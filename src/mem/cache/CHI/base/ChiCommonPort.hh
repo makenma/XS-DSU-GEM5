@@ -44,6 +44,25 @@ class ChiCommonPort: public Port
             }
         }
 
+        //TODO:Change to tamplated function after test
+        bool canSendReq() const
+        {
+            return CreditValue[static_cast<size_t>(ChannelType::REQ)] > 0;
+        }
+
+        bool enqueueReq(const RawReq& r)
+        {
+            const size_t idx = static_cast<size_t>(ChannelType::REQ);
+            assert(idx < NUM_CH);
+            if (CreditValue[idx] == 0) {
+                return false;
+            }
+            CreditValue[idx]--;
+            checkCredit(ChannelType::REQ);
+            req.push(r);
+            return true;
+        }
+
     private:
         std::array<uint8_t, NUM_CH> CreditValue{};
         std::array<uint8_t, NUM_CH> CreditLimit{};
@@ -58,7 +77,7 @@ class ChiCommonPort: public Port
 
 
 
-}
+};
 
 
 
