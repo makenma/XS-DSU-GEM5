@@ -18,10 +18,18 @@ Cache2ChiBridge::Cache2ChiBridge(const Cache2ChiBridgeParams& p)
     , cachePort(csprintf("%s.cache_side", name()), *this)
     // 下面这个 chiPort 构造参数，按你 ChiCommonPort 的构造函数签名对齐
     // 你之前 Port(name,id) 的版本第二参是 PortID，所以这里给一个 id（例如 0）
-    , chiPort(csprintf("%s.chi_side", name()), this, /*id*/ 0)
+    , chiPort(csprintf("%s.chi_side", name()),  /*id*/ 0)
     , pumpEvent([this]{ pump(); }, name() + ".pumpEvent")
 {
 }
+
+Cache2ChiBridge::CacheSidePort::CacheSidePort(const std::string& name, Cache2ChiBridge& owner)
+    : ResponsePort(name,&owner), owner(owner)
+    {
+        // Constructor implementation
+    }
+
+
 
 Port&
 Cache2ChiBridge::getPort(const std::string& if_name, PortID idx)
@@ -60,16 +68,16 @@ Cache2ChiBridge::packetToRawReq(PacketPtr pkt) const
     // 这些接口是 gem5 Packet 常用接口，如果你那份有差异就改这里
     r.addr = pkt->getAddr();
     r.size = static_cast<uint8_t>(pkt->getSize());
-    r.qos  = pkt->qosValue();
+    r.hdr.qos  = pkt->qosValue();
 
-    r.srcid = static_cast<int>(pkt->requestorId());
-    r.tgtid = 0;           // TODO：后续你可以根据地址映射到 HNF/SNF
+    r.hdr.srcid = static_cast<int>(pkt->requestorId());
+    r.hdr.tgtid = 0;           // TODO：后续你可以根据地址映射到 HNF/SNF
     r.AllowRetry = 0;      // TODO：如果你要实现 retry 机制再开启
 
     // 最小实现：只支持 read
     if (pkt->isRead()) {
         // ReadShared (Opcode[5:0]=0x01, Opcode[6]=0)
-        r.opcode = 0x01;
+        r.hdr.opcode = 0x01;
         return r;
     }
 
@@ -110,12 +118,13 @@ Cache2ChiBridge::cacheRecvFunctional(PacketPtr pkt)
     (void)cacheRecvTimingReq(pkt);
 }
 
-void
+bool
 Cache2ChiBridge::cacheRecvTimingSnoopResp(PacketPtr pkt)
 {
     // 如果 L2 会回 snoop resp，这里未来要接起来
     // 最小版本先不做
     warn("Cache2ChiBridge: snoop resp not handled yet\n");
+    return(false);
 }
 
 /* =========================

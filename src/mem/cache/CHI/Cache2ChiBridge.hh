@@ -45,7 +45,7 @@ class Cache2ChiBridge : public ClockedObject
 
         // 如果你要处理 snoop（可后续补）
         bool recvTimingSnoopResp(PacketPtr pkt) override
-        { owner.cacheRecvTimingSnoopResp(pkt); }
+        { return owner.cacheRecvTimingSnoopResp(pkt); }
 
         void recvRespRetry() override
         { }
@@ -64,7 +64,9 @@ class Cache2ChiBridge : public ClockedObject
     bool cacheRecvTimingReq(PacketPtr pkt);
     Tick cacheRecvAtomic(PacketPtr pkt);
     void cacheRecvFunctional(PacketPtr pkt);
-    void cacheRecvTimingSnoopResp(PacketPtr pkt);
+    bool cacheRecvTimingSnoopResp(PacketPtr pkt);
+
+    RawReq packetToRawReq(PacketPtr pkt) const;
 
     /** ============ Bridge internal queues ============ */
     std::queue<PacketPtr> pendingReqPkts; // cache->bridge 暂存
