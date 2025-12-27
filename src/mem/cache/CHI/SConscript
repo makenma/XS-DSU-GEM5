@@ -1,0 +1,13 @@
+# -*- mode:python -*-
+
+Import("*")
+
+
+SimObject('Cache2ChiBridge.py',sim_objects=['Cache2ChiBridge'])
+SimObject('ChiFlitSink.py',sim_objects=['ChiFlitSink'])
+
+Source('Cache2ChiBridge.cc')
+Source('ChiFlitSink.cc')
+
+DebugFlag('Cache2ChiBridge')
+DebugFlag('ChiFlitSink')
