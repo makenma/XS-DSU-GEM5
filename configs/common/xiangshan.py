@@ -421,7 +421,30 @@ def config_difftest(cpu_list, args, sys):
 
 def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
     np = args.num_cpus
-    # Set the cache line size for the entire system
+    assert buildEnv['TARGET_ISA'] == "riscv"
+
+    # override cpu class and clock
+    if args.xiangshan_ecore:
+        TestCPUClass = XiangshanECore
+        args.cpu_clock = '2.4GHz'
+    else:
+        TestCPUClass = XiangshanCore
+
+    ruby = False
+    if hasattr(args, 'ruby') and args.ruby:
+        ruby = True
+    test_sys = makeBareMetalXiangshanSystem('timing', SysConfig(mem=args.mem_size), None, np=np, ruby=ruby)
+    test_sys.num_cpus = np
+
+    if args.chi_test_mode:
+        test_sys.chi_bridges = [Cache2ChiBridge() for _ in range(4)]
+
+    test_sys.xiangshan_system = True
+    test_sys.enable_difftest = args.enable_difftest
+
+    config_xiangshan_inputs(args, test_sys)
+
+     # Set the cache line size for the entire system
     test_sys.cache_line_size = args.cacheline_size
 
     # Create a top-level voltage domain

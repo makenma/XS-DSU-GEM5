@@ -187,7 +187,12 @@ def config_aligned_l2(options, system, l2_cache_class):
 
             # Connect slice to the wrapper's cpu-side input and the internal xbar's cpu-side input
             cache_slice.cpu_side = l2_wrapper.slice_cpuside_ports
-            xbar.cpu_side_ports = cache_slice.mem_side
+            if not options.chi_test_mode:
+                xbar.cpu_side_ports = cache_slice.mem_side
+            else:
+                system.chi_bridges[j].cache_side = cache_slice.mem_side
+                xbar.cpu_side_ports = system.chi_bridges[j].mem_side
+
 
         # Connect the wrapper to the L1-L2 bus
         l2_wrapper.cpu_side = system.tol2bus_list[i].mem_side_ports
