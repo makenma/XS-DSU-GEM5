@@ -54,11 +54,46 @@ class Cache2ChiBridge : public ClockedObject
         { return AddrRangeList(); }
     };
 
+    // ============ Mem side port (acts like cache for the memory/CHI) ============
+     class MemSidePort : public RequestPort
+    {
+      private:
+        Cache2ChiBridge *owner;
+      public:
+        MemSidePort(const std::string& name, Cache2ChiBridge *owner);
+      protected:
+        bool recvTimingResp(PacketPtr pkt) override {
+          return owner->memSidePortRecvTimingResp(pkt);
+        }
+        void recvReqRetry() override {
+          return owner->memSidePortRecvReqRetry();
+        }
+        void recvTimingSnoopReq(PacketPtr pkt) override {
+          return owner->memSidePortRecvTimingSnoopReq(pkt);
+        }
+        void recvFunctionalSnoop(PacketPtr pkt) override {
+          return owner->memSidePortRecvFunctionalSnoop(pkt);
+        }
+        Tick recvAtomicSnoop(PacketPtr pkt) override {
+          return owner->memSidePortRecvAtomicSnoop(pkt);
+        }
+        void recvRangeChange() override {
+          return owner->memSidePortRecvRangeChange();
+        }
+        bool isSnooping() const override {
+          return true;
+        }
+    };
+
+
+
     /** ============ Ports ============ */
     CacheSidePort cachePort;
 
     // CHI side（你已经在 CHI 文件夹里写了）
     ChiCommonPort chiPort;
+
+    MemSidePort memPort;
 
     /** ============ Core handlers called by ports ============ */
     bool cacheRecvTimingReq(PacketPtr pkt);
@@ -67,6 +102,16 @@ class Cache2ChiBridge : public ClockedObject
     bool cacheRecvTimingSnoopResp(PacketPtr pkt);
 
     RawReq packetToRawReq(PacketPtr pkt) const;
+
+    // Mem side port methods
+    virtual bool memSidePortRecvTimingResp(PacketPtr pkt);
+    virtual void memSidePortRecvReqRetry();
+    virtual void memSidePortRecvTimingSnoopReq(PacketPtr pkt);
+    virtual void memSidePortRecvFunctionalSnoop(PacketPtr pkt);
+    virtual Tick memSidePortRecvAtomicSnoop(PacketPtr pkt);
+    virtual void memSidePortRecvRangeChange();
+
+
 
     /** ============ Bridge internal queues ============ */
     std::queue<PacketPtr> pendingReqPkts; // cache->bridge 暂存

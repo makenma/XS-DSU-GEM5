@@ -6,6 +6,8 @@
 #include <cassert>
 
 #include "base/logging.hh"
+#include "base/trace.hh"
+#include "debug/Cache2ChiBridge.hh"
 #include "mem/packet.hh"
 #include "sim/eventq.hh"
 #include "sim/sim_object.hh"
@@ -19,27 +21,38 @@ Cache2ChiBridge::Cache2ChiBridge(const Cache2ChiBridgeParams& p)
     // 下面这个 chiPort 构造参数，按你 ChiCommonPort 的构造函数签名对齐
     // 你之前 Port(name,id) 的版本第二参是 PortID，所以这里给一个 id（例如 0）
     , chiPort(csprintf("%s.chi_side", name()),  /*id*/ 0)
+    , memPort(p.name + ".mem_side", this)
     , pumpEvent([this]{ pump(); }, name() + ".pumpEvent")
 {
 }
 
-Cache2ChiBridge::CacheSidePort::CacheSidePort(const std::string& name, Cache2ChiBridge& owner)
-    : ResponsePort(name,&owner), owner(owner)
-    {
-        // Constructor implementation
-    }
+Cache2ChiBridge::CacheSidePort::CacheSidePort(const std::string& pname, Cache2ChiBridge& owner)
+    : ResponsePort(pname,&owner), owner(owner)
+{
+    // Constructor implementation
+    DPRINTF(Cache2ChiBridge, "Cache2ChiBridge constructed\n");
+}
 
+Cache2ChiBridge::MemSidePort::MemSidePort(const std::string& name,
+                                          Cache2ChiBridge* owner)
+    : RequestPort(name, owner), owner(owner)
+{
+}
 
 
 Port&
 Cache2ChiBridge::getPort(const std::string& if_name, PortID idx)
 {
+    DPRINTF(Cache2ChiBridge, "getPort(%s)\n", if_name);
     // Python 里用 system.bridge.cache_side / chi_side 连接时会进这里
     if (if_name == "cache_side") {
         return cachePort;
     }
     if (if_name == "chi_side") {
         return chiPort;
+    }
+    if (if_name == "mem_side") {
+        return memPort;
     }
 
     return ClockedObject::getPort(if_name, idx);
@@ -78,6 +91,7 @@ Cache2ChiBridge::packetToRawReq(PacketPtr pkt) const
     if (pkt->isRead()) {
         // ReadShared (Opcode[5:0]=0x01, Opcode[6]=0)
         r.hdr.opcode = 0x01;
+        DPRINTF(Cache2ChiBridge, "Converted read packet to CHI req: addr=0x%x, size=%d\n", r.addr, r.size);
         return r;
     }
 
@@ -96,6 +110,11 @@ Cache2ChiBridge::packetToRawReq(PacketPtr pkt) const
 bool
 Cache2ChiBridge::cacheRecvTimingReq(PacketPtr pkt)
 {
+    DPRINTF(Cache2ChiBridge,
+        "cacheRecvTimingReq: cmd=%s addr=0x%lx size=%u\n",
+        pkt->cmdString().c_str(),
+        (unsigned long)pkt->getAddr(),
+        pkt->getSize());
     // 最简单：先收下来，放 pending，然后触发 pump 再发到 CHI
     pendingReqPkts.push(pkt);
     schedulePump();
@@ -179,6 +198,48 @@ Cache2ChiBridge::pump()
     }
 }
 
+
+
+
+bool
+Cache2ChiBridge::memSidePortRecvTimingResp(PacketPtr pkt)
+{
+    DPRINTF(Cache2ChiBridge, "Got resp from memory side for addr: %#x\n", pkt->getAddr());
+
+
+    return true;
+}
+
+void
+Cache2ChiBridge::memSidePortRecvReqRetry()
+{
+    DPRINTF(Cache2ChiBridge, "Got req retry from memory side\n");
+}
+
+void
+Cache2ChiBridge::memSidePortRecvTimingSnoopReq(PacketPtr pkt)
+{
+    DPRINTF(Cache2ChiBridge, "Got snoop from memory side for addr: %#x\n", pkt->getAddr());
+}
+
+void
+Cache2ChiBridge::memSidePortRecvRangeChange()
+{
+    DPRINTF(Cache2ChiBridge, "Got range change from memory side\n");
+}
+
+void
+Cache2ChiBridge::memSidePortRecvFunctionalSnoop(PacketPtr pkt)
+{
+    DPRINTF(Cache2ChiBridge, "Got functional snoop from memory side for addr: %#x\n", pkt->getAddr());
+}
+
+Tick
+Cache2ChiBridge::memSidePortRecvAtomicSnoop(PacketPtr pkt)
+{
+    DPRINTF(Cache2ChiBridge, "Got atomic snoop from memory side for addr: %#x\n", pkt->getAddr());
+    return 1;
+}
 
 
 }

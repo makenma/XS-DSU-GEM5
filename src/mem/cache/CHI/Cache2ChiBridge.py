@@ -10,4 +10,5 @@ class Cache2ChiBridge(ClockedObject):
 
     cache_side = ResponsePort("Cache side (acts like memory for cache)")
     chi_side   = RequestPort("CHI side (sends CHI requests)")
+    mem_side = RequestPort("Memory side (receives responses from memory)")
 
