@@ -6,8 +6,21 @@ Import("*")
 SimObject('Cache2ChiBridge.py',sim_objects=['Cache2ChiBridge'])
 SimObject('ChiFlitSink.py',sim_objects=['ChiFlitSink'])
 
+# Base CHI component + a concrete node
+SimObject('base/BasicChiComponent.py', sim_objects=['BasicChiComponent'])
+SimObject('HomeNodeFull.py', sim_objects=['HomeNodeFull'])
+
+
 Source('Cache2ChiBridge.cc')
 Source('ChiFlitSink.cc')
+Source('base/BasicChiComponent.cc')
+
+Source('HomeNodeFull.cc')
+Source('HomeLinkLayer.cc')
 
 DebugFlag('Cache2ChiBridge')
 DebugFlag('ChiFlitSink')
+DebugFlag('BasicChiComponent')
+DebugFlag('HomeNodeFull')
+DebugFlag('HomeLinkLayer')
+
