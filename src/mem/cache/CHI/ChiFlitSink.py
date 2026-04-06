@@ -5,6 +5,6 @@ from m5.objects.ClockedObject import ClockedObject
 class ChiFlitSink(ClockedObject):
     type = "ChiFlitSink"
     cxx_header = "mem/cache/CHI/ChiFlitSink.hh"
-    cxx_class = "gem5::ChiFlitSink"
+    cxx_class = "gem5::Chi::ChiFlitSink"
 
     chi_side = ResponsePort("Sink CHI side port")
