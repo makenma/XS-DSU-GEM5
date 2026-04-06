@@ -1,4 +1,4 @@
-from m5.util import fatal
+from m5.util import fatal, warn
 from m5.util.convert import toMemorySize
 
 
@@ -24,5 +24,12 @@ def set_lsq_bank_conflict_cache_params(cpu, system):
             f"Invalid dcache geometry: size={cpu.dcache.size}, assoc={assoc}, "
             f"line={cache_line_size}, num_sets={num_sets}"
         )
+
+    if not hasattr(cpu, "DcacheSetBits"):
+        warn(
+            "Skipping LSQ bank-conflict DcacheSetBits setup because the current "
+            "CPU build does not expose that SimObject parameter."
+        )
+        return
 
     cpu.DcacheSetBits = num_sets.bit_length() - 1
