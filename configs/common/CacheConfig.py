@@ -191,6 +191,8 @@ def config_aligned_l2(options, system, l2_cache_class):
                 xbar.cpu_side_ports = cache_slice.mem_side
             else:
                 system.chi_bridges[j].cache_side = cache_slice.mem_side
+                system.chi_bridges[j].wakeup_target = system.home_node[j]
+                system.home_node[j].rxport = system.chi_bridges[j].chi_side
                 xbar.cpu_side_ports = system.chi_bridges[j].mem_side
 
 
