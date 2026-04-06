@@ -17,6 +17,9 @@
 namespace gem5
 {
 
+namespace Chi
+{
+
 class Cache2ChiBridge : public ClockedObject
 {
   public:
@@ -86,7 +89,7 @@ class Cache2ChiBridge : public ClockedObject
     };
 
 
-
+    ruby::Consumer* wakeupConsumer;
     /** ============ Ports ============ */
     CacheSidePort cachePort;
 
@@ -125,7 +128,7 @@ class Cache2ChiBridge : public ClockedObject
 };
 
 
-
+}
 
 }//namespace gem5
 

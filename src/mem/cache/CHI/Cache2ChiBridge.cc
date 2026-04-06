@@ -15,12 +15,15 @@
 namespace gem5
 {
 
+namespace Chi
+{
 Cache2ChiBridge::Cache2ChiBridge(const Cache2ChiBridgeParams& p)
     : ClockedObject(p)
+    ,wakeupConsumer(dynamic_cast<ruby::Consumer*>(p.wakeup_target))
     , cachePort(csprintf("%s.cache_side", name()), *this)
     // 下面这个 chiPort 构造参数，按你 ChiCommonPort 的构造函数签名对齐
     // 你之前 Port(name,id) 的版本第二参是 PortID，所以这里给一个 id（例如 0）
-    , chiPort(csprintf("%s.chi_side", name()),  /*id*/ 0)
+    , chiPort(csprintf("%s.chi_side", name()), wakeupConsumer, /*id*/ 0)
     , memPort(p.name + ".mem_side", this)
     , pumpEvent([this]{ pump(); }, name() + ".pumpEvent")
 {
@@ -81,16 +84,16 @@ Cache2ChiBridge::packetToRawReq(PacketPtr pkt) const
     // 这些接口是 gem5 Packet 常用接口，如果你那份有差异就改这里
     r.addr = pkt->getAddr();
     r.size = static_cast<uint8_t>(pkt->getSize());
-    r.hdr.qos  = pkt->qosValue();
+    r.qos  = pkt->qosValue();
 
-    r.hdr.srcid = static_cast<int>(pkt->requestorId());
-    r.hdr.tgtid = 0;           // TODO：后续你可以根据地址映射到 HNF/SNF
+    r.srcid = static_cast<int>(pkt->requestorId());
+    r.tgtid = 0;           // TODO：后续你可以根据地址映射到 HNF/SNF
     r.AllowRetry = 0;      // TODO：如果你要实现 retry 机制再开启
 
     // 最小实现：只支持 read
     if (pkt->isRead()) {
         // ReadShared (Opcode[5:0]=0x01, Opcode[6]=0)
-        r.hdr.opcode = 0x01;
+        r.opcode = 0x01;
         DPRINTF(Cache2ChiBridge, "Converted read packet to CHI req: addr=0x%x, size=%d\n", r.addr, r.size);
         return r;
     }
@@ -166,12 +169,11 @@ Cache2ChiBridge::pump()
         //   bool canSendReq() const;
         //   void enqueueReq(const RawReq&);
         //
-        if (!chiPort.canSendReq()) {
+        DPRINTF(Cache2ChiBridge, "bridge enqueue: chiPort=%p\n", &chiPort);
+        if (!chiPort.enqueueRx(REQ,r)) {
             // credit 不够：等 credit return 后再 pump
             break;
         }
-
-        chiPort.enqueueReq(r);
         pendingReqPkts.pop();
 
         // TODO：真实建模里你要保存 pkt 用于将来响应匹配（比如 MSHR / txnid）
@@ -241,6 +243,7 @@ Cache2ChiBridge::memSidePortRecvAtomicSnoop(PacketPtr pkt)
     return 1;
 }
 
+}
 
 }
 
