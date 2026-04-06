@@ -5,6 +5,9 @@
 
 namespace gem5
 {
+
+namespace Chi
+{
 /* =========================
  * Raw DAT Opcode (wire)
  * ========================= */
@@ -142,7 +145,7 @@ inline DecodedDat decodeDat(uint8_t raw)
     return out;
 }
 
-
+}
 
 }// namespace gem5
 

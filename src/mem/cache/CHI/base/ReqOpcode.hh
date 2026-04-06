@@ -5,6 +5,11 @@
 
 namespace gem5
 {
+
+
+namespace Chi
+{
+
  enum class ReqVariant : uint8_t { V0 = 0, V1 = 1 };
 
     struct ReqOpcode
@@ -166,6 +171,8 @@ namespace gem5
                 return out;
         }
     }
+
+}
 }// namespace gem5
 
 #endif

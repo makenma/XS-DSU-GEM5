@@ -7,6 +7,8 @@
 namespace gem5
 {
 
+namespace Chi
+{
     struct RspOpcode
     {
         uint8_t raw; // only bits[4:0] used
@@ -101,8 +103,7 @@ namespace gem5
         return out;
     }
 
-
-
+}
 
 }// namespace gem5
 

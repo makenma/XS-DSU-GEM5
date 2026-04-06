@@ -6,6 +6,9 @@
 namespace gem5
 {
 
+
+namespace Chi
+{
 /* =========================
  * Raw Snoop Opcode (wire)
  * ========================= */
@@ -222,5 +225,7 @@ inline DecodedSnp decodeSnp(uint8_t raw)
     return out;
 }
 
+
+}
 } // namespace gem5
 #endif

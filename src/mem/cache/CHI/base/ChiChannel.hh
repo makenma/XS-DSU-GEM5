@@ -3,9 +3,15 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <variant>
 
 namespace gem5
 {
+
+namespace Chi
+{
+
 
     enum ChannelType: uint8_t
     {
@@ -18,18 +24,24 @@ namespace gem5
 
 
 
-    struct CommonHdr
+    struct BaseFlit
     {
         uint8_t      qos;
         uint32_t     srcid;
         uint32_t     tgtid;
         uint32_t     txnid;
         uint8_t      opcode;
+        //module pipline virtual in rawflit
+        uint32_t     stage;
+
+        void next_stage(){
+            this->stage++;
+        }
+
     };
 
-    struct RawReq
+    struct RawReq:BaseFlit
     {
-        CommonHdr   hdr;
         uint8_t     AllowRetry;
         uint64_t    addr;
         uint8_t     size;
@@ -37,16 +49,14 @@ namespace gem5
 
     };
 
-    struct RawRsp
+    struct RawRsp:BaseFlit
     {
-        CommonHdr   hdr;
         uint8_t     dbid;
     };
 
 
-    struct RawSnp
+    struct RawSnp:BaseFlit
     {
-        CommonHdr   hdr;
         uint64_t    addr;
         uint8_t     size;
     };
@@ -57,9 +67,8 @@ namespace gem5
         size_t   ByteLength;// in bytes
     };
 
-    struct RawDat
+    struct RawDat:BaseFlit
     {
-        CommonHdr   hdr;
         uint8_t     last;
         uint32_t    HomeNID;
         uint8_t     dbid;
@@ -87,10 +96,12 @@ namespace gem5
     }
 
 
+    using StageFunc = std::function<void(BaseFlit*)>;
+    using FlitVariant = std::variant<RawReq, RawRsp, RawSnp, RawDat>;
 
 
 
-
+}
 
 }
 
