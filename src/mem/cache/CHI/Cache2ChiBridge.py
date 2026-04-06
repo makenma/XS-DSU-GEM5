@@ -6,9 +6,10 @@ from m5.objects.ClockedObject import ClockedObject
 class Cache2ChiBridge(ClockedObject):
     type = "Cache2ChiBridge"
     cxx_header = "mem/cache/CHI/Cache2ChiBridge.hh"
-    cxx_class = "gem5::Cache2ChiBridge"
+    cxx_class = "gem5::Chi::Cache2ChiBridge"
 
     cache_side = ResponsePort("Cache side (acts like memory for cache)")
-    chi_side   = RequestPort("CHI side (sends CHI requests)")
+    chi_side   = MasterPort("CHI side (sends CHI requests)")
     mem_side = RequestPort("Memory side (receives responses from memory)")
 
+    wakeup_target = Param.SimObject(NULL, "HomeNodeFull to wake up when enqueue")
