@@ -438,6 +438,7 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
 
     if args.chi_test_mode:
         test_sys.chi_bridges = [Cache2ChiBridge() for _ in range(4)]
+        test_sys.home_node   = [HomeNodeFull() for _ in range(4)]
 
     test_sys.xiangshan_system = True
     test_sys.enable_difftest = args.enable_difftest
@@ -894,5 +895,7 @@ def xiangshan_system_init():
         args.enable_difftest = False
         print("Trace mode: Difftest disabled for trace execution")
     args.enable_riscv_vector = True
+    if args.bp_type is None:
+        args.bp_type = 'DecoupledBPUWithBTB'
 
     return args
