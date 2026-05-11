@@ -3,8 +3,6 @@
 
 #include "mem/cache/CHI/HomeNodeFull.hh"
 
-#include <iostream>
-
 #include "debug/HomeLinkLayer.hh"
 
 namespace gem5::Chi
@@ -14,25 +12,23 @@ namespace gem5::Chi
 HomeNodeFull::HomeNodeFull(const HomeNodeFullParams& p)
     : BasicChiComponent(p),
     Consumer(this),
-    linklayer( this),
+    linklayer(this, p.block_size, p.data_beat_bytes, p.num_poc_entries,
+              p.enable_retry),
     rxport(p.name + ".rxport", static_cast<ruby::Consumer*>(this),/*PortID*/ 0)
 {
-    std::cout<<"HomeNodeFull constructed with name: "<<p.name<<std::endl;
-    std::cout << "consumer ptr=" << (void*)static_cast<ruby::Consumer*>(this) << "\n";
-
+    DPRINTF(HomeLinkLayer,
+            "HomeNodeFull constructed block=%u beat=%u entries=%u "
+            "retry=%u\n",
+            p.block_size, p.data_beat_bytes, p.num_poc_entries,
+            p.enable_retry);
     linklayer.setRxPort(&rxport);
 }
 
 void
 HomeNodeFull::wakeup()
 {
-    //TODO: abstract class here wirte the whole process later
-    std::cout<<"HomeNodeFull wakeup called"<<std::endl;
+    DPRINTF(HomeLinkLayer, "HomeNodeFull wakeup\n");
     linklayer.wakeup();
-
-
-
-
 }
 
 void
@@ -45,10 +41,16 @@ Port&
 HomeNodeFull::getPort(const std::string& if_name, PortID idx)
 {
     if (if_name == "rxport") {
-         std::cout<<"HomeNodeFull get rxport"<<std::endl;
+        DPRINTF(HomeLinkLayer, "getPort(rxport)\n");
         return rxport;
     }
     return BasicChiComponent::getPort(if_name, idx);
+}
+
+bool
+HomeNodeFull::hasLinkWork() const
+{
+    return linklayer.hasWork();
 }
 
 
