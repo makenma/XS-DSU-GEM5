@@ -14,6 +14,7 @@ class HomeNodeFull(BasicChiComponent):
 
     rxport = SlavePort("CHI RX port")
 
-    # No additional params/ports are declared in the provided C++ headers.
-    # If you later expose sub-components (e.g., linklayer ports) via Params,
-    # add them here and include PARAMS(HomeNodeFull) in C++.
+    block_size = Param.Unsigned(Parent.cache_line_size, "Cache line size")
+    data_beat_bytes = Param.UInt32(32, "Bytes carried by one CHI DAT beat")
+    num_poc_entries = Param.UInt32(32, "Minimal HNF transaction entries")
+    enable_retry = Param.Bool(True, "Enable RetryAck/PCrdGrant flow")
