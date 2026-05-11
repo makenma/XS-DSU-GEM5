@@ -162,6 +162,33 @@ namespace Chi
                 else          { out.major = ReqMajor::Write; out.minor = ReqMinor::WriteUnique; }
                 return out;
 
+            case 0x15:
+                out.major = ReqMajor::Write;
+                out.minor = ReqMinor::WriteEvict;
+                return out;
+
+            case 0x17:
+                out.major = ReqMajor::Write;
+                out.minor = ReqMinor::WriteClean;
+                return out;
+
+            case 0x18:
+            case 0x19:
+                out.major = ReqMajor::Write;
+                out.minor = ReqMinor::WriteUnique;
+                return out;
+
+            case 0x1B:
+                out.major = ReqMajor::Write;
+                out.minor = ReqMinor::WriteBack;
+                return out;
+
+            case 0x1C:
+            case 0x1D:
+                out.major = ReqMajor::Write;
+                out.minor = ReqMinor::WriteNoSnp;
+                return out;
+
             case 0x3A:
                 out.major = ReqMajor::Prefetch;
                 out.minor = ReqMinor::PrefetchTgt;
