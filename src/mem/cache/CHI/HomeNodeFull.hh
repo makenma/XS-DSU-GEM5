@@ -22,6 +22,7 @@ class HomeNodeFull : public BasicChiComponent , public ruby::Consumer
         void print(std::ostream& out) const override;
         Port& getPort(const std::string& if_name,
                   PortID idx = InvalidPortID) override;
+        bool hasLinkWork() const;
         //HomeNodeFull* create() const;
     private:
         HomeLinkLayer   linklayer;
