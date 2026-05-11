@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <functional>
 #include <variant>
+#include <vector>
 
 namespace gem5
 {
@@ -24,15 +25,23 @@ namespace Chi
 
 
 
+    enum class RspKind : uint8_t
+    {
+        MainPath,
+        ShortPath,
+        RetryAck,
+        PCrdGrant
+    };
+
     struct BaseFlit
     {
-        uint8_t      qos;
-        uint32_t     srcid;
-        uint32_t     tgtid;
-        uint32_t     txnid;
-        uint8_t      opcode;
+        uint8_t      qos = 0;
+        uint32_t     srcid = 0;
+        uint32_t     tgtid = 0;
+        uint32_t     txnid = 0;
+        uint8_t      opcode = 0;
         //module pipline virtual in rawflit
-        uint32_t     stage;
+        uint32_t     stage = 0;
 
         void next_stage(){
             this->stage++;
@@ -42,39 +51,56 @@ namespace Chi
 
     struct RawReq:BaseFlit
     {
-        uint8_t     AllowRetry;
-        uint64_t    addr;
-        uint8_t     size;
-        uint32_t    ReturnNid;
+        uint8_t     AllowRetry = 0;
+        uint64_t    addr = 0;
+        uint8_t     size = 0;
+        uint32_t    ReturnNid = 0;
 
+        uint8_t     order = 0;
+        uint8_t     pcrdtype = 0;
+        uint8_t     memattr = 0;
+        uint8_t     snpattr = 0;
+        bool        expCompAck = false;
+        bool        traceTag = false;
+        uint8_t     srcType = 0;
+        uint8_t     ldid = 0;
     };
 
     struct RawRsp:BaseFlit
     {
-        uint8_t     dbid;
+        uint8_t     dbid = 0;
+        uint8_t     resp = 0;
+        uint8_t     respErr = 0;
+        uint8_t     pcrdtype = 0;
+        RspKind     rspKind = RspKind::MainPath;
+        uint64_t    originSeq = 0;
+        uint64_t    originCycle = 0;
     };
 
 
     struct RawSnp:BaseFlit
     {
-        uint64_t    addr;
-        uint8_t     size;
-    };
-
-    struct data_payload
-    {
-        uint8_t* data;
-        size_t   ByteLength;// in bytes
+        uint64_t    addr = 0;
+        uint8_t     size = 0;
     };
 
     struct RawDat:BaseFlit
     {
-        uint8_t     last;
-        uint32_t    HomeNID;
-        uint8_t     dbid;
-        uint8_t     dataid;
-        data_payload data;
-        // uint8_t[]   data; // variable length data payload
+        uint8_t     last = 0;
+        uint32_t    HomeNID = 0;
+        uint8_t     dbid = 0;
+        uint8_t     dataid = 0;
+        uint8_t     resp = 0;
+        uint32_t    beatOffset = 0;
+        std::vector<uint8_t> byteEnable;
+        std::vector<uint8_t> chunkValid;
+        std::vector<uint8_t> data;
+
+        size_t
+        byteLength() const
+        {
+            return data.size();
+        }
     };
 
     struct FlitId
