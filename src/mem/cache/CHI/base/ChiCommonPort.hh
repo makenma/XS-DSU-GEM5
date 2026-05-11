@@ -79,6 +79,22 @@ public:
         return dequeueFlit(QueueKind::Rx, ch);
     }
 
+    std::optional<FlitVariant> getRxFlitNoCredit(ChannelType ch) {
+        return dequeueFlitNoCredit(QueueKind::Rx, ch);
+    }
+
+    void returnRxCredit(ChannelType ch, uint8_t val = 1) {
+        increaseRxCredit(ch, val);
+    }
+
+    bool hasRxFlit(ChannelType ch) const {
+        return !rx_queue[static_cast<size_t>(ch)].empty();
+    }
+
+    bool hasTxCredit(ChannelType ch) const {
+        return txCredit[static_cast<size_t>(ch)] > 0;
+    }
+
     // TX dequeue
     std::optional<FlitVariant> getTxFlit(ChannelType ch) {
         return dequeueFlit(QueueKind::Tx, ch);
@@ -152,7 +168,7 @@ private:
         assert(credit[idx] <= creditLimit[idx] && "CHI credit overflow!");
         queues[idx].push_back(f);
         assert(dst.m_consumer && "ChiCommonPort m_consumer is null");
-        dst.m_consumer->wakeup();
+        dst.m_consumer->scheduleEvent(Cycles(1));
         return true;
     }
 
@@ -169,6 +185,19 @@ private:
         queues[idx].pop_front();
         credit[idx]++;
         checkCredit(kind, ch);
+        return f;
+    }
+
+    std::optional<FlitVariant>
+    dequeueFlitNoCredit(QueueKind kind, ChannelType ch)
+    {
+        auto* queues = queueArray(kind);
+        size_t idx = static_cast<size_t>(ch);
+        if (queues[idx].empty()) {
+            return std::nullopt;
+        }
+        FlitVariant f = std::move(queues[idx].front());
+        queues[idx].pop_front();
         return f;
     }
 };
