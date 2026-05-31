@@ -18,3 +18,11 @@ class HomeNodeFull(BasicChiComponent):
     data_beat_bytes = Param.UInt32(32, "Bytes carried by one CHI DAT beat")
     num_poc_entries = Param.UInt32(32, "Minimal HNF transaction entries")
     enable_retry = Param.Bool(True, "Enable RetryAck/PCrdGrant flow")
+    sn_node_id = Param.UInt32(0, "Default SN node id used for HNF TXREQ")
+    direct_sn_fake_data = Param.Bool(
+        True,
+        "Generate zero CompData after direct ReadNoSnp when no real SN exists")
+    slc_num_sets = Param.UInt32(1024, "Number of modeled SLC sets")
+    slc_num_ways = Param.UInt32(16, "Number of modeled SLC ways")
+    sf_num_sets = Param.UInt32(1024, "Number of modeled SF sets")
+    sf_num_ways = Param.UInt32(16, "Number of modeled SF ways")

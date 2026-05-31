@@ -221,6 +221,7 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     const uint32_t blockSize;
     const uint32_t dataBeatBytes;
     const bool enableRetry;
+    const bool sinkHnfTxReq;
     uint32_t nextTxnId = 1;
     uint32_t nextSnoopTxnId = 1;
 
@@ -236,6 +237,7 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     uint32_t allocateSnoopTxnId();
 
     void drainChiTx();
+    void handleTxReq(const RawReq& req);
     void handleRsp(const RawRsp& rsp);
     void handleDat(const RawDat& dat);
     void handleSnp(const RawSnp& snp);

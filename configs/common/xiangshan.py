@@ -439,6 +439,13 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
     if args.chi_test_mode:
         test_sys.chi_bridges = [Cache2ChiBridge() for _ in range(4)]
         test_sys.home_node   = [HomeNodeFull() for _ in range(4)]
+        if getattr(args, "chi_2x2_router_test_mode", False):
+            test_sys.chi_routers = [
+                ChiRouterRefModel(local_x=x, local_y=y, node_type="router")
+                for y in range(2)
+                for x in range(2)
+            ]
+            test_sys.snf_bridge = Chi2ClassicMemBridge()
 
     test_sys.xiangshan_system = True
     test_sys.enable_difftest = args.enable_difftest

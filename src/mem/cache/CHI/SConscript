@@ -4,7 +4,9 @@ Import("*")
 
 
 SimObject('Cache2ChiBridge.py',sim_objects=['Cache2ChiBridge'])
+SimObject('Chi2ClassicMemBridge.py',sim_objects=['Chi2ClassicMemBridge'])
 SimObject('ChiFlitSink.py',sim_objects=['ChiFlitSink'])
+SimObject('ChiRouterRefModel.py',sim_objects=['ChiRouterRefModel'])
 
 # Base CHI component + a concrete node
 SimObject('base/BasicChiComponent.py', sim_objects=['BasicChiComponent'])
@@ -12,15 +14,22 @@ SimObject('HomeNodeFull.py', sim_objects=['HomeNodeFull'])
 
 
 Source('Cache2ChiBridge.cc')
+Source('Chi2ClassicMemBridge.cc')
 Source('ChiFlitSink.cc')
+Source('ChiRouterRefModel.cc')
 Source('base/BasicChiComponent.cc')
 
 Source('HomeNodeFull.cc')
 Source('HomeLinkLayer.cc')
+Source('HnfCoherencyController.cc')
+Source('HnfSLCSF.cc')
 
 DebugFlag('Cache2ChiBridge')
+DebugFlag('Chi2ClassicMemBridge')
 DebugFlag('ChiFlitSink')
+DebugFlag('ChiRouterRefModel')
 DebugFlag('BasicChiComponent')
 DebugFlag('HomeNodeFull')
 DebugFlag('HomeLinkLayer')
-
+DebugFlag('HnfCC')
+DebugFlag('HnfSLCSF')

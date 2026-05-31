@@ -19,3 +19,6 @@ class Cache2ChiBridge(ClockedObject):
     num_txns = Param.UInt32(32, "Maximum number of outstanding RN transactions")
     data_beat_bytes = Param.UInt32(32, "Bytes carried by one CHI DAT beat")
     enable_retry = Param.Bool(True, "Set AllowRetry and handle RetryAck/PCrdGrant")
+    sink_hnf_txreq = Param.Bool(
+        True,
+        "Drain HNF downstream TXREQ flits in direct bridge-HNF test topology")

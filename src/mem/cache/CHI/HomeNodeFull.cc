@@ -12,6 +12,10 @@ namespace gem5::Chi
 HomeNodeFull::HomeNodeFull(const HomeNodeFullParams& p)
     : BasicChiComponent(p),
     Consumer(this),
+    slcsf(p.block_size, p.slc_num_sets, p.slc_num_ways, p.sf_num_sets,
+          p.sf_num_ways),
+    cc(p.block_size, p.data_beat_bytes, p.num_poc_entries, p.sn_node_id,
+       p.direct_sn_fake_data),
     linklayer(this, p.block_size, p.data_beat_bytes, p.num_poc_entries,
               p.enable_retry),
     rxport(p.name + ".rxport", static_cast<ruby::Consumer*>(this),/*PortID*/ 0)
@@ -22,6 +26,8 @@ HomeNodeFull::HomeNodeFull(const HomeNodeFullParams& p)
             p.block_size, p.data_beat_bytes, p.num_poc_entries,
             p.enable_retry);
     linklayer.setRxPort(&rxport);
+    cc.setSlcsf(&slcsf);
+    linklayer.setCc(&cc);
 }
 
 void

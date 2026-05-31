@@ -15,12 +15,14 @@
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "debug/HomeLinkLayer.hh"
+#include "mem/cache/CHI/HnfCcTypes.hh"
 #include "mem/cache/CHI/base/ChiCommonPort.hh"
 #include "mem/ruby/common/Consumer.hh"
 
 namespace gem5::Chi {
 
 class HomeNodeFull;
+class HnfCoherencyController;
 
 class HomeLinkLayer : public ruby::Consumer
 {
@@ -34,6 +36,7 @@ class HomeLinkLayer : public ruby::Consumer
     bool hasWork() const;
 
     void setRxPort(ChiCommonPort* port) { rxport = port; }
+    void setCc(HnfCoherencyController* controller) { cc = controller; }
 
   private:
     static constexpr size_t NumCh =
@@ -196,21 +199,6 @@ class HomeLinkLayer : public ruby::Consumer
         uint8_t staticPriority = 0;
     };
 
-    struct LinkToCcReq
-    {
-        bool valid = false;
-        uint64_t seq = 0;
-        ChannelType channel = ChannelType::REQ;
-        FlitVariant flit{};
-        int tokenId = -1;
-        uint8_t priority = 0;
-        uint8_t resourceClass = 0;
-        bool isDynamic = false;
-        bool isStatic = false;
-        bool isFvb = false;
-        uint64_t dueCycle = 0;
-    };
-
     struct CcAdmitResult
     {
         bool valid = false;
@@ -255,6 +243,7 @@ class HomeLinkLayer : public ruby::Consumer
 
     HomeNodeFull *m_homenode = nullptr;
     ChiCommonPort *rxport = nullptr;
+    HnfCoherencyController *cc = nullptr;
 
     uint32_t blockSize = 64;
     uint32_t dataBeatBytes = 32;
@@ -273,7 +262,7 @@ class HomeLinkLayer : public ruby::Consumer
 
     PendingRetryTable pendingRetry;
 
-    std::deque<LinkToCcReq> linkToCcQ;
+    std::deque<HnfLinkToCcReq> linkToCcQ;
     std::deque<CcAdmitResult> ccAdmitQ;
     std::deque<CcRetireEvent> ccRetireQ;
     std::deque<RetryRecord> retryDecisionQ;
@@ -289,6 +278,7 @@ class HomeLinkLayer : public ruby::Consumer
     size_t pcrdGrantFifoDepth = 16;
     bool enableTxRspShortPath = false;
 
+    void doTxReqArb();
     void doTxRspArb();
     void doTxDatArb();
     void doCreditEvents();
@@ -333,6 +323,7 @@ class HomeLinkLayer : public ruby::Consumer
                       int tokenId, LlPriority prio, bool isStatic);
     void processCcAdmitResult(const CcAdmitResult& result);
     void queueRetire(uint32_t entry);
+    void queueRetire(const HnfCcRetireInfo& info);
 
     bool allocateRequest(const RawReq& req, uint32_t entry, int tokenId);
     void retireEntry(uint32_t entry);

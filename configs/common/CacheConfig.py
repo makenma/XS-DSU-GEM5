@@ -72,6 +72,87 @@ def _get_cache_opts(cpu, level, options):
 
     return opts
 
+def _chi_node_id(x, y, p=0, d=0):
+    return ((x & 0xF) << 7) | ((y & 0x7) << 4) | ((p & 0x3) << 2) | (d & 0x3)
+
+def _chi_router_2x2(system, x, y):
+    return system.chi_routers[y * 2 + x]
+
+def _connect_chi_router_2x2_mesh_once(system):
+    if getattr(system, "_chi_router_2x2_mesh_connected", False):
+        return
+
+    east = 0
+    south = 1
+    west = 2
+    north = 3
+
+    r00 = _chi_router_2x2(system, 0, 0)
+    r10 = _chi_router_2x2(system, 1, 0)
+    r01 = _chi_router_2x2(system, 0, 1)
+    r11 = _chi_router_2x2(system, 1, 1)
+
+    # Horizontal links, both directions.
+    r00.internal_ports[east] = r10.internal_peer_ports[west]
+    r10.internal_ports[west] = r00.internal_peer_ports[east]
+    r01.internal_ports[east] = r11.internal_peer_ports[west]
+    r11.internal_ports[west] = r01.internal_peer_ports[east]
+
+    # Vertical links, both directions. y increases north in ChiRouterRefModel.
+    r00.internal_ports[north] = r01.internal_peer_ports[south]
+    r01.internal_ports[south] = r00.internal_peer_ports[north]
+    r10.internal_ports[north] = r11.internal_peer_ports[south]
+    r11.internal_ports[south] = r10.internal_peer_ports[north]
+
+    hnf_id = _chi_node_id(1, 1, 0, 0)
+    snf_id = _chi_node_id(1, 0, 0, 0)
+
+    system.home_node[0].x = 1
+    system.home_node[0].y = 1
+    system.home_node[0].port = 0
+    system.home_node[0].device = 0
+    system.home_node[0].node_type = "hnf"
+    system.home_node[0].sn_node_id = snf_id
+    system.home_node[0].direct_sn_fake_data = False
+    r11.local_ports[0] = system.home_node[0].rxport
+
+    system.snf_bridge.node_id = snf_id
+    system.snf_bridge.hnf_node_id = hnf_id
+    system.snf_bridge.block_size = system.cache_line_size
+    r10.local_ports[0] = system.snf_bridge.chi_side
+
+    system.snf_cache = Cache(clk_domain=system.cpu_clk_domain,
+                             size="64kB",
+                             assoc=4,
+                             tag_latency=1,
+                             data_latency=2,
+                             response_latency=1,
+                             mshrs=16,
+                             tgts_per_mshr=8)
+    system.snf_bridge.mem_side = system.snf_cache.cpu_side
+    system.snf_cache.mem_side = system.membus.cpu_side_ports
+
+    system._chi_router_2x2_hnf_node_id = hnf_id
+    system._chi_router_2x2_snf_node_id = snf_id
+    system._chi_router_2x2_mesh_connected = True
+
+def _connect_chi_router_2x2_bridge(options, system, bridge_idx, cache_port, xbar):
+    if bridge_idx >= 4:
+        raise RuntimeError("CHI 2x2 router smoke currently supports at most "
+                           "four bridges")
+
+    _connect_chi_router_2x2_mesh_once(system)
+
+    bridge = system.chi_bridges[bridge_idx]
+    bridge.node_id = _chi_node_id(0, 0, 0, bridge_idx)
+    bridge.home_node_id = system._chi_router_2x2_hnf_node_id
+    bridge.sink_hnf_txreq = False
+    bridge.wakeup_target = system.home_node[0]
+
+    bridge.cache_side = cache_port
+    bridge.chi_side = _chi_router_2x2(system, 0, 0).device_ports[bridge_idx]
+    xbar.cpu_side_ports = bridge.mem_side
+
 def config_classic_l2(options, system, l2_cache_class):
     # When using classic L2 cache, The prefetcher is inside the l2cache, instead of l2Wrapper
     # So we need to move the prefetcher from l2Wrapper to l2cache
@@ -189,6 +270,9 @@ def config_aligned_l2(options, system, l2_cache_class):
             cache_slice.cpu_side = l2_wrapper.slice_cpuside_ports
             if not options.chi_test_mode:
                 xbar.cpu_side_ports = cache_slice.mem_side
+            elif getattr(options, "chi_2x2_router_test_mode", False):
+                _connect_chi_router_2x2_bridge(
+                    options, system, j, cache_slice.mem_side, xbar)
             else:
                 system.chi_bridges[j].cache_side = cache_slice.mem_side
                 system.chi_bridges[j].wakeup_target = system.home_node[j]

@@ -91,8 +91,20 @@ public:
         return !rx_queue[static_cast<size_t>(ch)].empty();
     }
 
+    bool hasTxFlit(ChannelType ch) const {
+        return !tx_queue[static_cast<size_t>(ch)].empty();
+    }
+
     bool hasTxCredit(ChannelType ch) const {
         return txCredit[static_cast<size_t>(ch)] > 0;
+    }
+
+    bool peerHasRxCredit(ChannelType ch) const {
+        return targetPort().rxCredit[static_cast<size_t>(ch)] > 0;
+    }
+
+    bool peerHasTxCredit(ChannelType ch) const {
+        return targetPort().txCredit[static_cast<size_t>(ch)] > 0;
     }
 
     // TX dequeue
@@ -121,6 +133,19 @@ private:
         }
 
         auto *peer = dynamic_cast<ChiCommonPort*>(&getPeer());
+        assert(peer && "ChiCommonPort peer has incompatible type");
+        return *peer;
+    }
+
+    const ChiCommonPort&
+    targetPort() const
+    {
+        if (!isConnected()) {
+            return *this;
+        }
+
+        auto *peer = dynamic_cast<const ChiCommonPort*>(
+            &const_cast<ChiCommonPort*>(this)->getPeer());
         assert(peer && "ChiCommonPort peer has incompatible type");
         return *peer;
     }

@@ -89,6 +89,7 @@ Cache2ChiBridge::Cache2ChiBridge(const Cache2ChiBridgeParams& p)
       blockSize(p.block_size),
       dataBeatBytes(p.data_beat_bytes),
       enableRetry(p.enable_retry),
+      sinkHnfTxReq(p.sink_hnf_txreq),
       pumpEvent([this]{ pump(); }, name() + ".pumpEvent")
 {
     fatal_if(blockSize == 0 || !isPowerOf2(blockSize),
@@ -516,6 +517,17 @@ Cache2ChiBridge::drainChiTx()
     bool madeProgress = true;
     while (madeProgress) {
         madeProgress = false;
+        if (auto flit = chiPort.getTxFlit(REQ)) {
+            std::visit([this](auto&& f) {
+                using T = std::decay_t<decltype(f)>;
+                if constexpr (std::is_same_v<T, RawReq>) {
+                    handleTxReq(f);
+                } else {
+                    panic("%s: non-REQ flit on REQ channel\n", name());
+                }
+            }, *flit);
+            madeProgress = true;
+        }
         if (auto flit = chiPort.getTxFlit(RSP)) {
             std::visit([this](auto&& f) {
                 using T = std::decay_t<decltype(f)>;
@@ -550,6 +562,31 @@ Cache2ChiBridge::drainChiTx()
             madeProgress = true;
         }
     }
+}
+
+void
+Cache2ChiBridge::handleTxReq(const RawReq& req)
+{
+    if (!sinkHnfTxReq) {
+        panic("%s: received HNF TXREQ opcode=0x%x while sink_hnf_txreq is "
+              "disabled\n",
+              name(), req.opcode);
+    }
+
+    const auto decoded = decodeReq(req.opcode);
+    if (decoded.minor != ReqMinor::ReadNoSnp) {
+        warn("%s: direct SN sink dropping unsupported HNF TXREQ opcode=0x%x "
+             "src=%u tgt=%u txn=%u addr=%#llx\n",
+             name(), req.opcode, req.srcid, req.tgtid, req.txnid,
+             static_cast<unsigned long long>(req.addr));
+        return;
+    }
+
+    DPRINTF(Cache2ChiBridge,
+            "direct SN sink accepted HNF TXREQ ReadNoSnp src=%u tgt=%u "
+            "txn=%u addr=%#llx size=%u\n",
+            req.srcid, req.tgtid, req.txnid,
+            static_cast<unsigned long long>(req.addr), req.size);
 }
 
 void

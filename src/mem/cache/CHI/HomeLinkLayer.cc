@@ -5,6 +5,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "mem/cache/CHI/HnfCoherencyController.hh"
 #include "mem/cache/CHI/HomeNodeFull.hh"
 #include "mem/cache/CHI/base/DatOpcode.hh"
 #include "mem/cache/CHI/base/ReqOpcode.hh"
@@ -139,10 +140,11 @@ HomeLinkLayer::wakeup()
     DPRINTF(HomeLinkLayer, "LL wakeup cycle=%llu rxport=%p\n",
             static_cast<unsigned long long>(llCycle), rxport);
 
+    doCcResultAndRetire();
+    doTxReqArb();
     doTxRspArb();
     doTxDatArb();
     doCreditEvents();
-    doCcResultAndRetire();
     doRetryWakeup();
     doPcrdGrantWakeup();
     doRxPipelineWakeup();
@@ -168,6 +170,37 @@ HomeLinkLayer::hasWork() const
 }
 
 void
+HomeLinkLayer::doTxReqArb()
+{
+    if (!rxport || !cc || !cc->hasTxReq()) {
+        return;
+    }
+
+    HnfCcTxReq pending = cc->frontTxReq();
+    pending.req.stage = BasicChiComponent::STAGE_H12;
+    if (!rxport->enqueueTx(ChannelType::REQ, pending.req)) {
+        DPRINTF(HomeLinkLayer,
+                "TXREQ H12 blocked opcode=0x%x src=%u tgt=%u txn=%u "
+                "addr=%#llx entry=%u\n",
+                pending.req.opcode, pending.req.srcid, pending.req.tgtid,
+                pending.req.txnid,
+                static_cast<unsigned long long>(pending.req.addr),
+                pending.entry);
+        return;
+    }
+
+    DPRINTF(HomeLinkLayer,
+            "TXREQ H12 send opcode=0x%x src=%u tgt=%u txn=%u addr=%#llx "
+            "entry=%u\n",
+            pending.req.opcode, pending.req.srcid, pending.req.tgtid,
+            pending.req.txnid,
+            static_cast<unsigned long long>(pending.req.addr),
+            pending.entry);
+    cc->popTxReq();
+    cc->notifyTxReqSent(pending.entry);
+}
+
+void
 HomeLinkLayer::doTxRspArb()
 {
     if (!rxport) {
@@ -189,27 +222,56 @@ HomeLinkLayer::doTxRspArb()
 void
 HomeLinkLayer::doTxDatArb()
 {
-    if (!rxport || txDatQ.empty()) {
+    if (!rxport) {
         return;
     }
 
-    TxDatPending pending = txDatQ.front();
+    if (!txDatQ.empty()) {
+        TxDatPending pending = txDatQ.front();
+        pending.dat.stage = BasicChiComponent::STAGE_H12;
+        if (!rxport->enqueueTx(ChannelType::DAT, pending.dat)) {
+            DPRINTF(HomeLinkLayer,
+                    "TXDAT H12 blocked opcode=0x%x src=%u txn=%u "
+                    "dataid=%u\n",
+                    pending.dat.opcode, pending.dat.srcid, pending.dat.txnid,
+                    pending.dat.dataid);
+            return;
+        }
+
+        DPRINTF(HomeLinkLayer,
+                "TXDAT H12 send opcode=0x%x src=%u tgt=%u txn=%u "
+                "dataid=%u bytes=%u last=%u\n",
+                pending.dat.opcode, pending.dat.srcid, pending.dat.tgtid,
+                pending.dat.txnid, pending.dat.dataid,
+                static_cast<unsigned>(pending.dat.data.size()),
+                pending.dat.last);
+        txDatQ.pop_front();
+        return;
+    }
+
+    if (!cc || !cc->hasTxDat()) {
+        return;
+    }
+
+    HnfCcTxDat pending = cc->frontTxDat();
     pending.dat.stage = BasicChiComponent::STAGE_H12;
     if (!rxport->enqueueTx(ChannelType::DAT, pending.dat)) {
         DPRINTF(HomeLinkLayer,
-                "TXDAT H12 blocked opcode=0x%x src=%u txn=%u dataid=%u\n",
+                "TXDAT H12 blocked CC opcode=0x%x src=%u txn=%u "
+                "dataid=%u entry=%u\n",
                 pending.dat.opcode, pending.dat.srcid, pending.dat.txnid,
-                pending.dat.dataid);
+                pending.dat.dataid, pending.entry);
         return;
     }
 
     DPRINTF(HomeLinkLayer,
-            "TXDAT H12 send opcode=0x%x src=%u tgt=%u txn=%u dataid=%u "
-            "bytes=%u last=%u\n",
+            "TXDAT H12 send CC opcode=0x%x src=%u tgt=%u txn=%u "
+            "dataid=%u bytes=%u last=%u entry=%u\n",
             pending.dat.opcode, pending.dat.srcid, pending.dat.tgtid,
             pending.dat.txnid, pending.dat.dataid,
-            static_cast<unsigned>(pending.dat.data.size()), pending.dat.last);
-    txDatQ.pop_front();
+            static_cast<unsigned>(pending.dat.data.size()), pending.dat.last,
+            pending.entry);
+    cc->popTxDat();
 }
 
 void
@@ -248,30 +310,32 @@ HomeLinkLayer::doCcResultAndRetire()
     }
     ccAdmitQ.swap(admitDeferred);
 
-    std::deque<LinkToCcReq> linkDeferred;
+    std::deque<HnfLinkToCcReq> linkDeferred;
     while (!linkToCcQ.empty()) {
-        LinkToCcReq req = linkToCcQ.front();
+        HnfLinkToCcReq req = linkToCcQ.front();
         linkToCcQ.pop_front();
         if (req.dueCycle > llCycle) {
             linkDeferred.push_back(std::move(req));
             continue;
         }
 
-        RawReq *raw = std::get_if<RawReq>(&req.flit);
-        panic_if(!raw, "HNF LinkToCcReq without RawReq seq=%llu\n",
+        panic_if(!cc, "HNF LinkToCcReq without CC seq=%llu\n",
                  static_cast<unsigned long long>(req.seq));
 
+        HnfCcAdmitResult ccResult = cc->acceptLinkReq(req, llCycle);
+
         CcAdmitResult result{};
-        result.valid = true;
-        result.seq = req.seq;
-        result.tokenId = req.tokenId;
-        result.accepted = true;
+        result.valid = ccResult.valid;
+        result.seq = ccResult.seq;
+        result.tokenId = ccResult.tokenId;
+        result.accepted = ccResult.accepted;
         result.dueCycle = llCycle + 1;
-        result.req = *raw;
+        result.req = ccResult.req;
         ccAdmitQ.push_back(result);
         DPRINTF(HomeLinkLayer,
-                "CC stub accepted input seq=%llu token=%d due=%llu\n",
+                "CC admit result seq=%llu token=%d accepted=%u due=%llu\n",
                 static_cast<unsigned long long>(req.seq), req.tokenId,
+                ccResult.accepted,
                 static_cast<unsigned long long>(result.dueCycle));
     }
     linkToCcQ.swap(linkDeferred);
@@ -598,19 +662,15 @@ HomeLinkLayer::doStageRsp(PipeEntry& entry, RawRsp& rsp)
     panic_if(decoded.minor != RspMinor::CompAck,
              "HNF RXRSP v1 only accepts CompAck, got opcode=0x%x txn=%u\n",
              rsp.opcode, rsp.txnid);
-
-    MinimalHnfTxn *txn = findTxn(rsp);
-    panic_if(!txn, "HNF RXRSP CompAck for unknown src=%u txn=%u\n",
+    panic_if(!cc, "HNF RXRSP CompAck without CC src=%u txn=%u\n",
              rsp.srcid, rsp.txnid);
-    panic_if(txn->kind != TxnKind::Read,
-             "HNF RXRSP CompAck matched non-read txn src=%u txn=%u\n",
-             rsp.srcid, rsp.txnid);
-
-    txn->compAckReceived = true;
+    std::optional<HnfCcRetireInfo> retire = cc->acceptRxRsp(rsp);
+    if (retire) {
+        queueRetire(*retire);
+    }
     DPRINTF(HomeLinkLayer,
-            "RXRSP H2 CompAck src=%u txn=%u entry=%u retire\n",
-            rsp.srcid, rsp.txnid, txn->entry);
-    queueRetire(txn->entry);
+            "RXRSP H2 CompAck src=%u txn=%u handed to CC retire=%u\n",
+            rsp.srcid, rsp.txnid, retire.has_value());
     return {StageAction::Drop};
 }
 
@@ -626,6 +686,19 @@ HomeLinkLayer::doStageDat(PipeEntry& entry, RawDat& dat)
     }
 
     const auto decoded = decodeDat(dat.opcode);
+    if (decoded.major == DatMajor::CompletionData) {
+        panic_if(!cc, "HNF RXDAT CompData without CC src=%u txn=%u\n",
+                 dat.srcid, dat.txnid);
+        const bool completed = cc->acceptRxDat(dat);
+        DPRINTF(HomeLinkLayer,
+                "RXDAT H2 CompData src=%u txn=%u dataid=%u bytes=%u "
+                "last=%u completed=%u\n",
+                dat.srcid, dat.txnid, dat.dataid,
+                static_cast<unsigned>(dat.data.size()), dat.last,
+                completed);
+        return {StageAction::Drop};
+    }
+
     panic_if(decoded.major != DatMajor::WriteData,
              "HNF RXDAT v1 only accepts write data, got opcode=0x%x "
              "txn=%u\n", dat.opcode, dat.txnid);
@@ -666,7 +739,7 @@ HomeLinkLayer::hasPendingWork() const
     return portHasRxFlit() || pipelineHasWork() || txQueuesHaveWork() ||
         !linkToCcQ.empty() || !ccAdmitQ.empty() || !ccRetireQ.empty() ||
         !retryDecisionQ.empty() || !creditEvents.empty() ||
-        hasHeldRetireToken();
+        hasHeldRetireToken() || (cc && cc->hasWork());
 }
 
 bool
@@ -686,7 +759,8 @@ bool
 HomeLinkLayer::txQueuesHaveWork() const
 {
     return !shortPathFifo.empty() || !retryAckFifo.empty() ||
-        !pcrdGrantFifo.empty() || !mainPathFifo.empty() || !txDatQ.empty();
+        !pcrdGrantFifo.empty() || !mainPathFifo.empty() || !txDatQ.empty() ||
+        (cc && cc->hasTxWork());
 }
 
 bool
@@ -872,11 +946,10 @@ void
 HomeLinkLayer::queueCcAdmit(const PipeEntry& entry, const RawReq& req,
                             int tokenId, LlPriority prio, bool isStatic)
 {
-    LinkToCcReq out{};
+    HnfLinkToCcReq out{};
     out.valid = true;
     out.seq = entry.seq;
-    out.channel = ChannelType::REQ;
-    out.flit = req;
+    out.req = req;
     out.tokenId = tokenId;
     out.priority = static_cast<uint8_t>(prio);
     out.resourceClass = tokens[tokenId].resourceClass;
@@ -916,11 +989,6 @@ HomeLinkLayer::processCcAdmitResult(const CcAdmitResult& result)
     token.pendingStatic = false;
 
     scheduleRxCreditReturn(ChannelType::REQ, 1, llCycle + 1);
-    const bool ok = allocateRequest(result.req,
-                                    static_cast<uint32_t>(result.tokenId),
-                                    result.tokenId);
-    panic_if(!ok, "HNF failed to allocate admitted request token=%d\n",
-             result.tokenId);
 
     DPRINTF(HomeLinkLayer,
             "CC admit seq=%llu token=%d accepted, RXREQ credit due=%llu\n",
@@ -932,6 +1000,22 @@ void
 HomeLinkLayer::queueRetire(uint32_t entry)
 {
     retireEntry(entry);
+}
+
+void
+HomeLinkLayer::queueRetire(const HnfCcRetireInfo& info)
+{
+    if (!info.valid) {
+        return;
+    }
+    CcRetireEvent ev{};
+    ev.valid = true;
+    ev.tokenId = info.tokenId;
+    ev.resourceClass = info.resourceClass;
+    ev.reqPriority = info.reqPriority;
+    ev.srcid = info.srcid;
+    ev.pcrdtype = info.pcrdtype;
+    ccRetireQ.push_back(ev);
 }
 
 bool
