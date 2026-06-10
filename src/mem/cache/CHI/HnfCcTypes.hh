@@ -21,6 +21,46 @@ enum class HnfCcEntryState : uint8_t
     Retire
 };
 
+enum class PocqState : uint8_t
+{
+    Idle,
+    SlcLookup,
+    SlcUpdate,
+    TxLink,
+    WaitCompAck,
+    IssueMcRead,
+    Sleep
+};
+
+enum class PocqEventKind : uint8_t
+{
+    Admit,
+    SlcLookupDone,
+    SlcUpdateDone,
+    TxLinkDone,
+    McDataDone,
+    CompAck
+};
+
+enum class PocqActionKind : uint8_t
+{
+    DoSlcLookup,
+    UpdateSlcSf,
+    QueueTxReq,
+    QueueCompData,
+    WaitCompAck,
+    Retire,
+    SleepForReplay
+};
+
+struct PocqEvent
+{
+    PocqEventKind kind = PocqEventKind::Admit;
+    bool slcHit = false;
+    bool sfHit = false;
+    bool replay = false;
+};
+
 enum class HnfSlcState : uint8_t
 {
     I,
