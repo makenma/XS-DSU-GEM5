@@ -46,6 +46,113 @@ HnfCoherencyController::HnfCoherencyController(
     fatal_if(maxEntries == 0, "HnfCC entry count must be non-zero\n");
 }
 
+std::optional<HnfCcRetireInfo>
+HnfCoherencyController::stepPocq(uint32_t entryId, const PocqEvent& event)
+{
+    panic_if(entryId >= entries.size(), "HnfCC invalid POCQ entry=%u\n",
+             entryId);
+
+    Entry& entry = entries[entryId];
+    PocqStepResult step = pocqGraph.tryStep(entry.pocqState, event);
+    panic_if(!step.stepped,
+             "HnfCC POCQ entry=%u has no transition state=%s event=%s\n",
+             entryId, POCQ_StateGraph::stateName(step.oldState),
+             POCQ_StateGraph::eventName(event.kind));
+
+    DPRINTF(HnfCC, "CC entry=%u POCQ %s --%s--> %s actions=%u\n",
+            entryId, POCQ_StateGraph::stateName(step.oldState),
+            POCQ_StateGraph::eventName(event.kind),
+            POCQ_StateGraph::stateName(step.nextState),
+            static_cast<unsigned>(step.actions.size()));
+
+    std::optional<HnfCcRetireInfo> retire;
+    for (PocqActionKind action : step.actions) {
+        DPRINTF(HnfCC, "CC entry=%u POCQ action=%s\n", entryId,
+                POCQ_StateGraph::actionName(action));
+        std::optional<HnfCcRetireInfo> actionRetire =
+            executePocqAction(entryId, action, event);
+        if (actionRetire) {
+            retire = actionRetire;
+        }
+    }
+    return retire;
+}
+
+std::optional<HnfCcRetireInfo>
+HnfCoherencyController::executePocqAction(uint32_t entryId,
+                                          PocqActionKind action,
+                                          const PocqEvent& event)
+{
+    panic_if(entryId >= entries.size(), "HnfCC invalid POCQ action entry=%u\n",
+             entryId);
+    Entry& entry = entries[entryId];
+
+    switch (action) {
+      case PocqActionKind::DoSlcLookup: {
+        entry.state = HnfCcEntryState::WaitSlc;
+
+        HnfSlcLookupReq lookup{};
+        lookup.entry = entryId;
+        lookup.req = entry.req;
+        lookup.blockAddr = entry.blockAddr;
+        entry.slcLookupResult = slcsfUnit->lookup(lookup);
+
+        if (entry.slcLookupResult.slcHit) {
+            entry.data = entry.slcLookupResult.data;
+            if (entry.data.size() < blockSize) {
+                entry.data.resize(blockSize, 0);
+            }
+        }
+
+        PocqEvent lookupDone{};
+        lookupDone.kind = PocqEventKind::SlcLookupDone;
+        lookupDone.slcHit = entry.slcLookupResult.slcHit;
+        lookupDone.sfHit = entry.slcLookupResult.sfHit;
+        lookupDone.replay = entry.slcLookupResult.replay;
+        return stepPocq(entryId, lookupDone);
+      }
+
+      case PocqActionKind::UpdateSlcSf:
+        if (entry.slcUpdatePending) {
+            slcsfUnit->fillCleanShared(entry.blockAddr, entry.req.srcid,
+                                       entry.data);
+            entry.slcUpdatePending = false;
+        }
+        {
+            PocqEvent updateDone{};
+            updateDone.kind = PocqEventKind::SlcUpdateDone;
+            return stepPocq(entryId, updateDone);
+        }
+
+      case PocqActionKind::QueueTxReq:
+        queueMcRead(entryId);
+        return std::nullopt;
+
+      case PocqActionKind::QueueCompData:
+        queueCompData(entryId, entry.data);
+        {
+            PocqEvent txLinkDone{};
+            txLinkDone.kind = PocqEventKind::TxLinkDone;
+            return stepPocq(entryId, txLinkDone);
+        }
+
+      case PocqActionKind::WaitCompAck:
+        entry.state = HnfCcEntryState::WaitCompAck;
+        return std::nullopt;
+
+      case PocqActionKind::Retire:
+        return retireEntry(entryId);
+
+      case PocqActionKind::SleepForReplay:
+        entry.state = HnfCcEntryState::Sleep;
+        DPRINTF(HnfCC, "CC entry=%u sleeps for SLCSF replay\n", entryId);
+        return std::nullopt;
+    }
+
+    panic("HnfCC unknown POCQ action=%u event=%u\n",
+          static_cast<unsigned>(action), static_cast<unsigned>(event.kind));
+}
+
 uint64_t
 HnfCoherencyController::blockAddr(const RawReq& req) const
 {
@@ -127,6 +234,7 @@ HnfCoherencyController::acceptLinkReq(const HnfLinkToCcReq& in,
 
     entry = Entry{};
     entry.state = HnfCcEntryState::Working;
+    entry.pocqState = PocqState::Idle;
     entry.req = in.req;
     entry.seq = in.seq;
     entry.blockAddr = blockAddr(in.req);
@@ -146,6 +254,7 @@ HnfCoherencyController::acceptLinkReq(const HnfLinkToCcReq& in,
 
     if (hasAddressHazard(entryId, entry.blockAddr)) {
         entry.state = HnfCcEntryState::Sleep;
+        entry.pocqState = PocqState::Sleep;
         for (uint32_t i = 0; i < entries.size(); ++i) {
             if (i != entryId && entryAllocated(entries[i]) &&
                 entries[i].blockAddr == entry.blockAddr) {
@@ -171,34 +280,12 @@ HnfCoherencyController::startReadFlow(uint32_t entryId)
     panic_if(entryId >= entries.size(), "HnfCC invalid read entry=%u\n",
              entryId);
     Entry& entry = entries[entryId];
-    entry.state = HnfCcEntryState::WaitSlc;
+    entry.pocqState = PocqState::Idle;
 
-    HnfSlcLookupReq lookup{};
-    lookup.entry = entryId;
-    lookup.req = entry.req;
-    lookup.blockAddr = entry.blockAddr;
-    HnfSlcLookupResult slc = slcsfUnit->lookup(lookup);
-
-    if (slc.replay) {
-        entry.state = HnfCcEntryState::Sleep;
-        DPRINTF(HnfCC, "CC entry=%u sleeps for SLCSF replay\n", entryId);
-        return;
-    }
-
-    if (slc.slcHit) {
-        entry.data = slc.data;
-        if (entry.data.size() < blockSize) {
-            entry.data.resize(blockSize, 0);
-        }
-        queueCompData(entryId, entry.data);
-        entry.state = HnfCcEntryState::WaitCompAck;
-        DPRINTF(HnfCC,
-                "CC entry=%u served ReadShared from SLC hit addr=%#llx\n",
-                entryId, static_cast<unsigned long long>(entry.blockAddr));
-        return;
-    }
-
-    queueMcRead(entryId);
+    PocqEvent admit{};
+    admit.kind = PocqEventKind::Admit;
+    std::optional<HnfCcRetireInfo> retire = stepPocq(entryId, admit);
+    panic_if(retire, "HnfCC entry=%u retired during admit path\n", entryId);
 }
 
 void
@@ -312,9 +399,12 @@ HnfCoherencyController::notifyTxReqSent(uint32_t entryId)
     }
 
     entry.data.assign(blockSize, 0);
-    slcsfUnit->fillCleanShared(entry.blockAddr, entry.req.srcid, entry.data);
-    queueCompData(entryId, entry.data);
-    entry.state = HnfCcEntryState::WaitCompAck;
+    entry.slcUpdatePending = true;
+    PocqEvent mcDataDone{};
+    mcDataDone.kind = PocqEventKind::McDataDone;
+    std::optional<HnfCcRetireInfo> retire = stepPocq(entryId, mcDataDone);
+    panic_if(retire, "HnfCC entry=%u retired during fake SN data path\n",
+             entryId);
     DPRINTF(HnfCC,
             "CC entry=%u generated fake SN data addr=%#llx requester=%u "
             "txn=%u\n",
@@ -372,9 +462,12 @@ HnfCoherencyController::acceptRxDat(const RawDat& dat)
         return false;
     }
 
-    slcsfUnit->fillCleanShared(entry.blockAddr, entry.req.srcid, entry.data);
-    queueCompData(entryId, entry.data);
-    entry.state = HnfCcEntryState::WaitCompAck;
+    entry.slcUpdatePending = true;
+    PocqEvent mcDataDone{};
+    mcDataDone.kind = PocqEventKind::McDataDone;
+    std::optional<HnfCcRetireInfo> retire = stepPocq(entryId, mcDataDone);
+    panic_if(retire, "HnfCC entry=%u retired during real SN data path\n",
+             entryId);
     DPRINTF(HnfCC,
             "CC entry=%u completed real SN read addr=%#llx requester=%u "
             "txn=%u\n",
@@ -418,7 +511,9 @@ HnfCoherencyController::acceptRxRsp(const RawRsp& rsp)
     DPRINTF(HnfCC,
             "CC entry=%u got CompAck src=%u txn=%u retire\n",
             *entryId, rsp.srcid, rsp.txnid);
-    return retireEntry(*entryId);
+    PocqEvent compAck{};
+    compAck.kind = PocqEventKind::CompAck;
+    return stepPocq(*entryId, compAck);
 }
 
 HnfCcRetireInfo
