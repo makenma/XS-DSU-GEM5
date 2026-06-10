@@ -7,7 +7,7 @@
 #include <optional>
 #include <vector>
 
-#include "mem/cache/CHI/HnfCcTypes.hh"
+#include "mem/cache/CHI/HnfPOCQStateGraph.hh"
 
 namespace gem5::Chi
 {
@@ -44,6 +44,7 @@ class HnfCoherencyController
     struct Entry
     {
         HnfCcEntryState state = HnfCcEntryState::Idle;
+        PocqState pocqState = PocqState::Idle;
         RawReq req{};
         uint64_t seq = 0;
         uint64_t blockAddr = 0;
@@ -55,6 +56,8 @@ class HnfCoherencyController
         uint32_t mcDataBytes = 0;
         std::optional<uint32_t> sleepingOn;
         std::vector<uint8_t> data;
+        HnfSlcLookupResult slcLookupResult{};
+        bool slcUpdatePending = false;
     };
 
     HnfSLCSF* slcsfUnit = nullptr;
@@ -65,6 +68,7 @@ class HnfCoherencyController
     uint32_t snNodeId = 0;
     bool directSnFakeData = true;
 
+    POCQ_StateGraph pocqGraph;
     std::vector<Entry> entries;
     std::deque<HnfCcTxReq> txReqQ;
     std::deque<HnfCcTxDat> txDatQ;
@@ -75,6 +79,10 @@ class HnfCoherencyController
     bool hasAddressHazard(uint32_t entry, uint64_t addr) const;
     std::optional<uint32_t> findTxn(uint32_t srcid, uint32_t txnid) const;
 
+    std::optional<HnfCcRetireInfo> stepPocq(uint32_t entry,
+                                            const PocqEvent& event);
+    std::optional<HnfCcRetireInfo> executePocqAction(
+        uint32_t entry, PocqActionKind action, const PocqEvent& event);
     void startReadFlow(uint32_t entry);
     void queueMcRead(uint32_t entry);
     void queueCompData(uint32_t entry, const std::vector<uint8_t>& data);
