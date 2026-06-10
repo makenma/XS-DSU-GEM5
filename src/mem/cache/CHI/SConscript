@@ -22,7 +22,12 @@ Source('base/BasicChiComponent.cc')
 Source('HomeNodeFull.cc')
 Source('HomeLinkLayer.cc')
 Source('HnfCoherencyController.cc')
+Source('HnfPOCQStateGraph.cc')
 Source('HnfSLCSF.cc')
+
+GTest('hnf_pocq_state_graph.test',
+      'HnfPOCQStateGraph.test.cc',
+      'HnfPOCQStateGraph.cc')
 
 DebugFlag('Cache2ChiBridge')
 DebugFlag('Chi2ClassicMemBridge')
