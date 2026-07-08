@@ -110,6 +110,8 @@ class POCQ_StateGraph : public DirectedGraph<PocqNode, PocqEdge>
     PocqNode txLink;
     PocqNode waitCompAck;
     PocqNode issueMcRead;
+    PocqNode txRsp;
+    PocqNode waitWriteData;
     PocqNode sleep;
 
     std::vector<std::unique_ptr<PocqEdge>> edgeStorage;
