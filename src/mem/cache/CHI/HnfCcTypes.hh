@@ -18,7 +18,25 @@ enum class HnfCcEntryState : uint8_t
     WaitSlc,
     IssueMcRead,
     WaitCompAck,
+    WaitWriteData,
     Retire
+};
+
+enum class PocqTxnKind : uint8_t
+{
+    Unknown,
+    ReadShared,
+    ReadUnique,
+    ReadNoSnp,
+    ReadOnce,
+    CleanInvalid,
+    MakeInvalid,
+    MakeUnique,
+    Evict,
+    WriteBackFull,
+    WriteCleanFull,
+    WriteUnique,
+    WriteEvictFull
 };
 
 enum class PocqState : uint8_t
@@ -29,6 +47,8 @@ enum class PocqState : uint8_t
     TxLink,
     WaitCompAck,
     IssueMcRead,
+    TxRsp,
+    WaitWriteData,
     Sleep
 };
 
@@ -38,8 +58,10 @@ enum class PocqEventKind : uint8_t
     SlcLookupDone,
     SlcUpdateDone,
     TxLinkDone,
+    TxRspDone,
     McDataDone,
-    CompAck
+    CompAck,
+    WriteDataDone
 };
 
 enum class PocqActionKind : uint8_t
@@ -48,7 +70,14 @@ enum class PocqActionKind : uint8_t
     UpdateSlcSf,
     QueueTxReq,
     QueueCompData,
+    QueueComp,
+    QueueCompDBIDResp,
     WaitCompAck,
+    WaitWriteData,
+    StoreWriteData,
+    FlushSf,
+    FlushL3,
+    WriteL3FlushSf,
     Retire,
     SleepForReplay
 };
@@ -56,9 +85,11 @@ enum class PocqActionKind : uint8_t
 struct PocqEvent
 {
     PocqEventKind kind = PocqEventKind::Admit;
+    PocqTxnKind txn = PocqTxnKind::Unknown;
     bool slcHit = false;
     bool sfHit = false;
     bool replay = false;
+    bool needsCompAck = false;
 };
 
 enum class HnfSlcState : uint8_t
@@ -124,6 +155,13 @@ struct HnfCcTxDat
 {
     uint32_t entry = 0;
     RawDat dat{};
+};
+
+struct HnfCcTxRsp
+{
+    uint32_t entry = 0;
+    RawRsp rsp{};
+    std::optional<HnfCcRetireInfo> retire;
 };
 
 struct HnfSlcLookupReq
