@@ -1,0 +1,65 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net">
+  <diagram name="第 1 页" id="0Bprp07m2sPZRJyHoNms">
+    <mxGraphModel grid="1" page="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="Mw-lVVB4Eav9sSRC4kDO-1" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="MC DMT" vertex="1">
+          <mxGeometry height="70" width="160" x="70" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="Mw-lVVB4Eav9sSRC4kDO-5" edge="1" parent="1" source="Mw-lVVB4Eav9sSRC4kDO-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;endArrow=none;endFill=0;" target="Mw-lVVB4Eav9sSRC4kDO-4">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="Mw-lVVB4Eav9sSRC4kDO-2" parent="1" style="shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1" value="TX ReadNoSnp" vertex="1">
+          <mxGeometry height="80" width="120" x="300" y="160" as="geometry" />
+        </mxCell>
+        <mxCell id="Mw-lVVB4Eav9sSRC4kDO-4" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="Order!=00" vertex="1">
+          <mxGeometry height="30" width="120" x="300" y="310" as="geometry" />
+        </mxCell>
+        <mxCell id="Mw-lVVB4Eav9sSRC4kDO-9" edge="1" parent="1" source="Mw-lVVB4Eav9sSRC4kDO-6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="Mw-lVVB4Eav9sSRC4kDO-7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="Mw-lVVB4Eav9sSRC4kDO-6" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Wait ReadReceipt" vertex="1">
+          <mxGeometry height="60" width="120" x="160" y="460" as="geometry" />
+        </mxCell>
+        <mxCell id="Mw-lVVB4Eav9sSRC4kDO-18" edge="1" parent="1" source="Mw-lVVB4Eav9sSRC4kDO-7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="Mw-lVVB4Eav9sSRC4kDO-17">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="Mw-lVVB4Eav9sSRC4kDO-7" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Wait Rnf CompAck" vertex="1">
+          <mxGeometry height="60" width="120" x="450" y="540" as="geometry" />
+        </mxCell>
+        <mxCell id="Mw-lVVB4Eav9sSRC4kDO-12" edge="1" parent="1" source="Mw-lVVB4Eav9sSRC4kDO-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;endArrow=none;endFill=0;" target="Mw-lVVB4Eav9sSRC4kDO-11" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="300" y="325" as="sourcePoint" />
+            <mxPoint x="220" y="460" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="Mw-lVVB4Eav9sSRC4kDO-11" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="Y" vertex="1">
+          <mxGeometry height="30" width="60" x="190" y="350" as="geometry" />
+        </mxCell>
+        <mxCell id="Mw-lVVB4Eav9sSRC4kDO-13" edge="1" parent="1" source="Mw-lVVB4Eav9sSRC4kDO-11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.506;entryY=-0.06;entryDx=0;entryDy=0;entryPerimeter=0;" target="Mw-lVVB4Eav9sSRC4kDO-6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="Mw-lVVB4Eav9sSRC4kDO-15" edge="1" parent="1" source="Mw-lVVB4Eav9sSRC4kDO-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;endArrow=none;endFill=0;" target="Mw-lVVB4Eav9sSRC4kDO-14" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="420" y="325" as="sourcePoint" />
+            <mxPoint x="510" y="540" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="Mw-lVVB4Eav9sSRC4kDO-16" edge="1" parent="1" source="Mw-lVVB4Eav9sSRC4kDO-14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="Mw-lVVB4Eav9sSRC4kDO-7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="Mw-lVVB4Eav9sSRC4kDO-14" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="N" vertex="1">
+          <mxGeometry height="30" width="60" x="480" y="350" as="geometry" />
+        </mxCell>
+        <mxCell id="Mw-lVVB4Eav9sSRC4kDO-17" parent="1" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;" value="Exit" vertex="1">
+          <mxGeometry height="80" width="80" x="470" y="700" as="geometry" />
+        </mxCell>
+        <mxCell id="Mw-lVVB4Eav9sSRC4kDO-19" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;rounded=0;" value="ReturnNID must equal to rnf nid&lt;br&gt;ReturnTXNID must equal to rnf txnid" vertex="1">
+          <mxGeometry height="110" width="140" x="90" y="120" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
