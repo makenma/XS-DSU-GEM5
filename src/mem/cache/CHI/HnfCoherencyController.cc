@@ -26,7 +26,67 @@ namespace DatOp
 constexpr uint8_t CompData = 0x04;
 } // namespace DatOp
 
+namespace RspOp
+{
+constexpr uint8_t Comp = 0x04;
+constexpr uint8_t CompDBIDResp = 0x05;
+} // namespace RspOp
+
 constexpr uint8_t RespSC = 1;
+
+PocqTxnKind
+txnKindForReq(const RawReq& req)
+{
+    const auto decoded = decodeReq(req.opcode);
+    switch (decoded.minor) {
+      case ReqMinor::ReadShared:
+      case ReqMinor::ReadClean:
+        return PocqTxnKind::ReadShared;
+      case ReqMinor::ReadUnique:
+      case ReqMinor::MakeReadUnique:
+        return PocqTxnKind::ReadUnique;
+      case ReqMinor::ReadNoSnp:
+      case ReqMinor::ReadNoSnpSep:
+        return PocqTxnKind::ReadNoSnp;
+      case ReqMinor::ReadOnce:
+        return PocqTxnKind::ReadOnce;
+      case ReqMinor::CleanInvalid:
+        return PocqTxnKind::CleanInvalid;
+      case ReqMinor::MakeInvalid:
+        return PocqTxnKind::MakeInvalid;
+      case ReqMinor::MakeUnique:
+        return PocqTxnKind::MakeUnique;
+      case ReqMinor::Evict:
+        return PocqTxnKind::Evict;
+      case ReqMinor::WriteBack:
+        return PocqTxnKind::WriteBackFull;
+      case ReqMinor::WriteClean:
+        return PocqTxnKind::WriteCleanFull;
+      case ReqMinor::WriteUnique:
+        return PocqTxnKind::WriteUnique;
+      case ReqMinor::WriteEvict:
+        return PocqTxnKind::WriteEvictFull;
+      default:
+        return PocqTxnKind::Unknown;
+    }
+}
+
+bool
+txnNeedsCompAck(PocqTxnKind txn)
+{
+    return txn == PocqTxnKind::ReadShared ||
+        txn == PocqTxnKind::ReadUnique ||
+        txn == PocqTxnKind::ReadOnce;
+}
+
+bool
+txnExpectsWriteData(PocqTxnKind txn)
+{
+    return txn == PocqTxnKind::WriteBackFull ||
+        txn == PocqTxnKind::WriteCleanFull ||
+        txn == PocqTxnKind::WriteUnique ||
+        txn == PocqTxnKind::WriteEvictFull;
+}
 
 } // anonymous namespace
 
@@ -106,9 +166,11 @@ HnfCoherencyController::executePocqAction(uint32_t entryId,
 
         PocqEvent lookupDone{};
         lookupDone.kind = PocqEventKind::SlcLookupDone;
+        lookupDone.txn = entry.txnKind;
         lookupDone.slcHit = entry.slcLookupResult.slcHit;
         lookupDone.sfHit = entry.slcLookupResult.sfHit;
         lookupDone.replay = entry.slcLookupResult.replay;
+        lookupDone.needsCompAck = entry.needsCompAck;
         return stepPocq(entryId, lookupDone);
       }
 
@@ -121,6 +183,8 @@ HnfCoherencyController::executePocqAction(uint32_t entryId,
         {
             PocqEvent updateDone{};
             updateDone.kind = PocqEventKind::SlcUpdateDone;
+            updateDone.txn = entry.txnKind;
+            updateDone.needsCompAck = entry.needsCompAck;
             return stepPocq(entryId, updateDone);
         }
 
@@ -133,11 +197,42 @@ HnfCoherencyController::executePocqAction(uint32_t entryId,
         {
             PocqEvent txLinkDone{};
             txLinkDone.kind = PocqEventKind::TxLinkDone;
+            txLinkDone.txn = entry.txnKind;
+            txLinkDone.needsCompAck = entry.needsCompAck;
             return stepPocq(entryId, txLinkDone);
         }
 
+      case PocqActionKind::QueueComp:
+        queueComp(entryId);
+        return std::nullopt;
+
+      case PocqActionKind::QueueCompDBIDResp:
+        queueCompDBIDResp(entryId);
+        return std::nullopt;
+
       case PocqActionKind::WaitCompAck:
         entry.state = HnfCcEntryState::WaitCompAck;
+        return std::nullopt;
+
+      case PocqActionKind::WaitWriteData:
+        entry.state = HnfCcEntryState::WaitWriteData;
+        return std::nullopt;
+
+      case PocqActionKind::StoreWriteData:
+        storeWriteData(entryId);
+        return std::nullopt;
+
+      case PocqActionKind::FlushSf:
+        slcsfUnit->flushSf(entry.blockAddr);
+        return std::nullopt;
+
+      case PocqActionKind::FlushL3:
+        slcsfUnit->flushL3(entry.blockAddr);
+        return std::nullopt;
+
+      case PocqActionKind::WriteL3FlushSf:
+        slcsfUnit->writeL3FlushSf(entry.blockAddr, entry.req.srcid,
+                                  entry.data);
         return std::nullopt;
 
       case PocqActionKind::Retire:
@@ -217,10 +312,13 @@ HnfCoherencyController::acceptLinkReq(const HnfLinkToCcReq& in,
              "HnfCC invalid token/entry id=%d\n", in.tokenId);
 
     const auto decoded = decodeReq(in.req.opcode);
-    panic_if(decoded.minor != ReqMinor::ReadShared,
-             "HnfCC v1 only supports ReadShared, got opcode=0x%x "
+    const PocqTxnKind txnKind = txnKindForReq(in.req);
+    panic_if(txnKind == PocqTxnKind::Unknown,
+             "HnfCC unsupported opcode=0x%x major=%u minor=%u "
              "src=%u txn=%u\n",
-             in.req.opcode, in.req.srcid, in.req.txnid);
+             in.req.opcode, static_cast<unsigned>(decoded.major),
+             static_cast<unsigned>(decoded.minor), in.req.srcid,
+             in.req.txnid);
 
     const uint32_t entryId = static_cast<uint32_t>(in.tokenId);
     Entry& entry = entries[entryId];
@@ -235,6 +333,7 @@ HnfCoherencyController::acceptLinkReq(const HnfLinkToCcReq& in,
     entry = Entry{};
     entry.state = HnfCcEntryState::Working;
     entry.pocqState = PocqState::Idle;
+    entry.txnKind = txnKind;
     entry.req = in.req;
     entry.seq = in.seq;
     entry.blockAddr = blockAddr(in.req);
@@ -242,6 +341,8 @@ HnfCoherencyController::acceptLinkReq(const HnfLinkToCcReq& in,
     entry.priority = in.priority;
     entry.resourceClass = in.resourceClass;
     entry.isStatic = in.isStatic;
+    entry.needsCompAck = txnNeedsCompAck(txnKind);
+    entry.expectsWriteData = txnExpectsWriteData(txnKind);
     entry.data.assign(blockSize, 0);
 
     DPRINTF(HnfCC,
@@ -284,6 +385,8 @@ HnfCoherencyController::startReadFlow(uint32_t entryId)
 
     PocqEvent admit{};
     admit.kind = PocqEventKind::Admit;
+    admit.txn = entry.txnKind;
+    admit.needsCompAck = entry.needsCompAck;
     std::optional<HnfCcRetireInfo> retire = stepPocq(entryId, admit);
     panic_if(retire, "HnfCC entry=%u retired during admit path\n", entryId);
 }
@@ -364,6 +467,74 @@ HnfCoherencyController::queueCompData(uint32_t entryId,
             entryId, bytes, entry.req.srcid, entry.req.txnid);
 }
 
+void
+HnfCoherencyController::queueComp(uint32_t entryId)
+{
+    Entry& entry = entries[entryId];
+
+    HnfCcTxRsp out{};
+    out.entry = entryId;
+    RawRsp& rsp = out.rsp;
+    rsp.qos = entry.req.qos;
+    rsp.srcid = entry.req.tgtid;
+    rsp.tgtid = entry.req.srcid;
+    rsp.txnid = entry.req.txnid;
+    rsp.opcode = RspOp::Comp;
+    rsp.dbid = 0;
+    rsp.resp = RespSC;
+    rsp.pcrdtype = entry.req.pcrdtype;
+    rsp.rspKind = RspKind::MainPath;
+    out.retire = makeRetireInfo(entry);
+    txRspQ.push_back(out);
+
+    const uint64_t addr = entry.blockAddr;
+    const uint32_t srcid = entry.req.srcid;
+    const uint32_t txnid = entry.req.txnid;
+    entry = Entry{};
+    wakeSleepingEntries(addr);
+
+    DPRINTF(HnfCC,
+            "CC entry=%u queues Comp src=%u txn=%u and retires after send\n",
+            entryId, srcid, txnid);
+}
+
+void
+HnfCoherencyController::queueCompDBIDResp(uint32_t entryId)
+{
+    Entry& entry = entries[entryId];
+
+    HnfCcTxRsp out{};
+    out.entry = entryId;
+    RawRsp& rsp = out.rsp;
+    rsp.qos = entry.req.qos;
+    rsp.srcid = entry.req.tgtid;
+    rsp.tgtid = entry.req.srcid;
+    rsp.txnid = entry.req.txnid;
+    rsp.opcode = RspOp::CompDBIDResp;
+    rsp.dbid = static_cast<uint8_t>(entryId + 1);
+    rsp.resp = RespSC;
+    rsp.pcrdtype = entry.req.pcrdtype;
+    rsp.rspKind = RspKind::MainPath;
+    txRspQ.push_back(out);
+
+    entry.state = HnfCcEntryState::WaitWriteData;
+    entry.writeDataBytes = 0;
+    DPRINTF(HnfCC,
+            "CC entry=%u queues CompDBIDResp src=%u txn=%u dbid=%u\n",
+            entryId, entry.req.srcid, entry.req.txnid, rsp.dbid);
+}
+
+void
+HnfCoherencyController::storeWriteData(uint32_t entryId)
+{
+    Entry& entry = entries[entryId];
+    slcsfUnit->writeLine(entry.blockAddr, entry.req.srcid, entry.data);
+    DPRINTF(HnfCC,
+            "CC entry=%u stores write data addr=%#llx src=%u txn=%u\n",
+            entryId, static_cast<unsigned long long>(entry.blockAddr),
+            entry.req.srcid, entry.req.txnid);
+}
+
 const HnfCcTxReq&
 HnfCoherencyController::frontTxReq() const
 {
@@ -402,6 +573,8 @@ HnfCoherencyController::notifyTxReqSent(uint32_t entryId)
     entry.slcUpdatePending = true;
     PocqEvent mcDataDone{};
     mcDataDone.kind = PocqEventKind::McDataDone;
+    mcDataDone.txn = entry.txnKind;
+    mcDataDone.needsCompAck = entry.needsCompAck;
     std::optional<HnfCcRetireInfo> retire = stepPocq(entryId, mcDataDone);
     panic_if(retire, "HnfCC entry=%u retired during fake SN data path\n",
              entryId);
@@ -412,10 +585,55 @@ HnfCoherencyController::notifyTxReqSent(uint32_t entryId)
             entry.req.srcid, entry.req.txnid);
 }
 
-bool
+std::optional<HnfCcRetireInfo>
 HnfCoherencyController::acceptRxDat(const RawDat& dat)
 {
     const auto decoded = decodeDat(dat.opcode);
+    if (decoded.major == DatMajor::WriteData) {
+        std::optional<uint32_t> entryId = findTxn(dat.srcid, dat.txnid);
+        panic_if(!entryId,
+                 "HnfCC write RXDAT for unknown src=%u txn=%u dbid=%u\n",
+                 dat.srcid, dat.txnid, dat.dbid);
+
+        Entry& entry = entries[*entryId];
+        panic_if(entry.state != HnfCcEntryState::WaitWriteData,
+                 "HnfCC write RXDAT entry=%u state=%u not waiting data\n",
+                 *entryId, static_cast<unsigned>(entry.state));
+
+        const uint32_t expected = expectedDataBytes(entry.req);
+        const uint32_t lineBytes = blockSize;
+        if (entry.data.size() < lineBytes) {
+            entry.data.resize(lineBytes, 0);
+        }
+
+        const uint32_t offset = dat.beatOffset;
+        panic_if(offset > lineBytes,
+                 "HnfCC write RXDAT entry=%u offset=%u lineBytes=%u\n",
+                 *entryId, offset, lineBytes);
+
+        const uint32_t copyBytes =
+            std::min<uint32_t>(dat.data.size(), lineBytes - offset);
+        std::copy(dat.data.begin(), dat.data.begin() + copyBytes,
+                  entry.data.begin() + offset);
+        entry.writeDataBytes =
+            std::min<uint32_t>(expected, entry.writeDataBytes + copyBytes);
+
+        DPRINTF(HnfCC,
+                "CC entry=%u got write data src=%u txn=%u dbid=%u "
+                "offset=%u bytes=%u received=%u/%u last=%u\n",
+                *entryId, dat.srcid, dat.txnid, dat.dbid, offset, copyBytes,
+                entry.writeDataBytes, expected, dat.last);
+
+        if (!dat.last && entry.writeDataBytes < expected) {
+            return std::nullopt;
+        }
+
+        PocqEvent writeDone{};
+        writeDone.kind = PocqEventKind::WriteDataDone;
+        writeDone.txn = entry.txnKind;
+        return stepPocq(*entryId, writeDone);
+    }
+
     panic_if(decoded.minor != DatMinor::CompData &&
                  decoded.minor != DatMinor::DataSepResp &&
                  decoded.minor != DatMinor::NCBWrDataCompAck,
@@ -459,12 +677,14 @@ HnfCoherencyController::acceptRxDat(const RawDat& dat)
             entry.mcDataBytes, expected, dat.last);
 
     if (!dat.last && entry.mcDataBytes < expected) {
-        return false;
+        return std::nullopt;
     }
 
     entry.slcUpdatePending = true;
     PocqEvent mcDataDone{};
     mcDataDone.kind = PocqEventKind::McDataDone;
+    mcDataDone.txn = entry.txnKind;
+    mcDataDone.needsCompAck = entry.needsCompAck;
     std::optional<HnfCcRetireInfo> retire = stepPocq(entryId, mcDataDone);
     panic_if(retire, "HnfCC entry=%u retired during real SN data path\n",
              entryId);
@@ -473,7 +693,7 @@ HnfCoherencyController::acceptRxDat(const RawDat& dat)
             "txn=%u\n",
             entryId, static_cast<unsigned long long>(entry.blockAddr),
             entry.req.srcid, entry.req.txnid);
-    return true;
+    return std::nullopt;
 }
 
 const HnfCcTxDat&
@@ -488,6 +708,20 @@ HnfCoherencyController::popTxDat()
 {
     panic_if(txDatQ.empty(), "HnfCC popTxDat on empty queue\n");
     txDatQ.pop_front();
+}
+
+const HnfCcTxRsp&
+HnfCoherencyController::frontTxRsp() const
+{
+    panic_if(txRspQ.empty(), "HnfCC frontTxRsp on empty queue\n");
+    return txRspQ.front();
+}
+
+void
+HnfCoherencyController::popTxRsp()
+{
+    panic_if(txRspQ.empty(), "HnfCC popTxRsp on empty queue\n");
+    txRspQ.pop_front();
 }
 
 std::optional<HnfCcRetireInfo>
