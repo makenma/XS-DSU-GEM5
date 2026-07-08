@@ -16,6 +16,8 @@ class Cache2ChiBridge(ClockedObject):
     block_size = Param.Unsigned(Parent.cache_line_size, "Cache line size in bytes")
     node_id = Param.UInt32(0, "RNF node id used as CHI SrcID/ReturnNID")
     home_node_id = Param.UInt32(0, "Default HNF node id used as CHI TgtID")
+    txnid_base = Param.UInt32(
+        0, "First CHI TxnID range base; allocated IDs are base + 1..num_txns")
     num_txns = Param.UInt32(32, "Maximum number of outstanding RN transactions")
     data_beat_bytes = Param.UInt32(32, "Bytes carried by one CHI DAT beat")
     enable_retry = Param.Bool(True, "Set AllowRetry and handle RetryAck/PCrdGrant")
