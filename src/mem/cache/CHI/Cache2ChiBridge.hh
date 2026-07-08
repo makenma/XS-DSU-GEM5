@@ -217,6 +217,7 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
 
     const uint32_t nodeId;
     const uint32_t homeNodeId;
+    const uint32_t txnIdBase;
     const uint32_t maxTxns;
     const uint32_t blockSize;
     const uint32_t dataBeatBytes;
