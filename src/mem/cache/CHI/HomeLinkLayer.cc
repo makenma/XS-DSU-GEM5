@@ -216,6 +216,30 @@ HomeLinkLayer::doTxRspArb()
     if (sendRspQueue(pcrdGrantFifo)) {
         return;
     }
+    if (cc && cc->hasTxRsp()) {
+        HnfCcTxRsp pending = cc->frontTxRsp();
+        pending.rsp.stage = BasicChiComponent::STAGE_H3;
+        if (!rxport->enqueueTx(ChannelType::RSP, pending.rsp)) {
+            DPRINTF(HomeLinkLayer,
+                    "TXRSP H3 blocked CC opcode=0x%x src=%u txn=%u "
+                    "entry=%u\n",
+                    pending.rsp.opcode, pending.rsp.srcid,
+                    pending.rsp.txnid, pending.entry);
+            return;
+        }
+
+        DPRINTF(HomeLinkLayer,
+                "TXRSP H3 send CC opcode=0x%x src=%u tgt=%u txn=%u "
+                "dbid=%u entry=%u retire=%u\n",
+                pending.rsp.opcode, pending.rsp.srcid, pending.rsp.tgtid,
+                pending.rsp.txnid, pending.rsp.dbid, pending.entry,
+                pending.retire.has_value());
+        cc->popTxRsp();
+        if (pending.retire) {
+            queueRetire(*pending.retire);
+        }
+        return;
+    }
     sendRspQueue(mainPathFifo);
 }
 
@@ -689,37 +713,37 @@ HomeLinkLayer::doStageDat(PipeEntry& entry, RawDat& dat)
     if (decoded.major == DatMajor::CompletionData) {
         panic_if(!cc, "HNF RXDAT CompData without CC src=%u txn=%u\n",
                  dat.srcid, dat.txnid);
-        const bool completed = cc->acceptRxDat(dat);
+        std::optional<HnfCcRetireInfo> retire = cc->acceptRxDat(dat);
+        if (retire) {
+            queueRetire(*retire);
+        }
         DPRINTF(HomeLinkLayer,
                 "RXDAT H2 CompData src=%u txn=%u dataid=%u bytes=%u "
-                "last=%u completed=%u\n",
+                "last=%u retire=%u\n",
                 dat.srcid, dat.txnid, dat.dataid,
                 static_cast<unsigned>(dat.data.size()), dat.last,
-                completed);
+                retire.has_value());
         return {StageAction::Drop};
     }
 
-    panic_if(decoded.major != DatMajor::WriteData,
-             "HNF RXDAT v1 only accepts write data, got opcode=0x%x "
-             "txn=%u\n", dat.opcode, dat.txnid);
-
-    MinimalHnfTxn *txn = findTxn(dat);
-    panic_if(!txn, "HNF RXDAT for unknown src=%u txn=%u dbid=%u\n",
-             dat.srcid, dat.txnid, dat.dbid);
-    panic_if(txn->kind != TxnKind::Write,
-             "HNF RXDAT matched non-write txn src=%u txn=%u\n",
-             dat.srcid, dat.txnid);
-
-    txn->receivedDataBytes += dat.data.size();
-    DPRINTF(HomeLinkLayer,
-            "RXDAT H2 write data src=%u txn=%u entry=%u dbid=%u "
-            "received=%u/%u last=%u\n",
-            dat.srcid, dat.txnid, txn->entry, dat.dbid,
-            txn->receivedDataBytes, txn->expectedDataBytes, dat.last);
-
-    if (dat.last || txn->receivedDataBytes >= txn->expectedDataBytes) {
-        queueRetire(txn->entry);
+    if (decoded.major == DatMajor::WriteData) {
+        panic_if(!cc, "HNF RXDAT write data without CC src=%u txn=%u\n",
+                 dat.srcid, dat.txnid);
+        std::optional<HnfCcRetireInfo> retire = cc->acceptRxDat(dat);
+        if (retire) {
+            queueRetire(*retire);
+        }
+        DPRINTF(HomeLinkLayer,
+                "RXDAT H2 write data src=%u txn=%u dbid=%u bytes=%u "
+                "last=%u retire=%u\n",
+                dat.srcid, dat.txnid, dat.dbid,
+                static_cast<unsigned>(dat.data.size()), dat.last,
+                retire.has_value());
+        return {StageAction::Drop};
     }
+
+    panic("HNF RXDAT unsupported opcode=0x%x txn=%u\n", dat.opcode,
+          dat.txnid);
     return {StageAction::Drop};
 }
 
