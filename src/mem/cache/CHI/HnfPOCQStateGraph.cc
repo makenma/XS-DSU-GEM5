@@ -16,6 +16,62 @@ isAdmit(const PocqEvent& event)
 }
 
 bool
+isReadTxn(PocqTxnKind txn)
+{
+    return txn == PocqTxnKind::Unknown ||
+        txn == PocqTxnKind::ReadShared ||
+        txn == PocqTxnKind::ReadUnique ||
+        txn == PocqTxnKind::ReadOnce;
+}
+
+bool
+isMaintenanceTxn(PocqTxnKind txn)
+{
+    return txn == PocqTxnKind::CleanInvalid ||
+        txn == PocqTxnKind::MakeInvalid ||
+        txn == PocqTxnKind::MakeUnique;
+}
+
+bool
+isWriteTxn(PocqTxnKind txn)
+{
+    return txn == PocqTxnKind::WriteBackFull ||
+        txn == PocqTxnKind::WriteCleanFull ||
+        txn == PocqTxnKind::WriteUnique ||
+        txn == PocqTxnKind::WriteEvictFull;
+}
+
+bool
+isAdmitReadNoSnp(const PocqEvent& event)
+{
+    return isAdmit(event) && event.txn == PocqTxnKind::ReadNoSnp;
+}
+
+bool
+isAdmitReadLookup(const PocqEvent& event)
+{
+    return isAdmit(event) && isReadTxn(event.txn);
+}
+
+bool
+isAdmitMaintenanceLookup(const PocqEvent& event)
+{
+    return isAdmit(event) && isMaintenanceTxn(event.txn);
+}
+
+bool
+isAdmitEvict(const PocqEvent& event)
+{
+    return isAdmit(event) && event.txn == PocqTxnKind::Evict;
+}
+
+bool
+isAdmitWrite(const PocqEvent& event)
+{
+    return isAdmit(event) && isWriteTxn(event.txn);
+}
+
+bool
 isLookupReplay(const PocqEvent& event)
 {
     return event.kind == PocqEventKind::SlcLookupDone && event.replay;
@@ -25,14 +81,21 @@ bool
 isLookupHit(const PocqEvent& event)
 {
     return event.kind == PocqEventKind::SlcLookupDone && !event.replay &&
-        event.slcHit;
+        event.slcHit && isReadTxn(event.txn);
 }
 
 bool
 isLookupMissNeedingMemory(const PocqEvent& event)
 {
     return event.kind == PocqEventKind::SlcLookupDone && !event.replay &&
-        !event.slcHit;
+        !event.slcHit && isReadTxn(event.txn);
+}
+
+bool
+isLookupMaintenanceDone(const PocqEvent& event)
+{
+    return event.kind == PocqEventKind::SlcLookupDone && !event.replay &&
+        isMaintenanceTxn(event.txn);
 }
 
 bool
@@ -48,6 +111,20 @@ isTxLinkDone(const PocqEvent& event)
 }
 
 bool
+isTxLinkDoneNeedsCompAck(const PocqEvent& event)
+{
+    return isTxLinkDone(event) &&
+        (event.needsCompAck || event.txn == PocqTxnKind::Unknown);
+}
+
+bool
+isTxLinkDoneNoCompAck(const PocqEvent& event)
+{
+    return isTxLinkDone(event) && !event.needsCompAck &&
+        event.txn != PocqTxnKind::Unknown;
+}
+
+bool
 isMcDataDone(const PocqEvent& event)
 {
     return event.kind == PocqEventKind::McDataDone;
@@ -57,6 +134,12 @@ bool
 isCompAck(const PocqEvent& event)
 {
     return event.kind == PocqEventKind::CompAck;
+}
+
+bool
+isWriteDataDone(const PocqEvent& event)
+{
+    return event.kind == PocqEventKind::WriteDataDone;
 }
 
 } // anonymous namespace
@@ -81,6 +164,8 @@ POCQ_StateGraph::POCQ_StateGraph()
       txLink(PocqState::TxLink),
       waitCompAck(PocqState::WaitCompAck),
       issueMcRead(PocqState::IssueMcRead),
+      txRsp(PocqState::TxRsp),
+      waitWriteData(PocqState::WaitWriteData),
       sleep(PocqState::Sleep)
 {
     addNode(idle);
@@ -89,21 +174,41 @@ POCQ_StateGraph::POCQ_StateGraph()
     addNode(txLink);
     addNode(waitCompAck);
     addNode(issueMcRead);
+    addNode(txRsp);
+    addNode(waitWriteData);
     addNode(sleep);
 
-    addTransition(idle, slcLookup, isAdmit, {PocqActionKind::DoSlcLookup});
+    addTransition(idle, issueMcRead, isAdmitReadNoSnp,
+                  {PocqActionKind::QueueTxReq});
+    addTransition(idle, slcLookup, isAdmitReadLookup,
+                  {PocqActionKind::DoSlcLookup});
+    addTransition(idle, slcLookup, isAdmitMaintenanceLookup,
+                  {PocqActionKind::DoSlcLookup});
+    addTransition(idle, idle, isAdmitEvict,
+                  {PocqActionKind::FlushSf, PocqActionKind::FlushL3,
+                   PocqActionKind::QueueComp});
+    addTransition(idle, waitWriteData, isAdmitWrite,
+                  {PocqActionKind::QueueCompDBIDResp,
+                   PocqActionKind::WaitWriteData});
     addTransition(slcLookup, sleep, isLookupReplay,
                   {PocqActionKind::SleepForReplay});
-    addTransition(slcLookup, slcUpdate, isLookupHit,
-                  {PocqActionKind::UpdateSlcSf});
+    addTransition(slcLookup, txLink, isLookupHit,
+                  {PocqActionKind::QueueCompData});
     addTransition(slcLookup, issueMcRead, isLookupMissNeedingMemory,
                   {PocqActionKind::QueueTxReq});
+    addTransition(slcLookup, idle, isLookupMaintenanceDone,
+                  {PocqActionKind::FlushL3, PocqActionKind::FlushSf,
+                   PocqActionKind::QueueComp});
     addTransition(issueMcRead, slcUpdate, isMcDataDone,
                   {PocqActionKind::UpdateSlcSf});
     addTransition(slcUpdate, txLink, isSlcUpdateDone,
                   {PocqActionKind::QueueCompData});
-    addTransition(txLink, waitCompAck, isTxLinkDone,
+    addTransition(txLink, waitCompAck, isTxLinkDoneNeedsCompAck,
                   {PocqActionKind::WaitCompAck});
+    addTransition(txLink, idle, isTxLinkDoneNoCompAck,
+                  {PocqActionKind::Retire});
+    addTransition(waitWriteData, idle, isWriteDataDone,
+                  {PocqActionKind::StoreWriteData, PocqActionKind::Retire});
     addTransition(waitCompAck, idle, isCompAck,
                   {PocqActionKind::Retire});
 }
@@ -195,6 +300,10 @@ POCQ_StateGraph::stateName(PocqState state)
         return "WaitCompAck";
       case PocqState::IssueMcRead:
         return "IssueMcRead";
+      case PocqState::TxRsp:
+        return "TxRsp";
+      case PocqState::WaitWriteData:
+        return "WaitWriteData";
       case PocqState::Sleep:
         return "Sleep";
     }
@@ -213,10 +322,14 @@ POCQ_StateGraph::eventName(PocqEventKind event)
         return "SlcUpdateDone";
       case PocqEventKind::TxLinkDone:
         return "TxLinkDone";
+      case PocqEventKind::TxRspDone:
+        return "TxRspDone";
       case PocqEventKind::McDataDone:
         return "McDataDone";
       case PocqEventKind::CompAck:
         return "CompAck";
+      case PocqEventKind::WriteDataDone:
+        return "WriteDataDone";
     }
     return "Unknown";
 }
@@ -233,8 +346,22 @@ POCQ_StateGraph::actionName(PocqActionKind action)
         return "QueueTxReq";
       case PocqActionKind::QueueCompData:
         return "QueueCompData";
+      case PocqActionKind::QueueComp:
+        return "QueueComp";
+      case PocqActionKind::QueueCompDBIDResp:
+        return "QueueCompDBIDResp";
       case PocqActionKind::WaitCompAck:
         return "WaitCompAck";
+      case PocqActionKind::WaitWriteData:
+        return "WaitWriteData";
+      case PocqActionKind::StoreWriteData:
+        return "StoreWriteData";
+      case PocqActionKind::FlushSf:
+        return "FlushSf";
+      case PocqActionKind::FlushL3:
+        return "FlushL3";
+      case PocqActionKind::WriteL3FlushSf:
+        return "WriteL3FlushSf";
       case PocqActionKind::Retire:
         return "Retire";
       case PocqActionKind::SleepForReplay:
@@ -266,6 +393,10 @@ POCQ_StateGraph::nodeFor(PocqState state) const
         return waitCompAck;
       case PocqState::IssueMcRead:
         return issueMcRead;
+      case PocqState::TxRsp:
+        return txRsp;
+      case PocqState::WaitWriteData:
+        return waitWriteData;
       case PocqState::Sleep:
         return sleep;
     }
