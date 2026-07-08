@@ -24,14 +24,25 @@ ACTION_NAMES = {
     "TX ReadNoSnp": "QueueMcRead",
     "Tx CompAck": "QueueCompAck",
     "Tx SnpUnique": "QueueSnpUnique",
+    "Tx SnpMakeInvlid": "QueueSnpMakeInvalid",
+    "Tx SnpOnceFwd": "QueueSnpOnceFwd",
+    "Tx compDBIDResp": "QueueCompDBIDResp",
+    "TXCOMP": "QueueComp",
     "Flush SF": "FlushSf",
+    "Flush L3": "FlushL3",
+    "Flush SF Flush L3": "FlushSfFlushL3",
+    "Write L3": "WriteL3",
     "Write L3 Flush SF": "WriteL3FlushSf",
+    "WriteL3 Flush SF": "WriteL3FlushSf",
 }
 
 EVENT_NAMES = {
     "SLC LookUp": "SlcLookupDone",
+    "SLC lookup": "SlcLookupDone",
     "RX CompData": "CompData",
     "Wait CompAck": "CompAck",
+    "RXCOMPACK": "CompAck",
+    "Wait Rnf CompAck": "CompAck",
     "Wait ReadReceipt": "ReadReceipt",
     "SnpResp_I": "SnpRespI",
     "SnpRespData(Ptl)_I_PD": "SnpRespDataPtlIPD",
@@ -39,7 +50,21 @@ EVENT_NAMES = {
 
 GUARD_NAMES = {
     "SLC HIT": "slc_hit",
+    "SLC MISS": "!slc_hit",
     "SF Miss": "sf_miss",
+    "SF MISS": "sf_miss",
+    "SF HIT": "sf_hit",
+    "SF HIT SLC HIT": "sf_hit && slc_hit",
+    "SF HIT SLC MISS": "sf_hit && !slc_hit",
+    "SF MISS SLC HIT": "sf_miss && slc_hit",
+    "SF MISS SLC MISS": "sf_miss && !slc_hit",
+}
+
+SUBGRAPH_ALIASES = {
+    # Keep historical misspellings in the draw.io files from leaking into the
+    # generated state graph.
+    "SnpCleanInvid": "SnpCleanInvalid",
+    "SnpMakeInvid": "SnpMakeInvlid",
 }
 
 
@@ -145,7 +170,8 @@ def semantic_for(node: Node) -> Dict[str, str]:
                                          normalize_symbol(node.label))}
     if node.kind == "subgraph":
         label = node.label.replace(" Graph", "")
-        return {"subgraph": normalize_symbol(label)}
+        subgraph = normalize_symbol(label)
+        return {"subgraph": SUBGRAPH_ALIASES.get(subgraph, subgraph)}
     if node.kind in {"guard", "config_guard", "branch_guard"}:
         return {"guard": GUARD_NAMES.get(node.label, node.label)}
     return {}
@@ -225,7 +251,7 @@ def combine_guards(labels: Iterable[str]) -> List[str]:
         label = labels[index]
         next_label = labels[index + 1] if index + 1 < len(labels) else None
 
-        if label == "If(DCT)" and next_label in {"Y", "N"}:
+        if label in {"If(DCT)", "if (DCT)"} and next_label in {"Y", "N"}:
             out.append("dct" if next_label == "Y" else "!dct")
             index += 2
             continue
@@ -403,6 +429,9 @@ def graph_to_dict(
 
 def default_inputs() -> List[Path]:
     base = Path(__file__).resolve().parent
+    trans_graph = base / "Trans_Graph"
+    if trans_graph.is_dir():
+        return sorted(trans_graph.glob("*.drawio"))
     return sorted(base.glob("*.drawio.xml"))
 
 
