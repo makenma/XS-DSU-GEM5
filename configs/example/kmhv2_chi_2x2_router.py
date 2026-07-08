@@ -34,7 +34,8 @@ if __name__ == "__m5_main__":
     test_sys = build_xiangshan_system(args)
 
     print("CHI 2x2 router smoke topology:")
-    print("  RNF bridges: router(0,0) P0 D0..D3")
+    print("  RNF bridges: router(0,0) P[core] D[slice], "
+          "same-core slices share SrcID")
     print("  SN bridge:   router(1,0) P0 D0 node_id=%#x -> classic cache -> DDR" %
           chi_node_id(1, 0, 0, 0))
     print("  HNF:         router(1,1) P0 D0 node_id=%#x" %
