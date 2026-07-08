@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 #include "mem/cache/CHI/HnfCcTypes.hh"
@@ -20,6 +21,12 @@ class HnfSLCSF
     HnfSlcLookupResult lookup(const HnfSlcLookupReq& req);
     void fillCleanShared(uint64_t block_addr, uint32_t requester,
                          const std::vector<uint8_t>& data);
+    void writeLine(uint64_t block_addr, uint32_t requester,
+                   const std::vector<uint8_t>& data);
+    void flushSf(uint64_t block_addr);
+    void flushL3(uint64_t block_addr);
+    void writeL3FlushSf(uint64_t block_addr, uint32_t requester,
+                        const std::vector<uint8_t>& data);
 
     bool isBusy() const { return false; }
 
@@ -48,16 +55,10 @@ class HnfSLCSF
     uint32_t sfSets = 1024;
     uint32_t sfWays = 16;
 
-    std::vector<SlcLine> slc;
-    std::vector<SfLine> sf;
+    std::unordered_map<uint64_t, SlcLine> slc;
+    std::unordered_map<uint64_t, SfLine> sf;
 
     uint64_t blockNumber(uint64_t block_addr) const;
-    size_t slcSet(uint64_t block_addr) const;
-    size_t sfSet(uint64_t block_addr) const;
-    size_t slcIndex(size_t set, size_t way) const;
-    size_t sfIndex(size_t set, size_t way) const;
-    size_t chooseSlcWay(size_t set) const;
-    size_t chooseSfWay(size_t set) const;
 };
 
 } // namespace gem5::Chi
