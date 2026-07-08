@@ -2,6 +2,7 @@
 #define __MEM_CACHE_CHI_CHI_ROUTER_REFMODEL_HH__
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <memory>
@@ -94,6 +95,25 @@ class ChiRouterRefModel : public BasicChiComponent, public ruby::Consumer
         uint64_t seq = 0;
     };
 
+    struct TxnRouteKey
+    {
+        uint32_t node = 0;
+        uint32_t txn = 0;
+
+        bool operator==(const TxnRouteKey &other) const
+        {
+            return node == other.node && txn == other.txn;
+        }
+    };
+
+    struct TxnRouteKeyHash
+    {
+        std::size_t operator()(const TxnRouteKey &key) const
+        {
+            return (static_cast<std::size_t>(key.node) << 32) ^ key.txn;
+        }
+    };
+
     struct InternalCtrl
     {
         int src = 0;
@@ -122,6 +142,7 @@ class ChiRouterRefModel : public BasicChiComponent, public ruby::Consumer
 
     std::array<bool, RefChannels> useDualCh{};
     std::unordered_map<uint32_t, uint32_t> routeTable;
+    std::unordered_map<TxnRouteKey, uint32_t, TxnRouteKeyHash> reverseRoute;
 
     std::array<std::array<FlitQueue, 24>, RefChannels> inputQ;
     std::array<std::array<FlitQueue, InternalNum>, RefChannels> inputFlitvQ;
@@ -227,7 +248,9 @@ class ChiRouterRefModel : public BasicChiComponent, public ruby::Consumer
                               QueueDir dir, bool from_device, int src_index,
                               int p, int d, int internal);
     uint32_t flitTargetId(const FlitVariant &flit) const;
-    uint32_t routeFieldFor(const FlitVariant &flit) const;
+    uint32_t routeFieldFor(ChannelType ch, const FlitVariant &flit) const;
+    void rememberReverseRoute(ChannelType ch, const FlitVariant &flit,
+                              bool from_device, int p, int d);
     OutPort decodeRouterToOutport(uint32_t router_field) const;
 
     int chIdx(ChannelType ch) const { return static_cast<int>(ch); }
