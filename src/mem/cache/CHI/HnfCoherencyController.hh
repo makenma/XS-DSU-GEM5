@@ -26,12 +26,13 @@ class HnfCoherencyController
     HnfCcAdmitResult acceptLinkReq(const HnfLinkToCcReq& req,
                                    uint64_t cycle);
     std::optional<HnfCcRetireInfo> acceptRxRsp(const RawRsp& rsp);
-    bool acceptRxDat(const RawDat& dat);
+    std::optional<HnfCcRetireInfo> acceptRxDat(const RawDat& dat);
 
     bool hasWork() const;
     bool hasTxReq() const { return !txReqQ.empty(); }
     bool hasTxDat() const { return !txDatQ.empty(); }
-    bool hasTxWork() const { return hasTxReq() || hasTxDat(); }
+    bool hasTxRsp() const { return !txRspQ.empty(); }
+    bool hasTxWork() const { return hasTxReq() || hasTxDat() || hasTxRsp(); }
 
     const HnfCcTxReq& frontTxReq() const;
     void popTxReq();
@@ -40,11 +41,15 @@ class HnfCoherencyController
     const HnfCcTxDat& frontTxDat() const;
     void popTxDat();
 
+    const HnfCcTxRsp& frontTxRsp() const;
+    void popTxRsp();
+
   private:
     struct Entry
     {
         HnfCcEntryState state = HnfCcEntryState::Idle;
         PocqState pocqState = PocqState::Idle;
+        PocqTxnKind txnKind = PocqTxnKind::Unknown;
         RawReq req{};
         uint64_t seq = 0;
         uint64_t blockAddr = 0;
@@ -54,6 +59,9 @@ class HnfCoherencyController
         bool isStatic = false;
         bool mcReadIssued = false;
         uint32_t mcDataBytes = 0;
+        uint32_t writeDataBytes = 0;
+        bool needsCompAck = false;
+        bool expectsWriteData = false;
         std::optional<uint32_t> sleepingOn;
         std::vector<uint8_t> data;
         HnfSlcLookupResult slcLookupResult{};
@@ -72,6 +80,7 @@ class HnfCoherencyController
     std::vector<Entry> entries;
     std::deque<HnfCcTxReq> txReqQ;
     std::deque<HnfCcTxDat> txDatQ;
+    std::deque<HnfCcTxRsp> txRspQ;
 
     uint64_t blockAddr(const RawReq& req) const;
     uint32_t expectedDataBytes(const RawReq& req) const;
@@ -86,6 +95,9 @@ class HnfCoherencyController
     void startReadFlow(uint32_t entry);
     void queueMcRead(uint32_t entry);
     void queueCompData(uint32_t entry, const std::vector<uint8_t>& data);
+    void queueComp(uint32_t entry);
+    void queueCompDBIDResp(uint32_t entry);
+    void storeWriteData(uint32_t entry);
     HnfCcRetireInfo retireEntry(uint32_t entry);
     HnfCcRetireInfo makeRetireInfo(const Entry& entry) const;
     void wakeSleepingEntries(uint64_t addr);
