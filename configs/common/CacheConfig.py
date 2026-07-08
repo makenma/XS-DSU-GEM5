@@ -136,21 +136,31 @@ def _connect_chi_router_2x2_mesh_once(system):
     system._chi_router_2x2_snf_node_id = snf_id
     system._chi_router_2x2_mesh_connected = True
 
-def _connect_chi_router_2x2_bridge(options, system, bridge_idx, cache_port, xbar):
-    if bridge_idx >= 4:
-        raise RuntimeError("CHI 2x2 router smoke currently supports at most "
-                           "four bridges")
+def _chi_rnf_node_id(cpu_idx):
+    return _chi_node_id(0, 0, cpu_idx, 0)
+
+def _chi_bridge_txnid_base(slice_idx):
+    return slice_idx * 1024
+
+def _connect_chi_router_2x2_bridge(options, system, cpu_idx, slice_idx,
+                                   cache_port, xbar):
+    if options.num_cpus > 4 or options.l2_slices > 4:
+        raise RuntimeError("CHI 2x2 router smoke supports at most four CPUs "
+                           "with four L2 slices each")
 
     _connect_chi_router_2x2_mesh_once(system)
 
+    bridge_idx = cpu_idx * options.l2_slices + slice_idx
     bridge = system.chi_bridges[bridge_idx]
-    bridge.node_id = _chi_node_id(0, 0, 0, bridge_idx)
+    bridge.node_id = _chi_rnf_node_id(cpu_idx)
     bridge.home_node_id = system._chi_router_2x2_hnf_node_id
+    bridge.txnid_base = _chi_bridge_txnid_base(slice_idx)
     bridge.sink_hnf_txreq = False
     bridge.wakeup_target = system.home_node[0]
 
     bridge.cache_side = cache_port
-    bridge.chi_side = _chi_router_2x2(system, 0, 0).device_ports[bridge_idx]
+    bridge.chi_side = _chi_router_2x2(
+        system, 0, 0).device_ports[cpu_idx * 4 + slice_idx]
     xbar.cpu_side_ports = bridge.mem_side
 
 def config_classic_l2(options, system, l2_cache_class):
@@ -272,13 +282,18 @@ def config_aligned_l2(options, system, l2_cache_class):
                 xbar.cpu_side_ports = cache_slice.mem_side
             elif getattr(options, "chi_2x2_router_test_mode", False):
                 _connect_chi_router_2x2_bridge(
-                    options, system, j, cache_slice.mem_side, xbar)
+                    options, system, i, j, cache_slice.mem_side, xbar)
             else:
-                system.chi_bridges[j].cache_side = cache_slice.mem_side
-                system.chi_bridges[j].wakeup_target = system.home_node[j]
-                system.home_node[j].direct_sn_fake_data = False
-                system.home_node[j].rxport = system.chi_bridges[j].chi_side
-                xbar.cpu_side_ports = system.chi_bridges[j].mem_side
+                bridge_idx = i * num_l2_slices + j
+                bridge = system.chi_bridges[bridge_idx]
+                bridge.node_id = i
+                bridge.home_node_id = bridge_idx
+                bridge.txnid_base = _chi_bridge_txnid_base(j)
+                bridge.cache_side = cache_slice.mem_side
+                bridge.wakeup_target = system.home_node[bridge_idx]
+                system.home_node[bridge_idx].direct_sn_fake_data = False
+                system.home_node[bridge_idx].rxport = bridge.chi_side
+                xbar.cpu_side_ports = bridge.mem_side
 
 
         # Connect the wrapper to the L1-L2 bus
