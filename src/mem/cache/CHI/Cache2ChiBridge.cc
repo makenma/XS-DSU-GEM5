@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -86,6 +87,7 @@ Cache2ChiBridge::Cache2ChiBridge(const Cache2ChiBridgeParams& p)
       memPort(p.name + ".mem_side", this),
       nodeId(p.node_id),
       homeNodeId(p.home_node_id),
+      txnIdBase(p.txnid_base),
       maxTxns(p.num_txns),
       blockSize(p.block_size),
       dataBeatBytes(p.data_beat_bytes),
@@ -98,6 +100,11 @@ Cache2ChiBridge::Cache2ChiBridge(const Cache2ChiBridgeParams& p)
     fatal_if(dataBeatBytes == 0 || dataBeatBytes > blockSize,
              "%s requires 0 < data_beat_bytes <= block_size\n", name());
     fatal_if(maxTxns == 0, "%s requires num_txns > 0\n", name());
+    fatal_if(static_cast<uint64_t>(txnIdBase) + maxTxns >
+                 std::numeric_limits<uint32_t>::max(),
+             "%s txnid_base=%u num_txns=%u exceeds uint32 TxnID range\n",
+             name(), txnIdBase, maxTxns);
+    nextTxnId = txnIdBase + 1;
 }
 
 Cache2ChiBridge::CacheSidePort::CacheSidePort(
@@ -162,7 +169,7 @@ Cache2ChiBridge::allocateTxnId()
 {
     for (uint32_t i = 0; i < maxTxns; ++i) {
         uint32_t id = nextTxnId;
-        nextTxnId = (nextTxnId % maxTxns) + 1;
+        nextTxnId = id >= txnIdBase + maxTxns ? txnIdBase + 1 : id + 1;
         if (!txns.count(id)) {
             return id;
         }
