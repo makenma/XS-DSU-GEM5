@@ -866,7 +866,8 @@ ChiRouterRefModel::makeRoutedFlit(ChannelType ch, const FlitVariant &flit,
     tr.p = p;
     tr.d = d;
     tr.internal = internal;
-    tr.routerField = routeFieldFor(flit);
+    rememberReverseRoute(ch, flit, from_device, p, d);
+    tr.routerField = routeFieldFor(ch, flit);
     tr.out = decodeRouterToOutport(tr.routerField);
     tr.destDevice = tr.routerField & 0x3;
     tr.dir = dir;
@@ -881,14 +882,45 @@ ChiRouterRefModel::flitTargetId(const FlitVariant &flit) const
 }
 
 uint32_t
-ChiRouterRefModel::routeFieldFor(const FlitVariant &flit) const
+ChiRouterRefModel::routeFieldFor(ChannelType ch, const FlitVariant &flit) const
 {
     const uint32_t tgt = flitTargetId(flit);
+    if (ch != ChannelType::REQ) {
+        const uint32_t txn = std::visit([](const auto &f) { return f.txnid; },
+                                        flit);
+        const auto reverse = reverseRoute.find(TxnRouteKey{tgt, txn});
+        if (reverse != reverseRoute.end()) {
+            return reverse->second & 0x7ff;
+        }
+    }
+
     const auto it = routeTable.find(tgt);
     if (it != routeTable.end()) {
         return it->second & 0x7ff;
     }
     return tgt & 0x7ff;
+}
+
+void
+ChiRouterRefModel::rememberReverseRoute(ChannelType ch,
+                                        const FlitVariant &flit,
+                                        bool from_device, int p, int d)
+{
+    if (ch != ChannelType::REQ || !from_device || p < 0 || d < 0) {
+        return;
+    }
+
+    const uint32_t src = std::visit([](const auto &f) { return f.srcid; },
+                                    flit);
+    const uint32_t txn = std::visit([](const auto &f) { return f.txnid; },
+                                    flit);
+    const uint32_t route =
+        ((static_cast<uint32_t>(localX) & 0xf) << 7) |
+        ((static_cast<uint32_t>(localY) & 0x7) << 4) |
+        ((static_cast<uint32_t>(p) & 0x3) << 2) |
+        (static_cast<uint32_t>(d) & 0x3);
+
+    reverseRoute[TxnRouteKey{src, txn}] = route;
 }
 
 ChiRouterRefModel::OutPort
