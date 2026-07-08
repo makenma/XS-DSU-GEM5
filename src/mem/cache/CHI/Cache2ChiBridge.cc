@@ -57,6 +57,7 @@ namespace DatOp
 constexpr uint8_t SnpRespData = 0x01;
 constexpr uint8_t CopyBackWriteData = 0x02;
 constexpr uint8_t NonCopyBackWriteData = 0x03;
+constexpr uint8_t CompData = 0x04;
 } // namespace DatOp
 
 bool
@@ -202,7 +203,7 @@ Cache2ChiBridge::classify(PacketPtr pkt) const
               "v1 refuses to map it to ReadUnique\n", name());
     }
 
-    if (cmd == MemCmd::ReadSharedReq) {
+    if (cmd == MemCmd::ReadReq || cmd == MemCmd::ReadSharedReq) {
         intent.kind = IntentKind::ReadShared;
         intent.txnClass = TxnClass::Read;
         intent.expectsData = true;
@@ -587,6 +588,45 @@ Cache2ChiBridge::handleTxReq(const RawReq& req)
             "txn=%u addr=%#llx size=%u\n",
             req.srcid, req.tgtid, req.txnid,
             static_cast<unsigned long long>(req.addr), req.size);
+
+    const uint32_t bytes = req.size ? req.size : blockSize;
+    RequestPtr request = std::make_shared<Request>(
+        req.addr, bytes, 0, Request::funcRequestorId);
+    PacketPtr pkt = new Packet(request, MemCmd::ReadReq);
+    pkt->allocate();
+    memPort.sendFunctional(pkt);
+
+    const uint8_t* data = pkt->getConstPtr<uint8_t>();
+    for (uint32_t offset = 0, dataid = 0; offset < bytes;
+         offset += dataBeatBytes, ++dataid) {
+        const uint32_t beatBytes = std::min(dataBeatBytes, bytes - offset);
+        RawDat dat{};
+        dat.qos = req.qos;
+        dat.srcid = req.tgtid;
+        dat.tgtid = req.srcid;
+        dat.txnid = req.txnid;
+        dat.opcode = DatOp::CompData;
+        dat.last = (offset + beatBytes) >= bytes;
+        dat.HomeNID = req.ReturnNid;
+        dat.dbid = 0;
+        dat.dataid = static_cast<uint8_t>(dataid);
+        dat.resp = static_cast<uint8_t>(RespState::SC);
+        dat.beatOffset = offset;
+        dat.data.assign(data + offset, data + offset + beatBytes);
+        dat.byteEnable.assign(beatBytes, 1);
+        dat.chunkValid.assign((beatBytes + 7) / 8, 1);
+
+        panic_if(!chiPort.enqueueRx(DAT, dat),
+                 "%s: direct SN sink failed to return CompData txn=%u "
+                 "dataid=%u\n",
+                 name(), req.txnid, dat.dataid);
+        DPRINTF(Cache2ChiBridge,
+                "direct SN sink returns CompData txn=%u dataid=%u "
+                "offset=%u bytes=%u last=%u\n",
+                req.txnid, dat.dataid, offset, beatBytes, dat.last);
+    }
+
+    delete pkt;
 }
 
 void
