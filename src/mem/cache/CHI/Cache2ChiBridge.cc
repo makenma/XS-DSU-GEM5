@@ -161,7 +161,7 @@ bool
 Cache2ChiBridge::hasPumpWork() const
 {
     return !pendingReqPkts.empty() || !pendingRespPkts.empty() ||
-           !retryTxnIds.empty();
+           !retryTxnIds.empty() || !pendingCompAcks.empty();
 }
 
 std::optional<uint32_t>
@@ -418,6 +418,15 @@ Cache2ChiBridge::cacheRecvTimingReq(PacketPtr pkt)
         pkt->cmdString().c_str(),
         static_cast<unsigned long>(pkt->getAddr()),
         pkt->getSize());
+    if (pkt->cmd == MemCmd::UpgradeReq ||
+        pkt->cmd == MemCmd::SCUpgradeReq) {
+        DPRINTF(Cache2ChiBridge,
+                "promote %s to ReadExReq so a retried/invalidation-raced "
+                "upgrade can refill data\n",
+                pkt->cmdString().c_str());
+        pkt->cmd = MemCmd::ReadExReq;
+        pkt->allocate();
+    }
     pendingReqPkts.push(pkt);
     schedulePump();
     return true;
@@ -474,6 +483,7 @@ Cache2ChiBridge::pump()
 {
     drainChiTx();
     sendPendingResponses();
+    sendPendingCompAcks();
 
     while (!retryTxnIds.empty()) {
         const uint32_t txnid = retryTxnIds.front();
@@ -485,6 +495,26 @@ Cache2ChiBridge::pump()
 
     while (!pendingReqPkts.empty()) {
         PacketPtr pkt = pendingReqPkts.front();
+        if (pkt->req->isUncacheable()) {
+            if (!memPort.sendTimingReq(pkt)) {
+                DPRINTF(Cache2ChiBridge,
+                        "uncacheable classic bypass blocked cmd=%s "
+                        "addr=%#llx bytes=%u\n",
+                        pkt->cmdString().c_str(),
+                        static_cast<unsigned long long>(pkt->getAddr()),
+                        pkt->getSize());
+                break;
+            }
+            DPRINTF(Cache2ChiBridge,
+                    "uncacheable classic bypass sent cmd=%s addr=%#llx "
+                    "bytes=%u\n",
+                    pkt->cmdString().c_str(),
+                    static_cast<unsigned long long>(pkt->getAddr()),
+                    pkt->getSize());
+            pendingReqPkts.pop();
+            continue;
+        }
+
         MemoryIntent intent = classify(pkt);
         auto txnid = allocateTxnId();
         if (!txnid) {
@@ -513,6 +543,7 @@ Cache2ChiBridge::pump()
 
     drainChiTx();
     sendPendingResponses();
+    sendPendingCompAcks();
 
     if (hasPumpWork()) {
         schedulePump();
@@ -715,6 +746,13 @@ Cache2ChiBridge::handleDat(const RawDat& dat)
               txn.readData.begin() + dat.beatOffset);
     txn.gotData = dat.last || txn.readData.size() >= txn.pkt->getSize();
     txn.gotComp = true;
+    if (dat.resp == static_cast<uint8_t>(RespState::SC) ||
+        dat.resp == static_cast<uint8_t>(RespState::SD_PD)) {
+        txn.pkt->setHasSharers();
+    } else if (dat.resp == static_cast<uint8_t>(RespState::UD_PD) &&
+               !txn.pkt->cacheResponding()) {
+        txn.pkt->setCacheResponding();
+    }
     DPRINTF(Cache2ChiBridge,
             "handle DAT opcode=0x%x txnid=%u dataid=%u offset=%u "
             "bytes=%u last=%u readBytes=%u/%u\n",
@@ -734,6 +772,7 @@ Cache2ChiBridge::handleSnp(const RawSnp& snp)
     PacketPtr pkt = new Packet(req, snoopCmdFor(snp), blockSize, snoopTxn);
     pkt->pushSenderState(new SnoopSenderState(snoopTxn));
     pkt->setExpressSnoop();
+    pkt->setSnoopPrecedesMshr();
 
     SnoopEntry snoop{};
     snoop.txnid = snoopTxn;
@@ -768,9 +807,19 @@ bool
 Cache2ChiBridge::sendPendingResponses()
 {
     while (!pendingRespPkts.empty()) {
-        PacketPtr pkt = pendingRespPkts.front();
-        if (!cachePort.sendTimingResp(pkt)) {
+        PendingClassicResponse& pending = pendingRespPkts.front();
+        if (!cachePort.sendTimingResp(pending.pkt)) {
             return false;
+        }
+
+        const std::optional<uint32_t> txnid = pending.txnid;
+        if (pending.compAck) {
+            panic_if(!txnid,
+                     "%s: pending CompAck has no bridge transaction\n",
+                     name());
+            pendingCompAcks.push({*pending.compAck, *txnid});
+        } else if (txnid) {
+            freeTxn(*txnid);
         }
         pendingRespPkts.pop();
     }
@@ -778,10 +827,28 @@ Cache2ChiBridge::sendPendingResponses()
 }
 
 bool
-Cache2ChiBridge::sendCompAck(TxnEntry& txn)
+Cache2ChiBridge::sendPendingCompAcks()
 {
-    if (txn.sentCompAck || !txn.intent.requiresCompAck) {
-        return true;
+    while (!pendingCompAcks.empty()) {
+        const PendingCompAck& pending = pendingCompAcks.front();
+        if (!chiPort.enqueueRx(RSP, pending.rsp)) {
+            return false;
+        }
+        DPRINTF(Cache2ChiBridge,
+                "send CompAck txnid=%u after classic response acceptance\n",
+                pending.rsp.txnid);
+        const uint32_t txnid = pending.txnid;
+        pendingCompAcks.pop();
+        freeTxn(txnid);
+    }
+    return true;
+}
+
+std::optional<RawRsp>
+Cache2ChiBridge::makeCompAck(const TxnEntry& txn) const
+{
+    if (!txn.intent.requiresCompAck) {
+        return std::nullopt;
     }
 
     RawRsp ack{};
@@ -793,13 +860,7 @@ Cache2ChiBridge::sendCompAck(TxnEntry& txn)
     ack.stage = 0;
     ack.dbid = 0;
     ack.resp = static_cast<uint8_t>(RespState::Unknown);
-
-    if (!chiPort.enqueueRx(RSP, ack)) {
-        return false;
-    }
-    txn.sentCompAck = true;
-    DPRINTF(Cache2ChiBridge, "send CompAck txnid=%u\n", txn.txnid);
-    return true;
+    return ack;
 }
 
 bool
@@ -844,7 +905,6 @@ Cache2ChiBridge::reissueRetriedTxn(uint32_t txnid)
     txn.hasDbid = false;
     txn.gotComp = false;
     txn.gotData = false;
-    txn.sentCompAck = false;
     txn.nextDataBeat = 0;
     txn.readData.clear();
     return true;
@@ -865,10 +925,6 @@ Cache2ChiBridge::maybeComplete(TxnEntry& txn)
     if (txn.intent.expectsComp && !txn.gotComp) {
         return;
     }
-    if (!sendCompAck(txn)) {
-        return;
-    }
-
     completeClassicTxn(txn);
 }
 
@@ -877,6 +933,8 @@ Cache2ChiBridge::completeClassicTxn(TxnEntry& txn)
 {
     txn.completed = true;
     PacketPtr pkt = txn.pkt;
+    const uint32_t txnid = txn.txnid;
+    const std::optional<RawRsp> compAck = makeCompAck(txn);
 
     if (txn.intent.needsResponse) {
         const std::string cmd = pkt->cmdString();
@@ -889,19 +947,25 @@ Cache2ChiBridge::completeClassicTxn(TxnEntry& txn)
         }
         const bool sent = cachePort.sendTimingResp(pkt);
         if (!sent) {
-            pendingRespPkts.push(pkt);
+            pendingRespPkts.push({pkt, compAck, txnid});
+        } else if (compAck) {
+            pendingCompAcks.push({*compAck, txnid});
+        } else {
+            freeTxn(txnid);
         }
         DPRINTF(Cache2ChiBridge,
                 "complete classic txnid=%u cmd=%s responded=%u\n",
-                txn.txnid, cmd.c_str(), sent);
+                txnid, cmd.c_str(), sent);
     } else {
+        panic_if(compAck,
+                 "%s: transaction %u requires CompAck without a classic "
+                 "response\n",
+                 name(), txnid);
         DPRINTF(Cache2ChiBridge, "complete no-response txnid=%u cmd=%s\n",
-                txn.txnid, pkt->cmdString().c_str());
+                txnid, pkt->cmdString().c_str());
         delete pkt;
+        freeTxn(txnid);
     }
-
-    const uint32_t txnid = txn.txnid;
-    freeTxn(txnid);
 }
 
 void
@@ -938,7 +1002,7 @@ Cache2ChiBridge::sendSnoopData(SnoopEntry& snoop, PacketPtr pkt)
     dat.dbid = 0;
     dat.dataid = 0;
     dat.resp = static_cast<uint8_t>(
-        snoop.invalidating ? RespState::I : RespState::SC);
+        snoop.invalidating ? RespState::I_PD : RespState::SD_PD);
     dat.beatOffset = 0;
     dat.data.assign(pkt->getConstPtr<uint8_t>(),
                     pkt->getConstPtr<uint8_t>() + pkt->getSize());
@@ -987,7 +1051,7 @@ Cache2ChiBridge::memSidePortRecvTimingResp(PacketPtr pkt)
     DPRINTF(Cache2ChiBridge, "Got resp from memory side for addr: %#x\n",
             pkt->getAddr());
     if (!cachePort.sendTimingResp(pkt)) {
-        pendingRespPkts.push(pkt);
+        pendingRespPkts.push({pkt, std::nullopt, std::nullopt});
     }
     return true;
 }
