@@ -78,23 +78,51 @@ isLookupReplay(const PocqEvent& event)
 }
 
 bool
+isLookupNeedsSnoop(const PocqEvent& event)
+{
+    return event.kind == PocqEventKind::SlcLookupDone && !event.replay &&
+        event.needsSnoop;
+}
+
+bool
 isLookupHit(const PocqEvent& event)
 {
     return event.kind == PocqEventKind::SlcLookupDone && !event.replay &&
-        event.slcHit && isReadTxn(event.txn);
+        !event.needsSnoop && event.slcHit && isReadTxn(event.txn);
 }
 
 bool
 isLookupMissNeedingMemory(const PocqEvent& event)
 {
     return event.kind == PocqEventKind::SlcLookupDone && !event.replay &&
-        !event.slcHit && isReadTxn(event.txn);
+        !event.needsSnoop && !event.slcHit && isReadTxn(event.txn);
 }
 
 bool
 isLookupMaintenanceDone(const PocqEvent& event)
 {
     return event.kind == PocqEventKind::SlcLookupDone && !event.replay &&
+        !event.needsSnoop && isMaintenanceTxn(event.txn);
+}
+
+bool
+isSnoopDoneReadWithData(const PocqEvent& event)
+{
+    return event.kind == PocqEventKind::SnoopDone &&
+        isReadTxn(event.txn) && event.dataAvailable;
+}
+
+bool
+isSnoopDoneReadNeedsMemory(const PocqEvent& event)
+{
+    return event.kind == PocqEventKind::SnoopDone &&
+        isReadTxn(event.txn) && !event.dataAvailable;
+}
+
+bool
+isSnoopDoneMaintenance(const PocqEvent& event)
+{
+    return event.kind == PocqEventKind::SnoopDone &&
         isMaintenanceTxn(event.txn);
 }
 
@@ -160,6 +188,7 @@ PocqEdge::matches(const PocqEvent& event) const
 POCQ_StateGraph::POCQ_StateGraph()
     : idle(PocqState::Idle),
       slcLookup(PocqState::SlcLookup),
+      waitSnoop(PocqState::WaitSnoop),
       slcUpdate(PocqState::SlcUpdate),
       txLink(PocqState::TxLink),
       waitCompAck(PocqState::WaitCompAck),
@@ -170,6 +199,7 @@ POCQ_StateGraph::POCQ_StateGraph()
 {
     addNode(idle);
     addNode(slcLookup);
+    addNode(waitSnoop);
     addNode(slcUpdate);
     addNode(txLink);
     addNode(waitCompAck);
@@ -185,19 +215,30 @@ POCQ_StateGraph::POCQ_StateGraph()
     addTransition(idle, slcLookup, isAdmitMaintenanceLookup,
                   {PocqActionKind::DoSlcLookup});
     addTransition(idle, idle, isAdmitEvict,
-                  {PocqActionKind::FlushSf, PocqActionKind::FlushL3,
+                  {PocqActionKind::RemoveSharer,
                    PocqActionKind::QueueComp});
     addTransition(idle, waitWriteData, isAdmitWrite,
                   {PocqActionKind::QueueCompDBIDResp,
                    PocqActionKind::WaitWriteData});
     addTransition(slcLookup, sleep, isLookupReplay,
                   {PocqActionKind::SleepForReplay});
+    addTransition(slcLookup, waitSnoop, isLookupNeedsSnoop,
+                  {PocqActionKind::QueueSnoops});
     addTransition(slcLookup, txLink, isLookupHit,
-                  {PocqActionKind::QueueCompData});
+                  {PocqActionKind::CommitRead,
+                   PocqActionKind::QueueCompData});
     addTransition(slcLookup, issueMcRead, isLookupMissNeedingMemory,
                   {PocqActionKind::QueueTxReq});
     addTransition(slcLookup, idle, isLookupMaintenanceDone,
-                  {PocqActionKind::FlushL3, PocqActionKind::FlushSf,
+                  {PocqActionKind::CommitMaintenance,
+                   PocqActionKind::QueueComp});
+    addTransition(waitSnoop, txLink, isSnoopDoneReadWithData,
+                  {PocqActionKind::CommitRead,
+                   PocqActionKind::QueueCompData});
+    addTransition(waitSnoop, issueMcRead, isSnoopDoneReadNeedsMemory,
+                  {PocqActionKind::QueueTxReq});
+    addTransition(waitSnoop, idle, isSnoopDoneMaintenance,
+                  {PocqActionKind::CommitMaintenance,
                    PocqActionKind::QueueComp});
     addTransition(issueMcRead, slcUpdate, isMcDataDone,
                   {PocqActionKind::UpdateSlcSf});
@@ -292,6 +333,8 @@ POCQ_StateGraph::stateName(PocqState state)
         return "Idle";
       case PocqState::SlcLookup:
         return "SlcLookup";
+      case PocqState::WaitSnoop:
+        return "WaitSnoop";
       case PocqState::SlcUpdate:
         return "SlcUpdate";
       case PocqState::TxLink:
@@ -320,6 +363,8 @@ POCQ_StateGraph::eventName(PocqEventKind event)
         return "SlcLookupDone";
       case PocqEventKind::SlcUpdateDone:
         return "SlcUpdateDone";
+      case PocqEventKind::SnoopDone:
+        return "SnoopDone";
       case PocqEventKind::TxLinkDone:
         return "TxLinkDone";
       case PocqEventKind::TxRspDone:
@@ -340,6 +385,14 @@ POCQ_StateGraph::actionName(PocqActionKind action)
     switch (action) {
       case PocqActionKind::DoSlcLookup:
         return "DoSlcLookup";
+      case PocqActionKind::QueueSnoops:
+        return "QueueSnoops";
+      case PocqActionKind::CommitRead:
+        return "CommitRead";
+      case PocqActionKind::CommitMaintenance:
+        return "CommitMaintenance";
+      case PocqActionKind::RemoveSharer:
+        return "RemoveSharer";
       case PocqActionKind::UpdateSlcSf:
         return "UpdateSlcSf";
       case PocqActionKind::QueueTxReq:
@@ -385,6 +438,8 @@ POCQ_StateGraph::nodeFor(PocqState state) const
         return idle;
       case PocqState::SlcLookup:
         return slcLookup;
+      case PocqState::WaitSnoop:
+        return waitSnoop;
       case PocqState::SlcUpdate:
         return slcUpdate;
       case PocqState::TxLink:
