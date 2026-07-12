@@ -408,7 +408,11 @@ BaseCPU::startup()
         goldenMemPtr = system->getGoldenMemPtr();
         _goldenMemManager = system->getGoldenMemManager();
 
-        diffAllStates->proxy->initState(params().cpu_id, goldenMemPtr);
+        if (enableDifftest) {
+            panic_if(!diffAllStates->proxy,
+                     "Difftest is enabled without a reference proxy");
+            diffAllStates->proxy->initState(params().cpu_id, goldenMemPtr);
+        }
     } else {
         goldenMemPtr = nullptr;
         _goldenMemManager = nullptr;
