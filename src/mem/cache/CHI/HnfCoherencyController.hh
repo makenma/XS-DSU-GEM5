@@ -5,9 +5,11 @@
 #include <cstdint>
 #include <deque>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 #include "mem/cache/CHI/HnfPOCQStateGraph.hh"
+#include "mem/cache/CHI/HnfSeqPOCQStateGraph.hh"
 
 namespace gem5::Chi
 {
@@ -19,7 +21,8 @@ class HnfCoherencyController
   public:
     HnfCoherencyController(uint32_t block_size, uint32_t data_beat_bytes,
                            uint32_t num_entries, uint32_t sn_node_id,
-                           bool direct_sn_fake_data);
+                           bool direct_sn_fake_data,
+                           uint32_t rnf_slices);
 
     void setSlcsf(HnfSLCSF* slcsf) { slcsfUnit = slcsf; }
 
@@ -27,16 +30,22 @@ class HnfCoherencyController
                                    uint64_t cycle);
     std::optional<HnfCcRetireInfo> acceptRxRsp(const RawRsp& rsp);
     std::optional<HnfCcRetireInfo> acceptRxDat(const RawDat& dat);
+    void serviceInternalWork();
 
     bool hasWork() const;
     bool hasTxReq() const { return !txReqQ.empty(); }
+    bool hasTxSnp() const { return !txSnpQ.empty(); }
     bool hasTxDat() const { return !txDatQ.empty(); }
     bool hasTxRsp() const { return !txRspQ.empty(); }
-    bool hasTxWork() const { return hasTxReq() || hasTxDat() || hasTxRsp(); }
+    bool hasTxWork() const
+    { return hasTxReq() || hasTxSnp() || hasTxDat() || hasTxRsp(); }
 
     const HnfCcTxReq& frontTxReq() const;
     void popTxReq();
     void notifyTxReqSent(uint32_t entry);
+
+    const HnfCcTxSnp& frontTxSnp() const;
+    void popTxSnp();
 
     const HnfCcTxDat& frontTxDat() const;
     void popTxDat();
@@ -66,6 +75,26 @@ class HnfCoherencyController
         std::vector<uint8_t> data;
         HnfSlcLookupResult slcLookupResult{};
         bool slcUpdatePending = false;
+        bool responseDataDirty = false;
+        uint32_t snoopTxnId = 0;
+        uint64_t snoopPendingTargets = 0;
+        bool snoopDataReceived = false;
+        bool slcsfReplay = false;
+    };
+
+    struct SeqPocqEntry
+    {
+        bool valid = false;
+        uint64_t seqId = 0;
+        SeqPocqState state = SeqPocqState::Idle;
+        uint64_t blockAddr = 0;
+        uint32_t homeNodeId = 0;
+        uint32_t owner = 0;
+        uint64_t sharers = 0;
+        uint32_t snoopTxnId = 0;
+        uint64_t pendingTargets = 0;
+        bool dataReceived = false;
+        std::vector<uint8_t> data;
     };
 
     HnfSLCSF* slcsfUnit = nullptr;
@@ -75,12 +104,18 @@ class HnfCoherencyController
     uint32_t maxEntries = 32;
     uint32_t snNodeId = 0;
     bool directSnFakeData = true;
+    uint32_t rnfSlices = 1;
+    uint32_t nextSnoopTxnId = 0x80000000U;
 
     POCQ_StateGraph pocqGraph;
+    SEQ_POCQ_StateGraph seqPocqGraph;
     std::vector<Entry> entries;
+    SeqPocqEntry seqPocqEntry;
     std::deque<HnfCcTxReq> txReqQ;
+    std::deque<HnfCcTxSnp> txSnpQ;
     std::deque<HnfCcTxDat> txDatQ;
     std::deque<HnfCcTxRsp> txRspQ;
+    std::unordered_map<uint32_t, uint32_t> snoopTxnToEntry;
 
     uint64_t blockAddr(const RawReq& req) const;
     uint32_t expectedDataBytes(const RawReq& req) const;
@@ -93,6 +128,12 @@ class HnfCoherencyController
     std::optional<HnfCcRetireInfo> executePocqAction(
         uint32_t entry, PocqActionKind action, const PocqEvent& event);
     void startReadFlow(uint32_t entry);
+    void queueSnoops(uint32_t entry);
+    void commitRead(uint32_t entry);
+    void completeMaintenance(uint32_t entry);
+    void completeSnoopTarget(uint32_t entry, uint32_t responder,
+                             bool has_data);
+    uint32_t targetRouteId(uint32_t target, uint64_t addr) const;
     void queueMcRead(uint32_t entry);
     void queueCompData(uint32_t entry, const std::vector<uint8_t>& data);
     void queueComp(uint32_t entry);
@@ -101,6 +142,13 @@ class HnfCoherencyController
     HnfCcRetireInfo retireEntry(uint32_t entry);
     HnfCcRetireInfo makeRetireInfo(const Entry& entry) const;
     void wakeSleepingEntries(uint64_t addr);
+    bool hasMainAddressHazard(uint64_t addr) const;
+    uint32_t allocateSnoopTxnId();
+    void startSeqPocq();
+    void stepSeqPocq(const SeqPocqEvent& event);
+    void queueSeqSnoops();
+    void completeSeqSnoopTarget(uint32_t responder, bool has_data);
+    void retrySlcsfReplayEntries();
 };
 
 } // namespace gem5::Chi
