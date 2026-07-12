@@ -279,6 +279,7 @@ class HomeLinkLayer : public ruby::Consumer
     bool enableTxRspShortPath = false;
 
     void doTxReqArb();
+    void doTxSnpArb();
     void doTxRspArb();
     void doTxDatArb();
     void doCreditEvents();
