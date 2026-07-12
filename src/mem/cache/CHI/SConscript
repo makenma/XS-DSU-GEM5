@@ -23,11 +23,29 @@ Source('HomeNodeFull.cc')
 Source('HomeLinkLayer.cc')
 Source('HnfCoherencyController.cc')
 Source('HnfPOCQStateGraph.cc')
+Source('HnfSeqPOCQStateGraph.cc')
 Source('HnfSLCSF.cc')
 
 GTest('hnf_pocq_state_graph.test',
       'HnfPOCQStateGraph.test.cc',
       'HnfPOCQStateGraph.cc')
+
+GTest('hnf_seq_pocq_state_graph.test',
+      'HnfSeqPOCQStateGraph.test.cc',
+      'HnfSeqPOCQStateGraph.cc')
+
+GTest('hnf_slcsf.test',
+      'HnfSLCSF.test.cc',
+      'HnfSLCSF.cc',
+      with_tag('gem5 trace'))
+
+GTest('hnf_coherency_controller.test',
+      'HnfCoherencyController.test.cc',
+      'HnfCoherencyController.cc',
+      'HnfPOCQStateGraph.cc',
+      'HnfSeqPOCQStateGraph.cc',
+      'HnfSLCSF.cc',
+      with_tag('gem5 trace'))
 
 DebugFlag('Cache2ChiBridge')
 DebugFlag('Chi2ClassicMemBridge')
