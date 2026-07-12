@@ -21,6 +21,11 @@ namespace ReqOp
 constexpr uint8_t ReadNoSnp = 0x04;
 } // namespace ReqOp
 
+namespace SnpOp
+{
+constexpr uint8_t CleanInvalid = 0x09;
+} // namespace SnpOp
+
 namespace DatOp
 {
 constexpr uint8_t CompData = 0x04;
@@ -33,6 +38,8 @@ constexpr uint8_t CompDBIDResp = 0x05;
 } // namespace RspOp
 
 constexpr uint8_t RespSC = 1;
+constexpr uint8_t RespUC = 2;
+constexpr uint8_t RespUDPD = 3;
 
 PocqTxnKind
 txnKindForReq(const RawReq& req)
@@ -92,18 +99,22 @@ txnExpectsWriteData(PocqTxnKind txn)
 
 HnfCoherencyController::HnfCoherencyController(
     uint32_t block_size, uint32_t data_beat_bytes, uint32_t num_entries,
-    uint32_t sn_node_id, bool direct_sn_fake_data)
+    uint32_t sn_node_id, bool direct_sn_fake_data, uint32_t rnf_slices)
     : blockSize(block_size),
       dataBeatBytes(data_beat_bytes),
       maxEntries(num_entries),
       snNodeId(sn_node_id),
       directSnFakeData(direct_sn_fake_data),
+      rnfSlices(rnf_slices),
       entries(num_entries)
 {
     fatal_if(blockSize == 0, "HnfCC block_size must be non-zero\n");
     fatal_if(dataBeatBytes == 0 || dataBeatBytes > blockSize,
              "HnfCC data_beat_bytes must satisfy 0 < beat <= block\n");
     fatal_if(maxEntries == 0, "HnfCC entry count must be non-zero\n");
+    fatal_if(rnfSlices == 0 || rnfSlices > 4 ||
+                 (rnfSlices & (rnfSlices - 1)) != 0,
+             "HnfCC rnf_slices must be a power of two in [1, 4]\n");
 }
 
 std::optional<HnfCcRetireInfo>
@@ -154,6 +165,7 @@ HnfCoherencyController::executePocqAction(uint32_t entryId,
         HnfSlcLookupReq lookup{};
         lookup.entry = entryId;
         lookup.req = entry.req;
+        lookup.txn = entry.txnKind;
         lookup.blockAddr = entry.blockAddr;
         entry.slcLookupResult = slcsfUnit->lookup(lookup);
 
@@ -163,6 +175,7 @@ HnfCoherencyController::executePocqAction(uint32_t entryId,
                 entry.data.resize(blockSize, 0);
             }
         }
+        entry.responseDataDirty = entry.slcLookupResult.dataDirty;
 
         PocqEvent lookupDone{};
         lookupDone.kind = PocqEventKind::SlcLookupDone;
@@ -170,14 +183,32 @@ HnfCoherencyController::executePocqAction(uint32_t entryId,
         lookupDone.slcHit = entry.slcLookupResult.slcHit;
         lookupDone.sfHit = entry.slcLookupResult.sfHit;
         lookupDone.replay = entry.slcLookupResult.replay;
+        lookupDone.needsSnoop =
+            entry.slcLookupResult.snoopTargets != 0;
+        lookupDone.dataAvailable = entry.slcLookupResult.slcHit;
         lookupDone.needsCompAck = entry.needsCompAck;
         return stepPocq(entryId, lookupDone);
       }
 
+      case PocqActionKind::QueueSnoops:
+        queueSnoops(entryId);
+        return std::nullopt;
+
+      case PocqActionKind::CommitRead:
+        commitRead(entryId);
+        return std::nullopt;
+
+      case PocqActionKind::CommitMaintenance:
+        completeMaintenance(entryId);
+        return std::nullopt;
+
+      case PocqActionKind::RemoveSharer:
+        slcsfUnit->removeSharer(entry.blockAddr, entry.req.srcid);
+        return std::nullopt;
+
       case PocqActionKind::UpdateSlcSf:
         if (entry.slcUpdatePending) {
-            slcsfUnit->fillCleanShared(entry.blockAddr, entry.req.srcid,
-                                       entry.data);
+            commitRead(entryId);
             entry.slcUpdatePending = false;
         }
         {
@@ -240,6 +271,7 @@ HnfCoherencyController::executePocqAction(uint32_t entryId,
 
       case PocqActionKind::SleepForReplay:
         entry.state = HnfCcEntryState::Sleep;
+        entry.slcsfReplay = true;
         DPRINTF(HnfCC, "CC entry=%u sleeps for SLCSF replay\n", entryId);
         return std::nullopt;
     }
@@ -271,7 +303,8 @@ bool
 HnfCoherencyController::hasAddressHazard(uint32_t entry, uint64_t addr) const
 {
     for (uint32_t i = 0; i < entries.size(); ++i) {
-        if (i == entry || !entryAllocated(entries[i])) {
+        if (i == entry || !entryAllocated(entries[i]) ||
+            entries[i].state == HnfCcEntryState::Sleep) {
             continue;
         }
         if (entries[i].blockAddr == addr) {
@@ -382,6 +415,7 @@ HnfCoherencyController::startReadFlow(uint32_t entryId)
              entryId);
     Entry& entry = entries[entryId];
     entry.pocqState = PocqState::Idle;
+    entry.slcsfReplay = false;
 
     PocqEvent admit{};
     admit.kind = PocqEventKind::Admit;
@@ -389,6 +423,132 @@ HnfCoherencyController::startReadFlow(uint32_t entryId)
     admit.needsCompAck = entry.needsCompAck;
     std::optional<HnfCcRetireInfo> retire = stepPocq(entryId, admit);
     panic_if(retire, "HnfCC entry=%u retired during admit path\n", entryId);
+}
+
+uint32_t
+HnfCoherencyController::targetRouteId(uint32_t target, uint64_t addr) const
+{
+    const uint32_t slice =
+        static_cast<uint32_t>((addr / blockSize) & (rnfSlices - 1));
+    return (target & ~0x3U) | slice;
+}
+
+void
+HnfCoherencyController::queueSnoops(uint32_t entryId)
+{
+    panic_if(entryId >= entries.size(), "HnfCC invalid snoop entry=%u\n",
+             entryId);
+    Entry& entry = entries[entryId];
+    panic_if(entry.slcLookupResult.snoopTargets == 0,
+             "HnfCC entry=%u queues snoop without targets\n", entryId);
+    panic_if(entry.snoopTxnId != 0,
+             "HnfCC entry=%u already owns snoop txn=%u\n",
+             entryId, entry.snoopTxnId);
+
+    const uint32_t snoopTxn = allocateSnoopTxnId();
+    snoopTxnToEntry.emplace(snoopTxn, entryId);
+
+    entry.state = HnfCcEntryState::WaitSnoop;
+    entry.snoopTxnId = snoopTxn;
+    entry.snoopPendingTargets = entry.slcLookupResult.snoopTargets;
+    entry.snoopDataReceived = false;
+
+    for (uint32_t target = 0; target < 64; ++target) {
+        if ((entry.snoopPendingTargets & (1ULL << target)) == 0) {
+            continue;
+        }
+
+        HnfCcTxSnp out{};
+        out.entry = entryId;
+        out.targetNode = target;
+        RawSnp& snp = out.snp;
+        snp.qos = entry.req.qos;
+        snp.srcid = entry.req.tgtid;
+        snp.tgtid = targetRouteId(target, entry.blockAddr);
+        snp.txnid = snoopTxn;
+        snp.opcode = entry.slcLookupResult.snoopOpcode;
+        snp.addr = entry.blockAddr;
+        snp.size = static_cast<uint8_t>(blockSize);
+        txSnpQ.push_back(out);
+
+        DPRINTF(HnfCC,
+                "CC entry=%u queues TXSNP opcode=0x%x txn=%u addr=%#llx "
+                "targetNode=%u targetRoute=%u broadcast=%u directed=%u\n",
+                entryId, snp.opcode, snp.txnid,
+                static_cast<unsigned long long>(snp.addr), target, snp.tgtid,
+                entry.slcLookupResult.snoopBroadcast,
+                entry.slcLookupResult.snoopDirected);
+    }
+}
+
+void
+HnfCoherencyController::commitRead(uint32_t entryId)
+{
+    Entry& entry = entries[entryId];
+    panic_if(entry.data.size() < blockSize,
+             "HnfCC entry=%u commits read with %u/%u data bytes\n",
+             entryId, static_cast<unsigned>(entry.data.size()), blockSize);
+    slcsfUnit->commitRead(entry.blockAddr, entry.req.srcid, entry.txnKind,
+                         entry.data, entry.responseDataDirty,
+                         entry.req.tgtid);
+    entry.slcUpdatePending = false;
+}
+
+void
+HnfCoherencyController::completeMaintenance(uint32_t entryId)
+{
+    Entry& entry = entries[entryId];
+    slcsfUnit->completeMaintenance(entry.blockAddr, entry.req.srcid,
+                                   entry.txnKind, entry.req.tgtid);
+}
+
+void
+HnfCoherencyController::completeSnoopTarget(uint32_t entryId,
+                                            uint32_t responder,
+                                            bool has_data)
+{
+    panic_if(entryId >= entries.size(),
+             "HnfCC invalid snoop completion entry=%u\n", entryId);
+    Entry& entry = entries[entryId];
+    panic_if(entry.state != HnfCcEntryState::WaitSnoop,
+             "HnfCC snoop completion entry=%u state=%u\n", entryId,
+             static_cast<unsigned>(entry.state));
+    panic_if(responder >= 64 ||
+                 (entry.snoopPendingTargets & (1ULL << responder)) == 0,
+             "HnfCC snoop txn=%u unexpected responder=%u pending=%#llx\n",
+             entry.snoopTxnId, responder,
+             static_cast<unsigned long long>(entry.snoopPendingTargets));
+    panic_if(has_data && entry.snoopDataReceived,
+             "HnfCC snoop txn=%u received dirty data from multiple RNFs\n",
+             entry.snoopTxnId);
+
+    if (has_data) {
+        entry.snoopDataReceived = true;
+        entry.responseDataDirty = true;
+    }
+    entry.snoopPendingTargets &= ~(1ULL << responder);
+
+    DPRINTF(HnfCC,
+            "CC entry=%u accepts snoop response txn=%u responder=%u "
+            "hasData=%u pending=%#llx\n",
+            entryId, entry.snoopTxnId, responder, has_data,
+            static_cast<unsigned long long>(entry.snoopPendingTargets));
+
+    if (entry.snoopPendingTargets != 0) {
+        return;
+    }
+
+    snoopTxnToEntry.erase(entry.snoopTxnId);
+    entry.snoopTxnId = 0;
+    PocqEvent snoopDone{};
+    snoopDone.kind = PocqEventKind::SnoopDone;
+    snoopDone.txn = entry.txnKind;
+    snoopDone.dataAvailable = entry.slcLookupResult.slcHit ||
+        entry.snoopDataReceived;
+    snoopDone.needsCompAck = entry.needsCompAck;
+    std::optional<HnfCcRetireInfo> retire = stepPocq(entryId, snoopDone);
+    panic_if(retire, "HnfCC entry=%u retired during snoop completion\n",
+             entryId);
 }
 
 void
@@ -448,7 +608,8 @@ HnfCoherencyController::queueCompData(uint32_t entryId,
         dat.HomeNID = entry.req.tgtid;
         dat.dbid = 0;
         dat.dataid = static_cast<uint8_t>(dataid);
-        dat.resp = RespSC;
+        dat.resp = entry.txnKind == PocqTxnKind::ReadUnique ?
+            (entry.responseDataDirty ? RespUDPD : RespUC) : RespSC;
         dat.beatOffset = offset;
         dat.data.assign(beatBytes, 0);
         if (offset < data.size()) {
@@ -528,7 +689,8 @@ void
 HnfCoherencyController::storeWriteData(uint32_t entryId)
 {
     Entry& entry = entries[entryId];
-    slcsfUnit->writeLine(entry.blockAddr, entry.req.srcid, entry.data);
+    slcsfUnit->writeLine(entry.blockAddr, entry.req.srcid, entry.data,
+                         entry.txnKind, entry.req.tgtid);
     DPRINTF(HnfCC,
             "CC entry=%u stores write data addr=%#llx src=%u txn=%u\n",
             entryId, static_cast<unsigned long long>(entry.blockAddr),
@@ -547,6 +709,20 @@ HnfCoherencyController::popTxReq()
 {
     panic_if(txReqQ.empty(), "HnfCC popTxReq on empty queue\n");
     txReqQ.pop_front();
+}
+
+const HnfCcTxSnp&
+HnfCoherencyController::frontTxSnp() const
+{
+    panic_if(txSnpQ.empty(), "HnfCC frontTxSnp on empty queue\n");
+    return txSnpQ.front();
+}
+
+void
+HnfCoherencyController::popTxSnp()
+{
+    panic_if(txSnpQ.empty(), "HnfCC popTxSnp on empty queue\n");
+    txSnpQ.pop_front();
 }
 
 void
@@ -570,6 +746,7 @@ HnfCoherencyController::notifyTxReqSent(uint32_t entryId)
     }
 
     entry.data.assign(blockSize, 0);
+    entry.responseDataDirty = false;
     entry.slcUpdatePending = true;
     PocqEvent mcDataDone{};
     mcDataDone.kind = PocqEventKind::McDataDone;
@@ -589,6 +766,57 @@ std::optional<HnfCcRetireInfo>
 HnfCoherencyController::acceptRxDat(const RawDat& dat)
 {
     const auto decoded = decodeDat(dat.opcode);
+    if (decoded.major == DatMajor::SnpRespData) {
+        if (seqPocqEntry.valid &&
+            seqPocqEntry.snoopTxnId == dat.txnid) {
+            if (seqPocqEntry.data.size() < blockSize) {
+                seqPocqEntry.data.resize(blockSize, 0);
+            }
+            panic_if(dat.beatOffset > blockSize,
+                     "HnfCC SEQ RXDAT txn=%u offset=%u block=%u\n",
+                     dat.txnid, dat.beatOffset, blockSize);
+            const uint32_t copyBytes = std::min<uint32_t>(
+                dat.data.size(), blockSize - dat.beatOffset);
+            std::copy(dat.data.begin(), dat.data.begin() + copyBytes,
+                      seqPocqEntry.data.begin() + dat.beatOffset);
+            DPRINTF(HnfCC,
+                    "SEQ POCQ id=%llu got SnpRespData src=%u txn=%u "
+                    "offset=%u bytes=%u last=%u\n",
+                    static_cast<unsigned long long>(seqPocqEntry.seqId),
+                    dat.srcid, dat.txnid, dat.beatOffset, copyBytes,
+                    dat.last);
+            if (dat.last) {
+                completeSeqSnoopTarget(dat.srcid, true);
+            }
+            return std::nullopt;
+        }
+
+        auto snoopIt = snoopTxnToEntry.find(dat.txnid);
+        panic_if(snoopIt == snoopTxnToEntry.end(),
+                 "HnfCC snoop RXDAT for unknown src=%u txn=%u\n",
+                 dat.srcid, dat.txnid);
+        Entry& entry = entries[snoopIt->second];
+        if (entry.data.size() < blockSize) {
+            entry.data.resize(blockSize, 0);
+        }
+        panic_if(dat.beatOffset > blockSize,
+                 "HnfCC snoop RXDAT txn=%u offset=%u block=%u\n",
+                 dat.txnid, dat.beatOffset, blockSize);
+        const uint32_t copyBytes = std::min<uint32_t>(
+            dat.data.size(), blockSize - dat.beatOffset);
+        std::copy(dat.data.begin(), dat.data.begin() + copyBytes,
+                  entry.data.begin() + dat.beatOffset);
+        DPRINTF(HnfCC,
+                "CC entry=%u got SnpRespData src=%u txn=%u offset=%u "
+                "bytes=%u last=%u resp=%u\n",
+                snoopIt->second, dat.srcid, dat.txnid, dat.beatOffset,
+                copyBytes, dat.last, dat.resp);
+        if (dat.last) {
+            completeSnoopTarget(snoopIt->second, dat.srcid, true);
+        }
+        return std::nullopt;
+    }
+
     if (decoded.major == DatMajor::WriteData) {
         std::optional<uint32_t> entryId = findTxn(dat.srcid, dat.txnid);
         panic_if(!entryId,
@@ -680,6 +908,7 @@ HnfCoherencyController::acceptRxDat(const RawDat& dat)
         return std::nullopt;
     }
 
+    entry.responseDataDirty = false;
     entry.slcUpdatePending = true;
     PocqEvent mcDataDone{};
     mcDataDone.kind = PocqEventKind::McDataDone;
@@ -728,6 +957,22 @@ std::optional<HnfCcRetireInfo>
 HnfCoherencyController::acceptRxRsp(const RawRsp& rsp)
 {
     const auto decoded = decodeRsp(rsp.opcode);
+    if (decoded.minor == RspMinor::SnpResp ||
+        decoded.minor == RspMinor::SnpRespFwded) {
+        if (seqPocqEntry.valid &&
+            seqPocqEntry.snoopTxnId == rsp.txnid) {
+            completeSeqSnoopTarget(rsp.srcid, false);
+            return std::nullopt;
+        }
+
+        auto snoopIt = snoopTxnToEntry.find(rsp.txnid);
+        panic_if(snoopIt == snoopTxnToEntry.end(),
+                 "HnfCC SnpResp for unknown src=%u txn=%u\n",
+                 rsp.srcid, rsp.txnid);
+        completeSnoopTarget(snoopIt->second, rsp.srcid, false);
+        return std::nullopt;
+    }
+
     panic_if(decoded.minor != RspMinor::CompAck,
              "HnfCC v1 only accepts CompAck on RXRSP, got opcode=0x%x "
              "src=%u txn=%u\n",
@@ -796,9 +1041,217 @@ HnfCoherencyController::wakeSleepingEntries(uint64_t addr)
 }
 
 bool
+HnfCoherencyController::hasMainAddressHazard(uint64_t addr) const
+{
+    return std::any_of(entries.begin(), entries.end(),
+                       [this, addr](const Entry& entry) {
+                           return entryAllocated(entry) &&
+                               !entry.slcsfReplay &&
+                               entry.blockAddr == addr;
+                       });
+}
+
+uint32_t
+HnfCoherencyController::allocateSnoopTxnId()
+{
+    uint32_t snoopTxn = nextSnoopTxnId++;
+    while (snoopTxn == 0 || snoopTxnToEntry.count(snoopTxn) ||
+           (seqPocqEntry.valid &&
+            seqPocqEntry.snoopTxnId == snoopTxn)) {
+        snoopTxn = nextSnoopTxnId++;
+    }
+    return snoopTxn;
+}
+
+void
+HnfCoherencyController::startSeqPocq()
+{
+    panic_if(seqPocqEntry.valid,
+             "HnfCC starts SEQ POCQ while another entry is active\n");
+    panic_if(!slcsfUnit || !slcsfUnit->hasPendingSeq(),
+             "HnfCC starts SEQ POCQ without a pending victim\n");
+
+    const HnfSLCSF::SeqVictim victim = slcsfUnit->frontPendingSeq();
+    slcsfUnit->markSeqIssued(victim.id);
+
+    seqPocqEntry = SeqPocqEntry{};
+    seqPocqEntry.valid = true;
+    seqPocqEntry.seqId = victim.id;
+    seqPocqEntry.blockAddr = victim.blockAddr;
+    seqPocqEntry.homeNodeId = victim.homeNodeId;
+    seqPocqEntry.owner = victim.owner;
+    seqPocqEntry.sharers = victim.sharers;
+    seqPocqEntry.data.assign(blockSize, 0);
+
+    DPRINTF(HnfCC,
+            "SEQ POCQ admit id=%llu addr=%#llx owner=%u sharers=%#llx\n",
+            static_cast<unsigned long long>(seqPocqEntry.seqId),
+            static_cast<unsigned long long>(seqPocqEntry.blockAddr),
+            seqPocqEntry.owner,
+            static_cast<unsigned long long>(seqPocqEntry.sharers));
+    stepSeqPocq({SeqPocqEventKind::Admit});
+}
+
+void
+HnfCoherencyController::stepSeqPocq(const SeqPocqEvent& event)
+{
+    panic_if(!seqPocqEntry.valid, "HnfCC steps an idle SEQ POCQ\n");
+    SeqPocqStepResult step =
+        seqPocqGraph.tryStep(seqPocqEntry.state, event);
+    panic_if(!step.stepped,
+             "HnfCC SEQ POCQ id=%llu has no transition state=%s event=%s\n",
+             static_cast<unsigned long long>(seqPocqEntry.seqId),
+             SEQ_POCQ_StateGraph::stateName(step.oldState),
+             SEQ_POCQ_StateGraph::eventName(event.kind));
+
+    DPRINTF(HnfCC,
+            "SEQ POCQ id=%llu %s --%s--> %s actions=%u\n",
+            static_cast<unsigned long long>(seqPocqEntry.seqId),
+            SEQ_POCQ_StateGraph::stateName(step.oldState),
+            SEQ_POCQ_StateGraph::eventName(event.kind),
+            SEQ_POCQ_StateGraph::stateName(step.nextState),
+            static_cast<unsigned>(step.actions.size()));
+
+    for (SeqPocqActionKind action : step.actions) {
+        DPRINTF(HnfCC, "SEQ POCQ id=%llu action=%s\n",
+                static_cast<unsigned long long>(seqPocqEntry.seqId),
+                SEQ_POCQ_StateGraph::actionName(action));
+        switch (action) {
+          case SeqPocqActionKind::CheckHazard:
+            stepSeqPocq({hasMainAddressHazard(seqPocqEntry.blockAddr) ?
+                         SeqPocqEventKind::HazardBlocked :
+                         SeqPocqEventKind::HazardClear});
+            break;
+          case SeqPocqActionKind::QueueCleanInvalid:
+            queueSeqSnoops();
+            break;
+          case SeqPocqActionKind::CompleteSfEvict:
+            slcsfUnit->completeSfEvict(
+                seqPocqEntry.seqId, seqPocqEntry.data,
+                seqPocqEntry.dataReceived);
+            break;
+          case SeqPocqActionKind::Retire:
+            DPRINTF(HnfCC, "SEQ POCQ retire id=%llu addr=%#llx\n",
+                    static_cast<unsigned long long>(seqPocqEntry.seqId),
+                    static_cast<unsigned long long>(
+                        seqPocqEntry.blockAddr));
+            seqPocqEntry = SeqPocqEntry{};
+            break;
+        }
+    }
+}
+
+void
+HnfCoherencyController::queueSeqSnoops()
+{
+    panic_if(!seqPocqEntry.valid || seqPocqEntry.sharers == 0,
+             "HnfCC queues invalid SEQ snoop id=%llu sharers=%#llx\n",
+             static_cast<unsigned long long>(seqPocqEntry.seqId),
+             static_cast<unsigned long long>(seqPocqEntry.sharers));
+
+    seqPocqEntry.snoopTxnId = allocateSnoopTxnId();
+    seqPocqEntry.pendingTargets = seqPocqEntry.sharers;
+    for (uint32_t target = 0; target < 64; ++target) {
+        if ((seqPocqEntry.pendingTargets & (1ULL << target)) == 0) {
+            continue;
+        }
+        HnfCcTxSnp out{};
+        out.entry = UINT32_MAX;
+        out.targetNode = target;
+        out.snp.srcid = seqPocqEntry.homeNodeId;
+        out.snp.tgtid = targetRouteId(target, seqPocqEntry.blockAddr);
+        out.snp.txnid = seqPocqEntry.snoopTxnId;
+        out.snp.opcode = SnpOp::CleanInvalid;
+        out.snp.addr = seqPocqEntry.blockAddr;
+        out.snp.size = static_cast<uint8_t>(blockSize);
+        txSnpQ.push_back(out);
+        DPRINTF(HnfCC,
+                "SEQ POCQ id=%llu queues SnpCleanInvalid txn=%u "
+                "addr=%#llx targetNode=%u targetRoute=%u\n",
+                static_cast<unsigned long long>(seqPocqEntry.seqId),
+                seqPocqEntry.snoopTxnId,
+                static_cast<unsigned long long>(seqPocqEntry.blockAddr),
+                target, out.snp.tgtid);
+    }
+}
+
+void
+HnfCoherencyController::completeSeqSnoopTarget(uint32_t responder,
+                                               bool has_data)
+{
+    panic_if(!seqPocqEntry.valid ||
+             seqPocqEntry.state != SeqPocqState::WaitSnoop,
+             "HnfCC completes inactive SEQ snoop responder=%u\n",
+             responder);
+    panic_if(responder >= 64 ||
+             (seqPocqEntry.pendingTargets & (1ULL << responder)) == 0,
+             "HnfCC SEQ id=%llu unexpected responder=%u pending=%#llx\n",
+             static_cast<unsigned long long>(seqPocqEntry.seqId),
+             responder,
+             static_cast<unsigned long long>(
+                 seqPocqEntry.pendingTargets));
+    panic_if(has_data && seqPocqEntry.dataReceived,
+             "HnfCC SEQ id=%llu got dirty data from multiple RNFs\n",
+             static_cast<unsigned long long>(seqPocqEntry.seqId));
+
+    seqPocqEntry.dataReceived |= has_data;
+    seqPocqEntry.pendingTargets &= ~(1ULL << responder);
+    DPRINTF(HnfCC,
+            "SEQ POCQ id=%llu accepts snoop response txn=%u responder=%u "
+            "hasData=%u pending=%#llx\n",
+            static_cast<unsigned long long>(seqPocqEntry.seqId),
+            seqPocqEntry.snoopTxnId, responder, has_data,
+            static_cast<unsigned long long>(
+                seqPocqEntry.pendingTargets));
+
+    if (seqPocqEntry.pendingTargets == 0) {
+        seqPocqEntry.snoopTxnId = 0;
+        stepSeqPocq({SeqPocqEventKind::SnoopDone});
+    }
+}
+
+void
+HnfCoherencyController::retrySlcsfReplayEntries()
+{
+    for (uint32_t i = 0; i < entries.size(); ++i) {
+        Entry& entry = entries[i];
+        if (entry.state != HnfCcEntryState::Sleep ||
+            !entry.slcsfReplay) {
+            continue;
+        }
+        DPRINTF(HnfCC,
+                "CC retries SLCSF replay entry=%u addr=%#llx\n", i,
+                static_cast<unsigned long long>(entry.blockAddr));
+        startReadFlow(i);
+    }
+}
+
+void
+HnfCoherencyController::serviceInternalWork()
+{
+    if (!seqPocqEntry.valid && slcsfUnit &&
+        slcsfUnit->hasPendingSeq()) {
+        startSeqPocq();
+    } else if (seqPocqEntry.valid &&
+               seqPocqEntry.state == SeqPocqState::Sleep &&
+               !hasMainAddressHazard(seqPocqEntry.blockAddr)) {
+        stepSeqPocq({SeqPocqEventKind::HazardClear});
+    }
+    retrySlcsfReplayEntries();
+}
+
+bool
 HnfCoherencyController::hasWork() const
 {
-    return hasTxWork();
+    if (hasTxWork()) {
+        return true;
+    }
+    return seqPocqEntry.valid ||
+        (slcsfUnit && slcsfUnit->hasPendingSeq()) ||
+        std::any_of(entries.begin(), entries.end(),
+                       [this](const Entry& entry) {
+                           return entryAllocated(entry);
+                       });
 }
 
 } // namespace gem5::Chi
