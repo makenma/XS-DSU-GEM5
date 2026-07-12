@@ -160,8 +160,10 @@ Cache2ChiBridge::schedulePump()
 bool
 Cache2ChiBridge::hasPumpWork() const
 {
-    return !pendingReqPkts.empty() || !pendingRespPkts.empty() ||
-           !retryTxnIds.empty() || !pendingCompAcks.empty();
+    return !pendingReqPkts.empty() ||
+           (!cacheRespBlocked && !pendingRespPkts.empty()) ||
+           !retryTxnIds.empty() || !pendingCompAcks.empty() ||
+           !pendingSnoopRetries.empty();
 }
 
 std::optional<uint32_t>
@@ -377,6 +379,10 @@ Cache2ChiBridge::packDataBeats(const MemoryIntent& intent, PacketPtr pkt,
     panic_if(!pkt->hasData(), "%s: %s carries CHI data but Packet has no data\n",
              name(), pkt->cmdString().c_str());
 
+    DPRINTF(Cache2ChiBridge,
+            "pack classic data txnid=%u cmd=%s addr=%#llx bytes=%u\n",
+            txnid, pkt->cmdString().c_str(),
+            static_cast<unsigned long long>(pkt->getAddr()), pkt->getSize());
     const uint8_t* src = pkt->getConstPtr<uint8_t>();
     const uint32_t pktSize = pkt->getSize();
     const uint32_t startOffset = pkt->getOffset(blockSize);
@@ -426,6 +432,7 @@ Cache2ChiBridge::cacheRecvTimingReq(PacketPtr pkt)
                 pkt->cmdString().c_str());
         pkt->cmd = MemCmd::ReadExReq;
         pkt->allocate();
+        promotedUpgradePkts.insert(pkt);
     }
     pendingReqPkts.push(pkt);
     schedulePump();
@@ -458,7 +465,18 @@ Cache2ChiBridge::cacheRecvTimingSnoopResp(PacketPtr pkt)
              name(), state->txnid);
 
     SnoopEntry& snoop = it->second;
-    sendSnoopData(snoop, pkt);
+    if (pkt->hasData()) {
+        sendSnoopData(snoop, pkt);
+    } else {
+        const RespState state = pkt->hasSharers() && !snoop.invalidating ?
+            RespState::SC : RespState::I;
+        sendSnoopRsp(snoop, state);
+        DPRINTF(Cache2ChiBridge,
+                "classic snoop response txnid=%u cmd=%s has no data; "
+                "sending SnpResp state=%u\n",
+                snoop.txnid, pkt->cmdString().c_str(),
+                static_cast<unsigned>(state));
+    }
 
     Packet::SenderState* popped = pkt->popSenderState();
     delete popped;
@@ -475,12 +493,27 @@ Cache2ChiBridge::cacheRecvTimingSnoopResp(PacketPtr pkt)
 void
 Cache2ChiBridge::cacheRecvRespRetry()
 {
+    panic_if(!cacheRespBlocked,
+             "%s: got classic response retry while not blocked\n", name());
+    cacheRespBlocked = false;
     schedulePump();
+}
+
+AddrRangeList
+Cache2ChiBridge::cacheGetAddrRanges() const
+{
+    return memPort.getAddrRanges();
 }
 
 void
 Cache2ChiBridge::pump()
 {
+    if (!pendingSnoopRetries.empty()) {
+        PendingSnoopRetry retry = pendingSnoopRetries.front();
+        pendingSnoopRetries.pop();
+        handleSnp(retry.snp, retry.attempts);
+    }
+
     drainChiTx();
     sendPendingResponses();
     sendPendingCompAcks();
@@ -525,6 +558,7 @@ Cache2ChiBridge::pump()
         txn.txnid = *txnid;
         txn.pkt = pkt;
         txn.intent = intent;
+        txn.intent.respondAsUpgrade = promotedUpgradePkts.count(pkt) != 0;
         txn.req = mapToReq(intent, pkt, *txnid);
         txn.dataBeats = packDataBeats(intent, pkt, *txnid);
 
@@ -537,6 +571,7 @@ Cache2ChiBridge::pump()
             break;
         }
 
+        promotedUpgradePkts.erase(pkt);
         pendingReqPkts.pop();
         txns.emplace(txn.txnid, std::move(txn));
     }
@@ -763,16 +798,26 @@ Cache2ChiBridge::handleDat(const RawDat& dat)
 }
 
 void
-Cache2ChiBridge::handleSnp(const RawSnp& snp)
+Cache2ChiBridge::handleSnp(const RawSnp& snp, uint32_t attempts)
 {
+    if (respondFromPendingCopyback(snp)) {
+        return;
+    }
+
     const uint32_t snoopTxn = allocateSnoopTxnId();
     auto req = std::make_shared<Request>(
         snp.addr & ~(static_cast<Addr>(blockSize) - 1),
         blockSize, 0, Request::funcRequestorId);
     PacketPtr pkt = new Packet(req, snoopCmdFor(snp), blockSize, snoopTxn);
+    pkt->allocate();
     pkt->pushSenderState(new SnoopSenderState(snoopTxn));
     pkt->setExpressSnoop();
-    pkt->setSnoopPrecedesMshr();
+    if (snoopPrecedesPendingTxn(snp)) {
+        pkt->setSnoopPrecedesMshr();
+        DPRINTF(Cache2ChiBridge,
+                "snoop txnid=%u addr=%#llx precedes pending outbound txn\n",
+                snp.txnid, static_cast<unsigned long long>(snp.addr));
+    }
 
     SnoopEntry snoop{};
     snoop.txnid = snoopTxn;
@@ -793,6 +838,21 @@ Cache2ChiBridge::handleSnp(const RawSnp& snp)
         return;
     }
 
+    constexpr uint32_t maxTransientSnoopRetries = 32;
+    if (pkt->hasSharers() && attempts < maxTransientSnoopRetries) {
+        DPRINTF(Cache2ChiBridge,
+                "retry transient snoop txnid=%u addr=%#llx attempt=%u\n",
+                snp.txnid, static_cast<unsigned long long>(snp.addr),
+                attempts + 1);
+        pendingSnoopRetries.push({snp, attempts + 1});
+
+        Packet::SenderState* popped = pkt->popSenderState();
+        delete popped;
+        delete pkt;
+        snoops.erase(it);
+        return;
+    }
+
     const RespState state = pkt->hasSharers() && !entry.invalidating ?
         RespState::SC : RespState::I;
     sendSnoopRsp(entry, state);
@@ -804,11 +864,97 @@ Cache2ChiBridge::handleSnp(const RawSnp& snp)
 }
 
 bool
+Cache2ChiBridge::respondFromPendingCopyback(const RawSnp& snp)
+{
+    const Addr snoopAddr =
+        snp.addr & ~(static_cast<Addr>(blockSize) - 1);
+    auto respond = [this, &snp, snoopAddr](PacketPtr pkt,
+                                           const char* source,
+                                           uint32_t txnid) {
+        SnoopEntry buffered{};
+        buffered.snp = snp;
+        buffered.invalidating = snoopInvalidates(snp);
+        sendSnoopData(buffered, pkt);
+        DPRINTF(Cache2ChiBridge,
+                "%s copyback txnid=%u supplies snoop txnid=%u "
+                "opcode=0x%x addr=%#llx invalidating=%u\n",
+                source, txnid, snp.txnid, snp.opcode,
+                static_cast<unsigned long long>(snoopAddr),
+                buffered.invalidating);
+    };
+
+    for (auto& [txnid, txn] : txns) {
+        const bool copyback =
+            txn.intent.kind == IntentKind::WriteBackFull ||
+            txn.intent.kind == IntentKind::WriteEvictFull;
+        if (!copyback || txn.completed || !txn.pkt ||
+            !txn.pkt->hasData() ||
+            txn.pkt->getBlockAddr(blockSize) != snoopAddr) {
+            continue;
+        }
+
+        respond(txn.pkt, "active", txnid);
+        return true;
+    }
+
+    std::queue<PacketPtr> pending = pendingReqPkts;
+    while (!pending.empty()) {
+        PacketPtr pkt = pending.front();
+        pending.pop();
+        if (pkt->req->isUncacheable() || !pkt->hasData() ||
+            pkt->getBlockAddr(blockSize) != snoopAddr) {
+            continue;
+        }
+
+        const MemoryIntent intent = classify(pkt);
+        if (intent.kind != IntentKind::WriteBackFull &&
+            intent.kind != IntentKind::WriteEvictFull) {
+            continue;
+        }
+
+        respond(pkt, "queued", 0);
+        return true;
+    }
+    return false;
+}
+
+bool
+Cache2ChiBridge::snoopPrecedesPendingTxn(const RawSnp& snp) const
+{
+    const Addr snoopAddr =
+        snp.addr & ~(static_cast<Addr>(blockSize) - 1);
+    for (const auto& item : txns) {
+        const TxnEntry& txn = item.second;
+        if (!txn.completed && !txn.gotComp && !txn.gotData && !txn.hasDbid &&
+            (txn.req.addr & ~(static_cast<Addr>(blockSize) - 1)) ==
+                snoopAddr) {
+            return true;
+        }
+    }
+
+    std::queue<PacketPtr> pending = pendingReqPkts;
+    while (!pending.empty()) {
+        PacketPtr pkt = pending.front();
+        pending.pop();
+        if (!pkt->req->isUncacheable() &&
+            pkt->getBlockAddr(blockSize) == snoopAddr) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool
 Cache2ChiBridge::sendPendingResponses()
 {
+    if (cacheRespBlocked) {
+        return false;
+    }
+
     while (!pendingRespPkts.empty()) {
         PendingClassicResponse& pending = pendingRespPkts.front();
         if (!cachePort.sendTimingResp(pending.pkt)) {
+            cacheRespBlocked = true;
             return false;
         }
 
@@ -938,15 +1084,20 @@ Cache2ChiBridge::completeClassicTxn(TxnEntry& txn)
 
     if (txn.intent.needsResponse) {
         const std::string cmd = pkt->cmdString();
+        if (txn.intent.respondAsUpgrade) {
+            pkt->cmd = MemCmd::UpgradeReq;
+        }
         pkt->makeTimingResponse();
-        if (pkt->hasData() && txn.intent.expectsData) {
+        if (pkt->hasData() && txn.intent.expectsData &&
+            !txn.intent.respondAsUpgrade) {
             panic_if(txn.readData.size() < pkt->getSize(),
                      "%s: completing read txn %u with only %zu/%u bytes\n",
                      name(), txn.txnid, txn.readData.size(), pkt->getSize());
             pkt->setData(txn.readData.data());
         }
-        const bool sent = cachePort.sendTimingResp(pkt);
+        const bool sent = !cacheRespBlocked && cachePort.sendTimingResp(pkt);
         if (!sent) {
+            cacheRespBlocked = true;
             pendingRespPkts.push({pkt, compAck, txnid});
         } else if (compAck) {
             pendingCompAcks.push({*compAck, txnid});
@@ -1004,6 +1155,10 @@ Cache2ChiBridge::sendSnoopData(SnoopEntry& snoop, PacketPtr pkt)
     dat.resp = static_cast<uint8_t>(
         snoop.invalidating ? RespState::I_PD : RespState::SD_PD);
     dat.beatOffset = 0;
+    DPRINTF(Cache2ChiBridge,
+            "pack classic snoop data txnid=%u cmd=%s addr=%#llx bytes=%u\n",
+            snoop.txnid, pkt->cmdString().c_str(),
+            static_cast<unsigned long long>(pkt->getAddr()), pkt->getSize());
     dat.data.assign(pkt->getConstPtr<uint8_t>(),
                     pkt->getConstPtr<uint8_t>() + pkt->getSize());
     dat.byteEnable.assign(dat.data.size(), 1);
@@ -1050,7 +1205,8 @@ Cache2ChiBridge::memSidePortRecvTimingResp(PacketPtr pkt)
 {
     DPRINTF(Cache2ChiBridge, "Got resp from memory side for addr: %#x\n",
             pkt->getAddr());
-    if (!cachePort.sendTimingResp(pkt)) {
+    if (cacheRespBlocked || !cachePort.sendTimingResp(pkt)) {
+        cacheRespBlocked = true;
         pendingRespPkts.push({pkt, std::nullopt, std::nullopt});
     }
     return true;
@@ -1074,6 +1230,7 @@ void
 Cache2ChiBridge::memSidePortRecvRangeChange()
 {
     DPRINTF(Cache2ChiBridge, "Got range change from memory side\n");
+    cachePort.sendRangeChange();
 }
 
 void
