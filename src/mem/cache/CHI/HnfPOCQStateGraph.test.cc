@@ -131,6 +131,21 @@ TEST(HnfPocqStateGraphTest, SlcMissIssuesMemoryRead)
                PocqState::TxLink, PocqActionKind::QueueCompData);
 }
 
+TEST(HnfPocqStateGraphTest, ReadNoSnpSkipsSlcUpdate)
+{
+    POCQ_StateGraph graph;
+    PocqState state = PocqState::Idle;
+
+    expectStep(graph.tryStep(state, admit(PocqTxnKind::ReadNoSnp)),
+               PocqState::IssueMcRead, PocqActionKind::QueueTxReq);
+
+    PocqEvent dataDone{};
+    dataDone.kind = PocqEventKind::McDataDone;
+    dataDone.txn = PocqTxnKind::ReadNoSnp;
+    expectStep(graph.tryStep(state, dataDone), PocqState::TxLink,
+               PocqActionKind::QueueCompData);
+}
+
 TEST(HnfPocqStateGraphTest, ReplaySleeps)
 {
     POCQ_StateGraph graph;
