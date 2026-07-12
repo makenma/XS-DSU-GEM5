@@ -26,3 +26,6 @@ class HomeNodeFull(BasicChiComponent):
     slc_num_ways = Param.UInt32(16, "Number of modeled SLC ways")
     sf_num_sets = Param.UInt32(1024, "Number of modeled SF sets")
     sf_num_ways = Param.UInt32(16, "Number of modeled SF ways")
+    seq_entries = Param.UInt32(8, "SF victim SEQ entries")
+    rnf_slices = Param.UInt32(
+        1, "Address-interleaved CHI bridges attached to each RNF")
