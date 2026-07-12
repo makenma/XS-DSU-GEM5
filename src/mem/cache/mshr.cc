@@ -457,7 +457,8 @@ MSHR::handleSnoop(PacketPtr pkt, Counter _order)
              "%s got snoop %s where needsWritable, "
              "does not match isInvalidate", name(), pkt->print());
 
-    if (!inService || (pkt->isExpressSnoop() && downstreamPending)) {
+    if (!inService || pkt->snoopPrecedesMshr() ||
+        (pkt->isExpressSnoop() && downstreamPending)) {
         // Request has not been issued yet, or it's been issued
         // locally but is buffered unissued at some downstream cache
         // which is forwarding us this snoop.  Either way, the packet
@@ -498,8 +499,8 @@ MSHR::handleSnoop(PacketPtr pkt, Counter _order)
 
     // Start by determining if we will eventually respond or not,
     // matching the conditions checked in Cache::handleSnoop
-    const bool will_respond = isPendingModified() && pkt->needsResponse() &&
-        !pkt->isClean();
+    const bool will_respond = !pkt->cacheResponding() &&
+        isPendingModified() && pkt->needsResponse() && !pkt->isClean();
     DPRINTF(MSHR, "%s isPendingModified: %d pkt->needsResponse(): %d "
             "pkt->isClean(): %d pkt->isInvalidate(): %d will_respond: %d\n",
             __func__, isPendingModified(), pkt->needsResponse(),
