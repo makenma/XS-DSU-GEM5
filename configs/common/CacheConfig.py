@@ -114,7 +114,8 @@ def _connect_chi_router_2x2_mesh_once(system):
     system.home_node[0].node_type = "hnf"
     system.home_node[0].sn_node_id = snf_id
     system.home_node[0].direct_sn_fake_data = False
-    system.home_node[0].rnf_slices = system._chi_router_2x2_l2_slices
+    # Each CPU exposes one RNF endpoint after its L2 wrapper's internal xbar.
+    system.home_node[0].rnf_slices = 1
     r11.local_ports[0] = system.home_node[0].rxport
 
     system.snf_bridge.node_id = snf_id
@@ -143,32 +144,23 @@ def _chi_rnf_node_id(cpu_idx):
 def _chi_bridge_txnid_base(slice_idx):
     return slice_idx * 1024
 
-def _connect_chi_router_2x2_bridge(options, system, cpu_idx, slice_idx,
-                                   cache_port, xbar):
-    if options.num_cpus > 4 or options.l2_slices > 4:
-        raise RuntimeError("CHI 2x2 router smoke supports at most four CPUs "
-                           "with four L2 slices each")
-
-    configured_slices = getattr(system, "_chi_router_2x2_l2_slices", None)
-    if configured_slices is None:
-        system._chi_router_2x2_l2_slices = options.l2_slices
-    elif configured_slices != options.l2_slices:
-        raise RuntimeError("CHI RNF slice count changed while wiring topology")
+def _connect_chi_router_2x2_bridge(options, system, cpu_idx, xbar):
+    if options.num_cpus > 4:
+        raise RuntimeError("CHI 2x2 router smoke supports at most four CPUs")
 
     _connect_chi_router_2x2_mesh_once(system)
 
-    bridge_idx = cpu_idx * options.l2_slices + slice_idx
-    bridge = system.chi_bridges[bridge_idx]
+    bridge = system.chi_bridges[cpu_idx]
     bridge.node_id = _chi_rnf_node_id(cpu_idx)
     bridge.home_node_id = system._chi_router_2x2_hnf_node_id
-    bridge.txnid_base = _chi_bridge_txnid_base(slice_idx)
+    bridge.txnid_base = 0
     bridge.sink_hnf_txreq = False
     bridge.wakeup_target = system.home_node[0]
 
-    bridge.cache_side = cache_port
+    xbar.mem_side_ports = bridge.cache_side
+    bridge.mem_side = system.membus.cpu_side_ports
     bridge.chi_side = _chi_router_2x2(
-        system, 0, 0).device_ports[cpu_idx * 4 + slice_idx]
-    xbar.cpu_side_ports = bridge.mem_side
+        system, 0, 0).device_ports[cpu_idx * 4]
 
 def config_classic_l2(options, system, l2_cache_class):
     # When using classic L2 cache, The prefetcher is inside the l2cache, instead of l2Wrapper
@@ -285,11 +277,9 @@ def config_aligned_l2(options, system, l2_cache_class):
 
             # Connect slice to the wrapper's cpu-side input and the internal xbar's cpu-side input
             cache_slice.cpu_side = l2_wrapper.slice_cpuside_ports
-            if not options.chi_test_mode:
+            if (not getattr(options, "chi_test_mode", False) or
+                    getattr(options, "chi_2x2_router_test_mode", False)):
                 xbar.cpu_side_ports = cache_slice.mem_side
-            elif getattr(options, "chi_2x2_router_test_mode", False):
-                _connect_chi_router_2x2_bridge(
-                    options, system, i, j, cache_slice.mem_side, xbar)
             else:
                 bridge_idx = i * num_l2_slices + j
                 bridge = system.chi_bridges[bridge_idx]
@@ -302,6 +292,8 @@ def config_aligned_l2(options, system, l2_cache_class):
                 system.home_node[bridge_idx].rxport = bridge.chi_side
                 xbar.cpu_side_ports = bridge.mem_side
 
+        if getattr(options, "chi_2x2_router_test_mode", False):
+            _connect_chi_router_2x2_bridge(options, system, i, xbar)
 
         # Connect the wrapper to the L1-L2 bus
         l2_wrapper.cpu_side = system.tol2bus_list[i].mem_side_ports
@@ -391,6 +383,13 @@ def config_cache(options, system):
             system.l3.do_fast_writeline = not options.kmh_align
 
         for i in range(options.num_cpus):
+            chi_2x2 = getattr(options, "chi_2x2_router_test_mode", False)
+            if chi_2x2:
+                if options.l3cache:
+                    raise RuntimeError("CHI 2x2 router mode does not use the "
+                                       "classic shared L3 path")
+                # The xbar and bridge were connected in config_aligned_l2().
+                continue
             if options.l3cache:
                 # l2 -> tol3bus -> l3
                 if options.classic_l2:
