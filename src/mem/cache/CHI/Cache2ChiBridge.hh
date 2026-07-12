@@ -127,6 +127,7 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
         UC = 2,
         UD_PD = 3,
         SD_PD = 4,
+        I_PD = 5,
         Unknown = 0xff
     };
 
@@ -156,7 +157,6 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
         uint8_t dbid = 0;
         bool gotComp = false;
         bool gotData = false;
-        bool sentCompAck = false;
         bool retryBlocked = false;
         bool completed = false;
         std::vector<uint8_t> readData;
@@ -175,6 +175,19 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
         PacketPtr snoopPkt = nullptr;
         bool invalidating = false;
         bool pendingData = false;
+    };
+
+    struct PendingClassicResponse
+    {
+        PacketPtr pkt = nullptr;
+        std::optional<RawRsp> compAck;
+        std::optional<uint32_t> txnid;
+    };
+
+    struct PendingCompAck
+    {
+        RawRsp rsp{};
+        uint32_t txnid = 0;
     };
 
     /** ============ Ports ============ */
@@ -210,8 +223,9 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
 
     /** ============ Bridge internal queues ============ */
     std::queue<PacketPtr> pendingReqPkts; // cache->bridge 暂存
-    std::queue<PacketPtr> pendingRespPkts; // bridge->cache 暂存（从CHI回来后组包）
+    std::queue<PendingClassicResponse> pendingRespPkts;
     std::queue<uint32_t> retryTxnIds;
+    std::queue<PendingCompAck> pendingCompAcks;
     std::unordered_map<uint32_t, TxnEntry> txns;
     std::unordered_map<uint32_t, SnoopEntry> snoops;
 
@@ -243,7 +257,8 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     void handleDat(const RawDat& dat);
     void handleSnp(const RawSnp& snp);
     bool sendPendingResponses();
-    bool sendCompAck(TxnEntry& txn);
+    bool sendPendingCompAcks();
+    std::optional<RawRsp> makeCompAck(const TxnEntry& txn) const;
     bool sendTxnData(TxnEntry& txn);
     bool reissueRetriedTxn(uint32_t txnid);
     void maybeComplete(TxnEntry& txn);
