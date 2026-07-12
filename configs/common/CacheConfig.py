@@ -114,6 +114,7 @@ def _connect_chi_router_2x2_mesh_once(system):
     system.home_node[0].node_type = "hnf"
     system.home_node[0].sn_node_id = snf_id
     system.home_node[0].direct_sn_fake_data = False
+    system.home_node[0].rnf_slices = system._chi_router_2x2_l2_slices
     r11.local_ports[0] = system.home_node[0].rxport
 
     system.snf_bridge.node_id = snf_id
@@ -147,6 +148,12 @@ def _connect_chi_router_2x2_bridge(options, system, cpu_idx, slice_idx,
     if options.num_cpus > 4 or options.l2_slices > 4:
         raise RuntimeError("CHI 2x2 router smoke supports at most four CPUs "
                            "with four L2 slices each")
+
+    configured_slices = getattr(system, "_chi_router_2x2_l2_slices", None)
+    if configured_slices is None:
+        system._chi_router_2x2_l2_slices = options.l2_slices
+    elif configured_slices != options.l2_slices:
+        raise RuntimeError("CHI RNF slice count changed while wiring topology")
 
     _connect_chi_router_2x2_mesh_once(system)
 
