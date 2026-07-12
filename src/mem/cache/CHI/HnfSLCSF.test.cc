@@ -177,4 +177,78 @@ TEST(HnfSlcSfTest, DirtySeqSnoopDataIsPreservedInSlc)
     EXPECT_FALSE(result.sfHit);
 }
 
+TEST(HnfSlcSfTest, ReservationsPreventSeqSlotOvercommit)
+{
+    HnfSLCSF model(64, 8, 2, 2, 1, 1);
+    const uint64_t set0A = TestAddr;
+    const uint64_t set1A = TestAddr + 64;
+    const uint64_t set0B = TestAddr + 128;
+    const uint64_t set1B = TestAddr + 192;
+    const auto data = lineData(0x90);
+
+    model.commitRead(set0A, 0, PocqTxnKind::ReadUnique, data, false, 0x90);
+    model.commitRead(set1A, 4, PocqTxnKind::ReadUnique, data, false, 0x90);
+
+    ASSERT_TRUE(model.tryReserveSfResources(
+        0, set0B, PocqTxnKind::ReadUnique));
+    EXPECT_TRUE(model.hasSfReservation(0));
+    EXPECT_EQ(model.seqReservationCount(), 1);
+    EXPECT_FALSE(model.tryReserveSfResources(
+        2, set0B, PocqTxnKind::ReadUnique));
+    EXPECT_FALSE(model.tryReserveSfResources(
+        1, set1B, PocqTxnKind::ReadUnique));
+
+    model.commitRead(set0B, 8, PocqTxnKind::ReadUnique, data, false, 0x90);
+    model.releaseSfResources(0);
+    EXPECT_EQ(model.seqReservationCount(), 0);
+    ASSERT_EQ(model.seqOccupancy(), 1);
+    EXPECT_FALSE(model.tryReserveSfResources(
+        1, set1B, PocqTxnKind::ReadUnique));
+
+    const auto victim = model.frontPendingSeq();
+    model.markSeqIssued(victim.id);
+    model.completeSfEvict(victim.id, {}, false);
+    ASSERT_TRUE(model.tryReserveSfResources(
+        1, set1B, PocqTxnKind::ReadUnique));
+    model.releaseSfResources(1);
+}
+
+TEST(HnfSlcSfTest, CurrentOwnerWritebackPreservesLatestData)
+{
+    HnfSLCSF model(64, 4, 2, 4, 2);
+    const auto oldData = lineData(0xa0);
+    const auto newData = lineData(0xb0);
+
+    model.commitRead(TestAddr, 0, PocqTxnKind::ReadUnique,
+                     oldData, false);
+    model.writeLine(TestAddr, 0, newData,
+                    PocqTxnKind::WriteBackFull);
+
+    const auto result =
+        lookup(model, TestAddr, 4, PocqTxnKind::ReadShared);
+    ASSERT_TRUE(result.slcHit);
+    EXPECT_FALSE(result.sfHit);
+    EXPECT_TRUE(result.dataDirty);
+    EXPECT_EQ(result.data, newData);
+}
+
+TEST(HnfSlcSfTest, StaleWritebackCannotOverwriteNewOwner)
+{
+    HnfSLCSF model(64, 4, 2, 4, 2);
+    const auto staleData = lineData(0xc0);
+    const auto ownerData = lineData(0xd0);
+
+    model.commitRead(TestAddr, 4, PocqTxnKind::ReadUnique,
+                     ownerData, false);
+    model.writeLine(TestAddr, 0, staleData,
+                    PocqTxnKind::WriteBackFull);
+
+    const auto result =
+        lookup(model, TestAddr, 8, PocqTxnKind::ReadShared);
+    EXPECT_FALSE(result.slcHit);
+    ASSERT_TRUE(result.sfHit);
+    EXPECT_EQ(result.rnfid, 4);
+    EXPECT_EQ(result.snoopTargets, 1ULL << 4);
+}
+
 } // namespace gem5::Chi
