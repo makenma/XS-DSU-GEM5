@@ -16,6 +16,7 @@ enum class HnfCcEntryState : uint8_t
     Sleep,
     Working,
     WaitSlc,
+    WaitSnoop,
     IssueMcRead,
     WaitCompAck,
     WaitWriteData,
@@ -43,6 +44,7 @@ enum class PocqState : uint8_t
 {
     Idle,
     SlcLookup,
+    WaitSnoop,
     SlcUpdate,
     TxLink,
     WaitCompAck,
@@ -57,6 +59,7 @@ enum class PocqEventKind : uint8_t
     Admit,
     SlcLookupDone,
     SlcUpdateDone,
+    SnoopDone,
     TxLinkDone,
     TxRspDone,
     McDataDone,
@@ -67,6 +70,10 @@ enum class PocqEventKind : uint8_t
 enum class PocqActionKind : uint8_t
 {
     DoSlcLookup,
+    QueueSnoops,
+    CommitRead,
+    CommitMaintenance,
+    RemoveSharer,
     UpdateSlcSf,
     QueueTxReq,
     QueueCompData,
@@ -89,6 +96,8 @@ struct PocqEvent
     bool slcHit = false;
     bool sfHit = false;
     bool replay = false;
+    bool needsSnoop = false;
+    bool dataAvailable = false;
     bool needsCompAck = false;
 };
 
@@ -151,6 +160,13 @@ struct HnfCcTxReq
     RawReq req{};
 };
 
+struct HnfCcTxSnp
+{
+    uint32_t entry = 0;
+    uint32_t targetNode = 0;
+    RawSnp snp{};
+};
+
 struct HnfCcTxDat
 {
     uint32_t entry = 0;
@@ -168,6 +184,7 @@ struct HnfSlcLookupReq
 {
     uint32_t entry = 0;
     RawReq req{};
+    PocqTxnKind txn = PocqTxnKind::Unknown;
     uint64_t blockAddr = 0;
 };
 
@@ -181,10 +198,13 @@ struct HnfSlcLookupResult
     bool mcreqNonspec = false;
     bool snoopBroadcast = false;
     bool snoopDirected = false;
+    uint8_t snoopOpcode = 0;
+    uint64_t snoopTargets = 0;
     uint32_t rnfid = 0;
-    uint32_t rnfvec = 0;
+    uint64_t rnfvec = 0;
     HnfSlcState slcState = HnfSlcState::I;
     HnfSfState sfState = HnfSfState::I;
+    bool dataDirty = false;
     std::vector<uint8_t> data;
 };
 
