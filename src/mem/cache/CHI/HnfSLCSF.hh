@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <deque>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 #include "mem/cache/CHI/HnfCcTypes.hh"
@@ -33,6 +34,11 @@ class HnfSLCSF
              uint32_t sf_num_ways, uint32_t seq_entries = 8);
 
     HnfSlcLookupResult lookup(const HnfSlcLookupReq& req);
+    bool tryReserveSfResources(uint32_t entry, uint64_t block_addr,
+                               PocqTxnKind txn);
+    void releaseSfResources(uint32_t entry);
+    bool hasSfReservation(uint32_t entry) const;
+    size_t seqReservationCount() const { return reservedSeqSlots; }
     void commitRead(uint64_t block_addr, uint32_t requester,
                     PocqTxnKind txn, const std::vector<uint8_t>& data,
                     bool data_dirty, uint32_t home_node_id = 0);
@@ -91,6 +97,13 @@ class HnfSLCSF
         SeqVictim victim{};
     };
 
+    struct SfReservation
+    {
+        uint32_t set = 0;
+        uint64_t blockAddr = 0;
+        bool seqSlot = false;
+    };
+
     uint32_t blockSize = 64;
     uint32_t slcSets = 1024;
     uint32_t slcWays = 16;
@@ -101,6 +114,9 @@ class HnfSLCSF
     std::vector<std::vector<SfLine>> sf;
     std::vector<SeqEntry> seq;
     std::deque<SeqId> seqPending;
+    std::vector<int64_t> sfReservationOwners;
+    std::unordered_map<uint32_t, SfReservation> sfReservations;
+    size_t reservedSeqSlots = 0;
     uint64_t accessCounter = 0;
     SeqId nextSeqId = 1;
 
@@ -119,7 +135,10 @@ class HnfSLCSF
     SlcLine& allocateSlc(uint64_t block_addr);
     SfLine& allocateSf(uint64_t block_addr, uint32_t home_node_id);
     const SfLine* selectSfVictim(uint64_t block_addr) const;
-    bool sfAllocationWouldReplay(uint64_t block_addr) const;
+    bool sfAllocationWouldReplay(
+        uint64_t block_addr,
+        std::optional<uint32_t> reservation_owner = std::nullopt) const;
+    bool txnTouchesSf(PocqTxnKind txn) const;
     bool txnMayAllocateSf(PocqTxnKind txn) const;
     SeqId installSeqVictim(uint32_t set, const SfLine& victim,
                            uint32_t home_node_id);
