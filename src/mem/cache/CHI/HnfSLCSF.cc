@@ -34,6 +34,17 @@ hasSingleBit(uint64_t mask)
     return mask != 0 && (mask & (mask - 1)) == 0;
 }
 
+uint64_t
+dataPrefix(const std::vector<uint8_t>& data)
+{
+    uint64_t value = 0;
+    const size_t bytes = std::min<size_t>(sizeof(value), data.size());
+    for (size_t i = 0; i < bytes; ++i) {
+        value |= static_cast<uint64_t>(data[i]) << (i * 8);
+    }
+    return value;
+}
+
 } // anonymous namespace
 
 HnfSLCSF::HnfSLCSF(uint32_t block_size, uint32_t slc_num_sets,
@@ -46,7 +57,8 @@ HnfSLCSF::HnfSLCSF(uint32_t block_size, uint32_t slc_num_sets,
       sfWays(sf_num_ways),
       slc(slc_num_sets, std::vector<SlcLine>(slc_num_ways)),
       sf(sf_num_sets, std::vector<SfLine>(sf_num_ways)),
-      seq(seq_entries)
+      seq(seq_entries),
+      sfReservationOwners(sf_num_sets, -1)
 {
     fatal_if(blockSize == 0, "HnfSLCSF block_size must be non-zero\n");
     fatal_if(slcSets == 0 || slcWays == 0,
@@ -191,15 +203,33 @@ HnfSLCSF::selectSfVictim(uint64_t block_addr) const
 }
 
 bool
+HnfSLCSF::txnTouchesSf(PocqTxnKind txn) const
+{
+    return txn == PocqTxnKind::ReadShared ||
+        txn == PocqTxnKind::ReadUnique ||
+        txn == PocqTxnKind::CleanInvalid ||
+        txn == PocqTxnKind::MakeInvalid ||
+        txn == PocqTxnKind::MakeUnique ||
+        txn == PocqTxnKind::Evict ||
+        txn == PocqTxnKind::WriteBackFull ||
+        txn == PocqTxnKind::WriteCleanFull ||
+        txn == PocqTxnKind::WriteUnique ||
+        txn == PocqTxnKind::WriteEvictFull;
+}
+
+bool
 HnfSLCSF::txnMayAllocateSf(PocqTxnKind txn) const
 {
     return txn == PocqTxnKind::ReadShared ||
         txn == PocqTxnKind::ReadUnique ||
-        txn == PocqTxnKind::MakeUnique;
+        txn == PocqTxnKind::MakeUnique ||
+        txn == PocqTxnKind::WriteCleanFull;
 }
 
 bool
-HnfSLCSF::sfAllocationWouldReplay(uint64_t block_addr) const
+HnfSLCSF::sfAllocationWouldReplay(
+    uint64_t block_addr,
+    std::optional<uint32_t> reservation_owner) const
 {
     if (findSf(block_addr)) {
         return false;
@@ -215,7 +245,131 @@ HnfSLCSF::sfAllocationWouldReplay(uint64_t block_addr) const
     panic_if(!victim, "HnfSLCSF failed to select a full-set SF victim\n");
     const uint64_t victimAddr =
         sfBlockAddr(victim->tag, sfSet(block_addr));
-    return seqOccupancy() == seq.size() || seqContains(victimAddr);
+    size_t otherReservations = reservedSeqSlots;
+    if (reservation_owner) {
+        auto reservation = sfReservations.find(*reservation_owner);
+        if (reservation != sfReservations.end() &&
+            reservation->second.seqSlot) {
+            panic_if(otherReservations == 0,
+                     "HnfSLCSF missing reserved SEQ slot for entry=%u\n",
+                     *reservation_owner);
+            --otherReservations;
+        }
+    }
+    return seqOccupancy() + otherReservations >= seq.size() ||
+        seqContains(victimAddr);
+}
+
+bool
+HnfSLCSF::tryReserveSfResources(uint32_t entry, uint64_t block_addr,
+                                PocqTxnKind txn)
+{
+    if (!txnTouchesSf(txn)) {
+        return true;
+    }
+
+    const uint32_t set = sfSet(block_addr);
+    auto existing = sfReservations.find(entry);
+    if (existing != sfReservations.end()) {
+        panic_if(existing->second.set != set ||
+                     existing->second.blockAddr != block_addr,
+                 "HnfSLCSF entry=%u changes SF reservation from "
+                 "addr=%#llx/set=%u to addr=%#llx/set=%u\n",
+                 entry,
+                 static_cast<unsigned long long>(
+                     existing->second.blockAddr),
+                 existing->second.set,
+                 static_cast<unsigned long long>(block_addr), set);
+        return true;
+    }
+
+    if (sfReservationOwners[set] >= 0 || seqContains(block_addr)) {
+        DPRINTF(HnfSLCSF,
+                "reserve entry=%u txn=%u addr=%#llx set=%u blocked "
+                "owner=%lld seqHit=%u\n",
+                entry, static_cast<unsigned>(txn),
+                static_cast<unsigned long long>(block_addr), set,
+                static_cast<long long>(sfReservationOwners[set]),
+                seqContains(block_addr));
+        return false;
+    }
+
+    bool reserveSeqSlot = false;
+    if (txnMayAllocateSf(txn) && !findSf(block_addr)) {
+        const auto& lines = sf[set];
+        const bool setFull = std::none_of(
+            lines.begin(), lines.end(),
+            [](const SfLine& line) { return !line.valid; });
+        if (setFull) {
+            const SfLine* victim = selectSfVictim(block_addr);
+            panic_if(!victim,
+                     "HnfSLCSF failed to reserve a full-set SF victim\n");
+            const uint64_t victimAddr = sfBlockAddr(victim->tag, set);
+            if (seqContains(victimAddr) ||
+                seqOccupancy() + reservedSeqSlots >= seq.size()) {
+                DPRINTF(HnfSLCSF,
+                        "reserve entry=%u txn=%u addr=%#llx set=%u "
+                        "blocked for SEQ victim=%#llx occupancy=%u "
+                        "reserved=%u capacity=%u\n",
+                        entry, static_cast<unsigned>(txn),
+                        static_cast<unsigned long long>(block_addr), set,
+                        static_cast<unsigned long long>(victimAddr),
+                        static_cast<unsigned>(seqOccupancy()),
+                        static_cast<unsigned>(reservedSeqSlots),
+                        static_cast<unsigned>(seq.size()));
+                return false;
+            }
+            reserveSeqSlot = true;
+        }
+    }
+
+    sfReservationOwners[set] = entry;
+    sfReservations.emplace(
+        entry, SfReservation{set, block_addr, reserveSeqSlot});
+    if (reserveSeqSlot) {
+        ++reservedSeqSlots;
+    }
+    DPRINTF(HnfSLCSF,
+            "reserve entry=%u txn=%u addr=%#llx set=%u seqSlot=%u "
+            "seqReserved=%u\n",
+            entry, static_cast<unsigned>(txn),
+            static_cast<unsigned long long>(block_addr), set,
+            reserveSeqSlot, static_cast<unsigned>(reservedSeqSlots));
+    return true;
+}
+
+void
+HnfSLCSF::releaseSfResources(uint32_t entry)
+{
+    auto reservation = sfReservations.find(entry);
+    if (reservation == sfReservations.end()) {
+        return;
+    }
+
+    const SfReservation held = reservation->second;
+    panic_if(sfReservationOwners[held.set] != static_cast<int64_t>(entry),
+             "HnfSLCSF entry=%u releases SF set=%u owned by %lld\n",
+             entry, held.set,
+             static_cast<long long>(sfReservationOwners[held.set]));
+    sfReservationOwners[held.set] = -1;
+    if (held.seqSlot) {
+        panic_if(reservedSeqSlots == 0,
+                 "HnfSLCSF entry=%u releases an unreserved SEQ slot\n",
+                 entry);
+        --reservedSeqSlots;
+    }
+    sfReservations.erase(reservation);
+    DPRINTF(HnfSLCSF,
+            "release entry=%u addr=%#llx set=%u seqSlot=%u "
+            "seqReserved=%u\n",
+            entry, static_cast<unsigned long long>(held.blockAddr), held.set,
+            held.seqSlot, static_cast<unsigned>(reservedSeqSlots));
+}
+
+bool
+HnfSLCSF::hasSfReservation(uint32_t entry) const
+{
+    return sfReservations.find(entry) != sfReservations.end();
 }
 
 HnfSLCSF::SeqId
@@ -338,7 +492,7 @@ HnfSLCSF::lookup(const HnfSlcLookupReq& req)
 
     if (seqContains(req.blockAddr) ||
         (txnMayAllocateSf(req.txn) &&
-         sfAllocationWouldReplay(req.blockAddr))) {
+         sfAllocationWouldReplay(req.blockAddr, req.entry))) {
         result.replay = true;
         DPRINTF(HnfSLCSF,
                 "lookup entry=%u txn=%u addr=%#llx replay for SEQ "
@@ -465,10 +619,12 @@ HnfSLCSF::commitRead(uint64_t block_addr, uint32_t requester,
 
     checkLineInvariant(block_addr);
     DPRINTF(HnfSLCSF,
-            "commit read txn=%u addr=%#llx requester=%u dirty=%u bytes=%u\n",
+            "commit read txn=%u addr=%#llx requester=%u dirty=%u bytes=%u "
+            "word0=%#llx\n",
             static_cast<unsigned>(txn),
             static_cast<unsigned long long>(block_addr), requester, data_dirty,
-            static_cast<unsigned>(data.size()));
+            static_cast<unsigned>(data.size()),
+            static_cast<unsigned long long>(dataPrefix(data)));
 }
 
 void
@@ -540,7 +696,18 @@ HnfSLCSF::writeLine(uint64_t block_addr, uint32_t requester,
 {
     switch (txn) {
       case PocqTxnKind::WriteBackFull:
-      case PocqTxnKind::WriteEvictFull:
+      case PocqTxnKind::WriteEvictFull: {
+        const SfLine* tracked = findSf(block_addr);
+        if (tracked &&
+            (tracked->sharers & requesterMask(requester)) == 0) {
+            DPRINTF(HnfSLCSF,
+                    "discard stale writeback txn=%u addr=%#llx "
+                    "requester=%u currentSharers=%#llx\n",
+                    static_cast<unsigned>(txn),
+                    static_cast<unsigned long long>(block_addr), requester,
+                    static_cast<unsigned long long>(tracked->sharers));
+            break;
+        }
         installSlc(block_addr, HnfSlcState::MU, requester, data);
         removeSharer(block_addr, requester);
         if (const SfLine* line = findSf(block_addr); line && line->valid) {
@@ -548,6 +715,7 @@ HnfSLCSF::writeLine(uint64_t block_addr, uint32_t requester,
             slcLine->state = HnfSlcState::MN;
         }
         break;
+      }
       case PocqTxnKind::WriteCleanFull: {
         installSlc(block_addr, HnfSlcState::EN, requester, data);
         SfLine& line = allocateSf(block_addr, home_node_id);
@@ -568,10 +736,12 @@ HnfSLCSF::writeLine(uint64_t block_addr, uint32_t requester,
     }
     checkLineInvariant(block_addr);
     DPRINTF(HnfSLCSF,
-            "write line txn=%u addr=%#llx requester=%u bytes=%u\n",
+            "write line txn=%u addr=%#llx requester=%u bytes=%u "
+            "word0=%#llx\n",
             static_cast<unsigned>(txn),
             static_cast<unsigned long long>(block_addr), requester,
-            static_cast<unsigned>(data.size()));
+            static_cast<unsigned>(data.size()),
+            static_cast<unsigned long long>(dataPrefix(data)));
 }
 
 void
