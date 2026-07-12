@@ -436,14 +436,16 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
     test_sys = makeBareMetalXiangshanSystem('timing', SysConfig(mem=args.mem_size), None, np=np, ruby=ruby)
     test_sys.num_cpus = np
 
-    if args.chi_test_mode:
+    if getattr(args, "chi_test_mode", False):
         l2_slices = getattr(args, "l2_slices", 4)
-        bridge_count = np * l2_slices
+        chi_2x2 = getattr(args, "chi_2x2_router_test_mode", False)
+        bridge_count = np if chi_2x2 else np * l2_slices
+        home_count = 1 if chi_2x2 else bridge_count
         test_sys.chi_bridges = [Cache2ChiBridge()
                                 for _ in range(bridge_count)]
         test_sys.home_node   = [HomeNodeFull()
-                                for _ in range(bridge_count)]
-        if getattr(args, "chi_2x2_router_test_mode", False):
+                                for _ in range(home_count)]
+        if chi_2x2:
             test_sys.chi_routers = [
                 ChiRouterRefModel(local_x=x, local_y=y, node_type="router")
                 for y in range(2)
