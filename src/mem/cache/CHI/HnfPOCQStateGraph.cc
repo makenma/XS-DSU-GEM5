@@ -159,6 +159,13 @@ isMcDataDone(const PocqEvent& event)
 }
 
 bool
+isMcDataDoneReadNoSnp(const PocqEvent& event)
+{
+    return isMcDataDone(event) &&
+        event.txn == PocqTxnKind::ReadNoSnp;
+}
+
+bool
 isCompAck(const PocqEvent& event)
 {
     return event.kind == PocqEventKind::CompAck;
@@ -240,6 +247,8 @@ POCQ_StateGraph::POCQ_StateGraph()
     addTransition(waitSnoop, idle, isSnoopDoneMaintenance,
                   {PocqActionKind::CommitMaintenance,
                    PocqActionKind::QueueComp});
+    addTransition(issueMcRead, txLink, isMcDataDoneReadNoSnp,
+                  {PocqActionKind::QueueCompData});
     addTransition(issueMcRead, slcUpdate, isMcDataDone,
                   {PocqActionKind::UpdateSlcSf});
     addTransition(slcUpdate, txLink, isSlcUpdateDone,
