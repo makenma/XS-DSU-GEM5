@@ -65,13 +65,16 @@ admit(PocqTxnKind txn)
 }
 
 PocqEvent
-lookupDone(PocqTxnKind txn, bool slcHit, bool sfHit = false)
+lookupDone(PocqTxnKind txn, bool slcHit, bool sfHit = false,
+           bool needsSnoop = false)
 {
     PocqEvent ev = lookupDone(slcHit, sfHit, false);
     ev.txn = txn;
     ev.needsCompAck = txn == PocqTxnKind::ReadShared ||
         txn == PocqTxnKind::ReadUnique ||
         txn == PocqTxnKind::ReadOnce;
+    ev.needsSnoop = needsSnoop;
+    ev.dataAvailable = slcHit;
     return ev;
 }
 
@@ -104,8 +107,10 @@ TEST(HnfPocqStateGraphTest, SlcHitPath)
                PocqState::SlcLookup, PocqActionKind::DoSlcLookup);
     EXPECT_EQ(state, PocqState::SlcLookup);
 
-    expectStep(graph.tryStep(state, lookupDone(true, true, false)),
-               PocqState::TxLink, PocqActionKind::QueueCompData);
+    expectActions(graph.tryStep(state, lookupDone(true, true, false)),
+                  PocqState::TxLink,
+                  {PocqActionKind::CommitRead,
+                   PocqActionKind::QueueCompData});
     expectStep(graph.tryStep(state, event(PocqEventKind::TxLinkDone)),
                PocqState::WaitCompAck, PocqActionKind::WaitCompAck);
     expectStep(graph.tryStep(state, event(PocqEventKind::CompAck)),
@@ -147,7 +152,7 @@ TEST(HnfPocqStateGraphTest, MaintenanceLookupQueuesComp)
     expectActions(graph.tryStep(
                       state, lookupDone(PocqTxnKind::CleanInvalid, true)),
                   PocqState::Idle,
-                  {PocqActionKind::FlushL3, PocqActionKind::FlushSf,
+                  {PocqActionKind::CommitMaintenance,
                    PocqActionKind::QueueComp});
 }
 
@@ -158,8 +163,41 @@ TEST(HnfPocqStateGraphTest, EvictQueuesCompWithoutLookup)
 
     expectActions(graph.tryStep(state, admit(PocqTxnKind::Evict)),
                   PocqState::Idle,
-                  {PocqActionKind::FlushSf, PocqActionKind::FlushL3,
+                  {PocqActionKind::RemoveSharer,
                    PocqActionKind::QueueComp});
+}
+
+TEST(HnfPocqStateGraphTest, ReadUniqueWaitsForSnoopBeforeData)
+{
+    POCQ_StateGraph graph;
+    PocqState state = PocqState::SlcLookup;
+
+    expectStep(graph.tryStep(
+                   state,
+                   lookupDone(PocqTxnKind::ReadUnique, true, true, true)),
+               PocqState::WaitSnoop, PocqActionKind::QueueSnoops);
+
+    PocqEvent done{};
+    done.kind = PocqEventKind::SnoopDone;
+    done.txn = PocqTxnKind::ReadUnique;
+    done.dataAvailable = true;
+    done.needsCompAck = true;
+    expectActions(graph.tryStep(state, done), PocqState::TxLink,
+                  {PocqActionKind::CommitRead,
+                   PocqActionKind::QueueCompData});
+}
+
+TEST(HnfPocqStateGraphTest, SnoopWithoutDataFallsBackToMemory)
+{
+    POCQ_StateGraph graph;
+    PocqState state = PocqState::WaitSnoop;
+
+    PocqEvent done{};
+    done.kind = PocqEventKind::SnoopDone;
+    done.txn = PocqTxnKind::ReadShared;
+    done.dataAvailable = false;
+    expectStep(graph.tryStep(state, done), PocqState::IssueMcRead,
+               PocqActionKind::QueueTxReq);
 }
 
 TEST(HnfPocqStateGraphTest, WriteWaitsForDataThenRetires)
@@ -175,6 +213,72 @@ TEST(HnfPocqStateGraphTest, WriteWaitsForDataThenRetires)
     expectActions(graph.tryStep(state, event(PocqEventKind::WriteDataDone)),
                   PocqState::Idle,
                   {PocqActionKind::StoreWriteData, PocqActionKind::Retire});
+}
+
+TEST(HnfPocqStateGraphTest, EverySupportedTransactionHasAnAdmitPath)
+{
+    const std::vector<PocqTxnKind> reads = {
+        PocqTxnKind::ReadShared,
+        PocqTxnKind::ReadUnique,
+        PocqTxnKind::ReadOnce,
+    };
+    const std::vector<PocqTxnKind> maintenance = {
+        PocqTxnKind::CleanInvalid,
+        PocqTxnKind::MakeInvalid,
+        PocqTxnKind::MakeUnique,
+    };
+    const std::vector<PocqTxnKind> writes = {
+        PocqTxnKind::WriteBackFull,
+        PocqTxnKind::WriteCleanFull,
+        PocqTxnKind::WriteUnique,
+        PocqTxnKind::WriteEvictFull,
+    };
+
+    for (PocqTxnKind txn : reads) {
+        POCQ_StateGraph graph;
+        PocqState state = PocqState::Idle;
+        const auto step = graph.tryStep(state, admit(txn));
+        ASSERT_TRUE(step.stepped) << static_cast<unsigned>(txn);
+        EXPECT_EQ(state, PocqState::SlcLookup);
+        EXPECT_EQ(step.actions.front(), PocqActionKind::DoSlcLookup);
+    }
+
+    {
+        POCQ_StateGraph graph;
+        PocqState state = PocqState::Idle;
+        const auto step = graph.tryStep(
+            state, admit(PocqTxnKind::ReadNoSnp));
+        ASSERT_TRUE(step.stepped);
+        EXPECT_EQ(state, PocqState::IssueMcRead);
+        EXPECT_EQ(step.actions.front(), PocqActionKind::QueueTxReq);
+    }
+
+    for (PocqTxnKind txn : maintenance) {
+        POCQ_StateGraph graph;
+        PocqState state = PocqState::Idle;
+        const auto step = graph.tryStep(state, admit(txn));
+        ASSERT_TRUE(step.stepped) << static_cast<unsigned>(txn);
+        EXPECT_EQ(state, PocqState::SlcLookup);
+        EXPECT_EQ(step.actions.front(), PocqActionKind::DoSlcLookup);
+    }
+
+    {
+        POCQ_StateGraph graph;
+        PocqState state = PocqState::Idle;
+        const auto step = graph.tryStep(state, admit(PocqTxnKind::Evict));
+        ASSERT_TRUE(step.stepped);
+        EXPECT_EQ(state, PocqState::Idle);
+        EXPECT_EQ(step.actions.front(), PocqActionKind::RemoveSharer);
+    }
+
+    for (PocqTxnKind txn : writes) {
+        POCQ_StateGraph graph;
+        PocqState state = PocqState::Idle;
+        const auto step = graph.tryStep(state, admit(txn));
+        ASSERT_TRUE(step.stepped) << static_cast<unsigned>(txn);
+        EXPECT_EQ(state, PocqState::WaitWriteData);
+        EXPECT_EQ(step.actions.front(), PocqActionKind::QueueCompDBIDResp);
+    }
 }
 
 TEST(HnfPocqStateGraphTest, NoMatchingEdgeLeavesStateUnchanged)
