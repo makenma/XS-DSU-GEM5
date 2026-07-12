@@ -204,6 +204,7 @@ HnfCoherencyController::executePocqAction(uint32_t entryId,
 
       case PocqActionKind::RemoveSharer:
         slcsfUnit->removeSharer(entry.blockAddr, entry.req.srcid);
+        slcsfUnit->releaseSfResources(entryId);
         return std::nullopt;
 
       case PocqActionKind::UpdateSlcSf:
@@ -270,6 +271,7 @@ HnfCoherencyController::executePocqAction(uint32_t entryId,
         return retireEntry(entryId);
 
       case PocqActionKind::SleepForReplay:
+        slcsfUnit->releaseSfResources(entryId);
         entry.state = HnfCcEntryState::Sleep;
         entry.slcsfReplay = true;
         DPRINTF(HnfCC, "CC entry=%u sleeps for SLCSF replay\n", entryId);
@@ -414,6 +416,20 @@ HnfCoherencyController::startReadFlow(uint32_t entryId)
     panic_if(entryId >= entries.size(), "HnfCC invalid read entry=%u\n",
              entryId);
     Entry& entry = entries[entryId];
+    if (!slcsfUnit->tryReserveSfResources(
+            entryId, entry.blockAddr, entry.txnKind)) {
+        entry.state = HnfCcEntryState::Sleep;
+        entry.pocqState = PocqState::Sleep;
+        entry.slcsfReplay = true;
+        DPRINTF(HnfCC,
+                "CC entry=%u sleeps for SF/SEQ resources txn=%u "
+                "addr=%#llx\n",
+                entryId, static_cast<unsigned>(entry.txnKind),
+                static_cast<unsigned long long>(entry.blockAddr));
+        return;
+    }
+
+    entry.state = HnfCcEntryState::Working;
     entry.pocqState = PocqState::Idle;
     entry.slcsfReplay = false;
 
@@ -491,6 +507,7 @@ HnfCoherencyController::commitRead(uint32_t entryId)
     slcsfUnit->commitRead(entry.blockAddr, entry.req.srcid, entry.txnKind,
                          entry.data, entry.responseDataDirty,
                          entry.req.tgtid);
+    slcsfUnit->releaseSfResources(entryId);
     entry.slcUpdatePending = false;
 }
 
@@ -500,6 +517,7 @@ HnfCoherencyController::completeMaintenance(uint32_t entryId)
     Entry& entry = entries[entryId];
     slcsfUnit->completeMaintenance(entry.blockAddr, entry.req.srcid,
                                    entry.txnKind, entry.req.tgtid);
+    slcsfUnit->releaseSfResources(entryId);
 }
 
 void
@@ -651,6 +669,7 @@ HnfCoherencyController::queueComp(uint32_t entryId)
     const uint64_t addr = entry.blockAddr;
     const uint32_t srcid = entry.req.srcid;
     const uint32_t txnid = entry.req.txnid;
+    slcsfUnit->releaseSfResources(entryId);
     entry = Entry{};
     wakeSleepingEntries(addr);
 
@@ -691,6 +710,7 @@ HnfCoherencyController::storeWriteData(uint32_t entryId)
     Entry& entry = entries[entryId];
     slcsfUnit->writeLine(entry.blockAddr, entry.req.srcid, entry.data,
                          entry.txnKind, entry.req.tgtid);
+    slcsfUnit->releaseSfResources(entryId);
     DPRINTF(HnfCC,
             "CC entry=%u stores write data addr=%#llx src=%u txn=%u\n",
             entryId, static_cast<unsigned long long>(entry.blockAddr),
@@ -910,19 +930,20 @@ HnfCoherencyController::acceptRxDat(const RawDat& dat)
 
     entry.responseDataDirty = false;
     entry.slcUpdatePending = true;
+    const uint64_t completedAddr = entry.blockAddr;
+    const uint32_t requester = entry.req.srcid;
+    const uint32_t requesterTxn = entry.req.txnid;
     PocqEvent mcDataDone{};
     mcDataDone.kind = PocqEventKind::McDataDone;
     mcDataDone.txn = entry.txnKind;
     mcDataDone.needsCompAck = entry.needsCompAck;
     std::optional<HnfCcRetireInfo> retire = stepPocq(entryId, mcDataDone);
-    panic_if(retire, "HnfCC entry=%u retired during real SN data path\n",
-             entryId);
     DPRINTF(HnfCC,
             "CC entry=%u completed real SN read addr=%#llx requester=%u "
             "txn=%u\n",
-            entryId, static_cast<unsigned long long>(entry.blockAddr),
-            entry.req.srcid, entry.req.txnid);
-    return std::nullopt;
+            entryId, static_cast<unsigned long long>(completedAddr),
+            requester, requesterTxn);
+    return retire;
 }
 
 const HnfCcTxDat&
@@ -1016,6 +1037,7 @@ HnfCoherencyController::retireEntry(uint32_t entryId)
     Entry& entry = entries[entryId];
     HnfCcRetireInfo info = makeRetireInfo(entry);
     const uint64_t addr = entry.blockAddr;
+    slcsfUnit->releaseSfResources(entryId);
     entry = Entry{};
     wakeSleepingEntries(addr);
     return info;
@@ -1046,7 +1068,7 @@ HnfCoherencyController::hasMainAddressHazard(uint64_t addr) const
     return std::any_of(entries.begin(), entries.end(),
                        [this, addr](const Entry& entry) {
                            return entryAllocated(entry) &&
-                               !entry.slcsfReplay &&
+                               entry.state != HnfCcEntryState::Sleep &&
                                entry.blockAddr == addr;
                        });
 }
