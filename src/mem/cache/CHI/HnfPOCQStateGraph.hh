@@ -106,6 +106,7 @@ class POCQ_StateGraph : public DirectedGraph<PocqNode, PocqEdge>
   private:
     PocqNode idle;
     PocqNode slcLookup;
+    PocqNode waitSnoop;
     PocqNode slcUpdate;
     PocqNode txLink;
     PocqNode waitCompAck;
