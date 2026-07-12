@@ -141,7 +141,11 @@ HomeLinkLayer::wakeup()
             static_cast<unsigned long long>(llCycle), rxport);
 
     doCcResultAndRetire();
+    if (cc) {
+        cc->serviceInternalWork();
+    }
     doTxReqArb();
+    doTxSnpArb();
     doTxRspArb();
     doTxDatArb();
     doCreditEvents();
@@ -198,6 +202,36 @@ HomeLinkLayer::doTxReqArb()
             pending.entry);
     cc->popTxReq();
     cc->notifyTxReqSent(pending.entry);
+}
+
+void
+HomeLinkLayer::doTxSnpArb()
+{
+    if (!rxport || !cc || !cc->hasTxSnp()) {
+        return;
+    }
+
+    HnfCcTxSnp pending = cc->frontTxSnp();
+    pending.snp.stage = BasicChiComponent::STAGE_H12;
+    if (!rxport->enqueueTx(ChannelType::SNP, pending.snp)) {
+        DPRINTF(HomeLinkLayer,
+                "TXSNP H12 blocked opcode=0x%x src=%u tgt=%u txn=%u "
+                "addr=%#llx entry=%u targetNode=%u\n",
+                pending.snp.opcode, pending.snp.srcid, pending.snp.tgtid,
+                pending.snp.txnid,
+                static_cast<unsigned long long>(pending.snp.addr),
+                pending.entry, pending.targetNode);
+        return;
+    }
+
+    DPRINTF(HomeLinkLayer,
+            "TXSNP H12 send opcode=0x%x src=%u tgt=%u txn=%u addr=%#llx "
+            "entry=%u targetNode=%u\n",
+            pending.snp.opcode, pending.snp.srcid, pending.snp.tgtid,
+            pending.snp.txnid,
+            static_cast<unsigned long long>(pending.snp.addr), pending.entry,
+            pending.targetNode);
+    cc->popTxSnp();
 }
 
 void
@@ -683,17 +717,20 @@ HomeLinkLayer::doStageRsp(PipeEntry& entry, RawRsp& rsp)
     }
 
     const auto decoded = decodeRsp(rsp.opcode);
-    panic_if(decoded.minor != RspMinor::CompAck,
-             "HNF RXRSP v1 only accepts CompAck, got opcode=0x%x txn=%u\n",
+    panic_if(decoded.minor != RspMinor::CompAck &&
+                 decoded.minor != RspMinor::SnpResp &&
+                 decoded.minor != RspMinor::SnpRespFwded,
+             "HNF RXRSP unsupported opcode=0x%x txn=%u\n",
              rsp.opcode, rsp.txnid);
-    panic_if(!cc, "HNF RXRSP CompAck without CC src=%u txn=%u\n",
+    panic_if(!cc, "HNF RXRSP without CC src=%u txn=%u\n",
              rsp.srcid, rsp.txnid);
     std::optional<HnfCcRetireInfo> retire = cc->acceptRxRsp(rsp);
     if (retire) {
         queueRetire(*retire);
     }
     DPRINTF(HomeLinkLayer,
-            "RXRSP H2 CompAck src=%u txn=%u handed to CC retire=%u\n",
+            "RXRSP H2 opcode=0x%x src=%u txn=%u handed to CC retire=%u\n",
+            rsp.opcode,
             rsp.srcid, rsp.txnid, retire.has_value());
     return {StageAction::Drop};
 }
@@ -710,6 +747,21 @@ HomeLinkLayer::doStageDat(PipeEntry& entry, RawDat& dat)
     }
 
     const auto decoded = decodeDat(dat.opcode);
+    if (decoded.major == DatMajor::SnpRespData) {
+        panic_if(!cc, "HNF RXDAT SnpRespData without CC src=%u txn=%u\n",
+                 dat.srcid, dat.txnid);
+        std::optional<HnfCcRetireInfo> retire = cc->acceptRxDat(dat);
+        panic_if(retire,
+                 "HNF RXDAT SnpRespData unexpectedly retired txn=%u\n",
+                 dat.txnid);
+        DPRINTF(HomeLinkLayer,
+                "RXDAT H2 SnpRespData src=%u txn=%u dataid=%u bytes=%u "
+                "last=%u resp=%u\n",
+                dat.srcid, dat.txnid, dat.dataid,
+                static_cast<unsigned>(dat.data.size()), dat.last, dat.resp);
+        return {StageAction::Drop};
+    }
+
     if (decoded.major == DatMajor::CompletionData) {
         panic_if(!cc, "HNF RXDAT CompData without CC src=%u txn=%u\n",
                  dat.srcid, dat.txnid);
