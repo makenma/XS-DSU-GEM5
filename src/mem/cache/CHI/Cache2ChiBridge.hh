@@ -7,6 +7,7 @@
 #include <optional>
 #include <queue>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "mem/packet.hh"
@@ -61,7 +62,7 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
         { owner.cacheRecvRespRetry(); }
 
         AddrRangeList getAddrRanges() const override
-        { return AddrRangeList(); }
+        { return owner.cacheGetAddrRanges(); }
     };
 
     // ============ Mem side port (acts like cache for the memory/CHI) ============
@@ -143,6 +144,7 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
         bool forceCleanResponse = false;
         bool carriesData = false;
         bool isPartial = false;
+        bool respondAsUpgrade = false;
     };
 
     struct TxnEntry
@@ -190,6 +192,12 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
         uint32_t txnid = 0;
     };
 
+    struct PendingSnoopRetry
+    {
+        RawSnp snp{};
+        uint32_t attempts = 0;
+    };
+
     /** ============ Ports ============ */
     CacheSidePort cachePort;
 
@@ -204,6 +212,7 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     void cacheRecvFunctional(PacketPtr pkt);
     bool cacheRecvTimingSnoopResp(PacketPtr pkt);
     void cacheRecvRespRetry();
+    AddrRangeList cacheGetAddrRanges() const;
 
     MemoryIntent classify(PacketPtr pkt) const;
     RawReq mapToReq(const MemoryIntent& intent, PacketPtr pkt, uint32_t txnid) const;
@@ -226,8 +235,11 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     std::queue<PendingClassicResponse> pendingRespPkts;
     std::queue<uint32_t> retryTxnIds;
     std::queue<PendingCompAck> pendingCompAcks;
+    std::queue<PendingSnoopRetry> pendingSnoopRetries;
     std::unordered_map<uint32_t, TxnEntry> txns;
     std::unordered_map<uint32_t, SnoopEntry> snoops;
+    std::unordered_set<PacketPtr> promotedUpgradePkts;
+    bool cacheRespBlocked = false;
 
     const uint32_t nodeId;
     const uint32_t homeNodeId;
@@ -255,7 +267,7 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     void handleTxReq(const RawReq& req);
     void handleRsp(const RawRsp& rsp);
     void handleDat(const RawDat& dat);
-    void handleSnp(const RawSnp& snp);
+    void handleSnp(const RawSnp& snp, uint32_t attempts = 0);
     bool sendPendingResponses();
     bool sendPendingCompAcks();
     std::optional<RawRsp> makeCompAck(const TxnEntry& txn) const;
@@ -266,6 +278,8 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
 
     void sendSnoopRsp(const SnoopEntry& snoop, RespState state);
     void sendSnoopData(SnoopEntry& snoop, PacketPtr pkt);
+    bool respondFromPendingCopyback(const RawSnp& snp);
+    bool snoopPrecedesPendingTxn(const RawSnp& snp) const;
     MemCmd snoopCmdFor(const RawSnp& snp) const;
     bool snoopInvalidates(const RawSnp& snp) const;
 };
