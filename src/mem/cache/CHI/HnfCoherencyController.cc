@@ -161,33 +161,19 @@ HnfCoherencyController::executePocqAction(uint32_t entryId,
     switch (action) {
       case PocqActionKind::DoSlcLookup: {
         entry.state = HnfCcEntryState::WaitSlc;
+        panic_if(entry.slcLookupPhase != SlcLookupPhase::None,
+                 "HnfCC entry=%u starts lookup with phase=%u\n", entryId,
+                 static_cast<unsigned>(entry.slcLookupPhase));
 
-        HnfSlcLookupReq lookup{};
-        lookup.entry = entryId;
-        lookup.req = entry.req;
-        lookup.txn = entry.txnKind;
-        lookup.blockAddr = entry.blockAddr;
-        entry.slcLookupResult = slcsfUnit->lookup(lookup);
-
-        if (entry.slcLookupResult.slcHit) {
-            entry.data = entry.slcLookupResult.data;
-            if (entry.data.size() < blockSize) {
-                entry.data.resize(blockSize, 0);
-            }
-        }
-        entry.responseDataDirty = entry.slcLookupResult.dataDirty;
-
-        PocqEvent lookupDone{};
-        lookupDone.kind = PocqEventKind::SlcLookupDone;
-        lookupDone.txn = entry.txnKind;
-        lookupDone.slcHit = entry.slcLookupResult.slcHit;
-        lookupDone.sfHit = entry.slcLookupResult.sfHit;
-        lookupDone.replay = entry.slcLookupResult.replay;
-        lookupDone.needsSnoop =
-            entry.slcLookupResult.snoopTargets != 0;
-        lookupDone.dataAvailable = entry.slcLookupResult.slcHit;
-        lookupDone.needsCompAck = entry.needsCompAck;
-        return stepPocq(entryId, lookupDone);
+        SlcSfReqHeader header = makeSlcSfReqHeader(
+            slcSfReqIds, entryId, entry.blockAddr, entry.req, entry.seq,
+            entry.acceptCycle);
+        entry.slcLookupReqId = header.reqId;
+        entry.pendingSlcLookup = SlcSfRequest(
+            makeSlcSfLookupReq(std::move(header), entry.txnKind));
+        entry.slcLookupPhase = SlcLookupPhase::IssuePending;
+        tryIssueSlcLookup(entryId);
+        return std::nullopt;
       }
 
       case PocqActionKind::QueueSnoops:
@@ -371,6 +357,7 @@ HnfCoherencyController::acceptLinkReq(const HnfLinkToCcReq& in,
     entry.txnKind = txnKind;
     entry.req = in.req;
     entry.seq = in.seq;
+    entry.acceptCycle = cycle;
     entry.blockAddr = blockAddr(in.req);
     entry.tokenId = in.tokenId;
     entry.priority = in.priority;
@@ -1249,8 +1236,117 @@ HnfCoherencyController::retrySlcsfReplayEntries()
 }
 
 void
+HnfCoherencyController::tryIssueSlcLookup(uint32_t entryId)
+{
+    Entry& entry = entries.at(entryId);
+    panic_if(entry.slcLookupPhase != SlcLookupPhase::IssuePending ||
+                 !entry.pendingSlcLookup,
+             "HnfCC entry=%u retries lookup without pending request\n",
+             entryId);
+    const SlcSfReqId reqId = entry.slcLookupReqId;
+    panic_if(!reqId.valid(), "HnfCC entry=%u has invalid lookup reqId\n",
+             entryId);
+
+    const SlcSfEnqueueResult result =
+        slcsfUnit->tryEnqueue(std::move(*entry.pendingSlcLookup));
+    if (result == SlcSfEnqueueResult::Accepted) {
+        entry.pendingSlcLookup.reset();
+        entry.slcLookupPhase = SlcLookupPhase::Waiting;
+        DPRINTF(HnfCC, "CC entry=%u issued SLCSF lookup req=%llu\n",
+                entryId, static_cast<unsigned long long>(reqId.value));
+    } else {
+        const SlcSfLookupReq* request =
+            std::get_if<SlcSfLookupReq>(&*entry.pendingSlcLookup);
+        panic_if(!request || request->header.reqId != reqId,
+                 "HnfCC entry=%u rejected lookup changed ownership/id\n",
+                 entryId);
+    }
+}
+
+void
+HnfCoherencyController::retryPendingSlcLookups()
+{
+    for (uint32_t i = 0; i < entries.size(); ++i) {
+        if (entries[i].slcLookupPhase == SlcLookupPhase::IssuePending) {
+            tryIssueSlcLookup(i);
+        }
+    }
+}
+
+void
+HnfCoherencyController::continueLatchedSlcLookups()
+{
+    for (uint32_t i = 0; i < entries.size(); ++i) {
+        Entry& entry = entries[i];
+        if (entry.slcLookupPhase != SlcLookupPhase::ResponseLatched) {
+            continue;
+        }
+        panic_if(!entry.latchedSlcResponse,
+                 "HnfCC entry=%u has response phase without response\n", i);
+        SlcSfResponse response = std::move(*entry.latchedSlcResponse);
+        entry.latchedSlcResponse.reset();
+        entry.slcLookupPhase = SlcLookupPhase::None;
+
+        if (response.status() == SlcSfTerminalStatus::Done) {
+            const auto* lookup =
+                std::get_if<SlcSfLookupResponse>(&response.payload());
+            panic_if(!lookup, "HnfCC entry=%u lookup Done has bad payload\n",
+                     i);
+            entry.slcLookupResult = lookup->result;
+            entry.slcCommitToken = lookup->token;
+        } else if (response.status() == SlcSfTerminalStatus::Replay) {
+            entry.slcLookupResult = HnfSlcLookupResult{};
+            entry.slcLookupResult.replay = true;
+        } else {
+            panic("HnfCC entry=%u lookup req=%llu failed\n", i,
+                  static_cast<unsigned long long>(
+                      entry.slcLookupReqId.value));
+        }
+
+        if (entry.slcLookupResult.slcHit) {
+            entry.data = entry.slcLookupResult.data;
+            if (entry.data.size() < blockSize) {
+                entry.data.resize(blockSize, 0);
+            }
+        }
+        entry.responseDataDirty = entry.slcLookupResult.dataDirty;
+
+        PocqEvent lookupDone{};
+        lookupDone.kind = PocqEventKind::SlcLookupDone;
+        lookupDone.txn = entry.txnKind;
+        lookupDone.slcHit = entry.slcLookupResult.slcHit;
+        lookupDone.sfHit = entry.slcLookupResult.sfHit;
+        lookupDone.replay = entry.slcLookupResult.replay;
+        lookupDone.needsSnoop = entry.slcLookupResult.snoopTargets != 0;
+        lookupDone.dataAvailable = entry.slcLookupResult.slcHit;
+        lookupDone.needsCompAck = entry.needsCompAck;
+        stepPocq(i, lookupDone);
+    }
+}
+
+void
+HnfCoherencyController::latchVisibleSlcResponses()
+{
+    while (auto response = slcsfUnit->popVisibleResponse()) {
+        const uint32_t entryId = response->pocEntryId();
+        panic_if(entryId >= entries.size(),
+                 "HnfCC response has invalid POCQ entry=%u\n", entryId);
+        Entry& entry = entries[entryId];
+        panic_if(entry.slcLookupPhase != SlcLookupPhase::Waiting ||
+                     entry.slcLookupReqId != response->reqId(),
+                 "HnfCC unexpected lookup response entry=%u req=%llu\n",
+                 entryId, static_cast<unsigned long long>(
+                              response->reqId().value));
+        entry.latchedSlcResponse = std::move(*response);
+        entry.slcLookupPhase = SlcLookupPhase::ResponseLatched;
+    }
+}
+
+void
 HnfCoherencyController::serviceInternalWork()
 {
+    continueLatchedSlcLookups();
+    retryPendingSlcLookups();
     if (!seqPocqEntry.valid && slcsfUnit &&
         slcsfUnit->hasPendingSeq()) {
         startSeqPocq();
@@ -1260,6 +1356,19 @@ HnfCoherencyController::serviceInternalWork()
         stepSeqPocq({SeqPocqEventKind::HazardClear});
     }
     retrySlcsfReplayEntries();
+    latchVisibleSlcResponses();
+}
+
+HnfCoherencyController::SlcLookupPhase
+HnfCoherencyController::slcLookupPhase(uint32_t entry) const
+{
+    return entries.at(entry).slcLookupPhase;
+}
+
+SlcSfReqId
+HnfCoherencyController::slcLookupReqId(uint32_t entry) const
+{
+    return entries.at(entry).slcLookupReqId;
 }
 
 bool

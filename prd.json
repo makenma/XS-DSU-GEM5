@@ -167,8 +167,8 @@
         "Typecheck passes"
       ],
       "priority": 9,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Final-iteration preflight. Use one CC-owned SlcSfReqIdAllocator and allocate exactly once per lookup; never reuse LinkLayer sequence IDs or recreate an ID on retry. Add an explicit per-entry lookup phase (None, IssuePending, Waiting, ResponseLatched), current reqId, an owned optional pending SlcSfRequest, optional latched SlcSfResponse, and CommitToken; assert at most one outstanding operation. On first DoSlcLookup, build the owned typed request with pocEntryId, line, requester, opcode/txn kind, QoS, and trace metadata, then call tryEnqueue only. Do not call the synchronous backend lookup, recursively inject SlcLookupDone, or advance the graph from this request cycle. Because rejected rvalue requests remain intact by contract, NoCredit and Initializing must retain the same object and reqId in IssuePending while the graph remains at SlcLookup; periodic service retries only IssuePending entries. Accepted clears the pending request and enters Waiting, and repeated service while Waiting must never enqueue again. Adapt controller tests to an explicit pump ordered as slcsf.wakeup(absoluteTick) followed by cc.serviceInternalWork(). Add LookupNoCreditEventuallyProgresses by prefilling the request queue, proving the reqId stays stable through retries, releasing the blocker, and observing one eventual accepted request/terminal response. Add a no-duplicate regression that repeatedly services a Waiting entry and proves queue/outstanding/response counts remain one. US-010 owns strict response matching, parameterized consume budgets, and full later-cycle graph continuation; implement only the minimum separated response latch/continuation needed to retain US-009 controller liveness, and never complete from DoSlcLookup's request cycle. Preserve existing controller functionality and all prior CHI tests. Stage only the controller implementation/tests and necessary story metadata; leave unrelated working-tree files untouched."
     },
     {
       "id": "US-010",

@@ -33,6 +33,9 @@ Started: 2026-07-28T20:49:07+08:00
 - When an embedded timed service depends on its owner for clock edges, share
   one advance/order/work-decision helper between production scheduling and
   smoke tests so tests exercise the real reschedule boundary.
+- Model an asynchronous controller operation with explicit issue-pending,
+  waiting, and response-latched phases; retry only the owned pending request
+  and continue the graph from a later service boundary.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -438,4 +441,42 @@ Started: 2026-07-28T20:49:07+08:00
   registered child-before-link ordering and idle-stop scheduling without a
   heavyweight HomeNode fixture, while a named parameter mapper keeps Python
   and C++ configuration surfaces auditable.
+---
+
+## 2026-07-28 22:55 - US-009 preflight
+- This is the tenth effective Ralph iteration. Interrupted, uncommitted audit
+  attempts were not counted; do not start another story after this iteration.
+- Allocate one CC-owned SLCSF request ID per lookup and retain the exact owned
+  request across `NoCredit`/`Initializing` retries. Track explicit
+  `IssuePending`, `Waiting`, and `ResponseLatched` entry phases so periodic
+  service cannot enqueue a duplicate while an operation is outstanding.
+- `DoSlcLookup` may only construct and try to enqueue; it must not perform a
+  synchronous backend lookup, recursively deliver `SlcLookupDone`, or advance
+  graph completion in the request cycle.
+- Adapt controller tests to a production-order pump (`slcsf.wakeup(tick)` then
+  `cc.serviceInternalWork()`), including queue-backpressure eventual progress
+  with stable reqId and repeated-service no-duplicate coverage. Keep US-010's
+  strict matching and parameterized response-consume semantics out of scope,
+  except for the minimum separated latch/continuation needed for liveness.
+---
+
+## 2026-07-28 23:04 - US-009
+- Story: Issue POCQ lookup requests asynchronously
+- What was implemented: Replaced synchronous POCQ lookup completion with a
+  CC-owned monotonic request allocator and per-entry IssuePending, Waiting,
+  and ResponseLatched phases. Lookup requests now own copied metadata, retain
+  their exact object and ID across admission backpressure, latch terminal
+  responses before later graph continuation, and cannot be issued twice.
+- Files changed: `src/mem/cache/CHI/HnfCoherencyController.hh`,
+  `src/mem/cache/CHI/HnfCoherencyController.cc`,
+  `src/mem/cache/CHI/HnfCoherencyController.test.cc`, `prd.json`, and
+  `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and all four CHI
+  GTest binaries successfully; all 69 tests passed (15 POCQ, 2 SEQ POCQ,
+  41 SLCSF, and 11 controller); changed C++ files passed
+  `python3 util/style.py`; `git diff --check` passed.
+- Learnings for future iterations: Keeping rejected requests in an explicit
+  issue-pending phase preserves ownership and identity, while latching visible
+  responses at the end of controller service prevents recursive same-cycle
+  graph continuation.
 ---

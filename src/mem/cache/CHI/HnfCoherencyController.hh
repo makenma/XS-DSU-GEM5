@@ -9,6 +9,8 @@
 #include <vector>
 
 #include "mem/cache/CHI/HnfPOCQStateGraph.hh"
+#include "mem/cache/CHI/HnfSLCSFRequest.hh"
+#include "mem/cache/CHI/HnfSLCSFResponse.hh"
 #include "mem/cache/CHI/HnfSeqPOCQStateGraph.hh"
 
 namespace gem5::Chi
@@ -19,6 +21,14 @@ class HnfSLCSF;
 class HnfCoherencyController
 {
   public:
+    enum class SlcLookupPhase : uint8_t
+    {
+        None,
+        IssuePending,
+        Waiting,
+        ResponseLatched
+    };
+
     HnfCoherencyController(uint32_t block_size, uint32_t data_beat_bytes,
                            uint32_t num_entries, uint32_t sn_node_id,
                            bool direct_sn_fake_data,
@@ -31,6 +41,9 @@ class HnfCoherencyController
     std::optional<HnfCcRetireInfo> acceptRxRsp(const RawRsp& rsp);
     std::optional<HnfCcRetireInfo> acceptRxDat(const RawDat& dat);
     void serviceInternalWork();
+
+    SlcLookupPhase slcLookupPhase(uint32_t entry) const;
+    SlcSfReqId slcLookupReqId(uint32_t entry) const;
 
     bool hasWork() const;
     bool hasTxReq() const { return !txReqQ.empty(); }
@@ -61,6 +74,7 @@ class HnfCoherencyController
         PocqTxnKind txnKind = PocqTxnKind::Unknown;
         RawReq req{};
         uint64_t seq = 0;
+        uint64_t acceptCycle = 0;
         uint64_t blockAddr = 0;
         int tokenId = -1;
         uint8_t priority = 0;
@@ -74,6 +88,11 @@ class HnfCoherencyController
         std::optional<uint32_t> sleepingOn;
         std::vector<uint8_t> data;
         HnfSlcLookupResult slcLookupResult{};
+        SlcLookupPhase slcLookupPhase = SlcLookupPhase::None;
+        SlcSfReqId slcLookupReqId{};
+        std::optional<SlcSfRequest> pendingSlcLookup;
+        std::optional<SlcSfResponse> latchedSlcResponse;
+        SlcSfCommitToken slcCommitToken{};
         bool slcUpdatePending = false;
         bool responseDataDirty = false;
         uint32_t snoopTxnId = 0;
@@ -98,6 +117,7 @@ class HnfCoherencyController
     };
 
     HnfSLCSF* slcsfUnit = nullptr;
+    SlcSfReqIdAllocator slcSfReqIds;
 
     uint32_t blockSize = 64;
     uint32_t dataBeatBytes = 32;
@@ -149,6 +169,10 @@ class HnfCoherencyController
     void queueSeqSnoops();
     void completeSeqSnoopTarget(uint32_t responder, bool has_data);
     void retrySlcsfReplayEntries();
+    void retryPendingSlcLookups();
+    void continueLatchedSlcLookups();
+    void latchVisibleSlcResponses();
+    void tryIssueSlcLookup(uint32_t entry);
 };
 
 } // namespace gem5::Chi

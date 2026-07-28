@@ -98,6 +98,27 @@ lookup(HnfSLCSF& slcsf, uint32_t requester, PocqTxnKind txn)
     return slcsf.lookup(req);
 }
 
+void
+pumpOnce(HnfCoherencyController& cc, HnfSLCSF& slcsf, Tick& tick)
+{
+    slcsf.wakeup(++tick);
+    cc.serviceInternalWork();
+}
+
+void
+pumpLookup(HnfCoherencyController& cc, HnfSLCSF& slcsf,
+           uint32_t entry, Tick& tick)
+{
+    for (size_t i = 0; i < 32; ++i) {
+        if (cc.slcLookupPhase(entry) ==
+            HnfCoherencyController::SlcLookupPhase::None) {
+            return;
+        }
+        pumpOnce(cc, slcsf, tick);
+    }
+    FAIL() << "SLCSF lookup did not complete";
+}
+
 } // anonymous namespace
 
 TEST(HnfCoherencyControllerTest, RetireWakesOneSameAddressSleeper)
@@ -111,6 +132,9 @@ TEST(HnfCoherencyControllerTest, RetireWakesOneSameAddressSleeper)
     const auto second = cc.acceptLinkReq(makeRead(1, 2, 4, 12, 0x01), 1);
     ASSERT_TRUE(first.accepted);
     ASSERT_TRUE(second.accepted);
+    EXPECT_FALSE(cc.hasTxReq());
+    Tick tick = 0;
+    pumpLookup(cc, slcsf, 0, tick);
     ASSERT_TRUE(cc.hasTxReq());
 
     EXPECT_EQ(cc.frontTxReq().entry, 0);
@@ -129,6 +153,7 @@ TEST(HnfCoherencyControllerTest, RetireWakesOneSameAddressSleeper)
     ASSERT_TRUE(retired);
     EXPECT_EQ(retired->tokenId, 0);
 
+    pumpLookup(cc, slcsf, 1, tick);
     ASSERT_TRUE(cc.hasTxDat());
     EXPECT_EQ(cc.frontTxDat().entry, 1);
 }
@@ -147,6 +172,9 @@ TEST(HnfCoherencyControllerTest, ReadUniqueSnoopsAllOtherSharers)
     const auto admitted =
         cc.acceptLinkReq(makeRead(0, 1, 8, 21, 0x07), 0);
     ASSERT_TRUE(admitted.accepted);
+    EXPECT_FALSE(cc.hasTxSnp());
+    Tick tick = 0;
+    pumpLookup(cc, slcsf, 0, tick);
 
     ASSERT_TRUE(cc.hasTxSnp());
     const HnfCcTxSnp first = cc.frontTxSnp();
@@ -265,6 +293,8 @@ TEST(HnfCoherencyControllerTest, ReadNoSnpReturnsWithoutAllocatingSlcSf)
     const auto admitted =
         cc.acceptLinkReq(makeRead(0, 1, 0, 31, 0x04), 0);
     ASSERT_TRUE(admitted.accepted);
+    Tick tick = 0;
+    pumpLookup(cc, slcsf, 0, tick);
     ASSERT_TRUE(cc.hasTxReq());
     cc.popTxReq();
     cc.notifyTxReqSent(0);
@@ -307,6 +337,8 @@ TEST(HnfCoherencyControllerTest, SeqPocqSleepsForMainAddressHazard)
     cc.serviceInternalWork();
     EXPECT_FALSE(cc.hasTxSnp());
 
+    Tick tick = 0;
+    pumpLookup(cc, slcsf, 0, tick);
     ASSERT_TRUE(cc.hasTxReq());
     cc.popTxReq();
     cc.notifyTxReqSent(0);
@@ -348,6 +380,8 @@ TEST(HnfCoherencyControllerTest, SeqPocqIgnoresYoungerSleepingWaiters)
     cc.serviceInternalWork();
     EXPECT_FALSE(cc.hasTxSnp());
 
+    Tick tick = 0;
+    pumpLookup(cc, slcsf, 0, tick);
     ASSERT_TRUE(cc.hasTxReq());
     cc.popTxReq();
     cc.notifyTxReqSent(0);
@@ -384,6 +418,9 @@ TEST(HnfCoherencyControllerTest, SeqReservationReplayMakesProgress)
         makeRead(0, 1, 8, 51, 0x07, set0B), 0).accepted);
     ASSERT_TRUE(cc.acceptLinkReq(
         makeRead(1, 2, 12, 52, 0x07, set1B), 1).accepted);
+    EXPECT_FALSE(cc.hasTxReq());
+    Tick tick = 0;
+    pumpLookup(cc, slcsf, 0, tick);
     ASSERT_TRUE(cc.hasTxReq());
     EXPECT_EQ(cc.frontTxReq().entry, 0);
     cc.popTxReq();
@@ -402,6 +439,7 @@ TEST(HnfCoherencyControllerTest, SeqReservationReplayMakesProgress)
     EXPECT_EQ(slcsf.seqOccupancy(), 0);
 
     cc.serviceInternalWork();
+    pumpLookup(cc, slcsf, 1, tick);
     ASSERT_TRUE(cc.hasTxReq());
     EXPECT_EQ(cc.frontTxReq().entry, 1);
 }
@@ -464,6 +502,8 @@ TEST(HnfCoherencyControllerTest, EverySupportedTransactionCompletes)
         ASSERT_TRUE(cc.acceptLinkReq(
             makeRead(0, i + 1, requester, requesterTxn,
                      test.opcode, addr), i).accepted);
+        Tick tick = 0;
+        pumpLookup(cc, slcsf, 0, tick);
 
         if (test.flow == Flow::ReadWithCompAck ||
             test.flow == Flow::ReadNoSnp) {
@@ -514,6 +554,84 @@ TEST(HnfCoherencyControllerTest, EverySupportedTransactionCompletes)
         }
 
         EXPECT_FALSE(cc.hasWork());
+    }
+}
+
+TEST(HnfCoherencyControllerTest, LookupNoCreditEventuallyProgresses)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.reqQueueEntries = 1;
+    config.respQueueEntries = 1;
+    config.maxInflight = 1;
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8, config);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    RawReq blockerRaw{};
+    blockerRaw.srcid = 63;
+    SlcSfReqIdAllocator blockerIds;
+    SlcSfRequest blocker = makeSlcSfLookupReq(
+        makeSlcSfReqHeader(
+            blockerIds, UINT32_MAX, TestAddr + BlockSize, blockerRaw),
+        PocqTxnKind::ReadShared);
+    ASSERT_EQ(slcsf.tryEnqueue(std::move(blocker)),
+              SlcSfEnqueueResult::Accepted);
+
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 77, 0, 91, 0x01), 0).accepted);
+    ASSERT_EQ(cc.slcLookupPhase(0),
+              HnfCoherencyController::SlcLookupPhase::IssuePending);
+    const SlcSfReqId reqId = cc.slcLookupReqId(0);
+    ASSERT_TRUE(reqId.valid());
+    for (size_t i = 0; i < 3; ++i) {
+        cc.serviceInternalWork();
+        EXPECT_EQ(cc.slcLookupPhase(0),
+                  HnfCoherencyController::SlcLookupPhase::IssuePending);
+        EXPECT_EQ(cc.slcLookupReqId(0), reqId);
+        EXPECT_EQ(slcsf.reqOutstanding(), 1);
+    }
+
+    Tick tick = 100;
+    for (size_t i = 0; i < 16 && slcsf.respVisibleCount() == 0; ++i) {
+        slcsf.wakeup(++tick);
+    }
+    ASSERT_EQ(slcsf.respVisibleCount(), 1);
+    ASSERT_TRUE(slcsf.popVisibleResponse());
+
+    cc.serviceInternalWork();
+    EXPECT_EQ(cc.slcLookupPhase(0),
+              HnfCoherencyController::SlcLookupPhase::Waiting);
+    EXPECT_EQ(cc.slcLookupReqId(0), reqId);
+    EXPECT_EQ(slcsf.reqOutstanding(), 1);
+
+    pumpLookup(cc, slcsf, 0, tick);
+    EXPECT_TRUE(cc.hasTxReq());
+}
+
+TEST(HnfCoherencyControllerTest, WaitingLookupIsNotIssuedTwice)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 1234, 0, 92, 0x01), 0).accepted);
+    ASSERT_EQ(cc.slcLookupPhase(0),
+              HnfCoherencyController::SlcLookupPhase::Waiting);
+    const SlcSfReqId reqId = cc.slcLookupReqId(0);
+    EXPECT_FALSE(cc.hasTxReq());
+    EXPECT_EQ(slcsf.reqOutstanding(), 1);
+
+    for (size_t i = 0; i < 8; ++i) {
+        cc.serviceInternalWork();
+        EXPECT_EQ(cc.slcLookupPhase(0),
+                  HnfCoherencyController::SlcLookupPhase::Waiting);
+        EXPECT_EQ(cc.slcLookupReqId(0), reqId);
+        EXPECT_EQ(slcsf.reqOutstanding(), 1);
+        EXPECT_EQ(slcsf.reqIngressCount(), 1);
+        EXPECT_EQ(slcsf.respOccupied(), 0);
     }
 }
 
