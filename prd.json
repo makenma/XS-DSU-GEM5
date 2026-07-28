@@ -93,8 +93,8 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Interrupted acceptance audit recovery is implemented but requires final revalidation before passing. The in-flight entry now owns the terminal reservation and mixed pipes complete out of acceptance order. Keep the independent identity sentinels in the regression: request IDs 61, 63, 62 must correspond to pocEntryIds 601, 603, 602, proving both fields of the pair are preserved rather than aliased or inferred from FIFO order. Re-run all four CHI GTests, style, and response accounting checks, then commit only the documented US-005 recovery set."
     },
     {
       "id": "US-006",

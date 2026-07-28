@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <set>
 #include <type_traits>
 #include <variant>
 #include <vector>
@@ -40,15 +41,29 @@ lineData(uint8_t seed)
 }
 
 SlcSfRequest
-lookupRequest(uint64_t req_id, uint64_t addr = TestAddr)
+lookupRequest(uint64_t req_id, uint64_t addr = TestAddr,
+              uint32_t poc_entry_id = 0)
 {
     SlcSfReqHeader header{};
     header.reqId = SlcSfReqId{req_id};
-    header.pocEntryId = req_id;
+    header.pocEntryId = poc_entry_id == 0 ? req_id : poc_entry_id;
     header.lineAddress = addr;
     header.requester = 7;
     return makeSlcSfLookupReq(
         std::move(header), PocqTxnKind::ReadShared);
+}
+
+SlcSfRequest
+fillRequest(uint64_t req_id, uint64_t addr = TestAddr,
+            uint32_t poc_entry_id = 0)
+{
+    SlcSfReqHeader header{};
+    header.reqId = SlcSfReqId{req_id};
+    header.pocEntryId = poc_entry_id == 0 ? req_id : poc_entry_id;
+    header.lineAddress = addr;
+    header.requester = 7;
+    return makeSlcSfFillCleanSharedReq(
+        std::move(header), lineData(static_cast<uint8_t>(req_id)), {});
 }
 
 const SlcSfReqHeader&
@@ -523,6 +538,184 @@ TEST(HnfSlcSfQueueTest, RejectsInvalidQueueAndIssueConfiguration)
                  std::invalid_argument);
     EXPECT_THROW(construct({1, 1, 2, 1, 1, 1}),
                  std::invalid_argument);
+}
+
+TEST(HnfSlcSfQueueTest, CompletedResponseNotVisibleUntilNextCycle)
+{
+    HnfSLCSF model(64, 4, 2, 4, 2);
+    auto request = lookupRequest(21);
+
+    ASSERT_EQ(model.tryEnqueue(std::move(request)),
+              SlcSfEnqueueResult::Accepted);
+    model.wakeup();
+    EXPECT_EQ(model.reqInflightCount(), 1);
+    EXPECT_EQ(model.respReservedCount(), 1);
+    EXPECT_EQ(model.respPendingCount(), 0);
+    EXPECT_EQ(model.respVisibleCount(), 0);
+    EXPECT_EQ(model.respOccupied(), 1);
+    EXPECT_FALSE(model.popVisibleResponse().has_value());
+
+    model.wakeup();
+    EXPECT_EQ(model.reqInflightCount(), 0);
+    EXPECT_EQ(model.respReservedCount(), 0);
+    EXPECT_EQ(model.respPendingCount(), 1);
+    EXPECT_EQ(model.respVisibleCount(), 0);
+    EXPECT_EQ(model.respOccupied(), 1);
+    EXPECT_FALSE(model.popVisibleResponse().has_value());
+
+    model.wakeup();
+    EXPECT_EQ(model.respPendingCount(), 0);
+    EXPECT_EQ(model.respVisibleCount(), 1);
+    auto response = model.popVisibleResponse();
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->reqId(), SlcSfReqId{21});
+    EXPECT_EQ(response->pocEntryId(), 21);
+    EXPECT_EQ(response->status(), SlcSfTerminalStatus::Done);
+    EXPECT_EQ(model.respOccupied(), 0);
+}
+
+TEST(HnfSlcSfQueueTest, AcceptedRequestProducesExactlyOneTerminalResponse)
+{
+    const HnfSLCSFPipelineConfig config{3, 3, 3, 3, 1, 1};
+    HnfSLCSF model(64, 4, 2, 4, 2, 8, config);
+    auto first = lookupRequest(31);
+    auto second = lookupRequest(32);
+    auto third = lookupRequest(33);
+
+    ASSERT_EQ(model.tryEnqueue(std::move(first)),
+              SlcSfEnqueueResult::Accepted);
+    ASSERT_EQ(model.tryEnqueue(std::move(second)),
+              SlcSfEnqueueResult::Accepted);
+    ASSERT_EQ(model.tryEnqueue(std::move(third)),
+              SlcSfEnqueueResult::Accepted);
+    model.wakeup();
+    EXPECT_EQ(model.respReservedCount(), 3);
+    EXPECT_EQ(model.respOccupied(), model.respCapacity());
+    model.wakeup();
+    EXPECT_EQ(model.respReservedCount(), 0);
+    EXPECT_EQ(model.respPendingCount(), 3);
+    EXPECT_EQ(model.reqOutstanding(), 0);
+    model.wakeup();
+    EXPECT_EQ(model.respVisibleCount(), 3);
+
+    for (uint64_t id = 31; id <= 33; ++id) {
+        auto response = model.popVisibleResponse();
+        ASSERT_TRUE(response.has_value());
+        EXPECT_EQ(response->reqId(), SlcSfReqId{id});
+        EXPECT_EQ(response->pocEntryId(), id);
+        EXPECT_EQ(response->status(), SlcSfTerminalStatus::Done);
+    }
+    EXPECT_FALSE(model.popVisibleResponse().has_value());
+    EXPECT_EQ(model.respOccupied(), 0);
+}
+
+TEST(HnfSlcSfQueueTest, ResponseBackpressureDoesNotDropOrDuplicate)
+{
+    const HnfSLCSFPipelineConfig config{2, 1, 2, 2, 1, 1};
+    HnfSLCSF model(64, 4, 2, 4, 2, 8, config);
+    auto first = lookupRequest(41);
+    auto second = lookupRequest(42);
+
+    ASSERT_EQ(model.tryEnqueue(std::move(first)),
+              SlcSfEnqueueResult::Accepted);
+    ASSERT_EQ(model.tryEnqueue(std::move(second)),
+              SlcSfEnqueueResult::Accepted);
+    model.wakeup();
+    EXPECT_EQ(model.reqInflightCount(), 1);
+    EXPECT_EQ(model.reqReadyCount(), 1);
+    EXPECT_EQ(model.respReservedCount(), 1);
+
+    model.wakeup();
+    EXPECT_EQ(model.respPendingCount(), 1);
+    EXPECT_EQ(model.reqReadyCount(), 1);
+    EXPECT_EQ(model.reqInflightCount(), 0);
+    model.wakeup();
+    EXPECT_EQ(model.respVisibleCount(), 1);
+    EXPECT_EQ(model.reqReadyCount(), 1);
+
+    auto first_response = model.popVisibleResponse();
+    ASSERT_TRUE(first_response.has_value());
+    EXPECT_EQ(first_response->reqId(), SlcSfReqId{41});
+    EXPECT_EQ(model.respOccupied(), 0);
+
+    model.wakeup();
+    EXPECT_EQ(model.reqReadyCount(), 0);
+    EXPECT_EQ(model.reqInflightCount(), 1);
+    EXPECT_EQ(model.respReservedCount(), 1);
+    model.wakeup();
+    EXPECT_EQ(model.respPendingCount(), 1);
+    model.wakeup();
+    auto second_response = model.popVisibleResponse();
+    ASSERT_TRUE(second_response.has_value());
+    EXPECT_EQ(second_response->reqId(), SlcSfReqId{42});
+    EXPECT_FALSE(model.popVisibleResponse().has_value());
+    EXPECT_EQ(model.respOccupied(), 0);
+}
+
+TEST(HnfSlcSfQueueTest, RejectedRequestProducesNoResponse)
+{
+    const HnfSLCSFPipelineConfig config{1, 1, 1, 1, 1, 1};
+    HnfSLCSF model(64, 4, 2, 4, 2, 8, config);
+    auto accepted = lookupRequest(51);
+    auto rejected = lookupRequest(52);
+
+    ASSERT_EQ(model.tryEnqueue(std::move(accepted)),
+              SlcSfEnqueueResult::Accepted);
+    EXPECT_EQ(model.tryEnqueue(std::move(rejected)),
+              SlcSfEnqueueResult::NoCredit);
+    EXPECT_EQ(requestHeader(rejected).reqId, SlcSfReqId{52});
+
+    model.wakeup();
+    model.wakeup();
+    model.wakeup();
+    auto response = model.popVisibleResponse();
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->reqId(), SlcSfReqId{51});
+    EXPECT_FALSE(model.popVisibleResponse().has_value());
+}
+
+TEST(HnfSlcSfQueueTest, MixedPipesCompleteOutOfAcceptanceOrder)
+{
+    const HnfSLCSFPipelineConfig config{3, 3, 2, 1, 1, 1};
+    HnfSLCSF model(64, 4, 2, 4, 2, 8, config);
+    auto first_lookup = lookupRequest(61, TestAddr, 601);
+    auto second_lookup = lookupRequest(62, TestAddr, 602);
+    auto fill = fillRequest(63, TestAddr, 603);
+
+    ASSERT_EQ(model.tryEnqueue(std::move(first_lookup)),
+              SlcSfEnqueueResult::Accepted);
+    ASSERT_EQ(model.tryEnqueue(std::move(second_lookup)),
+              SlcSfEnqueueResult::Accepted);
+    ASSERT_EQ(model.tryEnqueue(std::move(fill)),
+              SlcSfEnqueueResult::Accepted);
+
+    model.wakeup();
+    EXPECT_EQ(model.reqReadyCount(), 1);
+    EXPECT_EQ(model.reqInflightCount(), 2);
+    EXPECT_EQ(model.respReservedCount(), 2);
+
+    model.wakeup();
+    EXPECT_EQ(model.reqReadyCount(), 0);
+    EXPECT_EQ(model.reqInflightCount(), 1);
+    EXPECT_EQ(model.respPendingCount(), 2);
+
+    model.wakeup();
+    ASSERT_EQ(model.respVisibleCount(), 2);
+    std::set<std::pair<uint64_t, uint64_t>> first_completions;
+    while (auto response = model.popVisibleResponse()) {
+        first_completions.emplace(
+            response->pocEntryId(), response->reqId().value);
+    }
+    EXPECT_EQ(first_completions,
+              (std::set<std::pair<uint64_t, uint64_t>>{
+                  {601, 61}, {603, 63}}));
+
+    model.wakeup();
+    auto last_response = model.popVisibleResponse();
+    ASSERT_TRUE(last_response.has_value());
+    EXPECT_EQ(last_response->pocEntryId(), 602);
+    EXPECT_EQ(last_response->reqId(), SlcSfReqId{62});
+    EXPECT_FALSE(model.popVisibleResponse().has_value());
 }
 
 TEST(HnfSlcSfTest, ReadUniqueBroadcastsToOtherVectorSharers)

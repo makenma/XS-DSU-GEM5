@@ -18,6 +18,8 @@ Started: 2026-07-28T20:49:07+08:00
   registered stages rather than giving each physical deque the full capacity.
 - For retryable owned messages, accept an rvalue reference but move from it
   only after admission succeeds so rejection preserves caller ownership.
+- Represent an in-flight request as its terminal response reservation, then
+  count in-flight, pending, and visible states as one bounded occupancy.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -141,4 +143,93 @@ Started: 2026-07-28T20:49:07+08:00
 - Learnings for future iterations: Registered credit must account for ingress,
   ready, and non-terminal in-flight requests as one logical capacity, and an
   rvalue request remains retryable when rejection occurs before the move.
+---
+
+## 2026-07-28 21:48 - US-005
+- Story: Implement response double buffering and terminal reservations
+- What was implemented: Added shared-capacity terminal response reservations,
+  registered pending-to-visible response promotion, atomic reservation-to-
+  pending completion, visible-response consumption, response-aware work
+  detection, and issue stalling under response backpressure. Each accepted
+  request now produces one typed terminal response while rejected requests
+  produce none.
+- Files changed: `src/mem/cache/CHI/HnfSLCSF.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.test.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built all four RISCV CHI GTest binaries with
+  SCons successfully; all 52 tests passed (15 POCQ, 2 SEQ POCQ, 26 SLCSF,
+  including 4 new response-queue tests, and 9 controller), retaining all 36
+  baseline passes; changed C++ files passed `python3 util/style.py`;
+  `git diff --check` passed.
+- Learnings for future iterations: Reserving response capacity before issue
+  makes completion non-blocking, while pending and visible response buffers
+  can remain registered stages without multiplying the configured capacity.
+---
+
+## 2026-07-28 21:49 - US-005 interrupted acceptance audit
+- The first response-buffer draft built successfully and passed 52 tests, but
+  independent acceptance review stopped it before commit because two required
+  properties were not yet demonstrated safely.
+- Repair the issue boundary so terminal capacity is reserved before a request
+  is moved into in-flight state; keep reservation and issue coupled so no path
+  can expose an issued request without its durable terminal slot.
+- Add mixed-pipe, out-of-acceptance-order coverage and verify every completion
+  by `(pocEntryId, reqId)`, rather than assuming the visible queue follows
+  request FIFO order. Concrete requirements are also recorded in US-005 notes.
+- Ralph recovery files for US-005 are the currently staged changes to
+  `src/mem/cache/CHI/HnfSLCSF.hh`, `src/mem/cache/CHI/HnfSLCSF.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.test.cc`, `prd.json`, and `progress.txt`.
+  Review and repair this intentional story-scoped draft, then stage only these
+  files when US-005 genuinely passes.
+---
+
+## 2026-07-28 21:55 - US-005
+- Story: Implement response double buffering and terminal reservations
+- What was implemented: Completed the response-buffer recovery by making
+  in-flight queue membership itself the durable terminal reservation, so a
+  request is never issued before capacity is held. Added mixed lookup/fill
+  coverage proving responses can complete as 61, 63, then 62 and are matched
+  by `(pocEntryId, reqId)` rather than acceptance order.
+- Files changed: `src/mem/cache/CHI/HnfSLCSF.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.test.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built all four RISCV CHI GTest binaries with
+  SCons successfully; all 53 tests passed (15 POCQ, 2 SEQ POCQ, 27 SLCSF,
+  and 9 controller), retaining all 36 baseline passes; changed C++ files
+  passed `python3 util/style.py`; `git diff --check` passed.
+- Learnings for future iterations: Deriving reservation count from in-flight
+  ownership removes an independently mutable accounting state, and mixed-pipe
+  tests should compare response identity pairs without relying on queue order.
+---
+
+## 2026-07-28 21:57 - US-005 final identity-sentinel audit
+- The reservation-order and mixed-pipe completion gaps were repaired and all
+  53 tests passed, but review stopped the commit because the mixed-pipe test
+  used equal values for `pocEntryId` and `reqId` and therefore could not prove
+  that both identity fields survive independently.
+- The recovery test now uses request IDs 61/63/62 with distinct POC entry IDs
+  601/603/602. Re-run the full checks and retain the in-flight-owned terminal
+  reservation design before marking US-005 complete.
+- The intentional recovery set remains `src/mem/cache/CHI/HnfSLCSF.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.cc`, `src/mem/cache/CHI/HnfSLCSF.test.cc`,
+  `prd.json`, and `progress.txt`; unrelated user files remain out of scope.
+---
+
+## 2026-07-28 21:59 - US-005
+- Story: Implement response double buffering and terminal reservations
+- What was implemented: Finalized shared-capacity response buffering with
+  in-flight-owned terminal reservations, registered pending-to-visible
+  promotion, atomic terminal completion, backpressure-safe issue, and
+  out-of-order mixed-pipe completion matched by independent POC entry and
+  request identities.
+- Files changed: `src/mem/cache/CHI/HnfSLCSF.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.test.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built all four RISCV CHI GTest binaries with
+  SCons successfully; all 53 tests passed (15 POCQ, 2 SEQ POCQ, 27 SLCSF,
+  and 9 controller); changed C++ files passed `python3 util/style.py`;
+  `git diff --check` and `git diff --cached --check` passed.
+- Learnings for future iterations: Use independent sentinel values for every
+  component of a compound identity so tests prove preservation rather than
+  accidentally passing through aliased values.
 ---

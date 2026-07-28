@@ -4,9 +4,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <optional>
 
 #include "mem/cache/CHI/HnfSLCSFBackend.hh"
 #include "mem/cache/CHI/HnfSLCSFRequest.hh"
+#include "mem/cache/CHI/HnfSLCSFResponse.hh"
 
 namespace gem5::Chi
 {
@@ -62,6 +64,13 @@ class HnfSLCSF : public HnfSLCSFBackend
     size_t reqOutstanding() const;
     size_t reqCapacity() const { return config.reqQueueEntries; }
 
+    size_t respReservedCount() const { return inflightRequests.size(); }
+    size_t respPendingCount() const { return respPending.size(); }
+    size_t respVisibleCount() const { return respVisible.size(); }
+    size_t respOccupied() const;
+    size_t respCapacity() const { return config.respQueueEntries; }
+    std::optional<SlcSfResponse> popVisibleResponse();
+
     bool hasWork() const;
     bool isBusy() const { return hasWork() || HnfSLCSFBackend::isBusy(); }
 
@@ -74,15 +83,23 @@ class HnfSLCSF : public HnfSLCSFBackend
 
   private:
     static void validateConfig(const HnfSLCSFPipelineConfig& config);
+    void promotePendingResponses();
+    void completeInflightRequests();
     void promoteIngressRequests();
     void issueReadyRequests();
     void updateRegisteredCredits();
     void assertRequestAccounting() const;
+    void assertResponseAccounting() const;
 
     HnfSLCSFPipelineConfig config;
     std::deque<SlcSfRequest> reqIngress;
     std::deque<SlcSfRequest> reqReady;
+    // Membership in this queue is the terminal response reservation.  Keeping
+    // request issue and reservation in one state prevents either from becoming
+    // observable without the other.
     std::deque<SlcSfRequest> inflightRequests;
+    std::deque<SlcSfResponse> respPending;
+    std::deque<SlcSfResponse> respVisible;
     size_t visibleReqCredits = 0;
     bool initialized = true;
     bool draining = false;
