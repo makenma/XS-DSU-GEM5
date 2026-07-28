@@ -1,0 +1,744 @@
+{
+  "project": "xs-gem5 HNF SLCSF Pipeline",
+  "branchName": "ralph/hnf-slcsf-pipeline",
+  "description": "Pipeline all HNF SLC/SF requests and responses, remove zero-cycle POCQ feedback, add token-safe concurrency and victim handling, then migrate SLCSF to a standalone ClockedObject with lifecycle support.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Extract the synchronous SLC/SF storage backend",
+      "description": "As an HNF maintainer, I want storage semantics isolated from timing so that pipeline work cannot silently change coherence behavior.",
+      "acceptanceCriteria": [
+        "Move SLC/SF lines, replacement metadata, SEQ storage, and synchronous semantic operations into an ordinary C++ backend that is neither a SimObject nor an event owner.",
+        "Keep a temporary synchronous adapter for callers that have not yet migrated so this change builds independently.",
+        "Preserve the existing behavior of lookup, commitRead, completeMaintenance, removeSharer, writeLine, flushSf, flushL3, writeL3FlushSf, and completeSfEvict.",
+        "Update SConscript production and GTest dependencies when the backend adds a new translation unit.",
+        "All four CHI GTest binaries retain all 36 baseline passes: 15 POCQ, 2 SEQ POCQ, 10 HnfSLCSF, and 9 HnfCoherencyController tests, without observable latency or graph changes.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Define owned typed SLCSF request messages",
+      "description": "As an SLCSF integrator, I want delayed operations represented by owned typed requests so that they can outlive the calling stack.",
+      "acceptanceCriteria": [
+        "Define a monotonically allocated SlcSfReqId that is unique per operation and does not reuse LinkLayer Entry.seq.",
+        "Define a common request header containing reqId, pocEntryId, line or address key, requester, CHI opcode, QoS, and trace context.",
+        "Define owned Lookup, Fill, Update, and Evict payloads; UpdateKind covers all existing mutations plus CompleteSfEvict and ReleaseDirtyVictim.",
+        "Do not expose initialization as a public ownerless request.",
+        "Messages own cache-line, mask, victim, and snoop data and store no raw pointer or reference to SLC, SF, POCQ, or transient caller storage.",
+        "Add mapping tests proving every existing synchronous operation has one typed request representation.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Define terminal responses, replay payloads, and CommitToken",
+      "description": "As a coherence transaction, I want self-contained responses and versioned lookup snapshots so that delayed completion can be matched and validated safely.",
+      "acceptanceCriteria": [
+        "Define responses containing reqId, pocEntryId, operation kind, terminal status, and an owned operation-specific payload.",
+        "Terminal status distinguishes Done, Replay, and unrecoverable Error.",
+        "Replay payload contains a reason, absolute retryNotBeforeTick, and redoLookup.",
+        "CommitToken contains lookup request ID, line identity, lookup epoch, and SLC/SF hit, set, way, and generation snapshots.",
+        "Responses and tokens contain no raw storage or POCQ pointers and remain valid after the producing stack frame returns.",
+        "Add construction and operation-mapping tests for every response kind and CommitToken field.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Implement bounded request double buffering and registered credit",
+      "description": "As a POCQ client, I want registered request admission so that enqueue cannot form a same-cycle combinational service path or overrun capacity.",
+      "acceptanceCriteria": [
+        "Implement reqIngress and reqReady with promotion only from ingress to ready during an SLCSF wakeup.",
+        "tryEnqueue only takes request ownership and returns Accepted, NoCredit, Initializing, or Draining; it performs no probe, policy decision, or persistent mutation.",
+        "Enforce reqOutstanding = ingress + ready + in-flight requests without a terminal response and reqOutstanding <= req_queue_entries.",
+        "Latch visible request credit once per SLCSF wakeup and immediately decrement it after every Accepted result in that wakeup.",
+        "Require req_queue_entries, resp_queue_entries, max_inflight, and every issue width to be positive, and require max_inflight <= req_queue_entries.",
+        "RequestNotIssuedInAcceptanceCycle, ReqQueueFullReturnsNoCreditWithoutMutation, and same-wakeup burst-enqueue tests pass.",
+        "Rejected requests do not change ownership, persistent state, or request accounting.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Implement response double buffering and terminal reservations",
+      "description": "As an SLCSF service, I want reserved response capacity so that every accepted request has exactly one durable terminal completion.",
+      "acceptanceCriteria": [
+        "Implement respPending and respVisible with promotion only from pending to visible during an SLCSF wakeup.",
+        "Enforce respOccupied = reserved slots + pending responses + visible responses and respOccupied <= resp_queue_entries.",
+        "Reserve a terminal response slot before an operation issues and atomically convert that reservation to respPending on completion.",
+        "When no response slot is available, the operation stalls before semantic work or mutation; an operation that has mutated never stalls on response capacity.",
+        "Every accepted request produces exactly one Done, Replay, or Error response; a rejected request produces none.",
+        "Responses from different pipes may complete out of order and are identified by the pair pocEntryId and reqId rather than global FIFO position.",
+        "CompletedResponseNotVisibleUntilNextCycle, AcceptedRequestProducesExactlyOneTerminalResponse, and ResponseBackpressureDoesNotDropOrDuplicate tests pass.",
+        "Accounting tests cover reserved, pending, visible, consumed, and full-capacity states.",
+        "The four CHI GTest binaries retain all 36 baseline passing tests at the protocol-and-queue stage exit.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Implement the non-zero-latency lookup pipeline",
+      "description": "As a simulation user, I want lookup to consume configurable service time so that SLC and SF decisions are timing-visible.",
+      "acceptanceCriteria": [
+        "Model L0 Decode, L1 SLC probe, L2 SF probe, L3 policy, and L4 response latch or equivalent observable ready-tick boundaries.",
+        "SEQ-hit and SEQ-full decisions may short-circuit at L0 but still take one service cycle and pass through response double buffering.",
+        "lookup_latency defaults to 4 child cycles, rejects values below 1 at construction, and uses a defensive minimum of one cycle internally.",
+        "For acceptance cycle N and latency L, issueCycle is at least N+1, completeCycle is at least issueCycle+L, and visibleCycle is at least completeCycle+1.",
+        "Runtime latency configuration does not rely on a conflicting fixed compile-time pipeline depth.",
+        "LookupHasConfiguredLatency, NoZeroCycleLoop, ZeroLatencyConfigurationIsRejected, and exact accepted/issue/complete/visible timestamp tests pass.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Preserve lookup semantics and deterministic replacement order",
+      "description": "As an HNF maintainer, I want the delayed lookup to return the same facts and replacement behavior as the synchronous baseline.",
+      "acceptanceCriteria": [
+        "Lookup responses preserve hit or miss, state, data, dataDirty, memory-controller decision, snoop mode, opcode, targets, RNF facts, and a CommitToken.",
+        "Probe and Replay paths do not modify coherence state, tags, data, sharers, generation, SEQ, or victim storage.",
+        "Each successful non-Replay lookup records replacement access exactly once through recordAccess or an equivalent explicit commit point.",
+        "Replay records no replacement access, and replacement metadata updates do not change generation.",
+        "Four SLC/SF hit-miss combination tests and SeqHitReplayHasNoSideEffects pass.",
+        "A deterministic replacement-order regression selects the same victim as the synchronous baseline.",
+        "The four CHI GTest binaries retain all 36 baseline passing tests at the lookup-pipeline stage exit.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Add stage-A parameters and HomeNode scheduling",
+      "description": "As an HNF configuration author, I want the embedded pipeline driven by the existing HomeNode clock before the standalone SimObject migration.",
+      "acceptanceCriteria": [
+        "HomeNodeFull.py exposes lookup, fill, update, victim, SF-evict, replay, queue, VictimBuffer, issue-width, max-inflight, response-consume-width, and set-lock parameters.",
+        "Stage-A defaults are lookup=4, fill=4, update=3, victim=3, SF-evict=2, replay=2 cycles, request and response queues=8, VictimBuffer=2, all widths=1, and max_inflight=1.",
+        "HomeNodeFull wakeup advances embedded SLCSF exactly once before linklayer.wakeup.",
+        "HomeNode work detection includes ingress, ready, in-flight, pending or visible responses, and CC issue-pending entries.",
+        "An idle pipeline does not cause permanent useless self-scheduling.",
+        "A default HomeNodeFull instance still configures without caller changes.",
+        "A stage-A smoke test proves an accepted lookup completes without another RX flit.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Issue POCQ lookup requests asynchronously",
+      "description": "As a POCQ transaction, I want lookup issue separated from completion so that no semantic result is consumed in the request cycle.",
+      "acceptanceCriteria": [
+        "Each CC entry stores current reqId, lookup issue-pending or wait state, a latched response, and CommitToken, with at most one outstanding SLCSF operation per main POCQ entry.",
+        "DoSlcLookup only constructs a request and calls tryEnqueue; it performs no synchronous backend lookup and injects no recursive SlcLookupDone.",
+        "Accepted requests enter an explicit lookup-wait state.",
+        "NoCredit and Initializing preserve graph ownership and retry periodically without duplicate enqueue.",
+        "Controller tests use an explicit pump or tick helper rather than synchronous lookup return.",
+        "LookupNoCreditEventuallyProgresses and a no-duplicate-issue regression pass.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Consume lookup responses on a later CC cycle",
+      "description": "As a POCQ transaction, I want response matching and graph continuation registered across cycles so that event ordering cannot recreate a zero-cycle loop.",
+      "acceptanceCriteria": [
+        "CC consumes visible responses with a parameterized budget and matches the exact pocEntryId and reqId pair.",
+        "Unexpected, duplicate, or stale lookup responses trigger an assertion.",
+        "Hit data, dirty state, lookup facts, and CommitToken are fully copied into the CC entry before graph continuation.",
+        "Response consumption only latches a future graph event; SlcLookupDone transitions no earlier than a later CC cycle.",
+        "Lookup hit, miss, snoop, maintenance, and replay graph branches preserve existing functional behavior.",
+        "LookupResponseIsConsumedInLaterCcCycle and MismatchedLookupResponseIsRejected pass.",
+        "All four CHI GTest binaries retain 36 baseline passes and the default four-core litmus reports 7 of 7 workloads passing.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Track generations and validate CommitToken snapshots",
+      "description": "As a storage maintainer, I want generation bookkeeping and a pure token validator so that the later mutation service has one tested stale-snapshot rule.",
+      "acceptanceCriteria": [
+        "SLC and SF generation changes only on committed tag, state, data, or directory mutation; probe and replacement lastUse updates do not change it.",
+        "Implement a side-effect-free validator that re-probes and compares token request ID, line, hit or miss, set, way, generation, and epoch.",
+        "Replacing a line and reallocating the same way invalidates an older token in the ABA case.",
+        "Generation checking is always enabled and has no correctness-disabling configuration.",
+        "Token tests cover tag or line change, way reuse, hit-miss transition, generation change, and lookup epoch invalidation.",
+        "LookupTouchDoesNotInvalidateToken and EvictReallocateAbaInvalidatesOldToken pass.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "Implement the staged mutation service",
+      "description": "As an SLCSF service, I want mutations to have one staged and atomic completion path so that persistent writes cannot be repeated under backpressure.",
+      "acceptanceCriteria": [
+        "Implement U0 Decode and Validate, U1 resource preparation, U2 array write, and U3 invariant check and response latch, or equivalent observable boundaries.",
+        "Provide typed Fill, Update, and Evict dispatch for CommitRead, memory fill, maintenance, remove-sharer, and write-line semantics; later stories add flush, SF-victim completion, and dirty-victim release handlers.",
+        "U0 failure occurs before reservation consumption and persistent mutation.",
+        "U1 acquires every currently required resource atomically; failure cannot leave a partial reservation.",
+        "Only U2 modifies persistent storage and checkLineInvariant runs after the write.",
+        "U3 atomically converts the pre-held response reservation to respPending.",
+        "Visible-response backpressure prevents a new operation from entering U0 and never causes an already completed U2 mutation to execute twice.",
+        "Parameterized direct-service tests cover each handler available in this story, success latency, decode or structural validation failure, and response backpressure.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "Emit side-effect-free Replay for stale mutation tokens",
+      "description": "As a coherence transaction, I want the mutation service to reject stale snapshots before U1 so that intervening writes cannot be corrupted.",
+      "acceptanceCriteria": [
+        "Fill, Update, and Evict invoke the US-011 validator in U0 before any resource reservation or persistent mutation.",
+        "A token mismatch returns Replay with the stale-token reason and makes no change to tags, data, state, owner, sharers, generation, SEQ, VictimBuffer, or replacement state.",
+        "The Replay payload sets redoLookup and returns an absolute retryNotBeforeTick derived from replay_penalty.",
+        "A fresh token for the same request semantics can pass U0 and commit through U2.",
+        "StaleTokenReplaysWithoutWrite and a direct-service fresh-token commit test pass.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "Apply base per-operation service latency",
+      "description": "As a performance-modeling user, I want each currently available operation assigned a deterministic child-clock latency before later victim extensions.",
+      "acceptanceCriteria": [
+        "Lookup uses lookup_latency; Fill without a victim uses fill_latency.",
+        "Ordinary Update and Evict use update_latency; later victim stories extend this mapping for SF and dirty-victim conditions.",
+        "An L0 or U0 early Replay internally completes after one child cycle.",
+        "Defaults are fill=4, update=3, victim=3, and sf_evict=2 child cycles, and every service latency rejects values below 1.",
+        "replay_penalty is expressed in child cycles and the service returns it as absolute retryNotBeforeTick.",
+        "Parameterized tests cover Lookup, Fill without a victim, ordinary Update, ordinary Evict, and early Replay.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-015",
+      "title": "Make read POCQ updates asynchronous",
+      "description": "As a requester transaction, I want read completion delayed until its SLCSF mutation commits.",
+      "acceptanceCriteria": [
+        "Read-hit, snoop-with-data, and memory-fill paths enter explicit SLCSF update issue and wait states in the actual POCQ graph topology.",
+        "CompData is queued only after the corresponding Fill or Update terminal Done response.",
+        "NoCredit remains in the issue state and retries; an accepted update is not sent again before its response.",
+        "Implement a common CC replay handler that clears the old token, lookup result, and derived victim, snoop, and memory-controller decisions, releases this attempt's resources once, waits until the first CC edge at or after retryNotBeforeTick, and restarts from Lookup rather than resending the old mutation.",
+        "A fresh lookup after Replay obtains a new token and can commit, as verified by FreshLookupAfterStaleReplayCommits.",
+        "SF and other bounded reservations remain valid until Done, Replay, Error, or cancellation and are released at one cleanup point.",
+        "ReadNoSnp continues to bypass SLC/SF allocation and update.",
+        "ReadResponseWaitsForSlcSfCommit and ReservationHeldUntilUpdateResponse pass with existing read state-graph regressions.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-016",
+      "title": "Make maintenance POCQ updates asynchronous",
+      "description": "As a maintenance transaction, I want external completion delayed until its persistent SLCSF update has finished.",
+      "acceptanceCriteria": [
+        "Maintenance paths enter explicit SLCSF update issue and wait states in the actual POCQ graph topology.",
+        "Maintenance Comp is queued only after the corresponding terminal Done response.",
+        "NoCredit retries without changing graph ownership or duplicating the request.",
+        "A stale or recoverable Replay clears derived state and restarts from Lookup after the replay deadline.",
+        "All maintenance reservations have one cleanup point for Done, Replay, Error, and cancellation.",
+        "MaintenanceResponseWaitsForSlcSfCommit passes with all existing maintenance graph tests.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-017",
+      "title": "Make write completion and LinkLayer retire asynchronous",
+      "description": "As a write transaction, I want storage completion decoupled from the RX callback so that delayed updates retire LinkLayer resources exactly once.",
+      "acceptanceCriteria": [
+        "StoreWriteData and writeLine use typed service requests and explicit update-wait states rather than direct backend mutation.",
+        "A write remains allocated and does not retire before its terminal Done response.",
+        "Add a CC-to-LinkLayer deferred-retire queue or equivalent API for retire information produced by serviceInternalWork outside acceptRxDat.",
+        "serviceInternalWork handles stepPocq return values so terminal side effects are not discarded.",
+        "Deferred-retire work participates in hasWork and wakeup scheduling, and each LinkLayer token retires exactly once.",
+        "Update NoCredit eventually progresses without duplicate storage writes or duplicate retire.",
+        "WriteDoesNotRetireBeforeUpdateResponse and DeferredWriteRetiresTokenExactlyOnce pass.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-018",
+      "title": "Make eviction and remove-sharer asynchronous",
+      "description": "As an eviction transaction, I want directory removal to complete through the service pipeline before protocol completion or retirement.",
+      "acceptanceCriteria": [
+        "RemoveSharer and eviction storage work use typed service requests and explicit issue and wait states.",
+        "An eviction remains allocated, emits no early completion, and does not retire before terminal Done.",
+        "NoCredit preserves ownership and retries without duplicate enqueue.",
+        "Replay is side-effect free and returns through a fresh Lookup when required.",
+        "EvictWaitsForRemoveSharerResponse and UpdateNoCreditEventuallyProgresses pass with existing eviction graph tests.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-019",
+      "title": "Expose asynchronous flush service operations",
+      "description": "As an SLCSF maintainer, I want all flush mutations available through the same delayed service contract without inventing unsupported CHI transactions.",
+      "acceptanceCriteria": [
+        "FlushSf, FlushL3, and WriteL3FlushSf no longer directly mutate the backend when invoked through production service code.",
+        "Each flush has a typed request, configured update latency, response reservation, and one terminal response.",
+        "NoCredit and response backpressure produce no partial flush mutation.",
+        "Unit tests cover successful, replayed, and backpressured flush service operations.",
+        "Do not add a new CHI opcode transition solely to make currently unreachable flush actions reachable.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-020",
+      "title": "Reserve and hand off SF victims through SEQ",
+      "description": "As an internal SEQ transaction, I want SF replacement snapshots preserved atomically before a new directory entry is installed.",
+      "acceptanceCriteria": [
+        "Before overwriting an SF way, atomically reserve SEQ capacity, copy the complete directory snapshot, and only then install the replacement.",
+        "A Fill or Update producing an SF victim adds sf_evict_latency to its base service latency.",
+        "The terminal response owns and exposes SeqId and the full FVB snapshot without storage pointers.",
+        "SEQ full, reservation races, and stale requests return side-effect-free Replay or Error and do not overwrite the original victim.",
+        "SEQ occupancy plus reserved slots never exceeds seq_entries.",
+        "Waiting main and SEQ POCQ entries for the same address cannot commit simultaneously, and a sleeping main waiter cannot block the releasing SEQ.",
+        "Existing SEQ back-invalidate, dirty-data, reservation, same-address, and younger-sleeper regressions pass.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-021",
+      "title": "Complete SF eviction through an asynchronous update",
+      "description": "As an internal SEQ transaction, I want FVB completion delayed through SLCSF so that SEQ cannot retire before directory mutation is durable.",
+      "acceptanceCriteria": [
+        "After snoops finish, SEQ POCQ sends a typed CompleteSfEvict update and waits for its terminal response.",
+        "CompleteSfEvict is dispatched by the mutation service with update_latency.",
+        "SEQ does not retire or release its slot before terminal Done.",
+        "Dirty snoop data, owner, sharers, address, and SeqId remain valid while waiting.",
+        "NoCredit retries without duplicating completion; a stale or unknown completion is rejected without overwriting another victim.",
+        "SeqDoesNotRetireBeforeCompleteSfEvictResponse and SeqCompletionNoCreditEventuallyProgresses pass.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-022",
+      "title": "Implement the dirty SLC VictimBuffer",
+      "description": "As an HNF transaction, I want dirty victims preserved before replacement so that their newest cache-line data cannot be lost.",
+      "acceptanceCriteria": [
+        "Implement a bounded VictimBuffer with stable VictimId and reserve, installed-snapshot, handed-off, writeback-issued, and release states.",
+        "victim_buffer_entries defaults to 2, must be positive, and bounds occupancy plus reservations and handed-off owners.",
+        "Dirty replacement order is token validation, buffer reservation, old-line snapshot, victim install, new-line install, then terminal response production.",
+        "A Fill producing a dirty SLC victim adds victim_latency to its base service latency; if it also produces an SF victim, both latency additions apply.",
+        "A full buffer or same-line conflict returns Replay with the old line and replacement metadata unchanged.",
+        "The response owns victim ID, address, complete data, dirty facts, and state without exposing storage pointers.",
+        "A handed-off entry cannot be reused before explicit release; duplicate or unknown VictimId completion asserts.",
+        "DirtyVictimReservedBeforeOverwrite, VictimBufferFullReplaysWithoutMutation, and DirtyVictimHandoffPreservesData pass.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-023",
+      "title": "Write dirty victims back with an independent CC transaction",
+      "description": "As the HNF controller, I want each handed-off dirty victim written to the system node independently of its original requester.",
+      "acceptanceCriteria": [
+        "A Fill response carrying a victim creates a separate internal CC transaction keyed by VictimId and a distinct downstream TxnID.",
+        "The victim transaction neither reuses nor blocks the original requester POCQ token.",
+        "It sends WriteNoSnpFull TXREQ and one complete cache-line TXDAT to snNodeId.",
+        "TX backpressure preserves request and data and the transaction remains allocated until downstream terminal completion.",
+        "Downstream completion is matched to the correct VictimId; an error or retry keeps the VictimBuffer entry owned and follows existing LinkLayer policy.",
+        "DirtyVictimDataSurvivesWriteback, DirtyVictimTxBackpressureMakesProgress, and DirtyVictimCompletionMatchesVictimId pass.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 23,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-024",
+      "title": "Release dirty victims after downstream completion",
+      "description": "As the HNF controller, I want VictimBuffer reuse gated by an acknowledged SLCSF release so that downstream writeback and storage lifetime cannot race.",
+      "acceptanceCriteria": [
+        "After successful downstream write completion, CC sends ReleaseDirtyVictim carrying the exact VictimId.",
+        "ReleaseDirtyVictim is dispatched by the mutation service with update_latency.",
+        "The VictimBuffer entry becomes reusable only after the release update returns terminal Done.",
+        "NoCredit retries release without losing ownership or sending a duplicate successful release.",
+        "ReleaseDirtyVictimFreesExactlyOneEntry passes.",
+        "A forced-small-SLC end-to-end test triggers dirty eviction and verifies WriteNoSnpFull address and data, one downstream completion, VictimBuffer release, and normal completion of the original requester.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 24,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-025",
+      "title": "Unify admission, service stall, reservation, and replay ownership",
+      "description": "As a concurrency maintainer, I want one resource lifecycle so that legacy long-lived reservations cannot deadlock the new pipelines.",
+      "acceptanceCriteria": [
+        "Admission rejection, accepted service stall, and correctness Replay use distinct states, retry behavior, and counters.",
+        "Remove or narrow sfReservationOwners so no SLC or SF set lock spans external snoop, memory-controller, or requester waits.",
+        "CommitToken protects correctness while a transaction is outside SLCSF; short reservations cover only issued service work or explicit response, VictimBuffer, and SEQ capacity.",
+        "Multi-resource acquisition is all-or-nothing and leaves no partial lock or reservation on failure.",
+        "Done, Replay, Error, drain, and recoverable cancellation each have one testable cleanup point.",
+        "NoCredit generates no response, service stall generates no Replay, and Replay changes no persistent state.",
+        "Resource-leak audit, ReservationsPreventSeqSlotOvercommit, and SeqReservationReplayMakesProgress pass.",
+        "All four CHI GTest binaries retain all 36 baseline passes, and both default and forced-SF/SEQ four-core litmus configurations pass at the stage-5 exit.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 25,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-026",
+      "title": "Implement deadlock-free SLC and SF set conflict protection",
+      "description": "As a concurrency maintainer, I want tested short-lived set locks in place before more than one request can enter service.",
+      "acceptanceCriteria": [
+        "Implement short-lived SLC and SF set locks for internal issue-to-complete conflict windows without changing the compatibility default max_inflight=1.",
+        "Same-set read and write acquisitions conflict while different-set acquisitions can coexist in direct lock-manager tests.",
+        "Requests needing both lock classes acquire them atomically or in a deadlock-free global order.",
+        "Done, Replay, Error, and cancelled pre-commit work release each acquired lock exactly once.",
+        "Stalled acquisition retries without leaving a lock or reservation behind.",
+        "SameSetOperationsSerialize, LookupAndUpdateSameSetMutuallyExclude, and StalledLockAcquisitionLeaksNoLock pass against the lock and service harness.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 26,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-027",
+      "title": "Enable bounded multi-inflight service and out-of-order completion",
+      "description": "As a performance-modeling user, I want runtime concurrency knobs enabled only after set conflicts are protected.",
+      "acceptanceCriteria": [
+        "max_inflight and lookup, fill, update, and response-consume widths are enforced independently at runtime.",
+        "The compatibility default remains max_inflight=1 and every issue width=1.",
+        "max_inflight greater than one requires US-026 set-conflict protection; an unsafe disabled-lock configuration fails fast.",
+        "Different-set service windows overlap while same-set operations remain serialized by the existing locks.",
+        "Different pipes may complete out of order, but pocEntryId and reqId deliver each response to the correct entry with one outstanding operation per entry.",
+        "DifferentSetsCompleteConcurrently and MaxInflightAndIssueWidthAreEnforced cover overlap, every configured limit, and eventual progress.",
+        "A crossed SLC/SF-set test proves no lock-order deadlock and correct out-of-order response delivery under max_inflight greater than one.",
+        "Every concurrency test ends with expected-empty queues, locks, reservations, VictimBuffer owners, and SEQ occupancy.",
+        "All four CHI GTest binaries and both default and forced-SF/SEQ litmus configurations pass at the parallel-stage exit.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 27,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-028",
+      "title": "Create the standalone SlcSnoopFilter ClockedObject",
+      "description": "As a gem5 configuration author, I want SLCSF owned by a child ClockedObject so that timing and lifecycle have one canonical owner.",
+      "acceptanceCriteria": [
+        "Add SlcSnoopFilter C++ ClockedObject and SlcSnoopFilter.py under src/mem/cache/CHI in namespace gem5::Chi, and register the SimObject, source, tests, and debug flags in SConscript.",
+        "HomeNodeFull creates or references the configured child and CC holds a non-owning pointer instead of HomeNode owning the timed top-level object by value.",
+        "The child owns ordinary C++ storage, policy, VictimBuffer, SeqBuffer, queues, service, and stats components by value.",
+        "Normal transaction traffic remains POCQ or CC to SLCSF; LinkLayer receives no direct SLCSF transaction API, and SLCSF generates no TXSNP, TXREQ, TXDAT, or TXRSP flit.",
+        "A default HomeNodeFull still instantiates without configuration-script changes.",
+        "Standalone child build and instantiate smoke tests pass.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 28,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-029",
+      "title": "Make child parameters the single runtime source",
+      "description": "As a configuration author, I want old parameter paths to remain compatible while C++ consumes one resolved child configuration.",
+      "acceptanceCriteria": [
+        "slcsf child parameters are the only values read by runtime C++ storage and service code.",
+        "Existing HomeNode geometry, SEQ, latency, queue, VictimBuffer, width, and max-inflight parameters act only as Parent-proxy defaults or compatibility aliases.",
+        "Setting only an old parent path propagates its value to the child.",
+        "When parent and child explicitly set the same parameter, the explicit child value wins.",
+        "Existing sf_num_sets, sf_num_ways, and seq_entries forced-litmus command paths continue to work.",
+        "Default geometry remains slc_num_sets=1024, slc_num_ways=16, sf_num_sets=1024, sf_num_ways=16, and seq_entries=8, with the existing LRU and victim-selection results unchanged.",
+        "config.ini tests verify final geometry, SEQ, latency, queue, VictimBuffer, width, max-inflight, and clock-domain values and the documented override priority.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 29,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-030",
+      "title": "Drive SLCSF with its own clock event and future notifications",
+      "description": "As a timing-model user, I want SLCSF and CC clocks decoupled so correctness never depends on same-tick event order.",
+      "acceptanceCriteria": [
+        "The child uses EventFunctionWrapper and its own clocked event to advance service.",
+        "Remove the stage-A HomeNode wakeup call that directly ticks SLCSF so the service has exactly one advance source.",
+        "The child defaults clk_domain from HomeNodeFull but permits an explicitly configured independent child clock domain.",
+        "A visible response or a registered-credit transition from zero to nonzero schedules a future HomeNode or CC wakeup without directly consuming a response or stepping POCQ in the callback.",
+        "Cross-clock assertions compare absolute gem5 Tick and preserve visibleTick greater than acceptedTick.",
+        "At least one non-1:1 CC-to-SLCSF clock-period test validates double buffering, response delivery, retry deadlines, and future wakeup.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 30,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-031",
+      "title": "Model cold initialization explicitly",
+      "description": "As a simulator user, I want initialization to gate credits and complete after modeled latency without polluting transaction responses.",
+      "acceptanceCriteria": [
+        "Cold initState clears SLC, SF, VictimBuffer, and SeqBuffer and sets initialized false; checkpoint restore does not perform this reset.",
+        "startup schedules at least one child cycle of initialization with a default init_latency of 16 cycles.",
+        "Before initialization completes, registered request credit is zero and tryEnqueue returns Initializing.",
+        "Completion is exposed through registered initialized state and a future wakeup notification, not an ownerless InitDone in the normal response queue.",
+        "NoCreditsBeforeInitialization and InitializationCompletesAfterConfiguredLatency pass.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 31,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-032",
+      "title": "Schedule child work only when needed",
+      "description": "As a simulator user, I want deterministic event ordering without a permanent per-cycle idle poll.",
+      "acceptanceCriteria": [
+        "Each child wakeup orders work as response promotion, request promotion, ready-operation completion, ready-operation issue, registered-credit update, lifecycle check, then next-wakeup scheduling.",
+        "Completion precedes issue, so even a defensive zero-latency clamp cannot complete newly issued work in the same wakeup.",
+        "calculateNextWakeup chooses the earliest ingress or pending promotion, operation ready tick, initialization deadline, or drain work.",
+        "ensureWakeup avoids duplicate events and safely reschedules when earlier work arrives.",
+        "A completely idle initialized child does not self-schedule every cycle.",
+        "IdleFilterDoesNotSelfWakeForever and NewEarlierWorkReschedulesWakeup pass.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 32,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-033",
+      "title": "Implement drain phase D1 QuiesceUpstream",
+      "description": "As a gem5 user, I want new transactions stopped while existing protocol work can still generate required SLCSF requests.",
+      "acceptanceCriteria": [
+        "HomeNodeFull coordinates drain explicitly rather than relying on SimObject drain traversal order.",
+        "D1 stops only new RXREQ admission.",
+        "RXDAT, RXRSP, credits and retries, TX arbitration, CC internal work, deferred retire, and all existing main, SEQ, and victim entries continue.",
+        "During D1 the child records drainRequested but still accepts SLCSF intents from already allocated work.",
+        "HomeNode and CC detect when no existing entry can generate another SLCSF request before advancing to D2.",
+        "DrainDoesNotLoseIssuePendingIntent and DrainKeepsProtocolCompletionsEnabled cover issue-pending and protocol-completion states.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 33,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-034",
+      "title": "Seal, finish, and resume coordinated drain",
+      "description": "As a gem5 user, I want drain to seal child admission only after all upstream intents exist, then finish every accepted operation losslessly.",
+      "acceptanceCriteria": [
+        "HomeNode explicitly enters D2 SealAndDrainChild only after D1 proves no future SLCSF intent can be created.",
+        "tryEnqueue returns Draining only in D2 while accepted child work continues to advance.",
+        "CC continues consuming responses, sending required TX, receiving completions, processing deferred retire, and retiring entries throughout D2.",
+        "Drained is forbidden while ingress, ready, in-flight, pending or visible response, deferred retire, VictimBuffer owner, or SEQ/FVB work remains.",
+        "Every request accepted before sealing still produces exactly one terminal response.",
+        "signalDrainDone occurs only when parent and child are both idle; drainResume restores admission, recalculates registered credit, and wakes work as needed.",
+        "DrainWaitsForAllAcceptedWork and DrainResumeRestoresAdmission cover ingress, ready, in-flight, respPending, and respVisible starting states.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 34,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-035",
+      "title": "Serialize persistent SLCSF state at a drained boundary",
+      "description": "As a gem5 user, I want drained checkpoints to preserve all durable cache, directory, replacement, and identity state.",
+      "acceptanceCriteria": [
+        "serialize asserts that request and response queues, in-flight work, ready ticks, transient response reservations, deferred retire, and active owners are empty.",
+        "Checkpoint data includes initialized state; SLC tag, data, state, generation, and replacement metadata; SF tag, owner, sharers, state, generation, and replacement metadata.",
+        "Checkpoint data includes accessCounter or generation allocator, request, SEQ, victim, and reservation next IDs, epoch counters, and durable VictimBuffer or SEQ metadata.",
+        "Active non-drained pipeline checkpoint remains explicitly unsupported.",
+        "CheckpointRequiresDrainedState and a checkpoint-content inspection test pass.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 35,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-036",
+      "title": "Restore SLCSF state without reinitialization or ID rollback",
+      "description": "As a gem5 user, I want restored cache and directory state to remain coherent and immediately accept new work.",
+      "acceptanceCriteria": [
+        "Restore does not cold-initialize storage or emit a duplicate initialization completion.",
+        "Lines present before checkpoint preserve lookup result, complete data, dirty state, owners, sharers, replacement order, and generation after restore.",
+        "Request, generation, epoch, SEQ, victim, and reservation identifiers do not roll back or collide with serialized history.",
+        "The restored child can accept and complete a new transaction.",
+        "DrainedCheckpointRestoresSlcSfState, RestorePreservesReplacementAndNextIds, and RestoredFilterAcceptsNewWork pass.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 36,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-037",
+      "title": "Add SLCSF timing and resource statistics",
+      "description": "As a model developer, I want child-owned statistics that reveal timing, replay, victim, and capacity behavior without affecting correctness.",
+      "acceptanceCriteria": [
+        "Count lookup, fill, update, and evict operations; all four SLC/SF hit-miss combinations; directed and broadcast snoops; clean, dirty, and SF victims; and each Replay reason.",
+        "Track request and response full cycles, queue occupancy, configured service latency, accepted-to-visible latency, NoCredit, service stall, in-flight occupancy, and set-lock conflicts.",
+        "Define each counter at exactly one accepted, issued, terminal-produced, or consumed point so retry and Replay cannot double-count an event.",
+        "Statistics never form part of storage correctness state and disabling debug output changes no model behavior.",
+        "Directed tests verify exact counter deltas for hit, NoCredit, stale Replay, SEQ full, and different-set concurrency.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 37,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-038",
+      "title": "Add correlated traces and fail-fast invariants",
+      "description": "As a model developer, I want precise traces and assertions so timing or ownership bugs fail near their source.",
+      "acceptanceCriteria": [
+        "Debug traces correlate reqId, POCQ entry, line, accepted, issue, complete, and visible times, operation, terminal status, and Replay reason.",
+        "Assert acceptedTotal = terminalProducedTotal + requests without a terminal response and assert terminal Done, Replay, and Error totals are consistent.",
+        "Assert visibleTick is greater than acceptedTick without inferring time from request sequence numbers.",
+        "Assert Replay makes no persistent mutation; dirty lines have complete data; dirty and SF victims hold their required reservations; and token validation precedes commit.",
+        "Assert no duplicate committed valid tag per set or line, no duplicate request or response ID, and no queue, lock, reservation, VictimBuffer, or SEQ over-capacity state.",
+        "Invariant tests intentionally exercise each recoverable boundary without changing behavior when debug flags are disabled.",
+        "All four CHI GTest binaries and both litmus configurations pass at the standalone-ClockedObject stage exit.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 38,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-039",
+      "title": "Update implementation-status and validation documentation",
+      "description": "As an HNF maintainer, I want the design documents to describe the shipped behavior, compatibility contract, and verified limits before the final gate runs.",
+      "acceptanceCriteria": [
+        "Update the pipeline implementation plan with the actual 10 HnfSLCSF baseline tests, current ownership, POCQ graph changes, service-latency definition, deferred retire, and stage-7 file and checkpoint inventory.",
+        "Update the target architecture implementation-status section with final defaults, parent-to-child parameter compatibility, child override priority, and the drained-checkpoint-only limitation.",
+        "Document that currently unreachable Flush actions have asynchronous service-unit coverage but no newly invented protocol entry path.",
+        "Document the exact build, four-binary GTest, default-litmus, and forced-litmus commands intended for the final gate.",
+        "The documentation change contains no build logs, m5out output, or generated binaries.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 39,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-040",
+      "title": "Pass the full HNF SLCSF regression gate",
+      "description": "As an HNF maintainer, I want the last iteration to validate the complete code and documentation so no later change escapes the acceptance gate.",
+      "acceptanceCriteria": [
+        "scons build/RISCV/gem5.opt -j16 succeeds.",
+        "All four CHI GTest binaries build; all 36 pre-existing tests and every new test pass.",
+        "The default four-core litmus passes all 7 workloads and prints CHI_LITMUS_PASS total_errors=0.",
+        "The forced SF=64 sets by 4 ways and SEQ=4 four-core litmus passes all 7 workloads and prints CHI_LITMUS_PASS total_errors=0.",
+        "Both runs report alias checksum 0x50000001f0, pressure checksum 0x2800000000ffc000, and CHI_LITMUS_BAD count 0.",
+        "The forced trace contains SEQ install, admit, internal snoop, complete, and retire, with no HNF panic, CPU commit watchdog, deadlock, or abs-max-tick exit.",
+        "Do not require the historical exit tick to remain identical.",
+        "Existing default and forced regression parameter paths run unchanged.",
+        "git diff --check passes and the change set contains no build logs, m5out output, or generated binaries.",
+        "Tests pass",
+        "Typecheck passes"
+      ],
+      "priority": 40,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

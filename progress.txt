@@ -1,0 +1,29 @@
+# Ralph Progress Log
+Started: 2026-07-28T20:49:07+08:00
+---
+
+## Codebase Patterns
+- A new CHI translation unit must be added both as a production `Source` and
+  to every standalone `GTest` source list that directly links its callers.
+- The four HNF baseline GTests build under `build/RISCV/mem/cache/CHI/`; their
+  expected suite counts are 15 POCQ, 2 SEQ POCQ, 10 SLCSF, and 9 controller.
+---
+
+## 2026-07-28 21:01 - US-001
+- Story: Extract the synchronous SLC/SF storage backend
+- What was implemented: Moved all SLC/SF lines, replacement metadata, SEQ
+  storage, reservations, and synchronous semantic operations into the plain
+  `HnfSLCSFBackend` C++ class. Kept `HnfSLCSF` as a header-only synchronous
+  compatibility adapter inheriting the backend, with unchanged public calls.
+- Files changed: `src/mem/cache/CHI/HnfSLCSFBackend.hh`,
+  `src/mem/cache/CHI/HnfSLCSFBackend.cc`, `src/mem/cache/CHI/HnfSLCSF.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.cc`, `src/mem/cache/CHI/SConscript`, `prd.json`,
+  and `progress.txt`.
+- Checks run and their results: Built all four RISCV CHI GTest binaries with
+  SCons successfully; ran all 36 tests successfully (15 POCQ, 2 SEQ POCQ,
+  10 SLCSF, 9 controller); normalized old/new implementation diff was empty;
+  `git diff --check` passed.
+- Learnings for future iterations: The compatibility type can remain stable
+  while storage evolves behind it, and standalone GTests require explicit
+  linkage of newly extracted implementation units.
+---

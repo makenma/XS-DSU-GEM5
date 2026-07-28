@@ -25,6 +25,7 @@ Source('HnfCoherencyController.cc')
 Source('HnfPOCQStateGraph.cc')
 Source('HnfSeqPOCQStateGraph.cc')
 Source('HnfSLCSF.cc')
+Source('HnfSLCSFBackend.cc')
 
 GTest('hnf_pocq_state_graph.test',
       'HnfPOCQStateGraph.test.cc',
@@ -37,6 +38,7 @@ GTest('hnf_seq_pocq_state_graph.test',
 GTest('hnf_slcsf.test',
       'HnfSLCSF.test.cc',
       'HnfSLCSF.cc',
+      'HnfSLCSFBackend.cc',
       with_tag('gem5 trace'))
 
 GTest('hnf_coherency_controller.test',
@@ -45,6 +47,7 @@ GTest('hnf_coherency_controller.test',
       'HnfPOCQStateGraph.cc',
       'HnfSeqPOCQStateGraph.cc',
       'HnfSLCSF.cc',
+      'HnfSLCSFBackend.cc',
       with_tag('gem5 trace'))
 
 DebugFlag('Cache2ChiBridge')
