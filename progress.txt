@@ -9,6 +9,9 @@ Started: 2026-07-28T20:49:07+08:00
   expected suite counts are 15 POCQ, 2 SEQ POCQ, 10 SLCSF, and 9 controller.
 - Delayed CHI service messages should copy scalar flit metadata and own all
   variable payloads with value containers such as `vector` and `optional`.
+- Couple a delayed operation's kind to its payload with a restricted variant;
+  derive the kind from the active alternative instead of storing two fields
+  that can disagree.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -46,4 +49,36 @@ Started: 2026-07-28T20:49:07+08:00
 - Learnings for future iterations: A strong request-ID type prevents accidental
   reuse of LinkLayer sequence values, and queue-safe payloads can be introduced
   without changing the temporary synchronous adapter.
+---
+
+## 2026-07-28 21:11 - US-002 acceptance audit correction
+- Independent acceptance review found that the committed request model cannot
+  yet represent `completeSfEvict(id, data, dirty)` unambiguously, conflates SLC
+  and SF victim state, permits invalid kind/payload combinations, and does not
+  test parameter-preserving mappings for every synchronous operation including
+  `fillCleanShared`.
+- US-002 was reset to `passes: false`; its `notes` field contains the concrete
+  repair requirements. Commit `e7b1e6bb0d` remains as the base to repair.
+- Ralph recovery files for US-002: the current uncommitted changes to
+  `prd.json` and `progress.txt` are intentional story-scoped recovery metadata.
+  Review them, retain them, and stage them with the repaired US-002 files.
+---
+
+## 2026-07-28 21:18 - US-002
+- Story: Define owned typed SLCSF request messages
+- What was implemented: Repaired the typed request model by replacing freely
+  combinable kind and optional payload fields with restricted Fill, Update,
+  and Evict operation variants. Added `fillCleanShared`, strong SEQ and dirty
+  victim identities, distinct owned SLC/SF victim snapshots, unambiguous
+  CompleteSfEvict and ReleaseDirtyVictim update payloads, and factories that
+  preserve every synchronous operation parameter.
+- Files changed: `src/mem/cache/CHI/HnfSLCSFRequest.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.test.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built all four RISCV CHI GTest binaries with
+  SCons successfully; all 39 tests passed (15 POCQ, 2 SEQ POCQ, 13 SLCSF,
+  and 9 controller), retaining all 36 baseline passes; changed C++ files
+  passed `python3 util/style.py`; `git diff --check` passed.
+- Learnings for future iterations: Operation-specific variants prevent kind
+  and payload drift at compile time, while value-taking factories provide one
+  auditable ownership boundary for delayed requests.
 ---

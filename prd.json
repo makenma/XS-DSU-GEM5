@@ -36,7 +36,7 @@
       ],
       "priority": 2,
       "passes": true,
-      "notes": ""
+      "notes": "Acceptance audit repaired: operation-specific variants prevent kind/payload mismatches; CompleteSfEvict and ReleaseDirtyVictim carry strong SeqId/VictimId types; SLC and SF victim snapshots are distinct; fillCleanShared and every synchronous operation have parameter-preserving construction tests; repeated LinkLayer sequences allocate distinct monotonic request IDs."
     },
     {
       "id": "US-003",

@@ -3,8 +3,9 @@
 
 #include <cstdint>
 #include <limits>
-#include <optional>
 #include <stdexcept>
+#include <type_traits>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -99,6 +100,7 @@ makeSlcSfReqHeader(SlcSfReqIdAllocator& ids, uint32_t poc_entry_id, uint64_t lin
 enum class SlcSfUpdateKind : uint8_t
 {
     CommitRead,
+    FillCleanShared,
     CompleteMaintenance,
     RemoveSharer,
     WriteLine,
@@ -117,17 +119,39 @@ struct SlcSfCacheLine
     bool dirty = false;
 };
 
-/** Owned snapshot of a selected victim. */
-struct SlcSfVictim
+/** Stable identities for the two independently managed victim stores. */
+struct SlcSfSeqId
 {
-    uint64_t victimId = 0;
+    uint64_t value = 0;
+};
+
+struct SlcSfVictimId
+{
+    uint64_t value = 0;
+};
+
+/** Owned snapshot of a dirty line displaced from the SLC. */
+struct SlcSfSlcVictim
+{
+    SlcSfVictimId victimId{};
+    uint64_t lineAddress = 0;
+    HnfSlcState state = HnfSlcState::I;
+    uint32_t owner = 0;
+    SlcSfCacheLine line;
+};
+
+/** Owned snapshot of a directory line displaced from the SF into SEQ. */
+struct SlcSfSfVictim
+{
+    SlcSfSeqId seqId{};
     uint64_t lineAddress = 0;
     uint32_t homeNodeId = 0;
     HnfSfState state = HnfSfState::I;
     uint32_t owner = 0;
     uint64_t sharers = 0;
-    SlcSfCacheLine line;
 };
+
+using SlcSfVictim = std::variant<SlcSfSlcVictim, SlcSfSfVictim>;
 
 /** Owned data returned by snooping a victim. */
 struct SlcSfSnoopData
@@ -143,35 +167,240 @@ struct SlcSfLookupReq
     PocqTxnKind txn = PocqTxnKind::Unknown;
 };
 
-struct SlcSfFillReq
+struct SlcSfCommitRead
 {
-    SlcSfReqHeader header{};
-    SlcSfUpdateKind kind = SlcSfUpdateKind::CommitRead;
+    static constexpr SlcSfUpdateKind Kind = SlcSfUpdateKind::CommitRead;
+
     PocqTxnKind txn = PocqTxnKind::Unknown;
     uint32_t homeNodeId = 0;
     SlcSfCacheLine line;
 };
+
+struct SlcSfFillCleanShared
+{
+    static constexpr SlcSfUpdateKind Kind =
+        SlcSfUpdateKind::FillCleanShared;
+
+    SlcSfCacheLine line;
+};
+
+struct SlcSfWriteLine
+{
+    static constexpr SlcSfUpdateKind Kind = SlcSfUpdateKind::WriteLine;
+
+    PocqTxnKind txn = PocqTxnKind::Unknown;
+    uint32_t homeNodeId = 0;
+    SlcSfCacheLine line;
+};
+
+struct SlcSfWriteL3FlushSf
+{
+    static constexpr SlcSfUpdateKind Kind =
+        SlcSfUpdateKind::WriteL3FlushSf;
+
+    SlcSfCacheLine line;
+};
+
+using SlcSfFillOperation =
+    std::variant<SlcSfCommitRead, SlcSfFillCleanShared, SlcSfWriteLine,
+                 SlcSfWriteL3FlushSf>;
+
+struct SlcSfFillReq
+{
+    SlcSfReqHeader header{};
+    SlcSfFillOperation operation{};
+
+    SlcSfUpdateKind kind() const;
+};
+
+struct SlcSfCompleteMaintenance
+{
+    static constexpr SlcSfUpdateKind Kind =
+        SlcSfUpdateKind::CompleteMaintenance;
+
+    PocqTxnKind txn = PocqTxnKind::Unknown;
+    uint32_t homeNodeId = 0;
+};
+
+struct SlcSfRemoveSharer
+{
+    static constexpr SlcSfUpdateKind Kind = SlcSfUpdateKind::RemoveSharer;
+};
+
+struct SlcSfCompleteSfEvict
+{
+    static constexpr SlcSfUpdateKind Kind =
+        SlcSfUpdateKind::CompleteSfEvict;
+
+    SlcSfSeqId seqId{};
+    SlcSfSnoopData snoopData;
+};
+
+struct SlcSfReleaseDirtyVictim
+{
+    static constexpr SlcSfUpdateKind Kind =
+        SlcSfUpdateKind::ReleaseDirtyVictim;
+
+    SlcSfVictimId victimId{};
+};
+
+using SlcSfUpdateOperation =
+    std::variant<SlcSfCompleteMaintenance, SlcSfRemoveSharer,
+                 SlcSfCompleteSfEvict, SlcSfReleaseDirtyVictim>;
 
 struct SlcSfUpdateReq
 {
     SlcSfReqHeader header{};
-    SlcSfUpdateKind kind = SlcSfUpdateKind::CompleteMaintenance;
-    PocqTxnKind txn = PocqTxnKind::Unknown;
-    uint32_t homeNodeId = 0;
-    SlcSfCacheLine line;
-    std::optional<SlcSfVictim> victim;
-    std::optional<SlcSfSnoopData> snoopData;
+    SlcSfUpdateOperation operation{};
+
+    SlcSfUpdateKind kind() const;
 };
+
+struct SlcSfFlushSf
+{
+    static constexpr SlcSfUpdateKind Kind = SlcSfUpdateKind::FlushSf;
+};
+
+struct SlcSfFlushL3
+{
+    static constexpr SlcSfUpdateKind Kind = SlcSfUpdateKind::FlushL3;
+};
+
+using SlcSfEvictOperation = std::variant<SlcSfFlushSf, SlcSfFlushL3>;
 
 struct SlcSfEvictReq
 {
     SlcSfReqHeader header{};
-    SlcSfUpdateKind kind = SlcSfUpdateKind::FlushSf;
-    std::optional<SlcSfVictim> victim;
-    std::optional<SlcSfSnoopData> snoopData;
+    SlcSfEvictOperation operation{};
+
+    SlcSfUpdateKind kind() const;
 };
 
 using SlcSfRequest = std::variant<SlcSfLookupReq, SlcSfFillReq, SlcSfUpdateReq, SlcSfEvictReq>;
+
+template <class Operation>
+constexpr SlcSfUpdateKind
+slcSfOperationKind(const Operation&)
+{
+    return std::decay_t<Operation>::Kind;
+}
+
+inline SlcSfUpdateKind
+SlcSfFillReq::kind() const
+{
+    return std::visit(
+        [](const auto& op) { return slcSfOperationKind(op); }, operation);
+}
+
+inline SlcSfUpdateKind
+SlcSfUpdateReq::kind() const
+{
+    return std::visit(
+        [](const auto& op) { return slcSfOperationKind(op); }, operation);
+}
+
+inline SlcSfUpdateKind
+SlcSfEvictReq::kind() const
+{
+    return std::visit(
+        [](const auto& op) { return slcSfOperationKind(op); }, operation);
+}
+
+inline SlcSfLookupReq
+makeSlcSfLookupReq(SlcSfReqHeader header, PocqTxnKind txn)
+{
+    return SlcSfLookupReq{std::move(header), txn};
+}
+
+inline SlcSfFillReq
+makeSlcSfCommitReadReq(SlcSfReqHeader header, PocqTxnKind txn,
+                       std::vector<uint8_t> data, bool dirty,
+                       uint32_t home_node_id = 0,
+                       std::vector<uint8_t> byte_mask = {})
+{
+    SlcSfCacheLine line{std::move(data), std::move(byte_mask), dirty};
+    return SlcSfFillReq{
+        std::move(header),
+        SlcSfCommitRead{txn, home_node_id, std::move(line)}};
+}
+
+inline SlcSfFillReq
+makeSlcSfFillCleanSharedReq(SlcSfReqHeader header,
+                            std::vector<uint8_t> data,
+                            std::vector<uint8_t> byte_mask = {})
+{
+    SlcSfCacheLine line{std::move(data), std::move(byte_mask), false};
+    return SlcSfFillReq{
+        std::move(header), SlcSfFillCleanShared{std::move(line)}};
+}
+
+inline SlcSfUpdateReq
+makeSlcSfCompleteMaintenanceReq(SlcSfReqHeader header, PocqTxnKind txn,
+                                uint32_t home_node_id = 0)
+{
+    return SlcSfUpdateReq{
+        std::move(header), SlcSfCompleteMaintenance{txn, home_node_id}};
+}
+
+inline SlcSfUpdateReq
+makeSlcSfRemoveSharerReq(SlcSfReqHeader header)
+{
+    return SlcSfUpdateReq{std::move(header), SlcSfRemoveSharer{}};
+}
+
+inline SlcSfFillReq
+makeSlcSfWriteLineReq(SlcSfReqHeader header, std::vector<uint8_t> data,
+                      PocqTxnKind txn = PocqTxnKind::WriteUnique,
+                      uint32_t home_node_id = 0,
+                      std::vector<uint8_t> byte_mask = {})
+{
+    const bool dirty = txn != PocqTxnKind::WriteCleanFull;
+    SlcSfCacheLine line{std::move(data), std::move(byte_mask), dirty};
+    return SlcSfFillReq{
+        std::move(header),
+        SlcSfWriteLine{txn, home_node_id, std::move(line)}};
+}
+
+inline SlcSfEvictReq
+makeSlcSfFlushSfReq(SlcSfReqHeader header)
+{
+    return SlcSfEvictReq{std::move(header), SlcSfFlushSf{}};
+}
+
+inline SlcSfEvictReq
+makeSlcSfFlushL3Req(SlcSfReqHeader header)
+{
+    return SlcSfEvictReq{std::move(header), SlcSfFlushL3{}};
+}
+
+inline SlcSfFillReq
+makeSlcSfWriteL3FlushSfReq(SlcSfReqHeader header,
+                           std::vector<uint8_t> data,
+                           std::vector<uint8_t> byte_mask = {})
+{
+    SlcSfCacheLine line{std::move(data), std::move(byte_mask), true};
+    return SlcSfFillReq{
+        std::move(header), SlcSfWriteL3FlushSf{std::move(line)}};
+}
+
+inline SlcSfUpdateReq
+makeSlcSfCompleteSfEvictReq(SlcSfReqHeader header, SlcSfSeqId seq_id,
+                            std::vector<uint8_t> data, bool dirty,
+                            std::vector<uint8_t> byte_mask = {})
+{
+    SlcSfSnoopData snoop{
+        std::move(data), std::move(byte_mask), dirty};
+    return SlcSfUpdateReq{
+        std::move(header), SlcSfCompleteSfEvict{seq_id, std::move(snoop)}};
+}
+
+inline SlcSfUpdateReq
+makeSlcSfReleaseDirtyVictimReq(SlcSfReqHeader header,
+                               SlcSfVictimId victim_id)
+{
+    return SlcSfUpdateReq{
+        std::move(header), SlcSfReleaseDirtyVictim{victim_id}};
+}
 
 }  // namespace gem5::Chi
 
