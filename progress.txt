@@ -20,6 +20,14 @@ Started: 2026-07-28T20:49:07+08:00
   only after admission succeeds so rejection preserves caller ownership.
 - Represent an in-flight request as its terminal response reservation, then
   count in-flight, pending, and visible states as one bounded occupancy.
+- Express configurable service latency as an absolute completion cycle
+  captured at issue, and run completion before issue in each wakeup so newly
+  issued work cannot finish in the same cycle.
+- Translate owned asynchronous requests into synchronous backend calls only at
+  their modeled completion boundary, and map backend retry decisions to typed
+  terminal Replay responses rather than Done payload flags.
+- Derive replay deadlines from the absolute gem5 `Tick` at the completion
+  boundary; service-local cycle numbers are not valid retry timestamps.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -232,4 +240,113 @@ Started: 2026-07-28T20:49:07+08:00
 - Learnings for future iterations: Use independent sentinel values for every
   component of a compound identity so tests prove preservation rather than
   accidentally passing through aliased values.
+---
+
+## 2026-07-28 22:05 - US-006
+- Story: Implement the non-zero-latency lookup pipeline
+- What was implemented: Added runtime-configurable lookup service latency with
+  a four-cycle default, construction validation, defensive one-cycle minimum,
+  per-request issue and completion cycles, and a separately registered
+  response-visible boundary. Preserved mixed-pipe out-of-order completion and
+  terminal response reservations while lookup requests remain in flight.
+- Files changed: `src/mem/cache/CHI/HnfSLCSF.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.test.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built all four RISCV CHI GTest binaries with
+  SCons successfully; all 57 tests passed (15 POCQ, 2 SEQ POCQ, 31 SLCSF,
+  and 9 controller), retaining all 36 baseline passes; changed C++ files
+  passed `python3 util/style.py`; `git diff --check` passed.
+- Learnings for future iterations: Absolute ready cycles let runtime latency
+  vary without a compile-time pipeline depth, while wakeup ordering enforces
+  acceptance, issue, completion, and visibility as distinct boundaries.
+---
+
+## 2026-07-28 22:06 - US-006 acceptance-audit recovery
+- The first timing draft built and passed its queue/timestamp tests, but an
+  independent acceptance audit found that asynchronous Lookup completion still
+  returned an empty `HnfSlcLookupResult` and never called the synchronous
+  backend. It therefore did not make any SLC, SF, policy, or SEQ decision
+  timing-visible and must remain `passes: false`.
+- Preserve the absolute issue/completion-cycle design and US-005 response
+  accounting. At modeled Lookup completion, translate the owned request into a
+  backend lookup (or equivalent staged probes), return its real payload, and
+  add payload-sensitive seeded SLC/SF and SEQ replay tests across the registered
+  pending-to-visible boundary.
+- Map a backend `result.replay` decision to terminal status `Replay` with a
+  meaningful reason, `redoLookup=true`, and an absolute retry tick; `Done`
+  carrying a lookup result whose replay bit is set would violate the terminal
+  response contract established by US-003.
+- The intentional recovery set is `src/mem/cache/CHI/HnfSLCSF.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.cc`, `src/mem/cache/CHI/HnfSLCSF.test.cc`,
+  `prd.json`, and `progress.txt`; unrelated user files remain out of scope.
+---
+
+## 2026-07-28 22:11 - US-006
+- Story: Implement the non-zero-latency lookup pipeline
+- What was implemented: Completed the interrupted timing draft by translating
+  owned Lookup requests into backend probes only at their configured completion
+  cycle. Done responses now carry the real SLC/SF result, while backend SEQ
+  conflicts produce typed Replay responses with redoLookup and an absolute
+  retry tick through the registered pending-to-visible boundary.
+- Files changed: `src/mem/cache/CHI/HnfSLCSF.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.test.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built all four RISCV CHI GTest binaries with
+  SCons successfully; all 59 tests passed (15 POCQ, 2 SEQ POCQ, 33 SLCSF,
+  and 9 controller), retaining all 36 baseline passes; changed C++ files
+  passed `python3 util/style.py`; `git diff --check` and
+  `git diff --cached --check` passed.
+- Learnings for future iterations: Keep semantic execution at the modeled
+  completion boundary, and represent backend replay decisions as terminal
+  control outcomes instead of successful data payloads.
+---
+
+## 2026-07-28 22:12 - US-006 blocked finalization
+- Implementation, build, style, diff, and all 59 tests passed, but the required
+  exact commit subject `mem-cache: US-006 - Implement the non-zero-latency
+  lookup pipeline` is 66 characters. The repository commit hook rejects headers
+  longer than 65 characters.
+- Attempted the exact required `git commit -m` command without bypassing hooks;
+  the hook cancelled the commit with `66 > 65`. Shortening the PRD story title
+  would violate the Ralph instruction requiring the exact subject, while
+  `--no-verify` is explicitly forbidden.
+- US-006 remains `passes: false`. Its documented five-file recovery set remains
+  staged, and unrelated user changes remain unstaged.
+---
+
+## 2026-07-28 22:14 - US-006 absolute-tick audit recovery
+- Independent review found one remaining P1: `wakeupCycle + 1` is a local child
+  cycle number, not an absolute gem5 `Tick`. At a nonzero simulator time or
+  with a multi-tick clock period, the replay deadline would already be in the
+  past and permit an immediate retry.
+- Preserve the verified real backend payload and terminal `SeqConflict` Replay
+  path. Let wakeup receive or record the absolute completion Tick (or perform
+  an equivalent explicit conversion), require the retry deadline to be later
+  than that Tick, and test it using nonzero absolute wakeup values.
+- The repository hook's 65-character limit takes precedence over spelling out
+  an overlong PRD title. Keep `mem-cache: US-006 -` and use an unambiguous
+  hook-compliant concise title; never bypass the hook.
+- The intentional recovery set remains `src/mem/cache/CHI/HnfSLCSF.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.cc`, `src/mem/cache/CHI/HnfSLCSF.test.cc`,
+  `prd.json`, and `progress.txt`; unrelated user files remain out of scope.
+---
+
+## 2026-07-28 22:21 - US-006
+- Story: Implement the non-zero-latency lookup pipeline
+- What was implemented: Finalized the registered lookup pipeline with a
+  runtime-validated four-cycle default, issue and completion cycle tracking,
+  real backend lookup execution at completion, and pending-to-visible response
+  registration. Backend SEQ conflicts now return terminal Replay responses
+  whose retry deadline is derived from the absolute completion Tick.
+- Files changed: `src/mem/cache/CHI/HnfSLCSF.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.test.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built all four RISCV CHI GTest binaries with
+  SCons successfully; all 59 tests passed (15 POCQ, 2 SEQ POCQ, 33 SLCSF,
+  and 9 controller), retaining all 36 baseline passes; changed C++ files
+  passed `python3 util/style.py`; `git diff --check` and
+  `git diff --cached --check` passed.
+- Learnings for future iterations: Keep service latency in child-cycle units,
+  but construct externally visible retry times from an absolute gem5 Tick at
+  the semantic completion boundary.
 ---

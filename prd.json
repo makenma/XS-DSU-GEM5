@@ -111,8 +111,8 @@
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Interrupted acceptance-audit recovery. Preserve the existing timing/accounting and real-backend-result draft, but do not pass or commit it until retryNotBeforeTick is a true absolute gem5 Tick. The current wakeupCycle+1 expression is only a service-local cycle index and becomes a deadline in the past when the simulator tick is nonzero or a child cycle spans multiple ticks. Let wakeup receive or otherwise record an absolute Tick at the completion boundary, make the replay deadline strictly later than that Tick, and drive the SEQ replay test with nonzero absolute wakeup ticks. Retain the real HnfSLCSFBackend::lookup payload, terminal SeqConflict Replay with redoLookup, exact accept/issue/complete/visible cycles, runtime latency coverage, out-of-order mixed-pipe completion, and terminal-reservation accounting."
     },
     {
       "id": "US-007",

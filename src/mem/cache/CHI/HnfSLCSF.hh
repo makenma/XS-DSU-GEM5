@@ -29,6 +29,7 @@ struct HnfSLCSFPipelineConfig
     size_t lookupIssueWidth = 1;
     size_t fillIssueWidth = 1;
     size_t updateIssueWidth = 1;
+    size_t lookupLatency = 4;
 };
 
 /**
@@ -54,8 +55,11 @@ class HnfSLCSF : public HnfSLCSFBackend
      */
     SlcSfEnqueueResult tryEnqueue(SlcSfRequest&& request);
 
-    /** Advance the registered request boundary exactly once. */
+    /** Advance the registered request boundary at the current simulator tick. */
     void wakeup();
+
+    /** Advance the registered request boundary at an explicit absolute tick. */
+    void wakeup(Tick now);
 
     size_t registeredReqCredits() const { return visibleReqCredits; }
     size_t reqIngressCount() const { return reqIngress.size(); }
@@ -63,6 +67,7 @@ class HnfSLCSF : public HnfSLCSFBackend
     size_t reqInflightCount() const { return inflightRequests.size(); }
     size_t reqOutstanding() const;
     size_t reqCapacity() const { return config.reqQueueEntries; }
+    uint64_t currentCycle() const { return wakeupCycle; }
 
     size_t respReservedCount() const { return inflightRequests.size(); }
     size_t respPendingCount() const { return respPending.size(); }
@@ -82,9 +87,17 @@ class HnfSLCSF : public HnfSLCSFBackend
     void resumeFromDrain();
 
   private:
+    struct InflightRequest
+    {
+        SlcSfRequest request;
+        uint64_t issueCycle = 0;
+        uint64_t completeCycle = 0;
+    };
+
     static void validateConfig(const HnfSLCSFPipelineConfig& config);
     void promotePendingResponses();
     void completeInflightRequests();
+    SlcSfResponse makeTerminalResponse(const SlcSfRequest& request);
     void promoteIngressRequests();
     void issueReadyRequests();
     void updateRegisteredCredits();
@@ -97,10 +110,12 @@ class HnfSLCSF : public HnfSLCSFBackend
     // Membership in this queue is the terminal response reservation.  Keeping
     // request issue and reservation in one state prevents either from becoming
     // observable without the other.
-    std::deque<SlcSfRequest> inflightRequests;
+    std::deque<InflightRequest> inflightRequests;
     std::deque<SlcSfResponse> respPending;
     std::deque<SlcSfResponse> respVisible;
     size_t visibleReqCredits = 0;
+    uint64_t wakeupCycle = 0;
+    Tick wakeupTick = 0;
     bool initialized = true;
     bool draining = false;
 };

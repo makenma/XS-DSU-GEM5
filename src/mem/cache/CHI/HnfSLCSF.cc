@@ -1,8 +1,10 @@
 #include "mem/cache/CHI/HnfSLCSF.hh"
 
+#include <algorithm>
 #include <stdexcept>
 
 #include "base/logging.hh"
+#include "sim/cur_tick.hh"
 
 namespace gem5::Chi
 {
@@ -34,23 +36,20 @@ requestPipe(const SlcSfRequest& request)
         request);
 }
 
-SlcSfResponse
-makeTerminalResponse(const SlcSfRequest& request)
+HnfSlcLookupReq
+makeBackendLookupRequest(const SlcSfLookupReq& request)
 {
-    return std::visit(
-        [](const auto& typed_request) {
-            using Request = std::decay_t<decltype(typed_request)>;
-            if constexpr (std::is_same_v<Request, SlcSfLookupReq>) {
-                SlcSfCommitToken token{};
-                token.lookupReqId = typed_request.header.reqId;
-                token.lineAddress = typed_request.header.lineAddress;
-                return makeSlcSfDoneResponse(
-                    typed_request, HnfSlcLookupResult{}, token);
-            } else {
-                return makeSlcSfDoneResponse(typed_request);
-            }
-        },
-        request);
+    HnfSlcLookupReq backend_request{};
+    backend_request.entry = request.header.pocEntryId;
+    backend_request.blockAddr = request.header.lineAddress;
+    backend_request.txn = request.txn;
+    backend_request.req.addr = request.header.lineAddress;
+    backend_request.req.srcid = request.header.requester;
+    backend_request.req.opcode = request.header.opcode;
+    backend_request.req.qos = request.header.qos;
+    backend_request.req.txnid = request.header.trace.transactionId;
+    backend_request.req.traceTag = request.header.trace.traceTag;
+    return backend_request;
 }
 
 } // anonymous namespace
@@ -73,10 +72,11 @@ HnfSLCSF::validateConfig(const HnfSLCSFPipelineConfig& config)
 {
     if (config.reqQueueEntries == 0 || config.respQueueEntries == 0 ||
         config.maxInflight == 0 || config.lookupIssueWidth == 0 ||
-        config.fillIssueWidth == 0 || config.updateIssueWidth == 0) {
+        config.fillIssueWidth == 0 || config.updateIssueWidth == 0 ||
+        config.lookupLatency == 0) {
         throw std::invalid_argument(
-            "HnfSLCSF queue sizes, max inflight, and issue widths must be "
-            "positive");
+            "HnfSLCSF queue sizes, max inflight, issue widths, and lookup "
+            "latency must be positive");
     }
     if (config.maxInflight > config.reqQueueEntries) {
         throw std::invalid_argument(
@@ -108,6 +108,23 @@ HnfSLCSF::tryEnqueue(SlcSfRequest&& request)
 void
 HnfSLCSF::wakeup()
 {
+    // Standalone unit tests have no current event queue. Keep their legacy
+    // no-argument driver advancing one tick at a time, while simulation users
+    // observe the actual global tick.
+    if (Gem5Internal::_curTickPtr) {
+        wakeup(curTick());
+    } else {
+        panic_if(wakeupTick == MaxTick,
+                 "HnfSLCSF cannot wake after MaxTick");
+        wakeup(wakeupTick + 1);
+    }
+}
+
+void
+HnfSLCSF::wakeup(Tick now)
+{
+    ++wakeupCycle;
+    wakeupTick = now;
     promotePendingResponses();
     completeInflightRequests();
     promoteIngressRequests();
@@ -187,11 +204,47 @@ HnfSLCSF::promotePendingResponses()
 void
 HnfSLCSF::completeInflightRequests()
 {
-    while (!inflightRequests.empty()) {
-        respPending.push_back(
-            makeTerminalResponse(inflightRequests.front()));
-        inflightRequests.pop_front();
+    for (auto request = inflightRequests.begin();
+         request != inflightRequests.end();) {
+        if (request->completeCycle > wakeupCycle) {
+            ++request;
+            continue;
+        }
+
+        respPending.push_back(makeTerminalResponse(request->request));
+        request = inflightRequests.erase(request);
     }
+}
+
+SlcSfResponse
+HnfSLCSF::makeTerminalResponse(const SlcSfRequest& request)
+{
+    return std::visit(
+        [this](const auto& typed_request) {
+            using Request = std::decay_t<decltype(typed_request)>;
+            if constexpr (std::is_same_v<Request, SlcSfLookupReq>) {
+                HnfSlcLookupResult result = HnfSLCSFBackend::lookup(
+                    makeBackendLookupRequest(typed_request));
+                if (result.replay) {
+                    panic_if(wakeupTick == MaxTick,
+                             "HnfSLCSF cannot schedule a retry after MaxTick");
+                    return makeSlcSfReplayResponse(
+                        typed_request,
+                        SlcSfReplay{
+                            SlcSfReplayReason::SeqConflict,
+                            wakeupTick + 1, true});
+                }
+
+                SlcSfCommitToken token{};
+                token.lookupReqId = typed_request.header.reqId;
+                token.lineAddress = typed_request.header.lineAddress;
+                return makeSlcSfDoneResponse(
+                    typed_request, std::move(result), token);
+            } else {
+                return makeSlcSfDoneResponse(typed_request);
+            }
+        },
+        request);
 }
 
 void
@@ -240,7 +293,10 @@ HnfSLCSF::issueReadyRequests()
         // The in-flight entry is the reservation.  Capacity is checked before
         // emplacing it, and only a successfully emplaced request is erased
         // from ready, so issue and reservation are one state transition.
-        inflightRequests.emplace_back(std::move(*request));
+        const uint64_t latency = pipe == RequestPipe::Lookup ?
+            std::max<uint64_t>(1, config.lookupLatency) : 1;
+        inflightRequests.push_back(InflightRequest{
+            std::move(*request), wakeupCycle, wakeupCycle + latency});
         request = reqReady.erase(request);
         ++*issued;
     }
