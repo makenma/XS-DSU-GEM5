@@ -4,6 +4,7 @@
 #include <deque>
 #include <optional>
 #include <queue>
+#include <typeindex>
 
 #include "mem/cache/CHI/base/BasicChiComponent.hh"
 #include "mem/cache/CHI/base/ChiChannel.hh"
@@ -77,6 +78,25 @@ public:
     // RX dequeue
     std::optional<FlitVariant> getRxFlit(ChannelType ch) {
         return dequeueFlit(QueueKind::Rx, ch);
+    }
+
+    std::optional<FlitVariant>
+    getRxFlit(const std::type_index& flitType)
+    {
+        if (flitType == std::type_index(typeid(RawReq))) {
+            return getRxFlit(ChannelType::REQ);
+        }
+        if (flitType == std::type_index(typeid(RawRsp))) {
+            return getRxFlit(ChannelType::RSP);
+        }
+        if (flitType == std::type_index(typeid(RawSnp))) {
+            return getRxFlit(ChannelType::SNP);
+        }
+        if (flitType == std::type_index(typeid(RawDat))) {
+            return getRxFlit(ChannelType::DAT);
+        }
+
+        return std::nullopt;
     }
 
     // TX dequeue

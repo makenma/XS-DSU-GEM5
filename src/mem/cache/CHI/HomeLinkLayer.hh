@@ -1,6 +1,9 @@
 #ifndef __HOMELINKLAYER__HH__
 #define __HOMELINKLAYER__HH__
 
+#include <array>
+#include <deque>
+#include <type_traits>
 
 #include "base/logging.hh"
 #include "base/trace.hh"
@@ -28,15 +31,23 @@ class HomeLinkLayer :  public ruby::Consumer
         HomeNodeFull *m_homenode;
         std::deque<FlitVariant> pipline_queue;
         ChiCommonPort *rxport;
+        std::array<FlitVariant, 4> flits = {
+            RawReq{},
+            RawRsp{},
+            RawSnp{},
+            RawDat{}
+        };
         std::array<MemFn<RawReq>, 4> reqFuncs;
         std::array<MemFn<RawRsp>, 4> rspFuncs;
         std::array<MemFn<RawSnp>, 4> snpFuncs;
         std::array<MemFn<RawDat>, 4> datFuncs;
-        std::unordered_map<std::type_index, std::vector<StageFunc>> pipelineMap;
-        template<typename FlitType, size_t N>
-        std::vector<StageFunc> initPipeline(const std::array<MemFn<FlitType>, N>& funcs);
+
+        template<typename FlitType>
+        auto& funcsFor();
 
         void advancePipeline(FlitVariant& fv);
+
+        void LoopChannelPipline(const std::type_index& flitType);
 
         //pipline function
         void doStageH0_Req(RawReq* Req);
@@ -65,16 +76,21 @@ class HomeLinkLayer :  public ruby::Consumer
 
 };
 
-template<typename FlitType, size_t N>
-std::vector<StageFunc> HomeLinkLayer::initPipeline(const std::array<MemFn<FlitType>, N>& funcs)
+template<typename FlitType>
+auto&
+HomeLinkLayer::funcsFor()
 {
-    std::vector<StageFunc> ans(N);
-    for (int i = 0; i < N; ++i) {
-        ans[i] = [this, fn = funcs[i]](BaseFlit* f) {
-            (this->*fn)(static_cast<FlitType*>(f));
-        };
+    if constexpr (std::is_same_v<FlitType, RawReq>) {
+        return reqFuncs;
+    } else if constexpr (std::is_same_v<FlitType, RawRsp>) {
+        return rspFuncs;
+    } else if constexpr (std::is_same_v<FlitType, RawSnp>) {
+        return snpFuncs;
+    } else {
+        static_assert(std::is_same_v<FlitType, RawDat>,
+                      "Unsupported CHI flit type");
+        return datFuncs;
     }
-    return(ans);
 }
 
 

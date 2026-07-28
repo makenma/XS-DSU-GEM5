@@ -39,13 +39,6 @@ HomeLinkLayer::HomeLinkLayer( HomeNodeFull* hnf)
         &HomeLinkLayer::doStageH2_Dat,
         &HomeLinkLayer::doStageH3_Dat
     };
-    pipelineMap[typeid(RawReq)] = initPipeline(reqFuncs);
-    pipelineMap[typeid(RawRsp)] = initPipeline(rspFuncs);
-    pipelineMap[typeid(RawSnp)] = initPipeline(snpFuncs);
-    pipelineMap[typeid(RawDat)] = initPipeline(datFuncs);
-
-
-
 }
 
 void
@@ -53,69 +46,78 @@ HomeLinkLayer::wakeup()
 {
     DPRINTF(HomeLinkLayer, "HomeLinklayer wakeup!!!\n");
     DPRINTF(HomeLinkLayer, "home wakeup: rxport=%p\n", rxport);
-    for (ChannelType ch : {ChannelType::REQ, ChannelType::RSP, ChannelType::SNP, ChannelType::DAT}) {
-        auto flit = rxport->getRxFlit(ch);
-        if (flit.has_value()){
-            DPRINTF(HomeLinkLayer, "got flit on channel %d\n", (int)ch);
-            FlitVariant rxflit = flit.value();
-            advancePipeline(rxflit);
 
-        }
-
+    for (auto& flit : flits) {
+        std::visit([this](auto& f) {
+            LoopChannelPipline(typeid(f));
+        }, flit);
     }
-
-
 }
 
-void HomeLinkLayer::advancePipeline(FlitVariant& fv)
+void
+HomeLinkLayer::LoopChannelPipline(const std::type_index& flitType)
 {
-    std::visit([&](auto& f) {
-        using T = std::decay_t<decltype(f)>;
-        auto& funcs = pipelineMap.at(typeid(T));
+    auto getFlit = rxport->getRxFlit(flitType);
+    if (!getFlit) {
+        return;
+    }
 
-        DPRINTF(HomeLinkLayer,
-            "advancePipeline: type=%s stage=%d funcs.size=%d\n",
-            typeid(T).name(), (int)f.stage, (int)funcs.size());
+    advancePipeline(*getFlit);
+}
 
-        if (f.stage < funcs.size() && funcs[f.stage]) {
-            DPRINTF(HomeLinkLayer, "dispatching stage %d\n", (int)f.stage);
-            funcs[f.stage](static_cast<BaseFlit*>(&f));
-        } else {
+void
+HomeLinkLayer::advancePipeline(FlitVariant& fv)
+{
+    std::visit([this](auto& flit) {
+        using FlitType = std::decay_t<decltype(flit)>;
+        auto& funcs = funcsFor<FlitType>();
+
+        if (flit.stage >= funcs.size()) {
             DPRINTF(HomeLinkLayer,
-                "skip dispatch: stage=%d funcs.size=%d\n",
-                (int)f.stage, (int)funcs.size());
+                    "advancePipeline: stage=%d out of range\n",
+                    static_cast<int>(flit.stage));
+            return;
+        }
+
+        for(auto fn=funcs.rbegin(); fn!=funcs.rend(); ++fn) {
+            if (*fn) {
+                (this->**fn)(&flit);
+            }
         }
     }, fv);
 }
 
 
+
+
 // RawReq
 void HomeLinkLayer::doStageH0_Req(RawReq* Req) {
+    if (!Req->isCurrentStage(0)) return;
     Req->next_stage();
     DPRINTF(HomeLinkLayer, "HomeLinklayer get req!!!\n");
     m_homenode->scheduleEvent(gem5::Cycles(1));
 }
-void HomeLinkLayer::doStageH1_Req(RawReq* Req) { Req->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
-void HomeLinkLayer::doStageH2_Req(RawReq* Req) { Req->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
-void HomeLinkLayer::doStageH3_Req(RawReq* Req) { Req->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
+void HomeLinkLayer::doStageH1_Req(RawReq* Req) { if (!Req->isCurrentStage(1)) return; Req->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
+void HomeLinkLayer::doStageH2_Req(RawReq* Req) { if (!Req->isCurrentStage(2)) return; Req->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
+void HomeLinkLayer::doStageH3_Req(RawReq* Req) { if (!Req->isCurrentStage(3)) return; Req->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
 
 // RawRsp
-void HomeLinkLayer::doStageH0_Rsp(RawRsp* Rsp) { Rsp->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
-void HomeLinkLayer::doStageH1_Rsp(RawRsp* Rsp) { Rsp->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
-void HomeLinkLayer::doStageH2_Rsp(RawRsp* Rsp) { Rsp->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
-void HomeLinkLayer::doStageH3_Rsp(RawRsp* Rsp) { Rsp->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
+void HomeLinkLayer::doStageH0_Rsp(RawRsp* Rsp) { if (!Rsp->isCurrentStage(0)) return; Rsp->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
+void HomeLinkLayer::doStageH1_Rsp(RawRsp* Rsp) { if (!Rsp->isCurrentStage(1)) return; Rsp->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
+void HomeLinkLayer::doStageH2_Rsp(RawRsp* Rsp) { if (!Rsp->isCurrentStage(2)) return; Rsp->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
+void HomeLinkLayer::doStageH3_Rsp(RawRsp* Rsp) { if (!Rsp->isCurrentStage(3)) return; Rsp->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
 
 // RawSnp
-void HomeLinkLayer::doStageH0_Snp(RawSnp* Snp) { Snp->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
-void HomeLinkLayer::doStageH1_Snp(RawSnp* Snp) { Snp->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
-void HomeLinkLayer::doStageH2_Snp(RawSnp* Snp) { Snp->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
-void HomeLinkLayer::doStageH3_Snp(RawSnp* Snp) { Snp->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
+void HomeLinkLayer::doStageH0_Snp(RawSnp* Snp) { if (!Snp->isCurrentStage(0)) return; Snp->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
+void HomeLinkLayer::doStageH1_Snp(RawSnp* Snp) { if (!Snp->isCurrentStage(1)) return; Snp->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
+void HomeLinkLayer::doStageH2_Snp(RawSnp* Snp) { if (!Snp->isCurrentStage(2)) return; Snp->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
+void HomeLinkLayer::doStageH3_Snp(RawSnp* Snp) { if (!Snp->isCurrentStage(3)) return; Snp->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
 
 // RawDat
-void HomeLinkLayer::doStageH0_Dat(RawDat* Dat) { Dat->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
-void HomeLinkLayer::doStageH1_Dat(RawDat* Dat) { Dat->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
-void HomeLinkLayer::doStageH2_Dat(RawDat* Dat) { Dat->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
-void HomeLinkLayer::doStageH3_Dat(RawDat* Dat) { Dat->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
+void HomeLinkLayer::doStageH0_Dat(RawDat* Dat) { if (!Dat->isCurrentStage(0)) return; Dat->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
+void HomeLinkLayer::doStageH1_Dat(RawDat* Dat) { if (!Dat->isCurrentStage(1)) return; Dat->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
+void HomeLinkLayer::doStageH2_Dat(RawDat* Dat) { if (!Dat->isCurrentStage(2)) return; Dat->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
+void HomeLinkLayer::doStageH3_Dat(RawDat* Dat) { if (!Dat->isCurrentStage(3)) return; Dat->next_stage(); m_homenode->scheduleEvent(gem5::Cycles(1)); }
 
 
 

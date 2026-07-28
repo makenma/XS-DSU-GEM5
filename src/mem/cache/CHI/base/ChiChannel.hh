@@ -3,7 +3,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <variant>
 
 namespace gem5
@@ -36,6 +35,10 @@ namespace Chi
 
         void next_stage(){
             this->stage++;
+        }
+
+        bool isCurrentStage(uint32_t stage) const {
+            return this->stage == stage;
         }
 
     };
@@ -96,7 +99,6 @@ namespace Chi
     }
 
 
-    using StageFunc = std::function<void(BaseFlit*)>;
     using FlitVariant = std::variant<RawReq, RawRsp, RawSnp, RawDat>;
 
 
