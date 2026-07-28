@@ -223,8 +223,9 @@ HnfSLCSF::makeTerminalResponse(const SlcSfRequest& request)
         [this](const auto& typed_request) {
             using Request = std::decay_t<decltype(typed_request)>;
             if constexpr (std::is_same_v<Request, SlcSfLookupReq>) {
+                HnfSLCSFBackend::LookupSnapshot snapshot{};
                 HnfSlcLookupResult result = HnfSLCSFBackend::lookup(
-                    makeBackendLookupRequest(typed_request));
+                    makeBackendLookupRequest(typed_request), &snapshot);
                 if (result.replay) {
                     panic_if(wakeupTick == MaxTick,
                              "HnfSLCSF cannot schedule a retry after MaxTick");
@@ -238,6 +239,13 @@ HnfSLCSF::makeTerminalResponse(const SlcSfRequest& request)
                 SlcSfCommitToken token{};
                 token.lookupReqId = typed_request.header.reqId;
                 token.lineAddress = typed_request.header.lineAddress;
+                token.lookupEpoch = snapshot.lookupEpoch;
+                token.slc = SlcSfArraySnapshot{
+                    snapshot.slc.hit, snapshot.slc.set, snapshot.slc.way,
+                    snapshot.slc.generation};
+                token.sf = SlcSfArraySnapshot{
+                    snapshot.sf.hit, snapshot.sf.set, snapshot.sf.way,
+                    snapshot.sf.generation};
                 return makeSlcSfDoneResponse(
                     typed_request, std::move(result), token);
             } else {

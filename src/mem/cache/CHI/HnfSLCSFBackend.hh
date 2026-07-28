@@ -18,6 +18,28 @@ class HnfSLCSFBackend
   public:
     using SeqId = uint64_t;
 
+    struct ArraySnapshot
+    {
+        bool hit = false;
+        uint32_t set = 0;
+        uint32_t way = 0;
+        uint64_t generation = 0;
+        uint64_t replacementStamp = 0;
+    };
+
+    struct LookupSnapshot
+    {
+        uint64_t lookupEpoch = 0;
+        ArraySnapshot slc{};
+        ArraySnapshot sf{};
+    };
+
+    struct LookupObservation
+    {
+        HnfSlcLookupResult result{};
+        LookupSnapshot snapshot{};
+    };
+
     struct SeqVictim
     {
         SeqId id = 0;
@@ -33,7 +55,12 @@ class HnfSLCSFBackend
                     uint32_t slc_num_ways, uint32_t sf_num_sets,
                     uint32_t sf_num_ways, uint32_t seq_entries = 8);
 
-    HnfSlcLookupResult lookup(const HnfSlcLookupReq& req);
+    /** Inspect lookup semantics and version snapshots without side effects. */
+    LookupObservation probe(const HnfSlcLookupReq& req) const;
+
+    /** Probe and commit one replacement access when the result is not Replay. */
+    HnfSlcLookupResult lookup(
+        const HnfSlcLookupReq& req, LookupSnapshot* snapshot = nullptr);
     bool tryReserveSfResources(uint32_t entry, uint64_t block_addr,
                                PocqTxnKind txn);
     void releaseSfResources(uint32_t entry);
@@ -65,6 +92,8 @@ class HnfSLCSFBackend
     bool seqContains(uint64_t block_addr) const;
     size_t seqOccupancy() const;
     size_t seqCapacity() const { return seq.size(); }
+    uint64_t currentLookupEpoch() const { return lookupEpoch; }
+    uint64_t currentLookupAccessCount() const { return lookupAccessCount; }
 
     bool isBusy() const { return seqOccupancy() != 0; }
 
@@ -118,6 +147,8 @@ class HnfSLCSFBackend
     std::unordered_map<uint32_t, SfReservation> sfReservations;
     size_t reservedSeqSlots = 0;
     uint64_t accessCounter = 0;
+    uint64_t lookupEpoch = 1;
+    uint64_t lookupAccessCount = 0;
     SeqId nextSeqId = 1;
 
     uint64_t blockNumber(uint64_t block_addr) const;
@@ -135,6 +166,8 @@ class HnfSLCSFBackend
     SlcLine& allocateSlc(uint64_t block_addr);
     SfLine& allocateSf(uint64_t block_addr, uint32_t home_node_id);
     const SfLine* selectSfVictim(uint64_t block_addr) const;
+    LookupSnapshot snapshotLookup(uint64_t block_addr) const;
+    void recordAccess(uint64_t block_addr);
     bool sfAllocationWouldReplay(
         uint64_t block_addr,
         std::optional<uint32_t> reservation_owner = std::nullopt) const;

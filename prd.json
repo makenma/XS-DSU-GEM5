@@ -130,8 +130,8 @@
         "Typecheck passes"
       ],
       "priority": 7,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Interrupted acceptance-audit recovery. Preserve the pure const probe, pre-touch hit/set/way/generation snapshots, single recordAccess commit point, full lookup payload, four hit/miss combinations, and twin-model replacement draft, but do not pass or commit it until lookupEpoch is separated from lookup-access accounting. A normal probe or replacement touch must not advance the global token epoch: US-011 explicitly requires LookupTouchDoesNotInvalidateToken, so an unrelated lookup cannot make an older token stale. Keep a stable nonzero storage/reset epoch in CommitToken and use a separate lookupAccessCount (or equivalent read-only instrumentation) to prove every successful non-Replay lookup records exactly one access and Replay records zero. Rename/add the required SeqHitReplayHasNoSideEffects regression and compare replacement stamps/access count plus generation, semantic facts, SEQ occupancy and full pending-victim identity before and after Replay; generation-only comparison cannot detect an accidental replacement touch. The test draft also references private translation-unit-only SnpOp constants and will not compile; assert through a public opcode contract or stable expected value. Strengthen all four hit/miss cases beyond booleans: cover M/M memory-controller decision, SLC-only data/dirty state, SF-only snoop mode/opcode/targets/RNF facts, and HH state/data/token snapshots, preferably against separately seeded synchronous twins. Retain all US-006 timing, absolute-Tick Replay, reservation, mixed-pipe, and baseline tests."
     },
     {
       "id": "US-008",

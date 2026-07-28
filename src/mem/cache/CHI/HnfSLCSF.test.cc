@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <set>
+#include <stdexcept>
 #include <type_traits>
 #include <variant>
 #include <vector>
@@ -42,15 +43,17 @@ lineData(uint8_t seed)
 
 SlcSfRequest
 lookupRequest(uint64_t req_id, uint64_t addr = TestAddr,
-              uint32_t poc_entry_id = 0)
+              uint32_t poc_entry_id = 0,
+              PocqTxnKind txn = PocqTxnKind::ReadShared,
+              uint32_t requester = 7)
 {
     SlcSfReqHeader header{};
     header.reqId = SlcSfReqId{req_id};
     header.pocEntryId = poc_entry_id == 0 ? req_id : poc_entry_id;
     header.lineAddress = addr;
-    header.requester = 7;
+    header.requester = requester;
     return makeSlcSfLookupReq(
-        std::move(header), PocqTxnKind::ReadShared);
+        std::move(header), txn);
 }
 
 SlcSfRequest
@@ -74,6 +77,67 @@ requestHeader(const SlcSfRequest& request)
             return typed_request.header;
         },
         request);
+}
+
+SlcSfResponse
+completeLookup(HnfSLCSF& model, SlcSfRequest request)
+{
+    EXPECT_EQ(model.tryEnqueue(std::move(request)),
+              SlcSfEnqueueResult::Accepted);
+    for (size_t cycle = 0; cycle < 16; ++cycle) {
+        model.wakeup();
+        if (auto response = model.popVisibleResponse()) {
+            return std::move(*response);
+        }
+    }
+    throw std::runtime_error(
+        "HnfSLCSF lookup did not complete in test budget");
+}
+
+void
+expectLookupResultsEqual(const HnfSlcLookupResult& actual,
+                         const HnfSlcLookupResult& expected)
+{
+    EXPECT_EQ(actual.valid, expected.valid);
+    EXPECT_EQ(actual.entry, expected.entry);
+    EXPECT_EQ(actual.slcHit, expected.slcHit);
+    EXPECT_EQ(actual.sfHit, expected.sfHit);
+    EXPECT_EQ(actual.replay, expected.replay);
+    EXPECT_EQ(actual.mcreqNonspec, expected.mcreqNonspec);
+    EXPECT_EQ(actual.snoopBroadcast, expected.snoopBroadcast);
+    EXPECT_EQ(actual.snoopDirected, expected.snoopDirected);
+    EXPECT_EQ(actual.snoopOpcode, expected.snoopOpcode);
+    EXPECT_EQ(actual.snoopTargets, expected.snoopTargets);
+    EXPECT_EQ(actual.rnfid, expected.rnfid);
+    EXPECT_EQ(actual.rnfvec, expected.rnfvec);
+    EXPECT_EQ(actual.slcState, expected.slcState);
+    EXPECT_EQ(actual.sfState, expected.sfState);
+    EXPECT_EQ(actual.dataDirty, expected.dataDirty);
+    EXPECT_EQ(actual.data, expected.data);
+}
+
+void
+expectArraySnapshotsEqual(const HnfSLCSFBackend::ArraySnapshot& actual,
+                          const HnfSLCSFBackend::ArraySnapshot& expected)
+{
+    EXPECT_EQ(actual.hit, expected.hit);
+    EXPECT_EQ(actual.set, expected.set);
+    EXPECT_EQ(actual.way, expected.way);
+    EXPECT_EQ(actual.generation, expected.generation);
+    EXPECT_EQ(actual.replacementStamp, expected.replacementStamp);
+}
+
+void
+expectSeqVictimsEqual(const HnfSLCSFBackend::SeqVictim& actual,
+                      const HnfSLCSFBackend::SeqVictim& expected)
+{
+    EXPECT_EQ(actual.id, expected.id);
+    EXPECT_EQ(actual.blockAddr, expected.blockAddr);
+    EXPECT_EQ(actual.homeNodeId, expected.homeNodeId);
+    EXPECT_EQ(actual.state, expected.state);
+    EXPECT_EQ(actual.owner, expected.owner);
+    EXPECT_EQ(actual.sharers, expected.sharers);
+    EXPECT_EQ(actual.issued, expected.issued);
 }
 
 } // anonymous namespace
@@ -885,6 +949,264 @@ TEST(HnfSlcSfLookupPipelineTest, SeqConflictReturnsRegisteredReplay)
     EXPECT_EQ(replay.reason, SlcSfReplayReason::SeqConflict);
     EXPECT_TRUE(replay.redoLookup);
     EXPECT_EQ(replay.retryNotBeforeTick, 1021);
+}
+
+TEST(HnfSlcSfLookupPipelineTest, PreservesEveryLookupFactAndCommitToken)
+{
+    HnfSLCSF model(64, 4, 2, 4, 2);
+    const auto data = lineData(0xb0);
+    model.commitRead(
+        TestAddr, 0, PocqTxnKind::ReadShared, data, false);
+    model.commitRead(
+        TestAddr, 4, PocqTxnKind::ReadShared, data, false);
+
+    SlcSfResponse response = completeLookup(
+        model, lookupRequest(
+            81, TestAddr, 801, PocqTxnKind::ReadUnique, 8));
+    ASSERT_EQ(response.status(), SlcSfTerminalStatus::Done);
+    const auto& payload =
+        std::get<SlcSfLookupResponse>(response.payload());
+    const auto& result = payload.result;
+    EXPECT_TRUE(result.valid);
+    EXPECT_EQ(result.entry, 801);
+    EXPECT_TRUE(result.slcHit);
+    EXPECT_TRUE(result.sfHit);
+    EXPECT_EQ(result.slcState, HnfSlcState::EN);
+    EXPECT_EQ(result.sfState, HnfSfState::EN);
+    EXPECT_EQ(result.data, data);
+    EXPECT_FALSE(result.dataDirty);
+    EXPECT_FALSE(result.mcreqNonspec);
+    EXPECT_TRUE(result.snoopBroadcast);
+    EXPECT_FALSE(result.snoopDirected);
+    EXPECT_EQ(result.snoopOpcode, 0x07);
+    EXPECT_EQ(result.snoopTargets, (1ULL << 0) | (1ULL << 4));
+    EXPECT_EQ(result.rnfid, 0);
+    EXPECT_EQ(result.rnfvec, (1ULL << 0) | (1ULL << 4));
+
+    const auto& token = payload.token;
+    EXPECT_EQ(token.lookupReqId, SlcSfReqId{81});
+    EXPECT_EQ(token.lineAddress, TestAddr);
+    EXPECT_EQ(token.lookupEpoch, 1);
+    EXPECT_TRUE(token.slc.hit);
+    EXPECT_EQ(token.slc.set, 0);
+    EXPECT_LT(token.slc.way, 2);
+    EXPECT_NE(token.slc.generation, 0);
+    EXPECT_TRUE(token.sf.hit);
+    EXPECT_EQ(token.sf.set, 0);
+    EXPECT_LT(token.sf.way, 2);
+    EXPECT_NE(token.sf.generation, 0);
+}
+
+TEST(HnfSlcSfLookupPipelineTest, ReportsFourSlcSfHitMissCombinations)
+{
+    const auto data = lineData(0xc0);
+
+    HnfSLCSF neither_sync(64, 4, 2, 4, 2);
+    HnfSLCSF neither_pipe(64, 4, 2, 4, 2);
+    const auto neither_expected = lookup(
+        neither_sync, TestAddr, 7, PocqTxnKind::ReadShared);
+    auto neither_response = completeLookup(
+        neither_pipe, lookupRequest(
+            82, TestAddr, 3, PocqTxnKind::ReadShared, 7));
+    const auto& neither_payload =
+        std::get<SlcSfLookupResponse>(neither_response.payload());
+    expectLookupResultsEqual(neither_payload.result, neither_expected);
+    EXPECT_FALSE(neither_payload.result.slcHit);
+    EXPECT_FALSE(neither_payload.result.sfHit);
+    EXPECT_TRUE(neither_payload.result.mcreqNonspec);
+    EXPECT_EQ(neither_payload.result.slcState, HnfSlcState::I);
+    EXPECT_EQ(neither_payload.result.sfState, HnfSfState::I);
+    EXPECT_FALSE(neither_payload.token.slc.hit);
+    EXPECT_FALSE(neither_payload.token.sf.hit);
+
+    HnfSLCSF slc_sync(64, 4, 2, 4, 2);
+    HnfSLCSF slc_pipe(64, 4, 2, 4, 2);
+    for (HnfSLCSF* model : {&slc_sync, &slc_pipe}) {
+        model->writeLine(
+            TestAddr, 0, data, PocqTxnKind::WriteUnique);
+    }
+    const auto slc_expected = lookup(
+        slc_sync, TestAddr, 7, PocqTxnKind::ReadShared);
+    auto slc_response = completeLookup(
+        slc_pipe, lookupRequest(
+            83, TestAddr, 3, PocqTxnKind::ReadShared, 7));
+    const auto& slc_payload =
+        std::get<SlcSfLookupResponse>(slc_response.payload());
+    expectLookupResultsEqual(slc_payload.result, slc_expected);
+    EXPECT_TRUE(slc_payload.result.slcHit);
+    EXPECT_FALSE(slc_payload.result.sfHit);
+    EXPECT_EQ(slc_payload.result.slcState, HnfSlcState::MU);
+    EXPECT_EQ(slc_payload.result.data, data);
+    EXPECT_TRUE(slc_payload.result.dataDirty);
+    EXPECT_FALSE(slc_payload.result.mcreqNonspec);
+    EXPECT_TRUE(slc_payload.token.slc.hit);
+    EXPECT_FALSE(slc_payload.token.sf.hit);
+
+    HnfSLCSF sf_sync(64, 4, 2, 4, 2);
+    HnfSLCSF sf_pipe(64, 4, 2, 4, 2);
+    for (HnfSLCSF* model : {&sf_sync, &sf_pipe}) {
+        model->commitRead(
+            TestAddr, 0, PocqTxnKind::ReadUnique, data, false);
+    }
+    const auto sf_expected = lookup(
+        sf_sync, TestAddr, 7, PocqTxnKind::ReadUnique);
+    auto sf_response = completeLookup(
+        sf_pipe, lookupRequest(
+            84, TestAddr, 3, PocqTxnKind::ReadUnique, 7));
+    const auto& sf_payload =
+        std::get<SlcSfLookupResponse>(sf_response.payload());
+    expectLookupResultsEqual(sf_payload.result, sf_expected);
+    EXPECT_FALSE(sf_payload.result.slcHit);
+    EXPECT_TRUE(sf_payload.result.sfHit);
+    EXPECT_EQ(sf_payload.result.sfState, HnfSfState::EU);
+    EXPECT_TRUE(sf_payload.result.snoopDirected);
+    EXPECT_FALSE(sf_payload.result.snoopBroadcast);
+    EXPECT_EQ(sf_payload.result.snoopOpcode, 0x07);
+    EXPECT_EQ(sf_payload.result.snoopTargets, 1ULL << 0);
+    EXPECT_EQ(sf_payload.result.rnfid, 0);
+    EXPECT_EQ(sf_payload.result.rnfvec, 1ULL << 0);
+    EXPECT_FALSE(sf_payload.token.slc.hit);
+    EXPECT_TRUE(sf_payload.token.sf.hit);
+
+    HnfSLCSF both_sync(64, 4, 2, 4, 2);
+    HnfSLCSF both_pipe(64, 4, 2, 4, 2);
+    for (HnfSLCSF* model : {&both_sync, &both_pipe}) {
+        model->commitRead(
+            TestAddr, 0, PocqTxnKind::ReadShared, data, true);
+    }
+    const auto both_expected = lookup(
+        both_sync, TestAddr, 7, PocqTxnKind::ReadUnique);
+    auto both_response = completeLookup(
+        both_pipe, lookupRequest(
+            85, TestAddr, 3, PocqTxnKind::ReadUnique, 7));
+    const auto& both_payload =
+        std::get<SlcSfLookupResponse>(both_response.payload());
+    expectLookupResultsEqual(both_payload.result, both_expected);
+    EXPECT_TRUE(both_payload.result.slcHit);
+    EXPECT_TRUE(both_payload.result.sfHit);
+    EXPECT_EQ(both_payload.result.slcState, HnfSlcState::MN);
+    EXPECT_EQ(both_payload.result.sfState, HnfSfState::SN);
+    EXPECT_EQ(both_payload.result.data, data);
+    EXPECT_TRUE(both_payload.result.dataDirty);
+    EXPECT_TRUE(both_payload.result.snoopBroadcast);
+    EXPECT_EQ(both_payload.result.snoopOpcode, 0x07);
+    EXPECT_EQ(both_payload.result.snoopTargets, 1ULL << 0);
+    EXPECT_TRUE(both_payload.token.slc.hit);
+    EXPECT_TRUE(both_payload.token.sf.hit);
+    EXPECT_NE(both_payload.token.slc.generation, 0);
+    EXPECT_NE(both_payload.token.sf.generation, 0);
+    EXPECT_EQ(both_payload.token.lookupEpoch, 1);
+}
+
+TEST(HnfSlcSfLookupPipelineTest, SeqHitReplayHasNoSideEffects)
+{
+    HnfSLCSF model(64, 4, 2, 4, 2);
+    const auto data = lineData(0xd0);
+    model.commitRead(
+        TestAddr, 0, PocqTxnKind::ReadShared, data, false);
+    HnfSlcLookupReq request{};
+    request.entry = 9;
+    request.blockAddr = TestAddr;
+    request.req.srcid = 4;
+    request.txn = PocqTxnKind::ReadUnique;
+
+    const auto before = model.probe(request);
+    const auto after = model.probe(request);
+    EXPECT_EQ(model.currentLookupEpoch(), 1);
+    EXPECT_EQ(model.currentLookupAccessCount(), 0);
+    expectLookupResultsEqual(after.result, before.result);
+    expectArraySnapshotsEqual(after.snapshot.slc, before.snapshot.slc);
+    expectArraySnapshotsEqual(after.snapshot.sf, before.snapshot.sf);
+
+    HnfSLCSFBackend::LookupSnapshot committed{};
+    EXPECT_FALSE(model.lookup(request, &committed).replay);
+    EXPECT_EQ(committed.lookupEpoch, 1);
+    EXPECT_EQ(model.currentLookupEpoch(), 1);
+    EXPECT_EQ(model.currentLookupAccessCount(), 1);
+    const auto after_one_access = model.probe(request);
+    EXPECT_EQ(after_one_access.snapshot.slc.generation,
+              before.snapshot.slc.generation);
+    EXPECT_EQ(after_one_access.snapshot.sf.generation,
+              before.snapshot.sf.generation);
+    EXPECT_GT(after_one_access.snapshot.slc.replacementStamp,
+              before.snapshot.slc.replacementStamp);
+    EXPECT_GT(after_one_access.snapshot.sf.replacementStamp,
+              before.snapshot.sf.replacementStamp);
+    EXPECT_FALSE(model.lookup(request, &committed).replay);
+    EXPECT_EQ(committed.lookupEpoch, 1);
+    EXPECT_EQ(model.currentLookupEpoch(), 1);
+    EXPECT_EQ(model.currentLookupAccessCount(), 2);
+    const auto after_two_accesses = model.probe(request);
+    EXPECT_EQ(after_two_accesses.snapshot.slc.generation,
+              after_one_access.snapshot.slc.generation);
+    EXPECT_EQ(after_two_accesses.snapshot.sf.generation,
+              after_one_access.snapshot.sf.generation);
+    EXPECT_GT(after_two_accesses.snapshot.slc.replacementStamp,
+              after_one_access.snapshot.slc.replacementStamp);
+    EXPECT_GT(after_two_accesses.snapshot.sf.replacementStamp,
+              after_one_access.snapshot.sf.replacementStamp);
+
+    HnfSLCSF replay_model(64, 4, 2, 1, 1, 1);
+    const uint64_t replacement_addr = TestAddr + 64;
+    replay_model.commitRead(
+        TestAddr, 0, PocqTxnKind::ReadUnique, data, false, 0x90);
+    replay_model.commitRead(
+        replacement_addr, 4, PocqTxnKind::ReadUnique,
+        data, false, 0x90);
+    ASSERT_TRUE(replay_model.seqContains(TestAddr));
+    ASSERT_TRUE(replay_model.hasPendingSeq());
+    const auto replay_before = replay_model.probe(request);
+    EXPECT_TRUE(replay_before.result.replay);
+    const uint64_t epoch_before = replay_model.currentLookupEpoch();
+    const uint64_t accesses_before =
+        replay_model.currentLookupAccessCount();
+    const size_t occupancy_before = replay_model.seqOccupancy();
+    const auto victim_before = replay_model.frontPendingSeq();
+    EXPECT_TRUE(replay_model.lookup(request, &committed).replay);
+    EXPECT_EQ(replay_model.currentLookupEpoch(), epoch_before);
+    EXPECT_EQ(replay_model.currentLookupAccessCount(), accesses_before);
+    const auto replay_after = replay_model.probe(request);
+    expectLookupResultsEqual(replay_after.result, replay_before.result);
+    expectArraySnapshotsEqual(
+        replay_after.snapshot.slc, replay_before.snapshot.slc);
+    expectArraySnapshotsEqual(
+        replay_after.snapshot.sf, replay_before.snapshot.sf);
+    EXPECT_EQ(replay_model.seqOccupancy(), occupancy_before);
+    expectSeqVictimsEqual(
+        replay_model.frontPendingSeq(), victim_before);
+}
+
+TEST(HnfSlcSfLookupPipelineTest, MatchesSynchronousReplacementOrder)
+{
+    HnfSLCSF synchronous(64, 4, 2, 1, 2, 4);
+    HnfSLCSF pipelined(64, 4, 2, 1, 2, 4);
+    const uint64_t addr_a = TestAddr;
+    const uint64_t addr_b = TestAddr + 64;
+    const uint64_t addr_c = TestAddr + 128;
+    const auto data = lineData(0xe0);
+    for (HnfSLCSF* model : {&synchronous, &pipelined}) {
+        model->commitRead(
+            addr_a, 0, PocqTxnKind::ReadUnique, data, false, 0x90);
+        model->commitRead(
+            addr_b, 4, PocqTxnKind::ReadUnique, data, false, 0x90);
+    }
+
+    EXPECT_FALSE(lookup(
+        synchronous, addr_a, 8, PocqTxnKind::ReadShared).replay);
+    auto response = completeLookup(
+        pipelined, lookupRequest(
+            86, addr_a, 806, PocqTxnKind::ReadShared, 8));
+    ASSERT_EQ(response.status(), SlcSfTerminalStatus::Done);
+
+    synchronous.commitRead(
+        addr_c, 8, PocqTxnKind::ReadUnique, data, false, 0x90);
+    pipelined.commitRead(
+        addr_c, 8, PocqTxnKind::ReadUnique, data, false, 0x90);
+    ASSERT_TRUE(synchronous.hasPendingSeq());
+    ASSERT_TRUE(pipelined.hasPendingSeq());
+    EXPECT_EQ(synchronous.frontPendingSeq().blockAddr, addr_b);
+    expectSeqVictimsEqual(
+        pipelined.frontPendingSeq(), synchronous.frontPendingSeq());
 }
 
 TEST(HnfSlcSfTest, ReadUniqueBroadcastsToOtherVectorSharers)

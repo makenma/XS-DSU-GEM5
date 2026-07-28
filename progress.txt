@@ -28,6 +28,8 @@ Started: 2026-07-28T20:49:07+08:00
   terminal Replay responses rather than Done payload flags.
 - Derive replay deadlines from the absolute gem5 `Tick` at the completion
   boundary; service-local cycle numbers are not valid retry timestamps.
+- Keep a storage/reset epoch independent from read-only lookup-access
+  accounting so replacement touches cannot invalidate coherence snapshots.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -349,4 +351,46 @@ Started: 2026-07-28T20:49:07+08:00
 - Learnings for future iterations: Keep service latency in child-cycle units,
   but construct externally visible retry times from an absolute gem5 Tick at
   the semantic completion boundary.
+---
+
+## 2026-07-28 22:27 - US-007 acceptance-audit recovery
+- The first semantic-preservation draft correctly separated a pure const probe
+  from one explicit replacement-access commit and populated real CommitToken
+  array snapshots, but an independent audit found that `recordAccess()` also
+  incremented the global `lookupEpoch` on every successful lookup.
+- That design would make an older token stale after any unrelated read-only
+  lookup, contradicting the planned `LookupTouchDoesNotInvalidateToken`
+  invariant. Keep `lookupEpoch` stable across probes and replacement touches,
+  and use a separate access counter to verify non-Replay +1 and Replay +0.
+- Strengthen the required `SeqHitReplayHasNoSideEffects` regression to compare
+  replacement stamps/access count, generations, lookup facts, SEQ occupancy,
+  and the complete pending victim identity. A generation-only check cannot
+  detect an erroneous replacement-policy touch.
+- Repair the draft test's reference to translation-unit-private `SnpOp`, and
+  validate semantic fields—not only hit bits—in all four SLC/SF combinations.
+- Preserve the current five-file draft and all US-006 timing/reservation tests;
+  this interrupted attempt made no commit and consumes no effective Ralph
+  iteration.
+---
+
+## 2026-07-28 22:34 - US-007
+- Story: Preserve lookup semantics and deterministic replacement order
+- What was implemented: Split the pure lookup probe from its single explicit
+  replacement-access commit, returned the full synchronous lookup facts and
+  pre-touch CommitToken snapshots through the delayed pipeline, and separated
+  stable token epoch from lookup-access accounting. Added observable
+  replacement stamps and regressions for all four SLC/SF hit combinations,
+  Replay side effects, and deterministic victim selection.
+- Files changed: `src/mem/cache/CHI/HnfSLCSFBackend.hh`,
+  `src/mem/cache/CHI/HnfSLCSFBackend.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.test.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built all four RISCV CHI GTest binaries with
+  SCons successfully; all 63 tests passed (15 POCQ, 2 SEQ POCQ, 37 SLCSF,
+  and 9 controller), retaining all 36 baseline passes; changed C++ files
+  passed `python3 util/style.py`; `git diff --check` passed.
+- Learnings for future iterations: A replacement touch needs its own monotonic
+  observation counter; token epochs should represent storage lifecycle, while
+  pre-touch set, way, generation, and replacement stamps preserve the exact
+  decision that produced the lookup response.
 ---

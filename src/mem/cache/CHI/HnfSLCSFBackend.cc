@@ -483,12 +483,70 @@ HnfSLCSFBackend::invalidateSf(uint64_t block_addr)
     }
 }
 
-HnfSlcLookupResult
-HnfSLCSFBackend::lookup(const HnfSlcLookupReq& req)
+HnfSLCSFBackend::LookupSnapshot
+HnfSLCSFBackend::snapshotLookup(uint64_t block_addr) const
 {
-    HnfSlcLookupResult result{};
+    LookupSnapshot snapshot{};
+    snapshot.lookupEpoch = lookupEpoch;
+
+    const auto capture = [](const auto& lines, uint32_t set,
+                            uint64_t tag) {
+        ArraySnapshot array{};
+        array.set = set;
+        auto selected = std::find_if(
+            lines.begin(), lines.end(), [tag](const auto& line) {
+                return line.valid && line.tag == tag;
+            });
+        array.hit = selected != lines.end();
+        if (!array.hit) {
+            selected = std::find_if(
+                lines.begin(), lines.end(), [](const auto& line) {
+                    return !line.valid;
+                });
+            if (selected == lines.end()) {
+                selected = std::min_element(
+                    lines.begin(), lines.end(),
+                    [](const auto& lhs, const auto& rhs) {
+                        return lhs.lastUse < rhs.lastUse;
+                    });
+            }
+        }
+        panic_if(selected == lines.end(),
+                 "HnfSLCSF cannot snapshot an empty array set\n");
+        array.way = std::distance(lines.begin(), selected);
+        array.generation = selected->generation;
+        array.replacementStamp = selected->lastUse;
+        return array;
+    };
+
+    const uint32_t slc_set = slcSet(block_addr);
+    const uint32_t sf_set = sfSet(block_addr);
+    snapshot.slc = capture(slc[slc_set], slc_set, slcTag(block_addr));
+    snapshot.sf = capture(sf[sf_set], sf_set, sfTag(block_addr));
+    return snapshot;
+}
+
+void
+HnfSLCSFBackend::recordAccess(uint64_t block_addr)
+{
+    const uint64_t access = ++accessCounter;
+    if (SlcLine* line = findSlc(block_addr)) {
+        line->lastUse = access;
+    }
+    if (SfLine* line = findSf(block_addr)) {
+        line->lastUse = access;
+    }
+    ++lookupAccessCount;
+}
+
+HnfSLCSFBackend::LookupObservation
+HnfSLCSFBackend::probe(const HnfSlcLookupReq& req) const
+{
+    LookupObservation observation{};
+    HnfSlcLookupResult& result = observation.result;
     result.valid = true;
     result.entry = req.entry;
+    observation.snapshot = snapshotLookup(req.blockAddr);
 
     if (seqContains(req.blockAddr) ||
         (txnMayAllocateSf(req.txn) &&
@@ -502,24 +560,21 @@ HnfSLCSFBackend::lookup(const HnfSlcLookupReq& req)
                 static_cast<unsigned>(seqOccupancy()),
                 static_cast<unsigned>(seq.size()),
                 seqContains(req.blockAddr));
-        return result;
+        return observation;
     }
 
-    if (SlcLine* line = findSlc(req.blockAddr)) {
+    if (const SlcLine* line = findSlc(req.blockAddr)) {
         result.slcHit = true;
         result.slcState = line->state;
         result.dataDirty = isDirty(line->state);
         result.data = line->data;
-        line->lastUse = ++accessCounter;
     }
 
-    if (SfLine* line = findSf(req.blockAddr)) {
+    if (const SfLine* line = findSf(req.blockAddr)) {
         result.sfHit = true;
         result.sfState = line->state;
         result.rnfid = line->owner;
         result.rnfvec = line->sharers;
-        line->lastUse = ++accessCounter;
-
         const uint64_t otherSharers =
             line->sharers & ~requesterMask(req.req.srcid);
         switch (req.txn) {
@@ -575,7 +630,20 @@ HnfSLCSFBackend::lookup(const HnfSlcLookupReq& req)
             static_cast<unsigned long long>(result.snoopTargets),
             result.snoopOpcode, result.snoopBroadcast, result.snoopDirected,
             result.dataDirty);
-    return result;
+    return observation;
+}
+
+HnfSlcLookupResult
+HnfSLCSFBackend::lookup(const HnfSlcLookupReq& req, LookupSnapshot* snapshot)
+{
+    LookupObservation observation = probe(req);
+    if (!observation.result.replay) {
+        recordAccess(req.blockAddr);
+    }
+    if (snapshot) {
+        *snapshot = observation.snapshot;
+    }
+    return std::move(observation.result);
 }
 
 void
