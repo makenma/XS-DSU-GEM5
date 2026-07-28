@@ -73,6 +73,14 @@ makeEmbeddedSlcsfConfig(const Params& p)
 class HnfSLCSF : public HnfSLCSFBackend
 {
   public:
+    enum class MutationStage : uint8_t
+    {
+        U0DecodeValidate,
+        U1PrepareResources,
+        U2ArrayWrite,
+        U3CheckLatch
+    };
+
     HnfSLCSF(uint32_t block_size, uint32_t slc_num_sets,
              uint32_t slc_num_ways, uint32_t sf_num_sets,
              uint32_t sf_num_ways, uint32_t seq_entries = 8,
@@ -99,6 +107,7 @@ class HnfSLCSF : public HnfSLCSFBackend
     size_t reqOutstanding() const;
     size_t reqCapacity() const { return config.reqQueueEntries; }
     uint64_t currentCycle() const { return wakeupCycle; }
+    size_t mutationStageCount(MutationStage stage) const;
 
     size_t respReservedCount() const { return inflightRequests.size(); }
     size_t respPendingCount() const { return respPending.size(); }
@@ -129,12 +138,21 @@ class HnfSLCSF : public HnfSLCSFBackend
         SlcSfRequest request;
         uint64_t issueCycle = 0;
         uint64_t completeCycle = 0;
+        std::optional<MutationStage> mutationStage;
+        std::optional<SlcSfResponse> terminalResponse;
+        bool resourcesPrepared = false;
+        bool mutationCommitted = false;
     };
 
     static void validateConfig(const HnfSLCSFPipelineConfig& config);
     void promotePendingResponses();
     void completeInflightRequests();
     SlcSfResponse makeTerminalResponse(const SlcSfRequest& request);
+    std::optional<SlcSfError> validateMutationRequest(
+        const SlcSfRequest& request) const;
+    bool prepareMutationResources(InflightRequest& request);
+    void executeMutation(InflightRequest& request);
+    void advanceMutation(InflightRequest& request);
     void promoteIngressRequests();
     void issueReadyRequests();
     void updateRegisteredCredits();

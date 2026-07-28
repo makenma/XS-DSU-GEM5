@@ -94,6 +94,7 @@ class HnfSLCSFBackend
     size_t seqCapacity() const { return seq.size(); }
     uint64_t currentLookupEpoch() const { return lookupEpoch; }
     uint64_t currentLookupAccessCount() const { return lookupAccessCount; }
+    uint32_t blockSizeBytes() const { return blockSize; }
 
     /** Validate a prior lookup snapshot without consulting replacement order. */
     bool validateLookupSnapshot(
@@ -101,6 +102,9 @@ class HnfSLCSFBackend
 
     /** Invalidate every outstanding lookup snapshot at a lifecycle boundary. */
     void invalidateCommitTokens();
+
+    /** Check the cross-array state invariant after a staged mutation. */
+    void checkLineInvariant(uint64_t block_addr) const;
 
     bool isBusy() const { return seqOccupancy() != 0; }
 
@@ -188,7 +192,6 @@ class HnfSLCSFBackend
                     uint32_t requester, const std::vector<uint8_t>& data);
     void invalidateSlc(uint64_t block_addr);
     void invalidateSf(uint64_t block_addr);
-    void checkLineInvariant(uint64_t block_addr) const;
 };
 
 } // namespace gem5::Chi

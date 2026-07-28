@@ -42,6 +42,10 @@ Started: 2026-07-28T20:49:07+08:00
 - Validate a miss token against the generation of its recorded candidate way,
   not the way a later LRU probe would select; replacement touches may reorder
   candidates without mutating the recorded storage snapshot.
+- Model a staged mutation as one in-flight owner of both its request and
+  terminal response reservation; acquire transient resources before the sole
+  write stage and convert the same reservation to a pending response only at
+  the final registered boundary.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -529,4 +533,25 @@ Started: 2026-07-28T20:49:07+08:00
   candidate way directly so an unrelated LRU touch cannot stale the token,
   while generation changes still detect tag replacement, hit/miss transitions,
   committed mutations, and same-way ABA reuse.
+---
+
+## 2026-07-29 07:47 - US-012
+- Story: Implement the staged mutation service
+- What was implemented: Replaced placeholder non-lookup completions with an
+  explicit U0 decode/validation, U1 atomic resource preparation, U2 sole array
+  mutation, and U3 invariant-check/response-latch pipeline. Added typed
+  dispatch for CommitRead, clean memory fill, maintenance, remove-sharer, and
+  write-line semantics, with durable Error completion for malformed or
+  deferred operation kinds and backpressure-safe single-write behavior.
+- Files changed: `src/mem/cache/CHI/HnfSLCSFBackend.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.hh`, `src/mem/cache/CHI/HnfSLCSF.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.test.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and all four CHI
+  GTest binaries successfully; all 86 tests passed (15 POCQ, 2 SEQ POCQ,
+  55 SLCSF, and 14 controller), retaining all 36 baseline passes; changed C++
+  files passed `python3 util/style.py`; `git diff --check` passed.
+- Learnings for future iterations: Keeping stage ownership and terminal
+  reservation in one in-flight object lets resource stalls remain response-free
+  while guaranteeing a committed write cannot be repeated or blocked from its
+  terminal response.
 ---
