@@ -14,6 +14,10 @@ Started: 2026-07-28T20:49:07+08:00
   that can disagree.
 - Derive terminal response identity from the typed request and keep generic
   status/payload construction private so invalid combinations cannot compile.
+- Treat double-buffer queue sizes as one shared logical capacity across all
+  registered stages rather than giving each physical deque the full capacity.
+- For retryable owned messages, accept an rvalue reference but move from it
+  only after admission succeeds so rejection preserves caller ownership.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -117,4 +121,24 @@ Started: 2026-07-28T20:49:07+08:00
 - Learnings for future iterations: Concrete operation identity should be
   derived at the typed request boundary, while response payload ownership can
   be validated by returning messages built from local producing-stack data.
+---
+
+## 2026-07-28 21:42 - US-004
+- Story: Implement bounded request double buffering and registered credit
+- What was implemented: Added owned request admission with Accepted, NoCredit,
+  Initializing, and Draining outcomes; registered ingress-to-ready promotion;
+  bounded ready-to-in-flight issue; shared outstanding accounting; per-wakeup
+  credit latching and same-wakeup decrement; lifecycle admission gates; and
+  fail-fast queue, in-flight, and issue-width validation.
+- Files changed: `src/mem/cache/CHI/HnfSLCSF.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.test.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built all four RISCV CHI GTest binaries with
+  SCons successfully; all 48 tests passed (15 POCQ, 2 SEQ POCQ, 22 SLCSF,
+  including 5 new request-queue tests, and 9 controller), retaining all 36
+  baseline passes; changed C++ files passed `python3 util/style.py`;
+  `git diff --check` passed.
+- Learnings for future iterations: Registered credit must account for ingress,
+  ready, and non-terminal in-flight requests as one logical capacity, and an
+  rvalue request remains retryable when rejection occurs before the move.
 ---

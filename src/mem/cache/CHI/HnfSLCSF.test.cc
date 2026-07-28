@@ -39,6 +39,28 @@ lineData(uint8_t seed)
     return data;
 }
 
+SlcSfRequest
+lookupRequest(uint64_t req_id, uint64_t addr = TestAddr)
+{
+    SlcSfReqHeader header{};
+    header.reqId = SlcSfReqId{req_id};
+    header.pocEntryId = req_id;
+    header.lineAddress = addr;
+    header.requester = 7;
+    return makeSlcSfLookupReq(
+        std::move(header), PocqTxnKind::ReadShared);
+}
+
+const SlcSfReqHeader&
+requestHeader(const SlcSfRequest& request)
+{
+    return std::visit(
+        [](const auto& typed_request) -> const SlcSfReqHeader& {
+            return typed_request.header;
+        },
+        request);
+}
+
 } // anonymous namespace
 
 TEST(HnfSlcSfRequestTest, AllocatesMonotonicIdsIndependentOfLinkSequence)
@@ -375,6 +397,132 @@ TEST(HnfSlcSfResponseTest, PayloadsOutliveProducingStack)
     EXPECT_EQ(snoop.data[0], 7);
     EXPECT_EQ(snoop.byteMask[0], 0);
     EXPECT_TRUE(snoop.dirty);
+}
+
+TEST(HnfSlcSfQueueTest, RequestNotIssuedInAcceptanceCycle)
+{
+    HnfSLCSF model(64, 4, 2, 4, 2);
+    auto request = lookupRequest(1);
+
+    EXPECT_EQ(model.tryEnqueue(std::move(request)),
+              SlcSfEnqueueResult::Accepted);
+    EXPECT_EQ(model.reqIngressCount(), 1);
+    EXPECT_EQ(model.reqReadyCount(), 0);
+    EXPECT_EQ(model.reqInflightCount(), 0);
+    EXPECT_EQ(model.reqOutstanding(), 1);
+
+    model.wakeup();
+    EXPECT_EQ(model.reqIngressCount(), 0);
+    EXPECT_EQ(model.reqReadyCount(), 0);
+    EXPECT_EQ(model.reqInflightCount(), 1);
+}
+
+TEST(HnfSlcSfQueueTest, ReqQueueFullReturnsNoCreditWithoutMutation)
+{
+    const HnfSLCSFPipelineConfig config{2, 2, 1, 1, 1, 1};
+    HnfSLCSF model(64, 4, 2, 4, 2, 8, config);
+    const auto data = lineData(0x20);
+    model.commitRead(
+        TestAddr, 0, PocqTxnKind::ReadShared, data, false);
+
+    auto first = lookupRequest(1);
+    auto second = lookupRequest(2);
+    SlcSfReqHeader rejected_header{};
+    rejected_header.reqId = SlcSfReqId{3};
+    rejected_header.pocEntryId = 3;
+    rejected_header.lineAddress = TestAddr;
+    rejected_header.requester = 0;
+    SlcSfRequest rejected = makeSlcSfFlushL3Req(rejected_header);
+
+    EXPECT_EQ(model.tryEnqueue(std::move(first)),
+              SlcSfEnqueueResult::Accepted);
+    EXPECT_EQ(model.tryEnqueue(std::move(second)),
+              SlcSfEnqueueResult::Accepted);
+    EXPECT_EQ(model.registeredReqCredits(), 0);
+    EXPECT_EQ(model.tryEnqueue(std::move(rejected)),
+              SlcSfEnqueueResult::NoCredit);
+    EXPECT_EQ(requestHeader(rejected).reqId, SlcSfReqId{3});
+    EXPECT_EQ(model.reqOutstanding(), 2);
+
+    const auto result = lookup(
+        model, TestAddr, 4, PocqTxnKind::ReadShared);
+    EXPECT_TRUE(result.slcHit);
+    EXPECT_TRUE(result.sfHit);
+    EXPECT_EQ(result.data, data);
+}
+
+TEST(HnfSlcSfQueueTest, SameWakeupBurstConsumesRegisteredCredit)
+{
+    const HnfSLCSFPipelineConfig config{3, 2, 1, 1, 1, 1};
+    HnfSLCSF model(64, 4, 2, 4, 2, 8, config);
+    auto first = lookupRequest(1);
+    auto second = lookupRequest(2);
+    auto third = lookupRequest(3);
+    auto rejected = lookupRequest(4);
+
+    EXPECT_EQ(model.registeredReqCredits(), 3);
+    EXPECT_EQ(model.tryEnqueue(std::move(first)),
+              SlcSfEnqueueResult::Accepted);
+    EXPECT_EQ(model.registeredReqCredits(), 2);
+    EXPECT_EQ(model.tryEnqueue(std::move(second)),
+              SlcSfEnqueueResult::Accepted);
+    EXPECT_EQ(model.registeredReqCredits(), 1);
+    EXPECT_EQ(model.tryEnqueue(std::move(third)),
+              SlcSfEnqueueResult::Accepted);
+    EXPECT_EQ(model.registeredReqCredits(), 0);
+    EXPECT_EQ(model.tryEnqueue(std::move(rejected)),
+              SlcSfEnqueueResult::NoCredit);
+    EXPECT_EQ(requestHeader(rejected).reqId, SlcSfReqId{4});
+
+    model.wakeup();
+    EXPECT_EQ(model.reqIngressCount(), 0);
+    EXPECT_EQ(model.reqReadyCount(), 2);
+    EXPECT_EQ(model.reqInflightCount(), 1);
+    EXPECT_EQ(model.reqOutstanding(), 3);
+    EXPECT_EQ(model.registeredReqCredits(), 0);
+}
+
+TEST(HnfSlcSfQueueTest, LifecycleRejectionsPreserveRequestOwnership)
+{
+    HnfSLCSF model(64, 4, 2, 4, 2);
+    auto initializing_request = lookupRequest(11);
+    model.beginInitialization();
+    EXPECT_EQ(model.tryEnqueue(std::move(initializing_request)),
+              SlcSfEnqueueResult::Initializing);
+    EXPECT_EQ(requestHeader(initializing_request).reqId, SlcSfReqId{11});
+    EXPECT_EQ(model.reqOutstanding(), 0);
+
+    model.finishInitialization();
+    model.wakeup();
+    EXPECT_EQ(model.registeredReqCredits(), model.reqCapacity());
+    auto draining_request = lookupRequest(12);
+    model.beginDraining();
+    EXPECT_EQ(model.tryEnqueue(std::move(draining_request)),
+              SlcSfEnqueueResult::Draining);
+    EXPECT_EQ(requestHeader(draining_request).reqId, SlcSfReqId{12});
+    EXPECT_EQ(model.reqOutstanding(), 0);
+}
+
+TEST(HnfSlcSfQueueTest, RejectsInvalidQueueAndIssueConfiguration)
+{
+    const auto construct = [](HnfSLCSFPipelineConfig config) {
+        return HnfSLCSF(64, 4, 2, 4, 2, 8, config);
+    };
+
+    EXPECT_THROW(construct({0, 1, 1, 1, 1, 1}),
+                 std::invalid_argument);
+    EXPECT_THROW(construct({1, 0, 1, 1, 1, 1}),
+                 std::invalid_argument);
+    EXPECT_THROW(construct({1, 1, 0, 1, 1, 1}),
+                 std::invalid_argument);
+    EXPECT_THROW(construct({1, 1, 1, 0, 1, 1}),
+                 std::invalid_argument);
+    EXPECT_THROW(construct({1, 1, 1, 1, 0, 1}),
+                 std::invalid_argument);
+    EXPECT_THROW(construct({1, 1, 1, 1, 1, 0}),
+                 std::invalid_argument);
+    EXPECT_THROW(construct({1, 1, 2, 1, 1, 1}),
+                 std::invalid_argument);
 }
 
 TEST(HnfSlcSfTest, ReadUniqueBroadcastsToOtherVectorSharers)
