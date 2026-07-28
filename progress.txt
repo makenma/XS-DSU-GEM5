@@ -30,6 +30,9 @@ Started: 2026-07-28T20:49:07+08:00
   boundary; service-local cycle numbers are not valid retry timestamps.
 - Keep a storage/reset epoch independent from read-only lookup-access
   accounting so replacement touches cannot invalidate coherence snapshots.
+- When an embedded timed service depends on its owner for clock edges, share
+  one advance/order/work-decision helper between production scheduling and
+  smoke tests so tests exercise the real reschedule boundary.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -393,4 +396,46 @@ Started: 2026-07-28T20:49:07+08:00
   observation counter; token epochs should represent storage lifecycle, while
   pre-touch set, way, generation, and replacement stamps preserve the exact
   decision that produced the lookup response.
+---
+
+## 2026-07-28 22:39 - US-008 acceptance-audit recovery
+- The first stage-A draft exposed and mapped the complete parameter set and
+  called `slcsf.wakeup(curTick())` once before the link layer, but it was
+  interrupted before build, pass marking, or commit after two independent
+  acceptance gaps were found.
+- Restore the source-plan MVP default `enable_set_lock=False`; the draft used
+  true in Python, C++, and its regression. Reject an unsafe `max_inflight > 1`
+  configuration when that transition control is disabled.
+- Replace the direct `while (model.hasWork()) model.wakeup()` smoke test with a
+  fixture or production scheduling seam that exercises the same combined-work
+  decision as `HomeNodeFull::wakeup()`. It must reach a visible response with
+  no additional RX flit, consume it, and then prove scheduling stops at idle.
+- Preserve the intentional five-file draft in `HomeNodeFull.py`,
+  `HomeNodeFull.cc`, `HnfSLCSF.hh`, `HnfSLCSF.cc`, and
+  `HnfSLCSF.test.cc`; this interrupted attempt made no commit and consumes no
+  effective Ralph iteration.
+---
+
+## 2026-07-28 22:52 - US-008
+- Story: Add stage-A parameters and HomeNode scheduling
+- What was implemented: Added the complete `slcsf_`-prefixed stage-A parameter
+  surface and exact HomeNode-to-pipeline mapping, safe MVP defaults and
+  validation, and an embedded service driver that advances SLCSF once before
+  LinkLayer work and returns the combined owner reschedule decision. Added
+  default/override mapping coverage and a production-seam smoke test that
+  completes and consumes a lookup without another RX flit, then stops idle
+  scheduling.
+- Files changed: `src/mem/cache/CHI/HomeNodeFull.py`,
+  `src/mem/cache/CHI/HomeNodeFull.cc`, `src/mem/cache/CHI/HnfSLCSF.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.cc`, `src/mem/cache/CHI/HnfSLCSF.test.cc`,
+  `prd.json`, and `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` successfully;
+  instantiated default and non-default `HomeNodeFull` configurations; built
+  all four RISCV CHI GTests; all 67 tests passed (15 POCQ, 2 SEQ POCQ,
+  41 SLCSF, and 9 controller); changed sources passed `python3 util/style.py`;
+  `git diff --check` passed.
+- Learnings for future iterations: A shared owner-driving seam can prove both
+  registered child-before-link ordering and idle-stop scheduling without a
+  heavyweight HomeNode fixture, while a named parameter mapper keeps Python
+  and C++ configuration surfaces auditable.
 ---

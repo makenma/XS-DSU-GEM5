@@ -27,5 +27,24 @@ class HomeNodeFull(BasicChiComponent):
     sf_num_sets = Param.UInt32(1024, "Number of modeled SF sets")
     sf_num_ways = Param.UInt32(16, "Number of modeled SF ways")
     seq_entries = Param.UInt32(8, "SF victim SEQ entries")
+    slcsf_lookup_latency = Param.Cycles(4, "SLCSF lookup service latency")
+    slcsf_fill_latency = Param.Cycles(4, "SLCSF fill service latency")
+    slcsf_update_latency = Param.Cycles(3, "SLCSF update service latency")
+    slcsf_victim_latency = Param.Cycles(3, "SLCSF dirty victim latency")
+    slcsf_sf_evict_latency = Param.Cycles(2, "SLCSF SF eviction latency")
+    slcsf_replay_penalty = Param.Cycles(2, "SLCSF replay delay")
+    slcsf_req_queue_entries = Param.UInt32(8, "SLCSF request queue entries")
+    slcsf_resp_queue_entries = Param.UInt32(8, "SLCSF response queue entries")
+    slcsf_victim_buffer_entries = Param.UInt32(
+        2, "SLCSF VictimBuffer entries")
+    slcsf_lookup_issue_width = Param.UInt32(1, "SLCSF lookup issue width")
+    slcsf_fill_issue_width = Param.UInt32(1, "SLCSF fill issue width")
+    slcsf_update_issue_width = Param.UInt32(1, "SLCSF update issue width")
+    slcsf_max_inflight = Param.UInt32(
+        1, "Maximum in-flight SLCSF operations")
+    slcsf_response_consume_width = Param.UInt32(
+        1, "Maximum SLCSF responses consumed by CC per cycle")
+    slcsf_enable_set_lock = Param.Bool(
+        False, "Enable SLCSF set conflict locking")
     rnf_slices = Param.UInt32(
         1, "Address-interleaved CHI bridges attached to each RNF")

@@ -30,7 +30,38 @@ struct HnfSLCSFPipelineConfig
     size_t fillIssueWidth = 1;
     size_t updateIssueWidth = 1;
     size_t lookupLatency = 4;
+    size_t fillLatency = 4;
+    size_t updateLatency = 3;
+    size_t victimLatency = 3;
+    size_t sfEvictLatency = 2;
+    size_t replayPenalty = 2;
+    size_t victimBufferEntries = 2;
+    size_t responseConsumeWidth = 1;
+    bool enableSetLock = false;
 };
+
+template <class Params>
+HnfSLCSFPipelineConfig
+makeEmbeddedSlcsfConfig(const Params& p)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.reqQueueEntries = p.slcsf_req_queue_entries;
+    config.respQueueEntries = p.slcsf_resp_queue_entries;
+    config.maxInflight = p.slcsf_max_inflight;
+    config.lookupIssueWidth = p.slcsf_lookup_issue_width;
+    config.fillIssueWidth = p.slcsf_fill_issue_width;
+    config.updateIssueWidth = p.slcsf_update_issue_width;
+    config.lookupLatency = p.slcsf_lookup_latency;
+    config.fillLatency = p.slcsf_fill_latency;
+    config.updateLatency = p.slcsf_update_latency;
+    config.victimLatency = p.slcsf_victim_latency;
+    config.sfEvictLatency = p.slcsf_sf_evict_latency;
+    config.replayPenalty = p.slcsf_replay_penalty;
+    config.victimBufferEntries = p.slcsf_victim_buffer_entries;
+    config.responseConsumeWidth = p.slcsf_response_consume_width;
+    config.enableSetLock = p.slcsf_enable_set_lock;
+    return config;
+}
 
 /**
  * Compatibility adapter for synchronous callers during the timing migration.
@@ -75,6 +106,7 @@ class HnfSLCSF : public HnfSLCSFBackend
     size_t respOccupied() const;
     size_t respCapacity() const { return config.respQueueEntries; }
     std::optional<SlcSfResponse> popVisibleResponse();
+    const HnfSLCSFPipelineConfig& pipelineConfig() const { return config; }
 
     bool hasWork() const;
     bool isBusy() const { return hasWork() || HnfSLCSFBackend::isBusy(); }
@@ -119,6 +151,18 @@ class HnfSLCSF : public HnfSLCSFBackend
     bool initialized = true;
     bool draining = false;
 };
+
+template <class LinkWakeup, class LinkHasWork, class CcHasWork>
+bool
+advanceEmbeddedSlcsfStageA(HnfSLCSF& slcsf, Tick now,
+                           LinkWakeup&& linkWakeup,
+                           LinkHasWork&& linkHasWork,
+                           CcHasWork&& ccHasWork)
+{
+    slcsf.wakeup(now);
+    linkWakeup();
+    return slcsf.hasWork() || linkHasWork() || ccHasWork();
+}
 
 } // namespace gem5::Chi
 

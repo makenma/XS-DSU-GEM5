@@ -73,14 +73,22 @@ HnfSLCSF::validateConfig(const HnfSLCSFPipelineConfig& config)
     if (config.reqQueueEntries == 0 || config.respQueueEntries == 0 ||
         config.maxInflight == 0 || config.lookupIssueWidth == 0 ||
         config.fillIssueWidth == 0 || config.updateIssueWidth == 0 ||
-        config.lookupLatency == 0) {
+        config.lookupLatency == 0 || config.fillLatency == 0 ||
+        config.updateLatency == 0 || config.victimLatency == 0 ||
+        config.sfEvictLatency == 0 || config.replayPenalty == 0 ||
+        config.victimBufferEntries == 0 ||
+        config.responseConsumeWidth == 0) {
         throw std::invalid_argument(
-            "HnfSLCSF queue sizes, max inflight, issue widths, and lookup "
-            "latency must be positive");
+            "HnfSLCSF queue sizes, VictimBuffer, max inflight, widths, "
+            "latencies, and replay penalty must be positive");
     }
     if (config.maxInflight > config.reqQueueEntries) {
         throw std::invalid_argument(
             "HnfSLCSF max inflight exceeds request queue entries");
+    }
+    if (config.maxInflight > 1 && !config.enableSetLock) {
+        throw std::invalid_argument(
+            "HnfSLCSF max inflight above one requires set locking");
     }
 }
 

@@ -19,6 +19,25 @@ namespace
 
 constexpr uint64_t TestAddr = 0x80004000;
 
+struct StageAHomeNodeParams
+{
+    size_t slcsf_lookup_latency = 4;
+    size_t slcsf_fill_latency = 4;
+    size_t slcsf_update_latency = 3;
+    size_t slcsf_victim_latency = 3;
+    size_t slcsf_sf_evict_latency = 2;
+    size_t slcsf_replay_penalty = 2;
+    size_t slcsf_req_queue_entries = 8;
+    size_t slcsf_resp_queue_entries = 8;
+    size_t slcsf_victim_buffer_entries = 2;
+    size_t slcsf_lookup_issue_width = 1;
+    size_t slcsf_fill_issue_width = 1;
+    size_t slcsf_update_issue_width = 1;
+    size_t slcsf_max_inflight = 1;
+    size_t slcsf_response_consume_width = 1;
+    bool slcsf_enable_set_lock = false;
+};
+
 HnfSlcLookupResult
 lookup(HnfSLCSF& model, uint64_t addr, uint32_t requester,
        PocqTxnKind txn)
@@ -604,6 +623,154 @@ TEST(HnfSlcSfQueueTest, RejectsInvalidQueueAndIssueConfiguration)
                  std::invalid_argument);
 }
 
+TEST(HnfSlcSfQueueTest, StageADefaultConfigurationIsSafe)
+{
+    HnfSLCSF model(64, 4, 2, 4, 2);
+    const auto& config = model.pipelineConfig();
+
+    EXPECT_EQ(config.lookupLatency, 4);
+    EXPECT_EQ(config.fillLatency, 4);
+    EXPECT_EQ(config.updateLatency, 3);
+    EXPECT_EQ(config.victimLatency, 3);
+    EXPECT_EQ(config.sfEvictLatency, 2);
+    EXPECT_EQ(config.replayPenalty, 2);
+    EXPECT_EQ(config.reqQueueEntries, 8);
+    EXPECT_EQ(config.respQueueEntries, 8);
+    EXPECT_EQ(config.victimBufferEntries, 2);
+    EXPECT_EQ(config.lookupIssueWidth, 1);
+    EXPECT_EQ(config.fillIssueWidth, 1);
+    EXPECT_EQ(config.updateIssueWidth, 1);
+    EXPECT_EQ(config.maxInflight, 1);
+    EXPECT_EQ(config.responseConsumeWidth, 1);
+    EXPECT_FALSE(config.enableSetLock);
+}
+
+TEST(HnfSlcSfQueueTest, HomeNodeParametersMapToPipelineConfig)
+{
+    StageAHomeNodeParams params{};
+    auto config = makeEmbeddedSlcsfConfig(params);
+
+    EXPECT_EQ(config.lookupLatency, 4);
+    EXPECT_EQ(config.fillLatency, 4);
+    EXPECT_EQ(config.updateLatency, 3);
+    EXPECT_EQ(config.victimLatency, 3);
+    EXPECT_EQ(config.sfEvictLatency, 2);
+    EXPECT_EQ(config.replayPenalty, 2);
+    EXPECT_EQ(config.reqQueueEntries, 8);
+    EXPECT_EQ(config.respQueueEntries, 8);
+    EXPECT_EQ(config.victimBufferEntries, 2);
+    EXPECT_EQ(config.lookupIssueWidth, 1);
+    EXPECT_EQ(config.fillIssueWidth, 1);
+    EXPECT_EQ(config.updateIssueWidth, 1);
+    EXPECT_EQ(config.maxInflight, 1);
+    EXPECT_EQ(config.responseConsumeWidth, 1);
+    EXPECT_FALSE(config.enableSetLock);
+
+    params.slcsf_lookup_latency = 11;
+    params.slcsf_fill_latency = 12;
+    params.slcsf_update_latency = 13;
+    params.slcsf_victim_latency = 14;
+    params.slcsf_sf_evict_latency = 15;
+    params.slcsf_replay_penalty = 16;
+    params.slcsf_req_queue_entries = 17;
+    params.slcsf_resp_queue_entries = 18;
+    params.slcsf_victim_buffer_entries = 19;
+    params.slcsf_lookup_issue_width = 20;
+    params.slcsf_fill_issue_width = 21;
+    params.slcsf_update_issue_width = 22;
+    params.slcsf_max_inflight = 5;
+    params.slcsf_response_consume_width = 24;
+    params.slcsf_enable_set_lock = true;
+    config = makeEmbeddedSlcsfConfig(params);
+
+    EXPECT_EQ(config.lookupLatency, 11);
+    EXPECT_EQ(config.fillLatency, 12);
+    EXPECT_EQ(config.updateLatency, 13);
+    EXPECT_EQ(config.victimLatency, 14);
+    EXPECT_EQ(config.sfEvictLatency, 15);
+    EXPECT_EQ(config.replayPenalty, 16);
+    EXPECT_EQ(config.reqQueueEntries, 17);
+    EXPECT_EQ(config.respQueueEntries, 18);
+    EXPECT_EQ(config.victimBufferEntries, 19);
+    EXPECT_EQ(config.lookupIssueWidth, 20);
+    EXPECT_EQ(config.fillIssueWidth, 21);
+    EXPECT_EQ(config.updateIssueWidth, 22);
+    EXPECT_EQ(config.maxInflight, 5);
+    EXPECT_EQ(config.responseConsumeWidth, 24);
+    EXPECT_TRUE(config.enableSetLock);
+
+    HnfSLCSF overridden(64, 4, 2, 4, 2, 8, config);
+    EXPECT_EQ(overridden.pipelineConfig().lookupLatency, 11);
+    EXPECT_EQ(overridden.pipelineConfig().maxInflight, 5);
+    EXPECT_TRUE(overridden.pipelineConfig().enableSetLock);
+}
+
+TEST(HnfSlcSfQueueTest, StageASchedulerCompletesLookupWithoutAnotherRxFlit)
+{
+    HnfSLCSF model(64, 4, 2, 4, 2);
+    auto request = lookupRequest(20);
+    ASSERT_EQ(model.tryEnqueue(std::move(request)),
+              SlcSfEnqueueResult::Accepted);
+
+    std::optional<SlcSfResponse> response;
+    Tick tick = 100;
+    size_t homeNodeWakeups = 0;
+    bool nextEdgeScheduled = true;
+    while (nextEdgeScheduled && !response) {
+        const auto previousCycle = model.currentCycle();
+        nextEdgeScheduled = advanceEmbeddedSlcsfStageA(
+            model, tick++,
+            [&] {
+                EXPECT_EQ(model.currentCycle(), previousCycle + 1);
+                if (model.respVisibleCount() != 0) {
+                    response = model.popVisibleResponse();
+                }
+            },
+            [] { return false; }, [] { return false; });
+        ++homeNodeWakeups;
+        ASSERT_LT(homeNodeWakeups, 16);
+    }
+
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->reqId(), SlcSfReqId{20});
+    EXPECT_EQ(response->status(), SlcSfTerminalStatus::Done);
+    EXPECT_FALSE(nextEdgeScheduled);
+    EXPECT_FALSE(model.hasWork());
+}
+
+TEST(HnfSlcSfQueueTest, RejectsInvalidStageAServiceConfiguration)
+{
+    const auto expectInvalid = [](HnfSLCSFPipelineConfig config) {
+        EXPECT_THROW(HnfSLCSF(64, 4, 2, 4, 2, 8, config),
+                     std::invalid_argument);
+    };
+    HnfSLCSFPipelineConfig config{};
+
+    config.fillLatency = 0;
+    expectInvalid(config);
+    config = {};
+    config.updateLatency = 0;
+    expectInvalid(config);
+    config = {};
+    config.victimLatency = 0;
+    expectInvalid(config);
+    config = {};
+    config.sfEvictLatency = 0;
+    expectInvalid(config);
+    config = {};
+    config.replayPenalty = 0;
+    expectInvalid(config);
+    config = {};
+    config.victimBufferEntries = 0;
+    expectInvalid(config);
+    config = {};
+    config.responseConsumeWidth = 0;
+    expectInvalid(config);
+    config = {};
+    config.maxInflight = 2;
+    expectInvalid(config);
+}
+
 TEST(HnfSlcSfQueueTest, CompletedResponseNotVisibleUntilNextCycle)
 {
     const HnfSLCSFPipelineConfig config{8, 8, 1, 1, 1, 1, 1};
@@ -641,7 +808,8 @@ TEST(HnfSlcSfQueueTest, CompletedResponseNotVisibleUntilNextCycle)
 
 TEST(HnfSlcSfQueueTest, AcceptedRequestProducesExactlyOneTerminalResponse)
 {
-    const HnfSLCSFPipelineConfig config{3, 3, 3, 3, 1, 1, 1};
+    HnfSLCSFPipelineConfig config{3, 3, 3, 3, 1, 1, 1};
+    config.enableSetLock = true;
     HnfSLCSF model(64, 4, 2, 4, 2, 8, config);
     auto first = lookupRequest(31);
     auto second = lookupRequest(32);
@@ -676,7 +844,8 @@ TEST(HnfSlcSfQueueTest, AcceptedRequestProducesExactlyOneTerminalResponse)
 
 TEST(HnfSlcSfQueueTest, ResponseBackpressureDoesNotDropOrDuplicate)
 {
-    const HnfSLCSFPipelineConfig config{2, 1, 2, 2, 1, 1, 1};
+    HnfSLCSFPipelineConfig config{2, 1, 2, 2, 1, 1, 1};
+    config.enableSetLock = true;
     HnfSLCSF model(64, 4, 2, 4, 2, 8, config);
     auto first = lookupRequest(41);
     auto second = lookupRequest(42);
@@ -741,7 +910,8 @@ TEST(HnfSlcSfQueueTest, RejectedRequestProducesNoResponse)
 
 TEST(HnfSlcSfQueueTest, MixedPipesCompleteOutOfAcceptanceOrder)
 {
-    const HnfSLCSFPipelineConfig config{3, 3, 2, 1, 1, 1, 4};
+    HnfSLCSFPipelineConfig config{3, 3, 2, 1, 1, 1, 4};
+    config.enableSetLock = true;
     HnfSLCSF model(64, 4, 2, 4, 2, 8, config);
     auto first_lookup = lookupRequest(61, TestAddr, 601);
     auto second_lookup = lookupRequest(62, TestAddr, 602);
