@@ -526,6 +526,51 @@ HnfSLCSFBackend::snapshotLookup(uint64_t block_addr) const
     return snapshot;
 }
 
+bool
+HnfSLCSFBackend::validateLookupSnapshot(
+    uint64_t block_addr, const LookupSnapshot& snapshot) const
+{
+    if (snapshot.lookupEpoch != lookupEpoch) {
+        return false;
+    }
+
+    const auto matches = [](const auto& lines, uint32_t expected_set,
+                            uint64_t expected_tag,
+                            const ArraySnapshot& recorded) {
+        if (recorded.set != expected_set || recorded.way >= lines.size()) {
+            return false;
+        }
+
+        const auto hit = std::find_if(
+            lines.begin(), lines.end(), [expected_tag](const auto& line) {
+                return line.valid && line.tag == expected_tag;
+            });
+        const bool current_hit = hit != lines.end();
+        if (recorded.hit != current_hit) {
+            return false;
+        }
+        if (current_hit &&
+            static_cast<size_t>(std::distance(lines.begin(), hit)) !=
+                recorded.way) {
+            return false;
+        }
+        return lines[recorded.way].generation == recorded.generation;
+    };
+
+    const uint32_t slc_set = slcSet(block_addr);
+    const uint32_t sf_set = sfSet(block_addr);
+    return matches(slc[slc_set], slc_set, slcTag(block_addr), snapshot.slc) &&
+        matches(sf[sf_set], sf_set, sfTag(block_addr), snapshot.sf);
+}
+
+void
+HnfSLCSFBackend::invalidateCommitTokens()
+{
+    panic_if(lookupEpoch == std::numeric_limits<uint64_t>::max(),
+             "HnfSLCSF lookup epoch space exhausted\n");
+    ++lookupEpoch;
+}
+
 void
 HnfSLCSFBackend::recordAccess(uint64_t block_addr)
 {
@@ -730,18 +775,25 @@ HnfSLCSFBackend::removeSharer(uint64_t block_addr, uint32_t requester)
         return;
     }
 
-    line->sharers &= ~requesterMask(requester);
-    line->generation = ++accessCounter;
-    line->lastUse = accessCounter;
+    const uint64_t requester_bit = requesterMask(requester);
+    if ((line->sharers & requester_bit) == 0) {
+        return;
+    }
+
+    line->sharers &= ~requester_bit;
     if (line->sharers == 0) {
         invalidateSf(block_addr);
     } else if (hasSingleBit(line->sharers)) {
         line->owner = __builtin_ctzll(line->sharers);
         line->state = HnfSfState::SU;
+        line->generation = ++accessCounter;
+        line->lastUse = accessCounter;
     } else {
         const SlcLine* slcLine = findSlc(block_addr);
         line->state = slcLine && isDirty(slcLine->state) ?
             HnfSfState::SN : HnfSfState::EN;
+        line->generation = ++accessCounter;
+        line->lastUse = accessCounter;
     }
     checkLineInvariant(block_addr);
     DPRINTF(HnfSLCSF,

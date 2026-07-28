@@ -113,6 +113,15 @@ completeLookup(HnfSLCSF& model, SlcSfRequest request)
         "HnfSLCSF lookup did not complete in test budget");
 }
 
+SlcSfCommitToken
+completeLookupToken(HnfSLCSF& model, uint64_t req_id, uint64_t addr)
+{
+    SlcSfResponse response = completeLookup(
+        model, lookupRequest(req_id, addr));
+    EXPECT_EQ(response.status(), SlcSfTerminalStatus::Done);
+    return std::get<SlcSfLookupResponse>(response.payload()).token;
+}
+
 void
 expectLookupResultsEqual(const HnfSlcLookupResult& actual,
                          const HnfSlcLookupResult& expected)
@@ -1344,6 +1353,166 @@ TEST(HnfSlcSfLookupPipelineTest, SeqHitReplayHasNoSideEffects)
     EXPECT_EQ(replay_model.seqOccupancy(), occupancy_before);
     expectSeqVictimsEqual(
         replay_model.frontPendingSeq(), victim_before);
+}
+
+TEST(HnfSlcSfCommitTokenTest, LookupTouchDoesNotInvalidateToken)
+{
+    HnfSLCSF model(64, 1, 2, 1, 2);
+    model.commitRead(
+        TestAddr, 0, PocqTxnKind::ReadShared, lineData(0xe1), false);
+    model.commitRead(
+        TestAddr + 64, 1, PocqTxnKind::ReadShared, lineData(0xe2), false);
+    const uint64_t miss_addr = TestAddr + 128;
+    const SlcSfReqId lookup_id{91};
+    const SlcSfCommitToken token =
+        completeLookupToken(model, lookup_id.value, miss_addr);
+    ASSERT_FALSE(token.slc.hit);
+    ASSERT_FALSE(token.sf.hit);
+    const uint64_t accesses_before = model.currentLookupAccessCount();
+
+    EXPECT_TRUE(model.validateCommitToken(token, lookup_id, miss_addr));
+    EXPECT_EQ(model.currentLookupAccessCount(), accesses_before);
+    lookup(model, TestAddr, 7, PocqTxnKind::ReadShared);
+    EXPECT_EQ(model.currentLookupAccessCount(), accesses_before + 1);
+    const auto after_touch = model.probe(HnfSlcLookupReq{
+        0, RawReq{}, PocqTxnKind::Unknown, miss_addr});
+    EXPECT_FALSE(after_touch.snapshot.slc.hit);
+    EXPECT_FALSE(after_touch.snapshot.sf.hit);
+    EXPECT_NE(after_touch.snapshot.slc.way, token.slc.way);
+    EXPECT_NE(after_touch.snapshot.sf.way, token.sf.way);
+    EXPECT_TRUE(model.validateCommitToken(token, lookup_id, miss_addr));
+    EXPECT_EQ(model.currentLookupAccessCount(), accesses_before + 1);
+
+    SlcSfCommitToken changed = token;
+    changed.lookupReqId = SlcSfReqId{92};
+    EXPECT_FALSE(model.validateCommitToken(changed, lookup_id, miss_addr));
+    changed = token;
+    changed.lineAddress += 64;
+    EXPECT_FALSE(model.validateCommitToken(changed, lookup_id, miss_addr));
+    changed = token;
+    changed.slc.hit = !changed.slc.hit;
+    EXPECT_FALSE(model.validateCommitToken(changed, lookup_id, miss_addr));
+    changed = token;
+    ++changed.slc.set;
+    EXPECT_FALSE(model.validateCommitToken(changed, lookup_id, miss_addr));
+    changed = token;
+    ++changed.slc.way;
+    EXPECT_FALSE(model.validateCommitToken(changed, lookup_id, miss_addr));
+    changed = token;
+    ++changed.slc.generation;
+    EXPECT_FALSE(model.validateCommitToken(changed, lookup_id, miss_addr));
+    changed = token;
+    changed.sf.hit = !changed.sf.hit;
+    EXPECT_FALSE(model.validateCommitToken(changed, lookup_id, miss_addr));
+    changed = token;
+    ++changed.sf.set;
+    EXPECT_FALSE(model.validateCommitToken(changed, lookup_id, miss_addr));
+    changed = token;
+    ++changed.sf.way;
+    EXPECT_FALSE(model.validateCommitToken(changed, lookup_id, miss_addr));
+    changed = token;
+    ++changed.sf.generation;
+    EXPECT_FALSE(model.validateCommitToken(changed, lookup_id, miss_addr));
+}
+
+TEST(HnfSlcSfCommitTokenTest, NoOpDirectoryUpdatePreservesGeneration)
+{
+    HnfSLCSF model(64, 1, 1, 1, 1);
+    model.commitRead(
+        TestAddr, 0, PocqTxnKind::ReadShared, lineData(0xe2), false);
+    HnfSlcLookupReq request{};
+    request.blockAddr = TestAddr;
+    const auto before = model.probe(request);
+
+    model.removeSharer(TestAddr, 7);
+
+    const auto after = model.probe(request);
+    expectArraySnapshotsEqual(after.snapshot.slc, before.snapshot.slc);
+    expectArraySnapshotsEqual(after.snapshot.sf, before.snapshot.sf);
+}
+
+TEST(HnfSlcSfCommitTokenTest, CommittedHitMissAndGenerationChangesInvalidate)
+{
+    HnfSLCSF model(64, 1, 1, 1, 1);
+    const SlcSfReqId miss_id{93};
+    const SlcSfCommitToken miss =
+        completeLookupToken(model, miss_id.value, TestAddr);
+    ASSERT_FALSE(miss.slc.hit);
+    model.writeLine(
+        TestAddr, 0, lineData(0xe2), PocqTxnKind::WriteUnique);
+    EXPECT_FALSE(model.validateCommitToken(miss, miss_id, TestAddr));
+
+    const SlcSfReqId hit_id{94};
+    const SlcSfCommitToken hit =
+        completeLookupToken(model, hit_id.value, TestAddr);
+    ASSERT_TRUE(hit.slc.hit);
+    model.writeLine(
+        TestAddr, 0, lineData(0xe3), PocqTxnKind::WriteUnique);
+    const auto after = model.probe(HnfSlcLookupReq{
+        0, RawReq{}, PocqTxnKind::Unknown, TestAddr});
+    EXPECT_TRUE(after.snapshot.slc.hit);
+    EXPECT_EQ(after.snapshot.slc.way, hit.slc.way);
+    EXPECT_NE(after.snapshot.slc.generation, hit.slc.generation);
+    EXPECT_FALSE(model.validateCommitToken(hit, hit_id, TestAddr));
+}
+
+TEST(HnfSlcSfCommitTokenTest, TagChangeInSnapshottedWayInvalidatesToken)
+{
+    HnfSLCSF model(64, 1, 1, 1, 1);
+    const SlcSfReqId lookup_id{95};
+    const SlcSfCommitToken token =
+        completeLookupToken(model, lookup_id.value, TestAddr);
+    ASSERT_FALSE(token.slc.hit);
+
+    model.writeLine(
+        TestAddr + 64, 0, lineData(0xe4), PocqTxnKind::WriteUnique);
+    const auto current = model.probe(HnfSlcLookupReq{
+        0, RawReq{}, PocqTxnKind::Unknown, TestAddr});
+    EXPECT_FALSE(current.snapshot.slc.hit);
+    EXPECT_EQ(current.snapshot.slc.way, token.slc.way);
+    EXPECT_NE(current.snapshot.slc.generation, token.slc.generation);
+    EXPECT_FALSE(model.validateCommitToken(token, lookup_id, TestAddr));
+}
+
+TEST(HnfSlcSfCommitTokenTest, EvictReallocateAbaInvalidatesOldToken)
+{
+    HnfSLCSF model(64, 1, 1, 1, 1);
+    model.writeLine(
+        TestAddr, 0, lineData(0xe5), PocqTxnKind::WriteUnique);
+    const SlcSfReqId old_id{96};
+    const SlcSfCommitToken old_token =
+        completeLookupToken(model, old_id.value, TestAddr);
+    ASSERT_TRUE(old_token.slc.hit);
+
+    model.flushL3(TestAddr);
+    model.writeLine(
+        TestAddr + 64, 0, lineData(0xe6), PocqTxnKind::WriteUnique);
+    model.flushL3(TestAddr + 64);
+    model.writeLine(
+        TestAddr, 0, lineData(0xe7), PocqTxnKind::WriteUnique);
+
+    const SlcSfReqId fresh_id{97};
+    const SlcSfCommitToken fresh_token =
+        completeLookupToken(model, fresh_id.value, TestAddr);
+    EXPECT_TRUE(fresh_token.slc.hit);
+    EXPECT_EQ(fresh_token.slc.set, old_token.slc.set);
+    EXPECT_EQ(fresh_token.slc.way, old_token.slc.way);
+    EXPECT_NE(fresh_token.slc.generation, old_token.slc.generation);
+    EXPECT_FALSE(model.validateCommitToken(old_token, old_id, TestAddr));
+    EXPECT_TRUE(model.validateCommitToken(fresh_token, fresh_id, TestAddr));
+}
+
+TEST(HnfSlcSfCommitTokenTest, LookupEpochInvalidatesOutstandingTokens)
+{
+    HnfSLCSF model(64, 1, 1, 1, 1);
+    const SlcSfReqId lookup_id{98};
+    const SlcSfCommitToken token =
+        completeLookupToken(model, lookup_id.value, TestAddr);
+    ASSERT_TRUE(model.validateCommitToken(token, lookup_id, TestAddr));
+
+    model.invalidateCommitTokens();
+    EXPECT_NE(model.currentLookupEpoch(), token.lookupEpoch);
+    EXPECT_FALSE(model.validateCommitToken(token, lookup_id, TestAddr));
 }
 
 TEST(HnfSlcSfLookupPipelineTest, MatchesSynchronousReplacementOrder)

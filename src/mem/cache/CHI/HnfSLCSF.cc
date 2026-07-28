@@ -263,6 +263,28 @@ HnfSLCSF::makeTerminalResponse(const SlcSfRequest& request)
         request);
 }
 
+bool
+HnfSLCSF::validateCommitToken(
+    const SlcSfCommitToken& token, SlcSfReqId expected_lookup_req_id,
+    uint64_t expected_line_address) const
+{
+    if (!token.lookupReqId.valid() || !expected_lookup_req_id.valid() ||
+        token.lookupReqId != expected_lookup_req_id ||
+        token.lineAddress != expected_line_address) {
+        return false;
+    }
+
+    LookupSnapshot snapshot{};
+    snapshot.lookupEpoch = token.lookupEpoch;
+    snapshot.slc = ArraySnapshot{
+        token.slc.hit, token.slc.set, token.slc.way,
+        token.slc.generation, 0};
+    snapshot.sf = ArraySnapshot{
+        token.sf.hit, token.sf.set, token.sf.way,
+        token.sf.generation, 0};
+    return validateLookupSnapshot(expected_line_address, snapshot);
+}
+
 void
 HnfSLCSF::promoteIngressRequests()
 {

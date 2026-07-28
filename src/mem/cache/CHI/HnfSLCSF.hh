@@ -108,6 +108,11 @@ class HnfSLCSF : public HnfSLCSFBackend
     std::optional<SlcSfResponse> popVisibleResponse();
     const HnfSLCSFPipelineConfig& pipelineConfig() const { return config; }
 
+    /** Re-probe storage and validate every identity/version token field. */
+    bool validateCommitToken(const SlcSfCommitToken& token,
+                             SlcSfReqId expected_lookup_req_id,
+                             uint64_t expected_line_address) const;
+
     bool hasWork() const;
     bool isBusy() const { return hasWork() || HnfSLCSFBackend::isBusy(); }
 

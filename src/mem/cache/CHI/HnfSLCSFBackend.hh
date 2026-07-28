@@ -95,6 +95,13 @@ class HnfSLCSFBackend
     uint64_t currentLookupEpoch() const { return lookupEpoch; }
     uint64_t currentLookupAccessCount() const { return lookupAccessCount; }
 
+    /** Validate a prior lookup snapshot without consulting replacement order. */
+    bool validateLookupSnapshot(
+        uint64_t block_addr, const LookupSnapshot& snapshot) const;
+
+    /** Invalidate every outstanding lookup snapshot at a lifecycle boundary. */
+    void invalidateCommitTokens();
+
     bool isBusy() const { return seqOccupancy() != 0; }
 
   private:
