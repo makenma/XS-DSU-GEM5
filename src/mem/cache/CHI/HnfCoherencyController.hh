@@ -42,8 +42,17 @@ class HnfCoherencyController
     std::optional<HnfCcRetireInfo> acceptRxDat(const RawDat& dat);
     void serviceInternalWork();
 
+    /**
+     * Validate and latch one terminal SLCSF response.  This is public so the
+     * embedded service boundary can later be replaced by a standalone object
+     * without weakening response identity checks.
+     */
+    void consumeSlcsfResponse(SlcSfResponse response);
+
     SlcLookupPhase slcLookupPhase(uint32_t entry) const;
     SlcSfReqId slcLookupReqId(uint32_t entry) const;
+    const HnfSlcLookupResult& slcLookupResult(uint32_t entry) const;
+    const SlcSfCommitToken& slcCommitToken(uint32_t entry) const;
 
     bool hasWork() const;
     bool hasTxReq() const { return !txReqQ.empty(); }

@@ -635,4 +635,124 @@ TEST(HnfCoherencyControllerTest, WaitingLookupIsNotIssuedTwice)
     }
 }
 
+TEST(HnfCoherencyControllerTest, LookupResponseIsConsumedInLaterCcCycle)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    const auto expectedData = lineData(0xf0);
+    slcsf.commitRead(TestAddr, 0, PocqTxnKind::ReadShared,
+                     expectedData, true, HnfNode);
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 4321, 0, 93, 0x01), 0).accepted);
+    const SlcSfReqId reqId = cc.slcLookupReqId(0);
+
+    Tick tick = 200;
+    for (size_t i = 0; i < 16 && slcsf.respVisibleCount() == 0; ++i) {
+        slcsf.wakeup(++tick);
+    }
+    ASSERT_EQ(slcsf.respVisibleCount(), 1);
+    EXPECT_FALSE(cc.hasTxDat());
+    EXPECT_FALSE(cc.hasTxReq());
+
+    cc.serviceInternalWork();
+    EXPECT_EQ(cc.slcLookupPhase(0),
+              HnfCoherencyController::SlcLookupPhase::ResponseLatched);
+    EXPECT_FALSE(cc.hasTxDat());
+    EXPECT_FALSE(cc.hasTxReq());
+    const HnfSlcLookupResult& result = cc.slcLookupResult(0);
+    EXPECT_TRUE(result.valid);
+    EXPECT_TRUE(result.slcHit);
+    EXPECT_TRUE(result.sfHit);
+    EXPECT_TRUE(result.dataDirty);
+    EXPECT_EQ(result.slcState, HnfSlcState::MN);
+    EXPECT_EQ(result.sfState, HnfSfState::SN);
+    EXPECT_EQ(result.data, expectedData);
+    const SlcSfCommitToken& token = cc.slcCommitToken(0);
+    EXPECT_EQ(token.lookupReqId, reqId);
+    EXPECT_EQ(token.lineAddress, TestAddr);
+    EXPECT_NE(token.lookupEpoch, 0);
+    EXPECT_TRUE(token.slc.hit);
+    EXPECT_TRUE(token.sf.hit);
+    EXPECT_NE(token.slc.generation, 0);
+    EXPECT_NE(token.sf.generation, 0);
+
+    cc.serviceInternalWork();
+    EXPECT_EQ(cc.slcLookupPhase(0),
+              HnfCoherencyController::SlcLookupPhase::None);
+    EXPECT_TRUE(cc.hasTxDat());
+}
+
+TEST(HnfCoherencyControllerTest, ResponseConsumeWidthLimitsEachCcCycle)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.reqQueueEntries = 2;
+    config.respQueueEntries = 2;
+    config.responseConsumeWidth = 1;
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8, config);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 5001, 0, 94, 0x01, TestAddr), 0).accepted);
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(1, 5002, 4, 95, 0x01, TestAddr + BlockSize),
+        1).accepted);
+
+    Tick tick = 300;
+    for (size_t i = 0; i < 32 && slcsf.respVisibleCount() < 2; ++i) {
+        slcsf.wakeup(++tick);
+    }
+    ASSERT_EQ(slcsf.respVisibleCount(), 2);
+
+    cc.serviceInternalWork();
+    EXPECT_EQ(slcsf.respVisibleCount(), 1);
+    EXPECT_EQ(cc.slcLookupPhase(0),
+              HnfCoherencyController::SlcLookupPhase::ResponseLatched);
+    EXPECT_EQ(cc.slcLookupPhase(1),
+              HnfCoherencyController::SlcLookupPhase::Waiting);
+
+    cc.serviceInternalWork();
+    EXPECT_EQ(slcsf.respVisibleCount(), 0);
+    EXPECT_EQ(cc.slcLookupPhase(0),
+              HnfCoherencyController::SlcLookupPhase::None);
+    EXPECT_EQ(cc.slcLookupPhase(1),
+              HnfCoherencyController::SlcLookupPhase::ResponseLatched);
+}
+
+TEST(HnfCoherencyControllerTest, MismatchedLookupResponseIsRejected)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 6001, 0, 96, 0x01), 0).accepted);
+
+    SlcSfReqHeader wrongHeader{};
+    wrongHeader.reqId = SlcSfReqId{cc.slcLookupReqId(0).value + 1};
+    wrongHeader.pocEntryId = 0;
+    wrongHeader.lineAddress = TestAddr;
+    const SlcSfLookupReq wrongRequest = makeSlcSfLookupReq(
+        wrongHeader, PocqTxnKind::ReadShared);
+    const SlcSfResponse wrongResponse = makeSlcSfDoneResponse(
+        wrongRequest, HnfSlcLookupResult{}, SlcSfCommitToken{});
+    EXPECT_ANY_THROW(cc.consumeSlcsfResponse(wrongResponse));
+
+    SlcSfReqHeader matchingHeader = wrongHeader;
+    matchingHeader.reqId = cc.slcLookupReqId(0);
+    const SlcSfLookupReq matchingRequest = makeSlcSfLookupReq(
+        matchingHeader, PocqTxnKind::ReadShared);
+    const SlcSfResponse matchingResponse = makeSlcSfDoneResponse(
+        matchingRequest, HnfSlcLookupResult{}, SlcSfCommitToken{});
+    cc.consumeSlcsfResponse(matchingResponse);
+    EXPECT_ANY_THROW(cc.consumeSlcsfResponse(matchingResponse));
+
+    cc.serviceInternalWork();
+    EXPECT_ANY_THROW(cc.consumeSlcsfResponse(matchingResponse));
+}
+
 } // namespace gem5::Chi

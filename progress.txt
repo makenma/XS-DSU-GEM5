@@ -36,6 +36,9 @@ Started: 2026-07-28T20:49:07+08:00
 - Model an asynchronous controller operation with explicit issue-pending,
   waiting, and response-latched phases; retry only the owned pending request
   and continue the graph from a later service boundary.
+- At a registered response boundary, validate the complete operation and
+  identity pair, copy owned payload state under a bounded consume budget, and
+  defer graph continuation until the next controller service cycle.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -479,4 +482,27 @@ Started: 2026-07-28T20:49:07+08:00
   issue-pending phase preserves ownership and identity, while latching visible
   responses at the end of controller service prevents recursive same-cycle
   graph continuation.
+---
+
+## 2026-07-29 07:26 - US-010
+- Story: Consume lookup responses on a later CC cycle
+- What was implemented: Added budgeted visible-response consumption with
+  strict operation and `(pocEntryId, reqId)` validation. Lookup data, dirty
+  state, semantic facts, and CommitToken are copied into the CC entry at the
+  response-latch boundary, while `SlcLookupDone` graph continuation remains
+  registered until the following controller service cycle. Unexpected,
+  duplicate, and stale responses now share one fail-fast validation path.
+- Files changed: `src/mem/cache/CHI/HnfCoherencyController.hh`,
+  `src/mem/cache/CHI/HnfCoherencyController.cc`,
+  `src/mem/cache/CHI/HnfCoherencyController.test.cc`, `prd.json`, and
+  `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and all four CHI
+  GTest binaries successfully; all 72 tests passed (15 POCQ, 2 SEQ POCQ,
+  41 SLCSF, and 14 controller), retaining all 36 baseline passes; the default
+  four-core litmus passed all 7 workloads with
+  `CHI_LITMUS_PASS total_errors=0`; changed C++ files passed
+  `python3 util/style.py`; `git diff --check` passed.
+- Learnings for future iterations: Response consumption should validate and
+  snapshot data at one bounded boundary, while service ordering—not recursive
+  event delivery—provides the later-cycle graph continuation guarantee.
 ---
