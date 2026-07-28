@@ -1,9 +1,12 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <type_traits>
+#include <variant>
 #include <vector>
 
 #include "mem/cache/CHI/HnfSLCSF.hh"
+#include "mem/cache/CHI/HnfSLCSFRequest.hh"
 
 namespace gem5::Chi
 {
@@ -36,6 +39,106 @@ lineData(uint8_t seed)
 }
 
 } // anonymous namespace
+
+TEST(HnfSlcSfRequestTest, AllocatesMonotonicIdsIndependentOfLinkSequence)
+{
+    SlcSfReqIdAllocator ids;
+    RawReq raw{};
+    raw.srcid = 7;
+    raw.txnid = 11;
+    raw.opcode = 0x12;
+    raw.qos = 3;
+    raw.traceTag = true;
+
+    const auto first = makeSlcSfReqHeader(ids, 2, TestAddr, raw, 99, 101);
+    const auto second = makeSlcSfReqHeader(ids, 2, TestAddr, raw, 99, 102);
+
+    EXPECT_TRUE(first.reqId.valid());
+    EXPECT_EQ(first.reqId.value + 1, second.reqId.value);
+    EXPECT_NE(first.reqId.value, first.trace.linkSequence);
+    EXPECT_EQ(first.pocEntryId, 2);
+    EXPECT_EQ(first.lineAddress, TestAddr);
+    EXPECT_EQ(first.requester, raw.srcid);
+    EXPECT_EQ(first.opcode, raw.opcode);
+    EXPECT_EQ(first.qos, raw.qos);
+    EXPECT_EQ(first.trace.transactionId, raw.txnid);
+    EXPECT_TRUE(first.trace.traceTag);
+}
+
+TEST(HnfSlcSfRequestTest, MapsEverySynchronousOperationToTypedRequest)
+{
+    static_assert(!std::is_same_v<SlcSfReqId, uint64_t>);
+    SlcSfReqHeader header{};
+
+    SlcSfLookupReq lookupPayload{};
+    lookupPayload.header = header;
+    lookupPayload.txn = PocqTxnKind::ReadShared;
+    const SlcSfRequest lookup = lookupPayload;
+
+    auto fillRequest = [&header](SlcSfUpdateKind kind, PocqTxnKind txn) {
+        SlcSfFillReq req{};
+        req.header = header;
+        req.kind = kind;
+        req.txn = txn;
+        return SlcSfRequest{req};
+    };
+    auto updateRequest = [&header](SlcSfUpdateKind kind, PocqTxnKind txn) {
+        SlcSfUpdateReq req{};
+        req.header = header;
+        req.kind = kind;
+        req.txn = txn;
+        return SlcSfRequest{req};
+    };
+    auto evictRequest = [&header](SlcSfUpdateKind kind) {
+        SlcSfEvictReq req{};
+        req.header = header;
+        req.kind = kind;
+        return SlcSfRequest{req};
+    };
+
+    const SlcSfRequest commitRead = fillRequest(SlcSfUpdateKind::CommitRead, PocqTxnKind::ReadShared);
+    const SlcSfRequest completeMaintenance =
+        updateRequest(SlcSfUpdateKind::CompleteMaintenance, PocqTxnKind::CleanInvalid);
+    const SlcSfRequest removeSharer = updateRequest(SlcSfUpdateKind::RemoveSharer, PocqTxnKind::Evict);
+    const SlcSfRequest writeLine = fillRequest(SlcSfUpdateKind::WriteLine, PocqTxnKind::WriteUnique);
+    const SlcSfRequest flushSf = evictRequest(SlcSfUpdateKind::FlushSf);
+    const SlcSfRequest flushL3 = evictRequest(SlcSfUpdateKind::FlushL3);
+    const SlcSfRequest writeL3FlushSf = fillRequest(SlcSfUpdateKind::WriteL3FlushSf, PocqTxnKind::WriteUnique);
+    const SlcSfRequest completeSfEvict = evictRequest(SlcSfUpdateKind::CompleteSfEvict);
+    const SlcSfRequest releaseDirtyVictim = evictRequest(SlcSfUpdateKind::ReleaseDirtyVictim);
+
+    EXPECT_TRUE(std::holds_alternative<SlcSfLookupReq>(lookup));
+    EXPECT_EQ(std::get<SlcSfFillReq>(commitRead).kind, SlcSfUpdateKind::CommitRead);
+    EXPECT_EQ(std::get<SlcSfUpdateReq>(completeMaintenance).kind, SlcSfUpdateKind::CompleteMaintenance);
+    EXPECT_EQ(std::get<SlcSfUpdateReq>(removeSharer).kind, SlcSfUpdateKind::RemoveSharer);
+    EXPECT_EQ(std::get<SlcSfFillReq>(writeLine).kind, SlcSfUpdateKind::WriteLine);
+    EXPECT_EQ(std::get<SlcSfEvictReq>(flushSf).kind, SlcSfUpdateKind::FlushSf);
+    EXPECT_EQ(std::get<SlcSfEvictReq>(flushL3).kind, SlcSfUpdateKind::FlushL3);
+    EXPECT_EQ(std::get<SlcSfFillReq>(writeL3FlushSf).kind, SlcSfUpdateKind::WriteL3FlushSf);
+    EXPECT_EQ(std::get<SlcSfEvictReq>(completeSfEvict).kind, SlcSfUpdateKind::CompleteSfEvict);
+    EXPECT_EQ(std::get<SlcSfEvictReq>(releaseDirtyVictim).kind, SlcSfUpdateKind::ReleaseDirtyVictim);
+}
+
+TEST(HnfSlcSfRequestTest, PayloadsOwnLineMaskVictimAndSnoopData)
+{
+    std::vector<uint8_t> line = {1, 2, 3};
+    std::vector<uint8_t> mask = {1, 0, 1};
+    SlcSfEvictReq request{};
+    request.kind = SlcSfUpdateKind::CompleteSfEvict;
+    request.victim = SlcSfVictim{};
+    request.victim->line.data = line;
+    request.victim->line.byteMask = mask;
+    request.snoopData = SlcSfSnoopData{line, mask, true};
+
+    line[0] = 9;
+    mask[0] = 0;
+
+    EXPECT_EQ(request.victim->line.data[0], 1);
+    EXPECT_EQ(request.victim->line.byteMask[0], 1);
+    EXPECT_EQ(request.snoopData->data[0], 1);
+    EXPECT_EQ(request.snoopData->byteMask[0], 1);
+    EXPECT_TRUE(request.snoopData->dirty);
+}
 
 TEST(HnfSlcSfTest, ReadUniqueBroadcastsToOtherVectorSharers)
 {
