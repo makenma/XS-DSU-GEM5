@@ -53,8 +53,8 @@
         "Typecheck passes"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Interrupted acceptance audit: continue the existing HnfSLCSFResponse.hh and HnfSLCSF.test.cc drafts, but repair them before passing. Response operation identity must cover Lookup plus all 10 concrete mutation operations, not only four broad categories. Replay/Error construction must derive identity from a typed request; do not expose a generic factory that permits arbitrary operation/status/payload mismatches. Test all 11 request-to-response mappings, Done/Replay/Error, redoLookup true and false with absolute retry ticks, every CommitToken field using distinct SLC/SF sentinels, and owned lookup/data/mask/victim/snoop lifetime with no raw pointers or references."
     },
     {
       "id": "US-004",

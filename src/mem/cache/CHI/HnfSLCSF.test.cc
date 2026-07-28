@@ -7,6 +7,7 @@
 
 #include "mem/cache/CHI/HnfSLCSF.hh"
 #include "mem/cache/CHI/HnfSLCSFRequest.hh"
+#include "mem/cache/CHI/HnfSLCSFResponse.hh"
 
 namespace gem5::Chi
 {
@@ -204,6 +205,176 @@ TEST(HnfSlcSfRequestTest, PayloadsOwnLineMaskAndTypedVictimState)
     EXPECT_EQ(completion.snoopData.data[0], 1);
     EXPECT_EQ(completion.snoopData.byteMask[0], 1);
     EXPECT_TRUE(completion.snoopData.dirty);
+}
+
+TEST(HnfSlcSfResponseTest, MapsEveryTypedRequestToConcreteOperation)
+{
+    const SlcSfReqHeader header{
+        SlcSfReqId{71}, 73, TestAddr, 7, 0x12, 3,
+        SlcSfTraceContext{79, 83, 89, true}};
+    const auto lookup = makeSlcSfDoneResponse(
+        makeSlcSfLookupReq(header, PocqTxnKind::ReadShared), {}, {});
+    const auto commitRead = makeSlcSfDoneResponse(makeSlcSfCommitReadReq(
+        header, PocqTxnKind::ReadUnique, {1}, true));
+    const auto fillCleanShared = makeSlcSfDoneResponse(
+        makeSlcSfFillCleanSharedReq(header, {2}));
+    const auto completeMaintenance = makeSlcSfDoneResponse(
+        makeSlcSfCompleteMaintenanceReq(
+            header, PocqTxnKind::CleanInvalid));
+    const auto removeSharer =
+        makeSlcSfDoneResponse(makeSlcSfRemoveSharerReq(header));
+    const auto writeLine = makeSlcSfDoneResponse(
+        makeSlcSfWriteLineReq(header, {3}));
+    const auto flushSf =
+        makeSlcSfDoneResponse(makeSlcSfFlushSfReq(header));
+    const auto flushL3 =
+        makeSlcSfDoneResponse(makeSlcSfFlushL3Req(header));
+    const auto writeL3FlushSf = makeSlcSfDoneResponse(
+        makeSlcSfWriteL3FlushSfReq(header, {4}));
+    const auto completeSfEvict = makeSlcSfDoneResponse(
+        makeSlcSfCompleteSfEvictReq(
+            header, SlcSfSeqId{97}, {5}, false));
+    const auto releaseDirtyVictim = makeSlcSfDoneResponse(
+        makeSlcSfReleaseDirtyVictimReq(header, SlcSfVictimId{101}));
+
+    EXPECT_EQ(lookup.operationKind(), SlcSfOperationKind::Lookup);
+    EXPECT_EQ(commitRead.operationKind(), SlcSfOperationKind::CommitRead);
+    EXPECT_EQ(fillCleanShared.operationKind(),
+              SlcSfOperationKind::FillCleanShared);
+    EXPECT_EQ(completeMaintenance.operationKind(),
+              SlcSfOperationKind::CompleteMaintenance);
+    EXPECT_EQ(removeSharer.operationKind(),
+              SlcSfOperationKind::RemoveSharer);
+    EXPECT_EQ(writeLine.operationKind(), SlcSfOperationKind::WriteLine);
+    EXPECT_EQ(flushSf.operationKind(), SlcSfOperationKind::FlushSf);
+    EXPECT_EQ(flushL3.operationKind(), SlcSfOperationKind::FlushL3);
+    EXPECT_EQ(writeL3FlushSf.operationKind(),
+              SlcSfOperationKind::WriteL3FlushSf);
+    EXPECT_EQ(completeSfEvict.operationKind(),
+              SlcSfOperationKind::CompleteSfEvict);
+    EXPECT_EQ(releaseDirtyVictim.operationKind(),
+              SlcSfOperationKind::ReleaseDirtyVictim);
+
+    EXPECT_EQ(lookup.reqId(), header.reqId);
+    EXPECT_EQ(lookup.pocEntryId(), header.pocEntryId);
+    EXPECT_EQ(lookup.status(), SlcSfTerminalStatus::Done);
+    EXPECT_EQ(std::get<SlcSfFillResponse>(commitRead.payload()).updateKind,
+              SlcSfUpdateKind::CommitRead);
+    EXPECT_EQ(std::get<SlcSfUpdateResponse>(completeSfEvict.payload())
+                  .updateKind,
+              SlcSfUpdateKind::CompleteSfEvict);
+    EXPECT_EQ(std::get<SlcSfEvictResponse>(flushL3.payload()).updateKind,
+              SlcSfUpdateKind::FlushL3);
+}
+
+TEST(HnfSlcSfResponseTest, DerivesDoneReplayAndErrorFromTypedRequest)
+{
+    const SlcSfReqHeader header{
+        SlcSfReqId{103}, 107, TestAddr, 7, 0x12, 3, {}};
+    const auto lookupReq =
+        makeSlcSfLookupReq(header, PocqTxnKind::ReadShared);
+    const auto fillReq = makeSlcSfCommitReadReq(
+        header, PocqTxnKind::ReadUnique, {1, 2, 3}, true);
+    const auto updateReq = makeSlcSfCompleteSfEvictReq(
+        header, SlcSfSeqId{109}, {4, 5, 6}, false);
+
+    const auto done = makeSlcSfDoneResponse(lookupReq, {}, {});
+    const auto replayRedo = makeSlcSfReplayResponse(
+        fillReq,
+        SlcSfReplay{SlcSfReplayReason::StaleCommitToken, 113, true});
+    const auto replayKeep = makeSlcSfReplayResponse(
+        updateReq,
+        SlcSfReplay{SlcSfReplayReason::ResourceConflict, 127, false});
+    const auto error = makeSlcSfErrorResponse(
+        updateReq,
+        SlcSfError{SlcSfErrorCode::UnknownCompletion, "unknown victim"});
+
+    EXPECT_EQ(done.status(), SlcSfTerminalStatus::Done);
+    EXPECT_EQ(done.operationKind(), SlcSfOperationKind::Lookup);
+    EXPECT_EQ(replayRedo.status(), SlcSfTerminalStatus::Replay);
+    EXPECT_EQ(replayRedo.operationKind(), SlcSfOperationKind::CommitRead);
+    const auto& redo = std::get<SlcSfReplay>(replayRedo.payload());
+    EXPECT_EQ(redo.reason, SlcSfReplayReason::StaleCommitToken);
+    EXPECT_EQ(redo.retryNotBeforeTick, 113);
+    EXPECT_TRUE(redo.redoLookup);
+    const auto& keep = std::get<SlcSfReplay>(replayKeep.payload());
+    EXPECT_EQ(keep.retryNotBeforeTick, 127);
+    EXPECT_FALSE(keep.redoLookup);
+
+    EXPECT_EQ(error.status(), SlcSfTerminalStatus::Error);
+    EXPECT_EQ(error.operationKind(), SlcSfOperationKind::CompleteSfEvict);
+    const auto& errorPayload = std::get<SlcSfError>(error.payload());
+    EXPECT_EQ(errorPayload.code, SlcSfErrorCode::UnknownCompletion);
+    EXPECT_EQ(errorPayload.description, "unknown victim");
+}
+
+TEST(HnfSlcSfResponseTest, CommitTokenPreservesEverySnapshotField)
+{
+    const SlcSfCommitToken token{
+        SlcSfReqId{113}, TestAddr, 127,
+        SlcSfArraySnapshot{true, 2, 3, 131},
+        SlcSfArraySnapshot{false, 5, 7, 137}};
+
+    EXPECT_EQ(token.lookupReqId.value, 113);
+    EXPECT_EQ(token.lineAddress, TestAddr);
+    EXPECT_EQ(token.lookupEpoch, 127);
+    EXPECT_TRUE(token.slc.hit);
+    EXPECT_EQ(token.slc.set, 2);
+    EXPECT_EQ(token.slc.way, 3);
+    EXPECT_EQ(token.slc.generation, 131);
+    EXPECT_FALSE(token.sf.hit);
+    EXPECT_EQ(token.sf.set, 5);
+    EXPECT_EQ(token.sf.way, 7);
+    EXPECT_EQ(token.sf.generation, 137);
+}
+
+TEST(HnfSlcSfResponseTest, PayloadsOutliveProducingStack)
+{
+    const SlcSfReqHeader header{
+        SlcSfReqId{139}, 149, TestAddr, 7, 0x12, 3, {}};
+    const auto lookup = [&header]() {
+        HnfSlcLookupResult result{};
+        result.data = {1, 2, 3};
+        return makeSlcSfDoneResponse(
+            makeSlcSfLookupReq(header, PocqTxnKind::ReadUnique),
+            std::move(result), SlcSfCommitToken{});
+    }();
+    const auto fill = [&header]() {
+        std::vector<uint8_t> data = {4, 5, 6};
+        std::vector<uint8_t> mask = {1, 0, 1};
+        SlcSfSlcVictim slcVictim{
+            SlcSfVictimId{151}, TestAddr, HnfSlcState::MU, 7,
+            SlcSfCacheLine{data, mask, true}};
+        SlcSfSfVictim sfVictim{
+            SlcSfSeqId{157}, TestAddr, 0x90, HnfSfState::EU, 9,
+            1ULL << 9};
+        return makeSlcSfDoneResponse(
+            makeSlcSfCommitReadReq(
+                header, PocqTxnKind::ReadUnique, data, true, 0, mask),
+            std::move(slcVictim), std::move(sfVictim));
+    }();
+    const auto snoopRequest = [&header]() {
+        std::vector<uint8_t> data = {7, 8, 9};
+        std::vector<uint8_t> mask = {0, 1, 0};
+        return makeSlcSfCompleteSfEvictReq(
+            header, SlcSfSeqId{163}, std::move(data), true,
+            std::move(mask));
+    }();
+
+    const auto& lookupPayload =
+        std::get<SlcSfLookupResponse>(lookup.payload());
+    const auto& fillPayload = std::get<SlcSfFillResponse>(fill.payload());
+    ASSERT_TRUE(fillPayload.slcVictim.has_value());
+    ASSERT_TRUE(fillPayload.sfVictim.has_value());
+    EXPECT_EQ(lookupPayload.result.data[0], 1);
+    EXPECT_EQ(fillPayload.slcVictim->line.data[0], 4);
+    EXPECT_EQ(fillPayload.slcVictim->line.byteMask[0], 1);
+    EXPECT_EQ(fillPayload.sfVictim->seqId.value, 157);
+    const auto& snoop =
+        std::get<SlcSfCompleteSfEvict>(snoopRequest.operation).snoopData;
+    EXPECT_EQ(snoop.data[0], 7);
+    EXPECT_EQ(snoop.byteMask[0], 0);
+    EXPECT_TRUE(snoop.dirty);
 }
 
 TEST(HnfSlcSfTest, ReadUniqueBroadcastsToOtherVectorSharers)

@@ -12,6 +12,8 @@ Started: 2026-07-28T20:49:07+08:00
 - Couple a delayed operation's kind to its payload with a restricted variant;
   derive the kind from the active alternative instead of storing two fields
   that can disagree.
+- Derive terminal response identity from the typed request and keep generic
+  status/payload construction private so invalid combinations cannot compile.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -81,4 +83,38 @@ Started: 2026-07-28T20:49:07+08:00
 - Learnings for future iterations: Operation-specific variants prevent kind
   and payload drift at compile time, while value-taking factories provide one
   auditable ownership boundary for delayed requests.
+---
+
+## 2026-07-28 21:30 - US-003 interrupted acceptance audit
+- The first response/token draft was stopped before tracking updates or commit.
+  It models the three terminal statuses and full CommitToken fields, but only
+  tests four broad operation categories and exposes construction paths that can
+  pair an arbitrary kind, status, and payload.
+- Repair requirements are recorded in US-003's `notes`: derive concrete
+  operation identity from typed requests, make mismatches unconstructible, and
+  test Lookup plus all ten mutations, both Replay redo choices, absolute retry
+  ticks, token sentinels, and owned response payload lifetimes.
+- Ralph recovery files for US-003: the current uncommitted
+  `src/mem/cache/CHI/HnfSLCSFResponse.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.test.cc`, `prd.json`, and `progress.txt` are
+  intentional story-scoped work. Review, retain, repair, and stage only these
+  files when US-003 passes.
+---
+
+## 2026-07-28 21:35 - US-003
+- Story: Define terminal responses, replay payloads, and CommitToken
+- What was implemented: Added self-contained terminal responses with concrete
+  identities for Lookup and all ten mutation operations, typed-request-derived
+  Done, Replay, and Error factories, absolute replay timing with redo control,
+  and full versioned SLC/SF CommitToken snapshots. Added mapping, construction,
+  sentinel-field, and producing-stack lifetime coverage for owned payloads.
+- Files changed: `src/mem/cache/CHI/HnfSLCSFResponse.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.test.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built all four RISCV CHI GTest binaries with
+  SCons successfully; all 43 tests passed (15 POCQ, 2 SEQ POCQ, 17 SLCSF,
+  and 9 controller), retaining all 36 baseline passes; changed C++ files
+  passed `python3 util/style.py`; `git diff --check` passed.
+- Learnings for future iterations: Concrete operation identity should be
+  derived at the typed request boundary, while response payload ownership can
+  be validated by returning messages built from local producing-stack data.
 ---
