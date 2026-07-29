@@ -384,6 +384,24 @@ HnfSLCSF::validateMutationRequest(const SlcSfRequest& request) const
 }
 
 bool
+HnfSLCSF::validateMutationToken(const SlcSfRequest& request) const
+{
+    return std::visit(
+        [this](const auto& typed_request) {
+            using Request = std::decay_t<decltype(typed_request)>;
+            if constexpr (std::is_same_v<Request, SlcSfLookupReq>) {
+                return false;
+            } else {
+                return validateCommitToken(
+                    typed_request.token,
+                    typed_request.token.lookupReqId,
+                    typed_request.header.lineAddress);
+            }
+        },
+        request);
+}
+
+bool
 HnfSLCSF::prepareMutationResources(InflightRequest& request)
 {
     const auto prepare = [this, &request](PocqTxnKind txn) {
@@ -503,7 +521,11 @@ void
 HnfSLCSF::advanceMutation(InflightRequest& request)
 {
     switch (*request.mutationStage) {
-      case MutationStage::U0DecodeValidate:
+      case MutationStage::U0DecodeValidate: {
+        // Invoke the always-on validator for every mutation category. Decode
+        // errors retain priority in the terminal status, but validation still
+        // remains part of the common U0 boundary.
+        const bool token_valid = validateMutationToken(request.request);
         if (auto error = validateMutationRequest(request.request)) {
             request.terminalResponse = std::visit(
                 [&error](const auto& typed_request) {
@@ -512,10 +534,24 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
                 },
                 request.request);
             request.mutationStage = MutationStage::U3CheckLatch;
+        } else if (!token_valid) {
+            panic_if(config.replayPenalty > MaxTick - wakeupTick,
+                     "HnfSLCSF stale-token retry tick overflows");
+            request.terminalResponse = std::visit(
+                [this](const auto& typed_request) {
+                    return makeSlcSfReplayResponse(
+                        typed_request,
+                        SlcSfReplay{
+                            SlcSfReplayReason::StaleCommitToken,
+                            wakeupTick + config.replayPenalty, true});
+                },
+                request.request);
+            request.mutationStage = MutationStage::U3CheckLatch;
         } else {
             request.mutationStage = MutationStage::U1PrepareResources;
         }
         break;
+      }
       case MutationStage::U1PrepareResources:
         if (prepareMutationResources(request)) {
             request.mutationStage = MutationStage::U2ArrayWrite;

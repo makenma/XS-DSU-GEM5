@@ -46,6 +46,9 @@ Started: 2026-07-28T20:49:07+08:00
   terminal response reservation; acquire transient resources before the sole
   write stage and convert the same reservation to a pending response only at
   the final registered boundary.
+- Carry the lookup CommitToken by value in every delayed mutation request and
+  validate it in U0 before resource acquisition; stale snapshots become owned
+  terminal Replay responses with absolute retry deadlines.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -554,4 +557,25 @@ Started: 2026-07-28T20:49:07+08:00
   reservation in one in-flight object lets resource stalls remain response-free
   while guaranteeing a committed write cannot be repeated or blocked from its
   terminal response.
+---
+
+## 2026-07-29 07:57 - US-013
+- Story: Emit side-effect-free Replay for stale mutation tokens
+- What was implemented: Added owned CommitToken snapshots to Fill, Update, and
+  Evict requests and an always-on U0 validation boundary. Stale snapshots now
+  skip resource preparation and storage mutation, then produce a registered
+  StaleCommitToken Replay with redoLookup and an overflow-checked absolute
+  retry deadline derived from replay_penalty. Fresh-token mutations continue
+  through U2 and complete normally.
+- Files changed: `src/mem/cache/CHI/HnfSLCSFRequest.hh`,
+  `src/mem/cache/CHI/HnfSLCSFResponse.hh`, `src/mem/cache/CHI/HnfSLCSF.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.cc`, `src/mem/cache/CHI/HnfSLCSF.test.cc`,
+  `prd.json`, and `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and all four CHI
+  GTest binaries successfully; all 93 tests passed (15 POCQ, 2 SEQ POCQ,
+  62 SLCSF, and 14 controller), retaining all 36 baseline passes; changed C++
+  files passed `python3 util/style.py`; `git diff --check` passed.
+- Learnings for future iterations: A mutation must own the exact lookup token
+  it intends to consume, and stale detection belongs before both transient
+  reservation and the sole persistent write stage.
 ---

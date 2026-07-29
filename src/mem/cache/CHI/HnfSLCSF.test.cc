@@ -77,7 +77,7 @@ lookupRequest(uint64_t req_id, uint64_t addr = TestAddr,
 
 SlcSfRequest
 fillRequest(uint64_t req_id, uint64_t addr = TestAddr,
-            uint32_t poc_entry_id = 0)
+            uint32_t poc_entry_id = 0, SlcSfCommitToken token = {})
 {
     SlcSfReqHeader header{};
     header.reqId = SlcSfReqId{req_id};
@@ -85,7 +85,8 @@ fillRequest(uint64_t req_id, uint64_t addr = TestAddr,
     header.lineAddress = addr;
     header.requester = 7;
     return makeSlcSfFillCleanSharedReq(
-        std::move(header), lineData(static_cast<uint8_t>(req_id)), {});
+        std::move(header), lineData(static_cast<uint8_t>(req_id)), {},
+        token);
 }
 
 SlcSfReqHeader
@@ -936,7 +937,8 @@ TEST(HnfSlcSfQueueTest, MixedPipesCompleteOutOfAcceptanceOrder)
     HnfSLCSF model(64, 4, 2, 4, 2, 8, config);
     auto first_lookup = lookupRequest(61, TestAddr, 601);
     auto second_lookup = lookupRequest(62, TestAddr, 602);
-    auto fill = fillRequest(63, TestAddr, 603);
+    const auto fill_token = completeLookupToken(model, 600, TestAddr);
+    auto fill = fillRequest(63, TestAddr, 603, fill_token);
 
     ASSERT_EQ(model.tryEnqueue(std::move(first_lookup)),
               SlcSfEnqueueResult::Accepted);
@@ -1004,34 +1006,45 @@ class HnfSlcSfMutationServiceTest :
 TEST_P(HnfSlcSfMutationServiceTest, DispatchesThroughU0U1U2U3)
 {
     HnfSLCSF model(64, 4, 2, 4, 2);
-    SlcSfRequest request;
     switch (GetParam()) {
-      case StagedMutationCase::CommitRead:
-        request = makeSlcSfCommitReadReq(
-            mutationHeader(101), PocqTxnKind::ReadShared,
-            lineData(0x11), true, 0x90);
-        break;
-      case StagedMutationCase::MemoryFill:
-        request = makeSlcSfFillCleanSharedReq(
-            mutationHeader(102), lineData(0x22));
-        break;
       case StagedMutationCase::Maintenance:
         model.commitRead(
             TestAddr, 7, PocqTxnKind::ReadUnique,
             lineData(0x33), false, 0x90);
-        request = makeSlcSfCompleteMaintenanceReq(
-            mutationHeader(103), PocqTxnKind::MakeInvalid, 0x90);
         break;
       case StagedMutationCase::RemoveSharer:
         model.commitRead(
             TestAddr, 7, PocqTxnKind::ReadShared,
             lineData(0x44), false, 0x90);
-        request = makeSlcSfRemoveSharerReq(mutationHeader(104));
+        break;
+      default:
+        break;
+    }
+
+    const auto token = completeLookupToken(model, 1000, TestAddr);
+    SlcSfRequest request;
+    switch (GetParam()) {
+      case StagedMutationCase::CommitRead:
+        request = makeSlcSfCommitReadReq(
+            mutationHeader(101), PocqTxnKind::ReadShared,
+            lineData(0x11), true, 0x90, {}, token);
+        break;
+      case StagedMutationCase::MemoryFill:
+        request = makeSlcSfFillCleanSharedReq(
+            mutationHeader(102), lineData(0x22), {}, token);
+        break;
+      case StagedMutationCase::Maintenance:
+        request = makeSlcSfCompleteMaintenanceReq(
+            mutationHeader(103), PocqTxnKind::MakeInvalid, 0x90, token);
+        break;
+      case StagedMutationCase::RemoveSharer:
+        request = makeSlcSfRemoveSharerReq(
+            mutationHeader(104), token);
         break;
       case StagedMutationCase::WriteLine:
         request = makeSlcSfWriteLineReq(
             mutationHeader(105), lineData(0x55),
-            PocqTxnKind::WriteUnique, 0x90);
+            PocqTxnKind::WriteUnique, 0x90, {}, token);
         break;
     }
 
@@ -1133,13 +1146,101 @@ TEST(HnfSlcSfMutationServiceTest, DecodeFailureHasNoMutationOrReservation)
               SlcSfErrorCode::InvalidRequest);
 }
 
+TEST(HnfSlcSfMutationServiceTest, StaleTokenReplaysWithoutWrite)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.replayPenalty = 7;
+    HnfSLCSF model(64, 1, 1, 1, 1, 8, config);
+    model.commitRead(
+        TestAddr, 7, PocqTxnKind::ReadShared, lineData(0x61), false);
+    const auto stale_token = completeLookupToken(model, 1300, TestAddr);
+
+    model.writeLine(
+        TestAddr, 7, lineData(0x62), PocqTxnKind::WriteUnique);
+    const auto before = model.probe(HnfSlcLookupReq{
+        0, RawReq{}, PocqTxnKind::Unknown, TestAddr});
+    const uint64_t epoch_before = model.currentLookupEpoch();
+    const uint64_t accesses_before = model.currentLookupAccessCount();
+    const size_t seq_before = model.seqOccupancy();
+    const size_t seq_reservations_before = model.seqReservationCount();
+
+    SlcSfRequest request = makeSlcSfCommitReadReq(
+        mutationHeader(1301), PocqTxnKind::ReadShared,
+        lineData(0x63), true, 0x90, {}, stale_token);
+    ASSERT_EQ(model.tryEnqueue(std::move(request)),
+              SlcSfEnqueueResult::Accepted);
+    model.wakeup(1000);
+    model.wakeup(1010);
+    EXPECT_EQ(model.mutationStageCount(
+                  HnfSLCSF::MutationStage::U3CheckLatch), 1);
+    EXPECT_FALSE(model.hasSfReservation(1301));
+
+    const auto after_u0 = model.probe(HnfSlcLookupReq{
+        0, RawReq{}, PocqTxnKind::Unknown, TestAddr});
+    expectLookupResultsEqual(after_u0.result, before.result);
+    expectArraySnapshotsEqual(after_u0.snapshot.slc, before.snapshot.slc);
+    expectArraySnapshotsEqual(after_u0.snapshot.sf, before.snapshot.sf);
+    EXPECT_EQ(model.currentLookupEpoch(), epoch_before);
+    EXPECT_EQ(model.currentLookupAccessCount(), accesses_before);
+    EXPECT_EQ(model.seqOccupancy(), seq_before);
+    EXPECT_EQ(model.seqReservationCount(), seq_reservations_before);
+
+    model.wakeup(1020);
+    EXPECT_EQ(model.respPendingCount(), 1);
+    model.wakeup(1030);
+    auto response = model.popVisibleResponse();
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->status(), SlcSfTerminalStatus::Replay);
+    EXPECT_EQ(response->reqId(), SlcSfReqId{1301});
+    const auto& replay = std::get<SlcSfReplay>(response->payload());
+    EXPECT_EQ(replay.reason, SlcSfReplayReason::StaleCommitToken);
+    EXPECT_EQ(replay.retryNotBeforeTick, 1017);
+    EXPECT_TRUE(replay.redoLookup);
+
+    const auto after = model.probe(HnfSlcLookupReq{
+        0, RawReq{}, PocqTxnKind::Unknown, TestAddr});
+    expectLookupResultsEqual(after.result, before.result);
+    expectArraySnapshotsEqual(after.snapshot.slc, before.snapshot.slc);
+    expectArraySnapshotsEqual(after.snapshot.sf, before.snapshot.sf);
+    EXPECT_EQ(model.currentLookupEpoch(), epoch_before);
+    EXPECT_EQ(model.currentLookupAccessCount(), accesses_before);
+    EXPECT_EQ(model.seqOccupancy(), seq_before);
+    EXPECT_EQ(model.seqReservationCount(), seq_reservations_before);
+    EXPECT_EQ(model.reqOutstanding(), 0);
+    EXPECT_EQ(model.respOccupied(), 0);
+}
+
+TEST(HnfSlcSfMutationServiceTest, FreshTokenCommitsThroughU2)
+{
+    HnfSLCSF model(64, 1, 1, 1, 1);
+    const auto token = completeLookupToken(model, 1310, TestAddr);
+    SlcSfRequest request = makeSlcSfFillCleanSharedReq(
+        mutationHeader(1311), lineData(0x64), {}, token);
+    ASSERT_EQ(model.tryEnqueue(std::move(request)),
+              SlcSfEnqueueResult::Accepted);
+
+    std::optional<SlcSfResponse> response;
+    for (size_t cycle = 0; cycle < 8 && !response; ++cycle) {
+        model.wakeup();
+        response = model.popVisibleResponse();
+    }
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->status(), SlcSfTerminalStatus::Done);
+    const auto observation = model.probe(HnfSlcLookupReq{
+        0, RawReq{}, PocqTxnKind::Unknown, TestAddr});
+    EXPECT_TRUE(observation.result.slcHit);
+    EXPECT_TRUE(observation.result.sfHit);
+    EXPECT_EQ(observation.result.data, lineData(0x64));
+}
+
 TEST(HnfSlcSfMutationServiceTest, ResourcePreparationFailureIsAtomic)
 {
     HnfSLCSF model(64, 4, 2, 4, 2);
+    const auto token = completeLookupToken(model, 1100, TestAddr);
     ASSERT_TRUE(model.tryReserveSfResources(
         999, TestAddr, PocqTxnKind::ReadShared));
     SlcSfRequest request = makeSlcSfFillCleanSharedReq(
-        mutationHeader(111), lineData(0x77));
+        mutationHeader(111), lineData(0x77), {}, token);
     ASSERT_EQ(model.tryEnqueue(std::move(request)),
               SlcSfEnqueueResult::Accepted);
     model.wakeup();
@@ -1172,9 +1273,11 @@ TEST(HnfSlcSfMutationServiceTest,
     config.respQueueEntries = 1;
     config.lookupLatency = 1;
     HnfSLCSF model(64, 4, 2, 4, 2, 8, config);
+    const auto token = completeLookupToken(model, 1130, TestAddr);
     auto blocker = lookupRequest(112, TestAddr + 64);
     SlcSfRequest mutation = makeSlcSfWriteLineReq(
-        mutationHeader(113), lineData(0x88), PocqTxnKind::WriteUnique);
+        mutationHeader(113), lineData(0x88), PocqTxnKind::WriteUnique,
+        0, {}, token);
     ASSERT_EQ(model.tryEnqueue(std::move(blocker)),
               SlcSfEnqueueResult::Accepted);
     ASSERT_EQ(model.tryEnqueue(std::move(mutation)),

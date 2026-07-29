@@ -51,25 +51,6 @@ enum class SlcSfErrorCode : uint8_t
     UnknownCompletion
 };
 
-/** A pointer-free snapshot of one array lookup. */
-struct SlcSfArraySnapshot
-{
-    bool hit = false;
-    uint32_t set = 0;
-    uint32_t way = 0;
-    uint64_t generation = 0;
-};
-
-/** Versioned lookup facts required to validate a later mutation. */
-struct SlcSfCommitToken
-{
-    SlcSfReqId lookupReqId{};
-    uint64_t lineAddress = 0;
-    uint64_t lookupEpoch = 0;
-    SlcSfArraySnapshot slc{};
-    SlcSfArraySnapshot sf{};
-};
-
 struct SlcSfLookupResponse
 {
     HnfSlcLookupResult result;

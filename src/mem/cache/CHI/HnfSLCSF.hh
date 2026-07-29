@@ -150,6 +150,7 @@ class HnfSLCSF : public HnfSLCSFBackend
     SlcSfResponse makeTerminalResponse(const SlcSfRequest& request);
     std::optional<SlcSfError> validateMutationRequest(
         const SlcSfRequest& request) const;
+    bool validateMutationToken(const SlcSfRequest& request) const;
     bool prepareMutationResources(InflightRequest& request);
     void executeMutation(InflightRequest& request);
     void advanceMutation(InflightRequest& request);
