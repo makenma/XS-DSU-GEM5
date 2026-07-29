@@ -81,6 +81,9 @@ Started: 2026-07-28T20:49:07+08:00
 - Classify delayed service timing by the concrete semantic operation rather
   than its payload-bearing variant, since a data-carrying update may still
   consume update issue width and update latency instead of the fill pipe.
+- Convert a held capacity reservation into occupied storage before installing
+  a victim, and carry the copied victim snapshot in the terminal response so
+  reservation accounting and delayed handoff have one atomic ownership point.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -862,4 +865,29 @@ Started: 2026-07-28T20:49:07+08:00
   timing class; WriteL3FlushSf owns a cache line but is still an update-pipe
   operation. Response capacity must be reserved before any flush mutation so
   backpressure and NoCredit remain side-effect free.
+---
+
+## 2026-07-29 11:06 - US-020
+- Story: Reserve and hand off SF victims through SEQ
+- What was implemented: Made SF lines retain their home-node identity and
+  atomically convert a pre-held SEQ reservation into occupancy before copying
+  and overwriting a directory victim. Fill and Update operations that displace
+  SF entries now add sf_evict_latency and return an owned SeqId plus complete
+  directory snapshot. SEQ-capacity and reservation races produce side-effect-
+  free SeqConflict Replay responses, with runtime accounting enforcement.
+- Files changed: `src/mem/cache/CHI/HnfSLCSFBackend.hh`,
+  `src/mem/cache/CHI/HnfSLCSFBackend.cc`,
+  `src/mem/cache/CHI/HnfSLCSFResponse.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.hh`, `src/mem/cache/CHI/HnfSLCSF.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.test.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and all four CHI
+  GTest binaries successfully; all 136 tests passed (18 POCQ, 2 SEQ POCQ,
+  87 SLCSF, and 29 controller), including existing SEQ back-invalidate,
+  dirty-data, reservation, same-address, and younger-sleeper regressions;
+  changed C++ files passed `python3 util/style.py --modifications`;
+  `git diff --check` passed.
+- Learnings for future iterations: A victim handoff must preserve metadata
+  from the displaced line rather than the incoming replacement, and reserved
+  capacity must be consumed before occupancy is created so their sum remains
+  bounded at every intermediate point.
 ---

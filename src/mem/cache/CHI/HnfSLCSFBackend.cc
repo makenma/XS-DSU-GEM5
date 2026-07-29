@@ -376,6 +376,7 @@ HnfSLCSFBackend::tryReserveSfResources(uint32_t entry, uint64_t block_addr,
             }
             existing->second.seqSlot = true;
             ++reservedSeqSlots;
+            assertSeqAccounting();
         }
         return true;
     }
@@ -413,6 +414,7 @@ HnfSLCSFBackend::tryReserveSfResources(uint32_t entry, uint64_t block_addr,
     if (needsSeqSlot) {
         ++reservedSeqSlots;
     }
+    assertSeqAccounting();
     DPRINTF(HnfSLCSF,
             "reserve entry=%u txn=%u addr=%#llx set=%u seqSlot=%u "
             "seqReserved=%u\n",
@@ -443,6 +445,7 @@ HnfSLCSFBackend::releaseSfResources(uint32_t entry)
         --reservedSeqSlots;
     }
     sfReservations.erase(reservation);
+    assertSeqAccounting();
     DPRINTF(HnfSLCSF,
             "release entry=%u addr=%#llx set=%u seqSlot=%u "
             "seqReserved=%u\n",
@@ -457,9 +460,11 @@ HnfSLCSFBackend::hasSfReservation(uint32_t entry) const
 }
 
 HnfSLCSFBackend::SeqId
-HnfSLCSFBackend::installSeqVictim(uint32_t set, const SfLine& victim,
-                           uint32_t home_node_id)
+HnfSLCSFBackend::installSeqVictim(
+    uint32_t set, const SfLine& victim, SeqVictim* installed)
 {
+    panic_if(seqOccupancy() + reservedSeqSlots >= seq.size(),
+             "HnfSLCSF installs SF victim without available SEQ capacity\n");
     auto slot = std::find_if(seq.begin(), seq.end(),
                              [](const SeqEntry& entry) {
                                  return !entry.valid;
@@ -470,13 +475,17 @@ HnfSLCSFBackend::installSeqVictim(uint32_t set, const SfLine& victim,
     SeqVictim snapshot{};
     snapshot.id = nextSeqId++;
     snapshot.blockAddr = sfBlockAddr(victim.tag, set);
-    snapshot.homeNodeId = home_node_id;
+    snapshot.homeNodeId = victim.homeNodeId;
     snapshot.state = victim.state;
     snapshot.owner = victim.owner;
     snapshot.sharers = victim.sharers;
     slot->valid = true;
     slot->victim = snapshot;
     seqPending.push_back(snapshot.id);
+    if (installed) {
+        *installed = snapshot;
+    }
+    assertSeqAccounting();
 
     DPRINTF(HnfSLCSF,
             "SEQ install id=%llu addr=%#llx state=%u owner=%u "
@@ -490,9 +499,60 @@ HnfSLCSFBackend::installSeqVictim(uint32_t set, const SfLine& victim,
     return snapshot.id;
 }
 
+void
+HnfSLCSFBackend::consumeSeqReservation(
+    uint64_t block_addr, std::optional<uint32_t> reservation_owner)
+{
+    auto reservation = sfReservations.end();
+    if (reservation_owner) {
+        reservation = sfReservations.find(*reservation_owner);
+        panic_if(reservation == sfReservations.end() ||
+                     reservation->second.blockAddr != block_addr ||
+                     !reservation->second.seqSlot,
+                 "HnfSLCSF entry=%u installs an unreserved SF victim "
+                 "addr=%#llx\n",
+                 *reservation_owner,
+                 static_cast<unsigned long long>(block_addr));
+    } else {
+        for (auto candidate = sfReservations.begin();
+             candidate != sfReservations.end(); ++candidate) {
+            if (candidate->second.blockAddr != block_addr ||
+                !candidate->second.seqSlot) {
+                continue;
+            }
+            panic_if(reservation != sfReservations.end(),
+                     "HnfSLCSF ambiguous SEQ reservation for addr=%#llx\n",
+                     static_cast<unsigned long long>(block_addr));
+            reservation = candidate;
+        }
+    }
+
+    if (reservation == sfReservations.end()) {
+        return;
+    }
+    panic_if(reservedSeqSlots == 0,
+             "HnfSLCSF consumes an uncounted SEQ reservation\n");
+    reservation->second.seqSlot = false;
+    --reservedSeqSlots;
+    assertSeqAccounting();
+}
+
+void
+HnfSLCSFBackend::assertSeqAccounting() const
+{
+    panic_if(seqOccupancy() + reservedSeqSlots > seq.size(),
+             "HnfSLCSF SEQ accounting exceeds capacity occupancy=%u "
+             "reserved=%u capacity=%u\n",
+             static_cast<unsigned>(seqOccupancy()),
+             static_cast<unsigned>(reservedSeqSlots),
+             static_cast<unsigned>(seq.size()));
+}
+
 HnfSLCSFBackend::SfLine&
 HnfSLCSFBackend::allocateSf(uint64_t block_addr, uint32_t home_node_id,
-                            const ArraySnapshot* target)
+                            const ArraySnapshot* target,
+                            std::optional<uint32_t> reservation_owner,
+                            SeqVictim* sf_victim)
 {
     panic_if(target &&
                  (target->set != sfSet(block_addr) ||
@@ -527,16 +587,58 @@ HnfSLCSFBackend::allocateSf(uint64_t block_addr, uint32_t home_node_id,
         panic_if(seqContains(victimAddr),
                  "HnfSLCSF SF victim collides with active SEQ addr=%#llx\n",
                  static_cast<unsigned long long>(victimAddr));
-        installSeqVictim(sfSet(block_addr), *victim, home_node_id);
+        // Convert the pre-held capacity into an occupied SEQ entry before
+        // overwriting the selected way. This keeps occupancy plus reservations
+        // bounded while installSeqVictim copies the complete directory line.
+        consumeSeqReservation(block_addr, reservation_owner);
+        installSeqVictim(sfSet(block_addr), *victim, sf_victim);
     }
 
     const uint64_t generation = ++accessCounter;
     *victim = SfLine{};
     victim->valid = true;
     victim->tag = sfTag(block_addr);
+    victim->homeNodeId = home_node_id;
     victim->generation = generation;
     victim->lastUse = generation;
     return *victim;
+}
+
+bool
+HnfSLCSFBackend::sfAllocationWouldDisplace(
+    uint64_t block_addr, const LookupSnapshot& target) const
+{
+    if (target.sf.set != sfSet(block_addr) || target.sf.way >= sfWays ||
+        target.sf.hit) {
+        return false;
+    }
+    return sf[target.sf.set][target.sf.way].valid;
+}
+
+bool
+HnfSLCSFBackend::sfAllocationBlockedBySeq(
+    uint64_t block_addr, const LookupSnapshot& target,
+    std::optional<uint32_t> reservation_owner) const
+{
+    if (!sfAllocationWouldDisplace(block_addr, target)) {
+        return false;
+    }
+
+    const SfLine& victim = sf[target.sf.set][target.sf.way];
+    const uint64_t victim_addr = sfBlockAddr(victim.tag, target.sf.set);
+    size_t other_reservations = reservedSeqSlots;
+    if (reservation_owner) {
+        const auto reservation = sfReservations.find(*reservation_owner);
+        if (reservation != sfReservations.end() &&
+            reservation->second.seqSlot) {
+            panic_if(other_reservations == 0,
+                     "HnfSLCSF missing counted SEQ reservation entry=%u\n",
+                     *reservation_owner);
+            --other_reservations;
+        }
+    }
+    return seqContains(victim_addr) ||
+        seqOccupancy() + other_reservations >= seq.size();
 }
 
 void
@@ -791,7 +893,9 @@ void
 HnfSLCSFBackend::commitRead(uint64_t block_addr, uint32_t requester,
                      PocqTxnKind txn, const std::vector<uint8_t>& data,
                      bool data_dirty, uint32_t home_node_id,
-                     const LookupSnapshot* target)
+                     const LookupSnapshot* target,
+                     std::optional<uint32_t> reservation_owner,
+                     SeqVictim* sf_victim)
 {
     const uint64_t requesterBit = requesterMask(requester);
     switch (txn) {
@@ -800,7 +904,8 @@ HnfSLCSFBackend::commitRead(uint64_t block_addr, uint32_t requester,
                    data_dirty ? HnfSlcState::MN : HnfSlcState::EN,
                    requester, data, target ? &target->slc : nullptr);
         SfLine& line = allocateSf(
-            block_addr, home_node_id, target ? &target->sf : nullptr);
+            block_addr, home_node_id, target ? &target->sf : nullptr,
+            reservation_owner, sf_victim);
         line.sharers |= requesterBit;
         if (line.sharers == requesterBit) {
             line.owner = requester;
@@ -814,7 +919,8 @@ HnfSLCSFBackend::commitRead(uint64_t block_addr, uint32_t requester,
         invalidateSlc(block_addr);
         {
             SfLine& line = allocateSf(
-                block_addr, home_node_id, target ? &target->sf : nullptr);
+                block_addr, home_node_id, target ? &target->sf : nullptr,
+                reservation_owner, sf_victim);
             line.state = HnfSfState::EU;
             line.owner = requester;
             line.sharers = requesterBit;
@@ -842,13 +948,16 @@ HnfSLCSFBackend::commitRead(uint64_t block_addr, uint32_t requester,
 void
 HnfSLCSFBackend::completeMaintenance(uint64_t block_addr, uint32_t requester,
                               PocqTxnKind txn, uint32_t home_node_id,
-                              const LookupSnapshot* target)
+                              const LookupSnapshot* target,
+                              std::optional<uint32_t> reservation_owner,
+                              SeqVictim* sf_victim)
 {
     switch (txn) {
       case PocqTxnKind::MakeUnique: {
         invalidateSlc(block_addr);
         SfLine& line = allocateSf(
-            block_addr, home_node_id, target ? &target->sf : nullptr);
+            block_addr, home_node_id, target ? &target->sf : nullptr,
+            reservation_owner, sf_victim);
         line.state = HnfSfState::EU;
         line.owner = requester;
         line.sharers = requesterMask(requester);
@@ -906,17 +1015,21 @@ HnfSLCSFBackend::removeSharer(uint64_t block_addr, uint32_t requester)
 void
 HnfSLCSFBackend::fillCleanShared(uint64_t block_addr, uint32_t requester,
                           const std::vector<uint8_t>& data,
-                          const LookupSnapshot* target)
+                          const LookupSnapshot* target,
+                          std::optional<uint32_t> reservation_owner,
+                          SeqVictim* sf_victim)
 {
     commitRead(
         block_addr, requester, PocqTxnKind::ReadShared, data, false, 0,
-        target);
+        target, reservation_owner, sf_victim);
 }
 
 void
 HnfSLCSFBackend::writeLine(uint64_t block_addr, uint32_t requester,
                     const std::vector<uint8_t>& data, PocqTxnKind txn,
-                    uint32_t home_node_id, const LookupSnapshot* target)
+                    uint32_t home_node_id, const LookupSnapshot* target,
+                    std::optional<uint32_t> reservation_owner,
+                    SeqVictim* sf_victim)
 {
     switch (txn) {
       case PocqTxnKind::WriteBackFull:
@@ -947,7 +1060,8 @@ HnfSLCSFBackend::writeLine(uint64_t block_addr, uint32_t requester,
             block_addr, HnfSlcState::EN, requester, data,
             target ? &target->slc : nullptr);
         SfLine& line = allocateSf(
-            block_addr, home_node_id, target ? &target->sf : nullptr);
+            block_addr, home_node_id, target ? &target->sf : nullptr,
+            reservation_owner, sf_victim);
         line.sharers |= requesterMask(requester);
         line.owner = requester;
         line.state = HnfSfState::EN;

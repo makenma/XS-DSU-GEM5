@@ -71,20 +71,30 @@ class HnfSLCSFBackend
     void commitRead(uint64_t block_addr, uint32_t requester,
                     PocqTxnKind txn, const std::vector<uint8_t>& data,
                     bool data_dirty, uint32_t home_node_id = 0,
-                    const LookupSnapshot* target = nullptr);
+                    const LookupSnapshot* target = nullptr,
+                    std::optional<uint32_t> reservation_owner = std::nullopt,
+                    SeqVictim* sf_victim = nullptr);
     void completeMaintenance(uint64_t block_addr, uint32_t requester,
                              PocqTxnKind txn,
                              uint32_t home_node_id = 0,
-                             const LookupSnapshot* target = nullptr);
+                             const LookupSnapshot* target = nullptr,
+                             std::optional<uint32_t> reservation_owner =
+                                 std::nullopt,
+                             SeqVictim* sf_victim = nullptr);
     void removeSharer(uint64_t block_addr, uint32_t requester);
     void fillCleanShared(uint64_t block_addr, uint32_t requester,
                          const std::vector<uint8_t>& data,
-                         const LookupSnapshot* target = nullptr);
+                         const LookupSnapshot* target = nullptr,
+                         std::optional<uint32_t> reservation_owner =
+                             std::nullopt,
+                         SeqVictim* sf_victim = nullptr);
     void writeLine(uint64_t block_addr, uint32_t requester,
                    const std::vector<uint8_t>& data,
                    PocqTxnKind txn = PocqTxnKind::WriteUnique,
                    uint32_t home_node_id = 0,
-                   const LookupSnapshot* target = nullptr);
+                   const LookupSnapshot* target = nullptr,
+                   std::optional<uint32_t> reservation_owner = std::nullopt,
+                   SeqVictim* sf_victim = nullptr);
     void flushSf(uint64_t block_addr);
     void flushL3(uint64_t block_addr);
     void writeL3FlushSf(uint64_t block_addr, uint32_t requester,
@@ -114,6 +124,13 @@ class HnfSLCSFBackend
     bool validateLookupSnapshot(
         uint64_t block_addr, const LookupSnapshot& snapshot) const;
 
+    /** Return whether the token-selected SF way is a valid displacement. */
+    bool sfAllocationWouldDisplace(
+        uint64_t block_addr, const LookupSnapshot& target) const;
+    bool sfAllocationBlockedBySeq(
+        uint64_t block_addr, const LookupSnapshot& target,
+        std::optional<uint32_t> reservation_owner = std::nullopt) const;
+
     /** Invalidate every outstanding lookup snapshot at a lifecycle boundary. */
     void invalidateCommitTokens();
 
@@ -139,6 +156,7 @@ class HnfSLCSFBackend
         bool valid = false;
         uint64_t tag = 0;
         HnfSfState state = HnfSfState::I;
+        uint32_t homeNodeId = 0;
         uint32_t owner = 0;
         uint64_t sharers = 0;
         uint64_t generation = 0;
@@ -191,7 +209,10 @@ class HnfSLCSFBackend
     SlcLine& allocateSlc(uint64_t block_addr,
                          const ArraySnapshot* target = nullptr);
     SfLine& allocateSf(uint64_t block_addr, uint32_t home_node_id,
-                       const ArraySnapshot* target = nullptr);
+                       const ArraySnapshot* target = nullptr,
+                       std::optional<uint32_t> reservation_owner =
+                           std::nullopt,
+                       SeqVictim* sf_victim = nullptr);
     const SfLine* selectSfVictim(
         uint64_t block_addr, const ArraySnapshot* target = nullptr) const;
     LookupSnapshot snapshotLookup(uint64_t block_addr) const;
@@ -201,8 +222,12 @@ class HnfSLCSFBackend
         std::optional<uint32_t> reservation_owner = std::nullopt) const;
     bool txnTouchesSf(PocqTxnKind txn) const;
     bool txnMayAllocateSf(PocqTxnKind txn) const;
-    SeqId installSeqVictim(uint32_t set, const SfLine& victim,
-                           uint32_t home_node_id);
+    SeqId installSeqVictim(
+        uint32_t set, const SfLine& victim, SeqVictim* snapshot);
+    void consumeSeqReservation(
+        uint64_t block_addr,
+        std::optional<uint32_t> reservation_owner = std::nullopt);
+    void assertSeqAccounting() const;
     SeqEntry* findSeq(SeqId id);
     const SeqEntry* findSeq(SeqId id) const;
     void installSlc(uint64_t block_addr, HnfSlcState state,

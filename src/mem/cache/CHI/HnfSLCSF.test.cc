@@ -1321,6 +1321,217 @@ TEST(HnfSlcSfMutationServiceTest, FreshTokenCommitsThroughU2)
 }
 
 TEST(HnfSlcSfMutationServiceTest,
+     FillVictimAddsLatencyAndReturnsOwnedSeqSnapshot)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.fillLatency = 5;
+    config.sfEvictLatency = 3;
+    HnfSLCSF model(64, 1, 2, 1, 1, 1, config);
+    const uint64_t victim_addr = TestAddr;
+    const uint64_t replacement_addr = TestAddr + 64;
+    model.commitRead(
+        victim_addr, 3, PocqTxnKind::ReadUnique, lineData(0x72), false,
+        0x90);
+    const auto token =
+        completeLookupToken(model, 1312, replacement_addr);
+    ASSERT_FALSE(token.sf.hit);
+    SlcSfRequest request = makeSlcSfFillCleanSharedReq(
+        mutationHeader(1313, replacement_addr, 7), lineData(0x73), {},
+        token, token.lookupReqId);
+    ASSERT_EQ(model.tryEnqueue(std::move(request)),
+              SlcSfEnqueueResult::Accepted);
+    model.wakeup();
+    const uint64_t issue_cycle = model.currentCycle();
+
+    while (model.respPendingCount() == 0) {
+        model.wakeup();
+        EXPECT_LE(
+            model.seqOccupancy() + model.seqReservationCount(),
+            model.seqCapacity());
+        ASSERT_LE(
+            model.currentCycle(),
+            issue_cycle + config.fillLatency + config.sfEvictLatency);
+    }
+    EXPECT_EQ(
+        model.currentCycle(),
+        issue_cycle + config.fillLatency + config.sfEvictLatency);
+    EXPECT_EQ(model.seqOccupancy(), 1);
+    EXPECT_EQ(model.seqReservationCount(), 0);
+    const auto backend_victim = model.frontPendingSeq();
+
+    model.wakeup();
+    auto response = model.popVisibleResponse();
+    ASSERT_TRUE(response.has_value());
+    ASSERT_EQ(response->status(), SlcSfTerminalStatus::Done);
+    const auto& fill =
+        std::get<SlcSfFillResponse>(response->payload());
+    ASSERT_TRUE(fill.sfVictim.has_value());
+    const auto& victim = *fill.sfVictim;
+    EXPECT_EQ(victim.seqId.value, backend_victim.id);
+    EXPECT_EQ(victim.lineAddress, victim_addr);
+    EXPECT_EQ(victim.homeNodeId, 0x90);
+    EXPECT_EQ(victim.state, HnfSfState::EU);
+    EXPECT_EQ(victim.owner, 3);
+    EXPECT_EQ(victim.sharers, 1ULL << 3);
+}
+
+TEST(HnfSlcSfMutationServiceTest,
+     UpdateVictimAddsLatencyAndReturnsOwnedSeqSnapshot)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.updateLatency = 4;
+    config.sfEvictLatency = 2;
+    HnfSLCSF model(64, 1, 2, 1, 1, 1, config);
+    const uint64_t victim_addr = TestAddr;
+    const uint64_t replacement_addr = TestAddr + 64;
+    model.commitRead(
+        victim_addr, 5, PocqTxnKind::ReadShared, lineData(0x74), false,
+        0x91);
+    const auto token =
+        completeLookupToken(model, 1314, replacement_addr);
+    SlcSfRequest request = makeSlcSfCompleteMaintenanceReq(
+        mutationHeader(1315, replacement_addr, 9),
+        PocqTxnKind::MakeUnique, 0x92, token, token.lookupReqId);
+    ASSERT_EQ(model.tryEnqueue(std::move(request)),
+              SlcSfEnqueueResult::Accepted);
+    model.wakeup();
+    const uint64_t issue_cycle = model.currentCycle();
+
+    while (model.respPendingCount() == 0) {
+        model.wakeup();
+        EXPECT_LE(
+            model.seqOccupancy() + model.seqReservationCount(),
+            model.seqCapacity());
+        ASSERT_LE(
+            model.currentCycle(),
+            issue_cycle + config.updateLatency + config.sfEvictLatency);
+    }
+    EXPECT_EQ(
+        model.currentCycle(),
+        issue_cycle + config.updateLatency + config.sfEvictLatency);
+    model.wakeup();
+    auto response = model.popVisibleResponse();
+    ASSERT_TRUE(response.has_value());
+    ASSERT_EQ(response->status(), SlcSfTerminalStatus::Done);
+    const auto& update =
+        std::get<SlcSfUpdateResponse>(response->payload());
+    ASSERT_TRUE(update.sfVictim.has_value());
+    EXPECT_EQ(update.sfVictim->seqId.value, model.frontPendingSeq().id);
+    EXPECT_EQ(update.sfVictim->lineAddress, victim_addr);
+    EXPECT_EQ(update.sfVictim->homeNodeId, 0x91);
+    EXPECT_EQ(update.sfVictim->state, HnfSfState::EN);
+    EXPECT_EQ(update.sfVictim->owner, 5);
+    EXPECT_EQ(update.sfVictim->sharers, 1ULL << 5);
+}
+
+TEST(HnfSlcSfMutationServiceTest,
+     SeqCapacityRaceReplaysWithoutOverwritingVictim)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.replayPenalty = 3;
+    HnfSLCSF model(64, 2, 2, 2, 1, 1, config);
+    const uint64_t victim_addr = TestAddr;
+    const uint64_t other_victim_addr = TestAddr + 64;
+    const uint64_t replacement_addr = TestAddr + 128;
+    const uint64_t other_replacement_addr = TestAddr + 192;
+    model.commitRead(
+        victim_addr, 1, PocqTxnKind::ReadUnique, lineData(0x75), false,
+        0x90);
+    model.commitRead(
+        other_victim_addr, 2, PocqTxnKind::ReadUnique, lineData(0x76),
+        false, 0x91);
+    const auto token =
+        completeLookupToken(model, 1316, replacement_addr);
+
+    // Consume the only SEQ slot after Lookup but before the mutation reaches
+    // U1. The target token remains fresh because the other SF set changed.
+    model.commitRead(
+        other_replacement_addr, 4, PocqTxnKind::ReadUnique,
+        lineData(0x77), false, 0x92);
+    ASSERT_EQ(model.seqOccupancy(), 1);
+    ASSERT_TRUE(model.validateCommitToken(
+        token, token.lookupReqId, replacement_addr));
+    const auto original = model.probe(HnfSlcLookupReq{
+        0, RawReq{}, PocqTxnKind::Unknown, victim_addr});
+
+    SlcSfRequest request = makeSlcSfFillCleanSharedReq(
+        mutationHeader(1317, replacement_addr), lineData(0x78), {}, token,
+        token.lookupReqId);
+    ASSERT_EQ(model.tryEnqueue(std::move(request)),
+              SlcSfEnqueueResult::Accepted);
+    std::optional<SlcSfResponse> response;
+    for (size_t cycle = 0; cycle < 16 && !response; ++cycle) {
+        model.wakeup(1000 + cycle);
+        EXPECT_LE(
+            model.seqOccupancy() + model.seqReservationCount(),
+            model.seqCapacity());
+        response = model.popVisibleResponse();
+    }
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->status(), SlcSfTerminalStatus::Replay);
+    const auto& replay = std::get<SlcSfReplay>(response->payload());
+    EXPECT_EQ(replay.reason, SlcSfReplayReason::SeqConflict);
+    EXPECT_TRUE(replay.redoLookup);
+    EXPECT_FALSE(model.probe(HnfSlcLookupReq{
+        0, RawReq{}, PocqTxnKind::Unknown, replacement_addr}).result.sfHit);
+    const auto preserved = model.probe(HnfSlcLookupReq{
+        0, RawReq{}, PocqTxnKind::Unknown, victim_addr});
+    expectLookupResultsEqual(preserved.result, original.result);
+    expectArraySnapshotsEqual(preserved.snapshot.sf, original.snapshot.sf);
+    EXPECT_EQ(model.seqOccupancy(), 1);
+    EXPECT_EQ(model.seqReservationCount(), 0);
+    EXPECT_EQ(model.sfReservationCount(), 0);
+}
+
+TEST(HnfSlcSfMutationServiceTest,
+     SeqReservationRaceReplaysWithoutPartialReservation)
+{
+    HnfSLCSF model(64, 2, 2, 2, 1, 1);
+    const uint64_t victim_addr = TestAddr;
+    const uint64_t other_victim_addr = TestAddr + 64;
+    const uint64_t replacement_addr = TestAddr + 128;
+    const uint64_t other_replacement_addr = TestAddr + 192;
+    model.commitRead(
+        victim_addr, 1, PocqTxnKind::ReadUnique, lineData(0x79), false);
+    model.commitRead(
+        other_victim_addr, 2, PocqTxnKind::ReadUnique, lineData(0x7a),
+        false);
+    const auto token =
+        completeLookupToken(model, 1318, replacement_addr);
+    ASSERT_TRUE(model.tryReserveSfResources(
+        999, other_replacement_addr, PocqTxnKind::ReadShared));
+    ASSERT_EQ(model.seqOccupancy(), 0);
+    ASSERT_EQ(model.seqReservationCount(), 1);
+
+    SlcSfRequest request = makeSlcSfFillCleanSharedReq(
+        mutationHeader(1319, replacement_addr), lineData(0x7b), {}, token,
+        token.lookupReqId);
+    ASSERT_EQ(model.tryEnqueue(std::move(request)),
+              SlcSfEnqueueResult::Accepted);
+    std::optional<SlcSfResponse> response;
+    for (size_t cycle = 0; cycle < 16 && !response; ++cycle) {
+        model.wakeup();
+        EXPECT_LE(
+            model.seqOccupancy() + model.seqReservationCount(),
+            model.seqCapacity());
+        response = model.popVisibleResponse();
+    }
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->status(), SlcSfTerminalStatus::Replay);
+    EXPECT_EQ(std::get<SlcSfReplay>(response->payload()).reason,
+              SlcSfReplayReason::SeqConflict);
+    EXPECT_FALSE(model.hasSfReservation(1319));
+    EXPECT_TRUE(model.hasSfReservation(999));
+    EXPECT_TRUE(model.probe(HnfSlcLookupReq{
+        0, RawReq{}, PocqTxnKind::Unknown, victim_addr}).result.sfHit);
+    EXPECT_FALSE(model.probe(HnfSlcLookupReq{
+        0, RawReq{}, PocqTxnKind::Unknown, replacement_addr}).result.sfHit);
+    model.releaseSfResources(999);
+    EXPECT_EQ(model.sfReservationCount(), 0);
+    EXPECT_EQ(model.seqReservationCount(), 0);
+}
+
+TEST(HnfSlcSfMutationServiceTest,
      TokenLookupIdTamperReplaysWithoutSideEffects)
 {
     HnfSLCSF model(64, 1, 2, 1, 2);

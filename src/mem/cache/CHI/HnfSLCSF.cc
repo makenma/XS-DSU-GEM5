@@ -72,6 +72,15 @@ isWriteTxn(PocqTxnKind txn)
         txn == PocqTxnKind::WriteUnique;
 }
 
+bool
+mayAllocateSf(PocqTxnKind txn)
+{
+    return txn == PocqTxnKind::ReadShared ||
+        txn == PocqTxnKind::ReadUnique ||
+        txn == PocqTxnKind::MakeUnique ||
+        txn == PocqTxnKind::WriteCleanFull;
+}
+
 HnfSlcLookupReq
 makeBackendLookupRequest(const SlcSfLookupReq& request)
 {
@@ -158,7 +167,7 @@ HnfSLCSF::validateConfig(const HnfSLCSFPipelineConfig& config)
 uint64_t
 HnfSLCSF::serviceLatency(const SlcSfRequest& request) const
 {
-    const uint64_t latency = std::visit(
+    uint64_t latency = std::visit(
         [this](const auto& typed_request) {
             using Request = std::decay_t<decltype(typed_request)>;
             if constexpr (std::is_same_v<Request, SlcSfLookupReq>) {
@@ -172,7 +181,63 @@ HnfSLCSF::serviceLatency(const SlcSfRequest& request) const
             }
         },
         request);
+    if (mutationProducesSfVictim(request)) {
+        panic_if(config.sfEvictLatency > UINT64_MAX - latency,
+                 "HnfSLCSF SF-evict latency overflows\n");
+        latency += config.sfEvictLatency;
+    }
     return std::max<uint64_t>(1, latency);
+}
+
+bool
+HnfSLCSF::mutationProducesSfVictim(const SlcSfRequest& request) const
+{
+    const bool allocates_sf = std::visit(
+        [](const auto& typed_request) {
+            using Request = std::decay_t<decltype(typed_request)>;
+            if constexpr (std::is_same_v<Request, SlcSfFillReq>) {
+                return std::visit(
+                    [](const auto& operation) {
+                        using Operation =
+                            std::decay_t<decltype(operation)>;
+                        if constexpr (std::is_same_v<
+                                          Operation, SlcSfCommitRead>) {
+                            return operation.txn == PocqTxnKind::ReadShared ||
+                                operation.txn == PocqTxnKind::ReadUnique;
+                        } else if constexpr (std::is_same_v<
+                                                 Operation,
+                                                 SlcSfFillCleanShared>) {
+                            return true;
+                        } else if constexpr (std::is_same_v<
+                                                 Operation,
+                                                 SlcSfWriteLine>) {
+                            return operation.txn ==
+                                PocqTxnKind::WriteCleanFull;
+                        } else {
+                            return false;
+                        }
+                    },
+                    typed_request.operation);
+            } else if constexpr (std::is_same_v<Request, SlcSfUpdateReq>) {
+                return std::visit(
+                    [](const auto& operation) {
+                        using Operation =
+                            std::decay_t<decltype(operation)>;
+                        if constexpr (std::is_same_v<
+                                          Operation,
+                                          SlcSfCompleteMaintenance>) {
+                            return operation.txn == PocqTxnKind::MakeUnique;
+                        }
+                        return false;
+                    },
+                    typed_request.operation);
+            }
+            return false;
+        },
+        request);
+    return allocates_sf &&
+        sfAllocationWouldDisplace(
+            requestHeader(request).lineAddress, mutationTarget(request));
 }
 
 Tick
@@ -386,10 +451,12 @@ HnfSLCSF::mutationStageCount(MutationStage stage) const
 }
 
 SlcSfResponse
-HnfSLCSF::makeTerminalResponse(const SlcSfRequest& request)
+HnfSLCSF::makeTerminalResponse(
+    const SlcSfRequest& request,
+    std::optional<SlcSfSfVictim> sf_victim)
 {
     return std::visit(
-        [this](const auto& typed_request) {
+        [this, &sf_victim](const auto& typed_request) {
             using Request = std::decay_t<decltype(typed_request)>;
             if constexpr (std::is_same_v<Request, SlcSfLookupReq>) {
                 HnfSLCSFBackend::LookupSnapshot snapshot{};
@@ -415,8 +482,15 @@ HnfSLCSF::makeTerminalResponse(const SlcSfRequest& request)
                     snapshot.sf.generation};
                 return makeSlcSfDoneResponse(
                     typed_request, std::move(result), token);
+            } else if constexpr (std::is_same_v<Request, SlcSfFillReq>) {
+                return makeSlcSfDoneResponse(
+                    typed_request, std::nullopt, std::move(sf_victim));
+            } else if constexpr (std::is_same_v<Request, SlcSfUpdateReq>) {
+                return makeSlcSfDoneResponse(
+                    typed_request, std::move(sf_victim));
             } else {
-                return makeSlcSfDoneResponse(typed_request);
+                return makeSlcSfDoneResponse(
+                    typed_request, std::move(sf_victim));
             }
         },
         request);
@@ -530,6 +604,11 @@ HnfSLCSF::prepareMutationResources(InflightRequest& request)
                 return false;
             }
         }
+        if (mayAllocateSf(txn) && sfAllocationBlockedBySeq(
+                header.lineAddress, target, header.pocEntryId)) {
+            request.terminalReplayReason = SlcSfReplayReason::SeqConflict;
+            return true;
+        }
         if (!tryReserveSfResources(
                 header.pocEntryId, header.lineAddress, txn, &target)) {
             return false;
@@ -602,12 +681,14 @@ HnfSLCSF::executeMutation(InflightRequest& request)
 {
     const SlcSfReqHeader& header = requestHeader(request.request);
     const LookupSnapshot target = mutationTarget(request.request);
+    SeqVictim sf_victim{};
     std::visit(
-        [this, &header, &target](const auto& typed_request) {
+        [this, &header, &target, &sf_victim](const auto& typed_request) {
             using Request = std::decay_t<decltype(typed_request)>;
             if constexpr (std::is_same_v<Request, SlcSfFillReq>) {
                 std::visit(
-                    [this, &header, &target](const auto& operation) {
+                    [this, &header, &target, &sf_victim](
+                        const auto& operation) {
                         using Operation =
                             std::decay_t<decltype(operation)>;
                         if constexpr (std::is_same_v<
@@ -616,20 +697,23 @@ HnfSLCSF::executeMutation(InflightRequest& request)
                                 header.lineAddress, header.requester,
                                 operation.txn, operation.line.data,
                                 operation.line.dirty,
-                                operation.homeNodeId, &target);
+                                operation.homeNodeId, &target,
+                                header.pocEntryId, &sf_victim);
                         } else if constexpr (std::is_same_v<
                                                  Operation,
                                                  SlcSfFillCleanShared>) {
                             fillCleanShared(
                                 header.lineAddress, header.requester,
-                                operation.line.data, &target);
+                                operation.line.data, &target,
+                                header.pocEntryId, &sf_victim);
                         } else if constexpr (std::is_same_v<
                                                  Operation,
                                                  SlcSfWriteLine>) {
                             writeLine(
                                 header.lineAddress, header.requester,
                                 operation.line.data, operation.txn,
-                                operation.homeNodeId, &target);
+                                operation.homeNodeId, &target,
+                                header.pocEntryId, &sf_victim);
                         } else if constexpr (std::is_same_v<
                                                  Operation,
                                                  SlcSfWriteL3FlushSf>) {
@@ -641,7 +725,8 @@ HnfSLCSF::executeMutation(InflightRequest& request)
                     typed_request.operation);
             } else if constexpr (std::is_same_v<Request, SlcSfUpdateReq>) {
                 std::visit(
-                    [this, &header, &target](const auto& operation) {
+                    [this, &header, &target, &sf_victim](
+                        const auto& operation) {
                         using Operation =
                             std::decay_t<decltype(operation)>;
                         if constexpr (std::is_same_v<
@@ -650,7 +735,7 @@ HnfSLCSF::executeMutation(InflightRequest& request)
                             completeMaintenance(
                                 header.lineAddress, header.requester,
                                 operation.txn, operation.homeNodeId,
-                                &target);
+                                &target, header.pocEntryId, &sf_victim);
                         } else if constexpr (std::is_same_v<
                                                  Operation,
                                                  SlcSfRemoveSharer>) {
@@ -675,6 +760,12 @@ HnfSLCSF::executeMutation(InflightRequest& request)
             }
         },
         request.request);
+    if (sf_victim.id != 0) {
+        request.sfVictim = SlcSfSfVictim{
+            SlcSfSeqId{sf_victim.id}, sf_victim.blockAddr,
+            sf_victim.homeNodeId, sf_victim.state, sf_victim.owner,
+            sf_victim.sharers};
+    }
     request.mutationCommitted = true;
 }
 
@@ -716,7 +807,13 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
             request.completeCycle = std::max(
                 request.completeCycle, wakeupCycle + 1);
         } else if (prepareMutationResources(request)) {
-            request.mutationStage = MutationStage::U2ArrayWrite;
+            request.mutationStage = request.terminalReplayReason ?
+                MutationStage::U3CheckLatch :
+                MutationStage::U2ArrayWrite;
+            if (request.terminalReplayReason) {
+                request.completeCycle = std::max(
+                    request.completeCycle, wakeupCycle + 1);
+            }
         }
         break;
       case MutationStage::U2ArrayWrite:
@@ -760,7 +857,8 @@ HnfSLCSF::latchMutationResponse(InflightRequest& request)
             request.request);
     }
     if (!request.terminalResponse) {
-        request.terminalResponse = makeTerminalResponse(request.request);
+        request.terminalResponse = makeTerminalResponse(
+            request.request, std::move(request.sfVictim));
     }
     respPending.push_back(std::move(*request.terminalResponse));
     if (request.resourcesPrepared) {
@@ -852,7 +950,7 @@ HnfSLCSF::issueReadyRequests()
             mutation ? std::optional<MutationStage>(
                            MutationStage::U0DecodeValidate) : std::nullopt,
             std::nullopt, std::nullopt, false, false, false,
-            early_lookup_replay});
+            early_lookup_replay, std::nullopt});
         request = reqReady.erase(request);
         ++*issued;
     }

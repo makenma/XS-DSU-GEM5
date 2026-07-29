@@ -147,15 +147,19 @@ class HnfSLCSF : public HnfSLCSFBackend
         bool mutationCommitted = false;
         bool mutationStalled = false;
         bool earlyLookupReplay = false;
+        std::optional<SlcSfSfVictim> sfVictim;
     };
 
     static void validateConfig(const HnfSLCSFPipelineConfig& config);
     uint64_t serviceLatency(const SlcSfRequest& request) const;
+    bool mutationProducesSfVictim(const SlcSfRequest& request) const;
     Tick replayDeadline() const;
     bool lookupReplaysAtL0(const SlcSfRequest& request) const;
     void promotePendingResponses();
     void completeInflightRequests();
-    SlcSfResponse makeTerminalResponse(const SlcSfRequest& request);
+    SlcSfResponse makeTerminalResponse(
+        const SlcSfRequest& request,
+        std::optional<SlcSfSfVictim> sf_victim = std::nullopt);
     std::optional<SlcSfError> validateMutationRequest(
         const SlcSfRequest& request) const;
     bool validateMutationToken(const SlcSfRequest& request) const;

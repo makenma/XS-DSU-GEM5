@@ -67,6 +67,7 @@ struct SlcSfFillResponse
 struct SlcSfUpdateResponse
 {
     SlcSfUpdateKind updateKind = SlcSfUpdateKind::CompleteMaintenance;
+    std::optional<SlcSfSfVictim> sfVictim;
 };
 
 struct SlcSfEvictResponse
@@ -183,12 +184,14 @@ class SlcSfResponse
                 std::move(sf_victim)});
     }
 
-    static SlcSfResponse done(const SlcSfUpdateReq& request)
+    static SlcSfResponse done(
+        const SlcSfUpdateReq& request,
+        std::optional<SlcSfSfVictim> sf_victim = std::nullopt)
     {
         return SlcSfResponse(
             request.header, slcSfResponseOperation(request),
             SlcSfTerminalStatus::Done,
-            SlcSfUpdateResponse{request.kind()});
+            SlcSfUpdateResponse{request.kind(), std::move(sf_victim)});
     }
 
     static SlcSfResponse done(
@@ -252,9 +255,11 @@ makeSlcSfDoneResponse(
 }
 
 inline SlcSfResponse
-makeSlcSfDoneResponse(const SlcSfUpdateReq& request)
+makeSlcSfDoneResponse(
+    const SlcSfUpdateReq& request,
+    std::optional<SlcSfSfVictim> sf_victim = std::nullopt)
 {
-    return SlcSfResponse::done(request);
+    return SlcSfResponse::done(request, std::move(sf_victim));
 }
 
 inline SlcSfResponse
