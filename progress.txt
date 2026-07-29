@@ -1544,3 +1544,25 @@ Started: 2026-07-28T20:49:07+08:00
   validation commands, and unsupported lifecycle boundaries in one explicit
   authoritative section.
 ---
+
+## 2026-07-29 19:16 - US-040
+- Story: Pass the full HNF SLCSF regression gate
+- What was implemented: Completed the final production-build, four-binary
+  GTest, default four-core litmus, and forced SF=64x4/SEQ=4 four-core litmus
+  acceptance gate. Verified the forced legacy parent parameter path reaches
+  the standalone child and audited the compressed trace for complete SEQ
+  install, admit, internal snoop, durable-complete, and retire activity.
+- Files changed: `prd.json` and `progress.txt` only; generated `m5out` data and
+  build products remain outside the change set.
+- Checks run and their results: `scons build/RISCV/gem5.opt -j16` and the four
+  documented CHI GTest builds passed; all 190 tests passed (18 POCQ, 2 SEQ
+  POCQ, 122 SLCSF, and 48 controller). Both four-core litmus runs passed all 7
+  workloads with `CHI_LITMUS_PASS total_errors=0`; every hart reported alias
+  `0x50000001f0`, pressure `0x2800000000ffc000`, and BAD count 0. The forced
+  trace contained 2,796 installs, 2,794 admits, 3,013 internal snoop requests,
+  2,793 durable completions, and 2,793 retires, with no HNF panic, CPU commit
+  watchdog, deadlock, or abs-max-tick exit. `git diff --check` passed.
+- Learnings for future iterations: The final gate should validate both result
+  oracles and generated configuration, then correlate the forced trace across
+  the complete internal SEQ lifecycle without pinning a historical exit tick.
+---
