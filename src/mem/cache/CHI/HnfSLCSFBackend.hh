@@ -159,6 +159,10 @@ class HnfSLCSFBackend
 
     bool isBusy() const { return seqOccupancy() != 0; }
 
+  protected:
+    /** Clear all persistent storage for a simulator cold start. */
+    void resetStorageForColdStart();
+
   private:
     friend class HnfSLCSF;
 

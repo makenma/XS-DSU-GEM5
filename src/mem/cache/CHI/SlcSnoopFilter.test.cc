@@ -52,6 +52,73 @@ TEST(SlcSnoopFilterTest, IsStandaloneClockedNoncopyableOwner)
     SUCCEED();
 }
 
+TEST(SlcSnoopFilterTest, NoCreditsBeforeInitialization)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.reqQueueEntries = 2;
+    config.initLatency = 3;
+    HnfSLCSF service(64, 4, 2, 4, 2, 8, config);
+    service.resetForColdStart();
+    auto request = lookupRequest(41);
+
+    EXPECT_FALSE(service.isInitialized());
+    EXPECT_EQ(service.registeredReqCredits(), 0);
+    EXPECT_EQ(service.tryEnqueue(std::move(request)),
+              SlcSfEnqueueResult::Initializing);
+    EXPECT_EQ(std::get<SlcSfLookupReq>(request).header.reqId,
+              SlcSfReqId{41});
+    EXPECT_EQ(service.reqOutstanding(), 0);
+    EXPECT_EQ(service.respOccupied(), 0);
+}
+
+TEST(SlcSnoopFilterTest, InitializationCompletesAfterConfiguredLatency)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.reqQueueEntries = 2;
+    config.initLatency = 3;
+    HnfSLCSF service(64, 4, 2, 4, 2, 8, config);
+    service.resetForColdStart();
+
+    auto edge = advanceSlcSnoopFilterService(service, 10);
+    EXPECT_TRUE(edge.needsNextEdge);
+    EXPECT_FALSE(edge.creditBecameAvailable);
+    EXPECT_FALSE(service.isInitialized());
+    edge = advanceSlcSnoopFilterService(service, 13);
+    EXPECT_TRUE(edge.needsNextEdge);
+    EXPECT_FALSE(edge.creditBecameAvailable);
+    EXPECT_FALSE(service.isInitialized());
+    edge = advanceSlcSnoopFilterService(service, 16);
+    EXPECT_FALSE(edge.needsNextEdge);
+    EXPECT_TRUE(edge.creditBecameAvailable);
+    EXPECT_TRUE(service.isInitialized());
+    EXPECT_EQ(service.registeredReqCredits(), 2);
+    EXPECT_EQ(service.respOccupied(), 0);
+}
+
+TEST(SlcSnoopFilterTest, ColdResetClearsPersistentAndTransientStorage)
+{
+    HnfSLCSF service(64, 1, 2, 1, 1, 2);
+    service.fillCleanShared(TestAddr, 7, lineData(0xa1));
+    service.fillCleanShared(TestAddr + 64, 8, lineData(0xb2));
+    ASSERT_EQ(service.seqOccupancy(), 1);
+
+    service.resetForColdStart();
+
+    HnfSlcLookupReq lookup{};
+    lookup.blockAddr = TestAddr;
+    lookup.req.srcid = 7;
+    lookup.txn = PocqTxnKind::ReadShared;
+    const HnfSlcLookupResult result = service.lookup(lookup);
+    EXPECT_FALSE(result.slcHit);
+    EXPECT_FALSE(result.sfHit);
+    EXPECT_EQ(service.seqOccupancy(), 0);
+    EXPECT_EQ(service.seqReservationCount(), 0);
+    EXPECT_EQ(service.sfReservationCount(), 0);
+    EXPECT_EQ(service.victimBufferOccupancy(), 0);
+    EXPECT_EQ(service.victimReservationCount(), 0);
+    EXPECT_EQ(service.dirtyVictimSealCount(), 0);
+}
+
 TEST(SlcSnoopFilterTest, CrossClockEdgesNotifyOnlyFutureOwnerWakeups)
 {
     constexpr Tick AcceptedTick = 100;

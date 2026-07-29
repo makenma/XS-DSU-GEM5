@@ -51,6 +51,10 @@ class SlcSnoopFilter : public ClockedObject
     const HnfSLCSF& service() const { return slcsf; }
 
     bool hasWork() const { return slcsf.hasWork(); }
+    bool initialized() const { return slcsf.isInitialized(); }
+
+    void initState() override;
+    void startup() override;
 
     /** Register the owner callback used only to request a future wakeup. */
     void setFutureWakeupCallback(std::function<void(Tick)> callback)

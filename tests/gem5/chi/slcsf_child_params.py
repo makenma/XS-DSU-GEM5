@@ -78,6 +78,7 @@ parent_values = {
 connect_hnf(system, "parent_hnf", HomeNodeFull(**parent_values))
 
 child_values = {
+    "init_latency": 17,
     "slc_num_sets": 128,
     "sf_num_ways": 8,
     "seq_entries": 7,
@@ -112,6 +113,7 @@ expect_values(
         "sf_num_sets": 1024,
         "sf_num_ways": 16,
         "seq_entries": 8,
+        "init_latency": 16,
         "slcsf_lookup_latency": 4,
         "slcsf_fill_latency": 4,
         "slcsf_update_latency": 3,

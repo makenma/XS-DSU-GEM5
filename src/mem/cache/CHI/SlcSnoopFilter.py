@@ -19,6 +19,8 @@ class SlcSnoopFilter(ClockedObject):
     sf_num_sets = Param.UInt32(Parent.sf_num_sets, "Modeled SF sets")
     sf_num_ways = Param.UInt32(Parent.sf_num_ways, "Modeled SF ways")
     seq_entries = Param.UInt32(Parent.seq_entries, "SF victim SEQ entries")
+    init_latency = Param.Cycles(
+        16, "Abstract SLC/SF cold initialization latency")
 
     slcsf_lookup_latency = Param.Cycles(
         Parent.slcsf_lookup_latency, "SLCSF lookup service latency")

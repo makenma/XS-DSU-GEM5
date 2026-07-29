@@ -28,6 +28,7 @@ static_assert(!std::is_move_assignable_v<HnfSLCSF>);
 
 struct StageAHomeNodeParams
 {
+    size_t init_latency = 16;
     size_t slcsf_lookup_latency = 4;
     size_t slcsf_fill_latency = 4;
     size_t slcsf_update_latency = 3;
@@ -850,6 +851,7 @@ TEST(HnfSlcSfQueueTest, StageADefaultConfigurationIsSafe)
     EXPECT_EQ(config.responseConsumeWidth, 1);
     EXPECT_FALSE(config.enableSetLock);
     EXPECT_EQ(config.childClockPeriod, 1);
+    EXPECT_EQ(config.initLatency, 16);
 }
 
 TEST(HnfSlcSfQueueTest, HomeNodeParametersMapToPipelineConfig)
@@ -872,7 +874,9 @@ TEST(HnfSlcSfQueueTest, HomeNodeParametersMapToPipelineConfig)
     EXPECT_EQ(config.maxInflight, 1);
     EXPECT_EQ(config.responseConsumeWidth, 1);
     EXPECT_FALSE(config.enableSetLock);
+    EXPECT_EQ(config.initLatency, 16);
 
+    params.init_latency = 25;
     params.slcsf_lookup_latency = 11;
     params.slcsf_fill_latency = 12;
     params.slcsf_update_latency = 13;
@@ -906,6 +910,7 @@ TEST(HnfSlcSfQueueTest, HomeNodeParametersMapToPipelineConfig)
     EXPECT_EQ(config.responseConsumeWidth, 24);
     EXPECT_TRUE(config.enableSetLock);
     EXPECT_EQ(config.childClockPeriod, 8);
+    EXPECT_EQ(config.initLatency, 25);
 
     HnfSLCSF overridden(64, 4, 2, 4, 2, 8, config);
     EXPECT_EQ(overridden.pipelineConfig().lookupLatency, 11);

@@ -429,6 +429,19 @@ HnfSLCSF::wakeup(Tick now)
 {
     ++wakeupCycle;
     wakeupTick = now;
+    if (!initialized) {
+        panic_if(initializationCyclesRemaining == 0,
+                 "HnfSLCSF initialization has no completion deadline\n");
+        --initializationCyclesRemaining;
+        if (initializationCyclesRemaining == 0) {
+            finishInitialization();
+        }
+        updateRegisteredCredits();
+        assertRequestAccounting();
+        assertResponseAccounting();
+        assertVictimAccounting();
+        return;
+    }
     promotePendingResponses();
     completeInflightRequests();
     promoteIngressRequests();
@@ -606,19 +619,37 @@ HnfSLCSF::cancelRequest(
 bool
 HnfSLCSF::hasWork() const
 {
-    return reqOutstanding() != 0 || respOccupied() != 0;
+    return !initialized || reqOutstanding() != 0 || respOccupied() != 0;
 }
 
 bool
 HnfSLCSF::needsServiceWakeup() const
 {
-    return reqOutstanding() != 0 || !respPending.empty();
+    return !initialized || reqOutstanding() != 0 || !respPending.empty();
+}
+
+void
+HnfSLCSF::resetForColdStart()
+{
+    panic_if(reqOutstanding() != 0 || respOccupied() != 0 ||
+                 setLockCount() != 0,
+             "HnfSLCSF cold reset requires empty timing queues and locks\n");
+    resetStorageForColdStart();
+    for (VictimEntry& entry : victimBuffer) {
+        entry = VictimEntry{};
+    }
+    nextVictimId = 1;
+    nextCompletionNonce = 1;
+    nextSetLockOwner = 1;
+    draining = false;
+    beginInitialization();
 }
 
 void
 HnfSLCSF::beginInitialization()
 {
     initialized = false;
+    initializationCyclesRemaining = std::max<size_t>(config.initLatency, 1);
     visibleReqCredits = 0;
 }
 
@@ -626,6 +657,7 @@ void
 HnfSLCSF::finishInitialization()
 {
     initialized = true;
+    initializationCyclesRemaining = 0;
 }
 
 void

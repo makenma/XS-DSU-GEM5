@@ -99,6 +99,7 @@ struct HnfSLCSFPipelineConfig
     size_t responseConsumeWidth = 1;
     bool enableSetLock = false;
     Tick childClockPeriod = 1;
+    size_t initLatency = 16;
 };
 
 template <class Params>
@@ -122,6 +123,7 @@ makeEmbeddedSlcsfConfig(const Params& p, Tick child_clock_period = 1)
     config.responseConsumeWidth = p.slcsf_response_consume_width;
     config.enableSetLock = p.slcsf_enable_set_lock;
     config.childClockPeriod = child_clock_period;
+    config.initLatency = p.init_latency;
     return config;
 }
 
@@ -238,8 +240,10 @@ class HnfSLCSF : public HnfSLCSFBackend
             victimBufferOccupancy() != 0;
     }
 
-    // Stage-A lifecycle gates. Later lifecycle stories drive these at modeled
-    // initialization and drain boundaries.
+    bool isInitialized() const { return initialized; }
+
+    /** Reset persistent and transient state and enter modeled cold init. */
+    void resetForColdStart();
     void beginInitialization();
     void finishInitialization();
     void beginDraining();
@@ -361,6 +365,7 @@ class HnfSLCSF : public HnfSLCSFBackend
     uint64_t wakeupCycle = 0;
     Tick wakeupTick = 0;
     bool initialized = true;
+    size_t initializationCyclesRemaining = 0;
     bool draining = false;
     uint64_t noCreditRejects = 0;
     uint64_t initializingRejects = 0;

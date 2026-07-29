@@ -121,6 +121,9 @@ Started: 2026-07-28T20:49:07+08:00
 - Let an ordinary service report newly available work without owning events;
   its ClockedObject wrapper should schedule the sole service event and notify
   consumers only about registered transitions on a strictly future edge.
+- Put cold-only destructive reset in `initState()` and start modeled latency
+  from `startup()` so checkpoint restore never accidentally clears restored
+  state; publish completion through registered state and future notification.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -1302,4 +1305,31 @@ Started: 2026-07-28T20:49:07+08:00
   service event, expose registered state only at their own edges, and wake
   consumers through future absolute-Tick notifications rather than callbacks
   that perform consumer work directly.
+---
+
+## 2026-07-29 16:33 - US-031
+- Story: Model cold initialization explicitly
+- What was implemented: Added a 16-cycle canonical child initialization
+  parameter, cold-only persistent/transient reset, registered initialization
+  countdown, zero-credit admission gating, and future owner notification on
+  completion. `SlcSnoopFilter::initState()` performs the cold reset while
+  `startup()` schedules the child event, so checkpoint restore does not invoke
+  the destructive path and initialization never creates a terminal response.
+- Files changed: `src/mem/cache/CHI/HnfSLCSFBackend.hh`,
+  `src/mem/cache/CHI/HnfSLCSFBackend.cc`, `src/mem/cache/CHI/HnfSLCSF.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.cc`, `src/mem/cache/CHI/HnfSLCSF.test.cc`,
+  `src/mem/cache/CHI/SlcSnoopFilter.py`,
+  `src/mem/cache/CHI/SlcSnoopFilter.hh`,
+  `src/mem/cache/CHI/SlcSnoopFilter.cc`,
+  `src/mem/cache/CHI/SlcSnoopFilter.test.cc`,
+  `tests/gem5/chi/slcsf_child_params.py`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt`, the standalone
+  child, and all four CHI GTest binaries successfully; all 180 tests passed
+  (6 child, 18 POCQ, 2 SEQ POCQ, 110 SLCSF, and 44 controller). The generated
+  config.ini smoke printed `SLCSF_CHILD_PARAMS_PASS`; Python bytecode
+  compilation, changed-file gem5 style, and `git diff --check` passed.
+- Learnings for future iterations: Cold reset belongs exclusively to
+  `initState()`, while `startup()` should only schedule modeled work; a
+  registered zero-to-nonzero credit transition can expose initialization
+  completion without adding an ownerless message to transaction responses.
 ---

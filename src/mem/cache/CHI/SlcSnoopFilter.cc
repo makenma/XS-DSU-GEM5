@@ -22,6 +22,22 @@ SlcSnoopFilter::SlcSnoopFilter(const SlcSnoopFilterParams& p)
 }
 
 void
+SlcSnoopFilter::initState()
+{
+    ClockedObject::initState();
+    slcsf.resetForColdStart();
+}
+
+void
+SlcSnoopFilter::startup()
+{
+    ClockedObject::startup();
+    if (!slcsf.isInitialized()) {
+        scheduleServiceEvent();
+    }
+}
+
+void
 SlcSnoopFilter::scheduleServiceEvent()
 {
     const Tick when = clockEdge() > curTick() ?

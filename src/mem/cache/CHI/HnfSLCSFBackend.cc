@@ -68,6 +68,24 @@ HnfSLCSFBackend::HnfSLCSFBackend(uint32_t block_size, uint32_t slc_num_sets,
     fatal_if(seq.empty(), "HnfSLCSF SEQ must contain at least one entry\n");
 }
 
+void
+HnfSLCSFBackend::resetStorageForColdStart()
+{
+    slc.assign(slcSets, std::vector<SlcLine>(slcWays));
+    sf.assign(sfSets, std::vector<SfLine>(sfWays));
+    seq.assign(seq.size(), SeqEntry{});
+    seqPending.clear();
+    std::fill(issuedSfSetOwners.begin(), issuedSfSetOwners.end(), -1);
+    sfReservations.clear();
+    dirtyVictimSeals.clear();
+    reservedSeqSlots = 0;
+    accessCounter = 0;
+    lookupEpoch = 1;
+    lookupAccessCount = 0;
+    nextSeqId = 1;
+    assertSeqAccounting();
+}
+
 uint64_t
 HnfSLCSFBackend::blockNumber(uint64_t block_addr) const
 {
