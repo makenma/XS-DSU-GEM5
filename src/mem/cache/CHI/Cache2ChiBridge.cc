@@ -919,16 +919,31 @@ Cache2ChiBridge::respondFromPendingCopyback(const RawSnp& snp)
 }
 
 bool
-Cache2ChiBridge::snoopPrecedesPendingTxn(const RawSnp& snp) const
+Cache2ChiBridge::snoopPrecedesPendingTxn(const RawSnp& snp)
 {
     const Addr snoopAddr =
         snp.addr & ~(static_cast<Addr>(blockSize) - 1);
-    for (const auto& item : txns) {
-        const TxnEntry& txn = item.second;
+    const bool invalidating = snoopInvalidates(snp);
+    bool precedes = false;
+
+    for (auto& item : txns) {
+        TxnEntry& txn = item.second;
         if (!txn.completed && !txn.gotComp && !txn.gotData && !txn.hasDbid &&
             (txn.req.addr & ~(static_cast<Addr>(blockSize) - 1)) ==
                 snoopAddr) {
-            return true;
+            precedes = true;
+            const bool retained = retainPromotedUpgradeResponse(
+                txn.intent.respondAsUpgrade, true, invalidating);
+            if (txn.intent.respondAsUpgrade && !retained) {
+                DPRINTF(Cache2ChiBridge,
+                        "preceding invalidating snoop txnid=%u addr=%#llx "
+                        "requires data-bearing response for promoted "
+                        "upgrade txnid=%u\n",
+                        snp.txnid,
+                        static_cast<unsigned long long>(snoopAddr),
+                        txn.txnid);
+            }
+            txn.intent.respondAsUpgrade = retained;
         }
     }
 
@@ -938,10 +953,21 @@ Cache2ChiBridge::snoopPrecedesPendingTxn(const RawSnp& snp) const
         pending.pop();
         if (!pkt->req->isUncacheable() &&
             pkt->getBlockAddr(blockSize) == snoopAddr) {
-            return true;
+            precedes = true;
+            const bool promoted = promotedUpgradePkts.count(pkt) != 0;
+            if (!retainPromotedUpgradeResponse(
+                    promoted, true, invalidating) &&
+                promotedUpgradePkts.erase(pkt)) {
+                DPRINTF(Cache2ChiBridge,
+                        "preceding invalidating snoop txnid=%u addr=%#llx "
+                        "requires data-bearing response for queued promoted "
+                        "upgrade\n",
+                        snp.txnid,
+                        static_cast<unsigned long long>(snoopAddr));
+            }
         }
     }
-    return false;
+    return precedes;
 }
 
 bool

@@ -243,9 +243,6 @@ HnfCoherencyController::executePocqAction(uint32_t entryId,
         return retireEntry(entryId);
 
       case PocqActionKind::SleepForReplay:
-        if (slcsfUnit->hasSfReservation(entryId)) {
-            slcsfUnit->releaseSfResources(entryId);
-        }
         entry.state = HnfCcEntryState::Sleep;
         entry.slcsfReplay = true;
         DPRINTF(HnfCC, "CC entry=%u sleeps for SLCSF replay\n", entryId);
@@ -391,19 +388,16 @@ HnfCoherencyController::startReadFlow(uint32_t entryId)
     panic_if(entryId >= entries.size(), "HnfCC invalid read entry=%u\n",
              entryId);
     Entry& entry = entries[entryId];
-    if (!slcsfUnit->tryReserveSfResources(
-            entryId, entry.blockAddr, entry.txnKind)) {
+    // A pending SEQ victim for this line has priority over new main-path
+    // work. This is a transient address hazard, not a capacity reservation;
+    // sleeping here prevents the main entry from blocking the SEQ transaction
+    // that must remove the hazard.
+    if (slcsfUnit->seqContains(entry.blockAddr)) {
         entry.state = HnfCcEntryState::Sleep;
         entry.pocqState = PocqState::Sleep;
         entry.slcsfReplay = true;
-        DPRINTF(HnfCC,
-                "CC entry=%u sleeps for SF/SEQ resources txn=%u "
-                "addr=%#llx\n",
-                entryId, static_cast<unsigned>(entry.txnKind),
-                static_cast<unsigned long long>(entry.blockAddr));
         return;
     }
-
     entry.state = HnfCcEntryState::Working;
     entry.pocqState = PocqState::Idle;
     entry.slcsfReplay = false;
@@ -685,7 +679,6 @@ HnfCoherencyController::queueComp(uint32_t entryId)
     const uint64_t addr = entry.blockAddr;
     const uint32_t srcid = entry.req.srcid;
     const uint32_t txnid = entry.req.txnid;
-    slcsfUnit->releaseSfResources(entryId);
     entry = Entry{};
     wakeSleepingEntries(addr);
 
@@ -1140,7 +1133,6 @@ HnfCoherencyController::retireEntry(uint32_t entryId)
     Entry& entry = entries[entryId];
     HnfCcRetireInfo info = makeRetireInfo(entry);
     const uint64_t addr = entry.blockAddr;
-    slcsfUnit->releaseSfResources(entryId);
     entry = Entry{};
     wakeSleepingEntries(addr);
     return info;
@@ -1554,10 +1546,6 @@ HnfCoherencyController::retrySlcsfReplayEntries(Tick currentTick)
         }
         if (entry.expectsWriteData &&
             entry.writeDataBytes >= expectedDataBytes(entry.req)) {
-            if (!slcsfUnit->tryReserveSfResources(
-                    i, entry.blockAddr, entry.txnKind)) {
-                continue;
-            }
             entry.state = HnfCcEntryState::Working;
             entry.pocqState = PocqState::SlcLookup;
             entry.slcsfReplay = false;

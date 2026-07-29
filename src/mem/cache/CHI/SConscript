@@ -50,6 +50,10 @@ GTest('hnf_coherency_controller.test',
       'HnfSLCSFBackend.cc',
       with_tag('gem5 trace'))
 
+GTest('cache2chi_bridge.test',
+      'Cache2ChiBridge.test.cc',
+      with_tag('gem5 trace'))
+
 DebugFlag('Cache2ChiBridge')
 DebugFlag('Chi2ClassicMemBridge')
 DebugFlag('ChiFlitSink')

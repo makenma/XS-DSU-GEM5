@@ -195,7 +195,10 @@ class HnfSLCSFBackend
     std::vector<std::vector<SfLine>> sf;
     std::vector<SeqEntry> seq;
     std::deque<SeqId> seqPending;
-    std::vector<int64_t> sfReservationOwners;
+    // Locks are owned only by issued SLCSF mutations between resource
+    // preparation and terminal response latching. External transactions rely
+    // on CommitToken validation instead of holding a set across waits.
+    std::vector<int64_t> issuedSfSetOwners;
     std::unordered_map<uint32_t, SfReservation> sfReservations;
     size_t reservedSeqSlots = 0;
     uint64_t accessCounter = 0;

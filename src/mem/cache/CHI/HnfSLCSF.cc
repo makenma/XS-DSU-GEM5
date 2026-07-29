@@ -305,13 +305,16 @@ HnfSLCSF::tryEnqueue(SlcSfRequest&& request)
 {
     assertRequestAccounting();
     if (draining) {
+        ++drainingRejects;
         return SlcSfEnqueueResult::Draining;
     }
     if (!initialized) {
+        ++initializingRejects;
         return SlcSfEnqueueResult::Initializing;
     }
     if (visibleReqCredits == 0 ||
         reqOutstanding() == config.reqQueueEntries) {
+        ++noCreditRejects;
         return SlcSfEnqueueResult::NoCredit;
     }
 
@@ -377,6 +380,82 @@ HnfSLCSF::popVisibleResponse()
     return response;
 }
 
+SlcSfCancelResult
+HnfSLCSF::cancelRequest(
+    uint32_t poc_entry_id, SlcSfReqId req_id, Tick now)
+{
+    const auto matches = [poc_entry_id, req_id](const auto& request) {
+        const auto& header = requestHeader(request);
+        return header.pocEntryId == poc_entry_id && header.reqId == req_id;
+    };
+    if (std::any_of(reqIngress.begin(), reqIngress.end(), matches) ||
+        std::any_of(reqReady.begin(), reqReady.end(), matches)) {
+        // Queued requests do not yet own a response slot. Keep them intact so
+        // cancellation cannot violate Accepted -> exactly one terminal.
+        return SlcSfCancelResult::NotCancellable;
+    }
+
+    auto inflight = std::find_if(
+        inflightRequests.begin(), inflightRequests.end(),
+        [&matches](const InflightRequest& request) {
+            return matches(request.request);
+        });
+    if (inflight != inflightRequests.end()) {
+        const bool ownerless = std::visit(
+            [](const auto& typed_request) {
+                using Request = std::decay_t<decltype(typed_request)>;
+                if constexpr (std::is_same_v<Request, SlcSfUpdateReq>) {
+                    return std::holds_alternative<SlcSfCompleteSfEvict>(
+                               typed_request.operation) ||
+                        std::holds_alternative<SlcSfReleaseDirtyVictim>(
+                            typed_request.operation);
+                }
+                return false;
+            },
+            inflight->request);
+        if (ownerless) {
+            return SlcSfCancelResult::NotCancellable;
+        }
+        if (inflight->mutationCommitted || inflight->terminalResponse ||
+            inflight->terminalReplayReason) {
+            return SlcSfCancelResult::TooLate;
+        }
+        SlcSfResponse response = std::visit(
+            [this, now](const auto& typed_request) {
+                panic_if(config.replayPenalty >
+                             (MaxTick - now) / config.childClockPeriod,
+                         "HnfSLCSF cancellation replay deadline overflows");
+                return makeSlcSfReplayResponse(
+                    typed_request,
+                    SlcSfReplay{
+                        SlcSfReplayReason::Cancelled,
+                        now + config.replayPenalty *
+                                  config.childClockPeriod,
+                        true});
+            },
+            inflight->request);
+        finishInflight(
+            *inflight, FinishReason::Cancelled, std::move(response));
+        inflightRequests.erase(inflight);
+        assertRequestAccounting();
+        assertResponseAccounting();
+        return SlcSfCancelResult::Cancelled;
+    }
+
+    const auto response_matches =
+        [poc_entry_id, req_id](const SlcSfResponse& response) {
+        return response.pocEntryId() == poc_entry_id &&
+            response.reqId() == req_id;
+    };
+    if (std::any_of(
+            respPending.begin(), respPending.end(), response_matches) ||
+        std::any_of(
+            respVisible.begin(), respVisible.end(), response_matches)) {
+        return SlcSfCancelResult::TooLate;
+    }
+    return SlcSfCancelResult::NotFound;
+}
+
 bool
 HnfSLCSF::hasWork() const
 {
@@ -430,18 +509,17 @@ HnfSLCSF::completeInflightRequests()
         }
 
         if (!request->mutationStage) {
-            if (request->earlyLookupReplay) {
-                const auto& lookup =
-                    std::get<SlcSfLookupReq>(request->request);
-                respPending.push_back(makeSlcSfReplayResponse(
-                    lookup,
+            SlcSfResponse response = request->earlyLookupReplay ?
+                makeSlcSfReplayResponse(
+                    std::get<SlcSfLookupReq>(request->request),
                     SlcSfReplay{
                         SlcSfReplayReason::SeqConflict,
-                        replayDeadline(), true}));
-            } else {
-                respPending.push_back(
-                    makeTerminalResponse(request->request));
-            }
+                        replayDeadline(), true}) :
+                makeTerminalResponse(request->request);
+            const FinishReason reason =
+                response.status() == SlcSfTerminalStatus::Done ?
+                    FinishReason::Done : FinishReason::Replay;
+            finishInflight(*request, reason, std::move(response));
             request = inflightRequests.erase(request);
             continue;
         }
@@ -749,15 +827,9 @@ HnfSLCSF::reserveDirtyVictim(
     panic_if(!victim_addr,
              "HnfSLCSF reserves VictimBuffer without dirty displacement\n");
 
-    const bool same_line = std::any_of(
-        victimBuffer.begin(), victimBuffer.end(),
-        [victim_addr](const VictimEntry& entry) {
-            return entry.state != VictimState::Free &&
-                entry.state != VictimState::Released &&
-                entry.lineAddress == *victim_addr;
-        });
-    if (same_line) {
-        request.terminalReplayReason = SlcSfReplayReason::ResourceConflict;
+    if (auto failure = dirtyVictimReservationFailure(
+            replacement_addr, target)) {
+        request.terminalReplayReason = *failure;
         return true;
     }
 
@@ -766,10 +838,8 @@ HnfSLCSF::reserveDirtyVictim(
             return e.state == VictimState::Free ||
                 e.state == VictimState::Released;
         });
-    if (entry == victimBuffer.end()) {
-        request.terminalReplayReason = SlcSfReplayReason::VictimBufferFull;
-        return true;
-    }
+    panic_if(entry == victimBuffer.end(),
+             "HnfSLCSF VictimBuffer preflight changed during acquisition\n");
     panic_if(nextVictimId == 0,
              "HnfSLCSF dirty-victim ID space exhausted\n");
     entry->id = SlcSfVictimId{nextVictimId++};
@@ -786,6 +856,35 @@ HnfSLCSF::reserveDirtyVictim(
     request.slcVictim = std::move(snapshot);
     assertVictimAccounting();
     return true;
+}
+
+std::optional<SlcSfReplayReason>
+HnfSLCSF::dirtyVictimReservationFailure(
+    uint64_t replacement_addr, const LookupSnapshot& target) const
+{
+    const auto victim_addr = dirtySlcVictimAddress(replacement_addr, target);
+    panic_if(!victim_addr,
+             "HnfSLCSF checks VictimBuffer without dirty displacement\n");
+    const bool same_line = std::any_of(
+        victimBuffer.begin(), victimBuffer.end(),
+        [victim_addr](const VictimEntry& entry) {
+            return entry.state != VictimState::Free &&
+                entry.state != VictimState::Released &&
+                entry.lineAddress == *victim_addr;
+        });
+    if (same_line) {
+        return SlcSfReplayReason::ResourceConflict;
+    }
+
+    const auto entry = std::find_if(
+        victimBuffer.begin(), victimBuffer.end(), [](const VictimEntry& e) {
+            return e.state == VictimState::Free ||
+                e.state == VictimState::Released;
+        });
+    if (entry == victimBuffer.end()) {
+        return SlcSfReplayReason::VictimBufferFull;
+    }
+    return std::nullopt;
 }
 
 void
@@ -807,6 +906,19 @@ HnfSLCSF::cancelDirtyVictimReservation(InflightRequest& request)
     assertVictimAccounting();
 }
 
+void
+HnfSLCSF::rollbackPreparedResources(InflightRequest& request)
+{
+    if (request.slcVictimId) {
+        cancelDirtyVictimReservation(request);
+    }
+    const uint32_t owner = requestHeader(request.request).pocEntryId;
+    if (request.resourcesPrepared || hasSfReservation(owner)) {
+        releaseSfResources(owner);
+        request.resourcesPrepared = false;
+    }
+}
+
 bool
 HnfSLCSF::prepareMutationResources(InflightRequest& request)
 {
@@ -815,18 +927,20 @@ HnfSLCSF::prepareMutationResources(InflightRequest& request)
         [this, &request, &target](PocqTxnKind txn, bool may_allocate_slc,
                                   bool write_line) {
         const auto& header = requestHeader(request.request);
+        request.resourcesPrepared = request.resourcesPrepared ||
+            hasSfReservation(header.pocEntryId);
+        bool displaces_dirty = false;
         if (may_allocate_slc) {
-            const bool displaces_dirty = write_line ?
+            displaces_dirty = write_line ?
                 writeLineWouldDisplaceDirty(
                     header.lineAddress, header.requester, txn, &target) :
                 slcAllocationWouldDisplaceDirty(
                     header.lineAddress, &target);
             if (displaces_dirty) {
-                if (!request.slcVictimId &&
-                    !reserveDirtyVictim(request, target)) {
-                    return false;
-                }
-                if (request.terminalReplayReason) {
+                if (auto failure = dirtyVictimReservationFailure(
+                        header.lineAddress, target)) {
+                    request.terminalReplayReason = *failure;
+                    rollbackPreparedResources(request);
                     return true;
                 }
             }
@@ -834,13 +948,27 @@ HnfSLCSF::prepareMutationResources(InflightRequest& request)
         if (mayAllocateSf(txn) && sfAllocationBlockedBySeq(
                 header.lineAddress, target, header.pocEntryId)) {
             request.terminalReplayReason = SlcSfReplayReason::SeqConflict;
+            rollbackPreparedResources(request);
             return true;
         }
         if (!tryReserveSfResources(
                 header.pocEntryId, header.lineAddress, txn, &target)) {
+            rollbackPreparedResources(request);
             return false;
         }
         request.resourcesPrepared = hasSfReservation(header.pocEntryId);
+        // VictimBuffer availability was preflighted before the set/SEQ
+        // acquisition. Keep a defensive rollback in case that invariant is
+        // ever broken by a future resource implementation.
+        if (displaces_dirty && !request.slcVictimId &&
+            !reserveDirtyVictim(request, target)) {
+            rollbackPreparedResources(request);
+            return false;
+        }
+        if (request.terminalReplayReason) {
+            rollbackPreparedResources(request);
+            return true;
+        }
         return true;
     };
 
@@ -1060,6 +1188,10 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
                 request.completeCycle = std::max(
                     request.completeCycle, wakeupCycle + 1);
             }
+        } else {
+            // Accepted work remains in U1. Contention is a service stall,
+            // not another admission attempt and not a correctness Replay.
+            ++serviceStalls;
         }
         break;
       case MutationStage::U2ArrayWrite:
@@ -1089,9 +1221,6 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
 void
 HnfSLCSF::latchMutationResponse(InflightRequest& request)
 {
-    if (request.mutationCommitted) {
-        checkLineInvariant(requestHeader(request.request).lineAddress);
-    }
     if (request.terminalReplayReason) {
         const SlcSfReplayReason reason = *request.terminalReplayReason;
         request.terminalResponse = std::visit(
@@ -1102,9 +1231,49 @@ HnfSLCSF::latchMutationResponse(InflightRequest& request)
             },
             request.request);
     }
+    if (!request.terminalResponse) {
+        request.terminalResponse = makeTerminalResponse(
+            request.request, std::move(request.slcVictim),
+            std::move(request.sfVictim));
+    }
+    const SlcSfTerminalStatus status = request.terminalResponse->status();
+    const FinishReason reason = status == SlcSfTerminalStatus::Done ?
+        FinishReason::Done : status == SlcSfTerminalStatus::Replay ?
+            FinishReason::Replay : FinishReason::Error;
+    finishInflight(
+        request, reason, std::move(*request.terminalResponse));
+}
+
+void
+HnfSLCSF::finishInflight(
+    InflightRequest& request, FinishReason reason,
+    SlcSfResponse response)
+{
+    panic_if(request.cleanupDone,
+             "HnfSLCSF request=%llu is finalized more than once\n",
+             static_cast<unsigned long long>(
+                 requestHeader(request.request).reqId.value));
+    const auto& header = requestHeader(request.request);
+    panic_if(response.reqId() != header.reqId ||
+                 response.pocEntryId() != header.pocEntryId,
+             "HnfSLCSF final response identity disagrees with request\n");
+    const SlcSfTerminalStatus expected =
+        reason == FinishReason::Done ? SlcSfTerminalStatus::Done :
+        reason == FinishReason::Error ? SlcSfTerminalStatus::Error :
+                                       SlcSfTerminalStatus::Replay;
+    panic_if(response.status() != expected,
+             "HnfSLCSF final reason and response status disagree\n");
+    panic_if((reason == FinishReason::Replay ||
+              reason == FinishReason::Error ||
+              reason == FinishReason::Cancelled) &&
+                 request.mutationCommitted,
+             "HnfSLCSF cannot roll back a committed mutation\n");
+
+    if (request.mutationCommitted) {
+        checkLineInvariant(requestHeader(request.request).lineAddress);
+    }
     if (request.slcVictimId) {
-        if (request.mutationCommitted && !request.terminalResponse &&
-            !request.terminalReplayReason) {
+        if (reason == FinishReason::Done && request.mutationCommitted) {
             VictimEntry* entry = findDirtyVictim(*request.slcVictimId);
             panic_if(!entry ||
                          entry->state != VictimState::InstalledSnapshot ||
@@ -1117,17 +1286,21 @@ HnfSLCSF::latchMutationResponse(InflightRequest& request)
             cancelDirtyVictimReservation(request);
         }
     }
-    if (!request.terminalResponse) {
-        request.terminalResponse = makeTerminalResponse(
-            request.request, std::move(request.slcVictim),
-            std::move(request.sfVictim));
-    }
-    respPending.push_back(std::move(*request.terminalResponse));
     if (request.resourcesPrepared) {
         releaseSfResources(requestHeader(request.request).pocEntryId);
         request.resourcesPrepared = false;
     }
+    if (reason == FinishReason::Replay) {
+        ++correctnessReplays;
+    } else if (reason == FinishReason::Cancelled) {
+        ++cancelledRequests;
+    }
+    respPending.push_back(std::move(response));
+    ++finishedRequests;
+    request.cleanupDone = true;
     request.mutationStage.reset();
+    request.terminalResponse.reset();
+    request.terminalReplayReason.reset();
     assertVictimAccounting();
 }
 
@@ -1169,10 +1342,7 @@ HnfSLCSF::issueReadyRequests()
     size_t fill_issued = 0;
     size_t update_issued = 0;
 
-    for (auto request = reqReady.begin();
-         request != reqReady.end() &&
-         inflightRequests.size() < config.maxInflight &&
-         respOccupied() < config.respQueueEntries;) {
+    for (auto request = reqReady.begin(); request != reqReady.end();) {
         const RequestPipe pipe = requestPipe(*request);
         size_t* issued = nullptr;
         size_t width = 0;
@@ -1191,7 +1361,10 @@ HnfSLCSF::issueReadyRequests()
             break;
         }
 
-        if (*issued == width) {
+        if (inflightRequests.size() >= config.maxInflight ||
+            respOccupied() >= config.respQueueEntries ||
+            *issued == width) {
+            ++serviceStalls;
             ++request;
             continue;
         }
@@ -1202,6 +1375,8 @@ HnfSLCSF::issueReadyRequests()
         const bool mutation = pipe != RequestPipe::Lookup;
         const bool early_lookup_replay =
             !mutation && lookupReplaysAtL0(*request);
+        const bool adopted_reservation = hasSfReservation(
+            requestHeader(*request).pocEntryId);
         uint64_t latency = serviceLatency(*request);
         if (early_lookup_replay) {
             latency = 1;
@@ -1212,8 +1387,8 @@ HnfSLCSF::issueReadyRequests()
             std::move(*request), wakeupCycle, wakeupCycle + latency,
             mutation ? std::optional<MutationStage>(
                            MutationStage::U0DecodeValidate) : std::nullopt,
-            std::nullopt, std::nullopt, false, false, false,
-            early_lookup_replay, std::nullopt, std::nullopt,
+            std::nullopt, std::nullopt, adopted_reservation, false, false,
+            early_lookup_replay, false, std::nullopt, std::nullopt,
             std::nullopt});
         request = reqReady.erase(request);
         ++*issued;

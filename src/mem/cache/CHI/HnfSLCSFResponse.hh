@@ -41,7 +41,8 @@ enum class SlcSfReplayReason : uint8_t
     StaleCommitToken,
     ResourceConflict,
     SeqConflict,
-    VictimBufferFull
+    VictimBufferFull,
+    Cancelled
 };
 
 enum class SlcSfErrorCode : uint8_t

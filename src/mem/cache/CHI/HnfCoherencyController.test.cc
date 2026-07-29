@@ -1694,7 +1694,8 @@ TEST(HnfCoherencyControllerTest, ReadUpdateNoCreditRetriesWithoutDuplicate)
     EXPECT_TRUE(cc.hasTxDat());
 }
 
-TEST(HnfCoherencyControllerTest, ReservationHeldUntilUpdateResponse)
+TEST(HnfCoherencyControllerTest,
+     NoSetReservationSpansExternalOrResponseWait)
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
     HnfCoherencyController cc(
@@ -1712,7 +1713,7 @@ TEST(HnfCoherencyControllerTest, ReservationHeldUntilUpdateResponse)
     ASSERT_EQ(cc.slcUpdatePhase(0),
               HnfCoherencyController::SlcUpdatePhase::Waiting);
     EXPECT_EQ(cc.pocqState(0), PocqState::SlcUpdateWait);
-    EXPECT_TRUE(slcsf.hasSfReservation(0));
+    EXPECT_FALSE(slcsf.hasSfReservation(0));
     EXPECT_FALSE(cc.hasTxDat());
 
     for (size_t i = 0; i < 32 && slcsf.respVisibleCount() == 0; ++i) {
@@ -1867,7 +1868,7 @@ TEST(HnfCoherencyControllerTest, LookupReplayUsesSleepGraphAndDeadline)
     ASSERT_TRUE(slcsf.popVisibleResponse());
     ASSERT_EQ(cc.slcLookupPhase(0),
               HnfCoherencyController::SlcLookupPhase::Waiting);
-    ASSERT_TRUE(slcsf.hasSfReservation(0));
+    ASSERT_FALSE(slcsf.hasSfReservation(0));
 
     SlcSfReqHeader header{};
     header.reqId = staleLookupId;

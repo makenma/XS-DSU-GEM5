@@ -35,6 +35,19 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     void wakeup() override;
     void print(std::ostream& out) const override;
 
+    /**
+     * A promoted classic Upgrade normally has to be restored to an
+     * UpgradeResp.  The exception is an invalidating snoop which precedes
+     * the same MSHR: the classic cache then replaces the Upgrade target with
+     * a ReadEx target and needs the data-bearing response.
+     */
+    static constexpr bool
+    retainPromotedUpgradeResponse(bool promoted, bool snoopPrecedes,
+                                  bool snoopInvalidates)
+    {
+        return promoted && !(snoopPrecedes && snoopInvalidates);
+    }
+
   private:
     /** ============ Cache side port (acts like memory for the cache) ============ */
     class CacheSidePort : public ResponsePort
@@ -279,7 +292,7 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     void sendSnoopRsp(const SnoopEntry& snoop, RespState state);
     void sendSnoopData(SnoopEntry& snoop, PacketPtr pkt);
     bool respondFromPendingCopyback(const RawSnp& snp);
-    bool snoopPrecedesPendingTxn(const RawSnp& snp) const;
+    bool snoopPrecedesPendingTxn(const RawSnp& snp);
     MemCmd snoopCmdFor(const RawSnp& snp) const;
     bool snoopInvalidates(const RawSnp& snp) const;
 };

@@ -58,7 +58,7 @@ HnfSLCSFBackend::HnfSLCSFBackend(uint32_t block_size, uint32_t slc_num_sets,
       slc(slc_num_sets, std::vector<SlcLine>(slc_num_ways)),
       sf(sf_num_sets, std::vector<SfLine>(sf_num_ways)),
       seq(seq_entries),
-      sfReservationOwners(sf_num_sets, -1)
+      issuedSfSetOwners(sf_num_sets, -1)
 {
     fatal_if(blockSize == 0, "HnfSLCSF block_size must be non-zero\n");
     fatal_if(slcSets == 0 || slcWays == 0,
@@ -422,13 +422,13 @@ HnfSLCSFBackend::tryReserveSfResources(uint32_t entry, uint64_t block_addr,
         return true;
     }
 
-    if (sfReservationOwners[set] >= 0 || seqContains(block_addr)) {
+    if (issuedSfSetOwners[set] >= 0 || seqContains(block_addr)) {
         DPRINTF(HnfSLCSF,
                 "reserve entry=%u txn=%u addr=%#llx set=%u blocked "
                 "owner=%lld seqHit=%u\n",
                 entry, static_cast<unsigned>(txn),
                 static_cast<unsigned long long>(block_addr), set,
-                static_cast<long long>(sfReservationOwners[set]),
+                static_cast<long long>(issuedSfSetOwners[set]),
                 seqContains(block_addr));
         return false;
     }
@@ -449,7 +449,7 @@ HnfSLCSFBackend::tryReserveSfResources(uint32_t entry, uint64_t block_addr,
         return false;
     }
 
-    sfReservationOwners[set] = entry;
+    issuedSfSetOwners[set] = entry;
     sfReservations.emplace(
         entry, SfReservation{set, block_addr, needsSeqSlot});
     if (needsSeqSlot) {
@@ -474,11 +474,11 @@ HnfSLCSFBackend::releaseSfResources(uint32_t entry)
     }
 
     const SfReservation held = reservation->second;
-    panic_if(sfReservationOwners[held.set] != static_cast<int64_t>(entry),
+    panic_if(issuedSfSetOwners[held.set] != static_cast<int64_t>(entry),
              "HnfSLCSF entry=%u releases SF set=%u owned by %lld\n",
              entry, held.set,
-             static_cast<long long>(sfReservationOwners[held.set]));
-    sfReservationOwners[held.set] = -1;
+             static_cast<long long>(issuedSfSetOwners[held.set]));
+    issuedSfSetOwners[held.set] = -1;
     if (held.seqSlot) {
         panic_if(reservedSeqSlots == 0,
                  "HnfSLCSF entry=%u releases an unreserved SEQ slot\n",

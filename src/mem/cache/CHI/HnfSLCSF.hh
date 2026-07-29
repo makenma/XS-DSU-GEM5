@@ -22,6 +22,14 @@ enum class SlcSfEnqueueResult : uint8_t
     Draining
 };
 
+enum class SlcSfCancelResult : uint8_t
+{
+    Cancelled,
+    NotCancellable,
+    TooLate,
+    NotFound
+};
+
 struct HnfSLCSFPipelineConfig
 {
     size_t reqQueueEntries = 8;
@@ -133,8 +141,19 @@ class HnfSLCSF : public HnfSLCSFBackend
     size_t respVisibleCount() const { return respVisible.size(); }
     size_t respOccupied() const;
     size_t respCapacity() const { return config.respQueueEntries; }
+    uint64_t noCreditRejectCount() const { return noCreditRejects; }
+    uint64_t initializingRejectCount() const { return initializingRejects; }
+    uint64_t drainingRejectCount() const { return drainingRejects; }
+    uint64_t serviceStallCount() const { return serviceStalls; }
+    uint64_t correctnessReplayCount() const { return correctnessReplays; }
+    uint64_t finishedRequestCount() const { return finishedRequests; }
+    uint64_t cancelledRequestCount() const { return cancelledRequests; }
     std::optional<SlcSfResponse> popVisibleResponse();
     const HnfSLCSFPipelineConfig& pipelineConfig() const { return config; }
+
+    /** Cancel accepted work only while it is still safe to discard. */
+    SlcSfCancelResult cancelRequest(
+        uint32_t poc_entry_id, SlcSfReqId req_id, Tick now);
 
     /** Re-probe storage and validate every identity/version token field. */
     bool validateCommitToken(const SlcSfCommitToken& token,
@@ -156,6 +175,14 @@ class HnfSLCSF : public HnfSLCSFBackend
     void resumeFromDrain();
 
   private:
+    enum class FinishReason : uint8_t
+    {
+        Done,
+        Replay,
+        Error,
+        Cancelled
+    };
+
     struct InflightRequest
     {
         SlcSfRequest request;
@@ -168,6 +195,7 @@ class HnfSLCSF : public HnfSLCSFBackend
         bool mutationCommitted = false;
         bool mutationStalled = false;
         bool earlyLookupReplay = false;
+        bool cleanupDone = false;
         std::optional<SlcSfVictimId> slcVictimId;
         std::optional<SlcSfSlcVictim> slcVictim;
         std::optional<SlcSfSfVictim> sfVictim;
@@ -199,13 +227,19 @@ class HnfSLCSF : public HnfSLCSFBackend
     bool prepareMutationResources(InflightRequest& request);
     bool reserveDirtyVictim(InflightRequest& request,
                             const LookupSnapshot& target);
+    std::optional<SlcSfReplayReason> dirtyVictimReservationFailure(
+        uint64_t replacement_addr, const LookupSnapshot& target) const;
     void cancelDirtyVictimReservation(InflightRequest& request);
+    void rollbackPreparedResources(InflightRequest& request);
     VictimEntry* findDirtyVictim(SlcSfVictimId id);
     const VictimEntry* findDirtyVictim(SlcSfVictimId id) const;
     void assertVictimAccounting() const;
     void executeMutation(InflightRequest& request);
     void advanceMutation(InflightRequest& request);
     void latchMutationResponse(InflightRequest& request);
+    void finishInflight(
+        InflightRequest& request, FinishReason reason,
+        SlcSfResponse response);
     void promoteIngressRequests();
     void issueReadyRequests();
     void updateRegisteredCredits();
@@ -228,6 +262,13 @@ class HnfSLCSF : public HnfSLCSFBackend
     Tick wakeupTick = 0;
     bool initialized = true;
     bool draining = false;
+    uint64_t noCreditRejects = 0;
+    uint64_t initializingRejects = 0;
+    uint64_t drainingRejects = 0;
+    uint64_t serviceStalls = 0;
+    uint64_t correctnessReplays = 0;
+    uint64_t finishedRequests = 0;
+    uint64_t cancelledRequests = 0;
 };
 
 template <class LinkWakeup, class LinkHasWork, class CcHasWork>

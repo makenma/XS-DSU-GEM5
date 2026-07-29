@@ -1003,3 +1003,43 @@ Started: 2026-07-28T20:49:07+08:00
   but bounded storage ownership must remain independently scheduled until its
   asynchronous release is admitted, executed, and acknowledged.
 ---
+
+## 2026-07-29 12:50 - US-025
+- Story: Unify admission, service stall, reservation, and replay ownership
+- What was implemented: Removed controller-held SLC/SF reservations from
+  external protocol waits and confined set/SEQ ownership to issued mutation
+  service work. Admission rejection, accepted service stalls, correctness
+  Replay, and recoverable cancellation now have distinct counters and terminal
+  behavior. Multi-resource acquisition preflights VictimBuffer capacity and
+  rolls back adopted reservations atomically. Done, Replay, Error, and
+  cancellation converge on one identity-checked finalizer; an issued
+  cancellation preserves the Accepted contract by returning exactly one typed
+  Replay(Cancelled). A conditional Cache2ChiBridge fix also keeps promoted
+  Upgrade responses only when no preceding invalidating snoop has replaced the
+  classic MSHR target with a data-bearing ReadEx target.
+- Files changed: `src/mem/cache/CHI/Cache2ChiBridge.hh`,
+  `src/mem/cache/CHI/Cache2ChiBridge.cc`,
+  `src/mem/cache/CHI/Cache2ChiBridge.test.cc`,
+  `src/mem/cache/CHI/HnfCoherencyController.cc`,
+  `src/mem/cache/CHI/HnfCoherencyController.test.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.hh`, `src/mem/cache/CHI/HnfSLCSF.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.test.cc`,
+  `src/mem/cache/CHI/HnfSLCSFBackend.hh`,
+  `src/mem/cache/CHI/HnfSLCSFBackend.cc`,
+  `src/mem/cache/CHI/HnfSLCSFResponse.hh`,
+  `src/mem/cache/CHI/SConscript`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and all four
+  baseline CHI GTest binaries successfully; all 152 tests passed (18 POCQ,
+  2 SEQ POCQ, 97 SLCSF, and 35 controller). The new Cache2ChiBridge protocol
+  binary passed 5/5 tests, including normal promoted Upgrade and preceding
+  invalidation cases. Default and forced SF=64x4/SEQ=4 four-core litmus runs
+  both passed all seven workloads with `CHI_LITMUS_PASS total_errors=0`, at
+  ticks 627350688 and 631592442 respectively. Changed C++ passed
+  `python3 util/style.py`; `git diff --check` passed.
+- Learnings for future iterations: CommitToken validation replaces long-lived
+  external-wait locks, but issued work still needs an atomic short reservation
+  window and one terminal cleanup transfer. A classic Upgrade promoted to a
+  CHI ReadEx request must stop being restored to UpgradeResp if a preceding
+  invalidation has replaced the classic cache target and made returned data
+  mandatory.
+---
