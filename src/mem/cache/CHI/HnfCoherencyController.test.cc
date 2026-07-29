@@ -145,7 +145,183 @@ pumpSeqCompletion(HnfCoherencyController& cc, HnfSLCSF& slcsf, Tick& tick)
     FAIL() << "SLCSF SEQ completion did not complete";
 }
 
+void
+reachDirtyVictimWriteback(HnfCoherencyController& cc, HnfSLCSF& slcsf,
+                          Tick& tick, const std::vector<uint8_t>& fill_data,
+                          uint64_t replacement_addr = TestAddr + BlockSize)
+{
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 8001, 4, 121, 0x01, replacement_addr), tick).accepted);
+    pumpLookup(cc, slcsf, 0, tick);
+    ASSERT_TRUE(cc.hasTxReq());
+    const HnfCcTxReq read = cc.frontTxReq();
+    ASSERT_FALSE(read.dirtyVictimId.has_value());
+    EXPECT_EQ(read.entry, 0);
+    cc.popTxReq();
+    cc.notifyTxReqSent(read);
+
+    EXPECT_FALSE(cc.acceptRxDat(makeCompData(1, 0, false, fill_data)));
+    EXPECT_FALSE(cc.acceptRxDat(
+        makeCompData(1, BeatSize, true, fill_data)));
+    for (size_t i = 0; i < 32 && !cc.hasTxReq(); ++i) {
+        pumpOnce(cc, slcsf, tick);
+    }
+    ASSERT_TRUE(cc.hasTxReq());
+    ASSERT_TRUE(cc.frontTxReq().dirtyVictimId.has_value());
+}
+
 } // anonymous namespace
+
+TEST(HnfCoherencyControllerTest, DirtyVictimDataSurvivesWriteback)
+{
+    HnfSLCSF slcsf(BlockSize, 1, 1, 1, 1);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    const auto victim_data = lineData(0x91);
+    const auto fill_data = lineData(0xa1);
+    slcsf.writeLine(
+        TestAddr, 0, victim_data, PocqTxnKind::WriteUnique, HnfNode);
+
+    Tick tick = 1000;
+    reachDirtyVictimWriteback(cc, slcsf, tick, fill_data);
+    const HnfCcTxReq writeback = cc.frontTxReq();
+    const SlcSfVictimId victim_id{*writeback.dirtyVictimId};
+    EXPECT_EQ(writeback.entry, UINT32_MAX);
+    EXPECT_EQ(writeback.req.opcode, 0x5c);
+    EXPECT_EQ(writeback.req.addr, TestAddr);
+    EXPECT_EQ(writeback.req.srcid, HnfNode);
+    EXPECT_EQ(writeback.req.tgtid, SnNode);
+    EXPECT_NE(writeback.req.txnid, 1);
+    EXPECT_NE(writeback.req.txnid, 121);
+    const auto mapped_victim = cc.dirtyVictimForTxn(writeback.req.txnid);
+    ASSERT_TRUE(mapped_victim.has_value());
+    EXPECT_EQ(mapped_victim->value, victim_id.value);
+    EXPECT_EQ(cc.dirtyVictimTransactionCount(), 1);
+    EXPECT_EQ(slcsf.dirtyVictimState(victim_id),
+              HnfSLCSF::VictimState::HandedOff);
+    EXPECT_FALSE(cc.hasTxDat());
+
+    cc.popTxReq();
+    cc.notifyTxReqSent(writeback);
+    ASSERT_TRUE(cc.hasTxDat());
+    const HnfCcTxDat data = cc.frontTxDat();
+    EXPECT_EQ(data.entry, UINT32_MAX);
+    ASSERT_TRUE(data.dirtyVictimId.has_value());
+    EXPECT_EQ(*data.dirtyVictimId, victim_id.value);
+    EXPECT_EQ(data.dat.opcode, 0x03);
+    EXPECT_EQ(data.dat.txnid, writeback.req.txnid);
+    EXPECT_EQ(data.dat.tgtid, SnNode);
+    EXPECT_EQ(data.dat.beatOffset, 0);
+    EXPECT_TRUE(data.dat.last);
+    EXPECT_EQ(data.dat.data.size(), BlockSize);
+    EXPECT_EQ(data.dat.data, victim_data);
+    cc.popTxDat();
+    EXPECT_EQ(slcsf.dirtyVictimState(victim_id),
+              HnfSLCSF::VictimState::WritebackIssued);
+
+    // The requester continues from the latched Fill response on its own token.
+    cc.serviceInternalWork(tick);
+    ASSERT_TRUE(cc.hasTxDat());
+    EXPECT_FALSE(cc.frontTxDat().dirtyVictimId.has_value());
+    EXPECT_EQ(cc.frontTxDat().entry, 0);
+    cc.popTxDat();
+    ASSERT_TRUE(cc.hasTxDat());
+    EXPECT_FALSE(cc.frontTxDat().dirtyVictimId.has_value());
+    cc.popTxDat();
+    const auto retired = cc.acceptRxRsp(makeRsp(4, 121, 0x02));
+    ASSERT_TRUE(retired.has_value());
+    EXPECT_EQ(retired->tokenId, 0);
+    EXPECT_EQ(cc.dirtyVictimTransactionCount(), 1);
+    EXPECT_EQ(slcsf.dirtyVictimState(victim_id),
+              HnfSLCSF::VictimState::WritebackIssued);
+}
+
+TEST(HnfCoherencyControllerTest, DirtyVictimTxBackpressureMakesProgress)
+{
+    HnfSLCSF slcsf(BlockSize, 1, 1, 1, 1);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    const auto victim_data = lineData(0xb1);
+    slcsf.writeLine(
+        TestAddr, 0, victim_data, PocqTxnKind::WriteUnique, HnfNode);
+    Tick tick = 1100;
+    reachDirtyVictimWriteback(cc, slcsf, tick, lineData(0xc1));
+    const HnfCcTxReq blocked_req = cc.frontTxReq();
+    const auto victim_id = *blocked_req.dirtyVictimId;
+
+    for (size_t i = 0; i < 4; ++i) {
+        pumpOnce(cc, slcsf, tick);
+        ASSERT_TRUE(cc.hasTxReq());
+        EXPECT_EQ(cc.frontTxReq().req.txnid, blocked_req.req.txnid);
+        EXPECT_EQ(cc.frontTxReq().dirtyVictimId, victim_id);
+        EXPECT_EQ(cc.dirtyVictimTransactionCount(), 1);
+    }
+
+    cc.popTxReq();
+    cc.notifyTxReqSent(blocked_req);
+    while (cc.hasTxDat() &&
+           !cc.frontTxDat().dirtyVictimId.has_value()) {
+        cc.popTxDat();
+    }
+    ASSERT_TRUE(cc.hasTxDat());
+    const HnfCcTxDat blocked_data = cc.frontTxDat();
+    ASSERT_EQ(blocked_data.dirtyVictimId, victim_id);
+    for (size_t i = 0; i < 4; ++i) {
+        pumpOnce(cc, slcsf, tick);
+        ASSERT_TRUE(cc.hasTxDat());
+        EXPECT_EQ(cc.frontTxDat().dirtyVictimId, victim_id);
+        EXPECT_EQ(cc.frontTxDat().dat.data, victim_data);
+        EXPECT_EQ(cc.dirtyVictimTransactionCount(), 1);
+    }
+    cc.popTxDat();
+    EXPECT_FALSE(cc.hasTxDat());
+    EXPECT_EQ(slcsf.dirtyVictimState(SlcSfVictimId{victim_id}),
+              HnfSLCSF::VictimState::WritebackIssued);
+}
+
+TEST(HnfCoherencyControllerTest, DirtyVictimCompletionMatchesVictimId)
+{
+    HnfSLCSF slcsf(BlockSize, 1, 1, 1, 1);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    slcsf.writeLine(
+        TestAddr, 0, lineData(0xd1), PocqTxnKind::WriteUnique, HnfNode);
+    Tick tick = 1200;
+    reachDirtyVictimWriteback(cc, slcsf, tick, lineData(0xe1));
+    const HnfCcTxReq writeback = cc.frontTxReq();
+    const SlcSfVictimId victim_id{*writeback.dirtyVictimId};
+    const uint32_t downstream_txn = writeback.req.txnid;
+    cc.popTxReq();
+    cc.notifyTxReqSent(writeback);
+    ASSERT_TRUE(cc.hasTxDat());
+    cc.popTxDat();
+
+    RawRsp unknown = makeRsp(SnNode, downstream_txn + 1, 0x04);
+    EXPECT_ANY_THROW(cc.acceptRxRsp(unknown));
+    EXPECT_EQ(cc.dirtyVictimTransactionCount(), 1);
+    const auto mapped_victim = cc.dirtyVictimForTxn(downstream_txn);
+    ASSERT_TRUE(mapped_victim.has_value());
+    EXPECT_EQ(mapped_victim->value, victim_id.value);
+
+    RawRsp error = makeRsp(SnNode, downstream_txn, 0x04);
+    error.respErr = 1;
+    EXPECT_ANY_THROW(cc.acceptRxRsp(error));
+    EXPECT_EQ(cc.dirtyVictimTransactionCount(), 1);
+    EXPECT_EQ(slcsf.dirtyVictimState(victim_id),
+              HnfSLCSF::VictimState::WritebackIssued);
+
+    EXPECT_FALSE(cc.acceptRxRsp(makeRsp(SnNode, downstream_txn, 0x04)));
+    EXPECT_EQ(cc.dirtyVictimTransactionCount(), 0);
+    EXPECT_FALSE(cc.dirtyVictimForTxn(downstream_txn).has_value());
+    EXPECT_EQ(slcsf.dirtyVictimState(victim_id),
+              HnfSLCSF::VictimState::WritebackIssued);
+}
 
 TEST(HnfCoherencyControllerTest, RetireWakesOneSameAddressSleeper)
 {

@@ -159,6 +159,7 @@ struct HnfCcRetireInfo
 struct HnfCcTxReq
 {
     uint32_t entry = 0;
+    std::optional<uint64_t> dirtyVictimId;
     RawReq req{};
 };
 
@@ -172,6 +173,7 @@ struct HnfCcTxSnp
 struct HnfCcTxDat
 {
     uint32_t entry = 0;
+    std::optional<uint64_t> dirtyVictimId;
     RawDat dat{};
 };
 

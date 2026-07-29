@@ -204,7 +204,7 @@ HomeLinkLayer::doTxReqArb()
             static_cast<unsigned long long>(pending.req.addr),
             pending.entry);
     cc->popTxReq();
-    cc->notifyTxReqSent(pending.entry);
+    cc->notifyTxReqSent(pending);
 }
 
 void
@@ -721,6 +721,7 @@ HomeLinkLayer::doStageRsp(PipeEntry& entry, RawRsp& rsp)
 
     const auto decoded = decodeRsp(rsp.opcode);
     panic_if(decoded.minor != RspMinor::CompAck &&
+                 decoded.minor != RspMinor::Comp &&
                  decoded.minor != RspMinor::SnpResp &&
                  decoded.minor != RspMinor::SnpRespFwded,
              "HNF RXRSP unsupported opcode=0x%x txn=%u\n",

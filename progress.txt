@@ -90,6 +90,10 @@ Started: 2026-07-28T20:49:07+08:00
 - Before overwriting persistent storage, reserve bounded transient capacity,
   copy the exact versioned victim into it, and require that owned snapshot at
   the write boundary so capacity failure and conflicts remain mutation-free.
+- Give an internal downstream transaction both its stable storage-owner ID and
+  a separate wire transaction ID; retain its owned payload across TX
+  backpressure and match terminal completion through the explicit ID map
+  without consuming or delaying the originating POCQ token.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -948,4 +952,29 @@ Started: 2026-07-28T20:49:07+08:00
   copied victim snapshot through the write API itself, so the backend cannot
   bypass preservation with a generic permission flag. Released entries may
   be reused, but their stable IDs must remain monotonic and non-repeating.
+---
+
+## 2026-07-29 11:48 - US-023
+- Story: Write dirty victims back with an independent CC transaction
+- What was implemented: Fill responses carrying dirty SLC victims now create
+  CC-owned internal writeback transactions keyed by VictimId and a distinct
+  downstream TxnID. Each transaction retains the complete victim snapshot,
+  sends WriteNoSnpFull followed by one full-line NonCopyBackWriteData flit,
+  survives request and data backpressure, and matches terminal SN completion
+  without holding the original requester token. Error and unknown completion
+  paths remain fail-fast without releasing the VictimBuffer owner.
+- Files changed: `src/mem/cache/CHI/HnfCcTypes.hh`,
+  `src/mem/cache/CHI/HnfCoherencyController.hh`,
+  `src/mem/cache/CHI/HnfCoherencyController.cc`,
+  `src/mem/cache/CHI/HnfCoherencyController.test.cc`,
+  `src/mem/cache/CHI/HomeLinkLayer.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and all four CHI
+  GTest binaries successfully; all 144 tests passed (18 POCQ, 2 SEQ POCQ,
+  91 SLCSF, and 33 controller), including the three required dirty-victim
+  writeback regressions; changed C++ files passed `python3 util/style.py`;
+  `git diff --check` passed.
+- Learnings for future iterations: Internal protocol work should preserve its
+  storage-lifetime identity separately from its wire transaction identity,
+  and request acceptance should be the boundary that exposes retained data to
+  the downstream data channel.
 ---

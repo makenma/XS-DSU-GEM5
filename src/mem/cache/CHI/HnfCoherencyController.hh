@@ -83,6 +83,7 @@ class HnfCoherencyController
 
     const HnfCcTxReq& frontTxReq() const;
     void popTxReq();
+    void notifyTxReqSent(const HnfCcTxReq& request);
     void notifyTxReqSent(uint32_t entry);
 
     const HnfCcTxSnp& frontTxSnp() const;
@@ -90,6 +91,11 @@ class HnfCoherencyController
 
     const HnfCcTxDat& frontTxDat() const;
     void popTxDat();
+
+    size_t dirtyVictimTransactionCount() const
+    { return dirtyVictimTxns.size(); }
+    std::optional<SlcSfVictimId> dirtyVictimForTxn(
+        uint32_t downstream_txn_id) const;
 
     const HnfCcTxRsp& frontTxRsp() const;
     void popTxRsp();
@@ -150,6 +156,15 @@ class HnfCoherencyController
         std::optional<SlcSfRequest> pendingComplete;
     };
 
+    struct DirtyVictimTxn
+    {
+        SlcSfSlcVictim victim;
+        uint32_t downstreamTxnId = 0;
+        uint32_t homeNodeId = 0;
+        bool requestSent = false;
+        bool dataSent = false;
+    };
+
     HnfSLCSF* slcsfUnit = nullptr;
     SlcSfReqIdAllocator slcSfReqIds;
 
@@ -160,6 +175,7 @@ class HnfCoherencyController
     bool directSnFakeData = true;
     uint32_t rnfSlices = 1;
     uint32_t nextSnoopTxnId = 0x80000000U;
+    uint32_t nextDirtyVictimTxnId = 0x40000000U;
 
     POCQ_StateGraph pocqGraph;
     SEQ_POCQ_StateGraph seqPocqGraph;
@@ -171,6 +187,8 @@ class HnfCoherencyController
     std::deque<HnfCcTxRsp> txRspQ;
     std::deque<HnfCcRetireInfo> deferredRetireQ;
     std::unordered_map<uint32_t, uint32_t> snoopTxnToEntry;
+    std::unordered_map<uint64_t, DirtyVictimTxn> dirtyVictimTxns;
+    std::unordered_map<uint32_t, uint64_t> dirtyVictimTxnIds;
 
     uint64_t blockAddr(const RawReq& req) const;
     uint32_t expectedDataBytes(const RawReq& req) const;
@@ -201,6 +219,10 @@ class HnfCoherencyController
     void wakeSleepingEntries(uint64_t addr);
     bool hasMainAddressHazard(uint64_t addr) const;
     uint32_t allocateSnoopTxnId();
+    uint32_t allocateDirtyVictimTxnId();
+    void startDirtyVictimWriteback(uint32_t entry,
+                                   const SlcSfSlcVictim& victim);
+    void queueDirtyVictimData(DirtyVictimTxn& transaction);
     void startSeqPocq();
     void stepSeqPocq(const SeqPocqEvent& event);
     void queueSeqSnoops();

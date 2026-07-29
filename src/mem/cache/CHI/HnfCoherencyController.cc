@@ -19,6 +19,7 @@ namespace
 namespace ReqOp
 {
 constexpr uint8_t ReadNoSnp = 0x04;
+constexpr uint8_t WriteNoSnpFull = 0x5c;
 } // namespace ReqOp
 
 namespace SnpOp
@@ -29,6 +30,7 @@ constexpr uint8_t CleanInvalid = 0x09;
 namespace DatOp
 {
 constexpr uint8_t CompData = 0x04;
+constexpr uint8_t NonCopyBackWriteData = 0x03;
 } // namespace DatOp
 
 namespace RspOp
@@ -789,8 +791,25 @@ HnfCoherencyController::popTxSnp()
 }
 
 void
-HnfCoherencyController::notifyTxReqSent(uint32_t entryId)
+HnfCoherencyController::notifyTxReqSent(const HnfCcTxReq& request)
 {
+    if (request.dirtyVictimId) {
+        auto transaction = dirtyVictimTxns.find(*request.dirtyVictimId);
+        panic_if(transaction == dirtyVictimTxns.end() ||
+                     transaction->second.downstreamTxnId !=
+                         request.req.txnid ||
+                     transaction->second.requestSent,
+                 "HnfCC invalid sent dirty-victim request id=%llu txn=%u\n",
+                 static_cast<unsigned long long>(*request.dirtyVictimId),
+                 request.req.txnid);
+        transaction->second.requestSent = true;
+        slcsfUnit->markDirtyVictimWritebackIssued(
+            SlcSfVictimId{*request.dirtyVictimId});
+        queueDirtyVictimData(transaction->second);
+        return;
+    }
+
+    const uint32_t entryId = request.entry;
     panic_if(entryId >= entries.size(), "HnfCC invalid sent TXREQ entry=%u\n",
              entryId);
     Entry& entry = entries[entryId];
@@ -822,6 +841,14 @@ HnfCoherencyController::notifyTxReqSent(uint32_t entryId)
             "txn=%u\n",
             entryId, static_cast<unsigned long long>(entry.blockAddr),
             entry.req.srcid, entry.req.txnid);
+}
+
+void
+HnfCoherencyController::notifyTxReqSent(uint32_t entryId)
+{
+    HnfCcTxReq request{};
+    request.entry = entryId;
+    notifyTxReqSent(request);
 }
 
 std::optional<HnfCcRetireInfo>
@@ -998,6 +1025,15 @@ void
 HnfCoherencyController::popTxDat()
 {
     panic_if(txDatQ.empty(), "HnfCC popTxDat on empty queue\n");
+    const auto victim_id = txDatQ.front().dirtyVictimId;
+    if (victim_id) {
+        auto transaction = dirtyVictimTxns.find(*victim_id);
+        panic_if(transaction == dirtyVictimTxns.end() ||
+                     transaction->second.dataSent,
+                 "HnfCC sends data for unknown/completed dirty victim=%llu\n",
+                 static_cast<unsigned long long>(*victim_id));
+        transaction->second.dataSent = true;
+    }
     txDatQ.pop_front();
 }
 
@@ -1019,6 +1055,32 @@ std::optional<HnfCcRetireInfo>
 HnfCoherencyController::acceptRxRsp(const RawRsp& rsp)
 {
     const auto decoded = decodeRsp(rsp.opcode);
+    if (decoded.minor == RspMinor::Comp) {
+        auto txn_id = dirtyVictimTxnIds.find(rsp.txnid);
+        panic_if(txn_id == dirtyVictimTxnIds.end() || rsp.srcid != snNodeId,
+                 "HnfCC dirty-victim completion for unknown SN txn=%u "
+                 "src=%u\n", rsp.txnid, rsp.srcid);
+        auto transaction = dirtyVictimTxns.find(txn_id->second);
+        panic_if(transaction == dirtyVictimTxns.end(),
+                 "HnfCC dirty-victim txn=%u lost victim=%llu\n", rsp.txnid,
+                 static_cast<unsigned long long>(txn_id->second));
+        panic_if(rsp.respErr != 0,
+                 "HnfCC dirty-victim txn=%u victim=%llu completed with "
+                 "error=%u\n", rsp.txnid,
+                 static_cast<unsigned long long>(txn_id->second),
+                 rsp.respErr);
+        panic_if(!transaction->second.requestSent ||
+                     !transaction->second.dataSent,
+                 "HnfCC dirty-victim txn=%u completed before request/data "
+                 "send\n", rsp.txnid);
+
+        DPRINTF(HnfCC,
+                "CC dirty victim=%llu downstream txn=%u completed\n",
+                static_cast<unsigned long long>(txn_id->second), rsp.txnid);
+        dirtyVictimTxns.erase(transaction);
+        dirtyVictimTxnIds.erase(txn_id);
+        return std::nullopt;
+    }
     if (decoded.minor == RspMinor::SnpResp ||
         decoded.minor == RspMinor::SnpRespFwded) {
         if (seqPocqEntry.valid &&
@@ -1125,6 +1187,97 @@ HnfCoherencyController::allocateSnoopTxnId()
         snoopTxn = nextSnoopTxnId++;
     }
     return snoopTxn;
+}
+
+uint32_t
+HnfCoherencyController::allocateDirtyVictimTxnId()
+{
+    uint32_t txn_id = nextDirtyVictimTxnId++;
+    while (txn_id == 0 || txn_id <= entries.size() ||
+           dirtyVictimTxnIds.count(txn_id) ||
+           snoopTxnToEntry.count(txn_id) ||
+           (seqPocqEntry.valid && seqPocqEntry.snoopTxnId == txn_id)) {
+        txn_id = nextDirtyVictimTxnId++;
+    }
+    return txn_id;
+}
+
+std::optional<SlcSfVictimId>
+HnfCoherencyController::dirtyVictimForTxn(
+    uint32_t downstreamTxnId) const
+{
+    const auto transaction = dirtyVictimTxnIds.find(downstreamTxnId);
+    if (transaction == dirtyVictimTxnIds.end()) {
+        return std::nullopt;
+    }
+    return SlcSfVictimId{transaction->second};
+}
+
+void
+HnfCoherencyController::startDirtyVictimWriteback(
+    uint32_t entryId, const SlcSfSlcVictim& victim)
+{
+    panic_if(entryId >= entries.size() || !entryAllocated(entries[entryId]),
+             "HnfCC starts dirty-victim writeback without requester entry\n");
+    panic_if(!victim.victimId.value || !victim.line.dirty ||
+                 victim.line.data.size() != blockSize,
+             "HnfCC invalid dirty-victim handoff id=%llu bytes=%u dirty=%u\n",
+             static_cast<unsigned long long>(victim.victimId.value),
+             static_cast<unsigned>(victim.line.data.size()),
+             victim.line.dirty);
+    panic_if(dirtyVictimTxns.count(victim.victimId.value),
+             "HnfCC duplicate dirty-victim handoff id=%llu\n",
+             static_cast<unsigned long long>(victim.victimId.value));
+
+    DirtyVictimTxn transaction{};
+    transaction.victim = victim;
+    transaction.downstreamTxnId = allocateDirtyVictimTxnId();
+    transaction.homeNodeId = entries[entryId].req.tgtid;
+    const uint32_t txn_id = transaction.downstreamTxnId;
+    dirtyVictimTxnIds.emplace(txn_id, victim.victimId.value);
+    auto [it, inserted] = dirtyVictimTxns.emplace(
+        victim.victimId.value, std::move(transaction));
+    panic_if(!inserted, "HnfCC failed to allocate dirty-victim txn\n");
+
+    HnfCcTxReq out{};
+    out.entry = UINT32_MAX;
+    out.dirtyVictimId = victim.victimId.value;
+    out.req.srcid = it->second.homeNodeId;
+    out.req.tgtid = snNodeId;
+    out.req.txnid = txn_id;
+    out.req.opcode = ReqOp::WriteNoSnpFull;
+    out.req.AllowRetry = 0;
+    out.req.addr = victim.lineAddress;
+    out.req.size = static_cast<uint8_t>(blockSize);
+    out.req.ReturnNid = it->second.homeNodeId;
+    txReqQ.push_back(std::move(out));
+
+    DPRINTF(HnfCC,
+            "CC dirty victim=%llu queues WriteNoSnpFull addr=%#llx "
+            "downstream txn=%u independently of entry=%u\n",
+            static_cast<unsigned long long>(victim.victimId.value),
+            static_cast<unsigned long long>(victim.lineAddress), txn_id,
+            entryId);
+}
+
+void
+HnfCoherencyController::queueDirtyVictimData(DirtyVictimTxn& transaction)
+{
+    HnfCcTxDat out{};
+    out.entry = UINT32_MAX;
+    out.dirtyVictimId = transaction.victim.victimId.value;
+    out.dat.srcid = transaction.homeNodeId;
+    out.dat.tgtid = snNodeId;
+    out.dat.txnid = transaction.downstreamTxnId;
+    out.dat.opcode = DatOp::NonCopyBackWriteData;
+    out.dat.last = true;
+    out.dat.HomeNID = transaction.homeNodeId;
+    out.dat.dataid = 0;
+    out.dat.beatOffset = 0;
+    out.dat.data = transaction.victim.line.data;
+    out.dat.byteEnable.assign(blockSize, 1);
+    out.dat.chunkValid.assign((blockSize + 7) / 8, 1);
+    txDatQ.push_back(std::move(out));
 }
 
 void
@@ -1573,6 +1726,9 @@ HnfCoherencyController::consumeSlcsfResponse(SlcSfResponse response)
                 panic_if(!fill || fill->updateKind != expected,
                          "HnfCC entry=%u fill update Done has bad payload\n",
                          entryId);
+                if (fill->slcVictim) {
+                    startDirtyVictimWriteback(entryId, *fill->slcVictim);
+                }
             } else {
                 const auto* update =
                     std::get_if<SlcSfUpdateResponse>(&response.payload());
