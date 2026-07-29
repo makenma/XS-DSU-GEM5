@@ -49,6 +49,8 @@ Started: 2026-07-28T20:49:07+08:00
 - Carry the lookup CommitToken by value in every delayed mutation request and
   validate it in U0 before resource acquisition; stale snapshots become owned
   terminal Replay responses with absolute retry deadlines.
+- Preflight unsupported dirty SLC displacement before acquiring transient
+  resources, while recognizing semantic no-op writes that need no allocation.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -578,4 +580,26 @@ Started: 2026-07-28T20:49:07+08:00
 - Learnings for future iterations: A mutation must own the exact lookup token
   it intends to consume, and stale detection belongs before both transient
   reservation and the sole persistent write stage.
+---
+
+## 2026-07-29 08:04 - US-012
+- Story: Implement the staged mutation service
+- What was implemented: Completed the post-commit acceptance recovery by
+  making RemoveSharer participate in SF-set reservation, retaining adopted or
+  acquired reservations through U2 and U3, and releasing them exactly once at
+  terminal response conversion. Added side-effect-free dirty-victim preflight
+  with stale writeback no-op bypass, plus resource-leak and deferred-Evict
+  Error coverage.
+- Files changed: `src/mem/cache/CHI/HnfSLCSFBackend.hh`,
+  `src/mem/cache/CHI/HnfSLCSFBackend.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.test.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and all four CHI
+  GTest binaries successfully; all 93 tests passed (15 POCQ, 2 SEQ POCQ,
+  62 SLCSF, and 14 controller), retaining all 36 baseline passes; changed C++
+  files passed `python3 util/style.py`; `git diff --check` passed.
+- Learnings for future iterations: A mutation's transient reservation remains
+  part of its in-flight ownership through invariant checking and terminal
+  latching; resource preflight must reject unsupported displacement before any
+  partial reservation while preserving backend-defined no-op behavior.
 ---

@@ -65,6 +65,7 @@ class HnfSLCSFBackend
                                PocqTxnKind txn);
     void releaseSfResources(uint32_t entry);
     bool hasSfReservation(uint32_t entry) const;
+    size_t sfReservationCount() const { return sfReservations.size(); }
     size_t seqReservationCount() const { return reservedSeqSlots; }
     void commitRead(uint64_t block_addr, uint32_t requester,
                     PocqTxnKind txn, const std::vector<uint8_t>& data,
@@ -95,6 +96,11 @@ class HnfSLCSFBackend
     uint64_t currentLookupEpoch() const { return lookupEpoch; }
     uint64_t currentLookupAccessCount() const { return lookupAccessCount; }
     uint32_t blockSizeBytes() const { return blockSize; }
+
+    /** Report an unsupported dirty SLC displacement without changing state. */
+    bool slcAllocationWouldDisplaceDirty(uint64_t block_addr) const;
+    bool writeLineWouldDisplaceDirty(
+        uint64_t block_addr, uint32_t requester, PocqTxnKind txn) const;
 
     /** Validate a prior lookup snapshot without consulting replacement order. */
     bool validateLookupSnapshot(

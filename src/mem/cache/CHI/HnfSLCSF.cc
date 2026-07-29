@@ -404,8 +404,19 @@ HnfSLCSF::validateMutationToken(const SlcSfRequest& request) const
 bool
 HnfSLCSF::prepareMutationResources(InflightRequest& request)
 {
-    const auto prepare = [this, &request](PocqTxnKind txn) {
+    const auto prepare =
+        [this, &request](PocqTxnKind txn, bool may_allocate_slc,
+                         bool write_line) {
         const auto& header = requestHeader(request.request);
+        if (may_allocate_slc) {
+            const bool displaces_dirty = write_line ?
+                writeLineWouldDisplaceDirty(
+                    header.lineAddress, header.requester, txn) :
+                slcAllocationWouldDisplaceDirty(header.lineAddress);
+            if (displaces_dirty) {
+                return false;
+            }
+        }
         if (!tryReserveSfResources(
                 header.pocEntryId, header.lineAddress, txn)) {
             return false;
@@ -426,9 +437,15 @@ HnfSLCSF::prepareMutationResources(InflightRequest& request)
                                           Operation, SlcSfCommitRead> ||
                                       std::is_same_v<
                                           Operation, SlcSfWriteLine>) {
-                            return prepare(operation.txn);
+                            const bool may_allocate_slc =
+                                std::is_same_v<Operation, SlcSfWriteLine> ||
+                                operation.txn == PocqTxnKind::ReadShared;
+                            return prepare(
+                                operation.txn, may_allocate_slc,
+                                std::is_same_v<Operation, SlcSfWriteLine>);
                         } else {
-                            return prepare(PocqTxnKind::ReadShared);
+                            return prepare(
+                                PocqTxnKind::ReadShared, true, false);
                         }
                     },
                     typed_request.operation);
@@ -440,7 +457,12 @@ HnfSLCSF::prepareMutationResources(InflightRequest& request)
                         if constexpr (std::is_same_v<
                                           Operation,
                                           SlcSfCompleteMaintenance>) {
-                            return prepare(operation.txn);
+                            return prepare(operation.txn, false, false);
+                        } else if constexpr (std::is_same_v<
+                                                 Operation,
+                                                 SlcSfRemoveSharer>) {
+                            return prepare(
+                                PocqTxnKind::Evict, false, false);
                         } else {
                             return true;
                         }
@@ -511,10 +533,6 @@ HnfSLCSF::executeMutation(InflightRequest& request)
         },
         request.request);
     request.mutationCommitted = true;
-    if (request.resourcesPrepared) {
-        releaseSfResources(header.pocEntryId);
-        request.resourcesPrepared = false;
-    }
 }
 
 void
@@ -569,6 +587,11 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
             request.terminalResponse = makeTerminalResponse(request.request);
         }
         respPending.push_back(std::move(*request.terminalResponse));
+        if (request.resourcesPrepared) {
+            releaseSfResources(
+                requestHeader(request.request).pocEntryId);
+            request.resourcesPrepared = false;
+        }
         request.mutationStage.reset();
         break;
     }

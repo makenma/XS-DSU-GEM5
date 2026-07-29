@@ -191,6 +191,41 @@ HnfSLCSFBackend::allocateSlc(uint64_t block_addr)
     return *victim;
 }
 
+bool
+HnfSLCSFBackend::slcAllocationWouldDisplaceDirty(
+    uint64_t block_addr) const
+{
+    if (findSlc(block_addr)) {
+        return false;
+    }
+
+    const auto& set = slc[slcSet(block_addr)];
+    if (std::any_of(set.begin(), set.end(),
+                    [](const SlcLine& line) { return !line.valid; })) {
+        return false;
+    }
+    const auto victim = std::min_element(
+        set.begin(), set.end(), [](const SlcLine& lhs, const SlcLine& rhs) {
+            return lhs.lastUse < rhs.lastUse;
+        });
+    return victim != set.end() && isDirty(victim->state);
+}
+
+bool
+HnfSLCSFBackend::writeLineWouldDisplaceDirty(
+    uint64_t block_addr, uint32_t requester, PocqTxnKind txn) const
+{
+    if (txn == PocqTxnKind::WriteBackFull ||
+        txn == PocqTxnKind::WriteEvictFull) {
+        const SfLine* tracked = findSf(block_addr);
+        if (tracked &&
+            (tracked->sharers & requesterMask(requester)) == 0) {
+            return false;
+        }
+    }
+    return slcAllocationWouldDisplaceDirty(block_addr);
+}
+
 const HnfSLCSFBackend::SfLine*
 HnfSLCSFBackend::selectSfVictim(uint64_t block_addr) const
 {

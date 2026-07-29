@@ -225,7 +225,7 @@
       ],
       "priority": 12,
       "passes": true,
-      "notes": ""
+      "notes": "Post-commit acceptance recovery for 026d4b8fa1. Preserve the staged U0/U1/U2/U3 implementation and its green handler/backpressure tests, but do not pass US-012 until the audit fixes are committed and revalidated: RemoveSharer must acquire the SF-set resource in U1; an adopted per-entry reservation must remain held through U2 and U3 check/latch and be released exactly once at terminal conversion; dirty full-set SLC displacement must be detected without partial mutation or U2 panic, while stale WriteBackFull/WriteEvictFull no-op semantics must not be stalled; U0/U1 must leave storage unchanged; and every direct test must finish with zero request/response/SF/SEQ resource leakage. Add focused regressions for RemoveSharer conflict, adopted-reservation lifetime, dirty-victim handling, stale-writeback bypass, and deferred Evict Error. CommitToken stale Replay and token-directed exact-way plans belong to US-013 and must not be falsely claimed by this recovery. Re-run all four CHI binaries, full gem5 build, style, and diff checks, then commit only the recovery files plus prd.json/progress.txt."
     },
     {
       "id": "US-013",
