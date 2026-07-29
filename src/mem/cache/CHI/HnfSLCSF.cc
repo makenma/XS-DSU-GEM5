@@ -132,11 +132,13 @@ HnfSLCSF::HnfSLCSF(uint32_t block_size, uint32_t slc_num_sets,
                    HnfSLCSFPipelineConfig pipeline_config)
     : HnfSLCSFBackend(block_size, slc_num_sets, slc_num_ways,
                       sf_num_sets, sf_num_ways, seq_entries),
-      config(pipeline_config), visibleReqCredits(config.reqQueueEntries)
+      config(pipeline_config), victimBuffer(config.victimBufferEntries),
+      visibleReqCredits(config.reqQueueEntries)
 {
     validateConfig(config);
     assertRequestAccounting();
     assertResponseAccounting();
+    assertVictimAccounting();
 }
 
 void
@@ -186,7 +188,46 @@ HnfSLCSF::serviceLatency(const SlcSfRequest& request) const
                  "HnfSLCSF SF-evict latency overflows\n");
         latency += config.sfEvictLatency;
     }
+    if (mutationProducesDirtySlcVictim(request)) {
+        panic_if(config.victimLatency > UINT64_MAX - latency,
+                 "HnfSLCSF dirty-victim latency overflows\n");
+        latency += config.victimLatency;
+    }
     return std::max<uint64_t>(1, latency);
+}
+
+bool
+HnfSLCSF::mutationProducesDirtySlcVictim(
+    const SlcSfRequest& request) const
+{
+    if (!std::holds_alternative<SlcSfFillReq>(request)) {
+        return false;
+    }
+    const auto& fill = std::get<SlcSfFillReq>(request);
+    const LookupSnapshot target = mutationTarget(request);
+    return std::visit(
+        [this, &fill, &target](const auto& operation) {
+            using Operation = std::decay_t<decltype(operation)>;
+            if constexpr (std::is_same_v<Operation, SlcSfCommitRead>) {
+                return operation.txn == PocqTxnKind::ReadShared &&
+                    slcAllocationWouldDisplaceDirty(
+                        fill.header.lineAddress, &target);
+            } else if constexpr (std::is_same_v<
+                                     Operation, SlcSfFillCleanShared>) {
+                return slcAllocationWouldDisplaceDirty(
+                    fill.header.lineAddress, &target);
+            } else if constexpr (std::is_same_v<Operation, SlcSfWriteLine>) {
+                return writeLineWouldDisplaceDirty(
+                    fill.header.lineAddress, fill.header.requester,
+                    operation.txn, &target);
+            } else if constexpr (std::is_same_v<
+                                     Operation, SlcSfWriteL3FlushSf>) {
+                return slcAllocationWouldDisplaceDirty(
+                    fill.header.lineAddress, &target);
+            }
+            return false;
+        },
+        fill.operation);
 }
 
 bool
@@ -307,6 +348,7 @@ HnfSLCSF::wakeup(Tick now)
     updateRegisteredCredits();
     assertRequestAccounting();
     assertResponseAccounting();
+    assertVictimAccounting();
 }
 
 size_t
@@ -450,13 +492,99 @@ HnfSLCSF::mutationStageCount(MutationStage stage) const
         });
 }
 
+size_t
+HnfSLCSF::victimBufferOccupancy() const
+{
+    return std::count_if(
+        victimBuffer.begin(), victimBuffer.end(), [](const VictimEntry& entry) {
+            return entry.state != VictimState::Free &&
+                entry.state != VictimState::Released;
+        });
+}
+
+size_t
+HnfSLCSF::victimReservationCount() const
+{
+    return std::count_if(
+        victimBuffer.begin(), victimBuffer.end(), [](const VictimEntry& entry) {
+            return entry.state == VictimState::Reserved ||
+                entry.state == VictimState::InstalledSnapshot;
+        });
+}
+
+HnfSLCSF::VictimEntry*
+HnfSLCSF::findDirtyVictim(SlcSfVictimId id)
+{
+    auto entry = std::find_if(
+        victimBuffer.begin(), victimBuffer.end(), [id](const VictimEntry& e) {
+            return e.id.value == id.value;
+        });
+    return entry == victimBuffer.end() ? nullptr : &*entry;
+}
+
+const HnfSLCSF::VictimEntry*
+HnfSLCSF::findDirtyVictim(SlcSfVictimId id) const
+{
+    auto entry = std::find_if(
+        victimBuffer.begin(), victimBuffer.end(), [id](const VictimEntry& e) {
+            return e.id.value == id.value;
+        });
+    return entry == victimBuffer.end() ? nullptr : &*entry;
+}
+
+std::optional<HnfSLCSF::VictimState>
+HnfSLCSF::dirtyVictimState(SlcSfVictimId id) const
+{
+    const VictimEntry* entry = findDirtyVictim(id);
+    return entry ? std::optional<VictimState>(entry->state) : std::nullopt;
+}
+
+void
+HnfSLCSF::markDirtyVictimWritebackIssued(SlcSfVictimId id)
+{
+    VictimEntry* entry = findDirtyVictim(id);
+    panic_if(!entry || entry->state != VictimState::HandedOff,
+             "HnfSLCSF writeback for unknown or non-handed-off victim=%llu\n",
+             static_cast<unsigned long long>(id.value));
+    entry->state = VictimState::WritebackIssued;
+    assertVictimAccounting();
+}
+
+void
+HnfSLCSF::releaseDirtyVictim(SlcSfVictimId id)
+{
+    VictimEntry* entry = findDirtyVictim(id);
+    panic_if(!entry || entry->state == VictimState::Released ||
+                 entry->state == VictimState::Free,
+             "HnfSLCSF duplicate or unknown dirty-victim release=%llu\n",
+             static_cast<unsigned long long>(id.value));
+    panic_if(entry->state != VictimState::HandedOff &&
+                 entry->state != VictimState::WritebackIssued,
+             "HnfSLCSF releases dirty victim before handoff=%llu\n",
+             static_cast<unsigned long long>(id.value));
+    entry->state = VictimState::Released;
+    entry->snapshot.reset();
+    entry->lineAddress = 0;
+    assertVictimAccounting();
+}
+
+void
+HnfSLCSF::assertVictimAccounting() const
+{
+    panic_if(victimBufferOccupancy() > victimBuffer.size(),
+             "HnfSLCSF VictimBuffer exceeds capacity occupancy=%u/%u\n",
+             static_cast<unsigned>(victimBufferOccupancy()),
+             static_cast<unsigned>(victimBuffer.size()));
+}
+
 SlcSfResponse
 HnfSLCSF::makeTerminalResponse(
     const SlcSfRequest& request,
+    std::optional<SlcSfSlcVictim> slc_victim,
     std::optional<SlcSfSfVictim> sf_victim)
 {
     return std::visit(
-        [this, &sf_victim](const auto& typed_request) {
+        [this, &slc_victim, &sf_victim](const auto& typed_request) {
             using Request = std::decay_t<decltype(typed_request)>;
             if constexpr (std::is_same_v<Request, SlcSfLookupReq>) {
                 HnfSLCSFBackend::LookupSnapshot snapshot{};
@@ -484,7 +612,8 @@ HnfSLCSF::makeTerminalResponse(
                     typed_request, std::move(result), token);
             } else if constexpr (std::is_same_v<Request, SlcSfFillReq>) {
                 return makeSlcSfDoneResponse(
-                    typed_request, std::nullopt, std::move(sf_victim));
+                    typed_request, std::move(slc_victim),
+                    std::move(sf_victim));
             } else if constexpr (std::is_same_v<Request, SlcSfUpdateReq>) {
                 return makeSlcSfDoneResponse(
                     typed_request, std::move(sf_victim));
@@ -603,6 +732,73 @@ HnfSLCSF::validateMutationToken(const SlcSfRequest& request) const
 }
 
 bool
+HnfSLCSF::reserveDirtyVictim(
+    InflightRequest& request, const LookupSnapshot& target)
+{
+    const uint64_t replacement_addr = requestHeader(request.request).lineAddress;
+    const auto victim_addr = dirtySlcVictimAddress(replacement_addr, target);
+    panic_if(!victim_addr,
+             "HnfSLCSF reserves VictimBuffer without dirty displacement\n");
+
+    const bool same_line = std::any_of(
+        victimBuffer.begin(), victimBuffer.end(),
+        [victim_addr](const VictimEntry& entry) {
+            return entry.state != VictimState::Free &&
+                entry.state != VictimState::Released &&
+                entry.lineAddress == *victim_addr;
+        });
+    if (same_line) {
+        request.terminalReplayReason = SlcSfReplayReason::ResourceConflict;
+        return true;
+    }
+
+    auto entry = std::find_if(
+        victimBuffer.begin(), victimBuffer.end(), [](const VictimEntry& e) {
+            return e.state == VictimState::Free ||
+                e.state == VictimState::Released;
+        });
+    if (entry == victimBuffer.end()) {
+        request.terminalReplayReason = SlcSfReplayReason::VictimBufferFull;
+        return true;
+    }
+    panic_if(nextVictimId == 0,
+             "HnfSLCSF dirty-victim ID space exhausted\n");
+    entry->id = SlcSfVictimId{nextVictimId++};
+    entry->state = VictimState::Reserved;
+    entry->lineAddress = *victim_addr;
+    entry->snapshot.reset();
+    request.slcVictimId = entry->id;
+
+    SlcSfSlcVictim snapshot = snapshotDirtySlcVictim(
+        replacement_addr, target);
+    snapshot.victimId = entry->id;
+    entry->snapshot = snapshot;
+    entry->state = VictimState::InstalledSnapshot;
+    request.slcVictim = std::move(snapshot);
+    assertVictimAccounting();
+    return true;
+}
+
+void
+HnfSLCSF::cancelDirtyVictimReservation(InflightRequest& request)
+{
+    if (!request.slcVictimId) {
+        return;
+    }
+    VictimEntry* entry = findDirtyVictim(*request.slcVictimId);
+    panic_if(!entry || (entry->state != VictimState::Reserved &&
+                        entry->state != VictimState::InstalledSnapshot),
+             "HnfSLCSF cancels invalid dirty-victim reservation=%llu\n",
+             static_cast<unsigned long long>(request.slcVictimId->value));
+    entry->state = VictimState::Released;
+    entry->snapshot.reset();
+    entry->lineAddress = 0;
+    request.slcVictim.reset();
+    request.slcVictimId.reset();
+    assertVictimAccounting();
+}
+
+bool
 HnfSLCSF::prepareMutationResources(InflightRequest& request)
 {
     const LookupSnapshot target = mutationTarget(request.request);
@@ -617,7 +813,13 @@ HnfSLCSF::prepareMutationResources(InflightRequest& request)
                 slcAllocationWouldDisplaceDirty(
                     header.lineAddress, &target);
             if (displaces_dirty) {
-                return false;
+                if (!request.slcVictimId &&
+                    !reserveDirtyVictim(request, target)) {
+                    return false;
+                }
+                if (request.terminalReplayReason) {
+                    return true;
+                }
             }
         }
         if (mayAllocateSf(txn) && sfAllocationBlockedBySeq(
@@ -697,13 +899,17 @@ HnfSLCSF::executeMutation(InflightRequest& request)
 {
     const SlcSfReqHeader& header = requestHeader(request.request);
     const LookupSnapshot target = mutationTarget(request.request);
+    const SlcSfSlcVictim* preserved_victim = request.slcVictim ?
+        &*request.slcVictim : nullptr;
     SeqVictim sf_victim{};
     std::visit(
-        [this, &header, &target, &sf_victim](const auto& typed_request) {
+        [this, &header, &target, &sf_victim, preserved_victim](
+            const auto& typed_request) {
             using Request = std::decay_t<decltype(typed_request)>;
             if constexpr (std::is_same_v<Request, SlcSfFillReq>) {
                 std::visit(
-                    [this, &header, &target, &sf_victim](
+                    [this, &header, &target, &sf_victim,
+                     preserved_victim](
                         const auto& operation) {
                         using Operation =
                             std::decay_t<decltype(operation)>;
@@ -714,14 +920,16 @@ HnfSLCSF::executeMutation(InflightRequest& request)
                                 operation.txn, operation.line.data,
                                 operation.line.dirty,
                                 operation.homeNodeId, &target,
-                                header.pocEntryId, &sf_victim);
+                                header.pocEntryId, &sf_victim,
+                                preserved_victim);
                         } else if constexpr (std::is_same_v<
                                                  Operation,
                                                  SlcSfFillCleanShared>) {
                             fillCleanShared(
                                 header.lineAddress, header.requester,
                                 operation.line.data, &target,
-                                header.pocEntryId, &sf_victim);
+                                header.pocEntryId, &sf_victim,
+                                preserved_victim);
                         } else if constexpr (std::is_same_v<
                                                  Operation,
                                                  SlcSfWriteLine>) {
@@ -729,13 +937,15 @@ HnfSLCSF::executeMutation(InflightRequest& request)
                                 header.lineAddress, header.requester,
                                 operation.line.data, operation.txn,
                                 operation.homeNodeId, &target,
-                                header.pocEntryId, &sf_victim);
+                                header.pocEntryId, &sf_victim,
+                                preserved_victim);
                         } else if constexpr (std::is_same_v<
                                                  Operation,
                                                  SlcSfWriteL3FlushSf>) {
                             writeL3FlushSf(
                                 header.lineAddress, header.requester,
-                                operation.line.data, &target);
+                                operation.line.data, &target,
+                                preserved_victim);
                         }
                     },
                     typed_request.operation);
@@ -879,9 +1089,25 @@ HnfSLCSF::latchMutationResponse(InflightRequest& request)
             },
             request.request);
     }
+    if (request.slcVictimId) {
+        if (request.mutationCommitted && !request.terminalResponse &&
+            !request.terminalReplayReason) {
+            VictimEntry* entry = findDirtyVictim(*request.slcVictimId);
+            panic_if(!entry ||
+                         entry->state != VictimState::InstalledSnapshot ||
+                         !entry->snapshot,
+                     "HnfSLCSF hands off invalid dirty victim=%llu\n",
+                     static_cast<unsigned long long>(
+                         request.slcVictimId->value));
+            entry->state = VictimState::HandedOff;
+        } else {
+            cancelDirtyVictimReservation(request);
+        }
+    }
     if (!request.terminalResponse) {
         request.terminalResponse = makeTerminalResponse(
-            request.request, std::move(request.sfVictim));
+            request.request, std::move(request.slcVictim),
+            std::move(request.sfVictim));
     }
     respPending.push_back(std::move(*request.terminalResponse));
     if (request.resourcesPrepared) {
@@ -889,6 +1115,7 @@ HnfSLCSF::latchMutationResponse(InflightRequest& request)
         request.resourcesPrepared = false;
     }
     request.mutationStage.reset();
+    assertVictimAccounting();
 }
 
 bool
@@ -973,7 +1200,8 @@ HnfSLCSF::issueReadyRequests()
             mutation ? std::optional<MutationStage>(
                            MutationStage::U0DecodeValidate) : std::nullopt,
             std::nullopt, std::nullopt, false, false, false,
-            early_lookup_replay, std::nullopt});
+            early_lookup_replay, std::nullopt, std::nullopt,
+            std::nullopt});
         request = reqReady.erase(request);
         ++*issued;
     }

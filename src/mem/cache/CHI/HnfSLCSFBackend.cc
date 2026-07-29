@@ -159,7 +159,8 @@ HnfSLCSFBackend::findSf(uint64_t block_addr) const
 
 HnfSLCSFBackend::SlcLine&
 HnfSLCSFBackend::allocateSlc(uint64_t block_addr,
-                             const ArraySnapshot* target)
+                             const ArraySnapshot* target,
+                             const SlcSfSlcVictim* preserved_victim)
 {
     panic_if(target &&
                  (target->set != slcSet(block_addr) ||
@@ -185,12 +186,24 @@ HnfSLCSFBackend::allocateSlc(uint64_t block_addr,
             });
     }
     if (victim->valid) {
-        panic_if(isDirty(victim->state),
+        panic_if(isDirty(victim->state) && !preserved_victim,
                  "HnfSLCSF dirty SLC victim requires VictimBuffer before "
                  "replacement set=%u tag=%llu state=%u\n",
                  slcSet(block_addr),
                  static_cast<unsigned long long>(victim->tag),
                  static_cast<unsigned>(victim->state));
+        if (isDirty(victim->state)) {
+            const uint64_t victim_addr =
+                (victim->tag * slcSets + slcSet(block_addr)) * blockSize;
+            panic_if(preserved_victim->lineAddress != victim_addr ||
+                         preserved_victim->state != victim->state ||
+                         preserved_victim->owner != victim->owner ||
+                         preserved_victim->line.data != victim->data ||
+                         !preserved_victim->line.dirty,
+                     "HnfSLCSF preserved dirty-victim snapshot mismatch "
+                     "addr=%#llx\n",
+                     static_cast<unsigned long long>(victim_addr));
+        }
     }
 
     const uint64_t generation = ++accessCounter;
@@ -200,6 +213,34 @@ HnfSLCSFBackend::allocateSlc(uint64_t block_addr,
     victim->generation = generation;
     victim->lastUse = generation;
     return *victim;
+}
+
+std::optional<uint64_t>
+HnfSLCSFBackend::dirtySlcVictimAddress(
+    uint64_t block_addr, const LookupSnapshot& target) const
+{
+    if (!slcAllocationWouldDisplaceDirty(block_addr, &target)) {
+        return std::nullopt;
+    }
+    const SlcLine& victim = slc[target.slc.set][target.slc.way];
+    return (victim.tag * slcSets + target.slc.set) * blockSize;
+}
+
+SlcSfSlcVictim
+HnfSLCSFBackend::snapshotDirtySlcVictim(
+    uint64_t block_addr, const LookupSnapshot& target) const
+{
+    const auto victim_addr = dirtySlcVictimAddress(block_addr, target);
+    panic_if(!victim_addr,
+             "HnfSLCSF snapshots a non-dirty SLC displacement\n");
+    const SlcLine& victim = slc[target.slc.set][target.slc.way];
+    panic_if(victim.data.size() != blockSize,
+             "HnfSLCSF dirty SLC victim has incomplete data bytes=%u/%u\n",
+             static_cast<unsigned>(victim.data.size()), blockSize);
+    return SlcSfSlcVictim{
+        {}, *victim_addr, victim.state, victim.owner,
+        SlcSfCacheLine{victim.data, std::vector<uint8_t>(blockSize, 0xff),
+                       true}};
 }
 
 bool
@@ -644,9 +685,11 @@ HnfSLCSFBackend::sfAllocationBlockedBySeq(
 void
 HnfSLCSFBackend::installSlc(uint64_t block_addr, HnfSlcState state,
                      uint32_t requester, const std::vector<uint8_t>& data,
-                     const ArraySnapshot* target)
+                     const ArraySnapshot* target,
+                     const SlcSfSlcVictim* preserved_victim)
 {
-    SlcLine& line = allocateSlc(block_addr, target);
+    SlcLine& line = allocateSlc(
+        block_addr, target, preserved_victim);
     line.valid = true;
     line.state = state;
     line.owner = requester;
@@ -895,14 +938,16 @@ HnfSLCSFBackend::commitRead(uint64_t block_addr, uint32_t requester,
                      bool data_dirty, uint32_t home_node_id,
                      const LookupSnapshot* target,
                      std::optional<uint32_t> reservation_owner,
-                     SeqVictim* sf_victim)
+                     SeqVictim* sf_victim,
+                     const SlcSfSlcVictim* preserved_victim)
 {
     const uint64_t requesterBit = requesterMask(requester);
     switch (txn) {
       case PocqTxnKind::ReadShared: {
         installSlc(block_addr,
                    data_dirty ? HnfSlcState::MN : HnfSlcState::EN,
-                   requester, data, target ? &target->slc : nullptr);
+                   requester, data, target ? &target->slc : nullptr,
+                   preserved_victim);
         SfLine& line = allocateSf(
             block_addr, home_node_id, target ? &target->sf : nullptr,
             reservation_owner, sf_victim);
@@ -1017,11 +1062,12 @@ HnfSLCSFBackend::fillCleanShared(uint64_t block_addr, uint32_t requester,
                           const std::vector<uint8_t>& data,
                           const LookupSnapshot* target,
                           std::optional<uint32_t> reservation_owner,
-                          SeqVictim* sf_victim)
+                          SeqVictim* sf_victim,
+                          const SlcSfSlcVictim* preserved_victim)
 {
     commitRead(
         block_addr, requester, PocqTxnKind::ReadShared, data, false, 0,
-        target, reservation_owner, sf_victim);
+        target, reservation_owner, sf_victim, preserved_victim);
 }
 
 void
@@ -1029,7 +1075,8 @@ HnfSLCSFBackend::writeLine(uint64_t block_addr, uint32_t requester,
                     const std::vector<uint8_t>& data, PocqTxnKind txn,
                     uint32_t home_node_id, const LookupSnapshot* target,
                     std::optional<uint32_t> reservation_owner,
-                    SeqVictim* sf_victim)
+                    SeqVictim* sf_victim,
+                    const SlcSfSlcVictim* preserved_victim)
 {
     switch (txn) {
       case PocqTxnKind::WriteBackFull:
@@ -1047,7 +1094,7 @@ HnfSLCSFBackend::writeLine(uint64_t block_addr, uint32_t requester,
         }
         installSlc(
             block_addr, HnfSlcState::MU, requester, data,
-            target ? &target->slc : nullptr);
+            target ? &target->slc : nullptr, preserved_victim);
         removeSharer(block_addr, requester);
         if (const SfLine* line = findSf(block_addr); line && line->valid) {
             SlcLine* slcLine = findSlc(block_addr);
@@ -1058,7 +1105,7 @@ HnfSLCSFBackend::writeLine(uint64_t block_addr, uint32_t requester,
       case PocqTxnKind::WriteCleanFull: {
         installSlc(
             block_addr, HnfSlcState::EN, requester, data,
-            target ? &target->slc : nullptr);
+            target ? &target->slc : nullptr, preserved_victim);
         SfLine& line = allocateSf(
             block_addr, home_node_id, target ? &target->sf : nullptr,
             reservation_owner, sf_victim);
@@ -1072,7 +1119,7 @@ HnfSLCSFBackend::writeLine(uint64_t block_addr, uint32_t requester,
       case PocqTxnKind::WriteUnique:
         installSlc(
             block_addr, HnfSlcState::MU, requester, data,
-            target ? &target->slc : nullptr);
+            target ? &target->slc : nullptr, preserved_victim);
         invalidateSf(block_addr);
         break;
       default:
@@ -1108,10 +1155,11 @@ HnfSLCSFBackend::flushL3(uint64_t block_addr)
 void
 HnfSLCSFBackend::writeL3FlushSf(uint64_t block_addr, uint32_t requester,
                                 const std::vector<uint8_t>& data,
-                                const LookupSnapshot* target)
+                                const LookupSnapshot* target,
+                                const SlcSfSlcVictim* preserved_victim)
 {
     installSlc(block_addr, HnfSlcState::MU, requester, data,
-               target ? &target->slc : nullptr);
+               target ? &target->slc : nullptr, preserved_victim);
     invalidateSf(block_addr);
     checkLineInvariant(block_addr);
 }

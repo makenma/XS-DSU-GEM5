@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <deque>
 #include <optional>
+#include <vector>
 
 #include "mem/cache/CHI/HnfSLCSFBackend.hh"
 #include "mem/cache/CHI/HnfSLCSFRequest.hh"
@@ -83,6 +84,16 @@ class HnfSLCSF : public HnfSLCSFBackend
         U3CheckLatch
     };
 
+    enum class VictimState : uint8_t
+    {
+        Free,
+        Reserved,
+        InstalledSnapshot,
+        HandedOff,
+        WritebackIssued,
+        Released
+    };
+
     HnfSLCSF(uint32_t block_size, uint32_t slc_num_sets,
              uint32_t slc_num_ways, uint32_t sf_num_sets,
              uint32_t sf_num_ways, uint32_t seq_entries = 8,
@@ -110,6 +121,12 @@ class HnfSLCSF : public HnfSLCSFBackend
     size_t reqCapacity() const { return config.reqQueueEntries; }
     uint64_t currentCycle() const { return wakeupCycle; }
     size_t mutationStageCount(MutationStage stage) const;
+    size_t victimBufferCapacity() const { return victimBuffer.size(); }
+    size_t victimBufferOccupancy() const;
+    size_t victimReservationCount() const;
+    std::optional<VictimState> dirtyVictimState(SlcSfVictimId id) const;
+    void markDirtyVictimWritebackIssued(SlcSfVictimId id);
+    void releaseDirtyVictim(SlcSfVictimId id);
 
     size_t respReservedCount() const { return inflightRequests.size(); }
     size_t respPendingCount() const { return respPending.size(); }
@@ -125,7 +142,11 @@ class HnfSLCSF : public HnfSLCSFBackend
                              uint64_t expected_line_address) const;
 
     bool hasWork() const;
-    bool isBusy() const { return hasWork() || HnfSLCSFBackend::isBusy(); }
+    bool isBusy() const
+    {
+        return hasWork() || HnfSLCSFBackend::isBusy() ||
+            victimBufferOccupancy() != 0;
+    }
 
     // Stage-A lifecycle gates. Later lifecycle stories drive these at modeled
     // initialization and drain boundaries.
@@ -147,11 +168,22 @@ class HnfSLCSF : public HnfSLCSFBackend
         bool mutationCommitted = false;
         bool mutationStalled = false;
         bool earlyLookupReplay = false;
+        std::optional<SlcSfVictimId> slcVictimId;
+        std::optional<SlcSfSlcVictim> slcVictim;
         std::optional<SlcSfSfVictim> sfVictim;
+    };
+
+    struct VictimEntry
+    {
+        SlcSfVictimId id{};
+        VictimState state = VictimState::Free;
+        uint64_t lineAddress = 0;
+        std::optional<SlcSfSlcVictim> snapshot;
     };
 
     static void validateConfig(const HnfSLCSFPipelineConfig& config);
     uint64_t serviceLatency(const SlcSfRequest& request) const;
+    bool mutationProducesDirtySlcVictim(const SlcSfRequest& request) const;
     bool mutationProducesSfVictim(const SlcSfRequest& request) const;
     Tick replayDeadline() const;
     bool lookupReplaysAtL0(const SlcSfRequest& request) const;
@@ -159,11 +191,18 @@ class HnfSLCSF : public HnfSLCSFBackend
     void completeInflightRequests();
     SlcSfResponse makeTerminalResponse(
         const SlcSfRequest& request,
+        std::optional<SlcSfSlcVictim> slc_victim = std::nullopt,
         std::optional<SlcSfSfVictim> sf_victim = std::nullopt);
     std::optional<SlcSfError> validateMutationRequest(
         const SlcSfRequest& request) const;
     bool validateMutationToken(const SlcSfRequest& request) const;
     bool prepareMutationResources(InflightRequest& request);
+    bool reserveDirtyVictim(InflightRequest& request,
+                            const LookupSnapshot& target);
+    void cancelDirtyVictimReservation(InflightRequest& request);
+    VictimEntry* findDirtyVictim(SlcSfVictimId id);
+    const VictimEntry* findDirtyVictim(SlcSfVictimId id) const;
+    void assertVictimAccounting() const;
     void executeMutation(InflightRequest& request);
     void advanceMutation(InflightRequest& request);
     void latchMutationResponse(InflightRequest& request);
@@ -182,6 +221,8 @@ class HnfSLCSF : public HnfSLCSFBackend
     std::deque<InflightRequest> inflightRequests;
     std::deque<SlcSfResponse> respPending;
     std::deque<SlcSfResponse> respVisible;
+    std::vector<VictimEntry> victimBuffer;
+    uint64_t nextVictimId = 1;
     size_t visibleReqCredits = 0;
     uint64_t wakeupCycle = 0;
     Tick wakeupTick = 0;

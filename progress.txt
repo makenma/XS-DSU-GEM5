@@ -87,6 +87,9 @@ Started: 2026-07-28T20:49:07+08:00
 - Give internal controller transactions the same explicit issue/wait phases
   as external entries, retaining one owned request and ID across NoCredit;
   route their sentinel response namespace before main-entry bounds checks.
+- Before overwriting persistent storage, reserve bounded transient capacity,
+  copy the exact versioned victim into it, and require that owned snapshot at
+  the write boundary so capacity failure and conflicts remain mutation-free.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -922,4 +925,27 @@ Started: 2026-07-28T20:49:07+08:00
   same owned admission retry and exact terminal-response identity as a main
   POCQ entry; a sentinel response namespace keeps the two ownership domains
   distinct without weakening bounds checks.
+---
+
+## 2026-07-29 11:35 - US-022
+- Story: Implement the dirty SLC VictimBuffer
+- What was implemented: Added a bounded VictimBuffer with monotonic VictimId
+  allocation and reserved, installed-snapshot, handed-off, writeback-issued,
+  and released lifecycle states. Dirty Fill displacement now reserves and
+  copies the exact old line before the array write, returns the owned snapshot
+  in the terminal response, adds dirty-victim latency alongside any SF-victim
+  latency, and emits side-effect-free Replay on full or same-line conflicts.
+- Files changed: `src/mem/cache/CHI/HnfSLCSFBackend.hh`,
+  `src/mem/cache/CHI/HnfSLCSFBackend.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.hh`, `src/mem/cache/CHI/HnfSLCSF.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.test.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and all four CHI
+  GTest binaries successfully; all 141 tests passed (18 POCQ, 2 SEQ POCQ,
+  91 SLCSF, and 30 controller), retaining all baseline passes; changed C++
+  files passed `python3 util/style.py --modifications`; `git diff --check`
+  passed.
+- Learnings for future iterations: A dirty displacement should carry the
+  copied victim snapshot through the write API itself, so the backend cannot
+  bypass preservation with a generic permission flag. Released entries may
+  be reused, but their stable IDs must remain monotonic and non-repeating.
 ---
