@@ -58,6 +58,9 @@ Started: 2026-07-28T20:49:07+08:00
   operation class; deadline-driven catch-up may traverse multiple structural
   stages on one edge but must stop at a resource stall, while early Replay
   explicitly replaces the deadline with the one-cycle completion rule.
+- Test staged stale-token recovery at both resource boundaries: one case must
+  invalidate while stalled before acquisition, and another after acquisition
+  but before the sole write, so reservation ownership and cleanup stay proven.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -654,4 +657,21 @@ Started: 2026-07-28T20:49:07+08:00
   issue-to-completion deadline, so resource stalls may extend it without
   collapsing registered stage boundaries; retry deadlines require an explicit
   child-cycle-to-Tick conversion at the semantic completion boundary.
+---
+
+## 2026-07-29 08:55 - US-013
+- Story: Emit side-effect-free Replay for stale mutation tokens
+- What was implemented: Corrected the post-commit acceptance regression so a
+  fresh mutation first acquires and owns its SF reservation in U1, then an
+  intervening write stales its token before U2. Kept the separate dirty-target
+  U1-stall regression proving stale Replay before any reservation is acquired.
+- Files changed: `src/mem/cache/CHI/HnfSLCSF.test.cc`, `prd.json`, and
+  `progress.txt`.
+- Checks run and their results: Rebuilt the SLCSF GTest after the newest test
+  timestamp; built `build/RISCV/gem5.opt` and all four CHI GTest binaries; all
+  107 tests passed (15 POCQ, 2 SEQ POCQ, 76 SLCSF, and 14 controller); the
+  changed C++ test passed `python3 util/style.py`; `git diff --check` passed.
+- Learnings for future iterations: Stale-token tests must distinguish a U1
+  liveness escape before resource ownership from U2 revalidation after
+  resource ownership, because only the latter exercises terminal cleanup.
 ---

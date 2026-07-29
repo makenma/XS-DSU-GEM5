@@ -1476,16 +1476,19 @@ TEST(HnfSlcSfMutationServiceTest,
     model.wakeup();
     EXPECT_EQ(model.mutationStageCount(
                   HnfSLCSF::MutationStage::U1PrepareResources), 1);
-    model.writeLine(
-        TestAddr, 1, lineData(0x67), PocqTxnKind::WriteUnique);
-    const auto intervening = model.probe(HnfSlcLookupReq{
-        0, RawReq{}, PocqTxnKind::Unknown, TestAddr});
     model.releaseSfResources(999);
 
+    // Acquire the mutation's own reservation while the token is still fresh,
+    // then stale it before U2 so the final validation gate owns cleanup.
     model.wakeup();
     EXPECT_EQ(model.mutationStageCount(
                   HnfSLCSF::MutationStage::U2ArrayWrite), 1);
     EXPECT_TRUE(model.hasSfReservation(1331));
+    model.writeLine(
+        TestAddr, 1, lineData(0x67), PocqTxnKind::WriteUnique);
+    const auto intervening = model.probe(HnfSlcLookupReq{
+        0, RawReq{}, PocqTxnKind::Unknown, TestAddr});
+
     model.wakeup(500);
     EXPECT_EQ(model.mutationStageCount(
                   HnfSLCSF::MutationStage::U3CheckLatch), 1);

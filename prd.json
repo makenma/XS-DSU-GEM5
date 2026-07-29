@@ -242,7 +242,7 @@
       ],
       "priority": 13,
       "passes": true,
-      "notes": "Post-commit acceptance recovery for 632daa2488; the first recovery draft is not yet accepted. Preserve the owned CommitToken, independent sourceLookupReqId field, U2 revalidation, exact-way allocation plumbing, and three primary regressions, but close the remaining audit gaps before passing: never derive a missing sourceLookupReqId from token.lookupReqId (a missing source or a token-ID tamper against an independently retained source must Replay); exact-target SLC dirty preflight and SF SEQ reservation must inspect the token way even when another way is invalid/free; an existing same-entry reservation must be checked or atomically upgraded for the exact target/victim; and U0 Replay/Error must adopt and release any pre-held same-entry reservation exactly once. Add focused missing-source/token-ID-tamper, target-valid-plus-other-invalid dirty/SEQ, and preheld-U0-terminal zero-leak regressions. Then rebuild after the newest test mtime, run all four CHI binaries, style, and diff checks."
+      "notes": "Acceptance recovery verified: distinct regressions cover stale Replay while stalled in U1 before reservation acquisition and after acquiring a reservation but before U2, including side-effect-free cleanup. All 107 current CHI tests pass."
     },
     {
       "id": "US-014",
