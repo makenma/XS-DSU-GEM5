@@ -2314,6 +2314,16 @@ HnfCoherencyController::slcsfRetryNotBeforeTick(uint32_t entry) const
 }
 
 bool
+HnfCoherencyController::mayGenerateSlcsfIntent() const
+{
+    return seqPocqEntry.valid || !dirtyVictimTxns.empty() ||
+        std::any_of(entries.begin(), entries.end(),
+                    [this](const Entry& entry) {
+                        return entryAllocated(entry);
+                    });
+}
+
+bool
 HnfCoherencyController::hasWork() const
 {
     if (hasTxWork() || hasDeferredRetire()) {

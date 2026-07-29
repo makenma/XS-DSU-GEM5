@@ -1891,6 +1891,92 @@ TEST(HnfCoherencyControllerTest, LookupNoCreditEventuallyProgresses)
     EXPECT_TRUE(cc.hasTxReq());
 }
 
+TEST(HnfCoherencyControllerTest, DrainDoesNotLoseIssuePendingIntent)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.reqQueueEntries = 1;
+    config.respQueueEntries = 1;
+    config.maxInflight = 1;
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8, config);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    RawReq blockerRaw{};
+    blockerRaw.srcid = 63;
+    SlcSfReqIdAllocator blockerIds;
+    SlcSfRequest blocker = makeSlcSfLookupReq(
+        makeSlcSfReqHeader(
+            blockerIds, UINT32_MAX, TestAddr + BlockSize, blockerRaw),
+        PocqTxnKind::ReadShared);
+    ASSERT_EQ(slcsf.tryEnqueue(std::move(blocker)),
+              SlcSfEnqueueResult::Accepted);
+
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 7801, 0, 181, 0x01), 0).accepted);
+    ASSERT_EQ(cc.slcLookupPhase(0),
+              HnfCoherencyController::SlcLookupPhase::IssuePending);
+    const SlcSfReqId pending_id = cc.slcLookupReqId(0);
+    ASSERT_TRUE(cc.mayGenerateSlcsfIntent());
+
+    slcsf.requestDrain();
+    EXPECT_TRUE(slcsf.isDrainRequested());
+    EXPECT_FALSE(slcsf.isAdmissionSealed());
+    for (size_t i = 0; i < 3; ++i) {
+        cc.serviceInternalWork(100 + i);
+        EXPECT_EQ(cc.slcLookupPhase(0),
+                  HnfCoherencyController::SlcLookupPhase::IssuePending);
+        EXPECT_EQ(cc.slcLookupReqId(0), pending_id);
+    }
+
+    Tick tick = 110;
+    for (size_t i = 0; i < 16 && slcsf.respVisibleCount() == 0; ++i) {
+        slcsf.wakeup(++tick);
+    }
+    ASSERT_TRUE(slcsf.popVisibleResponse());
+    cc.serviceInternalWork(tick);
+    EXPECT_EQ(cc.slcLookupPhase(0),
+              HnfCoherencyController::SlcLookupPhase::Waiting);
+    EXPECT_EQ(cc.slcLookupReqId(0), pending_id);
+
+    pumpLookup(cc, slcsf, 0, tick);
+    EXPECT_TRUE(cc.hasTxReq());
+    EXPECT_EQ(slcsf.drainingRejectCount(), 0);
+}
+
+TEST(HnfCoherencyControllerTest, DrainKeepsProtocolCompletionsEnabled)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 7901, 0, 182, 0x01), 0).accepted);
+    Tick tick = 200;
+    pumpLookup(cc, slcsf, 0, tick);
+    ASSERT_TRUE(cc.hasTxReq());
+    const HnfCcTxReq memory_read = cc.frontTxReq();
+    cc.popTxReq();
+    cc.notifyTxReqSent(memory_read);
+
+    slcsf.requestDrain();
+    ASSERT_TRUE(slcsf.isDrainRequested());
+    ASSERT_FALSE(slcsf.isAdmissionSealed());
+    const auto data = lineData(0x73);
+    EXPECT_FALSE(cc.acceptRxDat(
+        makeCompData(memory_read.req.txnid, 0, false, data)));
+    EXPECT_FALSE(cc.acceptRxDat(
+        makeCompData(memory_read.req.txnid, BeatSize, true, data)));
+    ASSERT_NE(cc.slcUpdatePhase(0),
+              HnfCoherencyController::SlcUpdatePhase::None);
+
+    pumpUpdate(cc, slcsf, 0, tick);
+    ASSERT_TRUE(cc.hasTxDat());
+    EXPECT_EQ(cc.frontTxDat().entry, 0);
+    EXPECT_EQ(slcsf.drainingRejectCount(), 0);
+}
+
 TEST(HnfCoherencyControllerTest, WaitingLookupIsNotIssuedTwice)
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);

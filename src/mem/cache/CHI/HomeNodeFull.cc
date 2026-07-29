@@ -37,6 +37,23 @@ HomeNodeFull::wakeup()
 {
     DPRINTF(HomeLinkLayer, "HomeNodeFull wakeup\n");
     linklayer.wakeup();
+    if (d1Active && !linklayer.mayGenerateSlcsfIntent()) {
+        d1Complete = true;
+    }
+}
+
+DrainState
+HomeNodeFull::drain()
+{
+    d1Active = true;
+    linklayer.quiesceNewRequests();
+    slcsf->requestDrain();
+    d1Complete = !linklayer.mayGenerateSlcsfIntent();
+    if (!d1Complete && hasLinkWork()) {
+        ruby::Consumer::scheduleEvent(Cycles(1));
+    }
+    // US-034 owns the D2 seal, final empty check, and signalDrainDone().
+    return DrainState::Draining;
 }
 
 void

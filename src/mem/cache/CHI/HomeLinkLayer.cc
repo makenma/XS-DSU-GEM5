@@ -582,6 +582,9 @@ HomeLinkLayer::sampleRxPortsToH0()
 
     for (ChannelType ch : {ChannelType::REQ, ChannelType::RSP,
                            ChannelType::SNP, ChannelType::DAT}) {
+        if (ch == ChannelType::REQ && !acceptNewRxReq) {
+            continue;
+        }
         auto flit = rxport->getRxFlitNoCredit(ch);
         if (!flit) {
             continue;
@@ -879,11 +882,31 @@ HomeLinkLayer::portHasRxFlit() const
     }
     for (ChannelType ch : {ChannelType::REQ, ChannelType::RSP,
                            ChannelType::SNP, ChannelType::DAT}) {
+        if (ch == ChannelType::REQ && !acceptNewRxReq) {
+            continue;
+        }
         if (rxport->hasRxFlit(ch)) {
             return true;
         }
     }
     return false;
+}
+
+bool
+HomeLinkLayer::requestPipelineHasWork() const
+{
+    const ChannelPipe& request_pipe =
+        rxPipe[static_cast<size_t>(ChannelType::REQ)];
+    return std::any_of(
+        request_pipe.begin(), request_pipe.end(),
+        [](const StageQueue& stage) { return !stage.empty(); });
+}
+
+bool
+HomeLinkLayer::mayGenerateSlcsfIntent() const
+{
+    return requestPipelineHasWork() || !linkToCcQ.empty() ||
+        !ccAdmitQ.empty() || (cc && cc->mayGenerateSlcsfIntent());
 }
 
 bool

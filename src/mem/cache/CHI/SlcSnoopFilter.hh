@@ -95,6 +95,8 @@ class SlcSnoopFilter : public ClockedObject
 
     bool hasWork() const { return slcsf.hasWork(); }
     bool initialized() const { return slcsf.isInitialized(); }
+    void requestDrain() { slcsf.requestDrain(); }
+    bool drainRequested() const { return slcsf.isDrainRequested(); }
 
     void initState() override;
     void startup() override;

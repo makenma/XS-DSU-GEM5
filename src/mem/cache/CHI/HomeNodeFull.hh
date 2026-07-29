@@ -25,12 +25,16 @@ class HomeNodeFull : public BasicChiComponent , public ruby::Consumer
         Port& getPort(const std::string& if_name,
                   PortID idx = InvalidPortID) override;
         bool hasLinkWork() const;
+        DrainState drain() override;
+        bool drainD1Complete() const { return d1Complete; }
         //HomeNodeFull* create() const;
     private:
         SlcSnoopFilter* const slcsf;
         HnfCoherencyController cc;
         HomeLinkLayer   linklayer;
         ChiCommonPort   rxport;
+        bool d1Active = false;
+        bool d1Complete = false;
 
 
 

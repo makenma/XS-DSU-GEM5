@@ -89,6 +89,8 @@ class HnfCoherencyController
     { return seqPocqEntry.completeReqId; }
 
     bool hasWork() const;
+    /** Existing protocol owners which may still create an SLCSF intent. */
+    bool mayGenerateSlcsfIntent() const;
     bool hasTxReq() const { return !txReqQ.empty(); }
     bool hasTxSnp() const { return !txSnpQ.empty(); }
     bool hasTxDat() const { return !txDatQ.empty(); }

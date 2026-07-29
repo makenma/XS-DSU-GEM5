@@ -695,6 +695,7 @@ HnfSLCSF::resetForColdStart()
     nextVictimId = 1;
     nextCompletionNonce = 1;
     nextSetLockOwner = 1;
+    drainRequested = false;
     draining = false;
     beginInitialization();
 }
@@ -715,8 +716,15 @@ HnfSLCSF::finishInitialization()
 }
 
 void
+HnfSLCSF::requestDrain()
+{
+    drainRequested = true;
+}
+
+void
 HnfSLCSF::beginDraining()
 {
+    drainRequested = true;
     draining = true;
     visibleReqCredits = 0;
 }
@@ -724,6 +732,7 @@ HnfSLCSF::beginDraining()
 void
 HnfSLCSF::resumeFromDrain()
 {
+    drainRequested = false;
     draining = false;
 }
 

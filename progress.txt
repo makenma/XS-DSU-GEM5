@@ -127,6 +127,9 @@ Started: 2026-07-28T20:49:07+08:00
 - Let an event-owned ordinary service report its earliest useful logical cycle;
   the ClockedObject can skip inert edges by passing the elapsed-cycle delta and
   reschedule only when newly admitted work creates an earlier boundary.
+- Split coordinated drain into an upstream quiesce request and a later service
+  admission seal; conservatively keep every allocated protocol owner visible
+  until it can no longer create a delayed child intent.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -1360,4 +1363,26 @@ Started: 2026-07-28T20:49:07+08:00
 - Learnings for future iterations: A sparse event schedule remains cycle-exact
   when the service owns logical deadlines and the event owner supplies the
   number of intentionally skipped child edges at the chosen boundary.
+---
+
+## 2026-07-29 17:03 - US-033
+- Story: Implement drain phase D1 QuiesceUpstream
+- What was implemented: Added explicit HomeNodeFull D1 coordination that
+  stops only fresh RXREQ sampling while leaving all other link-layer and CC
+  service paths active. Split child drain-request recording from the later
+  admission seal, and added conservative link-layer/controller detection for
+  every existing protocol owner that may still generate an SLCSF intent.
+- Files changed: `src/mem/cache/CHI/HnfSLCSF.hh/.cc`,
+  `SlcSnoopFilter.hh`, `HnfCoherencyController.hh/.cc/.test.cc`,
+  `HomeLinkLayer.hh/.cc`, `HomeNodeFull.hh/.cc`, `prd.json`, and
+  `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and all relevant
+  CHI GTests successfully; all 189 tests passed (18 POCQ, 2 SEQ POCQ,
+  4 backend, 110 SLCSF, 9 standalone child, and 46 controller), including
+  DrainDoesNotLoseIssuePendingIntent and DrainKeepsProtocolCompletionsEnabled.
+  Changed C++ files passed `python3 util/style.py`; `git diff --check` passed.
+- Learnings for future iterations: D1 must gate at the fresh RXREQ sampling
+  boundary, not at the child request queue; requests owned by main, SEQ, or
+  victim transactions remain admissible until the parent proves no such owner
+  can create another intent.
 ---

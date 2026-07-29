@@ -250,11 +250,15 @@ class HnfSLCSF : public HnfSLCSFBackend
     }
 
     bool isInitialized() const { return initialized; }
+    bool isDrainRequested() const { return drainRequested; }
+    bool isAdmissionSealed() const { return draining; }
 
     /** Reset persistent and transient state and enter modeled cold init. */
     void resetForColdStart();
     void beginInitialization();
     void finishInitialization();
+    /** Record parent D1 without rejecting intents from allocated work. */
+    void requestDrain();
     void beginDraining();
     void resumeFromDrain();
 
@@ -376,6 +380,7 @@ class HnfSLCSF : public HnfSLCSFBackend
     Tick wakeupTick = 0;
     bool initialized = true;
     size_t initializationCyclesRemaining = 0;
+    bool drainRequested = false;
     bool draining = false;
     uint64_t noCreditRejects = 0;
     uint64_t initializingRejects = 0;

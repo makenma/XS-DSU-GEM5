@@ -34,6 +34,9 @@ class HomeLinkLayer : public ruby::Consumer
     void wakeup() override;
     void print(std::ostream& out) const override;
     bool hasWork() const;
+    void quiesceNewRequests() { acceptNewRxReq = false; }
+    bool newRequestsQuiesced() const { return !acceptNewRxReq; }
+    bool mayGenerateSlcsfIntent() const;
 
     void setRxPort(ChiCommonPort* port) { rxport = port; }
     void setCc(HnfCoherencyController* controller) { cc = controller; }
@@ -280,6 +283,7 @@ class HomeLinkLayer : public ruby::Consumer
     size_t retryAckFifoDepth = 16;
     size_t pcrdGrantFifoDepth = 16;
     bool enableTxRspShortPath = false;
+    bool acceptNewRxReq = true;
 
     void doTxReqArb();
     void doTxSnpArb();
@@ -305,6 +309,7 @@ class HomeLinkLayer : public ruby::Consumer
     bool pipelineHasWork() const;
     bool txQueuesHaveWork() const;
     bool portHasRxFlit() const;
+    bool requestPipelineHasWork() const;
     bool hasHeldRetireToken() const;
     void scheduleNextCycle();
 
