@@ -3,6 +3,7 @@
 
 #include <functional>
 
+#include "base/statistics.hh"
 #include "mem/cache/CHI/HnfSLCSF.hh"
 #include "params/SlcSnoopFilter.hh"
 #include "sim/clocked_object.hh"
@@ -116,6 +117,52 @@ class SlcSnoopFilter : public ClockedObject
     }
 
   private:
+    struct SlcSnoopFilterStats : public statistics::Group,
+                                 public HnfSLCSFStatsSink
+    {
+        SlcSnoopFilterStats(statistics::Group* parent,
+                            const SlcSnoopFilterParams& p);
+
+        void accepted(SlcSfStatOperation operation) override;
+        void sampledOccupancy(size_t req, size_t resp, size_t inflight,
+                              uint64_t cycles, bool req_full,
+                              bool resp_full) override;
+        void issued(uint64_t configured_latency) override;
+        void terminal(const SlcSfResponse& response) override;
+        void becameVisible(uint64_t latency) override;
+        void rejectedNoCredit() override;
+        void stalled(bool set_lock_conflict) override;
+
+        statistics::Scalar lookupOperations;
+        statistics::Scalar fillOperations;
+        statistics::Scalar updateOperations;
+        statistics::Scalar evictOperations;
+        statistics::Scalar missMissLookups;
+        statistics::Scalar slcHitLookups;
+        statistics::Scalar sfHitLookups;
+        statistics::Scalar slcSfHitLookups;
+        statistics::Scalar directedSnoops;
+        statistics::Scalar broadcastSnoops;
+        statistics::Scalar cleanSlcVictims;
+        statistics::Scalar dirtySlcVictims;
+        statistics::Scalar sfVictims;
+        statistics::Scalar staleTokenReplays;
+        statistics::Scalar resourceConflictReplays;
+        statistics::Scalar seqConflictReplays;
+        statistics::Scalar victimBufferFullReplays;
+        statistics::Scalar cancelledReplays;
+        statistics::Scalar requestFullCycles;
+        statistics::Scalar responseFullCycles;
+        statistics::Scalar noCredit;
+        statistics::Scalar serviceStalls;
+        statistics::Scalar setLockConflicts;
+        statistics::Distribution requestOccupancy;
+        statistics::Distribution responseOccupancy;
+        statistics::Distribution inflightOccupancy;
+        statistics::Distribution configuredServiceLatency;
+        statistics::Distribution acceptedToVisibleLatency;
+    } stats;
+
     std::optional<Tick> calculateNextWakeup() const;
     void ensureWakeup();
     void processServiceEvent();

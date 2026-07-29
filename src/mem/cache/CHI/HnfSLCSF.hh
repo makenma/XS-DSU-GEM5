@@ -1,12 +1,14 @@
 #ifndef __HNF_SLCSF_HH__
 #define __HNF_SLCSF_HH__
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 #include "mem/cache/CHI/HnfSLCSFBackend.hh"
@@ -44,6 +46,86 @@ enum class SlcSfSetLockMode : uint8_t
 {
     Read,
     Write
+};
+
+enum class SlcSfStatOperation : uint8_t
+{
+    Lookup,
+    Fill,
+    Update,
+    Evict,
+    NumOperations
+};
+
+enum class SlcSfStatHitCombination : uint8_t
+{
+    MissMiss,
+    SlcHit,
+    SfHit,
+    SlcSfHit,
+    NumCombinations
+};
+
+enum class SlcSfStatVictim : uint8_t
+{
+    CleanSlc,
+    DirtySlc,
+    Sf,
+    NumVictims
+};
+
+constexpr size_t SlcSfReplayReasonCount =
+    static_cast<size_t>(SlcSfReplayReason::Cancelled) + 1;
+
+/** Testable, non-architectural telemetry owned by the timed service. */
+struct HnfSLCSFStatsSnapshot
+{
+    std::array<uint64_t,
+               static_cast<size_t>(SlcSfStatOperation::NumOperations)>
+        operations{};
+    std::array<uint64_t,
+               static_cast<size_t>(SlcSfStatHitCombination::NumCombinations)>
+        hitCombinations{};
+    std::array<uint64_t,
+               static_cast<size_t>(SlcSfStatVictim::NumVictims)>
+        victims{};
+    std::array<uint64_t, SlcSfReplayReasonCount> replayReasons{};
+    uint64_t directedSnoops = 0;
+    uint64_t broadcastSnoops = 0;
+    uint64_t reqFullCycles = 0;
+    uint64_t respFullCycles = 0;
+    uint64_t reqOccupancySamples = 0;
+    uint64_t reqOccupancyTotal = 0;
+    uint64_t reqOccupancyMax = 0;
+    uint64_t respOccupancySamples = 0;
+    uint64_t respOccupancyTotal = 0;
+    uint64_t respOccupancyMax = 0;
+    uint64_t inflightOccupancySamples = 0;
+    uint64_t inflightOccupancyTotal = 0;
+    uint64_t inflightOccupancyMax = 0;
+    uint64_t serviceLatencySamples = 0;
+    uint64_t serviceLatencyTotal = 0;
+    uint64_t acceptedToVisibleSamples = 0;
+    uint64_t acceptedToVisibleLatencyTotal = 0;
+    uint64_t noCredit = 0;
+    uint64_t serviceStalls = 0;
+    uint64_t setLockConflicts = 0;
+};
+
+/** Optional child-owned gem5 statistics sink. */
+class HnfSLCSFStatsSink
+{
+  public:
+    virtual ~HnfSLCSFStatsSink() = default;
+    virtual void accepted(SlcSfStatOperation operation) = 0;
+    virtual void sampledOccupancy(size_t req, size_t resp, size_t inflight,
+                                  uint64_t cycles, bool req_full,
+                                  bool resp_full) = 0;
+    virtual void issued(uint64_t configured_latency) = 0;
+    virtual void terminal(const SlcSfResponse& response) = 0;
+    virtual void becameVisible(uint64_t latency) = 0;
+    virtual void rejectedNoCredit() = 0;
+    virtual void stalled(bool set_lock_conflict) = 0;
 };
 
 struct SlcSfSetLockRequest
@@ -160,7 +242,8 @@ class HnfSLCSF : public HnfSLCSFBackend
     HnfSLCSF(uint32_t block_size, uint32_t slc_num_sets,
              uint32_t slc_num_ways, uint32_t sf_num_sets,
              uint32_t sf_num_ways, uint32_t seq_entries = 8,
-             HnfSLCSFPipelineConfig pipeline_config = {});
+             HnfSLCSFPipelineConfig pipeline_config = {},
+             HnfSLCSFStatsSink* stats_sink = nullptr);
     HnfSLCSF(const HnfSLCSF&) = delete;
     HnfSLCSF& operator=(const HnfSLCSF&) = delete;
     HnfSLCSF(HnfSLCSF&&) = delete;
@@ -228,6 +311,7 @@ class HnfSLCSF : public HnfSLCSFBackend
     /** Pop only ordinary terminal responses; durable Done requires exact ACK. */
     std::optional<SlcSfResponse> popVisibleResponse();
     const HnfSLCSFPipelineConfig& pipelineConfig() const { return config; }
+    const HnfSLCSFStatsSnapshot& statsSnapshot() const { return stats; }
 
     /** Cancel accepted work only while it is still safe to discard. */
     SlcSfCancelResult cancelRequest(
@@ -368,6 +452,8 @@ class HnfSLCSF : public HnfSLCSFBackend
     void checkLifecycle() const;
     void assertRequestAccounting() const;
     void assertResponseAccounting() const;
+    void recordTerminalStats(const SlcSfResponse& response);
+    void recordServiceStall(bool set_lock_conflict = false);
 
     HnfSLCSFPipelineConfig config;
     std::deque<SlcSfRequest> reqIngress;
@@ -399,6 +485,9 @@ class HnfSLCSF : public HnfSLCSFBackend
     uint64_t correctnessReplays = 0;
     uint64_t finishedRequests = 0;
     uint64_t cancelledRequests = 0;
+    HnfSLCSFStatsSnapshot stats;
+    HnfSLCSFStatsSink* statsSink = nullptr;
+    std::unordered_map<uint64_t, uint64_t> acceptedCycles;
     std::function<void()> workAvailableCallback;
 };
 

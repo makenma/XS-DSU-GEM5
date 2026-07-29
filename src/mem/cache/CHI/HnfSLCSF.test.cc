@@ -4908,6 +4908,147 @@ TEST(HnfSlcSfTest, StaleWritebackCannotOverwriteNewOwner)
     EXPECT_EQ(result.snoopTargets, 1ULL << 4);
 }
 
+TEST(HnfSlcSfStatsTest, HitAndTimingCountersHaveExactDeltas)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.lookupLatency = 4;
+    HnfSLCSF model(64, 4, 2, 4, 2, 8, config);
+    const auto data = lineData(0xd1);
+    model.commitRead(TestAddr, 7, PocqTxnKind::ReadShared, data, false);
+
+    const HnfSLCSFStatsSnapshot before = model.statsSnapshot();
+    const SlcSfResponse response = completeLookup(
+        model, lookupRequest(9101, TestAddr, 901, PocqTxnKind::ReadShared, 7));
+    ASSERT_EQ(response.status(), SlcSfTerminalStatus::Done);
+    const HnfSLCSFStatsSnapshot& after = model.statsSnapshot();
+
+    EXPECT_EQ(after.operations[static_cast<size_t>(
+                  SlcSfStatOperation::Lookup)] -
+                  before.operations[static_cast<size_t>(
+                      SlcSfStatOperation::Lookup)],
+              1);
+    EXPECT_EQ(after.hitCombinations[static_cast<size_t>(
+                  SlcSfStatHitCombination::SlcSfHit)] -
+                  before.hitCombinations[static_cast<size_t>(
+                      SlcSfStatHitCombination::SlcSfHit)],
+              1);
+    EXPECT_EQ(after.serviceLatencySamples - before.serviceLatencySamples, 1);
+    EXPECT_EQ(after.serviceLatencyTotal - before.serviceLatencyTotal, 4);
+    EXPECT_EQ(after.acceptedToVisibleSamples -
+                  before.acceptedToVisibleSamples,
+              1);
+    EXPECT_EQ(after.acceptedToVisibleLatencyTotal -
+                  before.acceptedToVisibleLatencyTotal,
+              6);
+    EXPECT_EQ(after.noCredit - before.noCredit, 0);
+}
+
+TEST(HnfSlcSfStatsTest, NoCreditCountsOnlyTheRejectedAttempt)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.reqQueueEntries = 1;
+    config.maxInflight = 1;
+    HnfSLCSF model(64, 4, 2, 4, 2, 8, config);
+    auto accepted = lookupRequest(9102);
+    auto rejected = lookupRequest(9103, TestAddr + 64);
+
+    ASSERT_EQ(model.tryEnqueue(std::move(accepted)),
+              SlcSfEnqueueResult::Accepted);
+    ASSERT_EQ(model.tryEnqueue(std::move(rejected)),
+              SlcSfEnqueueResult::NoCredit);
+    const HnfSLCSFStatsSnapshot& stats = model.statsSnapshot();
+    EXPECT_EQ(stats.operations[static_cast<size_t>(
+                  SlcSfStatOperation::Lookup)],
+              1);
+    EXPECT_EQ(stats.noCredit, 1);
+    EXPECT_EQ(stats.replayReasons[static_cast<size_t>(
+                  SlcSfReplayReason::ResourceConflict)],
+              0);
+    model.wakeup();
+    EXPECT_EQ(model.statsSnapshot().reqFullCycles, 1);
+}
+
+TEST(HnfSlcSfStatsTest, StaleTokenReplayCountsOnceAtTerminal)
+{
+    HnfSLCSF model(64, 4, 2, 4, 2);
+    const SlcSfCommitToken token =
+        completeLookupToken(model, 9104, TestAddr);
+    model.fillCleanShared(TestAddr, 7, lineData(0xe1));
+    const HnfSLCSFStatsSnapshot before = model.statsSnapshot();
+
+    const SlcSfResponse response = completeMutation(
+        model, fillRequest(9105, TestAddr, 905, token, token.lookupReqId));
+    ASSERT_EQ(response.status(), SlcSfTerminalStatus::Replay);
+    EXPECT_EQ(std::get<SlcSfReplay>(response.payload()).reason,
+              SlcSfReplayReason::StaleCommitToken);
+    const HnfSLCSFStatsSnapshot& after = model.statsSnapshot();
+    EXPECT_EQ(after.operations[static_cast<size_t>(
+                  SlcSfStatOperation::Fill)] -
+                  before.operations[static_cast<size_t>(
+                      SlcSfStatOperation::Fill)],
+              1);
+    EXPECT_EQ(after.replayReasons[static_cast<size_t>(
+                  SlcSfReplayReason::StaleCommitToken)] -
+                  before.replayReasons[static_cast<size_t>(
+                      SlcSfReplayReason::StaleCommitToken)],
+              1);
+}
+
+TEST(HnfSlcSfStatsTest, SeqFullReplayCountsOnceWithoutHitOutcome)
+{
+    HnfSLCSF model(64, 4, 2, 1, 1, 1);
+    model.commitRead(
+        TestAddr, 0, PocqTxnKind::ReadUnique, lineData(0xf1), false, 0x90);
+    model.commitRead(
+        TestAddr + 64, 4, PocqTxnKind::ReadUnique, lineData(0xf2), false,
+        0x90);
+    ASSERT_TRUE(model.seqContains(TestAddr));
+    const HnfSLCSFStatsSnapshot before = model.statsSnapshot();
+
+    const SlcSfResponse response = completeLookup(
+        model, lookupRequest(9106, TestAddr, 906));
+    ASSERT_EQ(response.status(), SlcSfTerminalStatus::Replay);
+    EXPECT_EQ(std::get<SlcSfReplay>(response.payload()).reason,
+              SlcSfReplayReason::SeqConflict);
+    const HnfSLCSFStatsSnapshot& after = model.statsSnapshot();
+    EXPECT_EQ(after.replayReasons[static_cast<size_t>(
+                  SlcSfReplayReason::SeqConflict)] -
+                  before.replayReasons[static_cast<size_t>(
+                      SlcSfReplayReason::SeqConflict)],
+              1);
+    EXPECT_EQ(after.acceptedToVisibleSamples -
+                  before.acceptedToVisibleSamples,
+              1);
+    EXPECT_EQ(after.hitCombinations, before.hitCombinations);
+}
+
+TEST(HnfSlcSfStatsTest, DifferentSetConcurrencySamplesTwoInflight)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.maxInflight = 2;
+    config.lookupIssueWidth = 2;
+    config.enableSetLock = true;
+    HnfSLCSF model(64, 8, 2, 8, 2, 8, config);
+    auto first = lookupRequest(9107, TestAddr, 907);
+    auto second = lookupRequest(9108, TestAddr + 64, 908);
+    ASSERT_EQ(model.tryEnqueue(std::move(first)),
+              SlcSfEnqueueResult::Accepted);
+    ASSERT_EQ(model.tryEnqueue(std::move(second)),
+              SlcSfEnqueueResult::Accepted);
+
+    model.wakeup();
+    ASSERT_EQ(model.reqInflightCount(), 2);
+    model.wakeup();
+    const HnfSLCSFStatsSnapshot& stats = model.statsSnapshot();
+    EXPECT_EQ(stats.operations[static_cast<size_t>(
+                  SlcSfStatOperation::Lookup)],
+              2);
+    EXPECT_EQ(stats.serviceLatencySamples, 2);
+    EXPECT_EQ(stats.serviceLatencyTotal, 8);
+    EXPECT_EQ(stats.inflightOccupancyMax, 2);
+    EXPECT_EQ(stats.setLockConflicts, 0);
+}
+
 TEST(HnfSlcSfTest, CheckpointRequiresDrainedState)
 {
     HnfSLCSF model(64, 4, 2, 4, 2);

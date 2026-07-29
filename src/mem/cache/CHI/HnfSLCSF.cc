@@ -38,6 +38,31 @@ requestPipe(const SlcSfRequest& request)
         request);
 }
 
+SlcSfStatOperation
+statOperation(const SlcSfRequest& request)
+{
+    return std::visit(
+        [](const auto& typed_request) {
+            using Request = std::decay_t<decltype(typed_request)>;
+            if constexpr (std::is_same_v<Request, SlcSfLookupReq>) {
+                return SlcSfStatOperation::Lookup;
+            } else if constexpr (std::is_same_v<Request, SlcSfFillReq>) {
+                return SlcSfStatOperation::Fill;
+            } else if constexpr (std::is_same_v<Request, SlcSfUpdateReq>) {
+                return SlcSfStatOperation::Update;
+            } else {
+                return SlcSfStatOperation::Evict;
+            }
+        },
+        request);
+}
+
+size_t
+replayReasonIndex(SlcSfReplayReason reason)
+{
+    return static_cast<size_t>(reason);
+}
+
 const SlcSfReqHeader&
 requestHeader(const SlcSfRequest& request)
 {
@@ -209,13 +234,14 @@ HnfSLCSFSetLockManager::heldLockCount() const
 HnfSLCSF::HnfSLCSF(uint32_t block_size, uint32_t slc_num_sets,
                    uint32_t slc_num_ways, uint32_t sf_num_sets,
                    uint32_t sf_num_ways, uint32_t seq_entries,
-                   HnfSLCSFPipelineConfig pipeline_config)
+                   HnfSLCSFPipelineConfig pipeline_config,
+                   HnfSLCSFStatsSink* stats_sink)
     : HnfSLCSFBackend(block_size, slc_num_sets, slc_num_ways,
                       sf_num_sets, sf_num_ways, seq_entries),
       config(pipeline_config), victimBuffer(config.victimBufferEntries),
       setLocks(slc_num_sets, sf_num_sets),
       completionProducer(std::make_shared<const uint8_t>(0)),
-      visibleReqCredits(config.reqQueueEntries)
+      visibleReqCredits(config.reqQueueEntries), statsSink(stats_sink)
 {
     validateConfig(config);
     assertRequestAccounting();
@@ -397,9 +423,23 @@ HnfSLCSF::tryEnqueue(SlcSfRequest&& request)
     if (visibleReqCredits == 0 ||
         reqOutstanding() == config.reqQueueEntries) {
         ++noCreditRejects;
+        ++stats.noCredit;
+        if (statsSink) {
+            statsSink->rejectedNoCredit();
+        }
         return SlcSfEnqueueResult::NoCredit;
     }
 
+    const auto& header = requestHeader(request);
+    panic_if(acceptedCycles.find(header.reqId.value) != acceptedCycles.end(),
+             "HnfSLCSF duplicate accepted request ID=%llu\n",
+             static_cast<unsigned long long>(header.reqId.value));
+    const SlcSfStatOperation operation = statOperation(request);
+    ++stats.operations[static_cast<size_t>(operation)];
+    acceptedCycles.emplace(header.reqId.value, wakeupCycle);
+    if (statsSink) {
+        statsSink->accepted(operation);
+    }
     reqIngress.push_back(std::move(request));
     --visibleReqCredits;
     assertRequestAccounting();
@@ -436,6 +476,34 @@ HnfSLCSF::wakeup(Tick now, uint64_t elapsedCycles)
     panic_if(elapsedCycles == 0 || elapsedCycles > UINT64_MAX - wakeupCycle,
              "HnfSLCSF invalid elapsed child cycles=%llu\n",
              static_cast<unsigned long long>(elapsedCycles));
+    const size_t req_occupancy = reqOutstanding();
+    const size_t resp_occupancy = respOccupied();
+    const size_t inflight_occupancy = inflightRequests.size();
+    stats.reqOccupancySamples += elapsedCycles;
+    stats.reqOccupancyTotal += req_occupancy * elapsedCycles;
+    stats.reqOccupancyMax = std::max<uint64_t>(
+        stats.reqOccupancyMax, req_occupancy);
+    stats.respOccupancySamples += elapsedCycles;
+    stats.respOccupancyTotal += resp_occupancy * elapsedCycles;
+    stats.respOccupancyMax = std::max<uint64_t>(
+        stats.respOccupancyMax, resp_occupancy);
+    stats.inflightOccupancySamples += elapsedCycles;
+    stats.inflightOccupancyTotal += inflight_occupancy * elapsedCycles;
+    stats.inflightOccupancyMax = std::max<uint64_t>(
+        stats.inflightOccupancyMax, inflight_occupancy);
+    const bool req_full = req_occupancy == config.reqQueueEntries;
+    const bool resp_full = resp_occupancy == config.respQueueEntries;
+    if (req_full) {
+        stats.reqFullCycles += elapsedCycles;
+    }
+    if (resp_full) {
+        stats.respFullCycles += elapsedCycles;
+    }
+    if (statsSink) {
+        statsSink->sampledOccupancy(
+            req_occupancy, resp_occupancy, inflight_occupancy,
+            elapsedCycles, req_full, resp_full);
+    }
     wakeupCycle += elapsedCycles;
     wakeupTick = now;
     if (!initialized) {
@@ -905,6 +973,7 @@ HnfSLCSF::unserializePersistentState(CheckpointIn& cp)
     inflightRequests.clear();
     respPending.clear();
     respVisible.clear();
+    acceptedCycles.clear();
     initialized = true;
     initializationCyclesRemaining = 0;
     drainRequested = false;
@@ -921,6 +990,19 @@ void
 HnfSLCSF::promotePendingResponses()
 {
     while (!respPending.empty()) {
+        const SlcSfReqId req_id = respPending.front().reqId();
+        const auto accepted = acceptedCycles.find(req_id.value);
+        panic_if(accepted == acceptedCycles.end() ||
+                     accepted->second > wakeupCycle,
+                 "HnfSLCSF visible response lacks acceptance cycle ID=%llu\n",
+                 static_cast<unsigned long long>(req_id.value));
+        const uint64_t latency = wakeupCycle - accepted->second;
+        ++stats.acceptedToVisibleSamples;
+        stats.acceptedToVisibleLatencyTotal += latency;
+        if (statsSink) {
+            statsSink->becameVisible(latency);
+        }
+        acceptedCycles.erase(accepted);
         respVisible.push_back(std::move(respPending.front()));
         respPending.pop_front();
     }
@@ -1846,7 +1928,7 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
         } else {
             // Accepted work remains in U1. Contention is a service stall,
             // not another admission attempt and not a correctness Replay.
-            ++serviceStalls;
+            recordServiceStall();
         }
         break;
       case MutationStage::U2ArrayWrite:
@@ -1983,6 +2065,7 @@ HnfSLCSF::finishInflight(
     } else if (reason == FinishReason::Cancelled) {
         ++cancelledRequests;
     }
+    recordTerminalStats(response);
     respPending.push_back(std::move(response));
     ++finishedRequests;
     request.cleanupDone = true;
@@ -1991,6 +2074,69 @@ HnfSLCSF::finishInflight(
     request.terminalReplayReason.reset();
     request.completionLease.reset();
     assertVictimAccounting();
+}
+
+void
+HnfSLCSF::recordTerminalStats(const SlcSfResponse& response)
+{
+    if (response.status() == SlcSfTerminalStatus::Replay) {
+        const auto& replay = std::get<SlcSfReplay>(response.payload());
+        const size_t index = replayReasonIndex(replay.reason);
+        panic_if(index >= stats.replayReasons.size(),
+                 "HnfSLCSF unknown Replay reason\n");
+        ++stats.replayReasons[index];
+    }
+
+    if (const auto* lookup =
+            std::get_if<SlcSfLookupResponse>(&response.payload())) {
+        const HnfSlcLookupResult& result = lookup->result;
+        const size_t hit_index = result.slcHit ?
+            (result.sfHit ?
+                 static_cast<size_t>(SlcSfStatHitCombination::SlcSfHit) :
+                 static_cast<size_t>(SlcSfStatHitCombination::SlcHit)) :
+            (result.sfHit ?
+                 static_cast<size_t>(SlcSfStatHitCombination::SfHit) :
+                 static_cast<size_t>(SlcSfStatHitCombination::MissMiss));
+        ++stats.hitCombinations[hit_index];
+        stats.directedSnoops += result.snoopDirected;
+        stats.broadcastSnoops += result.snoopBroadcast;
+    }
+
+    if (const auto* fill =
+            std::get_if<SlcSfFillResponse>(&response.payload())) {
+        if (fill->slcVictim) {
+            const SlcSfStatVictim kind = fill->slcVictim->line.dirty ?
+                SlcSfStatVictim::DirtySlc : SlcSfStatVictim::CleanSlc;
+            ++stats.victims[static_cast<size_t>(kind)];
+        }
+        if (fill->sfVictim) {
+            ++stats.victims[static_cast<size_t>(SlcSfStatVictim::Sf)];
+        }
+    } else if (const auto* update =
+                   std::get_if<SlcSfUpdateResponse>(&response.payload())) {
+        if (update->sfVictim) {
+            ++stats.victims[static_cast<size_t>(SlcSfStatVictim::Sf)];
+        }
+    } else if (const auto* evict =
+                   std::get_if<SlcSfEvictResponse>(&response.payload())) {
+        if (evict->sfVictim) {
+            ++stats.victims[static_cast<size_t>(SlcSfStatVictim::Sf)];
+        }
+    }
+    if (statsSink) {
+        statsSink->terminal(response);
+    }
+}
+
+void
+HnfSLCSF::recordServiceStall(bool set_lock_conflict)
+{
+    ++serviceStalls;
+    ++stats.serviceStalls;
+    stats.setLockConflicts += set_lock_conflict;
+    if (statsSink) {
+        statsSink->stalled(set_lock_conflict);
+    }
 }
 
 bool
@@ -2053,7 +2199,7 @@ HnfSLCSF::issueReadyRequests()
         if (inflightRequests.size() >= config.maxInflight ||
             respOccupied() >= config.respQueueEntries ||
             *issued == width) {
-            ++serviceStalls;
+            recordServiceStall();
             ++request;
             continue;
         }
@@ -2069,7 +2215,7 @@ HnfSLCSF::issueReadyRequests()
                 pipe == RequestPipe::Lookup ? SlcSfSetLockMode::Read :
                                               SlcSfSetLockMode::Write};
             if (!setLocks.tryAcquire(nextSetLockOwner, lock_request)) {
-                ++serviceStalls;
+                recordServiceStall(true);
                 ++request;
                 continue;
             }
@@ -2098,6 +2244,11 @@ HnfSLCSF::issueReadyRequests()
             early_lookup_replay, false, std::nullopt, std::nullopt,
             std::nullopt, std::nullopt, std::nullopt,
             set_lock_owner});
+        ++stats.serviceLatencySamples;
+        stats.serviceLatencyTotal += latency;
+        if (statsSink) {
+            statsSink->issued(latency);
+        }
         request = reqReady.erase(request);
         ++*issued;
     }
