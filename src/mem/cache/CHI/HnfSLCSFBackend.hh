@@ -107,6 +107,7 @@ class HnfSLCSFBackend
     void completeSfEvict(SeqId id, const std::vector<uint8_t>& data,
                          bool dirty_data);
     bool seqContains(uint64_t block_addr) const;
+    bool seqCompletionMatches(SeqId id, uint64_t block_addr) const;
     size_t seqOccupancy() const;
     size_t seqCapacity() const { return seq.size(); }
     uint64_t currentLookupEpoch() const { return lookupEpoch; }

@@ -1189,10 +1189,8 @@ HnfCoherencyController::stepSeqPocq(const SeqPocqEvent& event)
           case SeqPocqActionKind::QueueCleanInvalid:
             queueSeqSnoops();
             break;
-          case SeqPocqActionKind::CompleteSfEvict:
-            slcsfUnit->completeSfEvict(
-                seqPocqEntry.seqId, seqPocqEntry.data,
-                seqPocqEntry.dataReceived);
+          case SeqPocqActionKind::IssueCompleteSfEvict:
+            tryIssueSeqComplete();
             break;
           case SeqPocqActionKind::Retire:
             DPRINTF(HnfCC, "SEQ POCQ retire id=%llu addr=%#llx\n",
@@ -1202,6 +1200,40 @@ HnfCoherencyController::stepSeqPocq(const SeqPocqEvent& event)
             seqPocqEntry = SeqPocqEntry{};
             break;
         }
+    }
+}
+
+void
+HnfCoherencyController::tryIssueSeqComplete()
+{
+    panic_if(!seqPocqEntry.valid ||
+                 seqPocqEntry.state != SeqPocqState::CompleteIssue,
+             "HnfCC issues inactive SEQ completion\n");
+    if (!seqPocqEntry.pendingComplete) {
+        SlcSfReqHeader header{};
+        header.reqId = slcSfReqIds.allocate();
+        header.pocEntryId = UINT32_MAX;
+        header.lineAddress = seqPocqEntry.blockAddr;
+        header.requester = seqPocqEntry.owner;
+        header.opcode = SnpOp::CleanInvalid;
+        header.trace.linkSequence = seqPocqEntry.seqId;
+        seqPocqEntry.completeReqId = header.reqId;
+        seqPocqEntry.pendingComplete = makeSlcSfCompleteSfEvictReq(
+            header, SlcSfSeqId{seqPocqEntry.seqId}, seqPocqEntry.data,
+            seqPocqEntry.dataReceived);
+    }
+
+    const SlcSfEnqueueResult result =
+        slcsfUnit->tryEnqueue(std::move(*seqPocqEntry.pendingComplete));
+    if (result == SlcSfEnqueueResult::Accepted) {
+        seqPocqEntry.pendingComplete.reset();
+        stepSeqPocq({SeqPocqEventKind::CompleteAccepted});
+    } else {
+        const auto* request =
+            std::get_if<SlcSfUpdateReq>(&*seqPocqEntry.pendingComplete);
+        panic_if(!request ||
+                     request->header.reqId != seqPocqEntry.completeReqId,
+                 "HnfCC rejected SEQ completion changed ownership/id\n");
     }
 }
 
@@ -1494,6 +1526,23 @@ void
 HnfCoherencyController::consumeSlcsfResponse(SlcSfResponse response)
 {
     const uint32_t entryId = response.pocEntryId();
+    if (response.operationKind() == SlcSfOperationKind::CompleteSfEvict) {
+        panic_if(!seqPocqEntry.valid ||
+                     seqPocqEntry.state != SeqPocqState::CompleteWait ||
+                     seqPocqEntry.completeReqId != response.reqId(),
+                 "HnfCC unexpected SEQ completion response req=%llu\n",
+                 static_cast<unsigned long long>(response.reqId().value));
+        panic_if(response.status() != SlcSfTerminalStatus::Done,
+                 "HnfCC SEQ completion req=%llu failed\n",
+                 static_cast<unsigned long long>(response.reqId().value));
+        const auto* update =
+            std::get_if<SlcSfUpdateResponse>(&response.payload());
+        panic_if(!update ||
+                     update->updateKind != SlcSfUpdateKind::CompleteSfEvict,
+                 "HnfCC SEQ completion Done has bad payload\n");
+        stepSeqPocq({SeqPocqEventKind::CompleteDone});
+        return;
+    }
     panic_if(entryId >= entries.size(),
              "HnfCC response has invalid POCQ entry=%u\n", entryId);
     Entry& entry = entries[entryId];
@@ -1612,6 +1661,9 @@ HnfCoherencyController::serviceInternalWork(Tick currentTick)
                seqPocqEntry.state == SeqPocqState::Sleep &&
                !hasMainAddressHazard(seqPocqEntry.blockAddr)) {
         stepSeqPocq({SeqPocqEventKind::HazardClear});
+    } else if (seqPocqEntry.valid &&
+               seqPocqEntry.state == SeqPocqState::CompleteIssue) {
+        tryIssueSeqComplete();
     }
     latchVisibleSlcResponses();
     retrySlcsfReplayEntries(currentTick);

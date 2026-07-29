@@ -1142,6 +1142,14 @@ HnfSLCSFBackend::seqContains(uint64_t block_addr) const
     });
 }
 
+bool
+HnfSLCSFBackend::seqCompletionMatches(SeqId id, uint64_t block_addr) const
+{
+    const SeqEntry* entry = findSeq(id);
+    return entry && entry->victim.issued &&
+        entry->victim.blockAddr == block_addr;
+}
+
 size_t
 HnfSLCSFBackend::seqOccupancy() const
 {

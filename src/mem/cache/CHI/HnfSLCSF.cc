@@ -512,7 +512,7 @@ HnfSLCSF::validateMutationRequest(const SlcSfRequest& request) const
     }
 
     return std::visit(
-        [](const auto& typed_request) -> std::optional<SlcSfError> {
+        [this](const auto& typed_request) -> std::optional<SlcSfError> {
             using Request = std::decay_t<decltype(typed_request)>;
             bool supported = false;
             if constexpr (std::is_same_v<Request, SlcSfFillReq>) {
@@ -542,13 +542,22 @@ HnfSLCSF::validateMutationRequest(const SlcSfRequest& request) const
                     typed_request.operation);
             } else if constexpr (std::is_same_v<Request, SlcSfUpdateReq>) {
                 supported = std::visit(
-                    [](const auto& operation) {
+                    [this, &typed_request](const auto& operation) {
                         using Operation =
                             std::decay_t<decltype(operation)>;
                         if constexpr (std::is_same_v<
                                           Operation,
                                           SlcSfCompleteMaintenance>) {
                             return isMaintenanceTxn(operation.txn);
+                        } else if constexpr (std::is_same_v<
+                                                 Operation,
+                                                 SlcSfCompleteSfEvict>) {
+                            return seqCompletionMatches(
+                                       operation.seqId.value,
+                                       typed_request.header.lineAddress) &&
+                                (!operation.snoopData.dirty ||
+                                 operation.snoopData.data.size() >=
+                                     blockSizeBytes());
                         } else {
                             return std::is_same_v<Operation,
                                                   SlcSfRemoveSharer>;
@@ -576,6 +585,13 @@ HnfSLCSF::validateMutationToken(const SlcSfRequest& request) const
             using Request = std::decay_t<decltype(typed_request)>;
             if constexpr (std::is_same_v<Request, SlcSfLookupReq>) {
                 return false;
+            } else if constexpr (std::is_same_v<Request, SlcSfUpdateReq>) {
+                const bool ownerless = std::holds_alternative<
+                    SlcSfCompleteSfEvict>(typed_request.operation);
+                return ownerless || validateCommitToken(
+                    typed_request.token,
+                    typed_request.sourceLookupReqId,
+                    typed_request.header.lineAddress);
             } else {
                 return validateCommitToken(
                     typed_request.token,
@@ -741,6 +757,13 @@ HnfSLCSF::executeMutation(InflightRequest& request)
                                                  SlcSfRemoveSharer>) {
                             removeSharer(
                                 header.lineAddress, header.requester);
+                        } else if constexpr (std::is_same_v<
+                                                 Operation,
+                                                 SlcSfCompleteSfEvict>) {
+                            completeSfEvict(
+                                operation.seqId.value,
+                                operation.snoopData.data,
+                                operation.snoopData.dirty);
                         }
                     },
                     typed_request.operation);

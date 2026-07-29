@@ -2292,6 +2292,63 @@ TEST(HnfSlcSfMutationServiceTest,
     EXPECT_EQ(response->status(), SlcSfTerminalStatus::Done);
 }
 
+TEST(HnfSlcSfMutationServiceTest,
+     UnknownOrStaleSeqCompletionCannotOverwriteVictim)
+{
+    HnfSLCSF model(64, 4, 2, 1, 1, 2);
+    const uint64_t firstAddr = TestAddr;
+    const uint64_t secondAddr = TestAddr + 64;
+    const uint64_t thirdAddr = TestAddr + 128;
+    const auto data = lineData(0xd8);
+    model.commitRead(
+        firstAddr, 0, PocqTxnKind::ReadUnique, data, false, 0x90);
+    model.commitRead(
+        secondAddr, 4, PocqTxnKind::ReadUnique, data, false, 0x90);
+    const auto firstVictim = model.frontPendingSeq();
+    model.markSeqIssued(firstVictim.id);
+
+    SlcSfReqHeader header{};
+    header.reqId = SlcSfReqId{1500};
+    header.pocEntryId = UINT32_MAX;
+    header.lineAddress = firstAddr;
+    header.requester = firstVictim.owner;
+    auto response = completeLookup(
+        model, makeSlcSfCompleteSfEvictReq(
+            header, SlcSfSeqId{firstVictim.id + 100}, {}, false));
+    EXPECT_EQ(response.status(), SlcSfTerminalStatus::Error);
+    EXPECT_TRUE(model.seqCompletionMatches(firstVictim.id, firstAddr));
+
+    header.reqId = SlcSfReqId{1501};
+    response = completeLookup(
+        model, makeSlcSfCompleteSfEvictReq(
+            header, SlcSfSeqId{firstVictim.id}, {}, false));
+    EXPECT_EQ(response.status(), SlcSfTerminalStatus::Done);
+    EXPECT_EQ(model.seqOccupancy(), 0);
+
+    model.commitRead(
+        thirdAddr, 8, PocqTxnKind::ReadUnique, data, false, 0x90);
+    const auto secondVictim = model.frontPendingSeq();
+    model.markSeqIssued(secondVictim.id);
+    ASSERT_NE(secondVictim.id, firstVictim.id);
+    ASSERT_EQ(secondVictim.blockAddr, secondAddr);
+
+    header.reqId = SlcSfReqId{1502};
+    header.lineAddress = secondAddr;
+    response = completeLookup(
+        model, makeSlcSfCompleteSfEvictReq(
+            header, SlcSfSeqId{firstVictim.id}, {}, false));
+    EXPECT_EQ(response.status(), SlcSfTerminalStatus::Error);
+    EXPECT_TRUE(model.seqCompletionMatches(
+        secondVictim.id, secondVictim.blockAddr));
+
+    header.reqId = SlcSfReqId{1503};
+    response = completeLookup(
+        model, makeSlcSfCompleteSfEvictReq(
+            header, SlcSfSeqId{secondVictim.id}, {}, false));
+    EXPECT_EQ(response.status(), SlcSfTerminalStatus::Done);
+    EXPECT_EQ(model.seqOccupancy(), 0);
+}
+
 TEST(HnfSlcSfLookupPipelineTest, LookupHasConfiguredLatency)
 {
     const HnfSLCSFPipelineConfig config{2, 2, 1, 1, 1, 1, 3};

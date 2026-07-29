@@ -84,6 +84,9 @@ Started: 2026-07-28T20:49:07+08:00
 - Convert a held capacity reservation into occupied storage before installing
   a victim, and carry the copied victim snapshot in the terminal response so
   reservation accounting and delayed handoff have one atomic ownership point.
+- Give internal controller transactions the same explicit issue/wait phases
+  as external entries, retaining one owned request and ID across NoCredit;
+  route their sentinel response namespace before main-entry bounds checks.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -890,4 +893,33 @@ Started: 2026-07-28T20:49:07+08:00
   from the displaced line rather than the incoming replacement, and reserved
   capacity must be consumed before occupancy is created so their sum remains
   bounded at every intermediate point.
+---
+
+## 2026-07-29 11:18 - US-021
+- Story: Complete SF eviction through an asynchronous update
+- What was implemented: Replaced synchronous SEQ completion and retirement
+  with explicit CompleteIssue and CompleteWait graph states. SEQ now owns and
+  retries one typed CompleteSfEvict request, waits for exact terminal response
+  matching, and retires only after Done. The staged update service validates
+  SeqId/address identity, preserves dirty snoop data, applies update latency,
+  and rejects stale or unknown completions without disturbing another victim.
+- Files changed: `src/mem/cache/CHI/HnfSeqPOCQStateGraph.hh`,
+  `src/mem/cache/CHI/HnfSeqPOCQStateGraph.cc`,
+  `src/mem/cache/CHI/HnfSeqPOCQStateGraph.test.cc`,
+  `src/mem/cache/CHI/HnfSLCSFBackend.hh`,
+  `src/mem/cache/CHI/HnfSLCSFBackend.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.cc`, `src/mem/cache/CHI/HnfSLCSF.test.cc`,
+  `src/mem/cache/CHI/HnfCoherencyController.hh`,
+  `src/mem/cache/CHI/HnfCoherencyController.cc`,
+  `src/mem/cache/CHI/HnfCoherencyController.test.cc`, `prd.json`, and
+  `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and all four CHI
+  GTest binaries successfully; all 138 tests passed (18 POCQ, 2 SEQ POCQ,
+  88 SLCSF, and 30 controller), retaining all baseline passes; changed C++
+  files passed `python3 util/style.py --modifications`; `git diff --check`
+  passed.
+- Learnings for future iterations: An internal victim transaction needs the
+  same owned admission retry and exact terminal-response identity as a main
+  POCQ entry; a sentinel response namespace keeps the two ownership domains
+  distinct without weakening bounds checks.
 ---

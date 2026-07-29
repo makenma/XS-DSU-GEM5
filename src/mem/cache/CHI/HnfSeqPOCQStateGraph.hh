@@ -15,7 +15,9 @@ enum class SeqPocqState : uint8_t
     Idle,
     HazardCheck,
     Sleep,
-    WaitSnoop
+    WaitSnoop,
+    CompleteIssue,
+    CompleteWait
 };
 
 enum class SeqPocqEventKind : uint8_t
@@ -23,14 +25,16 @@ enum class SeqPocqEventKind : uint8_t
     Admit,
     HazardBlocked,
     HazardClear,
-    SnoopDone
+    SnoopDone,
+    CompleteAccepted,
+    CompleteDone
 };
 
 enum class SeqPocqActionKind : uint8_t
 {
     CheckHazard,
     QueueCleanInvalid,
-    CompleteSfEvict,
+    IssueCompleteSfEvict,
     Retire
 };
 
@@ -105,6 +109,8 @@ class SEQ_POCQ_StateGraph : public DirectedGraph<SeqPocqNode, SeqPocqEdge>
     SeqPocqNode hazardCheck;
     SeqPocqNode sleep;
     SeqPocqNode waitSnoop;
+    SeqPocqNode completeIssue;
+    SeqPocqNode completeWait;
     std::vector<std::unique_ptr<SeqPocqEdge>> edgeStorage;
 
     const SeqPocqNode& nodeFor(SeqPocqState state) const;

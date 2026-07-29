@@ -69,6 +69,9 @@ class HnfCoherencyController
     SlcSfReqId slcUpdateReqId(uint32_t entry) const;
     PocqState pocqState(uint32_t entry) const;
     Tick slcsfRetryNotBeforeTick(uint32_t entry) const;
+    bool hasActiveSeqPocq() const { return seqPocqEntry.valid; }
+    SlcSfReqId seqCompleteReqId() const
+    { return seqPocqEntry.completeReqId; }
 
     bool hasWork() const;
     bool hasTxReq() const { return !txReqQ.empty(); }
@@ -143,6 +146,8 @@ class HnfCoherencyController
         uint64_t pendingTargets = 0;
         bool dataReceived = false;
         std::vector<uint8_t> data;
+        SlcSfReqId completeReqId{};
+        std::optional<SlcSfRequest> pendingComplete;
     };
 
     HnfSLCSF* slcsfUnit = nullptr;
@@ -199,6 +204,7 @@ class HnfCoherencyController
     void startSeqPocq();
     void stepSeqPocq(const SeqPocqEvent& event);
     void queueSeqSnoops();
+    void tryIssueSeqComplete();
     void completeSeqSnoopTarget(uint32_t responder, bool has_data);
     void retrySlcsfReplayEntries(Tick current_tick);
     void retryPendingSlcLookups();

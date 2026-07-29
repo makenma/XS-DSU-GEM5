@@ -28,6 +28,16 @@ bool isSnoopDone(const SeqPocqEvent& event)
     return event.kind == SeqPocqEventKind::SnoopDone;
 }
 
+bool isCompleteAccepted(const SeqPocqEvent& event)
+{
+    return event.kind == SeqPocqEventKind::CompleteAccepted;
+}
+
+bool isCompleteDone(const SeqPocqEvent& event)
+{
+    return event.kind == SeqPocqEventKind::CompleteDone;
+}
+
 } // anonymous namespace
 
 SeqPocqEdge::SeqPocqEdge(
@@ -47,12 +57,16 @@ SEQ_POCQ_StateGraph::SEQ_POCQ_StateGraph()
     : idle(SeqPocqState::Idle),
       hazardCheck(SeqPocqState::HazardCheck),
       sleep(SeqPocqState::Sleep),
-      waitSnoop(SeqPocqState::WaitSnoop)
+      waitSnoop(SeqPocqState::WaitSnoop),
+      completeIssue(SeqPocqState::CompleteIssue),
+      completeWait(SeqPocqState::CompleteWait)
 {
     addNode(idle);
     addNode(hazardCheck);
     addNode(sleep);
     addNode(waitSnoop);
+    addNode(completeIssue);
+    addNode(completeWait);
 
     addTransition(idle, hazardCheck, isAdmit,
                   {SeqPocqActionKind::CheckHazard});
@@ -61,9 +75,11 @@ SEQ_POCQ_StateGraph::SEQ_POCQ_StateGraph()
                   {SeqPocqActionKind::QueueCleanInvalid});
     addTransition(sleep, waitSnoop, isHazardClear,
                   {SeqPocqActionKind::QueueCleanInvalid});
-    addTransition(waitSnoop, idle, isSnoopDone,
-                  {SeqPocqActionKind::CompleteSfEvict,
-                   SeqPocqActionKind::Retire});
+    addTransition(waitSnoop, completeIssue, isSnoopDone,
+                  {SeqPocqActionKind::IssueCompleteSfEvict});
+    addTransition(completeIssue, completeWait, isCompleteAccepted, {});
+    addTransition(completeWait, idle, isCompleteDone,
+                  {SeqPocqActionKind::Retire});
 }
 
 SeqPocqStepResult
@@ -95,6 +111,8 @@ SEQ_POCQ_StateGraph::nodeFor(SeqPocqState state) const
       case SeqPocqState::HazardCheck: return hazardCheck;
       case SeqPocqState::Sleep: return sleep;
       case SeqPocqState::WaitSnoop: return waitSnoop;
+      case SeqPocqState::CompleteIssue: return completeIssue;
+      case SeqPocqState::CompleteWait: return completeWait;
     }
     assert(false && "Unknown SEQ POCQ state");
     return idle;
@@ -118,6 +136,8 @@ SEQ_POCQ_StateGraph::stateName(SeqPocqState state)
       case SeqPocqState::HazardCheck: return "HazardCheck";
       case SeqPocqState::Sleep: return "Sleep";
       case SeqPocqState::WaitSnoop: return "WaitSnoop";
+      case SeqPocqState::CompleteIssue: return "CompleteIssue";
+      case SeqPocqState::CompleteWait: return "CompleteWait";
     }
     return "Unknown";
 }
@@ -130,6 +150,8 @@ SEQ_POCQ_StateGraph::eventName(SeqPocqEventKind event)
       case SeqPocqEventKind::HazardBlocked: return "HazardBlocked";
       case SeqPocqEventKind::HazardClear: return "HazardClear";
       case SeqPocqEventKind::SnoopDone: return "SnoopDone";
+      case SeqPocqEventKind::CompleteAccepted: return "CompleteAccepted";
+      case SeqPocqEventKind::CompleteDone: return "CompleteDone";
     }
     return "Unknown";
 }
@@ -141,7 +163,8 @@ SEQ_POCQ_StateGraph::actionName(SeqPocqActionKind action)
       case SeqPocqActionKind::CheckHazard: return "CheckHazard";
       case SeqPocqActionKind::QueueCleanInvalid:
         return "QueueCleanInvalid";
-      case SeqPocqActionKind::CompleteSfEvict: return "CompleteSfEvict";
+      case SeqPocqActionKind::IssueCompleteSfEvict:
+        return "IssueCompleteSfEvict";
       case SeqPocqActionKind::Retire: return "Retire";
     }
     return "Unknown";

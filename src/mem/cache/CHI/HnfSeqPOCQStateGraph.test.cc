@@ -24,10 +24,20 @@ TEST(HnfSeqPocqStateGraphTest, NoHazardSnoopsThenCompletes)
 
     step = graph.tryStep(state, {SeqPocqEventKind::SnoopDone});
     ASSERT_TRUE(step.stepped);
+    EXPECT_EQ(state, SeqPocqState::CompleteIssue);
+    ASSERT_EQ(step.actions.size(), 1);
+    EXPECT_EQ(step.actions[0], SeqPocqActionKind::IssueCompleteSfEvict);
+
+    step = graph.tryStep(state, {SeqPocqEventKind::CompleteAccepted});
+    ASSERT_TRUE(step.stepped);
+    EXPECT_EQ(state, SeqPocqState::CompleteWait);
+    EXPECT_TRUE(step.actions.empty());
+
+    step = graph.tryStep(state, {SeqPocqEventKind::CompleteDone});
+    ASSERT_TRUE(step.stepped);
     EXPECT_EQ(state, SeqPocqState::Idle);
-    ASSERT_EQ(step.actions.size(), 2);
-    EXPECT_EQ(step.actions[0], SeqPocqActionKind::CompleteSfEvict);
-    EXPECT_EQ(step.actions[1], SeqPocqActionKind::Retire);
+    ASSERT_EQ(step.actions.size(), 1);
+    EXPECT_EQ(step.actions[0], SeqPocqActionKind::Retire);
 }
 
 TEST(HnfSeqPocqStateGraphTest, AddressHazardSleepsUntilClear)
