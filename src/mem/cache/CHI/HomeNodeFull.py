@@ -14,6 +14,8 @@ class HomeNodeFull(BasicChiComponent):
 
     rxport = SlavePort("CHI RX port")
 
-    # No additional params/ports are declared in the provided C++ headers.
-    # If you later expose sub-components (e.g., linklayer ports) via Params,
-    # add them here and include PARAMS(HomeNodeFull) in C++.
+    # QoS threshold per priority — order matches QosPool::PoolPriority:
+    # [HighHigh, High, Medium, Low]
+    qos_thresholds = VectorParam.Int(
+        [100, 80, 60, 40],
+        "QoS threshold per priority [HH, H, M, L]")

@@ -1,0 +1,9 @@
+CompileFlags:
+  CompilationDatabase: /home/makenma/project/xs-gem5/GEM5
+  Remove:
+    - -gz
+  Add:
+    - -Isrc
+    - -I/home/makenma/project/xs-gem5/GEM5/build/clangd-deps/zstd-root/usr/include
+    - -I/home/makenma/project/xs-gem5/GEM5/build/clangd-deps/sqlite-root/usr/include
+    - -Wno-c99-designator

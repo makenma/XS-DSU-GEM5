@@ -22,7 +22,7 @@ class HomeLinkLayer :  public ruby::Consumer
         template<typename FlitType>
         using MemFn = void (HomeLinkLayer::*)(FlitType*);
 
-        HomeLinkLayer(HomeNodeFull *HNF);
+        HomeLinkLayer(HomeNodeFull *HNF, const std::array<int, 4>& thresholds);
         void wakeup();
         void print(std::ostream& out) const {};
         inline void setRxPort(ChiCommonPort* port) { rxport = port; }
@@ -37,6 +37,48 @@ class HomeLinkLayer :  public ruby::Consumer
             RawSnp{},
             RawDat{}
         };
+        struct QosPool
+        {
+            enum PoolDim { QosCount, QosThreshold, PoolDimNum };
+            enum PoolPriority { HighHigh, High, Medium, Low, PoolPriorityNum };
+            std::array<std::array<int, PoolDimNum>, PoolPriorityNum> pool = {};
+
+            PoolPriority WhichPriority(int qos){
+                switch (qos) {
+                    case 15:          return HighHigh;
+                    case 12 ... 14:   return High;
+                    case 8 ... 11:    return Medium;
+                    case 0 ... 7:     return Low;
+                    default:          return Low;
+                }
+            }
+
+            bool is_QosAvail(int qos, PoolPriority Pri)
+            {
+                for (int p = Pri; p < PoolPriorityNum; ++p) {
+                    if (pool[QosCount][p] + 1 <= pool[QosThreshold][p]) {
+                        pool[QosCount][p]++;
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            bool enqueue(int qos){
+                PoolPriority Pri;
+                Pri  = WhichPriority(qos);
+                return is_QosAvail(qos, Pri);
+            }
+
+            QosPool() = default;
+            QosPool(const std::array<int, PoolPriorityNum>& thresholds) {
+                for (int p = 0; p < PoolPriorityNum; ++p) {
+                    pool[p][QosCount]     = 0;
+                    pool[p][QosThreshold] = thresholds[p];
+                }
+            }
+        };
+        QosPool m_qosPool;
         std::array<MemFn<RawReq>, 4> reqFuncs;
         std::array<MemFn<RawRsp>, 4> rspFuncs;
         std::array<MemFn<RawSnp>, 4> snpFuncs;

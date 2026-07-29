@@ -11,10 +11,19 @@ namespace gem5::Chi
 {
 
 
+static std::array<int, 4>
+buildThresholds(const HomeNodeFullParams& p)
+{
+    std::array<int, 4> th = {};
+    for (std::size_t i = 0; i < p.qos_thresholds.size() && i < 4; ++i)
+        th[i] = p.qos_thresholds[i];
+    return th;
+}
+
 HomeNodeFull::HomeNodeFull(const HomeNodeFullParams& p)
     : BasicChiComponent(p),
     Consumer(this),
-    linklayer( this),
+    linklayer( this, buildThresholds(p)),
     rxport(p.name + ".rxport", static_cast<ruby::Consumer*>(this),/*PortID*/ 0)
 {
     std::cout<<"HomeNodeFull constructed with name: "<<p.name<<std::endl;
