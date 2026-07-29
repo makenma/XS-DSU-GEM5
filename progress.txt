@@ -51,6 +51,9 @@ Started: 2026-07-28T20:49:07+08:00
   terminal Replay responses with absolute retry deadlines.
 - Preflight unsupported dirty SLC displacement before acquiring transient
   resources, while recognizing semantic no-op writes that need no allocation.
+- Revalidate a versioned mutation snapshot immediately before the sole write
+  after any resource stall, and use its recorded ways for both preflight and
+  allocation so replacement touches cannot redirect the commit.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -602,4 +605,27 @@ Started: 2026-07-28T20:49:07+08:00
   part of its in-flight ownership through invariant checking and terminal
   latching; resource preflight must reject unsupported displacement before any
   partial reservation while preserving backend-defined no-op behavior.
+---
+
+## 2026-07-29 08:24 - US-013
+- Story: Emit side-effect-free Replay for stale mutation tokens
+- What was implemented: Completed the acceptance recovery with independently
+  retained source lookup IDs, U0 and immediate-pre-U2 token validation, and
+  token-directed SLC/SF preflight and allocation. Exact-target SF reservations
+  now upgrade atomically when necessary, and every terminal path releases
+  adopted resources exactly once without allowing a stale persistent write.
+- Files changed: `src/mem/cache/CHI/HnfSLCSFRequest.hh`,
+  `src/mem/cache/CHI/HnfSLCSFBackend.hh`,
+  `src/mem/cache/CHI/HnfSLCSFBackend.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.test.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and all four CHI
+  GTest binaries from the newest source timestamps; all 99 tests passed
+  (15 POCQ, 2 SEQ POCQ, 68 SLCSF, and 14 controller), retaining all 36
+  baseline passes; changed C++ files passed `python3 util/style.py`;
+  `git diff --check` passed.
+- Learnings for future iterations: Never infer an expected identity from the
+  untrusted token being checked. Exact-target resource preflight must ignore
+  unrelated free ways, upgrade an adopted reservation atomically, and retain
+  cleanup ownership on early terminal paths as well as successful writes.
 ---

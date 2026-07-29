@@ -86,6 +86,33 @@ makeBackendLookupRequest(const SlcSfLookupReq& request)
     return backend_request;
 }
 
+HnfSLCSFBackend::LookupSnapshot
+mutationTarget(const SlcSfRequest& request)
+{
+    return std::visit(
+        [](const auto& typed_request) {
+            using Request = std::decay_t<decltype(typed_request)>;
+            HnfSLCSFBackend::LookupSnapshot target{};
+            if constexpr (std::is_same_v<Request, SlcSfLookupReq>) {
+                panic("HnfSLCSF lookup request has no mutation target\n");
+            } else {
+                target.lookupEpoch = typed_request.token.lookupEpoch;
+                target.slc = HnfSLCSFBackend::ArraySnapshot{
+                    typed_request.token.slc.hit,
+                    typed_request.token.slc.set,
+                    typed_request.token.slc.way,
+                    typed_request.token.slc.generation, 0};
+                target.sf = HnfSLCSFBackend::ArraySnapshot{
+                    typed_request.token.sf.hit,
+                    typed_request.token.sf.set,
+                    typed_request.token.sf.way,
+                    typed_request.token.sf.generation, 0};
+            }
+            return target;
+        },
+        request);
+}
+
 } // anonymous namespace
 
 HnfSLCSF::HnfSLCSF(uint32_t block_size, uint32_t slc_num_sets,
@@ -394,7 +421,7 @@ HnfSLCSF::validateMutationToken(const SlcSfRequest& request) const
             } else {
                 return validateCommitToken(
                     typed_request.token,
-                    typed_request.token.lookupReqId,
+                    typed_request.sourceLookupReqId,
                     typed_request.header.lineAddress);
             }
         },
@@ -404,21 +431,23 @@ HnfSLCSF::validateMutationToken(const SlcSfRequest& request) const
 bool
 HnfSLCSF::prepareMutationResources(InflightRequest& request)
 {
+    const LookupSnapshot target = mutationTarget(request.request);
     const auto prepare =
-        [this, &request](PocqTxnKind txn, bool may_allocate_slc,
-                         bool write_line) {
+        [this, &request, &target](PocqTxnKind txn, bool may_allocate_slc,
+                                  bool write_line) {
         const auto& header = requestHeader(request.request);
         if (may_allocate_slc) {
             const bool displaces_dirty = write_line ?
                 writeLineWouldDisplaceDirty(
-                    header.lineAddress, header.requester, txn) :
-                slcAllocationWouldDisplaceDirty(header.lineAddress);
+                    header.lineAddress, header.requester, txn, &target) :
+                slcAllocationWouldDisplaceDirty(
+                    header.lineAddress, &target);
             if (displaces_dirty) {
                 return false;
             }
         }
         if (!tryReserveSfResources(
-                header.pocEntryId, header.lineAddress, txn)) {
+                header.pocEntryId, header.lineAddress, txn, &target)) {
             return false;
         }
         request.resourcesPrepared = hasSfReservation(header.pocEntryId);
@@ -479,12 +508,13 @@ void
 HnfSLCSF::executeMutation(InflightRequest& request)
 {
     const SlcSfReqHeader& header = requestHeader(request.request);
+    const LookupSnapshot target = mutationTarget(request.request);
     std::visit(
-        [this, &header](const auto& typed_request) {
+        [this, &header, &target](const auto& typed_request) {
             using Request = std::decay_t<decltype(typed_request)>;
             if constexpr (std::is_same_v<Request, SlcSfFillReq>) {
                 std::visit(
-                    [this, &header](const auto& operation) {
+                    [this, &header, &target](const auto& operation) {
                         using Operation =
                             std::decay_t<decltype(operation)>;
                         if constexpr (std::is_same_v<
@@ -493,26 +523,26 @@ HnfSLCSF::executeMutation(InflightRequest& request)
                                 header.lineAddress, header.requester,
                                 operation.txn, operation.line.data,
                                 operation.line.dirty,
-                                operation.homeNodeId);
+                                operation.homeNodeId, &target);
                         } else if constexpr (std::is_same_v<
                                                  Operation,
                                                  SlcSfFillCleanShared>) {
                             fillCleanShared(
                                 header.lineAddress, header.requester,
-                                operation.line.data);
+                                operation.line.data, &target);
                         } else if constexpr (std::is_same_v<
                                                  Operation,
                                                  SlcSfWriteLine>) {
                             writeLine(
                                 header.lineAddress, header.requester,
                                 operation.line.data, operation.txn,
-                                operation.homeNodeId);
+                                operation.homeNodeId, &target);
                         }
                     },
                     typed_request.operation);
             } else if constexpr (std::is_same_v<Request, SlcSfUpdateReq>) {
                 std::visit(
-                    [this, &header](const auto& operation) {
+                    [this, &header, &target](const auto& operation) {
                         using Operation =
                             std::decay_t<decltype(operation)>;
                         if constexpr (std::is_same_v<
@@ -520,7 +550,8 @@ HnfSLCSF::executeMutation(InflightRequest& request)
                                           SlcSfCompleteMaintenance>) {
                             completeMaintenance(
                                 header.lineAddress, header.requester,
-                                operation.txn, operation.homeNodeId);
+                                operation.txn, operation.homeNodeId,
+                                &target);
                         } else if constexpr (std::is_same_v<
                                                  Operation,
                                                  SlcSfRemoveSharer>) {
@@ -540,6 +571,8 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
 {
     switch (*request.mutationStage) {
       case MutationStage::U0DecodeValidate: {
+        request.resourcesPrepared = hasSfReservation(
+            requestHeader(request.request).pocEntryId);
         // Invoke the always-on validator for every mutation category. Decode
         // errors retain priority in the terminal status, but validation still
         // remains part of the common U0 boundary.
@@ -571,12 +604,39 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
         break;
       }
       case MutationStage::U1PrepareResources:
-        if (prepareMutationResources(request)) {
+        if (!validateMutationToken(request.request)) {
+            panic_if(config.replayPenalty > MaxTick - wakeupTick,
+                     "HnfSLCSF stale-token retry tick overflows");
+            request.terminalResponse = std::visit(
+                [this](const auto& typed_request) {
+                    return makeSlcSfReplayResponse(
+                        typed_request,
+                        SlcSfReplay{
+                            SlcSfReplayReason::StaleCommitToken,
+                            wakeupTick + config.replayPenalty, true});
+                },
+                request.request);
+            request.mutationStage = MutationStage::U3CheckLatch;
+        } else if (prepareMutationResources(request)) {
             request.mutationStage = MutationStage::U2ArrayWrite;
         }
         break;
       case MutationStage::U2ArrayWrite:
-        executeMutation(request);
+        if (!validateMutationToken(request.request)) {
+            panic_if(config.replayPenalty > MaxTick - wakeupTick,
+                     "HnfSLCSF stale-token retry tick overflows");
+            request.terminalResponse = std::visit(
+                [this](const auto& typed_request) {
+                    return makeSlcSfReplayResponse(
+                        typed_request,
+                        SlcSfReplay{
+                            SlcSfReplayReason::StaleCommitToken,
+                            wakeupTick + config.replayPenalty, true});
+                },
+                request.request);
+        } else {
+            executeMutation(request);
+        }
         request.mutationStage = MutationStage::U3CheckLatch;
         break;
       case MutationStage::U3CheckLatch:

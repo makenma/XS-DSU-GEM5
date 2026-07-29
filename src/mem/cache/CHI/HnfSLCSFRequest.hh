@@ -229,6 +229,7 @@ struct SlcSfFillReq
     SlcSfReqHeader header{};
     SlcSfFillOperation operation{};
     SlcSfCommitToken token{};
+    SlcSfReqId sourceLookupReqId{};
 
     SlcSfUpdateKind kind() const;
 };
@@ -273,6 +274,7 @@ struct SlcSfUpdateReq
     SlcSfReqHeader header{};
     SlcSfUpdateOperation operation{};
     SlcSfCommitToken token{};
+    SlcSfReqId sourceLookupReqId{};
 
     SlcSfUpdateKind kind() const;
 };
@@ -294,6 +296,7 @@ struct SlcSfEvictReq
     SlcSfReqHeader header{};
     SlcSfEvictOperation operation{};
     SlcSfCommitToken token{};
+    SlcSfReqId sourceLookupReqId{};
 
     SlcSfUpdateKind kind() const;
 };
@@ -339,41 +342,48 @@ makeSlcSfCommitReadReq(SlcSfReqHeader header, PocqTxnKind txn,
                        std::vector<uint8_t> data, bool dirty,
                        uint32_t home_node_id = 0,
                        std::vector<uint8_t> byte_mask = {},
-                       SlcSfCommitToken token = {})
+                       SlcSfCommitToken token = {},
+                       SlcSfReqId source_lookup_req_id = {})
 {
     SlcSfCacheLine line{std::move(data), std::move(byte_mask), dirty};
     return SlcSfFillReq{
         std::move(header),
-        SlcSfCommitRead{txn, home_node_id, std::move(line)}, token};
+        SlcSfCommitRead{txn, home_node_id, std::move(line)}, token,
+        source_lookup_req_id};
 }
 
 inline SlcSfFillReq
 makeSlcSfFillCleanSharedReq(SlcSfReqHeader header,
                             std::vector<uint8_t> data,
                             std::vector<uint8_t> byte_mask = {},
-                            SlcSfCommitToken token = {})
+                            SlcSfCommitToken token = {},
+                            SlcSfReqId source_lookup_req_id = {})
 {
     SlcSfCacheLine line{std::move(data), std::move(byte_mask), false};
     return SlcSfFillReq{
-        std::move(header), SlcSfFillCleanShared{std::move(line)}, token};
+        std::move(header), SlcSfFillCleanShared{std::move(line)}, token,
+        source_lookup_req_id};
 }
 
 inline SlcSfUpdateReq
 makeSlcSfCompleteMaintenanceReq(SlcSfReqHeader header, PocqTxnKind txn,
                                 uint32_t home_node_id = 0,
-                                SlcSfCommitToken token = {})
+                                SlcSfCommitToken token = {},
+                                SlcSfReqId source_lookup_req_id = {})
 {
     return SlcSfUpdateReq{
         std::move(header), SlcSfCompleteMaintenance{txn, home_node_id},
-        token};
+        token, source_lookup_req_id};
 }
 
 inline SlcSfUpdateReq
 makeSlcSfRemoveSharerReq(SlcSfReqHeader header,
-                         SlcSfCommitToken token = {})
+                         SlcSfCommitToken token = {},
+                         SlcSfReqId source_lookup_req_id = {})
 {
     return SlcSfUpdateReq{
-        std::move(header), SlcSfRemoveSharer{}, token};
+        std::move(header), SlcSfRemoveSharer{}, token,
+        source_lookup_req_id};
 }
 
 inline SlcSfFillReq
@@ -381,58 +391,71 @@ makeSlcSfWriteLineReq(SlcSfReqHeader header, std::vector<uint8_t> data,
                       PocqTxnKind txn = PocqTxnKind::WriteUnique,
                       uint32_t home_node_id = 0,
                       std::vector<uint8_t> byte_mask = {},
-                      SlcSfCommitToken token = {})
+                      SlcSfCommitToken token = {},
+                      SlcSfReqId source_lookup_req_id = {})
 {
     const bool dirty = txn != PocqTxnKind::WriteCleanFull;
     SlcSfCacheLine line{std::move(data), std::move(byte_mask), dirty};
     return SlcSfFillReq{
         std::move(header),
-        SlcSfWriteLine{txn, home_node_id, std::move(line)}, token};
+        SlcSfWriteLine{txn, home_node_id, std::move(line)}, token,
+        source_lookup_req_id};
 }
 
 inline SlcSfEvictReq
-makeSlcSfFlushSfReq(SlcSfReqHeader header, SlcSfCommitToken token = {})
+makeSlcSfFlushSfReq(SlcSfReqHeader header, SlcSfCommitToken token = {},
+                    SlcSfReqId source_lookup_req_id = {})
 {
-    return SlcSfEvictReq{std::move(header), SlcSfFlushSf{}, token};
+    return SlcSfEvictReq{
+        std::move(header), SlcSfFlushSf{}, token,
+        source_lookup_req_id};
 }
 
 inline SlcSfEvictReq
-makeSlcSfFlushL3Req(SlcSfReqHeader header, SlcSfCommitToken token = {})
+makeSlcSfFlushL3Req(SlcSfReqHeader header, SlcSfCommitToken token = {},
+                    SlcSfReqId source_lookup_req_id = {})
 {
-    return SlcSfEvictReq{std::move(header), SlcSfFlushL3{}, token};
+    return SlcSfEvictReq{
+        std::move(header), SlcSfFlushL3{}, token,
+        source_lookup_req_id};
 }
 
 inline SlcSfFillReq
 makeSlcSfWriteL3FlushSfReq(SlcSfReqHeader header,
                            std::vector<uint8_t> data,
                            std::vector<uint8_t> byte_mask = {},
-                           SlcSfCommitToken token = {})
+                           SlcSfCommitToken token = {},
+                           SlcSfReqId source_lookup_req_id = {})
 {
     SlcSfCacheLine line{std::move(data), std::move(byte_mask), true};
     return SlcSfFillReq{
-        std::move(header), SlcSfWriteL3FlushSf{std::move(line)}, token};
+        std::move(header), SlcSfWriteL3FlushSf{std::move(line)}, token,
+        source_lookup_req_id};
 }
 
 inline SlcSfUpdateReq
 makeSlcSfCompleteSfEvictReq(SlcSfReqHeader header, SlcSfSeqId seq_id,
                             std::vector<uint8_t> data, bool dirty,
                             std::vector<uint8_t> byte_mask = {},
-                            SlcSfCommitToken token = {})
+                            SlcSfCommitToken token = {},
+                            SlcSfReqId source_lookup_req_id = {})
 {
     SlcSfSnoopData snoop{
         std::move(data), std::move(byte_mask), dirty};
     return SlcSfUpdateReq{
         std::move(header), SlcSfCompleteSfEvict{seq_id, std::move(snoop)},
-        token};
+        token, source_lookup_req_id};
 }
 
 inline SlcSfUpdateReq
 makeSlcSfReleaseDirtyVictimReq(SlcSfReqHeader header,
                                SlcSfVictimId victim_id,
-                               SlcSfCommitToken token = {})
+                               SlcSfCommitToken token = {},
+                               SlcSfReqId source_lookup_req_id = {})
 {
     return SlcSfUpdateReq{
-        std::move(header), SlcSfReleaseDirtyVictim{victim_id}, token};
+        std::move(header), SlcSfReleaseDirtyVictim{victim_id}, token,
+        source_lookup_req_id};
 }
 
 }  // namespace gem5::Chi

@@ -62,24 +62,29 @@ class HnfSLCSFBackend
     HnfSlcLookupResult lookup(
         const HnfSlcLookupReq& req, LookupSnapshot* snapshot = nullptr);
     bool tryReserveSfResources(uint32_t entry, uint64_t block_addr,
-                               PocqTxnKind txn);
+                               PocqTxnKind txn,
+                               const LookupSnapshot* target = nullptr);
     void releaseSfResources(uint32_t entry);
     bool hasSfReservation(uint32_t entry) const;
     size_t sfReservationCount() const { return sfReservations.size(); }
     size_t seqReservationCount() const { return reservedSeqSlots; }
     void commitRead(uint64_t block_addr, uint32_t requester,
                     PocqTxnKind txn, const std::vector<uint8_t>& data,
-                    bool data_dirty, uint32_t home_node_id = 0);
+                    bool data_dirty, uint32_t home_node_id = 0,
+                    const LookupSnapshot* target = nullptr);
     void completeMaintenance(uint64_t block_addr, uint32_t requester,
                              PocqTxnKind txn,
-                             uint32_t home_node_id = 0);
+                             uint32_t home_node_id = 0,
+                             const LookupSnapshot* target = nullptr);
     void removeSharer(uint64_t block_addr, uint32_t requester);
     void fillCleanShared(uint64_t block_addr, uint32_t requester,
-                         const std::vector<uint8_t>& data);
+                         const std::vector<uint8_t>& data,
+                         const LookupSnapshot* target = nullptr);
     void writeLine(uint64_t block_addr, uint32_t requester,
                    const std::vector<uint8_t>& data,
                    PocqTxnKind txn = PocqTxnKind::WriteUnique,
-                   uint32_t home_node_id = 0);
+                   uint32_t home_node_id = 0,
+                   const LookupSnapshot* target = nullptr);
     void flushSf(uint64_t block_addr);
     void flushL3(uint64_t block_addr);
     void writeL3FlushSf(uint64_t block_addr, uint32_t requester,
@@ -98,9 +103,11 @@ class HnfSLCSFBackend
     uint32_t blockSizeBytes() const { return blockSize; }
 
     /** Report an unsupported dirty SLC displacement without changing state. */
-    bool slcAllocationWouldDisplaceDirty(uint64_t block_addr) const;
+    bool slcAllocationWouldDisplaceDirty(
+        uint64_t block_addr, const LookupSnapshot* target = nullptr) const;
     bool writeLineWouldDisplaceDirty(
-        uint64_t block_addr, uint32_t requester, PocqTxnKind txn) const;
+        uint64_t block_addr, uint32_t requester, PocqTxnKind txn,
+        const LookupSnapshot* target = nullptr) const;
 
     /** Validate a prior lookup snapshot without consulting replacement order. */
     bool validateLookupSnapshot(
@@ -180,9 +187,12 @@ class HnfSLCSFBackend
     const SlcLine* findSlc(uint64_t block_addr) const;
     SfLine* findSf(uint64_t block_addr);
     const SfLine* findSf(uint64_t block_addr) const;
-    SlcLine& allocateSlc(uint64_t block_addr);
-    SfLine& allocateSf(uint64_t block_addr, uint32_t home_node_id);
-    const SfLine* selectSfVictim(uint64_t block_addr) const;
+    SlcLine& allocateSlc(uint64_t block_addr,
+                         const ArraySnapshot* target = nullptr);
+    SfLine& allocateSf(uint64_t block_addr, uint32_t home_node_id,
+                       const ArraySnapshot* target = nullptr);
+    const SfLine* selectSfVictim(
+        uint64_t block_addr, const ArraySnapshot* target = nullptr) const;
     LookupSnapshot snapshotLookup(uint64_t block_addr) const;
     void recordAccess(uint64_t block_addr);
     bool sfAllocationWouldReplay(
@@ -195,7 +205,8 @@ class HnfSLCSFBackend
     SeqEntry* findSeq(SeqId id);
     const SeqEntry* findSeq(SeqId id) const;
     void installSlc(uint64_t block_addr, HnfSlcState state,
-                    uint32_t requester, const std::vector<uint8_t>& data);
+                    uint32_t requester, const std::vector<uint8_t>& data,
+                    const ArraySnapshot* target = nullptr);
     void invalidateSlc(uint64_t block_addr);
     void invalidateSf(uint64_t block_addr);
 };
