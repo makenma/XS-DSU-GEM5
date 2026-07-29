@@ -75,6 +75,16 @@ SlcSnoopFilter::drainResume()
     }
 }
 
+void
+SlcSnoopFilter::serialize(CheckpointOut& cp) const
+{
+    panic_if(serviceEvent.scheduled(),
+             "%s cannot checkpoint with a scheduled service event\n", name());
+    ClockedObject::serialize(cp);
+    Serializable::ScopedCheckpointSection section(cp, "slcsf");
+    slcsf.serializePersistentState(cp);
+}
+
 std::optional<Tick>
 SlcSnoopFilter::calculateNextWakeup() const
 {

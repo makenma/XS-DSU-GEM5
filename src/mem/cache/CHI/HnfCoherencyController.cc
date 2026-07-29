@@ -2323,6 +2323,17 @@ HnfCoherencyController::mayGenerateSlcsfIntent() const
                     });
 }
 
+void
+HnfCoherencyController::serializeSlcsfIdentityState(CheckpointOut& cp) const
+{
+    panic_if(hasWork() || mayGenerateSlcsfIntent() ||
+                 !deferredRetireQ.empty(),
+             "HNF CC checkpoint requires no deferred retire or active owner\n");
+    paramOut(cp, "nextRequestId", slcSfReqIds.nextValue());
+    paramOut(cp, "nextSnoopTransactionId", nextSnoopTxnId);
+    paramOut(cp, "nextDirtyVictimTransactionId", nextDirtyVictimTxnId);
+}
+
 bool
 HnfCoherencyController::hasWork() const
 {

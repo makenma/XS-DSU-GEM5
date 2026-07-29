@@ -106,6 +106,7 @@ class SlcSnoopFilter : public ClockedObject
     void startup() override;
     DrainState drain() override;
     void drainResume() override;
+    void serialize(CheckpointOut& cp) const override;
 
     /** Register the owner callback used only to request a future wakeup. */
     void setFutureWakeupCallback(std::function<void(Tick)> callback)

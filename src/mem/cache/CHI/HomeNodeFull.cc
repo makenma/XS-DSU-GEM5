@@ -94,6 +94,18 @@ HomeNodeFull::drainResume()
 }
 
 void
+HomeNodeFull::serialize(CheckpointOut& cp) const
+{
+    panic_if(!d1Active || !d1Complete || !d2Active || hasLinkWork() ||
+                 !slcsf->admissionSealed() || !slcsf->completelyIdle(),
+             "%s checkpoint requires coordinated parent/SLCSF drain\n",
+             name());
+    BasicChiComponent::serialize(cp);
+    Serializable::ScopedCheckpointSection section(cp, "slcsfRequester");
+    cc.serializeSlcsfIdentityState(cp);
+}
+
+void
 HomeNodeFull::print(std::ostream& out) const
 {
     out << "HomeNodeFull(" << name() << ")";

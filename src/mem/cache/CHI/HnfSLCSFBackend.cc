@@ -1723,4 +1723,147 @@ HnfSLCSFBackend::checkLineInvariant(uint64_t block_addr) const
              static_cast<unsigned long long>(sfLine->sharers), slcLine != nullptr);
 }
 
+void
+HnfSLCSFBackend::serializePersistentState(CheckpointOut& cp) const
+{
+    panic_if(isBusy(),
+             "HnfSLCSF checkpoint requires drained backend state\n");
+
+    constexpr uint32_t format_version = 1;
+    paramOut(cp, "formatVersion", format_version);
+    paramOut(cp, "blockSize", blockSize);
+    paramOut(cp, "slcSets", slcSets);
+    paramOut(cp, "slcWays", slcWays);
+    paramOut(cp, "sfSets", sfSets);
+    paramOut(cp, "sfWays", sfWays);
+    paramOut(cp, "seqEntries", seq.size());
+    paramOut(cp, "accessCounter", accessCounter);
+    paramOut(cp, "lookupEpoch", lookupEpoch);
+    paramOut(cp, "lookupAccessCount", lookupAccessCount);
+    paramOut(cp, "nextSeqId", nextSeqId);
+
+    std::vector<uint32_t> slc_valid;
+    std::vector<uint64_t> slc_tag;
+    std::vector<uint32_t> slc_state;
+    std::vector<uint32_t> slc_owner;
+    std::vector<uint64_t> slc_generation;
+    std::vector<uint64_t> slc_last_use;
+    std::vector<uint64_t> slc_data_size;
+    std::vector<uint32_t> slc_data;
+    const size_t slc_lines = static_cast<size_t>(slcSets) * slcWays;
+    slc_valid.reserve(slc_lines);
+    slc_tag.reserve(slc_lines);
+    slc_state.reserve(slc_lines);
+    slc_owner.reserve(slc_lines);
+    slc_generation.reserve(slc_lines);
+    slc_last_use.reserve(slc_lines);
+    slc_data_size.reserve(slc_lines);
+    for (const auto& set : slc) {
+        for (const SlcLine& line : set) {
+            slc_valid.push_back(line.valid);
+            slc_tag.push_back(line.tag);
+            slc_state.push_back(static_cast<uint32_t>(line.state));
+            slc_owner.push_back(line.owner);
+            slc_generation.push_back(line.generation);
+            slc_last_use.push_back(line.lastUse);
+            slc_data_size.push_back(line.data.size());
+            for (uint8_t byte : line.data) {
+                slc_data.push_back(byte);
+            }
+        }
+    }
+    arrayParamOut(cp, "slcValid", slc_valid);
+    arrayParamOut(cp, "slcTag", slc_tag);
+    arrayParamOut(cp, "slcState", slc_state);
+    arrayParamOut(cp, "slcOwner", slc_owner);
+    arrayParamOut(cp, "slcGeneration", slc_generation);
+    arrayParamOut(cp, "slcReplacementStamp", slc_last_use);
+    arrayParamOut(cp, "slcDataSize", slc_data_size);
+    arrayParamOut(cp, "slcData", slc_data);
+
+    std::vector<uint32_t> sf_valid;
+    std::vector<uint64_t> sf_tag;
+    std::vector<uint32_t> sf_state;
+    std::vector<uint32_t> sf_home_node;
+    std::vector<uint32_t> sf_owner;
+    std::vector<uint64_t> sf_sharers;
+    std::vector<uint64_t> sf_generation;
+    std::vector<uint64_t> sf_last_use;
+    const size_t sf_lines = static_cast<size_t>(sfSets) * sfWays;
+    sf_valid.reserve(sf_lines);
+    sf_tag.reserve(sf_lines);
+    sf_state.reserve(sf_lines);
+    sf_home_node.reserve(sf_lines);
+    sf_owner.reserve(sf_lines);
+    sf_sharers.reserve(sf_lines);
+    sf_generation.reserve(sf_lines);
+    sf_last_use.reserve(sf_lines);
+    for (const auto& set : sf) {
+        for (const SfLine& line : set) {
+            sf_valid.push_back(line.valid);
+            sf_tag.push_back(line.tag);
+            sf_state.push_back(static_cast<uint32_t>(line.state));
+            sf_home_node.push_back(line.homeNodeId);
+            sf_owner.push_back(line.owner);
+            sf_sharers.push_back(line.sharers);
+            sf_generation.push_back(line.generation);
+            sf_last_use.push_back(line.lastUse);
+        }
+    }
+    arrayParamOut(cp, "sfValid", sf_valid);
+    arrayParamOut(cp, "sfTag", sf_tag);
+    arrayParamOut(cp, "sfState", sf_state);
+    arrayParamOut(cp, "sfHomeNodeId", sf_home_node);
+    arrayParamOut(cp, "sfOwner", sf_owner);
+    arrayParamOut(cp, "sfSharers", sf_sharers);
+    arrayParamOut(cp, "sfGeneration", sf_generation);
+    arrayParamOut(cp, "sfReplacementStamp", sf_last_use);
+
+    std::vector<uint32_t> seq_valid;
+    std::vector<uint32_t> seq_phase;
+    std::vector<uint64_t> seq_id;
+    std::vector<uint64_t> seq_address;
+    std::vector<uint32_t> seq_home_node;
+    std::vector<uint32_t> seq_state;
+    std::vector<uint32_t> seq_owner;
+    std::vector<uint64_t> seq_sharers;
+    std::vector<uint32_t> seq_opcode;
+    std::vector<uint32_t> seq_transaction;
+    std::vector<uint32_t> seq_dirty;
+    std::vector<uint64_t> seq_data_size;
+    std::vector<uint32_t> seq_data;
+    for (const SeqEntry& entry : seq) {
+        seq_valid.push_back(entry.valid);
+        seq_phase.push_back(static_cast<uint32_t>(entry.phase));
+        seq_id.push_back(entry.victim.id);
+        seq_address.push_back(entry.victim.blockAddr);
+        seq_home_node.push_back(entry.victim.homeNodeId);
+        seq_state.push_back(static_cast<uint32_t>(entry.victim.state));
+        seq_owner.push_back(entry.victim.owner);
+        seq_sharers.push_back(entry.victim.sharers);
+        seq_opcode.push_back(entry.completionOpcode);
+        seq_transaction.push_back(entry.completionTransactionId);
+        seq_dirty.push_back(entry.committedDirty);
+        seq_data_size.push_back(entry.committedData.size());
+        for (uint8_t byte : entry.committedData) {
+            seq_data.push_back(byte);
+        }
+    }
+    arrayParamOut(cp, "seqValid", seq_valid);
+    arrayParamOut(cp, "seqPhase", seq_phase);
+    arrayParamOut(cp, "seqId", seq_id);
+    arrayParamOut(cp, "seqAddress", seq_address);
+    arrayParamOut(cp, "seqHomeNodeId", seq_home_node);
+    arrayParamOut(cp, "seqState", seq_state);
+    arrayParamOut(cp, "seqOwner", seq_owner);
+    arrayParamOut(cp, "seqSharers", seq_sharers);
+    arrayParamOut(cp, "seqCompletionOpcode", seq_opcode);
+    arrayParamOut(cp, "seqCompletionTransactionId", seq_transaction);
+    arrayParamOut(cp, "seqCommittedDirty", seq_dirty);
+    arrayParamOut(cp, "seqCommittedDataSize", seq_data_size);
+    arrayParamOut(cp, "seqCommittedData", seq_data);
+    std::vector<uint64_t> pending(seqPending.begin(), seqPending.end());
+    arrayParamOut(cp, "seqPending", pending);
+}
+
 } // namespace gem5::Chi

@@ -80,6 +80,8 @@ class SlcSfReqIdAllocator
         return SlcSfReqId{nextId++};
     }
 
+    uint64_t nextValue() const { return nextId; }
+
   private:
     uint64_t nextId = 1;
 };

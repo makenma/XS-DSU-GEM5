@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <sstream>
+#include <string>
 #include <vector>
 
 #include "mem/cache/CHI/HnfCoherencyController.hh"
@@ -2713,6 +2715,21 @@ TEST(HnfCoherencyControllerTest, MismatchedLookupResponseIsRejected)
 
     cc.serviceInternalWork();
     EXPECT_ANY_THROW(cc.consumeSlcsfResponse(matchingResponse));
+}
+
+TEST(HnfCoherencyControllerTest,
+     CheckpointContentIncludesControllerRequestIdentity)
+{
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    std::ostringstream checkpoint;
+
+    ASSERT_NO_THROW(cc.serializeSlcsfIdentityState(checkpoint));
+    const std::string contents = checkpoint.str();
+    EXPECT_NE(contents.find("nextRequestId=1\n"), std::string::npos);
+    EXPECT_NE(contents.find("nextSnoopTransactionId="), std::string::npos);
+    EXPECT_NE(contents.find("nextDirtyVictimTransactionId="),
+              std::string::npos);
 }
 
 } // namespace gem5::Chi

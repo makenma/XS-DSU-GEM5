@@ -13,6 +13,7 @@
 #include "mem/cache/CHI/HnfSLCSFRequest.hh"
 #include "mem/cache/CHI/HnfSLCSFResponse.hh"
 #include "mem/cache/CHI/HnfSeqPOCQStateGraph.hh"
+#include "sim/serialize.hh"
 
 namespace gem5::Chi
 {
@@ -91,6 +92,8 @@ class HnfCoherencyController
     bool hasWork() const;
     /** Existing protocol owners which may still create an SLCSF intent. */
     bool mayGenerateSlcsfIntent() const;
+    /** Serialize controller-owned SLCSF identities at parent drain. */
+    void serializeSlcsfIdentityState(CheckpointOut& cp) const;
     bool hasTxReq() const { return !txReqQ.empty(); }
     bool hasTxSnp() const { return !txSnpQ.empty(); }
     bool hasTxDat() const { return !txDatQ.empty(); }

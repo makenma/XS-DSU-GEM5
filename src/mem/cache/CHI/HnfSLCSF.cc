@@ -739,6 +739,76 @@ HnfSLCSF::resumeFromDrain()
 }
 
 void
+HnfSLCSF::serializePersistentState(CheckpointOut& cp) const
+{
+    panic_if(!drainRequested || !draining,
+             "HnfSLCSF checkpoint requires coordinated drained state\n");
+    panic_if(!initialized || initializationCyclesRemaining != 0,
+             "HnfSLCSF checkpoint requires completed initialization\n");
+    panic_if(!reqIngress.empty() || !reqReady.empty() ||
+                 !inflightRequests.empty(),
+             "HnfSLCSF checkpoint requires empty request pipeline and "
+             "ready ticks\n");
+    panic_if(!respPending.empty() || !respVisible.empty(),
+             "HnfSLCSF checkpoint requires empty response pipeline\n");
+    panic_if(visibleReqCredits != 0 || setLockCount() != 0 ||
+                 victimBufferOccupancy() != 0 ||
+                 HnfSLCSFBackend::isBusy(),
+             "HnfSLCSF checkpoint requires no reservations or active owners\n");
+    panic_if(!isCompletelyIdle(),
+             "HnfSLCSF checkpoint requires completely drained state\n");
+
+    paramOut(cp, "initialized", initialized);
+    paramOut(cp, "wakeupCycle", wakeupCycle);
+    paramOut(cp, "wakeupTick", wakeupTick);
+    paramOut(cp, "nextVictimId", nextVictimId);
+    paramOut(cp, "nextReservationId", nextCompletionNonce);
+    paramOut(cp, "nextSetLockOwner", nextSetLockOwner);
+    paramOut(cp, "victimBufferEntries", victimBuffer.size());
+
+    std::vector<uint64_t> victim_id;
+    std::vector<uint32_t> victim_state;
+    std::vector<uint64_t> victim_address;
+    std::vector<uint32_t> victim_snapshot_valid;
+    std::vector<uint32_t> victim_snapshot_state;
+    std::vector<uint32_t> victim_snapshot_owner;
+    std::vector<uint32_t> victim_snapshot_dirty;
+    std::vector<uint64_t> victim_snapshot_data_size;
+    std::vector<uint32_t> victim_snapshot_data;
+    for (const VictimEntry& entry : victimBuffer) {
+        victim_id.push_back(entry.id.value);
+        victim_state.push_back(static_cast<uint32_t>(entry.state));
+        victim_address.push_back(entry.lineAddress);
+        victim_snapshot_valid.push_back(entry.snapshot.has_value());
+        victim_snapshot_state.push_back(entry.snapshot ?
+            static_cast<uint32_t>(entry.snapshot->state) : 0);
+        victim_snapshot_owner.push_back(entry.snapshot ?
+            entry.snapshot->owner : 0);
+        victim_snapshot_dirty.push_back(entry.snapshot &&
+            entry.snapshot->line.dirty);
+        victim_snapshot_data_size.push_back(entry.snapshot ?
+            entry.snapshot->line.data.size() : 0);
+        if (entry.snapshot) {
+            for (uint8_t byte : entry.snapshot->line.data) {
+                victim_snapshot_data.push_back(byte);
+            }
+        }
+    }
+    arrayParamOut(cp, "victimId", victim_id);
+    arrayParamOut(cp, "victimState", victim_state);
+    arrayParamOut(cp, "victimAddress", victim_address);
+    arrayParamOut(cp, "victimSnapshotValid", victim_snapshot_valid);
+    arrayParamOut(cp, "victimSnapshotState", victim_snapshot_state);
+    arrayParamOut(cp, "victimSnapshotOwner", victim_snapshot_owner);
+    arrayParamOut(cp, "victimSnapshotDirty", victim_snapshot_dirty);
+    arrayParamOut(cp, "victimSnapshotDataSize", victim_snapshot_data_size);
+    arrayParamOut(cp, "victimSnapshotData", victim_snapshot_data);
+
+    Serializable::ScopedCheckpointSection backend_section(cp, "backend");
+    HnfSLCSFBackend::serializePersistentState(cp);
+}
+
+void
 HnfSLCSF::promotePendingResponses()
 {
     while (!respPending.empty()) {

@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "mem/cache/CHI/HnfSLCSFRequest.hh"
+#include "sim/serialize.hh"
 
 namespace gem5::Chi
 {
@@ -162,6 +163,9 @@ class HnfSLCSFBackend
         return seqOccupancy() != 0 || reservedSeqSlots != 0 ||
             !sfReservations.empty() || !dirtyVictimSeals.empty();
     }
+
+    /** Serialize durable array and identity state at an idle boundary. */
+    void serializePersistentState(CheckpointOut& cp) const;
 
   protected:
     /** Clear all persistent storage for a simulator cold start. */

@@ -264,6 +264,9 @@ class HnfSLCSF : public HnfSLCSFBackend
     void beginDraining();
     void resumeFromDrain();
 
+    /** Serialize only after coordinated drain has sealed all admission. */
+    void serializePersistentState(CheckpointOut& cp) const;
+
 #ifdef UNIT_TEST
     /** Narrow fault injection; absent from production builds. */
     bool corruptInstalledDirtyVictimIdForTest(SlcSfVictimId replacement);

@@ -2,7 +2,9 @@
 
 #include <cstdint>
 #include <set>
+#include <sstream>
 #include <stdexcept>
+#include <string>
 #include <type_traits>
 #include <variant>
 #include <vector>
@@ -4876,6 +4878,59 @@ TEST(HnfSlcSfTest, StaleWritebackCannotOverwriteNewOwner)
     ASSERT_TRUE(result.sfHit);
     EXPECT_EQ(result.rnfid, 4);
     EXPECT_EQ(result.snoopTargets, 1ULL << 4);
+}
+
+TEST(HnfSlcSfTest, CheckpointRequiresDrainedState)
+{
+    HnfSLCSF model(64, 4, 2, 4, 2);
+    std::ostringstream checkpoint;
+
+    EXPECT_ANY_THROW(model.serializePersistentState(checkpoint));
+
+    auto request = lookupRequest(9001);
+    ASSERT_EQ(model.tryEnqueue(std::move(request)),
+              SlcSfEnqueueResult::Accepted);
+    model.beginDraining();
+    EXPECT_ANY_THROW(model.serializePersistentState(checkpoint));
+}
+
+TEST(HnfSlcSfTest, CheckpointContentIncludesPersistentState)
+{
+    HnfSLCSF model(64, 4, 2, 4, 2);
+    const auto first_data = lineData(0x23);
+    const auto second_data = lineData(0x63);
+    model.commitRead(TestAddr, 5, PocqTxnKind::ReadShared,
+                     first_data, true, 17);
+    model.commitRead(TestAddr + 64, 9, PocqTxnKind::ReadShared,
+                     second_data, false, 19);
+    lookup(model, TestAddr, 5, PocqTxnKind::ReadShared);
+    model.beginDraining();
+
+    std::ostringstream checkpoint;
+    ASSERT_NO_THROW(model.serializePersistentState(checkpoint));
+    const std::string contents = checkpoint.str();
+
+    EXPECT_NE(contents.find("initialized=true\n"), std::string::npos);
+    EXPECT_NE(contents.find("nextVictimId="), std::string::npos);
+    EXPECT_NE(contents.find("nextReservationId="), std::string::npos);
+    EXPECT_NE(contents.find("nextSetLockOwner="), std::string::npos);
+    EXPECT_NE(contents.find("victimState="), std::string::npos);
+    EXPECT_NE(contents.find("accessCounter="), std::string::npos);
+    EXPECT_NE(contents.find("lookupEpoch="), std::string::npos);
+    EXPECT_NE(contents.find("nextSeqId="), std::string::npos);
+    EXPECT_NE(contents.find("slcTag="), std::string::npos);
+    EXPECT_NE(contents.find("slcState="), std::string::npos);
+    EXPECT_NE(contents.find("slcGeneration="), std::string::npos);
+    EXPECT_NE(contents.find("slcReplacementStamp="), std::string::npos);
+    EXPECT_NE(contents.find("slcData=35 36 37"), std::string::npos);
+    EXPECT_NE(contents.find("sfTag="), std::string::npos);
+    EXPECT_NE(contents.find("sfState="), std::string::npos);
+    EXPECT_NE(contents.find("sfOwner="), std::string::npos);
+    EXPECT_NE(contents.find("sfSharers="), std::string::npos);
+    EXPECT_NE(contents.find("sfGeneration="), std::string::npos);
+    EXPECT_NE(contents.find("sfReplacementStamp="), std::string::npos);
+    EXPECT_NE(contents.find("seqValid="), std::string::npos);
+    EXPECT_NE(contents.find("seqPending="), std::string::npos);
 }
 
 } // namespace gem5::Chi

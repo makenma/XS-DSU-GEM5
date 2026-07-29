@@ -27,6 +27,7 @@ class HomeNodeFull : public BasicChiComponent , public ruby::Consumer
         bool hasLinkWork() const;
         DrainState drain() override;
         void drainResume() override;
+        void serialize(CheckpointOut& cp) const override;
         bool drainD1Complete() const { return d1Complete; }
         bool drainD2Active() const { return d2Active; }
         //HomeNodeFull* create() const;
