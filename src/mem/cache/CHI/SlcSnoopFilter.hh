@@ -17,6 +17,49 @@ struct SlcSnoopFilterAdvance
     bool creditBecameAvailable = false;
 };
 
+struct SlcSnoopFilterScheduleDecision
+{
+    bool schedule = false;
+    bool reschedule = false;
+    Tick when = 0;
+};
+
+/** Decide whether an absent or existing service event needs changing. */
+inline SlcSnoopFilterScheduleDecision
+slcSnoopFilterScheduleDecision(
+    std::optional<Tick> scheduled, std::optional<Tick> desired)
+{
+    if (!desired) {
+        return {};
+    }
+    return {
+        !scheduled.has_value(),
+        scheduled && *desired < *scheduled,
+        *desired};
+}
+
+/** Map a logical-cycle delta onto future child-clock edges. */
+inline Tick
+slcSnoopFilterWakeupTick(
+    Tick now, std::optional<Tick> last_service_tick, Tick first_future_edge,
+    Tick clock_period, uint64_t elapsed_cycles)
+{
+    panic_if(elapsed_cycles == 0 || clock_period == 0,
+             "SlcSnoopFilter invalid wakeup delta or clock period\n");
+    if (last_service_tick &&
+        elapsed_cycles <= (MaxTick - *last_service_tick) / clock_period) {
+        const Tick continuing =
+            *last_service_tick + elapsed_cycles * clock_period;
+        if (continuing > now) {
+            return continuing;
+        }
+    }
+    panic_if(elapsed_cycles - 1 >
+                 (MaxTick - first_future_edge) / clock_period,
+             "SlcSnoopFilter wakeup tick overflows\n");
+    return first_future_edge + (elapsed_cycles - 1) * clock_period;
+}
+
 /** Advance the ordinary service at one absolute child-clock boundary. */
 inline SlcSnoopFilterAdvance
 advanceSlcSnoopFilterService(HnfSLCSF& service, Tick now)
@@ -63,11 +106,14 @@ class SlcSnoopFilter : public ClockedObject
     }
 
   private:
-    void scheduleServiceEvent();
+    std::optional<Tick> calculateNextWakeup() const;
+    void ensureWakeup();
     void processServiceEvent();
 
     EventFunctionWrapper serviceEvent;
     HnfSLCSF slcsf;
+    uint64_t scheduledServiceCycle = 0;
+    std::optional<Tick> lastServiceTick;
     std::function<void(Tick)> futureWakeupCallback;
 };
 

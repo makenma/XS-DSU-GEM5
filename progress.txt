@@ -124,6 +124,9 @@ Started: 2026-07-28T20:49:07+08:00
 - Put cold-only destructive reset in `initState()` and start modeled latency
   from `startup()` so checkpoint restore never accidentally clears restored
   state; publish completion through registered state and future notification.
+- Let an event-owned ordinary service report its earliest useful logical cycle;
+  the ClockedObject can skip inert edges by passing the elapsed-cycle delta and
+  reschedule only when newly admitted work creates an earlier boundary.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -1332,4 +1335,29 @@ Started: 2026-07-28T20:49:07+08:00
   `initState()`, while `startup()` should only schedule modeled work; a
   registered zero-to-nonzero credit transition can expose initialization
   completion without adding an ownerless message to transaction responses.
+---
+
+## 2026-07-29 16:43 - US-032
+- Story: Schedule child work only when needed
+- What was implemented: Added earliest-useful-cycle calculation for ingress,
+  pending responses, operation deadlines, staged mutations, initialization,
+  and drain-held work. The standalone child now skips inert clock edges,
+  advances the ordinary service by the exact elapsed-cycle delta, avoids
+  duplicate events, and reschedules safely when new work needs an earlier
+  boundary. Registered wakeup ordering now explicitly promotes responses and
+  requests before completing old work and issuing new work.
+- Files changed: `src/mem/cache/CHI/HnfSLCSF.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.cc`,
+  `src/mem/cache/CHI/SlcSnoopFilter.hh`,
+  `src/mem/cache/CHI/SlcSnoopFilter.cc`,
+  `src/mem/cache/CHI/SlcSnoopFilter.test.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt`, the standalone
+  child, and all four CHI GTest binaries successfully; all 187 tests passed
+  (9 child, 18 POCQ, 2 SEQ POCQ, 4 backend-permit, 110 SLCSF, and 44
+  controller). The generated config.ini smoke printed
+  `SLCSF_CHILD_PARAMS_PASS`; changed C++ files passed `python3 util/style.py`;
+  `git diff --check` passed.
+- Learnings for future iterations: A sparse event schedule remains cycle-exact
+  when the service owns logical deadlines and the event owner supplies the
+  number of intentionally skipped child edges at the chosen boundary.
 ---

@@ -95,6 +95,81 @@ TEST(SlcSnoopFilterTest, InitializationCompletesAfterConfiguredLatency)
     EXPECT_EQ(service.respOccupied(), 0);
 }
 
+TEST(SlcSnoopFilterTest, IdleFilterDoesNotSelfWakeForever)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.reqQueueEntries = 2;
+    config.initLatency = 3;
+    HnfSLCSF service(64, 4, 2, 4, 2, 8, config);
+    service.resetForColdStart();
+
+    ASSERT_EQ(service.calculateNextWakeupCycle(), 3);
+    service.wakeup(30, 3);
+
+    EXPECT_TRUE(service.isInitialized());
+    EXPECT_EQ(service.registeredReqCredits(), 2);
+    EXPECT_FALSE(service.calculateNextWakeupCycle().has_value());
+    EXPECT_FALSE(service.needsServiceWakeup());
+}
+
+TEST(SlcSnoopFilterTest, NewEarlierWorkReschedulesWakeup)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.reqQueueEntries = 2;
+    config.lookupLatency = 8;
+    HnfSLCSF service(64, 4, 2, 4, 2, 8, config);
+    auto first = lookupRequest(51);
+
+    ASSERT_EQ(service.tryEnqueue(std::move(first)),
+              SlcSfEnqueueResult::Accepted);
+    service.wakeup(10);
+    ASSERT_EQ(service.currentCycle(), 1);
+    ASSERT_EQ(service.calculateNextWakeupCycle(), 9);
+
+    auto second = lookupRequest(52);
+    ASSERT_EQ(service.tryEnqueue(std::move(second)),
+              SlcSfEnqueueResult::Accepted);
+    ASSERT_EQ(service.calculateNextWakeupCycle(), 2);
+
+    const Tick earlier_tick = slcSnoopFilterWakeupTick(
+        103, 102, 105, 3, 1);
+    EXPECT_EQ(earlier_tick, 105);
+    const auto earlier = slcSnoopFilterScheduleDecision(126, earlier_tick);
+    EXPECT_FALSE(earlier.schedule);
+    EXPECT_TRUE(earlier.reschedule);
+    EXPECT_EQ(earlier.when, 105);
+
+    const auto duplicate = slcSnoopFilterScheduleDecision(105, 105);
+    EXPECT_FALSE(duplicate.schedule);
+    EXPECT_FALSE(duplicate.reschedule);
+}
+
+TEST(SlcSnoopFilterTest, CompletionPrecedesNewIssue)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.reqQueueEntries = 2;
+    config.lookupLatency = 1;
+    HnfSLCSF service(64, 4, 2, 4, 2, 8, config);
+    auto first = lookupRequest(61);
+
+    ASSERT_EQ(service.tryEnqueue(std::move(first)),
+              SlcSfEnqueueResult::Accepted);
+    service.wakeup(10);
+    auto second = lookupRequest(62);
+    ASSERT_EQ(service.tryEnqueue(std::move(second)),
+              SlcSfEnqueueResult::Accepted);
+
+    service.wakeup(20);
+    EXPECT_EQ(service.respPendingCount(), 1);
+    EXPECT_EQ(service.reqInflightCount(), 1);
+    EXPECT_EQ(service.finishedRequestCount(), 1);
+
+    service.wakeup(30);
+    EXPECT_EQ(service.respVisibleCount(), 1);
+    EXPECT_EQ(service.respPendingCount(), 1);
+    EXPECT_EQ(service.finishedRequestCount(), 2);
+}
+
 TEST(SlcSnoopFilterTest, ColdResetClearsPersistentAndTransientStorage)
 {
     HnfSLCSF service(64, 1, 2, 1, 1, 2);

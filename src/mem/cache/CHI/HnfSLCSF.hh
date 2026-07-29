@@ -186,6 +186,13 @@ class HnfSLCSF : public HnfSLCSFBackend
     /** Advance the registered request boundary at an explicit absolute tick. */
     void wakeup(Tick now);
 
+    /**
+     * Advance one registered boundary after intentionally skipping idle
+     * child-clock edges.  The timing owner may only skip to a cycle returned
+     * by calculateNextWakeupCycle().
+     */
+    void wakeup(Tick now, uint64_t elapsed_cycles);
+
     size_t registeredReqCredits() const { return visibleReqCredits; }
     size_t reqIngressCount() const { return reqIngress.size(); }
     size_t reqReadyCount() const { return reqReady.size(); }
@@ -234,6 +241,8 @@ class HnfSLCSF : public HnfSLCSFBackend
     bool hasWork() const;
     /** Work which requires another service clock edge, excluding visible data. */
     bool needsServiceWakeup() const;
+    /** Earliest logical child cycle at which registered state can advance. */
+    std::optional<uint64_t> calculateNextWakeupCycle() const;
     bool isBusy() const
     {
         return hasWork() || HnfSLCSFBackend::isBusy() ||
@@ -342,6 +351,7 @@ class HnfSLCSF : public HnfSLCSFBackend
     void promoteIngressRequests();
     void issueReadyRequests();
     void updateRegisteredCredits();
+    void checkLifecycle() const;
     void assertRequestAccounting() const;
     void assertResponseAccounting() const;
 

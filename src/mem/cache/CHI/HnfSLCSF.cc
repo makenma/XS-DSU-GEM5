@@ -427,26 +427,42 @@ HnfSLCSF::wakeup()
 void
 HnfSLCSF::wakeup(Tick now)
 {
-    ++wakeupCycle;
+    wakeup(now, 1);
+}
+
+void
+HnfSLCSF::wakeup(Tick now, uint64_t elapsedCycles)
+{
+    panic_if(elapsedCycles == 0 || elapsedCycles > UINT64_MAX - wakeupCycle,
+             "HnfSLCSF invalid elapsed child cycles=%llu\n",
+             static_cast<unsigned long long>(elapsedCycles));
+    wakeupCycle += elapsedCycles;
     wakeupTick = now;
     if (!initialized) {
         panic_if(initializationCyclesRemaining == 0,
                  "HnfSLCSF initialization has no completion deadline\n");
-        --initializationCyclesRemaining;
+        initializationCyclesRemaining =
+            elapsedCycles >= initializationCyclesRemaining ?
+                0 : initializationCyclesRemaining - elapsedCycles;
         if (initializationCyclesRemaining == 0) {
             finishInitialization();
         }
         updateRegisteredCredits();
+        checkLifecycle();
         assertRequestAccounting();
         assertResponseAccounting();
         assertVictimAccounting();
         return;
     }
+    // Registered boundary order is intentionally explicit.  In particular,
+    // completion precedes issue so a newly issued operation cannot complete
+    // on this wakeup even if a defensive latency clamp is ever needed.
     promotePendingResponses();
-    completeInflightRequests();
     promoteIngressRequests();
+    completeInflightRequests();
     issueReadyRequests();
     updateRegisteredCredits();
+    checkLifecycle();
     assertRequestAccounting();
     assertResponseAccounting();
     assertVictimAccounting();
@@ -626,6 +642,44 @@ bool
 HnfSLCSF::needsServiceWakeup() const
 {
     return !initialized || reqOutstanding() != 0 || !respPending.empty();
+}
+
+std::optional<uint64_t>
+HnfSLCSF::calculateNextWakeupCycle() const
+{
+    const auto next_cycle = [this]() {
+        panic_if(wakeupCycle == UINT64_MAX,
+                 "HnfSLCSF next wakeup cycle overflows\n");
+        return wakeupCycle + 1;
+    };
+
+    if (!initialized) {
+        panic_if(initializationCyclesRemaining == 0 ||
+                     initializationCyclesRemaining >
+                         UINT64_MAX - wakeupCycle,
+                 "HnfSLCSF initialization deadline overflows\n");
+        return wakeupCycle + initializationCyclesRemaining;
+    }
+
+    // Both double-buffer promotions, ready issue, and response visibility are
+    // registered on the immediately following child edge.
+    if (!respPending.empty() || !reqIngress.empty() || !reqReady.empty()) {
+        return next_cycle();
+    }
+
+    std::optional<uint64_t> earliest;
+    for (const InflightRequest& request : inflightRequests) {
+        uint64_t candidate = request.completeCycle;
+        if (request.mutationStage &&
+            (*request.mutationStage == MutationStage::U0DecodeValidate ||
+             *request.mutationStage == MutationStage::U1PrepareResources ||
+             request.mutationStalled)) {
+            candidate = next_cycle();
+        }
+        candidate = std::max(candidate, next_cycle());
+        earliest = earliest ? std::min(*earliest, candidate) : candidate;
+    }
+    return earliest;
 }
 
 void
@@ -1867,6 +1921,15 @@ HnfSLCSF::updateRegisteredCredits()
         return;
     }
     visibleReqCredits = config.reqQueueEntries - reqOutstanding();
+}
+
+void
+HnfSLCSF::checkLifecycle() const
+{
+    panic_if(initialized == (initializationCyclesRemaining != 0),
+             "HnfSLCSF initialization state/deadline disagree\n");
+    panic_if((!initialized || draining) && visibleReqCredits != 0,
+             "HnfSLCSF lifecycle gate exposes request credit\n");
 }
 
 void

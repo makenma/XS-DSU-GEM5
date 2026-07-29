@@ -14,7 +14,7 @@ SlcSnoopFilter::SlcSnoopFilter(const SlcSnoopFilterParams& p)
             p.sf_num_ways, p.seq_entries,
             makeEmbeddedSlcsfConfig(p, clockPeriod()))
 {
-    slcsf.setWorkAvailableCallback([this] { scheduleServiceEvent(); });
+    slcsf.setWorkAvailableCallback([this] { ensureWakeup(); });
     DPRINTF(SlcSnoopFilter,
             "Created block=%u SLC=%ux%u SF=%ux%u SEQ=%u\n",
             p.block_size, p.slc_num_sets, p.slc_num_ways, p.sf_num_sets,
@@ -32,28 +32,62 @@ void
 SlcSnoopFilter::startup()
 {
     ClockedObject::startup();
-    if (!slcsf.isInitialized()) {
-        scheduleServiceEvent();
+    ensureWakeup();
+}
+
+std::optional<Tick>
+SlcSnoopFilter::calculateNextWakeup() const
+{
+    const std::optional<uint64_t> cycle = slcsf.calculateNextWakeupCycle();
+    if (!cycle) {
+        return std::nullopt;
     }
+    panic_if(*cycle <= slcsf.currentCycle(),
+             "%s calculated a non-future service cycle\n", name());
+    const Tick next_edge = clockEdge() > curTick() ?
+        clockEdge() : clockEdge(Cycles(1));
+    return slcSnoopFilterWakeupTick(
+        curTick(), lastServiceTick, next_edge, clockPeriod(),
+        *cycle - slcsf.currentCycle());
 }
 
 void
-SlcSnoopFilter::scheduleServiceEvent()
+SlcSnoopFilter::ensureWakeup()
 {
-    const Tick when = clockEdge() > curTick() ?
-        clockEdge() : clockEdge(Cycles(1));
-    if (!serviceEvent.scheduled()) {
-        schedule(serviceEvent, when);
-    } else if (when < serviceEvent.when()) {
-        reschedule(serviceEvent, when);
+    const std::optional<Tick> desired = calculateNextWakeup();
+    const std::optional<Tick> scheduled = serviceEvent.scheduled() ?
+        std::optional<Tick>(serviceEvent.when()) : std::nullopt;
+    const SlcSnoopFilterScheduleDecision decision =
+        slcSnoopFilterScheduleDecision(scheduled, desired);
+    if (!decision.schedule && !decision.reschedule) {
+        return;
+    }
+
+    const std::optional<uint64_t> cycle = slcsf.calculateNextWakeupCycle();
+    panic_if(!cycle, "%s lost service work while scheduling\n", name());
+    scheduledServiceCycle = *cycle;
+    if (decision.schedule) {
+        schedule(serviceEvent, decision.when);
+    } else {
+        reschedule(serviceEvent, decision.when);
     }
 }
 
 void
 SlcSnoopFilter::processServiceEvent()
 {
-    const SlcSnoopFilterAdvance advance =
-        advanceSlcSnoopFilterService(slcsf, curTick());
+    panic_if(scheduledServiceCycle <= slcsf.currentCycle(),
+             "%s service event lacks a future logical cycle\n", name());
+    const uint64_t elapsed_cycles =
+        scheduledServiceCycle - slcsf.currentCycle();
+    const bool had_visible_response = slcsf.respVisibleCount() != 0;
+    const bool had_credit = slcsf.registeredReqCredits() != 0;
+    slcsf.wakeup(curTick(), elapsed_cycles);
+    lastServiceTick = curTick();
+    const SlcSnoopFilterAdvance advance{
+        slcsf.needsServiceWakeup(),
+        !had_visible_response && slcsf.respVisibleCount() != 0,
+        !had_credit && slcsf.registeredReqCredits() != 0};
 
     if ((advance.responseBecameVisible ||
          advance.creditBecameAvailable) && futureWakeupCallback) {
@@ -61,9 +95,7 @@ SlcSnoopFilter::processServiceEvent()
                  "%s cannot notify its owner after MaxTick\n", name());
         futureWakeupCallback(curTick() + 1);
     }
-    if (advance.needsNextEdge) {
-        scheduleServiceEvent();
-    }
+    ensureWakeup();
 }
 
 } // namespace gem5::Chi
