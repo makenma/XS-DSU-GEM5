@@ -143,6 +143,9 @@ HomeLinkLayer::wakeup()
     doCcResultAndRetire();
     if (cc) {
         cc->serviceInternalWork(curTick());
+        while (cc->hasDeferredRetire()) {
+            queueRetire(cc->popDeferredRetire());
+        }
     }
     doTxReqArb();
     doTxSnpArb();

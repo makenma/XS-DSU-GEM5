@@ -51,6 +51,8 @@ class HnfCoherencyController
     std::optional<HnfCcRetireInfo> acceptRxDat(const RawDat& dat);
     void serviceInternalWork();
     void serviceInternalWork(Tick current_tick);
+    bool hasDeferredRetire() const { return !deferredRetireQ.empty(); }
+    HnfCcRetireInfo popDeferredRetire();
 
     /**
      * Validate and latch one terminal SLCSF response.  This is public so the
@@ -162,6 +164,7 @@ class HnfCoherencyController
     std::deque<HnfCcTxSnp> txSnpQ;
     std::deque<HnfCcTxDat> txDatQ;
     std::deque<HnfCcTxRsp> txRspQ;
+    std::deque<HnfCcRetireInfo> deferredRetireQ;
     std::unordered_map<uint32_t, uint32_t> snoopTxnToEntry;
 
     uint64_t blockAddr(const RawReq& req) const;
@@ -186,6 +189,7 @@ class HnfCoherencyController
     void queueComp(uint32_t entry);
     void queueCompDBIDResp(uint32_t entry);
     void storeWriteData(uint32_t entry);
+    void deferRetire(std::optional<HnfCcRetireInfo> retire);
     HnfCcRetireInfo retireEntry(uint32_t entry);
     HnfCcRetireInfo makeRetireInfo(const Entry& entry) const;
     void wakeSleepingEntries(uint64_t addr);

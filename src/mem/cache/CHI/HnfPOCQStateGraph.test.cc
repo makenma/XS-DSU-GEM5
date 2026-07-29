@@ -279,7 +279,7 @@ TEST(HnfPocqStateGraphTest, SnoopWithoutDataFallsBackToMemory)
                PocqActionKind::QueueTxReq);
 }
 
-TEST(HnfPocqStateGraphTest, WriteWaitsForDataThenRetires)
+TEST(HnfPocqStateGraphTest, WriteWaitsForDataAndSlcUpdateThenRetires)
 {
     POCQ_StateGraph graph;
     PocqState state = PocqState::Idle;
@@ -290,8 +290,19 @@ TEST(HnfPocqStateGraphTest, WriteWaitsForDataThenRetires)
                    PocqActionKind::WaitWriteData});
 
     expectActions(graph.tryStep(state, event(PocqEventKind::WriteDataDone)),
-                  PocqState::Idle,
-                  {PocqActionKind::StoreWriteData, PocqActionKind::Retire});
+                  PocqState::SlcLookup, {PocqActionKind::DoSlcLookup});
+
+    PocqEvent lookupDone = event(PocqEventKind::SlcLookupDone);
+    lookupDone.txn = PocqTxnKind::WriteUnique;
+    expectStep(graph.tryStep(state, lookupDone), PocqState::SlcUpdateIssue,
+               PocqActionKind::StoreWriteData);
+    expectActions(
+        graph.tryStep(state, event(PocqEventKind::SlcUpdateAccepted)),
+        PocqState::SlcUpdateWait, {});
+    PocqEvent updateDone = event(PocqEventKind::SlcUpdateDone);
+    updateDone.txn = PocqTxnKind::WriteUnique;
+    expectStep(graph.tryStep(state, updateDone), PocqState::Idle,
+               PocqActionKind::Retire);
 }
 
 TEST(HnfPocqStateGraphTest, EverySupportedTransactionHasAnAdmitPath)

@@ -708,13 +708,42 @@ void
 HnfCoherencyController::storeWriteData(uint32_t entryId)
 {
     Entry& entry = entries[entryId];
-    slcsfUnit->writeLine(entry.blockAddr, entry.req.srcid, entry.data,
-                         entry.txnKind, entry.req.tgtid);
-    slcsfUnit->releaseSfResources(entryId);
+    panic_if(entry.slcUpdatePhase != SlcUpdatePhase::None,
+             "HnfCC entry=%u starts write update with phase=%u\n", entryId,
+             static_cast<unsigned>(entry.slcUpdatePhase));
+
+    SlcSfReqHeader header = makeSlcSfReqHeader(
+        slcSfReqIds, entryId, entry.blockAddr, entry.req, entry.seq,
+        entry.acceptCycle);
+    entry.slcUpdateReqId = header.reqId;
+    entry.pendingSlcUpdate = SlcSfRequest(makeSlcSfWriteLineReq(
+        std::move(header), entry.data, entry.txnKind, entry.req.tgtid, {},
+        entry.slcCommitToken, entry.slcLookupReqId));
+    entry.slcUpdatePhase = SlcUpdatePhase::IssuePending;
+    tryIssueSlcUpdate(entryId);
     DPRINTF(HnfCC,
-            "CC entry=%u stores write data addr=%#llx src=%u txn=%u\n",
+            "CC entry=%u queues write data update addr=%#llx src=%u txn=%u\n",
             entryId, static_cast<unsigned long long>(entry.blockAddr),
             entry.req.srcid, entry.req.txnid);
+}
+
+void
+HnfCoherencyController::deferRetire(
+    std::optional<HnfCcRetireInfo> retire)
+{
+    if (retire) {
+        deferredRetireQ.push_back(*retire);
+    }
+}
+
+HnfCcRetireInfo
+HnfCoherencyController::popDeferredRetire()
+{
+    panic_if(deferredRetireQ.empty(),
+             "HnfCC popDeferredRetire on empty queue\n");
+    HnfCcRetireInfo retire = deferredRetireQ.front();
+    deferredRetireQ.pop_front();
+    return retire;
 }
 
 const HnfCcTxReq&
@@ -1249,7 +1278,22 @@ HnfCoherencyController::retrySlcsfReplayEntries(Tick currentTick)
         if (entry.slcUpdatePhase == SlcUpdatePhase::ReplayWait) {
             entry.slcUpdatePhase = SlcUpdatePhase::None;
         }
-        startReadFlow(i);
+        if (entry.expectsWriteData &&
+            entry.writeDataBytes >= expectedDataBytes(entry.req)) {
+            if (!slcsfUnit->tryReserveSfResources(
+                    i, entry.blockAddr, entry.txnKind)) {
+                continue;
+            }
+            entry.state = HnfCcEntryState::Working;
+            entry.pocqState = PocqState::SlcLookup;
+            entry.slcsfReplay = false;
+            panic_if(executePocqAction(
+                         i, PocqActionKind::DoSlcLookup, PocqEvent{}),
+                     "HnfCC entry=%u retired while retrying write lookup\n",
+                     i);
+        } else {
+            startReadFlow(i);
+        }
     }
 }
 
@@ -1357,7 +1401,7 @@ HnfCoherencyController::continueLatchedSlcLookups()
         lookupDone.needsSnoop = entry.slcLookupResult.snoopTargets != 0;
         lookupDone.dataAvailable = entry.slcLookupResult.slcHit;
         lookupDone.needsCompAck = entry.needsCompAck;
-        stepPocq(i, lookupDone);
+        deferRetire(stepPocq(i, lookupDone));
     }
 }
 
@@ -1378,7 +1422,7 @@ HnfCoherencyController::continueLatchedSlcUpdates()
         updateDone.kind = PocqEventKind::SlcUpdateDone;
         updateDone.txn = entry.txnKind;
         updateDone.needsCompAck = entry.needsCompAck;
-        stepPocq(i, updateDone);
+        deferRetire(stepPocq(i, updateDone));
     }
 }
 
@@ -1405,7 +1449,9 @@ HnfCoherencyController::handleSlcsfReplay(
     entry.pendingSlcUpdate.reset();
     entry.latchedSlcUpdateResponse.reset();
     entry.slcUpdateReqId = SlcSfReqId{};
-    entry.data.clear();
+    if (!entry.expectsWriteData) {
+        entry.data.clear();
+    }
     entry.responseDataDirty = false;
     entry.snoopTxnId = 0;
     entry.snoopPendingTargets = 0;
@@ -1442,7 +1488,9 @@ HnfCoherencyController::consumeSlcsfResponse(SlcSfResponse response)
             SlcSfOperationKind::CommitRead;
         const bool maintenance = response.operationKind() ==
             SlcSfOperationKind::CompleteMaintenance;
-        panic_if((!commitRead && !maintenance) ||
+        const bool writeLine = response.operationKind() ==
+            SlcSfOperationKind::WriteLine;
+        panic_if((!commitRead && !maintenance && !writeLine) ||
                      entry.slcUpdatePhase != SlcUpdatePhase::Waiting ||
                      entry.latchedSlcUpdateResponse ||
                      entry.slcUpdateReqId != response.reqId(),
@@ -1451,12 +1499,13 @@ HnfCoherencyController::consumeSlcsfResponse(SlcSfResponse response)
                  static_cast<unsigned long long>(response.reqId().value));
 
         if (response.status() == SlcSfTerminalStatus::Done) {
-            if (commitRead) {
+            if (commitRead || writeLine) {
                 const auto* fill =
                     std::get_if<SlcSfFillResponse>(&response.payload());
-                panic_if(!fill || fill->updateKind !=
-                             SlcSfUpdateKind::CommitRead,
-                         "HnfCC entry=%u read update Done has bad payload\n",
+                const SlcSfUpdateKind expected = commitRead ?
+                    SlcSfUpdateKind::CommitRead : SlcSfUpdateKind::WriteLine;
+                panic_if(!fill || fill->updateKind != expected,
+                         "HnfCC entry=%u fill update Done has bad payload\n",
                          entryId);
             } else {
                 const auto* update =
@@ -1600,7 +1649,7 @@ HnfCoherencyController::slcsfRetryNotBeforeTick(uint32_t entry) const
 bool
 HnfCoherencyController::hasWork() const
 {
-    if (hasTxWork()) {
+    if (hasTxWork() || hasDeferredRetire()) {
         return true;
     }
     return seqPocqEntry.valid ||

@@ -578,12 +578,129 @@ TEST(HnfCoherencyControllerTest, EverySupportedTransactionCompletes)
             const auto retired = cc.acceptRxDat(makeWriteData(
                 requester, requesterTxn, BeatSize, true,
                 datOpcode, data));
-            ASSERT_TRUE(retired);
-            EXPECT_EQ(retired->tokenId, 0);
+            EXPECT_FALSE(retired);
+            pumpLookup(cc, slcsf, 0, tick);
+            ASSERT_EQ(cc.slcUpdatePhase(0),
+                      HnfCoherencyController::SlcUpdatePhase::Waiting);
+            pumpUpdate(cc, slcsf, 0, tick);
+            ASSERT_TRUE(cc.hasDeferredRetire());
+            EXPECT_EQ(cc.popDeferredRetire().tokenId, 0);
+            EXPECT_FALSE(cc.hasDeferredRetire());
         }
 
         EXPECT_FALSE(cc.hasWork());
     }
+}
+
+TEST(HnfCoherencyControllerTest, WriteDoesNotRetireBeforeUpdateResponse)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 8000, 0, 200, 0x59, TestAddr), 0).accepted);
+    ASSERT_TRUE(cc.hasTxRsp());
+    cc.popTxRsp();
+
+    const auto data = lineData(0xa1);
+    EXPECT_FALSE(cc.acceptRxDat(
+        makeWriteData(0, 200, 0, false, 0x03, data)));
+    EXPECT_FALSE(cc.acceptRxDat(
+        makeWriteData(0, 200, BeatSize, true, 0x03, data)));
+    EXPECT_FALSE(cc.hasDeferredRetire());
+
+    Tick tick = 1000;
+    pumpLookup(cc, slcsf, 0, tick);
+    ASSERT_EQ(cc.slcUpdatePhase(0),
+              HnfCoherencyController::SlcUpdatePhase::Waiting);
+    EXPECT_EQ(cc.pocqState(0), PocqState::SlcUpdateWait);
+    EXPECT_FALSE(cc.hasDeferredRetire());
+    EXPECT_FALSE(lookup(slcsf, 0, PocqTxnKind::ReadShared).slcHit);
+
+    pumpUpdate(cc, slcsf, 0, tick);
+    ASSERT_TRUE(cc.hasDeferredRetire());
+    EXPECT_EQ(cc.popDeferredRetire().tokenId, 0);
+    EXPECT_FALSE(cc.hasDeferredRetire());
+    EXPECT_EQ(lookup(slcsf, 0, PocqTxnKind::ReadShared).data, data);
+}
+
+TEST(HnfCoherencyControllerTest, DeferredWriteRetiresTokenExactlyOnce)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.reqQueueEntries = 1;
+    config.respQueueEntries = 1;
+    config.maxInflight = 1;
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8, config);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 8001, 0, 201, 0x59, TestAddr), 0).accepted);
+    cc.popTxRsp();
+    const auto data = lineData(0xa2);
+    EXPECT_FALSE(cc.acceptRxDat(
+        makeWriteData(0, 201, 0, false, 0x03, data)));
+    EXPECT_FALSE(cc.acceptRxDat(
+        makeWriteData(0, 201, BeatSize, true, 0x03, data)));
+
+    Tick tick = 1100;
+    for (size_t i = 0; i < 32 &&
+         cc.slcLookupPhase(0) !=
+             HnfCoherencyController::SlcLookupPhase::ResponseLatched; ++i) {
+        pumpOnce(cc, slcsf, tick);
+    }
+    ASSERT_EQ(cc.slcLookupPhase(0),
+              HnfCoherencyController::SlcLookupPhase::ResponseLatched);
+
+    RawReq blockerRaw{};
+    blockerRaw.srcid = 63;
+    SlcSfReqIdAllocator blockerIds;
+    SlcSfRequest blocker = makeSlcSfLookupReq(
+        makeSlcSfReqHeader(
+            blockerIds, UINT32_MAX, TestAddr + BlockSize, blockerRaw),
+        PocqTxnKind::ReadShared);
+    ASSERT_EQ(slcsf.tryEnqueue(std::move(blocker)),
+              SlcSfEnqueueResult::Accepted);
+
+    cc.serviceInternalWork(++tick);
+    ASSERT_EQ(cc.slcUpdatePhase(0),
+              HnfCoherencyController::SlcUpdatePhase::IssuePending);
+    const SlcSfReqId retainedReqId = cc.slcUpdateReqId(0);
+    EXPECT_EQ(cc.pocqState(0), PocqState::SlcUpdateIssue);
+    EXPECT_FALSE(cc.hasDeferredRetire());
+    for (size_t i = 0; i < 4; ++i) {
+        cc.serviceInternalWork(++tick);
+        EXPECT_EQ(cc.slcUpdateReqId(0), retainedReqId);
+        EXPECT_EQ(cc.slcUpdatePhase(0),
+                  HnfCoherencyController::SlcUpdatePhase::IssuePending);
+    }
+
+    std::optional<SlcSfResponse> blockerResponse;
+    for (size_t i = 0; i < 32 && !blockerResponse; ++i) {
+        slcsf.wakeup(++tick);
+        blockerResponse = slcsf.popVisibleResponse();
+    }
+    ASSERT_TRUE(blockerResponse);
+    ASSERT_EQ(blockerResponse->pocEntryId(), UINT32_MAX);
+
+    cc.serviceInternalWork(++tick);
+    ASSERT_EQ(cc.slcUpdatePhase(0),
+              HnfCoherencyController::SlcUpdatePhase::Waiting);
+    EXPECT_EQ(cc.slcUpdateReqId(0), retainedReqId);
+    pumpUpdate(cc, slcsf, 0, tick);
+
+    ASSERT_TRUE(cc.hasDeferredRetire());
+    const HnfCcRetireInfo retire = cc.popDeferredRetire();
+    EXPECT_EQ(retire.tokenId, 0);
+    EXPECT_FALSE(cc.hasDeferredRetire());
+    for (size_t i = 0; i < 4; ++i) {
+        pumpOnce(cc, slcsf, tick);
+    }
+    EXPECT_FALSE(cc.hasDeferredRetire());
+    EXPECT_EQ(lookup(slcsf, 0, PocqTxnKind::ReadShared).data, data);
 }
 
 TEST(HnfCoherencyControllerTest, LookupNoCreditEventuallyProgresses)

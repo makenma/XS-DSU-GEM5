@@ -81,7 +81,7 @@ bool
 isLookupNeedsSnoop(const PocqEvent& event)
 {
     return event.kind == PocqEventKind::SlcLookupDone && !event.replay &&
-        event.needsSnoop;
+        event.needsSnoop && !isWriteTxn(event.txn);
 }
 
 bool
@@ -106,6 +106,13 @@ isLookupMaintenanceDone(const PocqEvent& event)
 }
 
 bool
+isLookupWriteDone(const PocqEvent& event)
+{
+    return event.kind == PocqEventKind::SlcLookupDone && !event.replay &&
+        isWriteTxn(event.txn);
+}
+
+bool
 isSnoopDoneReadWithData(const PocqEvent& event)
 {
     return event.kind == PocqEventKind::SnoopDone &&
@@ -127,10 +134,17 @@ isSnoopDoneMaintenance(const PocqEvent& event)
 }
 
 bool
-isSlcUpdateDone(const PocqEvent& event)
+isSlcReadUpdateDone(const PocqEvent& event)
 {
     return event.kind == PocqEventKind::SlcUpdateDone && !event.replay &&
-        !isMaintenanceTxn(event.txn);
+        isReadTxn(event.txn);
+}
+
+bool
+isSlcWriteDone(const PocqEvent& event)
+{
+    return event.kind == PocqEventKind::SlcUpdateDone && !event.replay &&
+        isWriteTxn(event.txn);
 }
 
 bool
@@ -259,6 +273,8 @@ POCQ_StateGraph::POCQ_StateGraph()
                   {PocqActionKind::QueueTxReq});
     addTransition(slcLookup, slcUpdateIssue, isLookupMaintenanceDone,
                   {PocqActionKind::CommitMaintenance});
+    addTransition(slcLookup, slcUpdateIssue, isLookupWriteDone,
+                  {PocqActionKind::StoreWriteData});
     addTransition(waitSnoop, slcUpdateIssue, isSnoopDoneReadWithData,
                   {PocqActionKind::UpdateSlcSf});
     addTransition(waitSnoop, issueMcRead, isSnoopDoneReadNeedsMemory,
@@ -273,16 +289,18 @@ POCQ_StateGraph::POCQ_StateGraph()
                   isSlcUpdateAccepted, {});
     addTransition(slcUpdateWait, sleep, isSlcUpdateReplay,
                   {PocqActionKind::SleepForReplay});
-    addTransition(slcUpdateWait, txLink, isSlcUpdateDone,
+    addTransition(slcUpdateWait, txLink, isSlcReadUpdateDone,
                   {PocqActionKind::QueueCompData});
     addTransition(slcUpdateWait, idle, isSlcMaintenanceDone,
                   {PocqActionKind::QueueComp});
+    addTransition(slcUpdateWait, idle, isSlcWriteDone,
+                  {PocqActionKind::Retire});
     addTransition(txLink, waitCompAck, isTxLinkDoneNeedsCompAck,
                   {PocqActionKind::WaitCompAck});
     addTransition(txLink, idle, isTxLinkDoneNoCompAck,
                   {PocqActionKind::Retire});
-    addTransition(waitWriteData, idle, isWriteDataDone,
-                  {PocqActionKind::StoreWriteData, PocqActionKind::Retire});
+    addTransition(waitWriteData, slcLookup, isWriteDataDone,
+                  {PocqActionKind::DoSlcLookup});
     addTransition(waitCompAck, idle, isCompAck,
                   {PocqActionKind::Retire});
 }

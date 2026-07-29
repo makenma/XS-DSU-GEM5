@@ -72,6 +72,9 @@ Started: 2026-07-28T20:49:07+08:00
 - When multiple transaction classes share asynchronous issue and wait nodes,
   discriminate their terminal graph edges and response payloads by operation
   kind so each class emits only its own protocol completion.
+- Route side effects produced by periodic controller service through an owned
+  deferred queue, include that queue in work detection, and let the owning
+  event loop drain it exactly once on a later scheduling boundary.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -780,4 +783,28 @@ Started: 2026-07-28T20:49:07+08:00
 - Learnings for future iterations: A shared asynchronous update phase can
   serve multiple operation classes safely when request construction, response
   validation, and terminal graph edges retain concrete operation identity.
+---
+
+## 2026-07-29 10:31 - US-017
+- Story: Make write completion and LinkLayer retire asynchronous
+- What was implemented: Replaced direct writeLine mutation in the RXDAT path
+  with an explicit lookup/token boundary and typed WriteLine update issue,
+  wait, response-latch, and terminal graph states. Added a CC-owned deferred
+  retire queue drained by HomeLinkLayer after periodic service, with work
+  detection, Replay-safe write-data ownership, and exactly-once retirement.
+- Files changed: `src/mem/cache/CHI/HnfPOCQStateGraph.cc`,
+  `src/mem/cache/CHI/HnfPOCQStateGraph.test.cc`,
+  `src/mem/cache/CHI/HnfCoherencyController.hh`,
+  `src/mem/cache/CHI/HnfCoherencyController.cc`,
+  `src/mem/cache/CHI/HnfCoherencyController.test.cc`,
+  `src/mem/cache/CHI/HomeLinkLayer.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and all four CHI
+  GTest binaries successfully; all 126 tests passed (18 POCQ, 2 SEQ POCQ,
+  80 SLCSF, and 26 controller), retaining all baseline passes; changed C++
+  files passed `python3 util/style.py --modifications`; `git diff --check`
+  passed.
+- Learnings for future iterations: A callback that supplies the final payload
+  should only start an owned delayed operation; retirement produced later by
+  controller service needs an explicit queue so scheduling and token release
+  cannot silently discard or duplicate it.
 ---
