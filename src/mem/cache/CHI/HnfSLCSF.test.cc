@@ -2502,6 +2502,7 @@ enum class BaseServiceLatencyCase
     UpdateMapped,
     UpdateOne,
     UpdateTwo,
+    ReleaseDirtyVictim,
     OrdinaryEvictRemoveSharer,
     FlushL3,
     EarlyLookupReplay,
@@ -2555,6 +2556,34 @@ TEST_P(HnfSlcSfBaseServiceLatencyTest, CompletesAtMappedServiceDeadline)
         request = makeSlcSfCompleteMaintenanceReq(
             mutationHeader(1404), PocqTxnKind::MakeInvalid, 0x90, token,
             token.lookupReqId);
+        expected_latency = config.updateLatency;
+        break;
+      }
+      case BaseServiceLatencyCase::ReleaseDirtyVictim: {
+        model.writeLine(
+            TestAddr, 0, lineData(0x98), PocqTxnKind::WriteUnique);
+        const uint64_t replacement_addr = TestAddr + 64;
+        const auto token = completeLookupToken(
+            model, 1414, replacement_addr);
+        SlcSfRequest fill = makeSlcSfFillCleanSharedReq(
+            mutationHeader(1415, replacement_addr), lineData(0x99), {},
+            token, token.lookupReqId);
+        ASSERT_EQ(model.tryEnqueue(std::move(fill)),
+                  SlcSfEnqueueResult::Accepted);
+        std::optional<SlcSfResponse> fill_response;
+        for (size_t cycle = 0; cycle < 16 && !fill_response; ++cycle) {
+            model.wakeup(900 + cycle);
+            fill_response = model.popVisibleResponse();
+        }
+        ASSERT_TRUE(fill_response.has_value());
+        const auto& fill_payload =
+            std::get<SlcSfFillResponse>(fill_response->payload());
+        ASSERT_TRUE(fill_payload.slcVictim.has_value());
+        const SlcSfVictimId victim_id =
+            fill_payload.slcVictim->victimId;
+        model.markDirtyVictimWritebackIssued(victim_id);
+        request = makeSlcSfReleaseDirtyVictimReq(
+            mutationHeader(1416, TestAddr), victim_id);
         expected_latency = config.updateLatency;
         break;
       }
@@ -2641,6 +2670,11 @@ TEST_P(HnfSlcSfBaseServiceLatencyTest, CompletesAtMappedServiceDeadline)
                GetParam() == BaseServiceLatencyCase::EarlyMutationReplay) ?
                   SlcSfTerminalStatus::Replay :
                   SlcSfTerminalStatus::Done);
+    if (GetParam() == BaseServiceLatencyCase::ReleaseDirtyVictim) {
+        EXPECT_EQ(response->operationKind(),
+                  SlcSfOperationKind::ReleaseDirtyVictim);
+        EXPECT_EQ(model.victimBufferOccupancy(), 0);
+    }
     if (GetParam() == BaseServiceLatencyCase::OrdinaryEvictRemoveSharer) {
         EXPECT_EQ(response->operationKind(),
                   SlcSfOperationKind::RemoveSharer);

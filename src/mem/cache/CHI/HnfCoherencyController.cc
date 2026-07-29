@@ -1077,8 +1077,8 @@ HnfCoherencyController::acceptRxRsp(const RawRsp& rsp)
         DPRINTF(HnfCC,
                 "CC dirty victim=%llu downstream txn=%u completed\n",
                 static_cast<unsigned long long>(txn_id->second), rsp.txnid);
-        dirtyVictimTxns.erase(transaction);
         dirtyVictimTxnIds.erase(txn_id);
+        startDirtyVictimRelease(transaction->second);
         return std::nullopt;
     }
     if (decoded.minor == RspMinor::SnpResp ||
@@ -1213,6 +1213,18 @@ HnfCoherencyController::dirtyVictimForTxn(
     return SlcSfVictimId{transaction->second};
 }
 
+HnfCoherencyController::DirtyVictimPhase
+HnfCoherencyController::dirtyVictimPhase(SlcSfVictimId id) const
+{
+    return dirtyVictimTxns.at(id.value).phase;
+}
+
+SlcSfReqId
+HnfCoherencyController::dirtyVictimReleaseReqId(SlcSfVictimId id) const
+{
+    return dirtyVictimTxns.at(id.value).releaseReqId;
+}
+
 void
 HnfCoherencyController::startDirtyVictimWriteback(
     uint32_t entryId, const SlcSfSlcVictim& victim)
@@ -1278,6 +1290,69 @@ HnfCoherencyController::queueDirtyVictimData(DirtyVictimTxn& transaction)
     out.dat.byteEnable.assign(blockSize, 1);
     out.dat.chunkValid.assign((blockSize + 7) / 8, 1);
     txDatQ.push_back(std::move(out));
+}
+
+void
+HnfCoherencyController::startDirtyVictimRelease(DirtyVictimTxn& transaction)
+{
+    panic_if(transaction.phase != DirtyVictimPhase::Writeback ||
+                 transaction.pendingRelease ||
+                 transaction.releaseReqId.valid(),
+             "HnfCC dirty victim=%llu starts duplicate release\n",
+             static_cast<unsigned long long>(
+                 transaction.victim.victimId.value));
+
+    RawReq release{};
+    release.srcid = 0;
+    release.txnid = transaction.downstreamTxnId;
+    release.opcode = ReqOp::WriteNoSnpFull;
+    SlcSfReqHeader header = makeSlcSfReqHeader(
+        slcSfReqIds, UINT32_MAX, transaction.victim.lineAddress, release);
+    transaction.releaseReqId = header.reqId;
+    transaction.pendingRelease = SlcSfRequest(
+        makeSlcSfReleaseDirtyVictimReq(
+            std::move(header), transaction.victim.victimId));
+    transaction.phase = DirtyVictimPhase::ReleaseIssuePending;
+    tryIssueDirtyVictimRelease(transaction);
+}
+
+void
+HnfCoherencyController::tryIssueDirtyVictimRelease(
+    DirtyVictimTxn& transaction)
+{
+    panic_if(transaction.phase != DirtyVictimPhase::ReleaseIssuePending ||
+                 !transaction.pendingRelease,
+             "HnfCC dirty victim=%llu retries release without request\n",
+             static_cast<unsigned long long>(
+                 transaction.victim.victimId.value));
+    const SlcSfEnqueueResult result = slcsfUnit->tryEnqueue(
+        std::move(*transaction.pendingRelease));
+    if (result == SlcSfEnqueueResult::Accepted) {
+        transaction.pendingRelease.reset();
+        transaction.phase = DirtyVictimPhase::ReleaseWaiting;
+        DPRINTF(HnfCC,
+                "CC dirty victim=%llu issued release req=%llu\n",
+                static_cast<unsigned long long>(
+                    transaction.victim.victimId.value),
+                static_cast<unsigned long long>(
+                    transaction.releaseReqId.value));
+    } else {
+        const SlcSfReqId retained_id = std::visit(
+            [](const auto& request) { return request.header.reqId; },
+            *transaction.pendingRelease);
+        panic_if(retained_id != transaction.releaseReqId,
+                 "HnfCC rejected dirty-victim release changed ID\n");
+    }
+}
+
+void
+HnfCoherencyController::retryDirtyVictimReleases()
+{
+    for (auto& [id, transaction] : dirtyVictimTxns) {
+        if (transaction.phase == DirtyVictimPhase::ReleaseIssuePending) {
+            tryIssueDirtyVictimRelease(transaction);
+        }
+    }
 }
 
 void
@@ -1679,6 +1754,34 @@ void
 HnfCoherencyController::consumeSlcsfResponse(SlcSfResponse response)
 {
     const uint32_t entryId = response.pocEntryId();
+    if (response.operationKind() ==
+        SlcSfOperationKind::ReleaseDirtyVictim) {
+        auto transaction = std::find_if(
+            dirtyVictimTxns.begin(), dirtyVictimTxns.end(),
+            [&response](const auto& item) {
+                return item.second.releaseReqId == response.reqId();
+            });
+        panic_if(transaction == dirtyVictimTxns.end() ||
+                     transaction->second.phase !=
+                         DirtyVictimPhase::ReleaseWaiting ||
+                     entryId != UINT32_MAX,
+                 "HnfCC unexpected dirty-victim release response req=%llu\n",
+                 static_cast<unsigned long long>(response.reqId().value));
+        panic_if(response.status() != SlcSfTerminalStatus::Done,
+                 "HnfCC dirty-victim release req=%llu failed\n",
+                 static_cast<unsigned long long>(response.reqId().value));
+        const auto* update =
+            std::get_if<SlcSfUpdateResponse>(&response.payload());
+        panic_if(!update || update->updateKind !=
+                     SlcSfUpdateKind::ReleaseDirtyVictim,
+                 "HnfCC dirty-victim release Done has bad payload\n");
+        DPRINTF(HnfCC,
+                "CC dirty victim=%llu release req=%llu completed\n",
+                static_cast<unsigned long long>(transaction->first),
+                static_cast<unsigned long long>(response.reqId().value));
+        dirtyVictimTxns.erase(transaction);
+        return;
+    }
     if (response.operationKind() == SlcSfOperationKind::CompleteSfEvict) {
         panic_if(!seqPocqEntry.valid ||
                      seqPocqEntry.state != SeqPocqState::CompleteWait ||
@@ -1810,6 +1913,7 @@ HnfCoherencyController::serviceInternalWork(Tick currentTick)
     continueLatchedSlcLookups();
     retryPendingSlcUpdates();
     retryPendingSlcLookups();
+    retryDirtyVictimReleases();
     if (!seqPocqEntry.valid && slcsfUnit &&
         slcsfUnit->hasPendingSeq()) {
         startSeqPocq();
@@ -1879,7 +1983,7 @@ HnfCoherencyController::hasWork() const
     if (hasTxWork() || hasDeferredRetire()) {
         return true;
     }
-    return seqPocqEntry.valid ||
+    return !dirtyVictimTxns.empty() || seqPocqEntry.valid ||
         (slcsfUnit && slcsfUnit->hasPendingSeq()) ||
         std::any_of(entries.begin(), entries.end(),
                        [this](const Entry& entry) {

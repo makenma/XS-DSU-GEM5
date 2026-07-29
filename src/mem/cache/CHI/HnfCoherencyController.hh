@@ -38,6 +38,13 @@ class HnfCoherencyController
         ReplayWait
     };
 
+    enum class DirtyVictimPhase : uint8_t
+    {
+        Writeback,
+        ReleaseIssuePending,
+        ReleaseWaiting
+    };
+
     HnfCoherencyController(uint32_t block_size, uint32_t data_beat_bytes,
                            uint32_t num_entries, uint32_t sn_node_id,
                            bool direct_sn_fake_data,
@@ -96,6 +103,8 @@ class HnfCoherencyController
     { return dirtyVictimTxns.size(); }
     std::optional<SlcSfVictimId> dirtyVictimForTxn(
         uint32_t downstream_txn_id) const;
+    DirtyVictimPhase dirtyVictimPhase(SlcSfVictimId id) const;
+    SlcSfReqId dirtyVictimReleaseReqId(SlcSfVictimId id) const;
 
     const HnfCcTxRsp& frontTxRsp() const;
     void popTxRsp();
@@ -163,6 +172,9 @@ class HnfCoherencyController
         uint32_t homeNodeId = 0;
         bool requestSent = false;
         bool dataSent = false;
+        DirtyVictimPhase phase = DirtyVictimPhase::Writeback;
+        SlcSfReqId releaseReqId{};
+        std::optional<SlcSfRequest> pendingRelease;
     };
 
     HnfSLCSF* slcsfUnit = nullptr;
@@ -223,6 +235,9 @@ class HnfCoherencyController
     void startDirtyVictimWriteback(uint32_t entry,
                                    const SlcSfSlcVictim& victim);
     void queueDirtyVictimData(DirtyVictimTxn& transaction);
+    void startDirtyVictimRelease(DirtyVictimTxn& transaction);
+    void tryIssueDirtyVictimRelease(DirtyVictimTxn& transaction);
+    void retryDirtyVictimReleases();
     void startSeqPocq();
     void stepSeqPocq(const SeqPocqEvent& event);
     void queueSeqSnoops();

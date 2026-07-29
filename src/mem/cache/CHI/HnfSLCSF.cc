@@ -687,6 +687,13 @@ HnfSLCSF::validateMutationRequest(const SlcSfRequest& request) const
                                 (!operation.snoopData.dirty ||
                                  operation.snoopData.data.size() >=
                                      blockSizeBytes());
+                        } else if constexpr (std::is_same_v<
+                                                 Operation,
+                                                 SlcSfReleaseDirtyVictim>) {
+                            const VictimEntry* victim = findDirtyVictim(
+                                operation.victimId);
+                            return victim && victim->state ==
+                                VictimState::WritebackIssued;
                         } else {
                             return std::is_same_v<Operation,
                                                   SlcSfRemoveSharer>;
@@ -716,7 +723,9 @@ HnfSLCSF::validateMutationToken(const SlcSfRequest& request) const
                 return false;
             } else if constexpr (std::is_same_v<Request, SlcSfUpdateReq>) {
                 const bool ownerless = std::holds_alternative<
-                    SlcSfCompleteSfEvict>(typed_request.operation);
+                    SlcSfCompleteSfEvict>(typed_request.operation) ||
+                    std::holds_alternative<SlcSfReleaseDirtyVictim>(
+                        typed_request.operation);
                 return ownerless || validateCommitToken(
                     typed_request.token,
                     typed_request.sourceLookupReqId,
@@ -974,6 +983,10 @@ HnfSLCSF::executeMutation(InflightRequest& request)
                                 operation.seqId.value,
                                 operation.snoopData.data,
                                 operation.snoopData.dirty);
+                        } else if constexpr (std::is_same_v<
+                                                 Operation,
+                                                 SlcSfReleaseDirtyVictim>) {
+                            releaseDirtyVictim(operation.victimId);
                         }
                     },
                     typed_request.operation);
