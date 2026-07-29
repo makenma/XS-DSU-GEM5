@@ -102,6 +102,47 @@ mutationHeader(uint64_t req_id, uint64_t addr = TestAddr,
     return header;
 }
 
+enum class FlushServiceOperation : uint8_t
+{
+    FlushSf,
+    FlushL3,
+    WriteL3FlushSf
+};
+
+SlcSfRequest
+flushServiceRequest(FlushServiceOperation operation, uint64_t req_id,
+                    const SlcSfCommitToken& token)
+{
+    SlcSfReqHeader header = mutationHeader(req_id, token.lineAddress);
+    switch (operation) {
+      case FlushServiceOperation::FlushSf:
+        return makeSlcSfFlushSfReq(
+            std::move(header), token, token.lookupReqId);
+      case FlushServiceOperation::FlushL3:
+        return makeSlcSfFlushL3Req(
+            std::move(header), token, token.lookupReqId);
+      case FlushServiceOperation::WriteL3FlushSf:
+        return makeSlcSfWriteL3FlushSfReq(
+            std::move(header), lineData(0xa0), {}, token,
+            token.lookupReqId);
+    }
+    throw std::logic_error("unknown flush service operation");
+}
+
+SlcSfOperationKind
+flushServiceOperationKind(FlushServiceOperation operation)
+{
+    switch (operation) {
+      case FlushServiceOperation::FlushSf:
+        return SlcSfOperationKind::FlushSf;
+      case FlushServiceOperation::FlushL3:
+        return SlcSfOperationKind::FlushL3;
+      case FlushServiceOperation::WriteL3FlushSf:
+        return SlcSfOperationKind::WriteL3FlushSf;
+    }
+    throw std::logic_error("unknown flush service operation");
+}
+
 const SlcSfReqHeader&
 requestHeader(const SlcSfRequest& request)
 {
@@ -1826,33 +1867,167 @@ TEST(HnfSlcSfMutationServiceTest,
 }
 
 TEST(HnfSlcSfMutationServiceTest,
-     DeferredEvictHandlerReturnsErrorWithoutMutation)
+     FlushOperationsUseConfiguredServiceAndOneTerminalResponse)
 {
-    HnfSLCSF model(64, 4, 2, 4, 2);
-    model.writeLine(
-        TestAddr, 0, lineData(0x7d), PocqTxnKind::WriteUnique);
-    const auto before = model.probe(HnfSlcLookupReq{
-        0, RawReq{}, PocqTxnKind::Unknown, TestAddr});
-    SlcSfRequest request = makeSlcSfFlushL3Req(mutationHeader(123));
-    ASSERT_EQ(model.tryEnqueue(std::move(request)),
-              SlcSfEnqueueResult::Accepted);
+    for (const FlushServiceOperation operation : {
+             FlushServiceOperation::FlushSf,
+             FlushServiceOperation::FlushL3,
+             FlushServiceOperation::WriteL3FlushSf}) {
+        HnfSLCSFPipelineConfig config{};
+        config.updateLatency = 2;
+        config.fillLatency = 7;
+        HnfSLCSF model(64, 4, 2, 4, 2, 8, config);
+        model.commitRead(
+            TestAddr, 7, PocqTxnKind::ReadShared, lineData(0x7d), false);
+        const SlcSfCommitToken token =
+            completeLookupToken(model, 1230, TestAddr);
+        SlcSfRequest request = flushServiceRequest(operation, 1231, token);
+        ASSERT_EQ(model.tryEnqueue(std::move(request)),
+                  SlcSfEnqueueResult::Accepted);
 
-    std::optional<SlcSfResponse> response;
-    for (size_t cycle = 0; cycle < 6 && !response; ++cycle) {
-        model.wakeup();
-        response = model.popVisibleResponse();
+        const uint64_t accepted_cycle = model.currentCycle();
+        std::optional<SlcSfResponse> response;
+        for (size_t cycle = 0; cycle < 8 && !response; ++cycle) {
+            model.wakeup();
+            response = model.popVisibleResponse();
+        }
+        ASSERT_TRUE(response.has_value());
+        EXPECT_EQ(model.currentCycle(),
+                  accepted_cycle + config.updateLatency + 2);
+        EXPECT_EQ(response->status(), SlcSfTerminalStatus::Done);
+        EXPECT_EQ(response->operationKind(),
+                  flushServiceOperationKind(operation));
+        EXPECT_FALSE(model.popVisibleResponse().has_value());
+
+        const auto after = model.probe(HnfSlcLookupReq{
+            0, RawReq{}, PocqTxnKind::Unknown, TestAddr});
+        if (operation == FlushServiceOperation::FlushL3) {
+            EXPECT_FALSE(after.result.slcHit);
+        } else {
+            EXPECT_TRUE(after.result.slcHit);
+        }
+        if (operation != FlushServiceOperation::FlushL3) {
+            EXPECT_FALSE(after.result.sfHit);
+        }
+        if (operation == FlushServiceOperation::WriteL3FlushSf) {
+            EXPECT_EQ(after.result.data, lineData(0xa0));
+        }
+        EXPECT_EQ(model.reqOutstanding(), 0);
+        EXPECT_EQ(model.respOccupied(), 0);
     }
-    ASSERT_TRUE(response.has_value());
-    EXPECT_EQ(response->status(), SlcSfTerminalStatus::Error);
-    EXPECT_EQ(response->operationKind(), SlcSfOperationKind::FlushL3);
-    const auto after = model.probe(HnfSlcLookupReq{
-        0, RawReq{}, PocqTxnKind::Unknown, TestAddr});
-    expectArraySnapshotsEqual(after.snapshot.slc, before.snapshot.slc);
-    expectArraySnapshotsEqual(after.snapshot.sf, before.snapshot.sf);
-    EXPECT_EQ(model.reqOutstanding(), 0);
-    EXPECT_EQ(model.respOccupied(), 0);
-    EXPECT_EQ(model.sfReservationCount(), 0);
-    EXPECT_EQ(model.seqReservationCount(), 0);
+}
+
+TEST(HnfSlcSfMutationServiceTest, StaleFlushOperationsReplayWithoutMutation)
+{
+    for (const FlushServiceOperation operation : {
+             FlushServiceOperation::FlushSf,
+             FlushServiceOperation::FlushL3,
+             FlushServiceOperation::WriteL3FlushSf}) {
+        HnfSLCSF model(64, 4, 2, 4, 2);
+        model.commitRead(
+            TestAddr, 7, PocqTxnKind::ReadShared, lineData(0x7e), false);
+        const SlcSfCommitToken token =
+            completeLookupToken(model, 1240, TestAddr);
+        model.invalidateCommitTokens();
+        const auto before = model.probe(HnfSlcLookupReq{
+            0, RawReq{}, PocqTxnKind::Unknown, TestAddr});
+        SlcSfRequest request = flushServiceRequest(operation, 1241, token);
+        ASSERT_EQ(model.tryEnqueue(std::move(request)),
+                  SlcSfEnqueueResult::Accepted);
+
+        std::optional<SlcSfResponse> response;
+        for (size_t cycle = 0; cycle < 8 && !response; ++cycle) {
+            model.wakeup();
+            response = model.popVisibleResponse();
+        }
+        ASSERT_TRUE(response.has_value());
+        EXPECT_EQ(response->status(), SlcSfTerminalStatus::Replay);
+        EXPECT_EQ(response->operationKind(),
+                  flushServiceOperationKind(operation));
+        const auto after = model.probe(HnfSlcLookupReq{
+            0, RawReq{}, PocqTxnKind::Unknown, TestAddr});
+        expectArraySnapshotsEqual(after.snapshot.slc, before.snapshot.slc);
+        expectArraySnapshotsEqual(after.snapshot.sf, before.snapshot.sf);
+        EXPECT_EQ(after.result.data, before.result.data);
+    }
+}
+
+TEST(HnfSlcSfMutationServiceTest,
+     FlushOperationsWaitForTerminalResponseCapacity)
+{
+    for (const FlushServiceOperation operation : {
+             FlushServiceOperation::FlushSf,
+             FlushServiceOperation::FlushL3,
+             FlushServiceOperation::WriteL3FlushSf}) {
+        HnfSLCSFPipelineConfig config{};
+        config.lookupLatency = 1;
+        config.updateLatency = 1;
+        config.respQueueEntries = 1;
+        HnfSLCSF model(64, 4, 2, 4, 2, 8, config);
+        model.commitRead(
+            TestAddr, 7, PocqTxnKind::ReadShared, lineData(0x7f), false);
+        const SlcSfCommitToken token =
+            completeLookupToken(model, 1250, TestAddr);
+        const auto before = model.probe(HnfSlcLookupReq{
+            0, RawReq{}, PocqTxnKind::Unknown, TestAddr});
+        SlcSfRequest blocker = lookupRequest(1251, TestAddr + 64);
+        SlcSfRequest request = flushServiceRequest(operation, 1252, token);
+        ASSERT_EQ(model.tryEnqueue(std::move(blocker)),
+                  SlcSfEnqueueResult::Accepted);
+        ASSERT_EQ(model.tryEnqueue(std::move(request)),
+                  SlcSfEnqueueResult::Accepted);
+
+        model.wakeup();
+        model.wakeup();
+        model.wakeup();
+        ASSERT_EQ(model.respVisibleCount(), 1);
+        ASSERT_EQ(model.reqReadyCount(), 1);
+        const auto stalled = model.probe(HnfSlcLookupReq{
+            0, RawReq{}, PocqTxnKind::Unknown, TestAddr});
+        expectArraySnapshotsEqual(stalled.snapshot.slc, before.snapshot.slc);
+        expectArraySnapshotsEqual(stalled.snapshot.sf, before.snapshot.sf);
+
+        ASSERT_TRUE(model.popVisibleResponse().has_value());
+        std::optional<SlcSfResponse> response;
+        for (size_t cycle = 0; cycle < 8 && !response; ++cycle) {
+            model.wakeup();
+            response = model.popVisibleResponse();
+        }
+        ASSERT_TRUE(response.has_value());
+        EXPECT_EQ(response->status(), SlcSfTerminalStatus::Done);
+        EXPECT_EQ(response->operationKind(),
+                  flushServiceOperationKind(operation));
+        EXPECT_FALSE(model.popVisibleResponse().has_value());
+    }
+}
+
+TEST(HnfSlcSfMutationServiceTest, FlushNoCreditPreservesRequestAndState)
+{
+    for (const FlushServiceOperation operation : {
+             FlushServiceOperation::FlushSf,
+             FlushServiceOperation::FlushL3,
+             FlushServiceOperation::WriteL3FlushSf}) {
+        HnfSLCSFPipelineConfig config{};
+        config.reqQueueEntries = 1;
+        HnfSLCSF model(64, 4, 2, 4, 2, 8, config);
+        model.commitRead(
+            TestAddr, 7, PocqTxnKind::ReadShared, lineData(0x81), false);
+        const SlcSfCommitToken token =
+            completeLookupToken(model, 1260, TestAddr);
+        const auto before = model.probe(HnfSlcLookupReq{
+            0, RawReq{}, PocqTxnKind::Unknown, TestAddr});
+        SlcSfRequest blocker = lookupRequest(1261, TestAddr + 64);
+        SlcSfRequest request = flushServiceRequest(operation, 1262, token);
+        ASSERT_EQ(model.tryEnqueue(std::move(blocker)),
+                  SlcSfEnqueueResult::Accepted);
+        ASSERT_EQ(model.tryEnqueue(std::move(request)),
+                  SlcSfEnqueueResult::NoCredit);
+        EXPECT_EQ(requestHeader(request).reqId, SlcSfReqId{1262});
+        const auto after = model.probe(HnfSlcLookupReq{
+            0, RawReq{}, PocqTxnKind::Unknown, TestAddr});
+        expectArraySnapshotsEqual(after.snapshot.slc, before.snapshot.slc);
+        expectArraySnapshotsEqual(after.snapshot.sf, before.snapshot.sf);
+    }
 }
 
 TEST(HnfSlcSfMutationServiceTest,
@@ -1940,7 +2115,7 @@ enum class BaseServiceLatencyCase
     UpdateOne,
     UpdateTwo,
     OrdinaryEvictRemoveSharer,
-    DeferredEvict,
+    FlushL3,
     EarlyLookupReplay,
     EarlyMutationReplay
 };
@@ -2004,7 +2179,7 @@ TEST_P(HnfSlcSfBaseServiceLatencyTest, CompletesAtMappedServiceDeadline)
         expected_latency = config.updateLatency;
         break;
       }
-      case BaseServiceLatencyCase::DeferredEvict: {
+      case BaseServiceLatencyCase::FlushL3: {
         const auto token = completeLookupToken(model, 1412, TestAddr);
         request = makeSlcSfFlushL3Req(
             mutationHeader(1413), token, token.lookupReqId);
@@ -2074,8 +2249,6 @@ TEST_P(HnfSlcSfBaseServiceLatencyTest, CompletesAtMappedServiceDeadline)
     auto response = model.popVisibleResponse();
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(response->status(),
-              GetParam() == BaseServiceLatencyCase::DeferredEvict ?
-                  SlcSfTerminalStatus::Error :
               (GetParam() == BaseServiceLatencyCase::EarlyLookupReplay ||
                GetParam() == BaseServiceLatencyCase::EarlyMutationReplay) ?
                   SlcSfTerminalStatus::Replay :
@@ -2087,13 +2260,11 @@ TEST_P(HnfSlcSfBaseServiceLatencyTest, CompletesAtMappedServiceDeadline)
             0, RawReq{}, PocqTxnKind::Unknown, TestAddr});
         EXPECT_TRUE(after.result.slcHit);
         EXPECT_FALSE(after.result.sfHit);
-    } else if (GetParam() == BaseServiceLatencyCase::DeferredEvict) {
-        EXPECT_EQ(std::get<SlcSfError>(response->payload()).code,
-                  SlcSfErrorCode::InvalidRequest);
+    } else if (GetParam() == BaseServiceLatencyCase::FlushL3) {
+        EXPECT_EQ(response->operationKind(), SlcSfOperationKind::FlushL3);
         const auto after = model.probe(HnfSlcLookupReq{
             0, RawReq{}, PocqTxnKind::Unknown, TestAddr});
-        expectArraySnapshotsEqual(
-            after.snapshot.slc, before_service.snapshot.slc);
+        EXPECT_FALSE(after.result.slcHit);
         expectArraySnapshotsEqual(
             after.snapshot.sf, before_service.snapshot.sf);
     }
@@ -2110,7 +2281,7 @@ INSTANTIATE_TEST_SUITE_P(
         BaseServiceLatencyCase::UpdateOne,
         BaseServiceLatencyCase::UpdateTwo,
         BaseServiceLatencyCase::OrdinaryEvictRemoveSharer,
-        BaseServiceLatencyCase::DeferredEvict,
+        BaseServiceLatencyCase::FlushL3,
         BaseServiceLatencyCase::EarlyLookupReplay,
         BaseServiceLatencyCase::EarlyMutationReplay));
 

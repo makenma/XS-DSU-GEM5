@@ -231,17 +231,11 @@ HnfCoherencyController::executePocqAction(uint32_t entryId,
         return std::nullopt;
 
       case PocqActionKind::FlushSf:
-        slcsfUnit->flushSf(entry.blockAddr);
-        return std::nullopt;
-
       case PocqActionKind::FlushL3:
-        slcsfUnit->flushL3(entry.blockAddr);
-        return std::nullopt;
-
       case PocqActionKind::WriteL3FlushSf:
-        slcsfUnit->writeL3FlushSf(entry.blockAddr, entry.req.srcid,
-                                  entry.data);
-        return std::nullopt;
+        panic("HnfCC flush action=%u has no CHI protocol transition; "
+              "use the typed asynchronous SLCSF service request\n",
+              static_cast<unsigned>(action));
 
       case PocqActionKind::Retire:
         return retireEntry(entryId);

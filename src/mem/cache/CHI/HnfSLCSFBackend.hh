@@ -88,7 +88,8 @@ class HnfSLCSFBackend
     void flushSf(uint64_t block_addr);
     void flushL3(uint64_t block_addr);
     void writeL3FlushSf(uint64_t block_addr, uint32_t requester,
-                        const std::vector<uint8_t>& data);
+                        const std::vector<uint8_t>& data,
+                        const LookupSnapshot* target = nullptr);
 
     bool hasPendingSeq() const { return !seqPending.empty(); }
     SeqVictim frontPendingSeq() const;

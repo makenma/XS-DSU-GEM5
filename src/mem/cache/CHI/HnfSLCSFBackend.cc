@@ -993,9 +993,11 @@ HnfSLCSFBackend::flushL3(uint64_t block_addr)
 
 void
 HnfSLCSFBackend::writeL3FlushSf(uint64_t block_addr, uint32_t requester,
-                         const std::vector<uint8_t>& data)
+                                const std::vector<uint8_t>& data,
+                                const LookupSnapshot* target)
 {
-    installSlc(block_addr, HnfSlcState::MU, requester, data);
+    installSlc(block_addr, HnfSlcState::MU, requester, data,
+               target ? &target->slc : nullptr);
     invalidateSf(block_addr);
     checkLineInvariant(block_addr);
 }

@@ -28,7 +28,9 @@ requestPipe(const SlcSfRequest& request)
             if constexpr (std::is_same_v<Request, SlcSfLookupReq>) {
                 return RequestPipe::Lookup;
             } else if constexpr (std::is_same_v<Request, SlcSfFillReq>) {
-                return RequestPipe::Fill;
+                return typed_request.kind() ==
+                    SlcSfUpdateKind::WriteL3FlushSf ?
+                    RequestPipe::Update : RequestPipe::Fill;
             } else {
                 return RequestPipe::Update;
             }
@@ -162,7 +164,9 @@ HnfSLCSF::serviceLatency(const SlcSfRequest& request) const
             if constexpr (std::is_same_v<Request, SlcSfLookupReq>) {
                 return config.lookupLatency;
             } else if constexpr (std::is_same_v<Request, SlcSfFillReq>) {
-                return config.fillLatency;
+                return typed_request.kind() ==
+                    SlcSfUpdateKind::WriteL3FlushSf ?
+                    config.updateLatency : config.fillLatency;
             } else {
                 return config.updateLatency;
             }
@@ -453,6 +457,10 @@ HnfSLCSF::validateMutationRequest(const SlcSfRequest& request) const
                                                  Operation,
                                                  SlcSfWriteLine>) {
                             return isWriteTxn(operation.txn);
+                        } else if constexpr (std::is_same_v<
+                                                 Operation,
+                                                 SlcSfWriteL3FlushSf>) {
+                            return true;
                         } else {
                             return false;
                         }
@@ -473,6 +481,8 @@ HnfSLCSF::validateMutationRequest(const SlcSfRequest& request) const
                         }
                     },
                     typed_request.operation);
+            } else if constexpr (std::is_same_v<Request, SlcSfEvictReq>) {
+                supported = true;
             }
             if (supported) {
                 return std::nullopt;
@@ -547,8 +557,15 @@ HnfSLCSF::prepareMutationResources(InflightRequest& request)
                                 operation.txn, may_allocate_slc,
                                 std::is_same_v<Operation, SlcSfWriteLine>);
                         } else {
-                            return prepare(
-                                PocqTxnKind::ReadShared, true, false);
+                            if constexpr (std::is_same_v<
+                                              Operation,
+                                              SlcSfFillCleanShared>) {
+                                return prepare(
+                                    PocqTxnKind::ReadShared, true, false);
+                            } else {
+                                return prepare(
+                                    PocqTxnKind::WriteUnique, true, true);
+                            }
                         }
                     },
                     typed_request.operation);
@@ -571,6 +588,8 @@ HnfSLCSF::prepareMutationResources(InflightRequest& request)
                         }
                     },
                     typed_request.operation);
+            } else if constexpr (std::is_same_v<Request, SlcSfEvictReq>) {
+                return true;
             } else {
                 return false;
             }
@@ -611,6 +630,12 @@ HnfSLCSF::executeMutation(InflightRequest& request)
                                 header.lineAddress, header.requester,
                                 operation.line.data, operation.txn,
                                 operation.homeNodeId, &target);
+                        } else if constexpr (std::is_same_v<
+                                                 Operation,
+                                                 SlcSfWriteL3FlushSf>) {
+                            writeL3FlushSf(
+                                header.lineAddress, header.requester,
+                                operation.line.data, &target);
                         }
                     },
                     typed_request.operation);
@@ -631,6 +656,19 @@ HnfSLCSF::executeMutation(InflightRequest& request)
                                                  SlcSfRemoveSharer>) {
                             removeSharer(
                                 header.lineAddress, header.requester);
+                        }
+                    },
+                    typed_request.operation);
+            } else if constexpr (std::is_same_v<Request, SlcSfEvictReq>) {
+                std::visit(
+                    [this, &header](const auto& operation) {
+                        using Operation =
+                            std::decay_t<decltype(operation)>;
+                        if constexpr (std::is_same_v<
+                                          Operation, SlcSfFlushSf>) {
+                            flushSf(header.lineAddress);
+                        } else {
+                            flushL3(header.lineAddress);
                         }
                     },
                     typed_request.operation);
