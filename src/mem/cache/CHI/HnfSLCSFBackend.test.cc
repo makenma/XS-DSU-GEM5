@@ -1,15 +1,20 @@
+#ifndef UNIT_TEST
+#define UNIT_TEST
+#endif
+
 #include <gtest/gtest.h>
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <optional>
+#include <sstream>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
-#ifndef UNIT_TEST
-#define UNIT_TEST
-#endif
+#include "base/gtest/serialization_fixture.hh"
 #include "mem/cache/CHI/HnfSLCSF.hh"
 
 namespace gem5::Chi
@@ -20,6 +25,54 @@ namespace
 
 constexpr uint64_t VictimAddr = 0x80008000;
 constexpr uint64_t ReplacementAddr = VictimAddr + 64;
+
+struct BackendGeometry
+{
+    uint32_t slcSets = 1;
+    uint32_t slcWays = 1;
+    uint32_t sfSets = 1;
+    uint32_t sfWays = 1;
+    uint32_t seqEntries = 1;
+};
+
+class HnfSlcSfBackendCheckpointTest : public SerializationFixture
+{
+  protected:
+    static std::string serializeBackend(const HnfSLCSFBackend& backend)
+    {
+        std::ostringstream checkpoint;
+        {
+            Serializable::ScopedCheckpointSection section(checkpoint, "backend");
+            backend.serializePersistentState(checkpoint);
+        }
+        return checkpoint.str();
+    }
+
+    void expectRestoreRejected(const std::string& contents, const BackendGeometry& geometry)
+    {
+        simulateSerialization(contents);
+        HnfSLCSFBackend restored(64, geometry.slcSets, geometry.slcWays, geometry.sfSets, geometry.sfWays,
+                                 geometry.seqEntries);
+        CheckpointIn input(getDirName());
+        EXPECT_ANY_THROW({
+            Serializable::ScopedCheckpointSection section(input, "backend");
+            restored.unserializePersistentState(input);
+        });
+    }
+};
+
+void
+replaceCheckpointValue(std::string& checkpoint, const std::string& name, const std::string& value)
+{
+    const std::string key = name + "=";
+    const size_t begin = checkpoint.find(key);
+    ASSERT_NE(begin, std::string::npos) << name;
+    ASSERT_TRUE(begin == 0 || checkpoint[begin - 1] == '\n') << name;
+    const size_t value_begin = begin + key.size();
+    const size_t end = checkpoint.find('\n', value_begin);
+    ASSERT_NE(end, std::string::npos) << name;
+    checkpoint.replace(value_begin, end - value_begin, value);
+}
 
 static_assert(!std::is_copy_constructible_v<HnfSLCSFBackend>);
 static_assert(!std::is_copy_assignable_v<HnfSLCSFBackend>);
@@ -34,6 +87,50 @@ lineData(uint8_t seed)
         data[i] = seed + i;
     }
     return data;
+}
+
+HnfSLCSFBackend::LookupObservation
+probeLine(const HnfSLCSFBackend& backend, uint64_t address, uint32_t requester)
+{
+    HnfSlcLookupReq request{};
+    request.entry = 7;
+    request.req.srcid = requester;
+    request.txn = PocqTxnKind::ReadShared;
+    request.blockAddr = address;
+    return backend.probe(request);
+}
+
+void
+expectLookupObservationsEqual(const HnfSLCSFBackend::LookupObservation& actual,
+                              const HnfSLCSFBackend::LookupObservation& expected)
+{
+    EXPECT_EQ(actual.result.valid, expected.result.valid);
+    EXPECT_EQ(actual.result.entry, expected.result.entry);
+    EXPECT_EQ(actual.result.slcHit, expected.result.slcHit);
+    EXPECT_EQ(actual.result.sfHit, expected.result.sfHit);
+    EXPECT_EQ(actual.result.replay, expected.result.replay);
+    EXPECT_EQ(actual.result.mcreqNonspec, expected.result.mcreqNonspec);
+    EXPECT_EQ(actual.result.snoopBroadcast, expected.result.snoopBroadcast);
+    EXPECT_EQ(actual.result.snoopDirected, expected.result.snoopDirected);
+    EXPECT_EQ(actual.result.snoopOpcode, expected.result.snoopOpcode);
+    EXPECT_EQ(actual.result.snoopTargets, expected.result.snoopTargets);
+    EXPECT_EQ(actual.result.rnfid, expected.result.rnfid);
+    EXPECT_EQ(actual.result.rnfvec, expected.result.rnfvec);
+    EXPECT_EQ(actual.result.slcState, expected.result.slcState);
+    EXPECT_EQ(actual.result.sfState, expected.result.sfState);
+    EXPECT_EQ(actual.result.dataDirty, expected.result.dataDirty);
+    EXPECT_EQ(actual.result.data, expected.result.data);
+    EXPECT_EQ(actual.snapshot.lookupEpoch, expected.snapshot.lookupEpoch);
+    EXPECT_EQ(actual.snapshot.slc.hit, expected.snapshot.slc.hit);
+    EXPECT_EQ(actual.snapshot.slc.set, expected.snapshot.slc.set);
+    EXPECT_EQ(actual.snapshot.slc.way, expected.snapshot.slc.way);
+    EXPECT_EQ(actual.snapshot.slc.generation, expected.snapshot.slc.generation);
+    EXPECT_EQ(actual.snapshot.slc.replacementStamp, expected.snapshot.slc.replacementStamp);
+    EXPECT_EQ(actual.snapshot.sf.hit, expected.snapshot.sf.hit);
+    EXPECT_EQ(actual.snapshot.sf.set, expected.snapshot.sf.set);
+    EXPECT_EQ(actual.snapshot.sf.way, expected.snapshot.sf.way);
+    EXPECT_EQ(actual.snapshot.sf.generation, expected.snapshot.sf.generation);
+    EXPECT_EQ(actual.snapshot.sf.replacementStamp, expected.snapshot.sf.replacementStamp);
 }
 
 template <class Backend, class = void>
@@ -209,6 +306,29 @@ TEST(HnfSlcSfBackendPermitTest,
 }
 
 TEST(HnfSlcSfBackendPermitTest,
+     IncompleteLineInstallIsRejectedBeforeStateMutation)
+{
+    HnfSLCSFBackend backend(64, 2, 2, 2, 2);
+    std::vector<uint8_t> incomplete(63, 0xa5);
+
+    EXPECT_ANY_THROW(backend.writeLine(
+        VictimAddr, 1, incomplete, PocqTxnKind::WriteUnique));
+    EXPECT_FALSE(backend.probe(HnfSlcLookupReq{
+        1, RawReq{}, PocqTxnKind::ReadShared, VictimAddr}).result.slcHit);
+
+    const auto original = lineData(0x21);
+    backend.writeLine(
+        VictimAddr, 1, original, PocqTxnKind::WriteUnique);
+    EXPECT_ANY_THROW(backend.writeLine(
+        VictimAddr, 1, std::vector<uint8_t>(4, 0xee),
+        PocqTxnKind::WriteUnique));
+    const auto after = backend.probe(HnfSlcLookupReq{
+        1, RawReq{}, PocqTxnKind::ReadShared, VictimAddr});
+    EXPECT_TRUE(after.result.slcHit);
+    EXPECT_EQ(after.result.data, original);
+}
+
+TEST(HnfSlcSfBackendPermitTest,
      InstalledSnapshotCapabilityCommitsCompleteOwnedVictim)
 {
     HnfSLCSF model(64, 1, 1, 1, 1);
@@ -345,6 +465,368 @@ TEST(HnfSlcSfBackendPermitTest,
     EXPECT_EQ(model.reqOutstanding(), 0);
     EXPECT_EQ(model.respOccupied(), 0);
     EXPECT_EQ(model.correctnessReplayCount(), 1);
+}
+
+TEST(HnfSlcSfBackendInvariantTest,
+     RemovingVectorOwnerSelectsRemainingSharer)
+{
+    HnfSLCSFBackend backend(64, 1, 1, 1, 4, 1);
+    const auto data = lineData(0x42);
+    backend.commitRead(
+        ReplacementAddr, 0, PocqTxnKind::ReadShared, data, false);
+    backend.commitRead(
+        ReplacementAddr, 4, PocqTxnKind::ReadShared, data, false);
+    backend.commitRead(
+        ReplacementAddr, 8, PocqTxnKind::ReadShared, data, false);
+
+    backend.removeSharer(ReplacementAddr, 0);
+
+    const auto observation = probeLine(backend, ReplacementAddr, 63);
+    EXPECT_EQ(observation.result.sfState, HnfSfState::EN);
+    EXPECT_EQ(observation.result.rnfvec, (1ULL << 4) | (1ULL << 8));
+    EXPECT_EQ(observation.result.rnfid, 4);
+    backend.checkGlobalInvariants();
+}
+
+TEST_F(HnfSlcSfBackendCheckpointTest, RestoreRejectsNonBooleanPersistentFields)
+{
+    const BackendGeometry geometry{};
+    HnfSLCSFBackend original(64, geometry.slcSets, geometry.slcWays, geometry.sfSets, geometry.sfWays,
+                             geometry.seqEntries);
+    const std::string checkpoint = serializeBackend(original);
+
+    const std::vector<std::pair<std::string, std::string>> corruptions = {
+        {"slcValid", "2"},
+        {"sfValid", "2"},
+        {"seqValid", "2"},
+        {"seqCommittedDirty", "2"},
+    };
+    for (const auto& [field, value] : corruptions) {
+        SCOPED_TRACE(field);
+        std::string corrupted = checkpoint;
+        replaceCheckpointValue(corrupted, field, value);
+        expectRestoreRejected(corrupted, geometry);
+    }
+}
+
+TEST_F(HnfSlcSfBackendCheckpointTest, RestoreRejectsSlcValidStateAndDataInconsistency)
+{
+    const BackendGeometry geometry{};
+    HnfSLCSFBackend original(64, geometry.slcSets, geometry.slcWays, geometry.sfSets, geometry.sfWays,
+                             geometry.seqEntries);
+    original.writeLine(VictimAddr, 3, lineData(0x21), PocqTxnKind::WriteUnique);
+    const std::string checkpoint = serializeBackend(original);
+
+    const std::vector<std::pair<std::string, std::string>> corruptions = {
+        {"slcValid", "0"},
+        {"slcState", std::to_string(static_cast<uint32_t>(HnfSlcState::I))},
+        {"slcDataSize", "63"},
+    };
+    for (const auto& [field, value] : corruptions) {
+        SCOPED_TRACE(field);
+        std::string corrupted = checkpoint;
+        replaceCheckpointValue(corrupted, field, value);
+        expectRestoreRejected(corrupted, geometry);
+    }
+}
+
+TEST_F(HnfSlcSfBackendCheckpointTest, RestoreRejectsDuplicateSlcAndSfTags)
+{
+    const BackendGeometry geometry{1, 2, 1, 2, 1};
+    HnfSLCSFBackend original(64, geometry.slcSets, geometry.slcWays, geometry.sfSets, geometry.sfWays,
+                             geometry.seqEntries);
+    original.commitRead(VictimAddr, 3, PocqTxnKind::ReadShared, lineData(0x31), false, 17);
+    original.commitRead(ReplacementAddr, 5, PocqTxnKind::ReadShared, lineData(0x51), false, 19);
+    const std::string checkpoint = serializeBackend(original);
+
+    for (const char* field : {"slcTag", "sfTag"}) {
+        SCOPED_TRACE(field);
+        std::string corrupted = checkpoint;
+        replaceCheckpointValue(corrupted, field, "1 1");
+        expectRestoreRejected(corrupted, geometry);
+    }
+}
+
+TEST_F(HnfSlcSfBackendCheckpointTest, RestoreRejectsSfSharerOwnerAndExclusiveStateViolations)
+{
+    const BackendGeometry geometry{};
+    HnfSLCSFBackend original(64, geometry.slcSets, geometry.slcWays, geometry.sfSets, geometry.sfWays,
+                             geometry.seqEntries);
+    original.commitRead(VictimAddr, 3, PocqTxnKind::ReadShared, lineData(0x41), false, 17);
+    original.commitRead(VictimAddr, 5, PocqTxnKind::ReadShared, lineData(0x41), false, 17);
+    const std::string checkpoint = serializeBackend(original);
+
+    const std::vector<std::pair<std::string, std::string>> corruptions = {
+        {"sfSharers", "0"},
+        {"sfOwner", "6"},
+        {"sfState", std::to_string(static_cast<uint32_t>(HnfSfState::EU))},
+    };
+    for (const auto& [field, value] : corruptions) {
+        SCOPED_TRACE(field);
+        std::string corrupted = checkpoint;
+        replaceCheckpointValue(corrupted, field, value);
+        expectRestoreRejected(corrupted, geometry);
+    }
+}
+
+TEST_F(HnfSlcSfBackendCheckpointTest, RestoreRejectsNonCanonicalDrainedSeqState)
+{
+    const BackendGeometry geometry{1, 1, 1, 1, 2};
+    HnfSLCSFBackend original(64, geometry.slcSets, geometry.slcWays, geometry.sfSets, geometry.sfWays,
+                             geometry.seqEntries);
+    const std::string checkpoint = serializeBackend(original);
+
+    const std::vector<std::pair<std::string, std::string>> corruptions = {
+        {"seqPhase", "1 0"},
+        {"seqId", "7 0"},
+        {"seqAddress", "64 0"},
+        {"seqHomeNodeId", "17 0"},
+        {"seqState", std::to_string(static_cast<uint32_t>(HnfSfState::EU)) + " 0"},
+        {"seqOwner", "3 0"},
+        {"seqSharers", "3 0"},
+        {"seqCompletionOpcode", "9 0"},
+        {"seqCompletionTransactionId", "31 0"},
+        {"seqCommittedDirty", "1 0"},
+        {"seqCommittedDataSize", "1 0"},
+        {"seqPending", "7"},
+    };
+    for (const auto& [field, value] : corruptions) {
+        SCOPED_TRACE(field);
+        std::string corrupted = checkpoint;
+        replaceCheckpointValue(corrupted, field, value);
+        expectRestoreRejected(corrupted, geometry);
+    }
+}
+
+TEST_F(HnfSlcSfBackendCheckpointTest, RestoreRefusesLiveBackendOwnership)
+{
+    const BackendGeometry geometry{};
+    HnfSLCSFBackend original(64, geometry.slcSets, geometry.slcWays,
+                             geometry.sfSets, geometry.sfWays,
+                             geometry.seqEntries);
+    const std::string checkpoint = serializeBackend(original);
+    simulateSerialization(checkpoint);
+
+    HnfSLCSFBackend restored(64, geometry.slcSets, geometry.slcWays,
+                             geometry.sfSets, geometry.sfWays,
+                             geometry.seqEntries);
+    const auto target = probeLine(restored, VictimAddr, 3).snapshot;
+    ASSERT_TRUE(restored.tryReserveSfResources(
+        7, VictimAddr, PocqTxnKind::ReadShared, &target));
+    ASSERT_TRUE(restored.isBusy());
+
+    CheckpointIn input(getDirName());
+    EXPECT_ANY_THROW({
+        Serializable::ScopedCheckpointSection section(input, "backend");
+        restored.unserializePersistentState(input);
+    });
+    EXPECT_TRUE(restored.isBusy());
+    EXPECT_TRUE(restored.hasSfReservation(7));
+}
+
+TEST_F(HnfSlcSfBackendCheckpointTest,
+       RestoredNearMaximumLookupCountersNeverWrap)
+{
+    const BackendGeometry geometry{};
+    HnfSLCSFBackend original(64, geometry.slcSets, geometry.slcWays,
+                             geometry.sfSets, geometry.sfWays,
+                             geometry.seqEntries);
+    const std::string maximum_minus_one = std::to_string(
+        std::numeric_limits<uint64_t>::max() - 1);
+    const HnfSlcLookupReq request{
+        7, RawReq{}, PocqTxnKind::ReadShared, VictimAddr};
+
+    for (const char* field : {"accessCounter", "lookupAccessCount"}) {
+        SCOPED_TRACE(field);
+        std::string checkpoint = serializeBackend(original);
+        replaceCheckpointValue(checkpoint, field, maximum_minus_one);
+        simulateSerialization(checkpoint);
+
+        HnfSLCSFBackend restored(64, geometry.slcSets, geometry.slcWays,
+                                 geometry.sfSets, geometry.sfWays,
+                                 geometry.seqEntries);
+        CheckpointIn input(getDirName());
+        {
+            Serializable::ScopedCheckpointSection section(input, "backend");
+            ASSERT_NO_THROW(restored.unserializePersistentState(input));
+        }
+        ASSERT_NO_THROW(restored.lookup(request));
+        EXPECT_ANY_THROW(restored.lookup(request));
+    }
+}
+
+TEST_F(HnfSlcSfBackendCheckpointTest,
+       RestoredNearMaximumSeqIdentityNeverWraps)
+{
+    const BackendGeometry geometry{1, 1, 1, 1, 2};
+    HnfSLCSFBackend original(64, geometry.slcSets, geometry.slcWays,
+                             geometry.sfSets, geometry.sfWays,
+                             geometry.seqEntries);
+    std::string checkpoint = serializeBackend(original);
+    replaceCheckpointValue(
+        checkpoint, "nextSeqId",
+        std::to_string(std::numeric_limits<uint64_t>::max() - 1));
+    simulateSerialization(checkpoint);
+
+    HnfSLCSFBackend restored(64, geometry.slcSets, geometry.slcWays,
+                             geometry.sfSets, geometry.sfWays,
+                             geometry.seqEntries);
+    CheckpointIn input(getDirName());
+    {
+        Serializable::ScopedCheckpointSection section(input, "backend");
+        ASSERT_NO_THROW(restored.unserializePersistentState(input));
+    }
+
+    restored.commitRead(
+        VictimAddr, 3, PocqTxnKind::ReadUnique, lineData(0x11), false, 17);
+    const auto first_target =
+        probeLine(restored, ReplacementAddr, 5).snapshot;
+    ASSERT_TRUE(restored.tryReserveSfResources(
+        8, ReplacementAddr, PocqTxnKind::ReadUnique, &first_target));
+    HnfSLCSFBackend::SeqVictim first_victim{};
+    ASSERT_NO_THROW(restored.commitRead(
+        ReplacementAddr, 5, PocqTxnKind::ReadUnique, lineData(0x31), false,
+        17, &first_target, 8, &first_victim));
+    restored.releaseSfResources(8);
+    EXPECT_EQ(first_victim.id, std::numeric_limits<uint64_t>::max() - 1);
+    EXPECT_EQ(restored.nextSeqIdentity(),
+              std::numeric_limits<uint64_t>::max());
+
+    const uint64_t third_address = ReplacementAddr + 64;
+    const auto second_target = probeLine(restored, third_address, 7).snapshot;
+    ASSERT_TRUE(restored.tryReserveSfResources(
+        9, third_address, PocqTxnKind::ReadUnique, &second_target));
+    EXPECT_ANY_THROW(restored.commitRead(
+        third_address, 7, PocqTxnKind::ReadUnique, lineData(0x51), false, 17,
+        &second_target, 9));
+    EXPECT_EQ(restored.nextSeqIdentity(),
+              std::numeric_limits<uint64_t>::max());
+}
+
+TEST(HnfSlcSfBackendSnapshotTest,
+     AllocatorSnapshotIsOptionalAndDetectsCounterOnlyProgress)
+{
+    HnfSLCSFBackend backend(64, 1, 1, 1, 1);
+    const HnfSlcLookupReq request{
+        7, RawReq{}, PocqTxnKind::ReadShared, VictimAddr};
+    const auto storage_only = backend.protectedStateSnapshot(VictimAddr);
+    const auto stage_local =
+        backend.protectedStateSnapshot(VictimAddr, true);
+
+    ASSERT_NO_THROW(backend.lookup(request));
+    EXPECT_EQ(backend.protectedStateSnapshot(VictimAddr), storage_only);
+    EXPECT_NE(backend.protectedStateSnapshot(VictimAddr, true), stage_local);
+}
+
+TEST_F(HnfSlcSfBackendCheckpointTest,
+       ExhaustedPersistentCountersRoundTripAndNeverWrap)
+{
+    const BackendGeometry geometry{1, 1, 1, 1, 2};
+    HnfSLCSFBackend original(64, geometry.slcSets, geometry.slcWays, geometry.sfSets, geometry.sfWays,
+                             geometry.seqEntries);
+    const std::string checkpoint = serializeBackend(original);
+    const std::string maximum = std::to_string(std::numeric_limits<uint64_t>::max());
+    const HnfSlcLookupReq request{
+        7, RawReq{}, PocqTxnKind::ReadShared, VictimAddr};
+
+    for (const char* field : {"accessCounter", "lookupEpoch", "lookupAccessCount", "nextSeqId"}) {
+        SCOPED_TRACE(field);
+        std::string exhausted = checkpoint;
+        replaceCheckpointValue(exhausted, field, maximum);
+        simulateSerialization(exhausted);
+
+        HnfSLCSFBackend restored(64, geometry.slcSets, geometry.slcWays,
+                                 geometry.sfSets, geometry.sfWays,
+                                 geometry.seqEntries);
+        CheckpointIn input(getDirName());
+        {
+            Serializable::ScopedCheckpointSection section(input, "backend");
+            ASSERT_NO_THROW(restored.unserializePersistentState(input));
+        }
+        ASSERT_EQ(serializeBackend(restored), exhausted);
+
+        if (std::string(field) == "nextSeqId") {
+            restored.commitRead(
+                VictimAddr, 3, PocqTxnKind::ReadUnique, lineData(0x11),
+                false, 17);
+            const std::string durable_before = serializeBackend(restored);
+            const auto target =
+                probeLine(restored, ReplacementAddr, 5).snapshot;
+            ASSERT_TRUE(restored.tryReserveSfResources(
+                8, ReplacementAddr, PocqTxnKind::ReadUnique, &target));
+            const auto state_before = restored.protectedStateSnapshot(
+                ReplacementAddr, true);
+            const size_t reservations_before =
+                restored.sfReservationCount();
+            const size_t seq_reservations_before =
+                restored.seqReservationCount();
+            HnfSLCSFBackend::SeqVictim victim{};
+
+            EXPECT_ANY_THROW(restored.commitRead(
+                ReplacementAddr, 5, PocqTxnKind::ReadUnique,
+                lineData(0x31), false, 17, &target, 8, &victim));
+            EXPECT_EQ(restored.nextSeqIdentity(),
+                      std::numeric_limits<uint64_t>::max());
+            EXPECT_EQ(restored.protectedStateSnapshot(
+                          ReplacementAddr, true),
+                      state_before);
+            EXPECT_EQ(restored.sfReservationCount(), reservations_before);
+            EXPECT_EQ(restored.seqReservationCount(),
+                      seq_reservations_before);
+            EXPECT_EQ(victim.id, 0);
+
+            restored.releaseSfResources(8);
+            EXPECT_EQ(serializeBackend(restored), durable_before);
+            continue;
+        }
+
+        const std::string state_before = serializeBackend(restored);
+        if (std::string(field) == "lookupEpoch") {
+            EXPECT_ANY_THROW(restored.invalidateCommitTokens());
+            EXPECT_EQ(restored.currentLookupEpoch(),
+                      std::numeric_limits<uint64_t>::max());
+        } else {
+            EXPECT_ANY_THROW(restored.lookup(request));
+        }
+        EXPECT_EQ(serializeBackend(restored), state_before);
+    }
+}
+
+TEST_F(HnfSlcSfBackendCheckpointTest, DrainedPersistentStateRoundTripsExactly)
+{
+    const BackendGeometry geometry{2, 2, 2, 2, 2};
+    HnfSLCSFBackend original(64, geometry.slcSets, geometry.slcWays, geometry.sfSets, geometry.sfWays,
+                             geometry.seqEntries);
+    original.commitRead(VictimAddr, 3, PocqTxnKind::ReadShared, lineData(0x61), true, 17);
+    original.commitRead(VictimAddr, 5, PocqTxnKind::ReadShared, lineData(0x61), true, 17);
+    original.fillCleanShared(ReplacementAddr, 9, lineData(0x81));
+    const uint64_t unique_address = VictimAddr + 2 * 64;
+    original.writeLine(unique_address, 11, lineData(0xa1), PocqTxnKind::WriteUnique);
+
+    const std::vector<uint64_t> addresses = {VictimAddr, ReplacementAddr, unique_address};
+    std::vector<HnfSLCSFBackend::LookupObservation> before;
+    for (const uint64_t address : addresses) {
+        before.push_back(probeLine(original, address, 3));
+    }
+    const std::string checkpoint = serializeBackend(original);
+    simulateSerialization(checkpoint);
+
+    HnfSLCSFBackend restored(64, geometry.slcSets, geometry.slcWays, geometry.sfSets, geometry.sfWays,
+                             geometry.seqEntries);
+    CheckpointIn input(getDirName());
+    ASSERT_NO_THROW({
+        Serializable::ScopedCheckpointSection section(input, "backend");
+        restored.unserializePersistentState(input);
+    });
+
+    for (size_t i = 0; i < addresses.size(); ++i) {
+        SCOPED_TRACE(addresses[i]);
+        expectLookupObservationsEqual(probeLine(restored, addresses[i], 3), before[i]);
+    }
+    EXPECT_EQ(restored.currentLookupEpoch(), original.currentLookupEpoch());
+    EXPECT_EQ(restored.currentLookupAccessCount(), original.currentLookupAccessCount());
+    EXPECT_EQ(restored.nextSeqIdentity(), original.nextSeqIdentity());
+    EXPECT_EQ(serializeBackend(restored), checkpoint);
 }
 
 } // anonymous namespace

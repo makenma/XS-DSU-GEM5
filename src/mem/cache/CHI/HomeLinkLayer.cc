@@ -1,6 +1,7 @@
 #include "mem/cache/CHI/HomeLinkLayer.hh"
 
 #include <algorithm>
+#include <functional>
 #include <ostream>
 #include <type_traits>
 #include <utility>
@@ -51,7 +52,9 @@ setVariantStage(FlitVariant& flit, uint32_t stage)
 std::size_t
 HomeLinkLayer::TxnKeyHash::operator()(const TxnKey& key) const
 {
-    return (static_cast<std::size_t>(key.srcid) << 32) ^ key.txnid;
+    const uint64_t combined =
+        (static_cast<uint64_t>(key.srcid) << 32) | key.txnid;
+    return std::hash<uint64_t>{}(combined);
 }
 
 uint16_t
@@ -175,6 +178,66 @@ HomeLinkLayer::hasWork() const
 {
     return hasPendingWork();
 }
+
+bool
+HomeLinkLayer::hasProtocolOwnershipForDrain() const
+{
+    return hasPendingWork() || hasAllocatedProtocolToken() ||
+        hasRetryProtocolOwnership() || hasLegacyTransactionOwnership();
+}
+
+bool
+HomeLinkLayer::acceptsIncomingFlit(
+    ChannelType ch, const FlitVariant& flit) const
+{
+    if (ch != ChannelType::REQ || acceptNewRxReq) {
+        return true;
+    }
+
+    // A PCrdGrant is an already-created protocol obligation, not new work.
+    // Keep the matching AllowRetry=0 reissue admissible while ordinary RXREQ
+    // admission is quiesced, otherwise drain can deadlock on StaticReserved.
+    const RawReq* req = std::get_if<RawReq>(&flit);
+    return req && !req->AllowRetry &&
+        findStaticReservation(req->srcid, req->pcrdtype).has_value();
+}
+
+#ifdef UNIT_TEST
+void
+HomeLinkLayer::installStaticRetryReservationForTest(
+    uint32_t srcid, uint8_t pcrdtype)
+{
+    panic_if(tokens.empty(), "HomeLinkLayer test requires a resource token\n");
+    ResourceToken& token = tokens.front();
+    token.state = TokenState::StaticReserved;
+    token.staticOwnerSrcid = srcid;
+    token.staticPcrdtype = pcrdtype;
+}
+
+void
+HomeLinkLayer::installPendingRetryForTest(
+    uint32_t srcid, uint8_t pcrdtype)
+{
+    RetryRecord retry{};
+    retry.srcid = srcid;
+    retry.pcrdtype = pcrdtype;
+    pendingRetry.increment(retry.priority, srcid, pcrdtype);
+    pendingRetryRecords.push_back(retry);
+}
+
+void
+HomeLinkLayer::installRequestPipelineEntryForTest(const RawReq& req)
+{
+    PipeEntry entry{};
+    entry.flit = req;
+    entry.channel = ChannelType::REQ;
+    entry.stage = BasicChiComponent::STAGE_H0;
+    entry.seq = nextSeq++;
+    entry.enterCycle = llCycle;
+    rxPipe[static_cast<size_t>(ChannelType::REQ)][0].push_back(
+        std::move(entry));
+}
+#endif
 
 void
 HomeLinkLayer::doTxReqArb()
@@ -582,9 +645,9 @@ HomeLinkLayer::sampleRxPortsToH0()
 
     for (ChannelType ch : {ChannelType::REQ, ChannelType::RSP,
                            ChannelType::SNP, ChannelType::DAT}) {
-        if (ch == ChannelType::REQ && !acceptNewRxReq) {
-            continue;
-        }
+        // Admission is gated before the destination port consumes credit.
+        // Anything already present in the RX queue predates that boundary (or
+        // is an allowed static reissue) and remains owned work during drain.
         auto flit = rxport->getRxFlitNoCredit(ch);
         if (!flit) {
             continue;
@@ -882,14 +945,17 @@ HomeLinkLayer::portHasRxFlit() const
     }
     for (ChannelType ch : {ChannelType::REQ, ChannelType::RSP,
                            ChannelType::SNP, ChannelType::DAT}) {
-        if (ch == ChannelType::REQ && !acceptNewRxReq) {
-            continue;
-        }
         if (rxport->hasRxFlit(ch)) {
             return true;
         }
     }
     return false;
+}
+
+bool
+HomeLinkLayer::portHasRxReq() const
+{
+    return rxport && rxport->hasRxFlit(ChannelType::REQ);
 }
 
 bool
@@ -905,8 +971,14 @@ HomeLinkLayer::requestPipelineHasWork() const
 bool
 HomeLinkLayer::mayGenerateSlcsfIntent() const
 {
-    return requestPipelineHasWork() || !linkToCcQ.empty() ||
-        !ccAdmitQ.empty() || (cc && cc->mayGenerateSlcsfIntent());
+    // D1 may seal child admission only after every request already accepted at
+    // the link, every retry entitlement, and every CC owner has disappeared.
+    // cc->hasWork() is intentionally conservative and includes a pending SEQ
+    // victim which has not yet been adopted by the SEQ POCQ.
+    return portHasRxReq() || requestPipelineHasWork() ||
+        !linkToCcQ.empty() || !ccAdmitQ.empty() ||
+        hasAllocatedProtocolToken() || hasRetryProtocolOwnership() ||
+        (cc && (cc->mayGenerateSlcsfIntent() || cc->hasWork()));
 }
 
 bool
@@ -918,6 +990,30 @@ HomeLinkLayer::hasHeldRetireToken() const
         }
     }
     return false;
+}
+
+bool
+HomeLinkLayer::hasAllocatedProtocolToken() const
+{
+    return std::any_of(
+        tokens.begin(), tokens.end(), [](const ResourceToken& token) {
+            return token.state != TokenState::Free;
+        });
+}
+
+bool
+HomeLinkLayer::hasRetryProtocolOwnership() const
+{
+    return !retryDecisionQ.empty() || !pendingRetry.empty() ||
+        !pendingRetryRecords.empty();
+}
+
+bool
+HomeLinkLayer::hasLegacyTransactionOwnership() const
+{
+    return !txnLookup.empty() || !dbidLookup.empty() ||
+        std::any_of(entries.begin(), entries.end(),
+                    [](const MinimalHnfTxn& txn) { return txn.valid; });
 }
 
 void
@@ -958,8 +1054,7 @@ HomeLinkLayer::allocDynamicToken(LlPriority prio)
 }
 
 std::optional<int>
-HomeLinkLayer::findStaticReservation(uint32_t srcid,
-                                     uint8_t pcrdtype) const
+HomeLinkLayer::findStaticReservation(uint32_t srcid, uint8_t pcrdtype) const
 {
     for (const auto& token : tokens) {
         if (token.state == TokenState::StaticReserved &&

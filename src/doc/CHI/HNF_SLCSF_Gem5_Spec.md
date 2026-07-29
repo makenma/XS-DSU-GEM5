@@ -350,6 +350,11 @@ SEQ 持久状态、replacement/generation 和所有 monotonic next IDs，不会�
 cold `initState()`。活动队列、半完成响应、deferred retire 或未释放 owner
 的 checkpoint 会 fail fast，目前不支持。
 
+上述边界以外部 CHI fabric/bridge 已停止注入并排空为前置条件；D1/D2 只证明
+HomeNode、CC 和 SLCSF 的本地所有权。当前 2x2 Router 和 Cache2ChiBridge 没有
+ordered drain fence/epoch，因此全拓扑自动 drained checkpoint 仍不支持，必须在
+后续系统级工作中同时补齐 Router/Bridge drain ownership、fence 传播和恢复测试。
+
 ---
 
 # 2. 建议的文件组织

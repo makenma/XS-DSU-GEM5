@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <sstream>
 #include <string>
@@ -61,9 +62,14 @@ makeCompData(uint32_t mc_txnid, uint32_t offset, bool last,
     dat.txnid = mc_txnid;
     dat.opcode = 0x04;
     dat.last = last;
+    dat.HomeNID = HnfNode;
+    dat.dbid = 0;
+    dat.dataid = static_cast<uint8_t>(offset / BeatSize);
     dat.beatOffset = offset;
     dat.data.assign(data.begin() + offset,
                     data.begin() + offset + BeatSize);
+    dat.byteEnable.assign(dat.data.size(), 1);
+    dat.chunkValid.assign((dat.data.size() + 7) / 8, 1);
     return dat;
 }
 
@@ -111,9 +117,36 @@ makeWriteData(uint32_t requester, uint32_t txnid, uint32_t offset,
     dat.txnid = txnid;
     dat.opcode = opcode;
     dat.last = last;
+    dat.HomeNID = HnfNode;
+    dat.dbid = 1;
+    dat.dataid = static_cast<uint8_t>(offset / BeatSize);
     dat.beatOffset = offset;
     dat.data.assign(data.begin() + offset,
                     data.begin() + offset + BeatSize);
+    dat.byteEnable.assign(dat.data.size(), 1);
+    dat.chunkValid.assign((dat.data.size() + 7) / 8, 1);
+    return dat;
+}
+
+RawDat
+makeSnoopData(uint32_t requester, uint32_t txnid, uint32_t offset,
+              bool last, const std::vector<uint8_t>& data,
+              uint8_t response = 5)
+{
+    RawDat dat{};
+    dat.srcid = requester;
+    dat.tgtid = HnfNode;
+    dat.txnid = txnid;
+    dat.opcode = 0x01;
+    dat.last = last;
+    dat.HomeNID = HnfNode;
+    dat.dataid = static_cast<uint8_t>(offset / BeatSize);
+    dat.resp = response;
+    dat.beatOffset = offset;
+    dat.data.assign(data.begin() + offset,
+                    data.begin() + offset + BeatSize);
+    dat.byteEnable.assign(dat.data.size(), 1);
+    dat.chunkValid.assign((dat.data.size() + 7) / 8, 1);
     return dat;
 }
 
@@ -491,7 +524,7 @@ TEST(HnfCoherencyControllerTest,
 }
 
 TEST(HnfCoherencyControllerTest,
-     DirtyVictimDownstreamErrorHoldsOwnerWithoutRelease)
+     DirtyVictimDownstreamErrorFailsStopBeforeRelease)
 {
     HnfSLCSF slcsf(BlockSize, 1, 1, 1, 1);
     HnfCoherencyController cc(
@@ -511,26 +544,13 @@ TEST(HnfCoherencyControllerTest,
     ASSERT_TRUE(cc.hasTxDat());
     cc.popTxDat();
 
-    EXPECT_FALSE(cc.acceptRxRsp(
+    EXPECT_ANY_THROW(cc.acceptRxRsp(
         makeDirtyVictimRsp(writeback, 0x04, 24, 0, 1)));
-    EXPECT_EQ(cc.dirtyVictimPhase(victim_id),
-              HnfCoherencyController::DirtyVictimPhase::DownstreamErrorHeld);
     EXPECT_EQ(cc.dirtyVictimTransactionCount(), 1);
     EXPECT_TRUE(cc.dirtyVictimForTxn(writeback.req.txnid).has_value());
     EXPECT_FALSE(cc.dirtyVictimReleaseReqId(victim_id).valid());
     EXPECT_EQ(slcsf.dirtyVictimState(victim_id),
               HnfSLCSF::VictimState::WritebackIssued);
-    EXPECT_TRUE(cc.hasWork());
-
-    EXPECT_FALSE(cc.acceptRxRsp(
-        makeDirtyVictimRsp(writeback, 0x04, 24)));
-    for (size_t i = 0; i < 4; ++i) {
-        pumpOnce(cc, slcsf, tick);
-    }
-    EXPECT_EQ(cc.dirtyVictimPhase(victim_id),
-              HnfCoherencyController::DirtyVictimPhase::DownstreamErrorHeld);
-    EXPECT_EQ(cc.dirtyVictimTransactionCount(), 1);
-    EXPECT_EQ(slcsf.victimBufferOccupancy(), 1);
 }
 
 TEST(HnfCoherencyControllerTest, DirtyVictimCompletionMatchesVictimId)
@@ -799,6 +819,58 @@ TEST(HnfCoherencyControllerTest, RetireWakesOneSameAddressSleeper)
     EXPECT_EQ(cc.frontTxDat().entry, 1);
 }
 
+TEST(HnfCoherencyControllerTest,
+     CompAckRejectsIdentityAndReservedFieldMismatches)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    const auto data = lineData(0x31);
+    slcsf.commitRead(TestAddr, 0, PocqTxnKind::ReadShared,
+                     data, false, HnfNode);
+    HnfLinkToCcReq request = makeRead(0, 9, 0, 19, 0x01);
+    request.req.qos = 5;
+    ASSERT_TRUE(cc.acceptLinkReq(request, 0).accepted);
+
+    Tick tick = 0;
+    pumpLookup(cc, slcsf, 0, tick);
+    pumpUpdate(cc, slcsf, 0, tick);
+    ASSERT_EQ(cc.pocqState(0), PocqState::WaitCompAck);
+
+    RawRsp good = makeRsp(0, 19, 0x02);
+    good.qos = request.req.qos;
+    good.resp = 0xff;
+    const auto expectRejected = [&](RawRsp bad) {
+        EXPECT_ANY_THROW(cc.acceptRxRsp(bad));
+        EXPECT_EQ(cc.pocqState(0), PocqState::WaitCompAck);
+    };
+
+    RawRsp bad = good;
+    bad.tgtid = HnfNode + 1;
+    expectRejected(bad);
+    bad = good;
+    bad.qos = good.qos - 1;
+    expectRejected(bad);
+    bad = good;
+    bad.dbid = 1;
+    expectRejected(bad);
+    bad = good;
+    bad.respErr = 1;
+    expectRejected(bad);
+    bad = good;
+    bad.pcrdtype = 1;
+    expectRejected(bad);
+    bad = good;
+    bad.resp = 1;
+    expectRejected(bad);
+
+    const auto retired = cc.acceptRxRsp(good);
+    ASSERT_TRUE(retired);
+    EXPECT_EQ(retired->tokenId, 0);
+}
+
 TEST(HnfCoherencyControllerTest, ReadUniqueSnoopsAllOtherSharers)
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
@@ -844,6 +916,114 @@ TEST(HnfCoherencyControllerTest, ReadUniqueSnoopsAllOtherSharers)
     EXPECT_EQ(final.sfState, HnfSfState::EU);
     EXPECT_EQ(final.rnfid, 8);
     EXPECT_EQ(final.snoopTargets, 0);
+}
+
+TEST(HnfCoherencyControllerTest,
+     SnpRespRejectsIdentityStateAndForwardedResponses)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    const auto data = lineData(0x47);
+    slcsf.commitRead(TestAddr, 0, PocqTxnKind::ReadShared,
+                     data, false, HnfNode);
+    HnfLinkToCcReq request = makeRead(0, 10, 8, 20, 0x07);
+    request.req.qos = 6;
+    ASSERT_TRUE(cc.acceptLinkReq(request, 0).accepted);
+
+    Tick tick = 0;
+    pumpLookup(cc, slcsf, 0, tick);
+    ASSERT_EQ(cc.pocqState(0), PocqState::WaitSnoop);
+    ASSERT_TRUE(cc.hasTxSnp());
+    const HnfCcTxSnp snoop = cc.frontTxSnp();
+    ASSERT_EQ(snoop.targetNode, 0);
+    cc.popTxSnp();
+
+    RawRsp good = makeRsp(0, snoop.snp.txnid, 0x01);
+    good.qos = request.req.qos;
+    good.resp = 1;
+    const auto expectRejected = [&](RawRsp bad) {
+        EXPECT_ANY_THROW(cc.acceptRxRsp(bad));
+        EXPECT_EQ(cc.pocqState(0), PocqState::WaitSnoop);
+    };
+
+    RawRsp bad = good;
+    bad.tgtid = HnfNode + 1;
+    expectRejected(bad);
+    bad = good;
+    bad.qos = good.qos - 1;
+    expectRejected(bad);
+    bad = good;
+    bad.dbid = 1;
+    expectRejected(bad);
+    bad = good;
+    bad.respErr = 1;
+    expectRejected(bad);
+    bad = good;
+    bad.pcrdtype = 1;
+    expectRejected(bad);
+    bad = good;
+    bad.resp = 3;
+    expectRejected(bad);
+    bad = good;
+    bad.opcode = 0x09;
+    expectRejected(bad);
+
+    EXPECT_FALSE(cc.acceptRxRsp(good));
+    pumpUpdate(cc, slcsf, 0, tick);
+    EXPECT_TRUE(cc.hasTxDat());
+}
+
+TEST(HnfCoherencyControllerTest,
+     MainSnoopRejectedBeatDoesNotPolluteLaterData)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    const auto old_data = lineData(0x51);
+    const auto snoop_data = lineData(0x71);
+    slcsf.commitRead(
+        TestAddr, 0, PocqTxnKind::ReadShared, old_data, false, HnfNode);
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 2, 8, 22, 0x07), 0).accepted);
+    Tick tick = 0;
+    pumpLookup(cc, slcsf, 0, tick);
+
+    ASSERT_TRUE(cc.hasTxSnp());
+    const HnfCcTxSnp snoop = cc.frontTxSnp();
+    ASSERT_EQ(snoop.targetNode, 0);
+    cc.popTxSnp();
+
+    EXPECT_ANY_THROW(cc.acceptRxDat(makeSnoopData(
+        1, snoop.snp.txnid, 0, false, snoop_data)));
+    RawDat overlapping = makeSnoopData(
+        0, snoop.snp.txnid, BeatSize, true, snoop_data);
+    overlapping.beatOffset = BeatSize / 2;
+    EXPECT_ANY_THROW(cc.acceptRxDat(overlapping));
+
+    EXPECT_FALSE(cc.acceptRxDat(makeSnoopData(
+        0, snoop.snp.txnid, BeatSize, true, snoop_data)));
+    EXPECT_FALSE(cc.acceptRxDat(makeSnoopData(
+        0, snoop.snp.txnid, 0, false, snoop_data)));
+    pumpUpdate(cc, slcsf, 0, tick);
+
+    std::vector<uint8_t> returned_data(BlockSize, 0);
+    for (uint32_t beat = 0; beat < 2; ++beat) {
+        ASSERT_TRUE(cc.hasTxDat());
+        const RawDat& dat = cc.frontTxDat().dat;
+        ASSERT_EQ(dat.beatOffset, beat * BeatSize);
+        std::copy(dat.data.begin(), dat.data.end(),
+                  returned_data.begin() + dat.beatOffset);
+        cc.popTxDat();
+    }
+    EXPECT_EQ(returned_data, snoop_data);
+    const auto final = lookup(slcsf, 8, PocqTxnKind::ReadUnique);
+    EXPECT_EQ(final.sfState, HnfSfState::EU);
+    EXPECT_EQ(final.rnfid, 8);
 }
 
 TEST(HnfCoherencyControllerTest, SeqDoesNotRetireBeforeCompleteSfEvictResponse)
@@ -899,6 +1079,63 @@ TEST(HnfCoherencyControllerTest, SeqDoesNotRetireBeforeCompleteSfEvictResponse)
     EXPECT_FALSE(slcsf.lookup(req).replay);
 }
 
+TEST(HnfCoherencyControllerTest,
+     SeqSnpRespRejectsIdentityAndStateMismatches)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 1, 1, 2);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    const uint64_t victimAddr = TestAddr;
+    const uint64_t replacementAddr = TestAddr + BlockSize;
+    const auto data = lineData(0x74);
+    slcsf.commitRead(victimAddr, 0, PocqTxnKind::ReadUnique,
+                     data, false, HnfNode);
+    slcsf.commitRead(replacementAddr, 4, PocqTxnKind::ReadUnique,
+                     data, false, HnfNode);
+    ASSERT_EQ(slcsf.seqOccupancy(), 1);
+
+    cc.serviceInternalWork();
+    ASSERT_TRUE(cc.hasTxSnp());
+    const HnfCcTxSnp snoop = cc.frontTxSnp();
+    ASSERT_EQ(snoop.entry, UINT32_MAX);
+    cc.popTxSnp();
+
+    RawRsp good = makeRsp(0, snoop.snp.txnid, 0x01);
+    good.resp = 1;
+    const auto expectRejected = [&](RawRsp bad) {
+        EXPECT_ANY_THROW(cc.acceptRxRsp(bad));
+        EXPECT_TRUE(cc.hasActiveSeqPocq());
+        EXPECT_EQ(slcsf.seqOccupancy(), 1);
+    };
+
+    RawRsp bad = good;
+    bad.tgtid = HnfNode + 1;
+    expectRejected(bad);
+    bad = good;
+    bad.qos = 1;
+    expectRejected(bad);
+    bad = good;
+    bad.dbid = 1;
+    expectRejected(bad);
+    bad = good;
+    bad.respErr = 1;
+    expectRejected(bad);
+    bad = good;
+    bad.pcrdtype = 1;
+    expectRejected(bad);
+    bad = good;
+    bad.resp = 3;
+    expectRejected(bad);
+
+    EXPECT_FALSE(cc.acceptRxRsp(good));
+    Tick tick = 0;
+    pumpSeqCompletion(cc, slcsf, tick);
+    EXPECT_EQ(slcsf.seqOccupancy(), 0);
+    EXPECT_FALSE(cc.hasActiveSeqPocq());
+}
+
 TEST(HnfCoherencyControllerTest, SeqPocqPreservesDirtySnoopData)
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 1, 1, 2);
@@ -920,15 +1157,13 @@ TEST(HnfCoherencyControllerTest, SeqPocqPreservesDirtySnoopData)
     const HnfCcTxSnp snoop = cc.frontTxSnp();
     cc.popTxSnp();
 
-    RawDat dat{};
-    dat.srcid = 0;
-    dat.tgtid = HnfNode;
-    dat.txnid = snoop.snp.txnid;
-    dat.opcode = 0x01;
-    dat.last = true;
-    dat.beatOffset = 0;
-    dat.data = dirtyData;
-    EXPECT_FALSE(cc.acceptRxDat(dat));
+    EXPECT_ANY_THROW(cc.acceptRxDat(makeSnoopData(
+        1, snoop.snp.txnid, 0, false, dirtyData)));
+    EXPECT_TRUE(cc.hasActiveSeqPocq());
+    EXPECT_FALSE(cc.acceptRxDat(makeSnoopData(
+        0, snoop.snp.txnid, BeatSize, true, dirtyData)));
+    EXPECT_FALSE(cc.acceptRxDat(makeSnoopData(
+        0, snoop.snp.txnid, 0, false, dirtyData)));
     EXPECT_EQ(slcsf.seqOccupancy(), 1);
     Tick tick = 0;
     pumpSeqCompletion(cc, slcsf, tick);
@@ -973,6 +1208,167 @@ TEST(HnfCoherencyControllerTest, ReadNoSnpReturnsWithoutAllocatingSlcSf)
     const auto result = slcsf.lookup(req);
     EXPECT_FALSE(result.slcHit);
     EXPECT_FALSE(result.sfHit);
+}
+
+TEST(HnfCoherencyControllerTest,
+     PartialWriteUniqueIsRejectedBeforeEntryAllocation)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    HnfLinkToCcReq partial =
+        makeRead(0, 2, 0, 32, 0x58, TestAddr + 8);
+    partial.req.size = 4;
+    EXPECT_ANY_THROW(cc.acceptLinkReq(partial, 0));
+    EXPECT_FALSE(cc.hasWork());
+
+    const HnfCcAdmitResult full =
+        cc.acceptLinkReq(makeRead(0, 3, 0, 33, 0x59), 1);
+    EXPECT_TRUE(full.accepted);
+}
+
+TEST(HnfCoherencyControllerTest,
+     WriteDataAssemblyAcceptsTerminalBeatFirst)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 4, 0, 34, 0x59), 0).accepted);
+    ASSERT_TRUE(cc.hasTxRsp());
+    cc.popTxRsp();
+
+    const auto data = lineData(0xa4);
+    EXPECT_FALSE(cc.acceptRxDat(
+        makeWriteData(0, 34, BeatSize, true, 0x03, data)));
+    EXPECT_FALSE(cc.acceptRxDat(
+        makeWriteData(0, 34, 0, false, 0x03, data)));
+
+    Tick tick = 0;
+    pumpLookup(cc, slcsf, 0, tick);
+    pumpUpdate(cc, slcsf, 0, tick);
+    ASSERT_TRUE(cc.hasDeferredRetire());
+    EXPECT_EQ(cc.popDeferredRetire().tokenId, 0);
+    EXPECT_EQ(lookup(slcsf, 0, PocqTxnKind::ReadShared).data, data);
+}
+
+TEST(HnfCoherencyControllerTest,
+     WriteDataRejectsInvalidBeatWithoutMutatingAssembly)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 5, 0, 35, 0x59), 0).accepted);
+    ASSERT_TRUE(cc.hasTxRsp());
+    cc.popTxRsp();
+    const auto data = lineData(0xa5);
+
+    EXPECT_ANY_THROW(cc.acceptRxDat(
+        makeWriteData(0, 35, 0, true, 0x03, data)));
+    RawDat invalid_mask = makeWriteData(
+        0, 35, 0, false, 0x03, data);
+    invalid_mask.byteEnable[0] = 2;
+    EXPECT_ANY_THROW(cc.acceptRxDat(invalid_mask));
+    invalid_mask = makeWriteData(
+        0, 35, 0, false, 0x03, data);
+    invalid_mask.chunkValid[0] = 2;
+    EXPECT_ANY_THROW(cc.acceptRxDat(invalid_mask));
+
+    EXPECT_FALSE(cc.acceptRxDat(
+        makeWriteData(0, 35, 0, false, 0x03, data)));
+    EXPECT_ANY_THROW(cc.acceptRxDat(
+        makeWriteData(0, 35, 0, false, 0x03, data)));
+    EXPECT_FALSE(cc.acceptRxDat(
+        makeWriteData(0, 35, BeatSize, true, 0x03, data)));
+
+    Tick tick = 0;
+    pumpLookup(cc, slcsf, 0, tick);
+    pumpUpdate(cc, slcsf, 0, tick);
+    ASSERT_TRUE(cc.hasDeferredRetire());
+    cc.popDeferredRetire();
+    EXPECT_EQ(lookup(slcsf, 0, PocqTxnKind::ReadShared).data, data);
+}
+
+TEST(HnfCoherencyControllerTest,
+     McDataAssemblyRejectsMissingLastWithoutMutation)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 6, 0, 36, 0x04), 0).accepted);
+    Tick tick = 0;
+    pumpLookup(cc, slcsf, 0, tick);
+    ASSERT_TRUE(cc.hasTxReq());
+    const HnfCcTxReq read = cc.frontTxReq();
+    cc.popTxReq();
+    cc.notifyTxReqSent(read);
+
+    const auto data = lineData(0xa6);
+    EXPECT_FALSE(cc.acceptRxDat(
+        makeCompData(read.req.txnid, 0, false, data)));
+    EXPECT_ANY_THROW(cc.acceptRxDat(
+        makeCompData(read.req.txnid, BeatSize, false, data)));
+    EXPECT_FALSE(cc.hasTxDat());
+    const auto retired = cc.acceptRxDat(
+        makeCompData(read.req.txnid, BeatSize, true, data));
+    ASSERT_TRUE(retired);
+    EXPECT_EQ(retired->tokenId, 0);
+}
+
+TEST(HnfCoherencyControllerTest,
+     McTransactionIdentityRejectsLateBeatAfterEntryReuse)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+    const auto data = lineData(0xa7);
+    Tick tick = 0;
+
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 7, 0, 37, 0x04), tick).accepted);
+    pumpLookup(cc, slcsf, 0, tick);
+    ASSERT_TRUE(cc.hasTxReq());
+    const HnfCcTxReq first = cc.frontTxReq();
+    cc.popTxReq();
+    cc.notifyTxReqSent(first);
+    EXPECT_FALSE(cc.acceptRxDat(
+        makeCompData(first.req.txnid, BeatSize, true, data)));
+    const auto first_retire = cc.acceptRxDat(
+        makeCompData(first.req.txnid, 0, false, data));
+    ASSERT_TRUE(first_retire);
+    ASSERT_TRUE(cc.hasTxDat());
+    cc.popTxDat();
+    ASSERT_TRUE(cc.hasTxDat());
+    cc.popTxDat();
+
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 8, 0, 38, 0x04), tick).accepted);
+    pumpLookup(cc, slcsf, 0, tick);
+    ASSERT_TRUE(cc.hasTxReq());
+    const HnfCcTxReq second = cc.frontTxReq();
+    cc.popTxReq();
+    cc.notifyTxReqSent(second);
+    EXPECT_NE(first.req.txnid, second.req.txnid);
+
+    EXPECT_ANY_THROW(cc.acceptRxDat(
+        makeCompData(first.req.txnid, 0, false, data)));
+    EXPECT_FALSE(cc.acceptRxDat(
+        makeCompData(second.req.txnid, BeatSize, true, data)));
+    const auto second_retire = cc.acceptRxDat(
+        makeCompData(second.req.txnid, 0, false, data));
+    ASSERT_TRUE(second_retire);
+    EXPECT_EQ(second_retire->tokenId, 0);
 }
 
 TEST(HnfCoherencyControllerTest, SeqPocqSleepsForMainAddressHazard)
@@ -2671,12 +3067,13 @@ TEST(HnfCoherencyControllerTest,
     pumpLookup(cc, slcsf, 1, tick);
     ASSERT_TRUE(cc.hasTxReq());
     ASSERT_EQ(cc.frontTxReq().entry, 1);
+    const uint32_t mc_txnid = cc.frontTxReq().req.txnid;
     cc.popTxReq();
     cc.notifyTxReqSent(1);
 
-    EXPECT_FALSE(cc.acceptRxDat(makeCompData(2, 0, false, data)));
+    EXPECT_FALSE(cc.acceptRxDat(makeCompData(mc_txnid, 0, false, data)));
     const auto retired =
-        cc.acceptRxDat(makeCompData(2, BeatSize, true, data));
+        cc.acceptRxDat(makeCompData(mc_txnid, BeatSize, true, data));
     ASSERT_TRUE(retired);
     EXPECT_EQ(retired->tokenId, 1);
 
@@ -2737,6 +3134,7 @@ TEST(HnfCoherencyControllerTest,
     ASSERT_NO_THROW(cc.serializeSlcsfIdentityState(checkpoint));
     const std::string contents = checkpoint.str();
     EXPECT_NE(contents.find("nextRequestId=1\n"), std::string::npos);
+    EXPECT_NE(contents.find("nextMcTransactionId=1\n"), std::string::npos);
     EXPECT_NE(contents.find("nextSnoopTransactionId="), std::string::npos);
     EXPECT_NE(contents.find("nextDirtyVictimTransactionId="),
               std::string::npos);
@@ -2770,6 +3168,244 @@ TEST_F(HnfCcCheckpointTest, RestorePreservesControllerRequestIdentity)
     ASSERT_TRUE(restored.acceptLinkReq(
         makeRead(0, 7001, 3, 97, 0x01), 0).accepted);
     EXPECT_EQ(restored.slcLookupReqId(0), SlcSfReqId{701});
+}
+
+TEST_F(HnfCcCheckpointTest, ExhaustedControllerIdentitiesRoundTrip)
+{
+    HnfCoherencyController original(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    std::ostringstream checkpoint;
+    {
+        Serializable::ScopedCheckpointSection section(checkpoint, "cc");
+        original.serializeSlcsfIdentityState(checkpoint);
+    }
+    std::string contents = checkpoint.str();
+    struct ExhaustedIdentity
+    {
+        const char* original;
+        const char* exhausted;
+    };
+    const std::vector<ExhaustedIdentity> cases = {
+        {"nextRequestId=1\n",
+         "nextRequestId=18446744073709551615\n"},
+        {"nextMcTransactionId=1\n",
+         "nextMcTransactionId=1073741824\n"},
+        {"nextSnoopTransactionId=2147483648\n",
+         "nextSnoopTransactionId=4294967295\n"},
+        {"nextDirtyVictimTransactionId=1073741824\n",
+         "nextDirtyVictimTransactionId=2147483648\n"},
+    };
+
+    for (const auto& test : cases) {
+        const size_t position = contents.find(test.original);
+        ASSERT_NE(position, std::string::npos);
+        contents.replace(
+            position, std::string(test.original).size(), test.exhausted);
+    }
+    simulateSerialization(contents);
+
+    HnfCoherencyController restored(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    {
+        CheckpointIn input(getDirName());
+        Serializable::ScopedCheckpointSection section(input, "cc");
+        ASSERT_NO_THROW(restored.unserializeSlcsfIdentityState(input));
+    }
+
+    std::ostringstream round_trip;
+    {
+        Serializable::ScopedCheckpointSection section(round_trip, "cc");
+        ASSERT_NO_THROW(restored.serializeSlcsfIdentityState(round_trip));
+    }
+    for (const auto& test : cases) {
+        EXPECT_NE(round_trip.str().find(test.exhausted), std::string::npos);
+    }
+}
+
+TEST_F(HnfCcCheckpointTest,
+       RestoredExhaustedControllerAllocatorsFailBeforeReuse)
+{
+    HnfCoherencyController original(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    std::ostringstream checkpoint;
+    {
+        Serializable::ScopedCheckpointSection section(checkpoint, "cc");
+        original.serializeSlcsfIdentityState(checkpoint);
+    }
+    const std::string valid_contents = checkpoint.str();
+
+    const auto exercise = [this, &valid_contents](
+            const char* original_value, const char* exhausted_value,
+            auto&& operation) {
+        SCOPED_TRACE(exhausted_value);
+        std::string contents = valid_contents;
+        const size_t position = contents.find(original_value);
+        ASSERT_NE(position, std::string::npos);
+        contents.replace(position, std::string(original_value).size(),
+                         exhausted_value);
+        simulateSerialization(contents);
+
+        HnfCoherencyController restored(
+            BlockSize, BeatSize, 8, SnNode, false, 4);
+        {
+            CheckpointIn input(getDirName());
+            Serializable::ScopedCheckpointSection section(input, "cc");
+            ASSERT_NO_THROW(restored.unserializeSlcsfIdentityState(input));
+        }
+        operation(restored);
+    };
+
+    exercise("nextRequestId=1\n",
+             "nextRequestId=18446744073709551615\n",
+             [](HnfCoherencyController& cc) {
+                 HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+                 cc.setSlcsf(&slcsf);
+                 EXPECT_ANY_THROW(cc.acceptLinkReq(
+                     makeRead(0, 9100, 1, 400, 0x01), 0));
+                 EXPECT_FALSE(cc.slcLookupReqId(0).valid());
+                 EXPECT_ANY_THROW(cc.acceptLinkReq(
+                     makeRead(1, 9101, 2, 401, 0x01,
+                              TestAddr + 2 * BlockSize), 0));
+                 EXPECT_FALSE(cc.slcLookupReqId(1).valid());
+             });
+
+    exercise("nextMcTransactionId=1\n",
+             "nextMcTransactionId=1073741824\n",
+             [](HnfCoherencyController& cc) {
+                 HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+                 cc.setSlcsf(&slcsf);
+                 EXPECT_ANY_THROW(cc.acceptLinkReq(
+                     makeRead(0, 9200, 2, 410, 0x04), 0));
+                 EXPECT_FALSE(cc.hasTxReq());
+             });
+
+    exercise("nextSnoopTransactionId=2147483648\n",
+             "nextSnoopTransactionId=4294967295\n",
+             [](HnfCoherencyController& cc) {
+                 HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+                 const auto data = lineData(0xc0);
+                 slcsf.commitRead(
+                     TestAddr, 0, PocqTxnKind::ReadShared, data, false);
+                 slcsf.commitRead(
+                     TestAddr, 4, PocqTxnKind::ReadShared, data, false);
+                 cc.setSlcsf(&slcsf);
+                 ASSERT_TRUE(cc.acceptLinkReq(
+                     makeRead(0, 9300, 8, 420, 0x07), 0).accepted);
+                 Tick tick = 0;
+                 EXPECT_ANY_THROW(pumpLookup(cc, slcsf, 0, tick));
+                 EXPECT_FALSE(cc.hasTxSnp());
+             });
+
+    exercise("nextDirtyVictimTransactionId=1073741824\n",
+             "nextDirtyVictimTransactionId=2147483648\n",
+             [](HnfCoherencyController& cc) {
+                 HnfSLCSF slcsf(BlockSize, 1, 1, 1, 1);
+                 const auto victim_data = lineData(0xd0);
+                 const auto fill_data = lineData(0xe0);
+                 slcsf.writeLine(TestAddr, 0, victim_data,
+                                 PocqTxnKind::WriteUnique, HnfNode);
+                 cc.setSlcsf(&slcsf);
+                 Tick tick = 0;
+                 EXPECT_ANY_THROW(reachDirtyVictimWriteback(
+                     cc, slcsf, tick, fill_data));
+                 EXPECT_EQ(cc.dirtyVictimTransactionCount(), 0);
+                 EXPECT_EQ(cc.pendingDirtyVictimRequesterCount(), 0);
+             });
+}
+
+TEST_F(HnfCcCheckpointTest, RestoreRejectsInvalidControllerIdentityBounds)
+{
+    HnfCoherencyController original(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    std::ostringstream checkpoint;
+    {
+        Serializable::ScopedCheckpointSection section(checkpoint, "cc");
+        original.serializeSlcsfIdentityState(checkpoint);
+    }
+    const std::string valid_contents = checkpoint.str();
+    struct InvalidIdentity
+    {
+        const char* original;
+        const char* invalid;
+    };
+    const std::vector<InvalidIdentity> cases = {
+        {"nextRequestId=1\n", "nextRequestId=0\n"},
+        {"nextMcTransactionId=1\n", "nextMcTransactionId=0\n"},
+        {"nextMcTransactionId=1\n",
+         "nextMcTransactionId=4294967295\n"},
+        {"nextSnoopTransactionId=2147483648\n",
+         "nextSnoopTransactionId=0\n"},
+        {"nextSnoopTransactionId=2147483648\n",
+         "nextSnoopTransactionId=2147483647\n"},
+        {"nextDirtyVictimTransactionId=1073741824\n",
+         "nextDirtyVictimTransactionId=0\n"},
+        {"nextDirtyVictimTransactionId=1073741824\n",
+         "nextDirtyVictimTransactionId=1073741823\n"},
+        {"nextDirtyVictimTransactionId=1073741824\n",
+         "nextDirtyVictimTransactionId=4294967295\n"},
+    };
+
+    for (const auto& test : cases) {
+        SCOPED_TRACE(test.invalid);
+        std::string contents = valid_contents;
+        const size_t position = contents.find(test.original);
+        ASSERT_NE(position, std::string::npos);
+        contents.replace(
+            position, std::string(test.original).size(), test.invalid);
+        simulateSerialization(contents);
+
+        HnfCoherencyController restored(
+            BlockSize, BeatSize, 8, SnNode, false, 4);
+        EXPECT_ANY_THROW({
+            CheckpointIn input(getDirName());
+            Serializable::ScopedCheckpointSection section(input, "cc");
+            restored.unserializeSlcsfIdentityState(input);
+        });
+    }
+}
+
+TEST_F(HnfCcCheckpointTest, RestoreRejectsIdentityRewindOverUsedController)
+{
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    std::ostringstream old_checkpoint;
+    {
+        Serializable::ScopedCheckpointSection section(old_checkpoint, "cc");
+        cc.serializeSlcsfIdentityState(old_checkpoint);
+    }
+
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+    cc.setSlcsf(&slcsf);
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 9000, 0, 300, 0x04), 0).accepted);
+    Tick tick = 0;
+    pumpLookup(cc, slcsf, 0, tick);
+    ASSERT_TRUE(cc.hasTxReq());
+    const HnfCcTxReq read = cc.frontTxReq();
+    cc.popTxReq();
+    cc.notifyTxReqSent(read);
+    const auto data = lineData(0xb0);
+    EXPECT_FALSE(cc.acceptRxDat(
+        makeCompData(read.req.txnid, 0, false, data)));
+    ASSERT_TRUE(cc.acceptRxDat(
+        makeCompData(read.req.txnid, BeatSize, true, data)));
+    ASSERT_TRUE(cc.hasTxDat());
+    cc.popTxDat();
+    ASSERT_TRUE(cc.hasTxDat());
+    cc.popTxDat();
+    ASSERT_FALSE(cc.hasWork());
+
+    simulateSerialization(old_checkpoint.str());
+    EXPECT_ANY_THROW({
+        CheckpointIn input(getDirName());
+        Serializable::ScopedCheckpointSection section(input, "cc");
+        cc.unserializeSlcsfIdentityState(input);
+    });
+
+    std::ostringstream current;
+    ASSERT_NO_THROW(cc.serializeSlcsfIdentityState(current));
+    EXPECT_NE(current.str().find("nextMcTransactionId=2\n"),
+              std::string::npos);
 }
 
 } // namespace gem5::Chi

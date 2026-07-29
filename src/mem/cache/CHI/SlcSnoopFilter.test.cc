@@ -1,12 +1,14 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <limits>
 #include <set>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
 #include "mem/cache/CHI/SlcSnoopFilter.hh"
+#include "sim/eventq.hh"
 
 namespace gem5::Chi
 {
@@ -14,6 +16,24 @@ namespace
 {
 
 constexpr uint64_t TestAddr = 0x80004000;
+
+class ScopedTestEventQueue
+{
+  public:
+    ScopedTestEventQueue()
+        : previous(curEventQueue()), queue("slcsf-test-eventq")
+    {
+        curEventQueue(&queue);
+    }
+
+    ~ScopedTestEventQueue() { curEventQueue(previous); }
+
+    EventQueue& get() { return queue; }
+
+  private:
+    EventQueue* previous;
+    EventQueue queue;
+};
 
 SlcSfReqHeader
 requestHeader(uint64_t req_id)
@@ -143,6 +163,142 @@ TEST(SlcSnoopFilterTest, NewEarlierWorkReschedulesWakeup)
     const auto duplicate = slcSnoopFilterScheduleDecision(105, 105);
     EXPECT_FALSE(duplicate.schedule);
     EXPECT_FALSE(duplicate.reschedule);
+}
+
+TEST(SlcSnoopFilterTest, LongOccupancyWeightsSplitWithoutTruncation)
+{
+    std::vector<int> chunks;
+    const uint64_t cycles =
+        static_cast<uint64_t>(std::numeric_limits<int>::max()) + 1;
+    slcSnoopFilterSampleChunks(
+        cycles, [&chunks](int chunk) { chunks.push_back(chunk); });
+
+    ASSERT_EQ(chunks.size(), 2);
+    EXPECT_EQ(chunks[0], std::numeric_limits<int>::max());
+    EXPECT_EQ(chunks[1], 1);
+}
+
+TEST(SlcSnoopFilterTest, EventQueueEnforcesOneTickCdcVisibility)
+{
+    ScopedTestEventQueue scope;
+    EventQueue& queue = scope.get();
+    HnfSLCSFPipelineConfig config{};
+    config.reqQueueEntries = 1;
+    config.lookupLatency = 1;
+    HnfSLCSF service(64, 4, 2, 4, 2, 8, config);
+    SlcSfRequest request = lookupRequest(53);
+    bool accepted = false;
+    bool same_tick_credit = true;
+    bool same_tick_response = true;
+    bool next_tick_credit = false;
+    bool next_tick_response = false;
+
+    EventFunctionWrapper child(
+        [&service] { service.wakeup(curTick()); }, "slcsf-child");
+    EventFunctionWrapper parent_accept(
+        [&] {
+            accepted = service.tryEnqueue(std::move(request)) ==
+                SlcSfEnqueueResult::Accepted;
+        },
+        "slcsf-parent-accept");
+    // Same-priority bins are LIFO: schedule child first so parent accepts
+    // before the child edge at Tick 10.
+    queue.schedule(&child, 10);
+    queue.schedule(&parent_accept, 10);
+    queue.serviceEvents(10);
+    ASSERT_TRUE(accepted);
+    EXPECT_EQ(service.reqIngressCount(), 1);
+    EXPECT_EQ(service.reqInflightCount(), 0);
+
+    queue.schedule(&child, 11);
+    queue.serviceEvents(11);
+    ASSERT_EQ(service.reqInflightCount(), 1);
+
+    EventFunctionWrapper parent_credit(
+        [&] { same_tick_credit = service.registeredReqCredits() != 0; },
+        "slcsf-parent-credit");
+    // Schedule parent first so the child completes first at the same Tick.
+    queue.schedule(&parent_credit, 12);
+    queue.schedule(&child, 12);
+    queue.serviceEvents(12);
+    EXPECT_FALSE(same_tick_credit);
+    EXPECT_EQ(service.registeredReqCreditGrants(), 1);
+
+    EventFunctionWrapper parent_response(
+        [&] {
+            next_tick_credit = service.registeredReqCredits() != 0;
+            same_tick_response = service.frontVisibleResponse() != nullptr;
+        },
+        "slcsf-parent-response");
+    queue.schedule(&parent_response, 13);
+    queue.schedule(&child, 13);
+    queue.serviceEvents(13);
+    EXPECT_TRUE(next_tick_credit);
+    EXPECT_FALSE(same_tick_response);
+    EXPECT_EQ(service.rawRespVisibleCount(), 1);
+
+    EventFunctionWrapper parent_next(
+        [&] {
+            next_tick_response = service.frontVisibleResponse() != nullptr;
+        },
+        "slcsf-parent-next");
+    queue.schedule(&parent_next, 14);
+    queue.serviceEvents(14);
+    EXPECT_TRUE(next_tick_response);
+    ASSERT_TRUE(service.popVisibleResponse().has_value());
+}
+
+TEST(SlcSnoopFilterTest, OccupancySettlesBeforeMidWindowAdmission)
+{
+    ScopedTestEventQueue scope;
+    EventQueue& queue = scope.get();
+    HnfSLCSFPipelineConfig config{};
+    config.reqQueueEntries = 2;
+    config.maxInflight = 2;
+    config.lookupIssueWidth = 2;
+    config.lookupLatency = 4;
+    config.enableSetLock = true;
+    HnfSLCSF service(64, 4, 2, 4, 2, 8, config);
+    auto first = lookupRequest(54);
+    ASSERT_EQ(service.tryEnqueue(std::move(first)),
+              SlcSfEnqueueResult::Accepted);
+
+    queue.setCurTick(1);
+    service.wakeup(1, 1);
+    queue.setCurTick(3);
+    auto second = lookupRequest(55);
+    ASSERT_EQ(service.tryEnqueue(std::move(second)),
+              SlcSfEnqueueResult::Accepted);
+    queue.setCurTick(4);
+    // This models an original far deadline pulled forward by new work. The
+    // service advances three logical cycles, but production occupancy is
+    // settled from actual transition Ticks instead of backfilled at T4.
+    service.wakeup(4, 3);
+
+    const auto& stats = service.statsSnapshot();
+    EXPECT_EQ(stats.reqOccupancySamples, 4);
+    EXPECT_EQ(stats.reqOccupancyTotal, 5);
+    EXPECT_EQ(stats.respOccupancyTotal, 3);
+    EXPECT_EQ(stats.inflightOccupancyTotal, 3);
+}
+
+TEST(SlcSnoopFilterTest, MidEdgeTransitionPreservesNextChildSample)
+{
+    ScopedTestEventQueue scope;
+    EventQueue& queue = scope.get();
+    HnfSLCSFPipelineConfig config{};
+    config.childClockPeriod = 10;
+    HnfSLCSF service(64, 4, 2, 4, 2, 8, config);
+
+    queue.setCurTick(5);
+    auto request = lookupRequest(56);
+    ASSERT_EQ(service.tryEnqueue(std::move(request)),
+              SlcSfEnqueueResult::Accepted);
+    queue.setCurTick(10);
+    service.wakeup(10);
+
+    EXPECT_EQ(service.statsSnapshot().reqOccupancySamples, 1);
+    EXPECT_EQ(service.statsSnapshot().reqOccupancyTotal, 1);
 }
 
 TEST(SlcSnoopFilterTest, CompletionPrecedesNewIssue)
@@ -384,6 +540,53 @@ TEST(SlcSnoopFilterTest, DrainWaitsForAllAcceptedWork)
         EXPECT_EQ(service.respOccupied(), 0);
         EXPECT_TRUE(service.isCompletelyIdle());
     }
+}
+
+TEST(SlcSnoopFilterTest, DrainReadinessRequiresSealedAdmission)
+{
+    HnfSLCSF service(64, 4, 2, 4, 2);
+
+    EXPECT_FALSE(slcSnoopFilterDrainReady(service));
+    service.requestDrain();
+    EXPECT_FALSE(slcSnoopFilterDrainReady(service));
+    service.beginDraining();
+    EXPECT_TRUE(slcSnoopFilterDrainReady(service));
+}
+
+TEST(SlcSnoopFilterTest, InitializationDrainReadyTransitionNotifiesOwner)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.initLatency = 3;
+    HnfSLCSF service(64, 4, 2, 4, 2, 8, config);
+    service.resetForColdStart();
+    service.requestDrain();
+    service.beginDraining();
+    ASSERT_FALSE(slcSnoopFilterDrainReady(service));
+
+    std::optional<Tick> owner_notification;
+    const auto advance = [&service, &owner_notification](Tick tick) {
+        const auto edge = advanceSlcSnoopFilterService(service, tick);
+        if (slcSnoopFilterShouldNotifyOwner(edge)) {
+            owner_notification = tick + 1;
+        }
+        return edge;
+    };
+
+    const auto first_edge = advance(10);
+    EXPECT_FALSE(first_edge.drainBecameReady);
+    EXPECT_FALSE(slcSnoopFilterShouldNotifyOwner(first_edge));
+    EXPECT_FALSE(owner_notification.has_value());
+    const auto second_edge = advance(11);
+    EXPECT_FALSE(second_edge.drainBecameReady);
+    EXPECT_FALSE(slcSnoopFilterShouldNotifyOwner(second_edge));
+    EXPECT_FALSE(owner_notification.has_value());
+    const auto ready_edge = advance(12);
+    EXPECT_TRUE(ready_edge.drainBecameReady);
+    EXPECT_TRUE(slcSnoopFilterShouldNotifyOwner(ready_edge));
+    EXPECT_TRUE(slcSnoopFilterDrainReady(service));
+    EXPECT_EQ(owner_notification, std::optional<Tick>(13));
+    EXPECT_FALSE(ready_edge.creditBecameAvailable);
+    EXPECT_FALSE(ready_edge.responseBecameVisible);
 }
 
 TEST(SlcSnoopFilterTest, DrainResumeRestoresAdmission)

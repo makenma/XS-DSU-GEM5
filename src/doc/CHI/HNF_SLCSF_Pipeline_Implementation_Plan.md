@@ -96,6 +96,13 @@ parent/CC/deferred-retire 与 child request/response/in-flight/set-lock/VictimBu
 不序列化 active queue、in-flight stage/ready tick、response reservation、
 deferred retire 或已分配的 protocol/transient owner；active checkpoint 明确不支持。
 
+这里的 D1/D2 保证只覆盖 HomeNode、CC 和 SLCSF 的本地所有权边界。创建
+drained checkpoint 前，外部 CHI fabric 和 Cache2ChiBridge 必须已经停止注入并
+排空所有发往该 HomeNode 的请求。当前 `kmhv2_chi_2x2_router` 拓扑尚未实现
+Router/Bridge 间的 ordered drain fence/epoch，因而不支持直接依赖全局
+DrainManager 自动完成整条 2x2 fabric 的 checkpoint；该能力需要单独的系统级
+实现和测试，不能由 HomeNode 的本地 admission gate 推断。
+
 ### 0.5 最终回归命令
 
 以下命令均从 `GEM5` workspace 根目录执行。

@@ -15,6 +15,7 @@ SimObject('SlcSnoopFilter.py', sim_objects=['SlcSnoopFilter'])
 
 
 Source('Cache2ChiBridge.cc')
+Source('Cache2ChiBridgeData.cc')
 Source('Chi2ClassicMemBridge.cc')
 Source('ChiFlitSink.cc')
 Source('ChiRouterRefModel.cc')
@@ -66,8 +67,21 @@ GTest('hnf_coherency_controller.test',
       'HnfSLCSFBackend.cc',
       with_tag('gem5 trace'))
 
+GTest('home_link_layer.test',
+      'HomeLinkLayer.test.cc',
+      'HomeLinkLayer.cc',
+      'HnfCoherencyController.cc',
+      'HnfPOCQStateGraph.cc',
+      'HnfSeqPOCQStateGraph.cc',
+      'HnfSLCSF.cc',
+      'HnfSLCSFBackend.cc',
+      '../../ruby/common/Consumer.cc',
+      '../../../sim/port.cc',
+      with_tag('gem5 trace'))
+
 GTest('cache2chi_bridge.test',
       'Cache2ChiBridge.test.cc',
+      'Cache2ChiBridgeData.cc',
       with_tag('gem5 trace'))
 
 GTest('chi2classic_mem_bridge.test',

@@ -33,14 +33,43 @@ class HomeLinkLayer : public ruby::Consumer
 
     void wakeup() override;
     void print(std::ostream& out) const override;
+    /** Local work which can make progress on another HomeNode edge. */
     bool hasWork() const;
+    /**
+     * Protocol ownership which must be empty at a drained/checkpoint boundary.
+     *
+     * This is deliberately broader than hasWork(): a granted static retry
+     * reservation waits for an upstream reissue and must block drain without
+     * forcing the HomeNode to poll every cycle.
+     */
+    bool hasProtocolOwnershipForDrain() const;
     void quiesceNewRequests() { acceptNewRxReq = false; }
     void resumeNewRequests() { acceptNewRxReq = true; }
     bool newRequestsQuiesced() const { return !acceptNewRxReq; }
+    /** Admission predicate for the RX port's pre-enqueue drain gate. */
+    bool acceptsIncomingFlit(ChannelType ch, const FlitVariant& flit) const;
     bool mayGenerateSlcsfIntent() const;
 
-    void setRxPort(ChiCommonPort* port) { rxport = port; }
+    void
+    setRxPort(ChiCommonPort* port)
+    {
+        rxport = port;
+        if (rxport) {
+            rxport->setRxAdmissionCallback(
+                [this](ChannelType ch, const FlitVariant& flit) {
+                    return acceptsIncomingFlit(ch, flit);
+                });
+        }
+    }
     void setCc(HnfCoherencyController* controller) { cc = controller; }
+
+#ifdef UNIT_TEST
+    /** Narrow state setup used by the drain ownership unit tests. */
+    void installStaticRetryReservationForTest(
+        uint32_t srcid, uint8_t pcrdtype);
+    void installPendingRetryForTest(uint32_t srcid, uint8_t pcrdtype);
+    void installRequestPipelineEntryForTest(const RawReq& req);
+#endif
 
   private:
     static constexpr size_t NumCh =
@@ -310,8 +339,12 @@ class HomeLinkLayer : public ruby::Consumer
     bool pipelineHasWork() const;
     bool txQueuesHaveWork() const;
     bool portHasRxFlit() const;
+    bool portHasRxReq() const;
     bool requestPipelineHasWork() const;
     bool hasHeldRetireToken() const;
+    bool hasAllocatedProtocolToken() const;
+    bool hasRetryProtocolOwnership() const;
+    bool hasLegacyTransactionOwnership() const;
     void scheduleNextCycle();
 
     LlPriority mapPriority(const RawReq& req) const;

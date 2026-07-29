@@ -72,13 +72,26 @@ SlcSnoopFilter::SlcSnoopFilterStats::SlcSnoopFilterStats(
     requestOccupancy.init(0, p.slcsf_req_queue_entries, 1);
     responseOccupancy.init(0, p.slcsf_resp_queue_entries, 1);
     inflightOccupancy.init(0, p.slcsf_max_inflight, 1);
-    const size_t max_service_latency =
-        p.slcsf_fill_latency + p.slcsf_victim_latency +
-        p.slcsf_sf_evict_latency;
+    const auto checked_add = [](size_t lhs, size_t rhs) {
+        panic_if(rhs > std::numeric_limits<size_t>::max() - lhs,
+                 "SlcSnoopFilter latency histogram bound overflows\n");
+        return lhs + rhs;
+    };
+    const size_t max_service_latency = std::max({
+        static_cast<size_t>(p.slcsf_lookup_latency),
+        checked_add(
+            checked_add(
+                static_cast<size_t>(p.slcsf_fill_latency),
+                static_cast<size_t>(p.slcsf_victim_latency)),
+            static_cast<size_t>(p.slcsf_sf_evict_latency)),
+        checked_add(
+            static_cast<size_t>(p.slcsf_update_latency),
+            std::max(
+                static_cast<size_t>(p.slcsf_victim_latency),
+                static_cast<size_t>(p.slcsf_sf_evict_latency)))});
     configuredServiceLatency.init(0, std::max<size_t>(1, max_service_latency),
                                   1);
-    acceptedToVisibleLatency.init(
-        0, std::max<size_t>(1024, max_service_latency), 1);
+    acceptedToVisibleLatency.init(0);
 }
 
 void
@@ -99,12 +112,11 @@ SlcSnoopFilter::SlcSnoopFilterStats::sampledOccupancy(
     size_t req, size_t resp, size_t inflight, uint64_t cycles,
     bool req_full, bool resp_full)
 {
-    panic_if(cycles > static_cast<uint64_t>(std::numeric_limits<int>::max()),
-             "SlcSnoopFilter occupancy sample is too large\n");
-    const int samples = static_cast<int>(cycles);
-    requestOccupancy.sample(req, samples);
-    responseOccupancy.sample(resp, samples);
-    inflightOccupancy.sample(inflight, samples);
+    slcSnoopFilterSampleChunks(cycles, [this, req, resp, inflight](int chunk) {
+        requestOccupancy.sample(req, chunk);
+        responseOccupancy.sample(resp, chunk);
+        inflightOccupancy.sample(inflight, chunk);
+    });
     requestFullCycles += req_full ? cycles : 0;
     responseFullCycles += resp_full ? cycles : 0;
 }
@@ -113,6 +125,18 @@ void
 SlcSnoopFilter::SlcSnoopFilterStats::issued(uint64_t configured_latency)
 {
     configuredServiceLatency.sample(configured_latency);
+}
+
+void
+SlcSnoopFilter::SlcSnoopFilterStats::victim(SlcSfStatVictim victim)
+{
+    switch (victim) {
+      case SlcSfStatVictim::CleanSlc: ++cleanSlcVictims; break;
+      case SlcSfStatVictim::DirtySlc: ++dirtySlcVictims; break;
+      case SlcSfStatVictim::Sf: ++sfVictims; break;
+      case SlcSfStatVictim::NumVictims:
+        panic("SlcSnoopFilter received invalid victim statistic\n");
+    }
 }
 
 void
@@ -142,20 +166,6 @@ SlcSnoopFilter::SlcSnoopFilterStats::terminal(const SlcSfResponse& response)
             ++victimBufferFullReplays; break;
           case SlcSfReplayReason::Cancelled: ++cancelledReplays; break;
         }
-    }
-    if (const auto* fill =
-            std::get_if<SlcSfFillResponse>(&response.payload())) {
-        if (fill->slcVictim) {
-            fill->slcVictim->line.dirty ? ++dirtySlcVictims :
-                                          ++cleanSlcVictims;
-        }
-        sfVictims += fill->sfVictim.has_value();
-    } else if (const auto* update =
-                   std::get_if<SlcSfUpdateResponse>(&response.payload())) {
-        sfVictims += update->sfVictim.has_value();
-    } else if (const auto* evict =
-                   std::get_if<SlcSfEvictResponse>(&response.payload())) {
-        sfVictims += evict->sfVictim.has_value();
     }
 }
 
@@ -213,8 +223,8 @@ SlcSnoopFilter::drain()
     // The parent owns the D1 -> D2 boundary.  Merely record the request here;
     // allocated upstream protocol owners must remain able to enqueue in D1.
     slcsf.requestDrain();
-    return slcsf.isCompletelyIdle() ? DrainState::Drained :
-                                      DrainState::Draining;
+    return slcSnoopFilterDrainReady(slcsf) ?
+        DrainState::Drained : DrainState::Draining;
 }
 
 void
@@ -228,7 +238,7 @@ SlcSnoopFilter::sealAdmission()
 void
 SlcSnoopFilter::testDrainComplete()
 {
-    if (slcsf.isCompletelyIdle()) {
+    if (slcSnoopFilterDrainReady(slcsf)) {
         signalDrainDone();
     }
 }
@@ -236,15 +246,47 @@ SlcSnoopFilter::testDrainComplete()
 void
 SlcSnoopFilter::drainResume()
 {
-    const bool had_credit = slcsf.registeredReqCredits() != 0;
+    const bool had_credit = slcsf.registeredReqCreditGrants() != 0;
     slcsf.resumeFromDrain();
     ensureWakeup();
-    if (!had_credit && slcsf.registeredReqCredits() != 0 &&
+    if (!had_credit && slcsf.registeredReqCreditGrants() != 0 &&
         futureWakeupCallback) {
         panic_if(curTick() == MaxTick,
                  "%s cannot notify its owner after MaxTick\n", name());
         futureWakeupCallback(curTick() + 1);
     }
+}
+
+void
+SlcSnoopFilter::loadState(CheckpointIn& cp)
+{
+    fatal_if(!cp.sectionExists(name()),
+             "%s checkpoint is missing its required object section\n",
+             name());
+    fatal_if(!cp.sectionExists(name() + ".slcsf"),
+             "%s checkpoint is missing its SLCSF service section\n",
+             name());
+    fatal_if(!cp.sectionExists(name() + ".slcsf.backend"),
+             "%s checkpoint is missing its SLCSF backend section\n",
+             name());
+    ClockedObject::loadState(cp);
+}
+
+void
+SlcSnoopFilter::preDumpStats()
+{
+    slcsf.settleOccupancy(curTick());
+    ClockedObject::preDumpStats();
+}
+
+void
+SlcSnoopFilter::resetStats()
+{
+    slcsf.settleOccupancy(curTick());
+    ClockedObject::resetStats();
+    // Start the post-reset window at the reset Tick, even when it is between
+    // child edges.
+    slcsf.settleOccupancy(curTick());
 }
 
 void
@@ -289,6 +331,14 @@ void
 SlcSnoopFilter::ensureWakeup()
 {
     const std::optional<Tick> desired = calculateNextWakeup();
+    if (!desired) {
+        if (serviceEvent.scheduled()) {
+            deschedule(serviceEvent);
+        }
+        scheduledServiceCycle = slcsf.currentCycle();
+        lastServiceTick.reset();
+        return;
+    }
     const std::optional<Tick> scheduled = serviceEvent.scheduled() ?
         std::optional<Tick>(serviceEvent.when()) : std::nullopt;
     const SlcSnoopFilterScheduleDecision decision =
@@ -312,19 +362,30 @@ SlcSnoopFilter::processServiceEvent()
 {
     panic_if(scheduledServiceCycle <= slcsf.currentCycle(),
              "%s service event lacks a future logical cycle\n", name());
-    const uint64_t elapsed_cycles =
+    uint64_t elapsed_cycles =
         scheduledServiceCycle - slcsf.currentCycle();
-    const bool had_visible_response = slcsf.respVisibleCount() != 0;
-    const bool had_credit = slcsf.registeredReqCredits() != 0;
+    if (lastServiceTick) {
+        panic_if(curTick() < *lastServiceTick ||
+                     (curTick() - *lastServiceTick) % clockPeriod() != 0,
+                 "%s service event is not on its continuing child edge\n",
+                 name());
+        elapsed_cycles = std::max<uint64_t>(
+            elapsed_cycles,
+            (curTick() - *lastServiceTick) / clockPeriod());
+    }
+    const bool had_visible_response = slcsf.rawRespVisibleCount() != 0;
+    const bool had_credit = slcsf.registeredReqCreditGrants() != 0;
+    const bool was_drain_ready = slcSnoopFilterDrainReady(slcsf);
     slcsf.wakeup(curTick(), elapsed_cycles);
     lastServiceTick = curTick();
     const SlcSnoopFilterAdvance advance{
         slcsf.needsServiceWakeup(),
-        !had_visible_response && slcsf.respVisibleCount() != 0,
-        !had_credit && slcsf.registeredReqCredits() != 0};
+        !had_visible_response && slcsf.rawRespVisibleCount() != 0,
+        !had_credit && slcsf.registeredReqCreditGrants() != 0,
+        !was_drain_ready && slcSnoopFilterDrainReady(slcsf)};
 
-    if ((advance.responseBecameVisible ||
-         advance.creditBecameAvailable) && futureWakeupCallback) {
+    if (slcSnoopFilterShouldNotifyOwner(advance) &&
+        futureWakeupCallback) {
         panic_if(curTick() == MaxTick,
                  "%s cannot notify its owner after MaxTick\n", name());
         futureWakeupCallback(curTick() + 1);

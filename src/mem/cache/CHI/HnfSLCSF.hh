@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -119,10 +120,10 @@ struct HnfSLCSFTraceRecord
     uint32_t pocEntryId = 0;
     uint64_t lineAddress = 0;
     SlcSfOperationKind operation = SlcSfOperationKind::Lookup;
-    Tick acceptedTick = 0;
-    Tick issueTick = 0;
-    Tick completeTick = 0;
-    Tick visibleTick = 0;
+    std::optional<Tick> acceptedTick;
+    std::optional<Tick> issueTick;
+    std::optional<Tick> completeTick;
+    std::optional<Tick> visibleTick;
     SlcSfTerminalStatus status = SlcSfTerminalStatus::Error;
     std::optional<SlcSfReplayReason> replayReason;
 };
@@ -137,6 +138,7 @@ class HnfSLCSFStatsSink
                                   uint64_t cycles, bool req_full,
                                   bool resp_full) = 0;
     virtual void issued(uint64_t configured_latency) = 0;
+    virtual void victim(SlcSfStatVictim victim) = 0;
     virtual void terminal(const SlcSfResponse& response) = 0;
     virtual void becameVisible(uint64_t latency) = 0;
     virtual void rejectedNoCredit() = 0;
@@ -165,6 +167,9 @@ class HnfSLCSFSetLockManager
     bool tryAcquire(uint64_t owner, const SlcSfSetLockRequest& request);
     void release(uint64_t owner);
     bool holds(uint64_t owner) const;
+    size_t heldLockCount(uint64_t owner) const;
+    bool holdsExact(
+        uint64_t owner, const SlcSfSetLockRequest& request) const;
     size_t heldLockCount() const;
 
   private:
@@ -271,6 +276,9 @@ class HnfSLCSF : public HnfSLCSFBackend
      * retry the same owned message when registered credit becomes available.
      */
     SlcSfEnqueueResult tryEnqueue(SlcSfRequest&& request);
+    /** Explicit-tick form used at a cross-clock admission boundary. */
+    SlcSfEnqueueResult tryEnqueue(
+        SlcSfRequest&& request, Tick accepted_tick);
 
     /** Notify the timing owner after an accepted request creates work. */
     void setWorkAvailableCallback(std::function<void()> callback)
@@ -291,7 +299,10 @@ class HnfSLCSF : public HnfSLCSFBackend
      */
     void wakeup(Tick now, uint64_t elapsed_cycles);
 
-    size_t registeredReqCredits() const { return visibleReqCredits; }
+    size_t registeredReqCredits() const;
+    size_t registeredReqCredits(Tick observer_tick) const;
+    /** Raw registered grants, including grants produced at this Tick. */
+    size_t registeredReqCreditGrants() const { return visibleReqCredits; }
     size_t reqIngressCount() const { return reqIngress.size(); }
     size_t reqReadyCount() const { return reqReady.size(); }
     size_t reqInflightCount() const { return inflightRequests.size(); }
@@ -309,7 +320,10 @@ class HnfSLCSF : public HnfSLCSFBackend
 
     size_t respReservedCount() const { return inflightRequests.size(); }
     size_t respPendingCount() const { return respPending.size(); }
-    size_t respVisibleCount() const { return respVisible.size(); }
+    size_t respVisibleCount() const;
+    size_t respVisibleCount(Tick observer_tick) const;
+    /** Raw queue occupancy, including responses produced at this Tick. */
+    size_t rawRespVisibleCount() const { return respVisible.size(); }
     size_t respOccupied() const;
     size_t respCapacity() const { return config.respQueueEntries; }
     uint64_t noCreditRejectCount() const { return noCreditRejects; }
@@ -350,6 +364,8 @@ class HnfSLCSF : public HnfSLCSFBackend
     bool needsServiceWakeup() const;
     /** Earliest logical child cycle at which registered state can advance. */
     std::optional<uint64_t> calculateNextWakeupCycle() const;
+    /** Settle time-weighted occupancy before an external state transition. */
+    void settleOccupancy(Tick observer_tick);
     bool isBusy() const
     {
         return hasWork() || HnfSLCSFBackend::isBusy() ||
@@ -380,7 +396,11 @@ class HnfSLCSF : public HnfSLCSFBackend
     void unserializePersistentState(CheckpointIn& cp);
 
 #ifdef UNIT_TEST
-    /** Narrow fault injection; absent from production builds. */
+    uint64_t backendGlobalInvariantCheckCountForTest() const
+    {
+        return backendGlobalInvariantChecks;
+    }
+    /** Narrow fault injection used only by the backend permit test. */
     bool corruptInstalledDirtyVictimIdForTest(SlcSfVictimId replacement);
 #endif
 
@@ -395,9 +415,15 @@ class HnfSLCSF : public HnfSLCSFBackend
 
     struct InflightRequest
     {
+        explicit InflightRequest(SlcSfRequest&& incoming)
+            : request(std::move(incoming))
+        {}
+
         SlcSfRequest request;
         uint64_t issueCycle = 0;
         uint64_t completeCycle = 0;
+        uint64_t configuredLatency = 0;
+        bool latencyStatsRecorded = false;
         std::optional<MutationStage> mutationStage;
         std::optional<SlcSfResponse> terminalResponse;
         std::optional<SlcSfReplayReason> terminalReplayReason;
@@ -413,7 +439,7 @@ class HnfSLCSF : public HnfSLCSFBackend
         std::optional<SlcSfSfVictim> sfVictim;
         std::optional<uint64_t> setLockOwner;
         bool tokenValidated = false;
-        uint64_t replayLineFingerprint = 0;
+        std::optional<ProtectedStateSnapshot> rollbackSnapshot;
     };
 
     struct VictimEntry
@@ -429,6 +455,9 @@ class HnfSLCSF : public HnfSLCSFBackend
     };
 
     static void validateConfig(const HnfSLCSFPipelineConfig& config);
+    bool wasAccepted(SlcSfReqId req_id) const;
+    void rememberAccepted(SlcSfReqId req_id);
+    uint64_t baseServiceLatency(const SlcSfRequest& request) const;
     uint64_t serviceLatency(const SlcSfRequest& request) const;
     bool mutationProducesDirtySlcVictim(const SlcSfRequest& request) const;
     bool mutationProducesSfVictim(const SlcSfRequest& request) const;
@@ -467,17 +496,24 @@ class HnfSLCSF : public HnfSLCSFBackend
     void assertVictimAccounting() const;
     void executeMutation(InflightRequest& request);
     void advanceMutation(InflightRequest& request);
+    bool tryAcquireSetLock(InflightRequest& request);
+    std::optional<SlcSfStatVictim> pendingSlcVictimKind(
+        const SlcSfRequest& request) const;
+    void recordConfiguredLatency(
+        InflightRequest& request, uint64_t configured_latency);
     void latchMutationResponse(InflightRequest& request);
     void finishInflight(
         InflightRequest& request, FinishReason reason,
-        SlcSfResponse response);
+        SlcSfResponse response, Tick complete_tick);
     void promoteIngressRequests();
     void issueReadyRequests();
-    void updateRegisteredCredits();
+    void updateRegisteredCredits(Tick production_tick);
+    void sampleOccupancy(uint64_t cycles);
     void checkLifecycle() const;
     void assertRequestAccounting() const;
     void assertResponseAccounting() const;
     void assertGlobalInvariants() const;
+    void runBackendGlobalInvariantCheck();
     void recordTerminalStats(const SlcSfResponse& response);
     void recordServiceStall(bool set_lock_conflict = false);
 
@@ -490,6 +526,7 @@ class HnfSLCSF : public HnfSLCSFBackend
     std::deque<InflightRequest> inflightRequests;
     std::deque<SlcSfResponse> respPending;
     std::deque<SlcSfResponse> respVisible;
+    std::deque<Tick> respVisibleTicks;
     std::vector<VictimEntry> victimBuffer;
     HnfSLCSFSetLockManager setLocks;
     /** Opaque identity shared only with leases minted by this service. */
@@ -498,8 +535,10 @@ class HnfSLCSF : public HnfSLCSFBackend
     uint64_t nextCompletionNonce = 1;
     uint64_t nextSetLockOwner = 1;
     size_t visibleReqCredits = 0;
+    std::deque<std::optional<Tick>> visibleReqCreditTicks;
     uint64_t wakeupCycle = 0;
     Tick wakeupTick = 0;
+    std::optional<Tick> lastOccupancyTick;
     bool initialized = true;
     size_t initializationCyclesRemaining = 0;
     bool drainRequested = false;
@@ -513,32 +552,29 @@ class HnfSLCSF : public HnfSLCSFBackend
     uint64_t cancelledRequests = 0;
     HnfSLCSFStatsSnapshot stats;
     HnfSLCSFStatsSink* statsSink = nullptr;
-    std::unordered_map<uint64_t, uint64_t> acceptedCycles;
     std::unordered_map<uint64_t, HnfSLCSFTraceRecord> activeTraces;
-    std::unordered_map<uint64_t, bool> acceptedIds;
+    // Exact duplicate tombstones compressed into disjoint inclusive ranges.
+    // The production allocator is contiguous, so this remains one range.
+    std::map<uint64_t, uint64_t> acceptedIdRanges;
     std::optional<HnfSLCSFTraceRecord> completedTrace;
     uint64_t acceptedTotal = 0;
     uint64_t terminalDoneTotal = 0;
     uint64_t terminalReplayTotal = 0;
     uint64_t terminalErrorTotal = 0;
+#ifdef UNIT_TEST
+    uint64_t backendGlobalInvariantChecks = 0;
+    struct VictimIdCorruptionForTest
+    {
+        SlcSfReqId reqId;
+        SlcSfVictimId replacement;
+    };
+    // Set only by the UNIT_TEST hook and consumed immediately inside U2, so
+    // production boundary invariants stay exact during fault injection.
+    std::optional<VictimIdCorruptionForTest>
+        pendingVictimIdCorruptionForTest;
+#endif
     std::function<void()> workAvailableCallback;
 };
-
-#ifdef UNIT_TEST
-inline bool
-HnfSLCSF::corruptInstalledDirtyVictimIdForTest(
-    SlcSfVictimId replacement)
-{
-    for (InflightRequest& request : inflightRequests) {
-        if (request.mutationStage == MutationStage::U2ArrayWrite &&
-            request.slcVictim && request.slcVictimSeal) {
-            request.slcVictim->victimId = replacement;
-            return true;
-        }
-    }
-    return false;
-}
-#endif
 
 } // namespace gem5::Chi
 

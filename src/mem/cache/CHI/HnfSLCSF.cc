@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <stdexcept>
+#include <unordered_set>
 
 #include "base/logging.hh"
 #include "base/trace.hh"
@@ -151,6 +152,15 @@ mutationTarget(const SlcSfRequest& request)
         request);
 }
 
+uint64_t
+allocatePersistentIdentity(uint64_t& next, const char* name)
+{
+    panic_if(next == 0 || next == UINT64_MAX,
+             "HnfSLCSF %s identity space exhausted next=%llu\n", name,
+             static_cast<unsigned long long>(next));
+    return next++;
+}
+
 } // anonymous namespace
 
 HnfSLCSFSetLockManager::HnfSLCSFSetLockManager(
@@ -224,6 +234,38 @@ HnfSLCSFSetLockManager::holds(uint64_t owner) const
 }
 
 size_t
+HnfSLCSFSetLockManager::heldLockCount(uint64_t owner) const
+{
+    const auto owned = [owner](const std::optional<Holder>& holder) {
+        return holder && holder->owner == owner;
+    };
+    return std::count_if(slcOwners.begin(), slcOwners.end(), owned) +
+        std::count_if(sfOwners.begin(), sfOwners.end(), owned);
+}
+
+bool
+HnfSLCSFSetLockManager::holdsExact(
+    uint64_t owner, const SlcSfSetLockRequest& request) const
+{
+    if ((request.slcSet && *request.slcSet >= slcOwners.size()) ||
+        (request.sfSet && *request.sfSet >= sfOwners.size())) {
+        return false;
+    }
+    const auto matches = [owner, &request](
+                             const std::optional<Holder>& holder) {
+        return holder && holder->owner == owner &&
+            holder->mode == request.mode;
+    };
+    if ((request.slcSet && !matches(slcOwners[*request.slcSet])) ||
+        (request.sfSet && !matches(sfOwners[*request.sfSet]))) {
+        return false;
+    }
+    return heldLockCount(owner) ==
+        static_cast<size_t>(request.slcSet.has_value()) +
+        static_cast<size_t>(request.sfSet.has_value());
+}
+
+size_t
 HnfSLCSFSetLockManager::heldLockCount() const
 {
     const auto occupied = [](const std::optional<Holder>& holder) {
@@ -246,9 +288,11 @@ HnfSLCSF::HnfSLCSF(uint32_t block_size, uint32_t slc_num_sets,
       visibleReqCredits(config.reqQueueEntries), statsSink(stats_sink)
 {
     validateConfig(config);
+    visibleReqCreditTicks.resize(config.reqQueueEntries, std::nullopt);
     assertRequestAccounting();
     assertResponseAccounting();
     assertVictimAccounting();
+    runBackendGlobalInvariantCheck();
 }
 
 void
@@ -276,10 +320,46 @@ HnfSLCSF::validateConfig(const HnfSLCSFPipelineConfig& config)
     }
 }
 
-uint64_t
-HnfSLCSF::serviceLatency(const SlcSfRequest& request) const
+bool
+HnfSLCSF::wasAccepted(SlcSfReqId reqId) const
 {
-    uint64_t latency = std::visit(
+    const auto next = acceptedIdRanges.upper_bound(reqId.value);
+    if (next == acceptedIdRanges.begin()) {
+        return false;
+    }
+    const auto previous = std::prev(next);
+    return reqId.value <= previous->second;
+}
+
+void
+HnfSLCSF::rememberAccepted(SlcSfReqId reqId)
+{
+    auto next = acceptedIdRanges.upper_bound(reqId.value);
+    auto previous = next == acceptedIdRanges.begin() ?
+        acceptedIdRanges.end() : std::prev(next);
+    const bool joins_previous = previous != acceptedIdRanges.end() &&
+        previous->second != UINT64_MAX &&
+        previous->second + 1 == reqId.value;
+    const bool joins_next = next != acceptedIdRanges.end() &&
+        reqId.value != UINT64_MAX && reqId.value + 1 == next->first;
+    if (joins_previous && joins_next) {
+        previous->second = next->second;
+        acceptedIdRanges.erase(next);
+    } else if (joins_previous) {
+        previous->second = reqId.value;
+    } else if (joins_next) {
+        const uint64_t end = next->second;
+        acceptedIdRanges.erase(next);
+        acceptedIdRanges.emplace(reqId.value, end);
+    } else {
+        acceptedIdRanges.emplace(reqId.value, reqId.value);
+    }
+}
+
+uint64_t
+HnfSLCSF::baseServiceLatency(const SlcSfRequest& request) const
+{
+    return std::max<uint64_t>(1, std::visit(
         [this](const auto& typed_request) {
             using Request = std::decay_t<decltype(typed_request)>;
             if constexpr (std::is_same_v<Request, SlcSfLookupReq>) {
@@ -292,7 +372,15 @@ HnfSLCSF::serviceLatency(const SlcSfRequest& request) const
                 return config.updateLatency;
             }
         },
-        request);
+        request));
+}
+
+uint64_t
+HnfSLCSF::serviceLatency(const SlcSfRequest& request) const
+{
+    // Mutation callers must validate the commit token before entering this
+    // routine: both victim probes intentionally dereference its selected way.
+    uint64_t latency = baseServiceLatency(request);
     if (mutationProducesSfVictim(request)) {
         panic_if(config.sfEvictLatency > UINT64_MAX - latency,
                  "HnfSLCSF SF-evict latency overflows\n");
@@ -413,6 +501,17 @@ HnfSLCSF::lookupReplaysAtL0(const SlcSfRequest& request) const
 SlcSfEnqueueResult
 HnfSLCSF::tryEnqueue(SlcSfRequest&& request)
 {
+    return tryEnqueue(
+        std::move(request),
+        Gem5Internal::_curTickPtr ? curTick() : wakeupTick);
+}
+
+SlcSfEnqueueResult
+HnfSLCSF::tryEnqueue(SlcSfRequest&& request, Tick acceptedTick)
+{
+    if (Gem5Internal::_curTickPtr) {
+        settleOccupancy(acceptedTick);
+    }
     assertRequestAccounting();
     if (draining) {
         ++drainingRejects;
@@ -422,7 +521,12 @@ HnfSLCSF::tryEnqueue(SlcSfRequest&& request)
         ++initializingRejects;
         return SlcSfEnqueueResult::Initializing;
     }
-    if (visibleReqCredits == 0 ||
+    const auto credit = std::find_if(
+        visibleReqCreditTicks.begin(), visibleReqCreditTicks.end(),
+        [acceptedTick](const std::optional<Tick>& produced) {
+            return !produced || acceptedTick > *produced;
+        });
+    if (credit == visibleReqCreditTicks.end() ||
         reqOutstanding() == config.reqQueueEntries) {
         ++noCreditRejects;
         ++stats.noCredit;
@@ -433,19 +537,19 @@ HnfSLCSF::tryEnqueue(SlcSfRequest&& request)
     }
 
     const auto& header = requestHeader(request);
-    panic_if(!header.reqId.valid() || acceptedIds.count(header.reqId.value),
+    panic_if(!header.reqId.valid() || wasAccepted(header.reqId),
              "HnfSLCSF duplicate accepted request ID=%llu\n",
              static_cast<unsigned long long>(header.reqId.value));
     const SlcSfStatOperation operation = statOperation(request);
     ++stats.operations[static_cast<size_t>(operation)];
-    acceptedCycles.emplace(header.reqId.value, wakeupCycle);
-    acceptedIds.emplace(header.reqId.value, true);
+    rememberAccepted(header.reqId);
     activeTraces.emplace(
         header.reqId.value,
         HnfSLCSFTraceRecord{header.reqId, header.pocEntryId,
                             header.lineAddress,
-                            slcSfResponseOperation(request), wakeupTick,
-                            0, 0, 0, SlcSfTerminalStatus::Error,
+                            slcSfResponseOperation(request), acceptedTick,
+                            std::nullopt, std::nullopt, std::nullopt,
+                            SlcSfTerminalStatus::Error,
                             std::nullopt});
     ++acceptedTotal;
     DPRINTF(HnfSLCSF,
@@ -455,11 +559,12 @@ HnfSLCSF::tryEnqueue(SlcSfRequest&& request)
             header.pocEntryId,
             static_cast<unsigned long long>(header.lineAddress),
             static_cast<unsigned>(slcSfResponseOperation(request)),
-            static_cast<unsigned long long>(wakeupTick));
+            static_cast<unsigned long long>(acceptedTick));
     if (statsSink) {
         statsSink->accepted(operation);
     }
     reqIngress.push_back(std::move(request));
+    visibleReqCreditTicks.erase(credit);
     --visibleReqCredits;
     assertRequestAccounting();
     if (workAvailableCallback) {
@@ -495,6 +600,48 @@ HnfSLCSF::wakeup(Tick now, uint64_t elapsedCycles)
     panic_if(elapsedCycles == 0 || elapsedCycles > UINT64_MAX - wakeupCycle,
              "HnfSLCSF invalid elapsed child cycles=%llu\n",
              static_cast<unsigned long long>(elapsedCycles));
+    if (Gem5Internal::_curTickPtr) {
+        settleOccupancy(now);
+    } else {
+        sampleOccupancy(elapsedCycles);
+    }
+    wakeupCycle += elapsedCycles;
+    wakeupTick = now;
+    if (!initialized) {
+        panic_if(initializationCyclesRemaining == 0,
+                 "HnfSLCSF initialization has no completion deadline\n");
+        initializationCyclesRemaining =
+            elapsedCycles >= initializationCyclesRemaining ?
+                0 : initializationCyclesRemaining - elapsedCycles;
+        if (initializationCyclesRemaining == 0) {
+            finishInitialization();
+        }
+        updateRegisteredCredits(now);
+        checkLifecycle();
+        assertRequestAccounting();
+        assertResponseAccounting();
+        assertVictimAccounting();
+        assertGlobalInvariants();
+        return;
+    }
+    // Registered boundary order is intentionally explicit.  In particular,
+    // completion precedes issue so a newly issued operation cannot complete
+    // on this wakeup even if a defensive latency clamp is ever needed.
+    promotePendingResponses();
+    promoteIngressRequests();
+    completeInflightRequests();
+    issueReadyRequests();
+    updateRegisteredCredits(now);
+    checkLifecycle();
+    assertRequestAccounting();
+    assertResponseAccounting();
+    assertVictimAccounting();
+    assertGlobalInvariants();
+}
+
+void
+HnfSLCSF::sampleOccupancy(uint64_t elapsedCycles)
+{
     const size_t req_occupancy = reqOutstanding();
     const size_t resp_occupancy = respOccupied();
     const size_t inflight_occupancy = inflightRequests.size();
@@ -523,38 +670,28 @@ HnfSLCSF::wakeup(Tick now, uint64_t elapsedCycles)
             req_occupancy, resp_occupancy, inflight_occupancy,
             elapsedCycles, req_full, resp_full);
     }
-    wakeupCycle += elapsedCycles;
-    wakeupTick = now;
-    if (!initialized) {
-        panic_if(initializationCyclesRemaining == 0,
-                 "HnfSLCSF initialization has no completion deadline\n");
-        initializationCyclesRemaining =
-            elapsedCycles >= initializationCyclesRemaining ?
-                0 : initializationCyclesRemaining - elapsedCycles;
-        if (initializationCyclesRemaining == 0) {
-            finishInitialization();
-        }
-        updateRegisteredCredits();
-        checkLifecycle();
-        assertRequestAccounting();
-        assertResponseAccounting();
-        assertVictimAccounting();
-        assertGlobalInvariants();
+}
+
+void
+HnfSLCSF::settleOccupancy(Tick observerTick)
+{
+    if (!lastOccupancyTick) {
+        lastOccupancyTick = observerTick;
         return;
     }
-    // Registered boundary order is intentionally explicit.  In particular,
-    // completion precedes issue so a newly issued operation cannot complete
-    // on this wakeup even if a defensive latency clamp is ever needed.
-    promotePendingResponses();
-    promoteIngressRequests();
-    completeInflightRequests();
-    issueReadyRequests();
-    updateRegisteredCredits();
-    checkLifecycle();
-    assertRequestAccounting();
-    assertResponseAccounting();
-    assertVictimAccounting();
-    assertGlobalInvariants();
+    panic_if(observerTick < *lastOccupancyTick,
+             "HnfSLCSF occupancy accounting moved backwards\n");
+    // Child edges are phase-aligned to Tick zero. Counting crossed edge
+    // indices preserves the fractional remainder across any number of
+    // mid-edge queue transitions (e.g. 0 -> enqueue@5 -> wakeup@10).
+    const uint64_t cycles =
+        observerTick / config.childClockPeriod -
+        *lastOccupancyTick / config.childClockPeriod;
+    if (cycles != 0) {
+        sampleOccupancy(cycles);
+    }
+    // State transitions after this call own the next complete interval.
+    lastOccupancyTick = observerTick;
 }
 
 size_t
@@ -564,22 +701,65 @@ HnfSLCSF::reqOutstanding() const
 }
 
 size_t
+HnfSLCSF::registeredReqCredits() const
+{
+    if (!Gem5Internal::_curTickPtr) {
+        return visibleReqCredits;
+    }
+    return registeredReqCredits(curTick());
+}
+
+size_t
+HnfSLCSF::registeredReqCredits(Tick observerTick) const
+{
+    return std::count_if(
+        visibleReqCreditTicks.begin(), visibleReqCreditTicks.end(),
+        [observerTick](const std::optional<Tick>& produced) {
+            return !produced || observerTick > *produced;
+        });
+}
+
+size_t
 HnfSLCSF::respOccupied() const
 {
     return inflightRequests.size() + respPending.size() + respVisible.size();
 }
 
+size_t
+HnfSLCSF::respVisibleCount() const
+{
+    if (!Gem5Internal::_curTickPtr) {
+        return respVisible.size();
+    }
+    return respVisibleCount(curTick());
+}
+
+size_t
+HnfSLCSF::respVisibleCount(Tick observerTick) const
+{
+    return std::count_if(
+        respVisibleTicks.begin(), respVisibleTicks.end(),
+        [observerTick](Tick produced) { return observerTick > produced; });
+}
+
 const SlcSfResponse*
 HnfSLCSF::frontVisibleResponse() const
 {
-    return respVisible.empty() ? nullptr : &respVisible.front();
+    if (respVisible.empty() ||
+        (Gem5Internal::_curTickPtr && curTick() <= respVisibleTicks.front())) {
+        return nullptr;
+    }
+    return &respVisible.front();
 }
 
 SlcSfCompletionAckResult
 HnfSLCSF::acknowledgeVisibleCompletion(const SlcSfResponse& response)
 {
-    if (respVisible.empty()) {
+    if (!frontVisibleResponse()) {
         return SlcSfCompletionAckResult::NotVisible;
+    }
+    if (Gem5Internal::_curTickPtr) {
+        settleOccupancy(curTick());
     }
     const SlcSfResponse& visible = respVisible.front();
     if (visible.reqId() != response.reqId() ||
@@ -621,6 +801,7 @@ HnfSLCSF::acknowledgeVisibleCompletion(const SlcSfResponse& response)
         return SlcSfCompletionAckResult::Stale;
     }
     respVisible.pop_front();
+    respVisibleTicks.pop_front();
     assertResponseAccounting();
     return SlcSfCompletionAckResult::Acknowledged;
 }
@@ -629,8 +810,11 @@ std::optional<SlcSfResponse>
 HnfSLCSF::popVisibleResponse()
 {
     assertResponseAccounting();
-    if (respVisible.empty()) {
+    if (!frontVisibleResponse()) {
         return std::nullopt;
+    }
+    if (Gem5Internal::_curTickPtr) {
+        settleOccupancy(curTick());
     }
     const auto* update =
         std::get_if<SlcSfUpdateResponse>(&respVisible.front().payload());
@@ -641,6 +825,7 @@ HnfSLCSF::popVisibleResponse()
 
     SlcSfResponse response = std::move(respVisible.front());
     respVisible.pop_front();
+    respVisibleTicks.pop_front();
     assertResponseAccounting();
     return response;
 }
@@ -649,6 +834,9 @@ SlcSfCancelResult
 HnfSLCSF::cancelRequest(
     uint32_t poc_entry_id, SlcSfReqId req_id, Tick now)
 {
+    if (Gem5Internal::_curTickPtr) {
+        settleOccupancy(now);
+    }
     const auto matches = [poc_entry_id, req_id](const auto& request) {
         const auto& header = requestHeader(request);
         return header.pocEntryId == poc_entry_id && header.reqId == req_id;
@@ -681,6 +869,18 @@ HnfSLCSF::cancelRequest(
         if (ownerless) {
             return SlcSfCancelResult::NotCancellable;
         }
+        const auto trace = activeTraces.find(req_id.value);
+        panic_if(trace == activeTraces.end() ||
+                     !trace->second.issueTick,
+                 "HnfSLCSF in-flight cancellation lacks issue tick "
+                 "req=%llu\n",
+                 static_cast<unsigned long long>(req_id.value));
+        // A parent action at the issue Tick cannot observe across the child
+        // register boundary. Leave the request live and reject that same-Tick
+        // cancellation explicitly; a later Tick may still cancel it.
+        if (now <= *trace->second.issueTick) {
+            return SlcSfCancelResult::TooLate;
+        }
         if (inflight->mutationCommitted || inflight->terminalResponse ||
             inflight->terminalReplayReason) {
             return SlcSfCancelResult::TooLate;
@@ -699,13 +899,15 @@ HnfSLCSF::cancelRequest(
                         true});
             },
             inflight->request);
-        inflight->replayLineFingerprint = lineStateFingerprint(
-            requestHeader(inflight->request).lineAddress);
         finishInflight(
-            *inflight, FinishReason::Cancelled, std::move(response));
+            *inflight, FinishReason::Cancelled, std::move(response), now);
         inflightRequests.erase(inflight);
+        updateRegisteredCredits(now);
         assertRequestAccounting();
         assertResponseAccounting();
+        if (workAvailableCallback) {
+            workAvailableCallback();
+        }
         return SlcSfCancelResult::Cancelled;
     }
 
@@ -780,12 +982,18 @@ HnfSLCSF::resetForColdStart()
                  setLockCount() != 0,
              "HnfSLCSF cold reset requires empty timing queues and locks\n");
     resetStorageForColdStart();
+    runBackendGlobalInvariantCheck();
     for (VictimEntry& entry : victimBuffer) {
         entry = VictimEntry{};
     }
     nextVictimId = 1;
     nextCompletionNonce = 1;
     nextSetLockOwner = 1;
+#ifdef UNIT_TEST
+    pendingVictimIdCorruptionForTest.reset();
+#endif
+    lastOccupancyTick = Gem5Internal::_curTickPtr ?
+        std::optional<Tick>(curTick()) : std::nullopt;
     drainRequested = false;
     draining = false;
     beginInitialization();
@@ -797,6 +1005,7 @@ HnfSLCSF::beginInitialization()
     initialized = false;
     initializationCyclesRemaining = std::max<size_t>(config.initLatency, 1);
     visibleReqCredits = 0;
+    visibleReqCreditTicks.clear();
 }
 
 void
@@ -818,6 +1027,7 @@ HnfSLCSF::beginDraining()
     drainRequested = true;
     draining = true;
     visibleReqCredits = 0;
+    visibleReqCreditTicks.clear();
 }
 
 void
@@ -825,7 +1035,8 @@ HnfSLCSF::resumeFromDrain()
 {
     drainRequested = false;
     draining = false;
-    updateRegisteredCredits();
+    updateRegisteredCredits(
+        Gem5Internal::_curTickPtr ? curTick() : wakeupTick);
     checkLifecycle();
 }
 
@@ -866,24 +1077,17 @@ HnfSLCSF::serializePersistentState(CheckpointOut& cp) const
     std::vector<uint32_t> victim_snapshot_dirty;
     std::vector<uint64_t> victim_snapshot_data_size;
     std::vector<uint32_t> victim_snapshot_data;
-    for (const VictimEntry& entry : victimBuffer) {
-        victim_id.push_back(entry.id.value);
-        victim_state.push_back(static_cast<uint32_t>(entry.state));
-        victim_address.push_back(entry.lineAddress);
-        victim_snapshot_valid.push_back(entry.snapshot.has_value());
-        victim_snapshot_state.push_back(entry.snapshot ?
-            static_cast<uint32_t>(entry.snapshot->state) : 0);
-        victim_snapshot_owner.push_back(entry.snapshot ?
-            entry.snapshot->owner : 0);
-        victim_snapshot_dirty.push_back(entry.snapshot &&
-            entry.snapshot->line.dirty);
-        victim_snapshot_data_size.push_back(entry.snapshot ?
-            entry.snapshot->line.data.size() : 0);
-        if (entry.snapshot) {
-            for (uint8_t byte : entry.snapshot->line.data) {
-                victim_snapshot_data.push_back(byte);
-            }
-        }
+    for (size_t i = 0; i < victimBuffer.size(); ++i) {
+        // A serialized service is drained, so normalize both Free and
+        // Released implementation states to one canonical empty encoding.
+        victim_id.push_back(0);
+        victim_state.push_back(static_cast<uint32_t>(VictimState::Free));
+        victim_address.push_back(0);
+        victim_snapshot_valid.push_back(0);
+        victim_snapshot_state.push_back(0);
+        victim_snapshot_owner.push_back(0);
+        victim_snapshot_dirty.push_back(0);
+        victim_snapshot_data_size.push_back(0);
     }
     arrayParamOut(cp, "victimId", victim_id);
     arrayParamOut(cp, "victimState", victim_state);
@@ -902,6 +1106,10 @@ HnfSLCSF::serializePersistentState(CheckpointOut& cp) const
 void
 HnfSLCSF::unserializePersistentState(CheckpointIn& cp)
 {
+    fatal_if(reqOutstanding() != 0 || respOccupied() != 0 ||
+                 victimBufferOccupancy() != 0 || setLockCount() != 0 ||
+                 HnfSLCSFBackend::isBusy(),
+             "HnfSLCSF refuses to restore over live timing/backend state\n");
     bool saved_initialized = false;
     size_t saved_victim_entries = 0;
     paramIn(cp, "initialized", saved_initialized);
@@ -912,6 +1120,7 @@ HnfSLCSF::unserializePersistentState(CheckpointIn& cp)
     paramIn(cp, "nextSetLockOwner", nextSetLockOwner);
     paramIn(cp, "victimBufferEntries", saved_victim_entries);
     fatal_if(!saved_initialized || saved_victim_entries != victimBuffer.size() ||
+                 wakeupCycle == UINT64_MAX || wakeupTick == MaxTick ||
                  nextVictimId == 0 || nextCompletionNonce == 0 ||
                  nextSetLockOwner == 0,
              "HnfSLCSF checkpoint has invalid lifecycle or next IDs\n");
@@ -943,66 +1152,60 @@ HnfSLCSF::unserializePersistentState(CheckpointIn& cp)
                  victim_snapshot_dirty.size() != entries ||
                  victim_snapshot_data_size.size() != entries,
              "HnfSLCSF checkpoint has malformed VictimBuffer arrays\n");
-    size_t data_offset = 0;
-    uint64_t max_victim_id = 0;
     for (size_t i = 0; i < entries; ++i) {
-        fatal_if(victim_state[i] >
-                         static_cast<uint32_t>(VictimState::Released) ||
-                     (victim_state[i] !=
-                          static_cast<uint32_t>(VictimState::Free) &&
-                      victim_state[i] !=
-                          static_cast<uint32_t>(VictimState::Released)) ||
-                     victim_snapshot_state[i] >
-                         static_cast<uint32_t>(HnfSlcState::MN) ||
-                     victim_snapshot_data_size[i] > blockSizeBytes() ||
-                     data_offset + victim_snapshot_data_size[i] >
-                         victim_snapshot_data.size(),
-                 "HnfSLCSF restore requires a drained VictimBuffer\n");
-        VictimEntry& entry = victimBuffer[i];
-        entry = VictimEntry{};
-        entry.id = SlcSfVictimId{victim_id[i]};
-        entry.state = static_cast<VictimState>(victim_state[i]);
-        entry.lineAddress = victim_address[i];
-        if (victim_snapshot_valid[i]) {
-            SlcSfCacheLine line;
-            line.dirty = victim_snapshot_dirty[i];
-            line.byteMask.assign(blockSizeBytes(), 0xff);
-            for (size_t j = 0; j < victim_snapshot_data_size[i]; ++j) {
-                fatal_if(victim_snapshot_data[data_offset] > UINT8_MAX,
-                         "HnfSLCSF checkpoint has invalid victim data byte\n");
-                line.data.push_back(victim_snapshot_data[data_offset++]);
-            }
-            entry.snapshot = SlcSfSlcVictim{
-                entry.id, entry.lineAddress,
-                static_cast<HnfSlcState>(victim_snapshot_state[i]),
-                victim_snapshot_owner[i], std::move(line)};
-        } else {
-            fatal_if(victim_snapshot_data_size[i] != 0,
-                     "HnfSLCSF invalid absent victim snapshot data\n");
-        }
-        max_victim_id = std::max(max_victim_id, entry.id.value);
+        fatal_if(victim_snapshot_valid[i] > 1 ||
+                     victim_snapshot_dirty[i] > 1,
+                 "HnfSLCSF checkpoint has non-boolean victim fields\n");
+        fatal_if(victim_id[i] != 0 ||
+                     victim_state[i] !=
+                         static_cast<uint32_t>(VictimState::Free) ||
+                     victim_address[i] != 0 ||
+                     victim_snapshot_valid[i] != 0 ||
+                     victim_snapshot_state[i] != 0 ||
+                     victim_snapshot_owner[i] != 0 ||
+                     victim_snapshot_dirty[i] != 0 ||
+                     victim_snapshot_data_size[i] != 0,
+                 "HnfSLCSF checkpoint VictimBuffer is not canonical empty\n");
+        victimBuffer[i] = VictimEntry{};
     }
-    fatal_if(data_offset != victim_snapshot_data.size() ||
-                 nextVictimId <= max_victim_id,
-             "HnfSLCSF checkpoint victim identity rolled back\n");
+    fatal_if(!victim_snapshot_data.empty(),
+             "HnfSLCSF canonical VictimBuffer contains snapshot data\n");
 
     {
         Serializable::ScopedCheckpointSection backend_section(cp, "backend");
         HnfSLCSFBackend::unserializePersistentState(cp);
     }
+    runBackendGlobalInvariantCheck();
 
     reqIngress.clear();
     reqReady.clear();
     inflightRequests.clear();
     respPending.clear();
     respVisible.clear();
-    acceptedCycles.clear();
+    respVisibleTicks.clear();
+    lastOccupancyTick = Gem5Internal::_curTickPtr ?
+        std::optional<Tick>(curTick()) : std::nullopt;
+    activeTraces.clear();
+    acceptedIdRanges.clear();
+    completedTrace.reset();
+    acceptedTotal = 0;
+    terminalDoneTotal = 0;
+    terminalReplayTotal = 0;
+    terminalErrorTotal = 0;
+    finishedRequests = 0;
+    cancelledRequests = 0;
+    correctnessReplays = 0;
+#ifdef UNIT_TEST
+    pendingVictimIdCorruptionForTest.reset();
+#endif
     initialized = true;
     initializationCyclesRemaining = 0;
     drainRequested = false;
     draining = false;
     visibleReqCredits = 0;
-    updateRegisteredCredits();
+    visibleReqCreditTicks.clear();
+    updateRegisteredCredits(
+        Gem5Internal::_curTickPtr ? curTick() : wakeupTick);
     checkLifecycle();
     assertVictimAccounting();
     assertRequestAccounting();
@@ -1014,20 +1217,33 @@ HnfSLCSF::promotePendingResponses()
 {
     while (!respPending.empty()) {
         const SlcSfReqId req_id = respPending.front().reqId();
-        const auto accepted = acceptedCycles.find(req_id.value);
-        panic_if(accepted == acceptedCycles.end() ||
-                     accepted->second > wakeupCycle,
-                 "HnfSLCSF visible response lacks acceptance cycle ID=%llu\n",
-                 static_cast<unsigned long long>(req_id.value));
         auto trace = activeTraces.find(req_id.value);
         panic_if(trace == activeTraces.end() ||
-                     wakeupTick <= trace->second.acceptedTick,
-                 "HnfSLCSF visible tick is not after acceptance req=%llu "
-                 "accepted=%llu visible=%llu\n",
+                     !trace->second.acceptedTick ||
+                     !trace->second.issueTick ||
+                     !trace->second.completeTick ||
+                     trace->second.visibleTick ||
+                     *trace->second.issueTick <=
+                         *trace->second.acceptedTick ||
+                     *trace->second.completeTick <=
+                         *trace->second.issueTick ||
+                     wakeupTick <= *trace->second.completeTick,
+                 "HnfSLCSF trace tick order must be "
+                 "accepted < issue < complete < visible req=%llu "
+                 "accepted=%llu issue=%llu complete=%llu visible=%llu\n",
                  static_cast<unsigned long long>(req_id.value),
                  static_cast<unsigned long long>(
-                     trace == activeTraces.end() ? 0 :
-                         trace->second.acceptedTick),
+                     trace == activeTraces.end() ||
+                         !trace->second.acceptedTick ? 0 :
+                         *trace->second.acceptedTick),
+                 static_cast<unsigned long long>(
+                     trace == activeTraces.end() ||
+                         !trace->second.issueTick ? 0 :
+                         *trace->second.issueTick),
+                 static_cast<unsigned long long>(
+                     trace == activeTraces.end() ||
+                         !trace->second.completeTick ? 0 :
+                         *trace->second.completeTick),
                  static_cast<unsigned long long>(wakeupTick));
         trace->second.visibleTick = wakeupTick;
         DPRINTF(HnfSLCSF,
@@ -1038,23 +1254,28 @@ HnfSLCSF::promotePendingResponses()
                 trace->second.pocEntryId,
                 static_cast<unsigned long long>(trace->second.lineAddress),
                 static_cast<unsigned>(trace->second.operation),
-                static_cast<unsigned long long>(trace->second.acceptedTick),
-                static_cast<unsigned long long>(trace->second.issueTick),
-                static_cast<unsigned long long>(trace->second.completeTick),
-                static_cast<unsigned long long>(trace->second.visibleTick),
+                static_cast<unsigned long long>(*trace->second.acceptedTick),
+                static_cast<unsigned long long>(
+                    trace->second.issueTick.value_or(0)),
+                static_cast<unsigned long long>(*trace->second.completeTick),
+                static_cast<unsigned long long>(*trace->second.visibleTick),
                 static_cast<unsigned>(trace->second.status),
                 trace->second.replayReason ?
                     static_cast<int>(*trace->second.replayReason) : -1);
         completedTrace = trace->second;
+        const Tick tick_latency =
+            *trace->second.visibleTick - *trace->second.acceptedTick;
+        const uint64_t latency =
+            tick_latency / config.childClockPeriod +
+            (tick_latency % config.childClockPeriod != 0);
         activeTraces.erase(trace);
-        const uint64_t latency = wakeupCycle - accepted->second;
         ++stats.acceptedToVisibleSamples;
         stats.acceptedToVisibleLatencyTotal += latency;
         if (statsSink) {
             statsSink->becameVisible(latency);
         }
-        acceptedCycles.erase(accepted);
         respVisible.push_back(std::move(respPending.front()));
+        respVisibleTicks.push_back(wakeupTick);
         respPending.pop_front();
     }
 }
@@ -1071,10 +1292,9 @@ HnfSLCSF::completeInflightRequests()
         }
 
         if (!request->mutationStage) {
-            if (request->earlyLookupReplay) {
-                request->replayLineFingerprint = lineStateFingerprint(
-                    requestHeader(request->request).lineAddress);
-            }
+            const ProtectedStateSnapshot stage_snapshot =
+                protectedStateSnapshot(
+                    requestHeader(request->request).lineAddress, true);
             SlcSfResponse response = request->earlyLookupReplay ?
                 makeSlcSfReplayResponse(
                     std::get<SlcSfLookupReq>(request->request),
@@ -1085,7 +1305,14 @@ HnfSLCSF::completeInflightRequests()
             const FinishReason reason =
                 response.status() == SlcSfTerminalStatus::Done ?
                     FinishReason::Done : FinishReason::Replay;
-            finishInflight(*request, reason, std::move(response));
+            finishInflight(
+                *request, reason, std::move(response), wakeupTick);
+            if (reason != FinishReason::Done) {
+                panic_if(stage_snapshot != protectedStateSnapshot(
+                             requestHeader(request->request).lineAddress,
+                             true),
+                         "HnfSLCSF lookup Replay changed protected state\n");
+            }
             request = inflightRequests.erase(request);
             continue;
         }
@@ -1135,6 +1362,23 @@ HnfSLCSF::mutationStageCount(MutationStage stage) const
             return request.mutationStage == stage;
         });
 }
+
+#ifdef UNIT_TEST
+bool
+HnfSLCSF::corruptInstalledDirtyVictimIdForTest(
+    SlcSfVictimId replacement)
+{
+    for (InflightRequest& request : inflightRequests) {
+        if (request.mutationStage == MutationStage::U2ArrayWrite &&
+            request.slcVictim && request.slcVictimSeal) {
+            pendingVictimIdCorruptionForTest = VictimIdCorruptionForTest{
+                requestHeader(request.request).reqId, replacement};
+            return true;
+        }
+    }
+    return false;
+}
+#endif
 
 size_t
 HnfSLCSF::victimBufferOccupancy() const
@@ -1278,17 +1522,156 @@ HnfSLCSF::assertVictimAccounting() const
              "HnfSLCSF VictimBuffer exceeds capacity occupancy=%u/%u\n",
              static_cast<unsigned>(victimBufferOccupancy()),
              static_cast<unsigned>(victimBuffer.size()));
+    std::unordered_set<uint64_t> victim_ids;
     for (const VictimEntry& entry : victimBuffer) {
-        const bool occupied = entry.state != VictimState::Free &&
-            entry.state != VictimState::Released;
-        panic_if(occupied &&
-                     (entry.id.value == 0 || !entry.snapshot ||
-                      !entry.snapshot->line.dirty ||
-                      entry.snapshot->line.data.size() != blockSizeBytes()),
-                 "HnfSLCSF dirty victim lacks reservation or full snapshot "
-                 "id=%llu state=%u\n",
+        const bool empty = entry.state == VictimState::Free ||
+            entry.state == VictimState::Released;
+        const bool has_writeback = entry.writebackTxnId != 0;
+        const bool full_snapshot = entry.snapshot &&
+            entry.snapshot->victimId.value == entry.id.value &&
+            entry.snapshot->lineAddress == entry.lineAddress &&
+            (entry.snapshot->state == HnfSlcState::MU ||
+             entry.snapshot->state == HnfSlcState::MN) &&
+            entry.snapshot->line.dirty &&
+            entry.snapshot->line.data.size() == blockSizeBytes() &&
+            entry.snapshot->line.byteMask.size() == blockSizeBytes() &&
+            std::all_of(
+                entry.snapshot->line.byteMask.begin(),
+                entry.snapshot->line.byteMask.end(),
+                [](uint8_t byte) { return byte == 0xff; });
+        panic_if(empty &&
+                     (entry.snapshot || entry.lineAddress != 0 ||
+                      entry.writebackRequester != 0 ||
+                      entry.writebackOpcode != 0 || has_writeback ||
+                      entry.completionLease),
+                 "HnfSLCSF empty victim slot retains owned state id=%llu\n",
+                 static_cast<unsigned long long>(entry.id.value));
+        if (empty) {
+            continue;
+        }
+        panic_if(entry.id.value == 0 ||
+                     !victim_ids.insert(entry.id.value).second,
+                 "HnfSLCSF invalid/duplicate live victim id=%llu\n",
+                 static_cast<unsigned long long>(entry.id.value));
+        if (entry.state == VictimState::Reserved) {
+            panic_if(entry.snapshot || has_writeback || entry.completionLease,
+                     "HnfSLCSF reserved victim owns premature state\n");
+            continue;
+        }
+        panic_if(!full_snapshot,
+                 "HnfSLCSF live victim lacks exact full snapshot id=%llu "
+                 "state=%u\n",
                  static_cast<unsigned long long>(entry.id.value),
                  static_cast<unsigned>(entry.state));
+        const bool before_writeback =
+            entry.state == VictimState::InstalledSnapshot ||
+            entry.state == VictimState::HandedOff;
+        const bool claimed = entry.state == VictimState::ReleaseClaimed ||
+            entry.state == VictimState::ReleaseCommittedAwaitAck;
+        panic_if(before_writeback &&
+                     (entry.writebackRequester != 0 ||
+                      entry.writebackOpcode != 0 || has_writeback ||
+                      entry.completionLease),
+                 "HnfSLCSF pre-writeback victim owns completion state\n");
+        panic_if(entry.state == VictimState::WritebackIssued &&
+                     (!has_writeback || entry.completionLease),
+                 "HnfSLCSF issued victim has invalid lease/transaction\n");
+        panic_if(claimed &&
+                     (!has_writeback || !entry.completionLease ||
+                      !victimLeaseMatches(
+                          entry, *entry.completionLease)),
+                 "HnfSLCSF claimed victim has invalid exact lease\n");
+    }
+
+    std::unordered_set<uint64_t> installed_ids;
+    size_t expected_seals = 0;
+    size_t release_claims = 0;
+    for (const InflightRequest& request : inflightRequests) {
+        if (request.slcVictimId) {
+            const VictimEntry* entry = findDirtyVictim(
+                *request.slcVictimId);
+            panic_if(!entry ||
+                         entry->state != VictimState::InstalledSnapshot ||
+                         !request.slcVictim ||
+                         !installed_ids.insert(
+                             request.slcVictimId->value).second ||
+                         request.slcVictim->victimId.value !=
+                             entry->id.value ||
+                         request.slcVictim->lineAddress !=
+                             entry->lineAddress ||
+                         request.slcVictim->state != entry->snapshot->state ||
+                         request.slcVictim->owner != entry->snapshot->owner ||
+                         request.slcVictim->line.data !=
+                             entry->snapshot->line.data ||
+                         request.slcVictim->line.byteMask !=
+                             entry->snapshot->line.byteMask,
+                     "HnfSLCSF in-flight dirty victim is not exact id=%llu\n",
+                     static_cast<unsigned long long>(
+                         request.slcVictimId->value));
+        } else {
+            panic_if(request.slcVictim || request.slcVictimSeal,
+                     "HnfSLCSF in-flight victim fields are unpaired\n");
+        }
+        expected_seals += request.slcVictimSeal.has_value();
+        if (request.completionLease &&
+            request.completionLease->kind() ==
+                SlcSfCompletionKind::ReleaseDirtyVictim) {
+            const VictimEntry* entry = findDirtyVictim(SlcSfVictimId{
+                request.completionLease->objectId()});
+            const bool request_owns_claim = entry &&
+                (entry->state == VictimState::ReleaseClaimed ||
+                 entry->state ==
+                     VictimState::ReleaseCommittedAwaitAck);
+            panic_if(!request_owns_claim ||
+                         !entry->completionLease ||
+                         *entry->completionLease != *request.completionLease,
+                     "HnfSLCSF release claim lacks exact in-flight owner\n");
+            release_claims +=
+                entry->state == VictimState::ReleaseClaimed;
+        }
+    }
+    for (const VictimEntry& entry : victimBuffer) {
+        panic_if(entry.state == VictimState::InstalledSnapshot &&
+                     !installed_ids.count(entry.id.value),
+                 "HnfSLCSF installed victim lacks in-flight owner id=%llu\n",
+                 static_cast<unsigned long long>(entry.id.value));
+    }
+    panic_if(expected_seals != dirtyVictimSealCount(),
+             "HnfSLCSF dirty-victim seal ownership mismatch (%u/%u)\n",
+             static_cast<unsigned>(expected_seals),
+             static_cast<unsigned>(dirtyVictimSealCount()));
+    const size_t buffer_release_claims = std::count_if(
+        victimBuffer.begin(), victimBuffer.end(), [](const VictimEntry& entry) {
+            return entry.state == VictimState::ReleaseClaimed;
+        });
+    panic_if(release_claims != buffer_release_claims,
+             "HnfSLCSF release-claim ownership mismatch (%u/%u)\n",
+             static_cast<unsigned>(release_claims),
+             static_cast<unsigned>(buffer_release_claims));
+
+    const auto completion_owner_count = [this](
+                                             const SlcSfCompletionLease& lease) {
+        const auto has = [&lease](const SlcSfResponse& response) {
+            const auto* update =
+                std::get_if<SlcSfUpdateResponse>(&response.payload());
+            return update && update->completionLease &&
+                *update->completionLease == lease;
+        };
+        return std::count_if(
+                   inflightRequests.begin(), inflightRequests.end(),
+                   [&lease](const InflightRequest& request) {
+                       return request.completionLease &&
+                           *request.completionLease == lease;
+                   }) +
+            std::count_if(respPending.begin(), respPending.end(), has) +
+            std::count_if(respVisible.begin(), respVisible.end(), has);
+    };
+    for (const VictimEntry& entry : victimBuffer) {
+        if (entry.state == VictimState::ReleaseCommittedAwaitAck) {
+            panic_if(!entry.completionLease ||
+                         completion_owner_count(*entry.completionLease) != 1,
+                     "HnfSLCSF committed victim release lacks one response\n");
+        }
     }
 }
 
@@ -1486,15 +1869,14 @@ HnfSLCSF::claimDurableCompletion(InflightRequest& request)
     if (request.completionLease) {
         return durableClaimMatches(request);
     }
-    panic_if(nextCompletionNonce == 0,
-             "HnfSLCSF completion lease nonce space exhausted\n");
-
     if (const auto* complete =
             std::get_if<SlcSfCompleteSfEvict>(&update->operation)) {
         SlcSfCompletionLease lease{
             completionProducer,
             SlcSfCompletionKind::CompleteSfEvict,
-            nextCompletionNonce++, update->header, complete->seqId.value};
+            allocatePersistentIdentity(
+                nextCompletionNonce, "completion lease nonce"),
+            update->header, complete->seqId.value};
         if (!claimSeqCompletion(complete->seqId.value, lease)) {
             return false;
         }
@@ -1511,7 +1893,9 @@ HnfSLCSF::claimDurableCompletion(InflightRequest& request)
     SlcSfCompletionLease lease{
         completionProducer,
         SlcSfCompletionKind::ReleaseDirtyVictim,
-        nextCompletionNonce++, update->header, release.victimId.value};
+        allocatePersistentIdentity(
+            nextCompletionNonce, "completion lease nonce"),
+        update->header, release.victimId.value};
     victim->completionLease = lease;
     if (!victimLeaseMatches(*victim, lease)) {
         victim->completionLease.reset();
@@ -1586,9 +1970,8 @@ HnfSLCSF::reserveDirtyVictim(
         });
     panic_if(entry == victimBuffer.end(),
              "HnfSLCSF VictimBuffer preflight changed during acquisition\n");
-    panic_if(nextVictimId == 0,
-             "HnfSLCSF dirty-victim ID space exhausted\n");
-    entry->id = SlcSfVictimId{nextVictimId++};
+    entry->id = SlcSfVictimId{allocatePersistentIdentity(
+        nextVictimId, "dirty-victim")};
     entry->state = VictimState::Reserved;
     entry->lineAddress = *victim_addr;
     entry->snapshot.reset();
@@ -1789,6 +2172,99 @@ HnfSLCSF::prepareMutationResources(InflightRequest& request)
         request.request);
 }
 
+std::optional<SlcSfStatVictim>
+HnfSLCSF::pendingSlcVictimKind(const SlcSfRequest& request) const
+{
+    bool allocates_slc = false;
+    bool uses_commit_target = false;
+    std::visit(
+        [this, &allocates_slc, &uses_commit_target](
+            const auto& typed_request) {
+            using Request = std::decay_t<decltype(typed_request)>;
+            if constexpr (std::is_same_v<Request, SlcSfFillReq>) {
+                uses_commit_target = true;
+                allocates_slc = std::visit(
+                    [this, &typed_request](const auto& operation) {
+                        using Operation =
+                            std::decay_t<decltype(operation)>;
+                        if constexpr (std::is_same_v<
+                                          Operation, SlcSfCommitRead>) {
+                            return operation.txn ==
+                                PocqTxnKind::ReadShared;
+                        } else if constexpr (std::is_same_v<
+                                                 Operation,
+                                                 SlcSfFillCleanShared> ||
+                                             std::is_same_v<
+                                                 Operation,
+                                                 SlcSfWriteL3FlushSf>) {
+                            return true;
+                        } else if constexpr (std::is_same_v<
+                                                 Operation,
+                                                 SlcSfWriteLine>) {
+                            if (operation.txn ==
+                                    PocqTxnKind::WriteBackFull ||
+                                operation.txn ==
+                                    PocqTxnKind::WriteEvictFull) {
+                                const SfLine* tracked = findSf(
+                                    typed_request.header.lineAddress);
+                                if (tracked &&
+                                    (tracked->sharers &
+                                     (1ULL << typed_request.header.requester))
+                                        == 0) {
+                                    return false;
+                                }
+                            }
+                            return true;
+                        }
+                        return false;
+                    },
+                    typed_request.operation);
+            } else if constexpr (std::is_same_v<Request, SlcSfUpdateReq>) {
+                if (const auto* complete = std::get_if<
+                        SlcSfCompleteSfEvict>(&typed_request.operation)) {
+                    allocates_slc = complete->snoopData.dirty;
+                }
+            }
+        },
+        request);
+    if (!allocates_slc) {
+        return std::nullopt;
+    }
+
+    const uint64_t address = requestHeader(request).lineAddress;
+    if (findSlc(address)) {
+        return std::nullopt;
+    }
+    const SlcLine* victim = nullptr;
+    if (uses_commit_target) {
+        const LookupSnapshot target = mutationTarget(request);
+        panic_if(target.slc.set >= slc.size() ||
+                     target.slc.way >= slc[target.slc.set].size(),
+                 "HnfSLCSF validated mutation has invalid SLC victim way\n");
+        victim = &slc[target.slc.set][target.slc.way];
+    } else {
+        const auto& set = slc[slcSet(address)];
+        auto selected = std::find_if(
+            set.begin(), set.end(),
+            [](const SlcLine& line) { return !line.valid; });
+        if (selected == set.end()) {
+            selected = std::min_element(
+                set.begin(), set.end(),
+                [](const SlcLine& lhs, const SlcLine& rhs) {
+                    return lhs.lastUse < rhs.lastUse;
+                });
+        }
+        victim = selected == set.end() ? nullptr : &*selected;
+    }
+    if (!victim || !victim->valid) {
+        return std::nullopt;
+    }
+    const bool dirty = victim->state == HnfSlcState::MU ||
+        victim->state == HnfSlcState::MN;
+    return dirty ? SlcSfStatVictim::DirtySlc :
+                   SlcSfStatVictim::CleanSlc;
+}
+
 void
 HnfSLCSF::executeMutation(InflightRequest& request)
 {
@@ -1798,6 +2274,8 @@ HnfSLCSF::executeMutation(InflightRequest& request)
                  requestHeader(request.request).reqId.value));
     const SlcSfReqHeader& header = requestHeader(request.request);
     const LookupSnapshot target = mutationTarget(request.request);
+    const std::optional<SlcSfStatVictim> slc_victim_kind =
+        pendingSlcVictimKind(request.request);
     const SlcSfSlcVictim* preserved_victim = request.slcVictim ?
         &*request.slcVictim : nullptr;
     const DirtyVictimSeal* installed_seal = request.slcVictimSeal ?
@@ -1925,16 +2403,74 @@ HnfSLCSF::executeMutation(InflightRequest& request)
         request.slcVictimSeal.reset();
     }
     request.mutationCommitted = true;
+    if (slc_victim_kind) {
+        ++stats.victims[static_cast<size_t>(*slc_victim_kind)];
+        if (statsSink) {
+            statsSink->victim(*slc_victim_kind);
+        }
+    }
+    if (sf_victim.id != 0) {
+        ++stats.victims[static_cast<size_t>(SlcSfStatVictim::Sf)];
+        if (statsSink) {
+            statsSink->victim(SlcSfStatVictim::Sf);
+        }
+    }
+    runBackendGlobalInvariantCheck();
+}
+
+bool
+HnfSLCSF::tryAcquireSetLock(InflightRequest& request)
+{
+    if (!config.enableSetLock || request.setLockOwner) {
+        return true;
+    }
+    panic_if(nextSetLockOwner == 0 || nextSetLockOwner == UINT64_MAX,
+             "HnfSLCSF set lock owner ID overflows\n");
+    const auto& header = requestHeader(request.request);
+    const SlcSfSetLockRequest lock_request{
+        slcSet(header.lineAddress), sfSet(header.lineAddress),
+        requestPipe(request.request) == RequestPipe::Lookup ?
+            SlcSfSetLockMode::Read : SlcSfSetLockMode::Write};
+    if (!setLocks.tryAcquire(nextSetLockOwner, lock_request)) {
+        return false;
+    }
+    request.setLockOwner = nextSetLockOwner++;
+    return true;
+}
+
+void
+HnfSLCSF::recordConfiguredLatency(
+    InflightRequest& request, uint64_t configuredLatency)
+{
+    panic_if(request.latencyStatsRecorded || configuredLatency == 0,
+             "HnfSLCSF records invalid/duplicate configured latency\n");
+    request.configuredLatency = configuredLatency;
+    request.latencyStatsRecorded = true;
+    ++stats.serviceLatencySamples;
+    stats.serviceLatencyTotal += configuredLatency;
+    if (statsSink) {
+        statsSink->issued(configuredLatency);
+    }
 }
 
 void
 HnfSLCSF::advanceMutation(InflightRequest& request)
 {
-    if (!request.terminalReplayReason) {
-        request.replayLineFingerprint = lineStateFingerprint(
-            requestHeader(request.request).lineAddress);
-    }
-    switch (*request.mutationStage) {
+    const MutationStage entered_stage = *request.mutationStage;
+    const ProtectedStateSnapshot stage_snapshot = protectedStateSnapshot(
+        requestHeader(request.request).lineAddress, true);
+    const auto* update = std::get_if<SlcSfUpdateReq>(&request.request);
+    const bool needs_rollback_candidate =
+        entered_stage == MutationStage::U0DecodeValidate && update &&
+        (std::holds_alternative<SlcSfCompleteSfEvict>(update->operation) ||
+         std::holds_alternative<SlcSfReleaseDirtyVictim>(
+             update->operation));
+    const std::optional<ProtectedStateSnapshot> rollback_candidate =
+        needs_rollback_candidate ?
+            std::optional<ProtectedStateSnapshot>(protectedStateSnapshot(
+                requestHeader(request.request).lineAddress, false)) :
+            std::nullopt;
+    switch (entered_stage) {
       case MutationStage::U0DecodeValidate: {
         request.resourcesPrepared = hasSfReservation(
             requestHeader(request.request).pocEntryId);
@@ -1944,6 +2480,7 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
         const bool token_valid = validateMutationToken(request.request);
         request.tokenValidated = token_valid;
         if (auto error = validateMutationRequest(request.request)) {
+            recordConfiguredLatency(request, request.configuredLatency);
             request.terminalResponse = std::visit(
                 [&error](const auto& typed_request) {
                     return makeSlcSfErrorResponse(
@@ -1952,12 +2489,28 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
                 request.request);
             request.mutationStage = MutationStage::U3CheckLatch;
         } else if (!token_valid) {
+            recordConfiguredLatency(request, 1);
             request.terminalReplayReason =
                 SlcSfReplayReason::StaleCommitToken;
             request.mutationStage = MutationStage::U3CheckLatch;
             request.completeCycle = wakeupCycle;
             latchMutationResponse(request);
-        } else if (!claimDurableCompletion(request)) {
+        } else {
+            const uint64_t latency = serviceLatency(request.request);
+            panic_if(latency < request.configuredLatency ||
+                         latency - request.configuredLatency >
+                             UINT64_MAX - request.completeCycle,
+                     "HnfSLCSF service completion cycle overflows\n");
+            request.completeCycle += latency - request.configuredLatency;
+            recordConfiguredLatency(request, latency);
+        }
+        if (!request.mutationStage) {
+            break;
+        }
+        if (request.terminalResponse || request.terminalReplayReason) {
+            break;
+        }
+        if (!claimDurableCompletion(request)) {
             request.terminalResponse = std::visit(
                 [](const auto& typed_request) {
                     return makeSlcSfErrorResponse(
@@ -1969,6 +2522,11 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
                 request.request);
             request.mutationStage = MutationStage::U3CheckLatch;
         } else {
+            if (request.completionLease) {
+                panic_if(!rollback_candidate,
+                         "HnfSLCSF durable U0 lacks rollback snapshot\n");
+                request.rollbackSnapshot = *rollback_candidate;
+            }
             request.mutationStage = MutationStage::U1PrepareResources;
         }
         break;
@@ -1993,6 +2551,8 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
             request.mutationStage = MutationStage::U3CheckLatch;
             request.completeCycle = std::max(
                 request.completeCycle, wakeupCycle + 1);
+        } else if (!tryAcquireSetLock(request)) {
+            recordServiceStall(true);
         } else if (prepareMutationResources(request)) {
             request.mutationStage = request.terminalReplayReason ?
                 MutationStage::U3CheckLatch :
@@ -2004,6 +2564,10 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
         } else {
             // Accepted work remains in U1. Contention is a service stall,
             // not another admission attempt and not a correctness Replay.
+            if (request.setLockOwner) {
+                setLocks.release(*request.setLockOwner);
+                request.setLockOwner.reset();
+            }
             recordServiceStall();
         }
         break;
@@ -2025,17 +2589,40 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
         } else if (!validateMutationToken(request.request)) {
             request.terminalReplayReason =
                 SlcSfReplayReason::StaleCommitToken;
-        } else if (request.slcVictim &&
-                   !dirtyVictimWriteCanProceed(
-                       requestHeader(request.request).lineAddress,
-                       mutationTarget(request.request),
-                       *request.slcVictim,
-                       *request.slcVictimSeal)) {
-            request.terminalReplayReason =
-                SlcSfReplayReason::StaleCommitToken;
         } else {
-            request.tokenValidated = true;
-            executeMutation(request);
+#ifdef UNIT_TEST
+            std::optional<SlcSfVictimId> injected_original;
+            if (pendingVictimIdCorruptionForTest &&
+                pendingVictimIdCorruptionForTest->reqId ==
+                    requestHeader(request.request).reqId) {
+                panic_if(!request.slcVictim,
+                         "HnfSLCSF victim-id fault injection lacks victim\n");
+                injected_original = request.slcVictim->victimId;
+                request.slcVictim->victimId =
+                    pendingVictimIdCorruptionForTest->replacement;
+                pendingVictimIdCorruptionForTest.reset();
+            }
+#endif
+            const bool victim_write_valid = !request.slcVictim ||
+                dirtyVictimWriteCanProceed(
+                    requestHeader(request.request).lineAddress,
+                    mutationTarget(request.request), *request.slcVictim,
+                    *request.slcVictimSeal);
+#ifdef UNIT_TEST
+            // Restore the test-only transient corruption immediately after
+            // the target seal check. The production boundary invariant stays
+            // exact while the registered U3 path performs ordinary cleanup.
+            if (injected_original) {
+                request.slcVictim->victimId = *injected_original;
+            }
+#endif
+            if (!victim_write_valid) {
+                request.terminalReplayReason =
+                    SlcSfReplayReason::StaleCommitToken;
+            } else {
+                request.tokenValidated = true;
+                executeMutation(request);
+            }
         }
         request.mutationStage = MutationStage::U3CheckLatch;
         if (request.terminalResponse || request.terminalReplayReason) {
@@ -2051,6 +2638,25 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
             latchMutationResponse(request);
         }
         break;
+    }
+    // A successful durable claim is the only pre-U2 stage allowed to change
+    // fingerprinted state. All terminal, Replay, error, and stall paths must
+    // leave the protected arrays/SEQ exactly as they entered the stage.
+    const bool successful_u0_claim =
+        entered_stage == MutationStage::U0DecodeValidate &&
+        request.mutationStage == MutationStage::U1PrepareResources &&
+        request.completionLease.has_value();
+    const bool cleanup_rolled_back_prior_stage_state =
+        entered_stage == MutationStage::U3CheckLatch && request.cleanupDone;
+    if (!request.mutationCommitted && !successful_u0_claim &&
+        !cleanup_rolled_back_prior_stage_state) {
+        panic_if(stage_snapshot != protectedStateSnapshot(
+                     requestHeader(request.request).lineAddress, true),
+                 "HnfSLCSF non-U2 stage changed protected state req=%llu "
+                 "stage=%u\n",
+                 static_cast<unsigned long long>(
+                     requestHeader(request.request).reqId.value),
+                 static_cast<unsigned>(entered_stage));
     }
 }
 
@@ -2077,19 +2683,49 @@ HnfSLCSF::latchMutationResponse(InflightRequest& request)
         FinishReason::Done : status == SlcSfTerminalStatus::Replay ?
             FinishReason::Replay : FinishReason::Error;
     finishInflight(
-        request, reason, std::move(*request.terminalResponse));
+        request, reason, std::move(*request.terminalResponse), wakeupTick);
 }
 
 void
 HnfSLCSF::finishInflight(
     InflightRequest& request, FinishReason reason,
-    SlcSfResponse response)
+    SlcSfResponse response, Tick completeTick)
 {
     panic_if(request.cleanupDone,
              "HnfSLCSF request=%llu is finalized more than once\n",
              static_cast<unsigned long long>(
                  requestHeader(request.request).reqId.value));
     const auto& header = requestHeader(request.request);
+#ifdef UNIT_TEST
+    if (pendingVictimIdCorruptionForTest &&
+        pendingVictimIdCorruptionForTest->reqId == header.reqId) {
+        pendingVictimIdCorruptionForTest.reset();
+    }
+#endif
+    const bool compare_to_rollback = request.rollbackSnapshot.has_value();
+    const ProtectedStateSnapshot finish_snapshot = protectedStateSnapshot(
+        header.lineAddress, !compare_to_rollback);
+    auto trace = activeTraces.find(header.reqId.value);
+    panic_if(trace == activeTraces.end() ||
+                 !trace->second.acceptedTick ||
+                 !trace->second.issueTick ||
+                 trace->second.completeTick ||
+                 trace->second.visibleTick ||
+                 *trace->second.issueTick <= *trace->second.acceptedTick ||
+                 completeTick <= *trace->second.issueTick,
+             "HnfSLCSF trace tick order must be "
+             "accepted < issue < complete req=%llu accepted=%llu "
+             "issue=%llu complete=%llu\n",
+             static_cast<unsigned long long>(header.reqId.value),
+             static_cast<unsigned long long>(
+                 trace == activeTraces.end() ||
+                     !trace->second.acceptedTick ? 0 :
+                     *trace->second.acceptedTick),
+             static_cast<unsigned long long>(
+                 trace == activeTraces.end() ||
+                     !trace->second.issueTick ? 0 :
+                     *trace->second.issueTick),
+             static_cast<unsigned long long>(completeTick));
     panic_if(response.reqId() != header.reqId ||
                  response.pocEntryId() != header.pocEntryId,
              "HnfSLCSF final response identity disagrees with request\n");
@@ -2107,14 +2743,6 @@ HnfSLCSF::finishInflight(
               reason == FinishReason::Cancelled) &&
                  request.mutationCommitted,
              "HnfSLCSF cannot roll back a committed mutation\n");
-    panic_if(reason == FinishReason::Replay &&
-                 lineStateFingerprint(header.lineAddress) !=
-                     request.replayLineFingerprint,
-             "HnfSLCSF Replay mutated persistent state req=%llu "
-             "line=%#llx\n",
-             static_cast<unsigned long long>(header.reqId.value),
-             static_cast<unsigned long long>(header.lineAddress));
-
     if (request.mutationCommitted) {
         checkLineInvariant(requestHeader(request.request).lineAddress);
     }
@@ -2130,6 +2758,8 @@ HnfSLCSF::finishInflight(
                      static_cast<unsigned long long>(
                          request.slcVictimId->value));
             entry->state = VictimState::HandedOff;
+            request.slcVictimId.reset();
+            request.slcVictim.reset();
         } else {
             cancelDirtyVictimReservation(request);
         }
@@ -2145,17 +2775,22 @@ HnfSLCSF::finishInflight(
         setLocks.release(*request.setLockOwner);
         request.setLockOwner.reset();
     }
+    panic_if(reason != FinishReason::Done &&
+                 protectedStateSnapshot(
+                     header.lineAddress, !compare_to_rollback) !=
+                     request.rollbackSnapshot.value_or(finish_snapshot),
+             "HnfSLCSF non-Done terminal mutated persistent state req=%llu "
+             "line=%#llx reason=%u\n",
+             static_cast<unsigned long long>(header.reqId.value),
+             static_cast<unsigned long long>(header.lineAddress),
+             static_cast<unsigned>(reason));
     if (reason == FinishReason::Replay) {
         ++correctnessReplays;
     } else if (reason == FinishReason::Cancelled) {
         ++cancelledRequests;
     }
     recordTerminalStats(response);
-    auto trace = activeTraces.find(header.reqId.value);
-    panic_if(trace == activeTraces.end() || trace->second.completeTick != 0,
-             "HnfSLCSF duplicate or unknown terminal response req=%llu\n",
-             static_cast<unsigned long long>(header.reqId.value));
-    trace->second.completeTick = wakeupTick;
+    trace->second.completeTick = completeTick;
     trace->second.status = response.status();
     if (response.status() == SlcSfTerminalStatus::Replay) {
         trace->second.replayReason =
@@ -2202,27 +2837,6 @@ HnfSLCSF::recordTerminalStats(const SlcSfResponse& response)
         stats.broadcastSnoops += result.snoopBroadcast;
     }
 
-    if (const auto* fill =
-            std::get_if<SlcSfFillResponse>(&response.payload())) {
-        if (fill->slcVictim) {
-            const SlcSfStatVictim kind = fill->slcVictim->line.dirty ?
-                SlcSfStatVictim::DirtySlc : SlcSfStatVictim::CleanSlc;
-            ++stats.victims[static_cast<size_t>(kind)];
-        }
-        if (fill->sfVictim) {
-            ++stats.victims[static_cast<size_t>(SlcSfStatVictim::Sf)];
-        }
-    } else if (const auto* update =
-                   std::get_if<SlcSfUpdateResponse>(&response.payload())) {
-        if (update->sfVictim) {
-            ++stats.victims[static_cast<size_t>(SlcSfStatVictim::Sf)];
-        }
-    } else if (const auto* evict =
-                   std::get_if<SlcSfEvictResponse>(&response.payload())) {
-        if (evict->sfVictim) {
-            ++stats.victims[static_cast<size_t>(SlcSfStatVictim::Sf)];
-        }
-    }
     if (statsSink) {
         statsSink->terminal(response);
     }
@@ -2265,6 +2879,15 @@ void
 HnfSLCSF::promoteIngressRequests()
 {
     while (!reqIngress.empty()) {
+        const SlcSfReqId req_id = requestHeader(reqIngress.front()).reqId;
+        const auto trace = activeTraces.find(req_id.value);
+        panic_if(trace == activeTraces.end() ||
+                     !trace->second.acceptedTick,
+                 "HnfSLCSF ingress lacks acceptance tick req=%llu\n",
+                 static_cast<unsigned long long>(req_id.value));
+        if (wakeupTick <= *trace->second.acceptedTick) {
+            break;
+        }
         reqReady.push_back(std::move(reqIngress.front()));
         reqIngress.pop_front();
     }
@@ -2330,24 +2953,29 @@ HnfSLCSF::issueReadyRequests()
             !mutation && lookupReplaysAtL0(*request);
         const bool adopted_reservation = hasSfReservation(
             requestHeader(*request).pocEntryId);
-        uint64_t latency = serviceLatency(*request);
+        uint64_t latency = baseServiceLatency(*request);
         if (early_lookup_replay) {
             latency = 1;
         }
         panic_if(latency > UINT64_MAX - wakeupCycle,
                  "HnfSLCSF service completion cycle overflows");
-        inflightRequests.push_back(InflightRequest{
-            std::move(*request), wakeupCycle, wakeupCycle + latency,
-            mutation ? std::optional<MutationStage>(
-                           MutationStage::U0DecodeValidate) : std::nullopt,
-            std::nullopt, std::nullopt, adopted_reservation, false, false,
-            early_lookup_replay, false, std::nullopt, std::nullopt,
-            std::nullopt, std::nullopt, std::nullopt,
-            set_lock_owner});
+        InflightRequest new_inflight(std::move(*request));
+        new_inflight.issueCycle = wakeupCycle;
+        new_inflight.completeCycle = wakeupCycle + latency;
+        new_inflight.configuredLatency = latency;
+        new_inflight.mutationStage = mutation ?
+            std::optional<MutationStage>(MutationStage::U0DecodeValidate) :
+            std::nullopt;
+        new_inflight.resourcesPrepared = adopted_reservation;
+        new_inflight.earlyLookupReplay = early_lookup_replay;
+        new_inflight.setLockOwner = set_lock_owner;
+        inflightRequests.push_back(std::move(new_inflight));
         InflightRequest& inflight = inflightRequests.back();
         const auto& header = requestHeader(inflight.request);
         auto trace = activeTraces.find(header.reqId.value);
-        panic_if(trace == activeTraces.end() || trace->second.issueTick != 0,
+        panic_if(trace == activeTraces.end() || trace->second.issueTick ||
+                     !trace->second.acceptedTick ||
+                     wakeupTick <= *trace->second.acceptedTick,
                  "HnfSLCSF duplicate or unknown issue req=%llu\n",
                  static_cast<unsigned long long>(header.reqId.value));
         trace->second.issueTick = wakeupTick;
@@ -2359,13 +2987,11 @@ HnfSLCSF::issueReadyRequests()
                 static_cast<unsigned long long>(header.lineAddress),
                 static_cast<unsigned>(slcSfResponseOperation(
                     inflight.request)),
-                static_cast<unsigned long long>(trace->second.acceptedTick),
+                static_cast<unsigned long long>(*trace->second.acceptedTick),
                 static_cast<unsigned long long>(wakeupTick),
                 static_cast<unsigned long long>(wakeupCycle + latency));
-        ++stats.serviceLatencySamples;
-        stats.serviceLatencyTotal += latency;
-        if (statsSink) {
-            statsSink->issued(latency);
+        if (!mutation) {
+            recordConfiguredLatency(inflight, latency);
         }
         request = reqReady.erase(request);
         ++*issued;
@@ -2373,13 +2999,23 @@ HnfSLCSF::issueReadyRequests()
 }
 
 void
-HnfSLCSF::updateRegisteredCredits()
+HnfSLCSF::updateRegisteredCredits(Tick productionTick)
 {
     if (!initialized || draining) {
         visibleReqCredits = 0;
+        visibleReqCreditTicks.clear();
         return;
     }
-    visibleReqCredits = config.reqQueueEntries - reqOutstanding();
+    const size_t desired = config.reqQueueEntries - reqOutstanding();
+    while (visibleReqCreditTicks.size() > desired) {
+        visibleReqCreditTicks.pop_back();
+    }
+    while (visibleReqCreditTicks.size() < desired) {
+        visibleReqCreditTicks.push_back(
+            Gem5Internal::_curTickPtr ?
+                std::optional<Tick>(productionTick) : std::nullopt);
+    }
+    visibleReqCredits = visibleReqCreditTicks.size();
 }
 
 void
@@ -2401,6 +3037,9 @@ HnfSLCSF::assertRequestAccounting() const
              "HnfSLCSF visible request credit exceeds free capacity "
              "(%zu/%zu)\n", visibleReqCredits,
              config.reqQueueEntries - reqOutstanding());
+    panic_if(visibleReqCredits != visibleReqCreditTicks.size(),
+             "HnfSLCSF credit timestamp accounting mismatch (%zu/%zu)\n",
+             visibleReqCredits, visibleReqCreditTicks.size());
 }
 
 void
@@ -2409,6 +3048,18 @@ HnfSLCSF::assertResponseAccounting() const
     panic_if(respOccupied() > config.respQueueEntries,
              "HnfSLCSF response accounting exceeds capacity (%zu/%zu)\n",
              respOccupied(), config.respQueueEntries);
+    panic_if(respVisible.size() != respVisibleTicks.size(),
+             "HnfSLCSF response visibility timestamp mismatch (%zu/%zu)\n",
+             respVisible.size(), respVisibleTicks.size());
+}
+
+void
+HnfSLCSF::runBackendGlobalInvariantCheck()
+{
+    HnfSLCSFBackend::checkGlobalInvariants();
+#ifdef UNIT_TEST
+    ++backendGlobalInvariantChecks;
+#endif
 }
 
 void
@@ -2427,25 +3078,118 @@ HnfSLCSF::assertGlobalInvariants() const
              "pending=%u\n", static_cast<unsigned>(activeTraces.size()),
              static_cast<unsigned>(reqOutstanding()),
              static_cast<unsigned>(respPending.size()));
-    panic_if(setLockCount() > inflightRequests.size() * 2,
-             "HnfSLCSF set locks exceed in-flight ownership (%u/%u)\n",
+    std::unordered_set<uint64_t> lock_owners;
+    size_t expected_locks = 0;
+    for (const InflightRequest& inflight : inflightRequests) {
+        const bool lockless_retry_window = inflight.mutationStage ==
+                MutationStage::U1PrepareResources &&
+            inflight.mutationStalled;
+        panic_if((!config.enableSetLock && inflight.setLockOwner) ||
+                     (config.enableSetLock && !lockless_retry_window &&
+                      !inflight.setLockOwner) ||
+                     (lockless_retry_window && inflight.setLockOwner),
+                 "HnfSLCSF request/set-lock reverse ownership mismatch "
+                 "req=%llu stage=%d stalled=%u\n",
+                 static_cast<unsigned long long>(
+                     requestHeader(inflight.request).reqId.value),
+                 inflight.mutationStage ?
+                     static_cast<int>(*inflight.mutationStage) : -1,
+                 inflight.mutationStalled);
+        if (!inflight.setLockOwner) {
+            continue;
+        }
+        panic_if(!lock_owners.insert(*inflight.setLockOwner).second,
+                 "HnfSLCSF duplicate in-flight set-lock owner=%llu\n",
+                 static_cast<unsigned long long>(*inflight.setLockOwner));
+        const auto& header = requestHeader(inflight.request);
+        const SlcSfSetLockRequest expected{
+            slcSet(header.lineAddress), sfSet(header.lineAddress),
+            requestPipe(inflight.request) == RequestPipe::Lookup ?
+                SlcSfSetLockMode::Read : SlcSfSetLockMode::Write};
+        panic_if(!setLocks.holdsExact(*inflight.setLockOwner, expected),
+                 "HnfSLCSF in-flight request has inexact set-lock ownership "
+                 "owner=%llu\n",
+                 static_cast<unsigned long long>(*inflight.setLockOwner));
+        expected_locks += expected.slcSet.has_value() +
+            expected.sfSet.has_value();
+    }
+    panic_if(setLockCount() != expected_locks,
+             "HnfSLCSF set-lock ownership mismatch actual=%u expected=%u\n",
              static_cast<unsigned>(setLockCount()),
-             static_cast<unsigned>(inflightRequests.size() * 2));
+             static_cast<unsigned>(expected_locks));
 
-    std::unordered_map<uint64_t, bool> response_ids;
-    const auto record_response = [&response_ids](const SlcSfResponse& response) {
-        panic_if(response_ids.count(response.reqId().value),
+    std::unordered_set<uint64_t> owned_ids;
+    const auto record_request = [this, &owned_ids](
+                                    const SlcSfRequest& request,
+                                    bool issued) {
+        const auto& header = requestHeader(request);
+        const auto trace = activeTraces.find(header.reqId.value);
+        panic_if(!owned_ids.insert(header.reqId.value).second ||
+                     !wasAccepted(header.reqId) ||
+                     trace == activeTraces.end() ||
+                     !trace->second.acceptedTick ||
+                     (issued &&
+                      (!trace->second.issueTick ||
+                       *trace->second.issueTick <=
+                           *trace->second.acceptedTick)) ||
+                     (!issued && trace->second.issueTick) ||
+                     trace->second.completeTick ||
+                     trace->second.visibleTick,
+                 "HnfSLCSF invalid active request ownership ID=%llu\n",
+                 static_cast<unsigned long long>(header.reqId.value));
+    };
+    for (const SlcSfRequest& request : reqIngress) {
+        record_request(request, false);
+    }
+    for (const SlcSfRequest& request : reqReady) {
+        record_request(request, false);
+    }
+    for (const InflightRequest& request : inflightRequests) {
+        record_request(request.request, true);
+    }
+
+    const auto record_response =
+        [this, &owned_ids](const SlcSfResponse& response, bool pending) {
+        panic_if(!owned_ids.insert(response.reqId().value).second,
                  "HnfSLCSF duplicate response ID=%llu\n",
                  static_cast<unsigned long long>(response.reqId().value));
-        response_ids.emplace(response.reqId().value, true);
+        const auto trace = activeTraces.find(response.reqId().value);
+        panic_if(!wasAccepted(response.reqId()) ||
+                     (pending &&
+                      (trace == activeTraces.end() ||
+                       !trace->second.acceptedTick ||
+                       !trace->second.issueTick ||
+                       !trace->second.completeTick ||
+                       trace->second.visibleTick ||
+                       *trace->second.issueTick <=
+                           *trace->second.acceptedTick ||
+                       *trace->second.completeTick <=
+                           *trace->second.issueTick ||
+                       trace->second.status != response.status())) ||
+                     (!pending && trace != activeTraces.end()),
+                 "HnfSLCSF response/trace ownership mismatch ID=%llu\n",
+                 static_cast<unsigned long long>(response.reqId().value));
     };
     for (const SlcSfResponse& response : respPending) {
-        record_response(response);
+        record_response(response, true);
     }
     for (const SlcSfResponse& response : respVisible) {
-        record_response(response);
+        record_response(response, false);
     }
-    checkGlobalInvariants();
+    if (completedTrace) {
+        panic_if(!completedTrace->acceptedTick ||
+                     !completedTrace->issueTick ||
+                     !completedTrace->completeTick ||
+                     !completedTrace->visibleTick ||
+                     *completedTrace->issueTick <=
+                         *completedTrace->acceptedTick ||
+                     *completedTrace->completeTick <=
+                         *completedTrace->issueTick ||
+                     *completedTrace->visibleTick <=
+                         *completedTrace->completeTick,
+                 "HnfSLCSF completed trace tick order must be "
+                 "accepted < issue < complete < visible\n");
+    }
 }
 
 } // namespace gem5::Chi

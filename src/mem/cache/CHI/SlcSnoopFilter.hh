@@ -1,7 +1,9 @@
 #ifndef __MEM_CACHE_CHI_SLC_SNOOP_FILTER_HH__
 #define __MEM_CACHE_CHI_SLC_SNOOP_FILTER_HH__
 
+#include <algorithm>
 #include <functional>
+#include <limits>
 
 #include "base/statistics.hh"
 #include "mem/cache/CHI/HnfSLCSF.hh"
@@ -16,7 +18,15 @@ struct SlcSnoopFilterAdvance
     bool needsNextEdge = false;
     bool responseBecameVisible = false;
     bool creditBecameAvailable = false;
+    bool drainBecameReady = false;
 };
+
+inline bool
+slcSnoopFilterShouldNotifyOwner(const SlcSnoopFilterAdvance& advance)
+{
+    return advance.responseBecameVisible ||
+        advance.creditBecameAvailable || advance.drainBecameReady;
+}
 
 struct SlcSnoopFilterScheduleDecision
 {
@@ -24,6 +34,25 @@ struct SlcSnoopFilterScheduleDecision
     bool reschedule = false;
     Tick when = 0;
 };
+
+inline bool
+slcSnoopFilterDrainReady(const HnfSLCSF& service)
+{
+    return service.isAdmissionSealed() && service.isCompletelyIdle();
+}
+
+/** Split a long weighted statistics sample into the API's int-sized chunks. */
+template <class Sample>
+inline void
+slcSnoopFilterSampleChunks(uint64_t cycles, Sample&& sample)
+{
+    while (cycles != 0) {
+        const int chunk = static_cast<int>(std::min<uint64_t>(
+            cycles, std::numeric_limits<int>::max()));
+        sample(chunk);
+        cycles -= static_cast<uint64_t>(chunk);
+    }
+}
 
 /** Decide whether an absent or existing service event needs changing. */
 inline SlcSnoopFilterScheduleDecision
@@ -61,18 +90,22 @@ slcSnoopFilterWakeupTick(
     return first_future_edge + (elapsed_cycles - 1) * clock_period;
 }
 
+#ifdef UNIT_TEST
 /** Advance the ordinary service at one absolute child-clock boundary. */
 inline SlcSnoopFilterAdvance
 advanceSlcSnoopFilterService(HnfSLCSF& service, Tick now)
 {
-    const bool had_visible_response = service.respVisibleCount() != 0;
-    const bool had_credit = service.registeredReqCredits() != 0;
+    const bool had_visible_response = service.rawRespVisibleCount() != 0;
+    const bool had_credit = service.registeredReqCreditGrants() != 0;
+    const bool was_drain_ready = slcSnoopFilterDrainReady(service);
     service.wakeup(now);
     return {
         service.needsServiceWakeup(),
-        !had_visible_response && service.respVisibleCount() != 0,
-        !had_credit && service.registeredReqCredits() != 0};
+        !had_visible_response && service.rawRespVisibleCount() != 0,
+        !had_credit && service.registeredReqCreditGrants() != 0,
+        !was_drain_ready && slcSnoopFilterDrainReady(service)};
 }
+#endif
 
 /**
  * Clocked ownership boundary for the HNF SLC and snoop filter.
@@ -105,6 +138,9 @@ class SlcSnoopFilter : public ClockedObject
 
     void initState() override;
     void startup() override;
+    void loadState(CheckpointIn& cp) override;
+    void preDumpStats() override;
+    void resetStats() override;
     DrainState drain() override;
     void drainResume() override;
     void serialize(CheckpointOut& cp) const override;
@@ -128,6 +164,7 @@ class SlcSnoopFilter : public ClockedObject
                               uint64_t cycles, bool req_full,
                               bool resp_full) override;
         void issued(uint64_t configured_latency) override;
+        void victim(SlcSfStatVictim victim) override;
         void terminal(const SlcSfResponse& response) override;
         void becameVisible(uint64_t latency) override;
         void rejectedNoCredit() override;
@@ -160,7 +197,7 @@ class SlcSnoopFilter : public ClockedObject
         statistics::Distribution responseOccupancy;
         statistics::Distribution inflightOccupancy;
         statistics::Distribution configuredServiceLatency;
-        statistics::Distribution acceptedToVisibleLatency;
+        statistics::SparseHistogram acceptedToVisibleLatency;
     } stats;
 
     std::optional<Tick> calculateNextWakeup() const;

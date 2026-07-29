@@ -127,6 +127,27 @@ class HnfCoherencyController
     void popTxRsp();
 
   private:
+    /**
+     * Byte-exact state for one CHI DAT transfer.
+     *
+     * A byte count alone cannot distinguish complete data from a duplicated
+     * beat.  Keep the coverage and DataID history with the transaction owner
+     * so `last` is only accepted together with complete, unique coverage.
+     */
+    struct DataAssembly
+    {
+        bool active = false;
+        bool complete = false;
+        uint32_t startOffset = 0;
+        uint32_t expectedBytes = 0;
+        uint32_t coveredBytes = 0;
+        bool sawLast = false;
+        std::vector<uint8_t> coverage;
+        std::vector<uint8_t> seenDataIds;
+        std::optional<uint32_t> source;
+        std::optional<uint8_t> response;
+    };
+
     struct Entry
     {
         HnfCcEntryState state = HnfCcEntryState::Idle;
@@ -141,8 +162,8 @@ class HnfCoherencyController
         uint8_t resourceClass = 0;
         bool isStatic = false;
         bool mcReadIssued = false;
-        uint32_t mcDataBytes = 0;
-        uint32_t writeDataBytes = 0;
+        uint32_t mcTxnId = 0;
+        uint8_t writeDbid = 0;
         bool needsCompAck = false;
         bool expectsWriteData = false;
         std::optional<uint32_t> sleepingOn;
@@ -151,6 +172,9 @@ class HnfCoherencyController
         // so a lookup hit must never overwrite the buffered write bytes.
         std::vector<uint8_t> readData;
         std::vector<uint8_t> writePayload;
+        DataAssembly mcDataAssembly;
+        DataAssembly writeDataAssembly;
+        DataAssembly snoopDataAssembly;
         HnfSlcLookupResult slcLookupResult{};
         SlcLookupPhase slcLookupPhase = SlcLookupPhase::None;
         SlcSfReqId slcLookupReqId{};
@@ -182,7 +206,9 @@ class HnfCoherencyController
         uint32_t snoopTxnId = 0;
         uint64_t pendingTargets = 0;
         bool dataReceived = false;
+        bool dataDirty = false;
         std::vector<uint8_t> data;
+        DataAssembly dataAssembly;
         SlcSfReqId completeReqId{};
         std::optional<SlcSfRequest> pendingComplete;
     };
@@ -217,6 +243,7 @@ class HnfCoherencyController
     bool directSnFakeData = true;
     bool dirtyVictimRetryEnabled = true;
     uint32_t rnfSlices = 1;
+    uint32_t nextMcTxnId = 1;
     uint32_t nextSnoopTxnId = 0x80000000U;
     uint32_t nextDirtyVictimTxnId = 0x40000000U;
 
@@ -229,6 +256,7 @@ class HnfCoherencyController
     std::deque<HnfCcTxDat> txDatQ;
     std::deque<HnfCcTxRsp> txRspQ;
     std::deque<HnfCcRetireInfo> deferredRetireQ;
+    std::unordered_map<uint32_t, uint32_t> mcTxnToEntry;
     std::unordered_map<uint32_t, uint32_t> snoopTxnToEntry;
     std::unordered_map<uint64_t, DirtyVictimTxn> dirtyVictimTxns;
     std::unordered_map<uint32_t, uint64_t> dirtyVictimTxnIds;
@@ -236,6 +264,11 @@ class HnfCoherencyController
 
     uint64_t blockAddr(const RawReq& req) const;
     uint32_t expectedDataBytes(const RawReq& req) const;
+    void resetDataAssembly(DataAssembly& assembly, uint32_t start_offset,
+                           uint32_t expected_bytes);
+    bool acceptDataBeat(DataAssembly& assembly, std::vector<uint8_t>& buffer,
+                        const RawDat& dat, const char* owner,
+                        uint64_t owner_id);
     bool entryAllocated(const Entry& entry) const;
     bool hasAddressHazard(uint32_t entry, uint64_t addr) const;
     std::optional<uint32_t> findTxn(uint32_t srcid, uint32_t txnid) const;
@@ -250,7 +283,7 @@ class HnfCoherencyController
     void completeMaintenance(uint32_t entry);
     void removeSharer(uint32_t entry);
     void completeSnoopTarget(uint32_t entry, uint32_t responder,
-                             bool has_data);
+                             bool has_data, bool data_dirty = false);
     uint32_t targetRouteId(uint32_t target, uint64_t addr) const;
     void queueMcRead(uint32_t entry);
     void queueCompData(uint32_t entry, const std::vector<uint8_t>& data);
@@ -264,6 +297,7 @@ class HnfCoherencyController
     HnfCcRetireInfo makeRetireInfo(const Entry& entry) const;
     void wakeSleepingEntries(uint64_t addr);
     bool hasMainAddressHazard(uint64_t addr) const;
+    uint32_t allocateMcTxnId();
     uint32_t allocateSnoopTxnId();
     uint32_t allocateDirtyVictimTxnId(uint32_t requester_txnid);
     void startDirtyVictimWriteback(uint32_t entry,
@@ -282,7 +316,8 @@ class HnfCoherencyController
     void stepSeqPocq(const SeqPocqEvent& event);
     void queueSeqSnoops();
     void tryIssueSeqComplete();
-    void completeSeqSnoopTarget(uint32_t responder, bool has_data);
+    void completeSeqSnoopTarget(uint32_t responder, bool has_data,
+                                bool data_dirty = false);
     void retrySlcsfReplayEntries(Tick current_tick);
     void retryPendingSlcLookups();
     void retryPendingSlcUpdates();

@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <iosfwd>
 #include <optional>
 #include <queue>
@@ -25,6 +26,10 @@ namespace gem5
 
 namespace Chi
 {
+
+#ifdef UNIT_TEST
+class Cache2ChiBridgeProtocolTestPeer;
+#endif
 
 class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
 {
@@ -49,6 +54,10 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     }
 
   private:
+#ifdef UNIT_TEST
+    friend class Cache2ChiBridgeProtocolTestPeer;
+#endif
+
     /** ============ Cache side port (acts like memory for the cache) ============ */
     class CacheSidePort : public ResponsePort
     {
@@ -174,7 +183,13 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
         bool gotData = false;
         bool retryBlocked = false;
         bool completed = false;
+        uint32_t readExpectedBytes = 0;
         std::vector<uint8_t> readData;
+        std::vector<uint8_t> readCoverage;
+        std::vector<uint8_t> seenReadDataIds;
+        uint32_t readDataBytes = 0;
+        bool sawReadDataLast = false;
+        std::optional<uint8_t> readResp;
     };
 
     struct SnoopSenderState : public Packet::SenderState
@@ -190,6 +205,9 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
         PacketPtr snoopPkt = nullptr;
         bool invalidating = false;
         bool pendingData = false;
+        std::optional<RawRsp> pendingRsp;
+        std::vector<RawDat> dataBeats;
+        size_t nextDataBeat = 0;
     };
 
     struct PendingClassicResponse
@@ -249,6 +267,7 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     std::queue<uint32_t> retryTxnIds;
     std::queue<PendingCompAck> pendingCompAcks;
     std::queue<PendingSnoopRetry> pendingSnoopRetries;
+    std::deque<SnoopEntry> pendingSnoopResponses;
     std::unordered_map<uint32_t, TxnEntry> txns;
     std::unordered_map<uint32_t, SnoopEntry> snoops;
     std::unordered_set<PacketPtr> promotedUpgradePkts;
@@ -280,16 +299,24 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     void handleTxReq(const RawReq& req);
     void handleRsp(const RawRsp& rsp);
     void handleDat(const RawDat& dat);
+    static bool acceptReadDataBeat(TxnEntry& txn, const RawDat& dat,
+                                   uint32_t data_beat_bytes,
+                                   const char* owner_name);
     void handleSnp(const RawSnp& snp, uint32_t attempts = 0);
     bool sendPendingResponses();
     bool sendPendingCompAcks();
+    bool sendPendingSnoopResponses();
+    static bool advancePendingSnoopResponse(
+        SnoopEntry& snoop,
+        const std::function<bool(ChannelType, const FlitVariant&)>& enqueue);
+    void queuePendingSnoopResponse(SnoopEntry&& snoop);
     std::optional<RawRsp> makeCompAck(const TxnEntry& txn) const;
     bool sendTxnData(TxnEntry& txn);
     bool reissueRetriedTxn(uint32_t txnid);
     void maybeComplete(TxnEntry& txn);
     void completeClassicTxn(TxnEntry& txn);
 
-    void sendSnoopRsp(const SnoopEntry& snoop, RespState state);
+    void sendSnoopRsp(SnoopEntry& snoop, RespState state);
     void sendSnoopData(SnoopEntry& snoop, PacketPtr pkt);
     bool respondFromPendingCopyback(const RawSnp& snp);
     bool snoopPrecedesPendingTxn(const RawSnp& snp);

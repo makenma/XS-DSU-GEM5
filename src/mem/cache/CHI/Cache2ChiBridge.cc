@@ -64,16 +64,7 @@ constexpr uint8_t CompData = 0x04;
 bool
 isDirtyResp(uint8_t resp)
 {
-    return resp == 3 || resp == 4;
-}
-
-bool
-isReadDataOpcode(uint8_t opcode)
-{
-    const auto decoded = decodeDat(opcode);
-    return decoded.minor == DatMinor::CompData ||
-           decoded.minor == DatMinor::DataSepResp ||
-           decoded.minor == DatMinor::NCBWrDataCompAck;
+    return resp == 3 || resp == 4 || resp == 5;
 }
 
 } // anonymous namespace
@@ -99,6 +90,8 @@ Cache2ChiBridge::Cache2ChiBridge(const Cache2ChiBridgeParams& p)
              "%s requires a non-zero power-of-two block_size\n", name());
     fatal_if(dataBeatBytes == 0 || dataBeatBytes > blockSize,
              "%s requires 0 < data_beat_bytes <= block_size\n", name());
+    fatal_if(1 + (blockSize - 1) / dataBeatBytes > UINT8_MAX + 1,
+             "%s block requires more than the 8-bit DataID space\n", name());
     fatal_if(maxTxns == 0, "%s requires num_txns > 0\n", name());
     fatal_if(static_cast<uint64_t>(txnIdBase) + maxTxns >
                  std::numeric_limits<uint32_t>::max(),
@@ -163,7 +156,8 @@ Cache2ChiBridge::hasPumpWork() const
     return !pendingReqPkts.empty() ||
            (!cacheRespBlocked && !pendingRespPkts.empty()) ||
            !retryTxnIds.empty() || !pendingCompAcks.empty() ||
-           !pendingSnoopRetries.empty();
+           !pendingSnoopRetries.empty() ||
+           !pendingSnoopResponses.empty();
 }
 
 std::optional<uint32_t>
@@ -262,13 +256,17 @@ Cache2ChiBridge::classify(PacketPtr pkt) const
     }
 
     if (cmd == MemCmd::WriteReq || cmd == MemCmd::WriteLineReq) {
-        intent.kind = pkt->isWholeLineWrite(blockSize) ?
-            IntentKind::WriteUniqueFull : IntentKind::WriteUniquePtl;
+        panic_if(!pkt->isWholeLineWrite(blockSize),
+                 "%s: partial coherent write addr=%#llx bytes=%u is disabled "
+                 "until HNF models a masked RMW/no-allocate path\n",
+                 name(), static_cast<unsigned long long>(pkt->getAddr()),
+                 pkt->getSize());
+        intent.kind = IntentKind::WriteUniqueFull;
         intent.txnClass = TxnClass::Write;
         intent.expectsDbid = true;
         intent.expectsComp = true;
         intent.carriesData = true;
-        intent.isPartial = intent.kind == IntentKind::WriteUniquePtl;
+        intent.isPartial = false;
         return intent;
     }
 
@@ -478,14 +476,19 @@ Cache2ChiBridge::cacheRecvTimingSnoopResp(PacketPtr pkt)
                 static_cast<unsigned>(state));
     }
 
+    PacketPtr original_snoop_pkt = snoop.snoopPkt;
+    snoop.snoopPkt = nullptr;
+    snoop.pendingData = false;
     Packet::SenderState* popped = pkt->popSenderState();
     delete popped;
     delete pkt;
 
-    if (snoop.snoopPkt) {
-        delete snoop.snoopPkt;
+    if (original_snoop_pkt && original_snoop_pkt != pkt) {
+        delete original_snoop_pkt;
     }
+    SnoopEntry pending = std::move(snoop);
     snoops.erase(it);
+    queuePendingSnoopResponse(std::move(pending));
     schedulePump();
     return true;
 }
@@ -515,6 +518,7 @@ Cache2ChiBridge::pump()
     }
 
     drainChiTx();
+    sendPendingSnoopResponses();
     sendPendingResponses();
     sendPendingCompAcks();
 
@@ -561,6 +565,7 @@ Cache2ChiBridge::pump()
         txn.intent.respondAsUpgrade = promotedUpgradePkts.count(pkt) != 0;
         txn.req = mapToReq(intent, pkt, *txnid);
         txn.dataBeats = packDataBeats(intent, pkt, *txnid);
+        txn.readExpectedBytes = intent.expectsData ? pkt->getSize() : 0;
 
         DPRINTF(Cache2ChiBridge,
                 "enqueue CHI REQ opcode=0x%x txnid=%u cmd=%s addr=0x%lx\n",
@@ -577,6 +582,7 @@ Cache2ChiBridge::pump()
     }
 
     drainChiTx();
+    sendPendingSnoopResponses();
     sendPendingResponses();
     sendPendingCompAcks();
 
@@ -763,24 +769,7 @@ Cache2ChiBridge::handleDat(const RawDat& dat)
              name(), dat.opcode, dat.txnid);
     TxnEntry& txn = it->second;
 
-    if (!isReadDataOpcode(dat.opcode)) {
-        warn("%s: ignoring unsupported incoming DAT opcode=0x%x txnid=%u\n",
-             name(), dat.opcode, dat.txnid);
-        return;
-    }
-
-    if (txn.intent.forceCleanResponse && isDirtyResp(dat.resp)) {
-        panic("%s: ReadCleanReq mapped as ReadShared got dirty CHI data "
-              "response state %u\n", name(), dat.resp);
-    }
-
-    if (txn.readData.size() < dat.beatOffset + dat.data.size()) {
-        txn.readData.resize(dat.beatOffset + dat.data.size(), 0);
-    }
-    std::copy(dat.data.begin(), dat.data.end(),
-              txn.readData.begin() + dat.beatOffset);
-    txn.gotData = dat.last || txn.readData.size() >= txn.pkt->getSize();
-    txn.gotComp = true;
+    acceptReadDataBeat(txn, dat, dataBeatBytes, name().c_str());
     if (dat.resp == static_cast<uint8_t>(RespState::SC) ||
         dat.resp == static_cast<uint8_t>(RespState::SD_PD)) {
         txn.pkt->setHasSharers();
@@ -793,7 +782,7 @@ Cache2ChiBridge::handleDat(const RawDat& dat)
             "bytes=%u last=%u readBytes=%u/%u\n",
             dat.opcode, dat.txnid, dat.dataid, dat.beatOffset,
             static_cast<unsigned>(dat.data.size()), dat.last,
-            static_cast<unsigned>(txn.readData.size()), txn.pkt->getSize());
+            txn.readDataBytes, txn.readExpectedBytes);
     maybeComplete(txn);
 }
 
@@ -857,10 +846,17 @@ Cache2ChiBridge::handleSnp(const RawSnp& snp, uint32_t attempts)
         RespState::SC : RespState::I;
     sendSnoopRsp(entry, state);
 
+    PacketPtr original_snoop_pkt = entry.snoopPkt;
+    entry.snoopPkt = nullptr;
     Packet::SenderState* popped = pkt->popSenderState();
     delete popped;
     delete pkt;
+    if (original_snoop_pkt && original_snoop_pkt != pkt) {
+        delete original_snoop_pkt;
+    }
+    SnoopEntry pending = std::move(entry);
     snoops.erase(it);
+    queuePendingSnoopResponse(std::move(pending));
 }
 
 bool
@@ -881,6 +877,7 @@ Cache2ChiBridge::respondFromPendingCopyback(const RawSnp& snp)
                 source, txnid, snp.txnid, snp.opcode,
                 static_cast<unsigned long long>(snoopAddr),
                 buffered.invalidating);
+        queuePendingSnoopResponse(std::move(buffered));
     };
 
     for (auto& [txnid, txn] : txns) {
@@ -1079,6 +1076,11 @@ Cache2ChiBridge::reissueRetriedTxn(uint32_t txnid)
     txn.gotData = false;
     txn.nextDataBeat = 0;
     txn.readData.clear();
+    txn.readCoverage.clear();
+    txn.seenReadDataIds.clear();
+    txn.readDataBytes = 0;
+    txn.sawReadDataLast = false;
+    txn.readResp.reset();
     return true;
 }
 
@@ -1146,8 +1148,12 @@ Cache2ChiBridge::completeClassicTxn(TxnEntry& txn)
 }
 
 void
-Cache2ChiBridge::sendSnoopRsp(const SnoopEntry& snoop, RespState state)
+Cache2ChiBridge::sendSnoopRsp(SnoopEntry& snoop, RespState state)
 {
+    panic_if(snoop.pendingRsp || !snoop.dataBeats.empty() ||
+                 snoop.nextDataBeat != 0,
+             "%s: snoop txnid=%u already has a pending CHI response\n",
+             name(), snoop.snp.txnid);
     RawRsp rsp{};
     rsp.qos = snoop.snp.qos;
     rsp.srcid = nodeId;
@@ -1157,43 +1163,89 @@ Cache2ChiBridge::sendSnoopRsp(const SnoopEntry& snoop, RespState state)
     rsp.stage = 0;
     rsp.dbid = 0;
     rsp.resp = static_cast<uint8_t>(state);
-
-    if (!chiPort.enqueueRx(RSP, rsp)) {
-        panic("%s: failed to enqueue SnpResp; retrying snoop responses is "
-              "not implemented yet\n", name());
-    }
+    snoop.pendingRsp = rsp;
 }
 
 void
 Cache2ChiBridge::sendSnoopData(SnoopEntry& snoop, PacketPtr pkt)
 {
-    RawDat dat{};
-    dat.qos = snoop.snp.qos;
-    dat.srcid = nodeId;
-    dat.tgtid = snoop.snp.srcid;
-    dat.txnid = snoop.snp.txnid;
-    dat.opcode = DatOp::SnpRespData;
-    dat.stage = 0;
-    dat.last = 1;
-    dat.HomeNID = homeNodeId;
-    dat.dbid = 0;
-    dat.dataid = 0;
-    dat.resp = static_cast<uint8_t>(
-        snoop.invalidating ? RespState::I_PD : RespState::SD_PD);
-    dat.beatOffset = 0;
+    panic_if(snoop.pendingRsp || !snoop.dataBeats.empty() ||
+                 snoop.nextDataBeat != 0,
+             "%s: snoop txnid=%u already has pending response data\n",
+             name(), snoop.snp.txnid);
+    panic_if(pkt->getSize() != blockSize,
+             "%s: snoop data txnid=%u has %u/%u line bytes\n",
+             name(), snoop.snp.txnid, pkt->getSize(), blockSize);
     DPRINTF(Cache2ChiBridge,
             "pack classic snoop data txnid=%u cmd=%s addr=%#llx bytes=%u\n",
             snoop.txnid, pkt->cmdString().c_str(),
             static_cast<unsigned long long>(pkt->getAddr()), pkt->getSize());
-    dat.data.assign(pkt->getConstPtr<uint8_t>(),
-                    pkt->getConstPtr<uint8_t>() + pkt->getSize());
-    dat.byteEnable.assign(dat.data.size(), 1);
-    dat.chunkValid.assign((dat.data.size() + 7) / 8, 1);
+    const uint8_t* data = pkt->getConstPtr<uint8_t>();
+    for (uint32_t offset = 0, dataid = 0; offset < blockSize;
+         offset += dataBeatBytes, ++dataid) {
+        const uint32_t beat_bytes =
+            std::min(dataBeatBytes, blockSize - offset);
+        RawDat dat{};
+        dat.qos = snoop.snp.qos;
+        dat.srcid = nodeId;
+        dat.tgtid = snoop.snp.srcid;
+        dat.txnid = snoop.snp.txnid;
+        dat.opcode = DatOp::SnpRespData;
+        dat.stage = 0;
+        dat.last = offset + beat_bytes == blockSize;
+        dat.HomeNID = snoop.snp.srcid;
+        dat.dbid = 0;
+        dat.dataid = static_cast<uint8_t>(dataid);
+        dat.resp = static_cast<uint8_t>(
+            snoop.invalidating ? RespState::I_PD : RespState::SD_PD);
+        dat.beatOffset = offset;
+        dat.data.assign(data + offset, data + offset + beat_bytes);
+        dat.byteEnable.assign(beat_bytes, 1);
+        dat.chunkValid.assign((beat_bytes + 7) / 8, 1);
 
-    if (!chiPort.enqueueRx(DAT, dat)) {
-        panic("%s: failed to enqueue SnpRespData; retrying snoop data is "
-              "not implemented yet\n", name());
+        snoop.dataBeats.push_back(std::move(dat));
     }
+}
+
+void
+Cache2ChiBridge::queuePendingSnoopResponse(SnoopEntry&& snoop)
+{
+    panic_if(snoop.snoopPkt,
+             "%s: queues snoop txnid=%u while retaining classic packet\n",
+             name(), snoop.snp.txnid);
+    pendingSnoopResponses.push_back(std::move(snoop));
+    sendPendingSnoopResponses();
+}
+
+bool
+Cache2ChiBridge::sendPendingSnoopResponses()
+{
+    const size_t responses = pendingSnoopResponses.size();
+    bool all_sent = true;
+    for (size_t i = 0; i < responses; ++i) {
+        SnoopEntry snoop = std::move(pendingSnoopResponses.front());
+        pendingSnoopResponses.pop_front();
+        const size_t first_unsent = snoop.nextDataBeat;
+        const bool sent = advancePendingSnoopResponse(
+            snoop, [this](ChannelType channel, const FlitVariant& flit) {
+                return chiPort.enqueueRx(channel, flit);
+            });
+        if (!sent) {
+            DPRINTF(Cache2ChiBridge,
+                    "snoop txnid=%u response blocked after DAT beat=%u/%u\n",
+                    snoop.snp.txnid,
+                    static_cast<unsigned>(snoop.nextDataBeat),
+                    static_cast<unsigned>(snoop.dataBeats.size()));
+            pendingSnoopResponses.push_back(std::move(snoop));
+            all_sent = false;
+            continue;
+        }
+        DPRINTF(Cache2ChiBridge,
+                "snoop txnid=%u response sent DAT beats=%u..%u\n",
+                snoop.snp.txnid, static_cast<unsigned>(first_unsent),
+                static_cast<unsigned>(snoop.nextDataBeat));
+    }
+    return all_sent;
 }
 
 MemCmd

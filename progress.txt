@@ -1566,3 +1566,38 @@ Started: 2026-07-28T20:49:07+08:00
   oracles and generated configuration, then correlate the forced trace across
   the complete internal SEQ lifecycle without pinning a historical exit tick.
 ---
+
+## 2026-07-29 21:42 - Post-Ralph hardening audit
+- Story: Strict protocol, ownership, restore, and end-to-end regression audit
+- What was implemented: Hardened CC and Cache2 read-data assembly against
+  wrong identities, malformed geometry, overlap, duplicate beats, and early or
+  missing `last`; made snoop DAT/RSP credit backpressure resumable and
+  exact-once; rejected partial coherent writes until a masked RMW path exists;
+  made dirty-victim errors fail-stop; added strict no-data `SnpResp` and
+  `CompAck` identity/state checks; fixed vector-owner replacement after sharer
+  removal; added fail-safe monotonic allocator exhaustion and symmetric
+  checkpoint restore; tightened service/backend invariants, drain ownership,
+  lifecycle traces, timing statistics, and production-only test-hook guards.
+- Files changed: HNF SLCSF service/backend/controller, HomeLinkLayer,
+  HomeNodeFull, Cache2ChiBridge, SlcSnoopFilter, ChiCommonPort, their GTests,
+  CHI build registration, and the implementation/specification documents.
+- Checks run and their results: The production `gem5.opt` build and all nine
+  CHI GTest targets passed; 261/261 tests passed (18 POCQ, 2 SEQ POCQ, 2 CC
+  types, 130 SLCSF, 17 backend, 17 snoop-filter, 61 controller, 5 HomeLink,
+  and 9 Cache2). The standalone-child configuration smoke printed
+  `SLCSF_CHILD_PARAMS_PASS`. Both default and forced SF=64x4/SEQ=4 four-core
+  litmus runs passed all seven workloads with `CHI_LITMUS_PASS
+  total_errors=0`; all harts reported alias `0x50000001f0`, pressure
+  `0x2800000000ffc000`, and BAD count 0. The forced trace contained 2,637
+  installs, 2,635 admits, 2,862 internal snoop requests, 2,634 durable
+  completions, and 2,634 retires, with no panic, watchdog, deadlock, or
+  max-tick exit. Full-file C++ style checks and `git diff --check` passed, and
+  production objects expose no UNIT_TEST-only hooks.
+- Known boundary: D1/D2 prove only local HomeNode/CC/SLCSF ownership. A drained
+  checkpoint requires the external CHI router and Cache2 bridges to be stopped
+  and empty; automatic whole-fabric checkpointing remains unsupported until an
+  ordered system-wide drain fence/epoch is implemented.
+- Learnings for future iterations: Validate response-channel identity as
+  strictly as data-channel identity, and treat legal exhausted allocator
+  sentinels as restorable fail-stop states instead of permitting wraparound.
+---

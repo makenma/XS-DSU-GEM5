@@ -18,9 +18,15 @@ namespace gem5::Chi
 namespace
 {
 
+constexpr uint32_t McTxnIdLimit = 0x40000000U;
+constexpr uint32_t DirtyVictimTxnIdBase = McTxnIdLimit;
+constexpr uint32_t DirtyVictimTxnIdLimit = 0x80000000U;
+constexpr uint32_t SnoopTxnIdBase = DirtyVictimTxnIdLimit;
+
 namespace ReqOp
 {
 constexpr uint8_t ReadNoSnp = 0x04;
+constexpr uint8_t WriteUniquePtl = 0x58;
 constexpr uint8_t WriteNoSnpFull = 0x5c;
 } // namespace ReqOp
 
@@ -31,6 +37,8 @@ constexpr uint8_t CleanInvalid = 0x09;
 
 namespace DatOp
 {
+constexpr uint8_t SnpRespData = 0x01;
+constexpr uint8_t CopyBackWriteData = 0x02;
 constexpr uint8_t CompData = 0x04;
 constexpr uint8_t NonCopyBackWriteData = 0x03;
 } // namespace DatOp
@@ -44,6 +52,13 @@ constexpr uint8_t CompDBIDResp = 0x05;
 constexpr uint8_t RespSC = 1;
 constexpr uint8_t RespUC = 2;
 constexpr uint8_t RespUDPD = 3;
+
+bool
+isDirtyDataResponse(uint8_t response)
+{
+    // UD_PD, SD_PD, and I_PD all transfer dirty data ownership.
+    return response == 3 || response == 4 || response == 5;
+}
 
 PocqTxnKind
 txnKindForReq(const RawReq& req)
@@ -120,10 +135,16 @@ HnfCoherencyController::HnfCoherencyController(
       rnfSlices(rnf_slices),
       entries(num_entries)
 {
-    fatal_if(blockSize == 0, "HnfCC block_size must be non-zero\n");
+    fatal_if(blockSize == 0 || (blockSize & (blockSize - 1)) != 0,
+             "HnfCC block_size must be a non-zero power of two\n");
     fatal_if(dataBeatBytes == 0 || dataBeatBytes > blockSize,
              "HnfCC data_beat_bytes must satisfy 0 < beat <= block\n");
+    fatal_if(1 + (blockSize - 1) / dataBeatBytes > UINT8_MAX + 1,
+             "HnfCC block requires more than the 8-bit DataID space\n");
     fatal_if(maxEntries == 0, "HnfCC entry count must be non-zero\n");
+    fatal_if(maxEntries > UINT8_MAX,
+             "HnfCC entry count=%u exceeds nonzero 8-bit DBID space\n",
+             maxEntries);
     fatal_if(rnfSlices == 0 || rnfSlices > 4 ||
                  (rnfSlices & (rnfSlices - 1)) != 0,
              "HnfCC rnf_slices must be a power of two in [1, 4]\n");
@@ -275,6 +296,111 @@ HnfCoherencyController::expectedDataBytes(const RawReq& req) const
     return req.size ? req.size : blockSize;
 }
 
+void
+HnfCoherencyController::resetDataAssembly(
+    DataAssembly& assembly, uint32_t start_offset, uint32_t expected_bytes)
+{
+    panic_if(expected_bytes == 0 || start_offset > blockSize ||
+                 expected_bytes > blockSize - start_offset,
+             "HnfCC invalid DAT assembly range offset=%u bytes=%u block=%u\n",
+             start_offset, expected_bytes, blockSize);
+    assembly = DataAssembly{};
+    assembly.active = true;
+    assembly.startOffset = start_offset;
+    assembly.expectedBytes = expected_bytes;
+    assembly.coverage.assign(blockSize, 0);
+    assembly.seenDataIds.assign(UINT8_MAX + 1, 0);
+}
+
+bool
+HnfCoherencyController::acceptDataBeat(
+    DataAssembly& assembly, std::vector<uint8_t>& buffer,
+    const RawDat& dat, const char* owner, uint64_t owner_id)
+{
+    panic_if(!assembly.active || assembly.complete,
+             "HnfCC %s=%llu receives DAT without an active assembly\n",
+             owner, static_cast<unsigned long long>(owner_id));
+    panic_if(dat.data.empty(),
+             "HnfCC %s=%llu receives an empty DAT beat\n", owner,
+             static_cast<unsigned long long>(owner_id));
+    const uint32_t beat_count =
+        1 + (assembly.expectedBytes - 1) / dataBeatBytes;
+    panic_if(beat_count == 0 || beat_count > UINT8_MAX + 1 ||
+                 dat.dataid >= beat_count ||
+                 assembly.seenDataIds[dat.dataid],
+             "HnfCC %s=%llu DAT DataID=%u beats=%u duplicate=%u\n",
+             owner, static_cast<unsigned long long>(owner_id), dat.dataid,
+             beat_count, assembly.seenDataIds[dat.dataid]);
+
+    const uint32_t relative_offset = dat.dataid * dataBeatBytes;
+    const uint32_t expected_offset =
+        assembly.startOffset + relative_offset;
+    const uint32_t expected_beat_bytes = std::min(
+        dataBeatBytes, assembly.expectedBytes - relative_offset);
+    panic_if(dat.beatOffset != expected_offset ||
+                 dat.beatOffset > blockSize ||
+                 dat.data.size() != expected_beat_bytes ||
+                 dat.data.size() > blockSize - dat.beatOffset,
+             "HnfCC %s=%llu DAT range offset=%u bytes=%u expectedOffset=%u "
+             "expectedBeat=%u block=%u\n",
+             owner, static_cast<unsigned long long>(owner_id),
+             dat.beatOffset, static_cast<unsigned>(dat.data.size()),
+             expected_offset, expected_beat_bytes, blockSize);
+    panic_if(dat.byteEnable.size() != dat.data.size() ||
+                 dat.chunkValid.size() != (dat.data.size() + 7) / 8,
+             "HnfCC %s=%llu DAT mask geometry bytes=%u be=%u chunks=%u\n",
+             owner, static_cast<unsigned long long>(owner_id),
+             static_cast<unsigned>(dat.data.size()),
+             static_cast<unsigned>(dat.byteEnable.size()),
+             static_cast<unsigned>(dat.chunkValid.size()));
+    panic_if(std::any_of(dat.byteEnable.begin(), dat.byteEnable.end(),
+                         [](uint8_t byte) { return byte != 1; }) ||
+                 std::any_of(dat.chunkValid.begin(), dat.chunkValid.end(),
+                             [](uint8_t chunk) { return chunk != 1; }),
+             "HnfCC %s=%llu DAT has disabled required bytes/chunks\n", owner,
+             static_cast<unsigned long long>(owner_id));
+    if (assembly.response) {
+        panic_if(*assembly.response != dat.resp,
+                 "HnfCC %s=%llu DAT response changed %u->%u\n", owner,
+                 static_cast<unsigned long long>(owner_id),
+                 *assembly.response, dat.resp);
+    }
+    for (uint32_t i = 0; i < dat.data.size(); ++i) {
+        panic_if(assembly.coverage[dat.beatOffset + i],
+                 "HnfCC %s=%llu DAT overlaps byte=%u\n", owner,
+                 static_cast<unsigned long long>(owner_id),
+                 dat.beatOffset + i);
+    }
+
+    const uint32_t covered_after =
+        assembly.coveredBytes + dat.data.size();
+    const bool terminal_beat = dat.dataid + 1 == beat_count;
+    panic_if(static_cast<bool>(dat.last) != terminal_beat,
+             "HnfCC %s=%llu DAT last=%u disagrees with DataID=%u, "
+             "terminal=%u\n",
+             owner, static_cast<unsigned long long>(owner_id), dat.last,
+             dat.dataid, beat_count - 1);
+    const bool saw_last_after = assembly.sawLast || dat.last;
+    const bool complete = saw_last_after &&
+        covered_after == assembly.expectedBytes;
+
+    if (buffer.size() < blockSize) {
+        buffer.resize(blockSize, 0);
+    }
+    std::copy(dat.data.begin(), dat.data.end(),
+              buffer.begin() + dat.beatOffset);
+    std::fill(assembly.coverage.begin() + dat.beatOffset,
+              assembly.coverage.begin() + dat.beatOffset + dat.data.size(), 1);
+    assembly.coveredBytes = covered_after;
+    assembly.seenDataIds[dat.dataid] = 1;
+    assembly.sawLast = saw_last_after;
+    if (!assembly.response) {
+        assembly.response = dat.resp;
+    }
+    assembly.complete = complete;
+    return complete;
+}
+
 bool
 HnfCoherencyController::entryAllocated(const Entry& entry) const
 {
@@ -336,6 +462,32 @@ HnfCoherencyController::acceptLinkReq(const HnfLinkToCcReq& in,
              static_cast<unsigned>(decoded.minor), in.req.srcid,
              in.req.txnid);
 
+    const uint32_t data_bytes = expectedDataBytes(in.req);
+    panic_if(data_bytes > blockSize,
+             "HnfCC request crosses modeled line src=%u txn=%u addr=%#llx "
+             "bytes=%u block=%u\n",
+             in.req.srcid, in.req.txnid,
+             static_cast<unsigned long long>(in.req.addr), data_bytes,
+             blockSize);
+    panic_if(in.req.opcode == ReqOp::WriteUniquePtl,
+             "HnfCC WriteUniquePtl is disabled until a coherent masked "
+             "read-modify-write/no-allocate path is available src=%u txn=%u "
+             "addr=%#llx bytes=%u\n",
+             in.req.srcid, in.req.txnid,
+             static_cast<unsigned long long>(in.req.addr), data_bytes);
+    const bool coherent_read = txnKind == PocqTxnKind::ReadShared ||
+        txnKind == PocqTxnKind::ReadUnique ||
+        txnKind == PocqTxnKind::ReadOnce;
+    const bool line_aligned = (in.req.addr & (blockSize - 1)) == 0;
+    if (txnExpectsWriteData(txnKind) || coherent_read) {
+        panic_if(data_bytes != blockSize || !line_aligned,
+                 "HnfCC line transaction requires aligned full data src=%u "
+                 "txn=%u opcode=0x%x addr=%#llx bytes=%u block=%u\n",
+                 in.req.srcid, in.req.txnid, in.req.opcode,
+                 static_cast<unsigned long long>(in.req.addr), data_bytes,
+                 blockSize);
+    }
+
     const uint32_t entryId = static_cast<uint32_t>(in.tokenId);
     Entry& entry = entries[entryId];
     if (entryAllocated(entry)) {
@@ -363,6 +515,11 @@ HnfCoherencyController::acceptLinkReq(const HnfLinkToCcReq& in,
     entry.readData.assign(blockSize, 0);
     if (entry.expectsWriteData) {
         entry.writePayload.assign(blockSize, 0);
+        const uint32_t start_offset = static_cast<uint32_t>(
+            entry.req.addr - entry.blockAddr);
+        resetDataAssembly(
+            entry.writeDataAssembly, start_offset,
+            expectedDataBytes(entry.req));
     }
 
     DPRINTF(HnfCC,
@@ -450,6 +607,7 @@ HnfCoherencyController::queueSnoops(uint32_t entryId)
     entry.snoopTxnId = snoopTxn;
     entry.snoopPendingTargets = entry.slcLookupResult.snoopTargets;
     entry.snoopDataReceived = false;
+    resetDataAssembly(entry.snoopDataAssembly, 0, blockSize);
 
     for (uint32_t target = 0; target < 64; ++target) {
         if ((entry.snoopPendingTargets & (1ULL << target)) == 0) {
@@ -551,7 +709,8 @@ HnfCoherencyController::removeSharer(uint32_t entryId)
 void
 HnfCoherencyController::completeSnoopTarget(uint32_t entryId,
                                             uint32_t responder,
-                                            bool has_data)
+                                            bool has_data,
+                                            bool data_dirty)
 {
     panic_if(entryId >= entries.size(),
              "HnfCC invalid snoop completion entry=%u\n", entryId);
@@ -567,10 +726,13 @@ HnfCoherencyController::completeSnoopTarget(uint32_t entryId,
     panic_if(has_data && entry.snoopDataReceived,
              "HnfCC snoop txn=%u received dirty data from multiple RNFs\n",
              entry.snoopTxnId);
+    panic_if(data_dirty && !has_data,
+             "HnfCC snoop txn=%u marks a no-data response dirty\n",
+             entry.snoopTxnId);
 
     if (has_data) {
         entry.snoopDataReceived = true;
-        entry.responseDataDirty = true;
+        entry.responseDataDirty = data_dirty;
     }
     entry.snoopPendingTargets &= ~(1ULL << responder);
 
@@ -606,10 +768,14 @@ HnfCoherencyController::queueMcRead(uint32_t entryId)
     req.qos = entry.req.qos;
     req.srcid = entry.req.tgtid;
     req.tgtid = snNodeId;
-    req.txnid = entryId + 1;
+    panic_if(entry.mcTxnId != 0,
+             "HnfCC entry=%u allocates a second MC transaction=%u\n",
+             entryId, entry.mcTxnId);
+    req.txnid = allocateMcTxnId();
     req.opcode = ReqOp::ReadNoSnp;
     req.AllowRetry = 0;
-    req.addr = entry.blockAddr;
+    req.addr = entry.txnKind == PocqTxnKind::ReadNoSnp ?
+        entry.req.addr : entry.blockAddr;
     req.size = expectedDataBytes(entry.req);
     req.ReturnNid = entry.req.tgtid;
     req.order = entry.req.order;
@@ -619,6 +785,16 @@ HnfCoherencyController::queueMcRead(uint32_t entryId)
     req.traceTag = entry.req.traceTag;
     req.srcType = entry.req.srcType;
     req.ldid = entry.req.ldid;
+
+    const auto [mc_it, inserted] = mcTxnToEntry.emplace(req.txnid, entryId);
+    panic_if(!inserted,
+             "HnfCC failed to bind MC transaction=%u to entry=%u\n",
+             req.txnid, entryId);
+    entry.mcTxnId = mc_it->first;
+    entry.mcReadIssued = false;
+    entry.readData.assign(blockSize, 0);
+    resetDataAssembly(
+        entry.mcDataAssembly, 0, expectedDataBytes(entry.req));
 
     HnfCcTxReq out{};
     out.entry = entryId;
@@ -721,13 +897,20 @@ HnfCoherencyController::queueCompDBIDResp(uint32_t entryId)
     rsp.txnid = entry.req.txnid;
     rsp.opcode = RspOp::CompDBIDResp;
     rsp.dbid = static_cast<uint8_t>(entryId + 1);
+    panic_if(rsp.dbid == 0, "HnfCC entry=%u generated reserved DBID zero\n",
+             entryId);
     rsp.resp = RespSC;
     rsp.pcrdtype = entry.req.pcrdtype;
     rsp.rspKind = RspKind::MainPath;
     txRspQ.push_back(out);
 
     entry.state = HnfCcEntryState::WaitWriteData;
-    entry.writeDataBytes = 0;
+    entry.writeDbid = rsp.dbid;
+    entry.writePayload.assign(blockSize, 0);
+    resetDataAssembly(
+        entry.writeDataAssembly,
+        static_cast<uint32_t>(entry.req.addr - entry.blockAddr),
+        expectedDataBytes(entry.req));
     DPRINTF(HnfCC,
             "CC entry=%u queues CompDBIDResp src=%u txn=%u dbid=%u\n",
             entryId, entry.req.srcid, entry.req.txnid, rsp.dbid);
@@ -740,6 +923,13 @@ HnfCoherencyController::storeWriteData(uint32_t entryId)
     panic_if(entry.slcUpdatePhase != SlcUpdatePhase::None,
              "HnfCC entry=%u starts write update with phase=%u\n", entryId,
              static_cast<unsigned>(entry.slcUpdatePhase));
+    panic_if(!entry.writeDataAssembly.complete ||
+                 entry.writeDataAssembly.coveredBytes != blockSize ||
+                 entry.writePayload.size() != blockSize,
+             "HnfCC entry=%u commits incomplete write coverage=%u/%u "
+             "payload=%u\n",
+             entryId, entry.writeDataAssembly.coveredBytes, blockSize,
+             static_cast<unsigned>(entry.writePayload.size()));
 
     SlcSfReqHeader header = makeSlcSfReqHeader(
         slcSfReqIds, entryId, entry.blockAddr, entry.req, entry.seq,
@@ -854,12 +1044,19 @@ HnfCoherencyController::notifyTxReqSent(const HnfCcTxReq& request)
 
     if (!directSnFakeData) {
         entry.state = HnfCcEntryState::IssueMcRead;
-        entry.mcDataBytes = 0;
+        entry.readData.assign(blockSize, 0);
+        resetDataAssembly(
+            entry.mcDataAssembly, 0, expectedDataBytes(entry.req));
         return;
     }
 
     entry.readData.assign(blockSize, 0);
     entry.responseDataDirty = false;
+    panic_if(entry.mcTxnId == 0 || mcTxnToEntry.erase(entry.mcTxnId) != 1,
+             "HnfCC entry=%u fake SN completion lost MC transaction=%u\n",
+             entryId, entry.mcTxnId);
+    entry.mcTxnId = 0;
+    entry.mcDataAssembly = DataAssembly{};
     PocqEvent mcDataDone{};
     mcDataDone.kind = PocqEventKind::McDataDone;
     mcDataDone.txn = entry.txnKind;
@@ -887,26 +1084,44 @@ HnfCoherencyController::acceptRxDat(const RawDat& dat)
 {
     const auto decoded = decodeDat(dat.opcode);
     if (decoded.major == DatMajor::SnpRespData) {
+        panic_if(dat.opcode != DatOp::SnpRespData,
+                 "HnfCC unsupported partial/forwarded snoop DAT opcode=0x%x "
+                 "src=%u txn=%u\n",
+                 dat.opcode, dat.srcid, dat.txnid);
         if (seqPocqEntry.valid &&
             seqPocqEntry.snoopTxnId == dat.txnid) {
-            if (seqPocqEntry.data.size() < blockSize) {
-                seqPocqEntry.data.resize(blockSize, 0);
+            panic_if(seqPocqEntry.state != SeqPocqState::WaitSnoop ||
+                         dat.srcid >= 64 ||
+                         (seqPocqEntry.pendingTargets &
+                          (1ULL << dat.srcid)) == 0 ||
+                         (seqPocqEntry.dataAssembly.source &&
+                          *seqPocqEntry.dataAssembly.source != dat.srcid) ||
+                         seqPocqEntry.dataReceived ||
+                         dat.tgtid != seqPocqEntry.homeNodeId ||
+                         dat.HomeNID != seqPocqEntry.homeNodeId ||
+                         dat.dbid != 0 || dat.qos != 0,
+                     "HnfCC SEQ RXDAT identity mismatch id=%llu src=%u "
+                     "tgt=%u home=%u txn=%u dbid=%u pending=%#llx\n",
+                     static_cast<unsigned long long>(seqPocqEntry.seqId),
+                     dat.srcid, dat.tgtid, dat.HomeNID, dat.txnid, dat.dbid,
+                     static_cast<unsigned long long>(
+                         seqPocqEntry.pendingTargets));
+            const bool complete = acceptDataBeat(
+                seqPocqEntry.dataAssembly, seqPocqEntry.data, dat,
+                "SEQ", seqPocqEntry.seqId);
+            if (!seqPocqEntry.dataAssembly.source) {
+                seqPocqEntry.dataAssembly.source = dat.srcid;
             }
-            panic_if(dat.beatOffset > blockSize,
-                     "HnfCC SEQ RXDAT txn=%u offset=%u block=%u\n",
-                     dat.txnid, dat.beatOffset, blockSize);
-            const uint32_t copyBytes = std::min<uint32_t>(
-                dat.data.size(), blockSize - dat.beatOffset);
-            std::copy(dat.data.begin(), dat.data.begin() + copyBytes,
-                      seqPocqEntry.data.begin() + dat.beatOffset);
             DPRINTF(HnfCC,
                     "SEQ POCQ id=%llu got SnpRespData src=%u txn=%u "
                     "offset=%u bytes=%u last=%u\n",
                     static_cast<unsigned long long>(seqPocqEntry.seqId),
-                    dat.srcid, dat.txnid, dat.beatOffset, copyBytes,
+                    dat.srcid, dat.txnid, dat.beatOffset,
+                    static_cast<unsigned>(dat.data.size()),
                     dat.last);
-            if (dat.last) {
-                completeSeqSnoopTarget(dat.srcid, true);
+            if (complete) {
+                completeSeqSnoopTarget(
+                    dat.srcid, true, isDirtyDataResponse(dat.resp));
             }
             return std::nullopt;
         }
@@ -916,23 +1131,35 @@ HnfCoherencyController::acceptRxDat(const RawDat& dat)
                  "HnfCC snoop RXDAT for unknown src=%u txn=%u\n",
                  dat.srcid, dat.txnid);
         Entry& entry = entries[snoopIt->second];
-        if (entry.readData.size() < blockSize) {
-            entry.readData.resize(blockSize, 0);
+        panic_if(entry.state != HnfCcEntryState::WaitSnoop ||
+                     dat.srcid >= 64 ||
+                     (entry.snoopPendingTargets & (1ULL << dat.srcid)) == 0 ||
+                     (entry.snoopDataAssembly.source &&
+                      *entry.snoopDataAssembly.source != dat.srcid) ||
+                     entry.snoopDataReceived ||
+                     dat.tgtid != entry.req.tgtid ||
+                     dat.HomeNID != entry.req.tgtid || dat.dbid != 0 ||
+                     dat.qos != entry.req.qos,
+                 "HnfCC snoop RXDAT identity mismatch entry=%u src=%u "
+                 "tgt=%u home=%u txn=%u dbid=%u pending=%#llx\n",
+                 snoopIt->second, dat.srcid, dat.tgtid, dat.HomeNID,
+                 dat.txnid, dat.dbid,
+                 static_cast<unsigned long long>(entry.snoopPendingTargets));
+        const bool complete = acceptDataBeat(
+            entry.snoopDataAssembly, entry.readData, dat,
+            "snoop entry", snoopIt->second);
+        if (!entry.snoopDataAssembly.source) {
+            entry.snoopDataAssembly.source = dat.srcid;
         }
-        panic_if(dat.beatOffset > blockSize,
-                 "HnfCC snoop RXDAT txn=%u offset=%u block=%u\n",
-                 dat.txnid, dat.beatOffset, blockSize);
-        const uint32_t copyBytes = std::min<uint32_t>(
-            dat.data.size(), blockSize - dat.beatOffset);
-        std::copy(dat.data.begin(), dat.data.begin() + copyBytes,
-                  entry.readData.begin() + dat.beatOffset);
         DPRINTF(HnfCC,
                 "CC entry=%u got SnpRespData src=%u txn=%u offset=%u "
                 "bytes=%u last=%u resp=%u\n",
                 snoopIt->second, dat.srcid, dat.txnid, dat.beatOffset,
-                copyBytes, dat.last, dat.resp);
-        if (dat.last) {
-            completeSnoopTarget(snoopIt->second, dat.srcid, true);
+                static_cast<unsigned>(dat.data.size()), dat.last, dat.resp);
+        if (complete) {
+            completeSnoopTarget(
+                snoopIt->second, dat.srcid, true,
+                isDirtyDataResponse(dat.resp));
         }
         return std::nullopt;
     }
@@ -947,32 +1174,33 @@ HnfCoherencyController::acceptRxDat(const RawDat& dat)
         panic_if(entry.state != HnfCcEntryState::WaitWriteData,
                  "HnfCC write RXDAT entry=%u state=%u not waiting data\n",
                  *entryId, static_cast<unsigned>(entry.state));
+        const uint8_t expected_opcode =
+            entry.txnKind == PocqTxnKind::WriteUnique ?
+                DatOp::NonCopyBackWriteData : DatOp::CopyBackWriteData;
+        panic_if(dat.opcode != expected_opcode ||
+                     dat.tgtid != entry.req.tgtid ||
+                     dat.HomeNID != entry.req.tgtid ||
+                     dat.dbid != entry.writeDbid ||
+                     dat.qos != entry.req.qos,
+                 "HnfCC write RXDAT identity mismatch entry=%u opcode=0x%x/"
+                 "0x%x src=%u tgt=%u/%u home=%u dbid=%u/%u txn=%u\n",
+                 *entryId, dat.opcode, expected_opcode, dat.srcid,
+                 dat.tgtid, entry.req.tgtid, dat.HomeNID, dat.dbid,
+                 entry.writeDbid, dat.txnid);
 
-        const uint32_t expected = expectedDataBytes(entry.req);
-        const uint32_t lineBytes = blockSize;
-        if (entry.writePayload.size() < lineBytes) {
-            entry.writePayload.resize(lineBytes, 0);
-        }
-
-        const uint32_t offset = dat.beatOffset;
-        panic_if(offset > lineBytes,
-                 "HnfCC write RXDAT entry=%u offset=%u lineBytes=%u\n",
-                 *entryId, offset, lineBytes);
-
-        const uint32_t copyBytes =
-            std::min<uint32_t>(dat.data.size(), lineBytes - offset);
-        std::copy(dat.data.begin(), dat.data.begin() + copyBytes,
-                  entry.writePayload.begin() + offset);
-        entry.writeDataBytes =
-            std::min<uint32_t>(expected, entry.writeDataBytes + copyBytes);
+        const bool complete = acceptDataBeat(
+            entry.writeDataAssembly, entry.writePayload, dat,
+            "write entry", *entryId);
 
         DPRINTF(HnfCC,
                 "CC entry=%u got write data src=%u txn=%u dbid=%u "
                 "offset=%u bytes=%u received=%u/%u last=%u\n",
-                *entryId, dat.srcid, dat.txnid, dat.dbid, offset, copyBytes,
-                entry.writeDataBytes, expected, dat.last);
+                *entryId, dat.srcid, dat.txnid, dat.dbid, dat.beatOffset,
+                static_cast<unsigned>(dat.data.size()),
+                entry.writeDataAssembly.coveredBytes,
+                entry.writeDataAssembly.expectedBytes, dat.last);
 
-        if (!dat.last && entry.writeDataBytes < expected) {
+        if (!complete) {
             return std::nullopt;
         }
 
@@ -983,16 +1211,19 @@ HnfCoherencyController::acceptRxDat(const RawDat& dat)
     }
 
     panic_if(decoded.minor != DatMinor::CompData &&
-                 decoded.minor != DatMinor::DataSepResp &&
-                 decoded.minor != DatMinor::NCBWrDataCompAck,
+                 decoded.minor != DatMinor::DataSepResp,
              "HnfCC real-SN RXDAT unsupported opcode=0x%x src=%u txn=%u\n",
              dat.opcode, dat.srcid, dat.txnid);
 
-    panic_if(dat.txnid == 0 || dat.txnid > entries.size(),
-             "HnfCC real-SN RXDAT bad txnid=%u src=%u\n",
+    const auto mc_txn = mcTxnToEntry.find(dat.txnid);
+    panic_if(mc_txn == mcTxnToEntry.end(),
+             "HnfCC real-SN RXDAT for unknown/stale txnid=%u src=%u\n",
              dat.txnid, dat.srcid);
 
-    const uint32_t entryId = dat.txnid - 1;
+    const uint32_t entryId = mc_txn->second;
+    panic_if(entryId >= entries.size(),
+             "HnfCC MC transaction=%u maps invalid entry=%u\n",
+             dat.txnid, entryId);
     Entry& entry = entries[entryId];
     panic_if(!entryAllocated(entry),
              "HnfCC real-SN RXDAT for idle entry=%u src=%u txn=%u\n",
@@ -1000,34 +1231,35 @@ HnfCoherencyController::acceptRxDat(const RawDat& dat)
     panic_if(entry.state != HnfCcEntryState::IssueMcRead,
              "HnfCC real-SN RXDAT entry=%u state=%u not waiting for SN data\n",
              entryId, static_cast<unsigned>(entry.state));
+    panic_if(!entry.mcReadIssued || entry.mcTxnId != dat.txnid ||
+                 dat.srcid != snNodeId || dat.tgtid != entry.req.tgtid ||
+                 dat.HomeNID != entry.req.tgtid || dat.dbid != 0 ||
+                 dat.qos != entry.req.qos,
+             "HnfCC real-SN RXDAT identity mismatch entry=%u src=%u/%u "
+             "tgt=%u/%u home=%u txn=%u/%u dbid=%u\n",
+             entryId, dat.srcid, snNodeId, dat.tgtid, entry.req.tgtid,
+             dat.HomeNID, dat.txnid, entry.mcTxnId, dat.dbid);
 
-    const uint32_t expected = expectedDataBytes(entry.req);
-    if (entry.readData.size() < expected) {
-        entry.readData.resize(expected, 0);
-    }
-
-    const uint32_t offset = dat.beatOffset;
-    panic_if(offset > expected,
-             "HnfCC real-SN RXDAT entry=%u offset=%u expected=%u\n",
-             entryId, offset, expected);
-
-    const uint32_t copyBytes =
-        std::min<uint32_t>(dat.data.size(), expected - offset);
-    std::copy(dat.data.begin(), dat.data.begin() + copyBytes,
-              entry.readData.begin() + offset);
-    entry.mcDataBytes = std::min<uint32_t>(expected,
-                                           entry.mcDataBytes + copyBytes);
+    const bool complete = acceptDataBeat(
+        entry.mcDataAssembly, entry.readData, dat, "MC entry", entryId);
 
     DPRINTF(HnfCC,
             "CC entry=%u got real SN CompData src=%u txn=%u dataid=%u "
             "offset=%u bytes=%u received=%u/%u last=%u\n",
-            entryId, dat.srcid, dat.txnid, dat.dataid, offset, copyBytes,
-            entry.mcDataBytes, expected, dat.last);
+            entryId, dat.srcid, dat.txnid, dat.dataid, dat.beatOffset,
+            static_cast<unsigned>(dat.data.size()),
+            entry.mcDataAssembly.coveredBytes,
+            entry.mcDataAssembly.expectedBytes, dat.last);
 
-    if (!dat.last && entry.mcDataBytes < expected) {
+    if (!complete) {
         return std::nullopt;
     }
 
+    panic_if(mcTxnToEntry.erase(dat.txnid) != 1,
+             "HnfCC entry=%u lost completed MC transaction=%u\n",
+             entryId, dat.txnid);
+    entry.mcTxnId = 0;
+    entry.mcDataAssembly = DataAssembly{};
     entry.responseDataDirty = false;
     const uint64_t completedAddr = entry.blockAddr;
     const uint32_t requester = entry.req.srcid;
@@ -1177,10 +1409,29 @@ HnfCoherencyController::acceptRxRsp(const RawRsp& rsp)
         completeDirtyVictimWriteback(victim, rsp);
         return std::nullopt;
     }
-    if (decoded.minor == RspMinor::SnpResp ||
-        decoded.minor == RspMinor::SnpRespFwded) {
+    panic_if(decoded.minor == RspMinor::SnpRespFwded,
+             "HnfCC does not support forwarded SnpResp opcode=0x%x "
+             "src=%u txn=%u\n",
+             rsp.opcode, rsp.srcid, rsp.txnid);
+    if (decoded.minor == RspMinor::SnpResp) {
         if (seqPocqEntry.valid &&
             seqPocqEntry.snoopTxnId == rsp.txnid) {
+            panic_if(seqPocqEntry.state != SeqPocqState::WaitSnoop ||
+                         rsp.srcid >= 64 ||
+                         (seqPocqEntry.pendingTargets &
+                          (1ULL << rsp.srcid)) == 0 ||
+                         rsp.tgtid != seqPocqEntry.homeNodeId ||
+                         rsp.qos != 0 || rsp.dbid != 0 ||
+                         rsp.respErr != 0 || rsp.pcrdtype != 0 ||
+                         rsp.resp > RespUC,
+                     "HnfCC SEQ SnpResp identity/state mismatch id=%llu "
+                     "src=%u tgt=%u txn=%u qos=%u dbid=%u resp=%u "
+                     "respErr=%u pcrdtype=%u pending=%#llx\n",
+                     static_cast<unsigned long long>(seqPocqEntry.seqId),
+                     rsp.srcid, rsp.tgtid, rsp.txnid, rsp.qos, rsp.dbid,
+                     rsp.resp, rsp.respErr, rsp.pcrdtype,
+                     static_cast<unsigned long long>(
+                         seqPocqEntry.pendingTargets));
             completeSeqSnoopTarget(rsp.srcid, false);
             return std::nullopt;
         }
@@ -1189,6 +1440,25 @@ HnfCoherencyController::acceptRxRsp(const RawRsp& rsp)
         panic_if(snoopIt == snoopTxnToEntry.end(),
                  "HnfCC SnpResp for unknown src=%u txn=%u\n",
                  rsp.srcid, rsp.txnid);
+        panic_if(snoopIt->second >= entries.size(),
+                 "HnfCC SnpResp txn=%u maps to invalid entry=%u\n",
+                 rsp.txnid, snoopIt->second);
+        const Entry& entry = entries[snoopIt->second];
+        panic_if(entry.state != HnfCcEntryState::WaitSnoop ||
+                     entry.snoopTxnId != rsp.txnid || rsp.srcid >= 64 ||
+                     (entry.snoopPendingTargets &
+                      (1ULL << rsp.srcid)) == 0 ||
+                     rsp.tgtid != entry.req.tgtid ||
+                     rsp.qos != entry.req.qos || rsp.dbid != 0 ||
+                     rsp.respErr != 0 || rsp.pcrdtype != 0 ||
+                     rsp.resp > RespUC,
+                 "HnfCC SnpResp identity/state mismatch entry=%u src=%u "
+                 "tgt=%u txn=%u qos=%u dbid=%u resp=%u respErr=%u "
+                 "pcrdtype=%u pending=%#llx\n",
+                 snoopIt->second, rsp.srcid, rsp.tgtid, rsp.txnid,
+                 rsp.qos, rsp.dbid, rsp.resp, rsp.respErr, rsp.pcrdtype,
+                 static_cast<unsigned long long>(
+                     entry.snoopPendingTargets));
         completeSnoopTarget(snoopIt->second, rsp.srcid, false);
         return std::nullopt;
     }
@@ -1206,6 +1476,15 @@ HnfCoherencyController::acceptRxRsp(const RawRsp& rsp)
     panic_if(entry.state != HnfCcEntryState::WaitCompAck,
              "HnfCC CompAck entry=%u state=%u is not waiting CompAck\n",
              *entryId, static_cast<unsigned>(entry.state));
+    panic_if(rsp.tgtid != entry.req.tgtid ||
+                 rsp.qos != entry.req.qos || rsp.dbid != 0 ||
+                 rsp.respErr != 0 || rsp.pcrdtype != 0 ||
+                 (rsp.resp != 0 && rsp.resp != 0xff),
+             "HnfCC CompAck identity/state mismatch entry=%u src=%u "
+             "tgt=%u txn=%u qos=%u dbid=%u resp=%u respErr=%u "
+             "pcrdtype=%u\n",
+             *entryId, rsp.srcid, rsp.tgtid, rsp.txnid, rsp.qos,
+             rsp.dbid, rsp.resp, rsp.respErr, rsp.pcrdtype);
 
     DPRINTF(HnfCC,
             "CC entry=%u got CompAck src=%u txn=%u retire\n",
@@ -1276,6 +1555,11 @@ HnfCoherencyController::retireEntry(uint32_t entryId)
     panic_if(entryId >= entries.size(), "HnfCC invalid retire entry=%u\n",
              entryId);
     Entry& entry = entries[entryId];
+    if (entry.mcTxnId != 0) {
+        panic_if(mcTxnToEntry.erase(entry.mcTxnId) != 1,
+                 "HnfCC entry=%u retires with unowned MC transaction=%u\n",
+                 entryId, entry.mcTxnId);
+    }
     HnfCcRetireInfo info = makeRetireInfo(entry);
     const uint64_t addr = entry.blockAddr;
     traceDirtyVictimRequesterDone(entry.req.srcid, entry.req.txnid);
@@ -1316,29 +1600,58 @@ HnfCoherencyController::hasMainAddressHazard(uint64_t addr) const
 }
 
 uint32_t
+HnfCoherencyController::allocateMcTxnId()
+{
+    panic_if(nextMcTxnId == 0 || nextMcTxnId >= McTxnIdLimit,
+             "HnfCC MC transaction identity space exhausted next=%u\n",
+             nextMcTxnId);
+    const uint32_t txn_id = nextMcTxnId++;
+    panic_if(mcTxnToEntry.count(txn_id) ||
+                 dirtyVictimTxnIds.count(txn_id) ||
+                 snoopTxnToEntry.count(txn_id) ||
+                 (seqPocqEntry.valid &&
+                  seqPocqEntry.snoopTxnId == txn_id),
+             "HnfCC MC transaction identity collision txn=%u\n", txn_id);
+    return txn_id;
+}
+
+uint32_t
 HnfCoherencyController::allocateSnoopTxnId()
 {
-    uint32_t snoopTxn = nextSnoopTxnId++;
-    while (snoopTxn == 0 || snoopTxnToEntry.count(snoopTxn) ||
-           (seqPocqEntry.valid &&
-            seqPocqEntry.snoopTxnId == snoopTxn)) {
-        snoopTxn = nextSnoopTxnId++;
+    while (true) {
+        panic_if(nextSnoopTxnId < SnoopTxnIdBase ||
+                     nextSnoopTxnId == UINT32_MAX,
+                 "HnfCC snoop transaction identity space exhausted next=%u\n",
+                 nextSnoopTxnId);
+        const uint32_t snoop_txn = nextSnoopTxnId++;
+        if (!mcTxnToEntry.count(snoop_txn) &&
+            !snoopTxnToEntry.count(snoop_txn) &&
+            !dirtyVictimTxnIds.count(snoop_txn) &&
+            (!seqPocqEntry.valid ||
+             seqPocqEntry.snoopTxnId != snoop_txn)) {
+            return snoop_txn;
+        }
     }
-    return snoopTxn;
 }
 
 uint32_t
 HnfCoherencyController::allocateDirtyVictimTxnId(uint32_t requester_txnid)
 {
-    uint32_t txn_id = nextDirtyVictimTxnId++;
-    while (txn_id == 0 || txn_id == requester_txnid ||
-           txn_id <= entries.size() ||
-           dirtyVictimTxnIds.count(txn_id) ||
-           snoopTxnToEntry.count(txn_id) ||
-           (seqPocqEntry.valid && seqPocqEntry.snoopTxnId == txn_id)) {
-        txn_id = nextDirtyVictimTxnId++;
+    while (true) {
+        panic_if(nextDirtyVictimTxnId < DirtyVictimTxnIdBase ||
+                     nextDirtyVictimTxnId >= DirtyVictimTxnIdLimit,
+                 "HnfCC dirty-victim transaction identity space exhausted "
+                 "next=%u\n",
+                 nextDirtyVictimTxnId);
+        const uint32_t txn_id = nextDirtyVictimTxnId++;
+        if (txn_id != requester_txnid && !mcTxnToEntry.count(txn_id) &&
+            !dirtyVictimTxnIds.count(txn_id) &&
+            !snoopTxnToEntry.count(txn_id) &&
+            (!seqPocqEntry.valid ||
+             seqPocqEntry.snoopTxnId != txn_id)) {
+            return txn_id;
+        }
     }
-    return txn_id;
 }
 
 std::optional<SlcSfVictimId>
@@ -1496,29 +1809,17 @@ void
 HnfCoherencyController::completeDirtyVictimWriteback(
     DirtyVictimTxn& transaction, const RawRsp& rsp)
 {
-    if (rsp.respErr != 0) {
-        if (transaction.dataQueued) {
-            const auto pending = std::find_if(
-                txDatQ.begin(), txDatQ.end(), [&transaction](const auto& dat) {
-                    return dat.dirtyVictimId &&
-                        *dat.dirtyVictimId ==
-                            transaction.victim.victimId.value;
-                });
-            panic_if(pending == txDatQ.end(),
-                     "HnfCC dirty victim=%llu lost queued error data\n",
-                     static_cast<unsigned long long>(
-                         transaction.victim.victimId.value));
-            txDatQ.erase(pending);
-            transaction.dataQueued = false;
-        }
-        transaction.phase = DirtyVictimPhase::DownstreamErrorHeld;
-        DPRINTF(HnfCC,
-                "CC dirty victim=%llu downstream txn=%u holds error=%u\n",
-                static_cast<unsigned long long>(
-                    transaction.victim.victimId.value),
-                transaction.downstreamTxnId, rsp.respErr);
-        return;
-    }
+    // There is no architected path which can report this asynchronous failure
+    // back to the already-completed requester.  Releasing would lose the only
+    // dirty copy, while retaining an inert owner schedules the HNF forever and
+    // makes drain impossible.  Fail-stop until a real retry/error contract is
+    // modeled.
+    panic_if(rsp.respErr != 0,
+             "HnfCC dirty victim=%llu downstream txn=%u failed respErr=%u; "
+             "dirty data cannot be released safely\n",
+             static_cast<unsigned long long>(
+                 transaction.victim.victimId.value),
+             transaction.downstreamTxnId, rsp.respErr);
 
     transaction.completionSeen = true;
     if (!transaction.dataSent) {
@@ -1632,6 +1933,7 @@ HnfCoherencyController::startSeqPocq()
     seqPocqEntry.sharers = victim.sharers;
     seqPocqEntry.snoopTxnId = snoop_txn_id;
     seqPocqEntry.data.assign(blockSize, 0);
+    resetDataAssembly(seqPocqEntry.dataAssembly, 0, blockSize);
 
     DPRINTF(HnfCC,
             "SEQ POCQ admit id=%llu addr=%#llx owner=%u sharers=%#llx\n",
@@ -1707,7 +2009,7 @@ HnfCoherencyController::tryIssueSeqComplete()
         seqPocqEntry.completeReqId = header.reqId;
         seqPocqEntry.pendingComplete = makeSlcSfCompleteSfEvictReq(
             header, SlcSfSeqId{seqPocqEntry.seqId}, seqPocqEntry.data,
-            seqPocqEntry.dataReceived);
+            seqPocqEntry.dataDirty);
     }
 
     const SlcSfEnqueueResult result =
@@ -1761,7 +2063,8 @@ HnfCoherencyController::queueSeqSnoops()
 
 void
 HnfCoherencyController::completeSeqSnoopTarget(uint32_t responder,
-                                               bool has_data)
+                                               bool has_data,
+                                               bool data_dirty)
 {
     panic_if(!seqPocqEntry.valid ||
              seqPocqEntry.state != SeqPocqState::WaitSnoop,
@@ -1777,8 +2080,12 @@ HnfCoherencyController::completeSeqSnoopTarget(uint32_t responder,
     panic_if(has_data && seqPocqEntry.dataReceived,
              "HnfCC SEQ id=%llu got dirty data from multiple RNFs\n",
              static_cast<unsigned long long>(seqPocqEntry.seqId));
+    panic_if(data_dirty && !has_data,
+             "HnfCC SEQ id=%llu marks a no-data response dirty\n",
+             static_cast<unsigned long long>(seqPocqEntry.seqId));
 
     seqPocqEntry.dataReceived |= has_data;
+    seqPocqEntry.dataDirty |= data_dirty;
     seqPocqEntry.pendingTargets &= ~(1ULL << responder);
     DPRINTF(HnfCC,
             "SEQ POCQ id=%llu accepts snoop response txn=%u responder=%u "
@@ -1811,8 +2118,7 @@ HnfCoherencyController::retrySlcsfReplayEntries(Tick currentTick)
         if (entry.slcUpdatePhase == SlcUpdatePhase::ReplayWait) {
             entry.slcUpdatePhase = SlcUpdatePhase::None;
         }
-        if (entry.expectsWriteData &&
-            entry.writeDataBytes >= expectedDataBytes(entry.req)) {
+        if (entry.expectsWriteData && entry.writeDataAssembly.complete) {
             entry.state = HnfCcEntryState::Working;
             entry.pocqState = PocqState::SlcLookup;
             entry.slcsfReplay = false;
@@ -2001,8 +2307,18 @@ HnfCoherencyController::handleSlcsfReplay(
     entry.snoopTxnId = 0;
     entry.snoopPendingTargets = 0;
     entry.snoopDataReceived = false;
+    entry.snoopDataAssembly = DataAssembly{};
     entry.mcReadIssued = false;
-    entry.mcDataBytes = 0;
+    if (entry.mcTxnId != 0) {
+        panic_if(mcTxnToEntry.erase(entry.mcTxnId) != 1,
+                 "HnfCC entry=%u Replay lost MC transaction=%u\n",
+                 entryId, entry.mcTxnId);
+    }
+    entry.mcTxnId = 0;
+    entry.mcDataAssembly = DataAssembly{};
+    if (!entry.expectsWriteData) {
+        entry.writeDataAssembly = DataAssembly{};
+    }
     entry.retryNotBeforeTick = replay->retryNotBeforeTick;
     entry.slcUpdatePhase = lookup ?
         SlcUpdatePhase::None : SlcUpdatePhase::ReplayWait;
@@ -2330,6 +2646,7 @@ HnfCoherencyController::serializeSlcsfIdentityState(CheckpointOut& cp) const
                  !deferredRetireQ.empty(),
              "HNF CC checkpoint requires no deferred retire or active owner\n");
     paramOut(cp, "nextRequestId", slcSfReqIds.nextValue());
+    paramOut(cp, "nextMcTransactionId", nextMcTxnId);
     paramOut(cp, "nextSnoopTransactionId", nextSnoopTxnId);
     paramOut(cp, "nextDirtyVictimTransactionId", nextDirtyVictimTxnId);
 }
@@ -2341,10 +2658,33 @@ HnfCoherencyController::unserializeSlcsfIdentityState(CheckpointIn& cp)
                  !deferredRetireQ.empty(),
              "HNF CC restore requires an idle controller\n");
     uint64_t next_request_id = 0;
+    uint32_t next_mc_txn_id = 0;
+    uint32_t next_snoop_txn_id = 0;
+    uint32_t next_dirty_victim_txn_id = 0;
     paramIn(cp, "nextRequestId", next_request_id);
-    paramIn(cp, "nextSnoopTransactionId", nextSnoopTxnId);
-    paramIn(cp, "nextDirtyVictimTransactionId", nextDirtyVictimTxnId);
+    paramIn(cp, "nextMcTransactionId", next_mc_txn_id);
+    paramIn(cp, "nextSnoopTransactionId", next_snoop_txn_id);
+    paramIn(cp, "nextDirtyVictimTransactionId",
+            next_dirty_victim_txn_id);
+    panic_if(next_request_id == 0 ||
+                 next_mc_txn_id == 0 ||
+                 next_mc_txn_id > McTxnIdLimit ||
+                 next_dirty_victim_txn_id < DirtyVictimTxnIdBase ||
+                 next_dirty_victim_txn_id > DirtyVictimTxnIdLimit ||
+                 next_snoop_txn_id < SnoopTxnIdBase ||
+                 next_request_id < slcSfReqIds.nextValue() ||
+                 next_mc_txn_id < nextMcTxnId ||
+                 next_dirty_victim_txn_id < nextDirtyVictimTxnId ||
+                 next_snoop_txn_id < nextSnoopTxnId,
+             "HNF CC restore has invalid/non-monotonic identity state "
+             "req=%llu mc=%u snoop=%u dirtyVictim=%u\n",
+             static_cast<unsigned long long>(next_request_id),
+             next_mc_txn_id, next_snoop_txn_id,
+             next_dirty_victim_txn_id);
     slcSfReqIds.restoreNextValue(next_request_id);
+    nextMcTxnId = next_mc_txn_id;
+    nextSnoopTxnId = next_snoop_txn_id;
+    nextDirtyVictimTxnId = next_dirty_victim_txn_id;
 }
 
 bool
@@ -2353,7 +2693,8 @@ HnfCoherencyController::hasWork() const
     if (hasTxWork() || hasDeferredRetire()) {
         return true;
     }
-    return !dirtyVictimTxns.empty() || seqPocqEntry.valid ||
+    return !mcTxnToEntry.empty() || !dirtyVictimTxns.empty() ||
+        seqPocqEntry.valid ||
         (slcsfUnit && slcsfUnit->hasPendingSeq()) ||
         std::any_of(entries.begin(), entries.end(),
                        [this](const Entry& entry) {

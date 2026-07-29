@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <unordered_set>
 
 #include "base/logging.hh"
 #include "base/trace.hh"
@@ -32,6 +33,20 @@ bool
 hasSingleBit(uint64_t mask)
 {
     return mask != 0 && (mask & (mask - 1)) == 0;
+}
+
+void
+requireIncrementable(uint64_t value, const char* name)
+{
+    panic_if(value == std::numeric_limits<uint64_t>::max(),
+             "HnfSLCSF %s space exhausted\n", name);
+}
+
+uint64_t
+checkedIncrement(uint64_t& value, const char* name)
+{
+    requireIncrementable(value, name);
+    return ++value;
 }
 
 uint64_t
@@ -192,7 +207,7 @@ HnfSLCSFBackend::allocateSlc(uint64_t block_addr,
                  "HnfSLCSF dirty-victim permit supplied for SLC hit "
                  "addr=%#llx\n",
                  static_cast<unsigned long long>(block_addr));
-        hit->lastUse = ++accessCounter;
+        hit->lastUse = checkedIncrement(accessCounter, "access counter");
         return *hit;
     }
 
@@ -229,7 +244,8 @@ HnfSLCSFBackend::allocateSlc(uint64_t block_addr,
                  static_cast<unsigned long long>(block_addr));
     }
 
-    const uint64_t generation = ++accessCounter;
+    const uint64_t generation =
+        checkedIncrement(accessCounter, "access counter");
     *victim = SlcLine{};
     victim->valid = true;
     victim->tag = slcTag(block_addr);
@@ -745,7 +761,8 @@ HnfSLCSFBackend::installSeqVictim(
              "HnfSLCSF installs SF victim while SEQ is full\n");
 
     SeqVictim snapshot{};
-    snapshot.id = nextSeqId++;
+    snapshot.id = nextSeqId;
+    checkedIncrement(nextSeqId, "SEQ identity");
     snapshot.blockAddr = sfBlockAddr(victim.tag, set);
     snapshot.homeNodeId = victim.homeNodeId;
     snapshot.state = victim.state;
@@ -838,7 +855,7 @@ HnfSLCSFBackend::allocateSf(uint64_t block_addr, uint32_t home_node_id,
     if (SfLine* hit = findSf(block_addr)) {
         panic_if(target && &sf[target->set][target->way] != hit,
                  "HnfSLCSF token SF hit way changed before mutation\n");
-        hit->lastUse = ++accessCounter;
+        hit->lastUse = checkedIncrement(accessCounter, "access counter");
         return *hit;
     }
 
@@ -863,6 +880,10 @@ HnfSLCSFBackend::allocateSf(uint64_t block_addr, uint32_t home_node_id,
         panic_if(seqContains(victimAddr),
                  "HnfSLCSF SF victim collides with active SEQ addr=%#llx\n",
                  static_cast<unsigned long long>(victimAddr));
+        // An exhausted allocator is a valid restored state.  Reject the next
+        // displacement before consuming its transient reservation so the
+        // failed operation cannot leave partial ownership behind.
+        requireIncrementable(nextSeqId, "SEQ identity");
         // Convert the pre-held capacity into an occupied SEQ entry before
         // overwriting the selected way. This keeps occupancy plus reservations
         // bounded while installSeqVictim copies the complete directory line.
@@ -870,7 +891,8 @@ HnfSLCSFBackend::allocateSf(uint64_t block_addr, uint32_t home_node_id,
         installSeqVictim(sfSet(block_addr), *victim, sf_victim);
     }
 
-    const uint64_t generation = ++accessCounter;
+    const uint64_t generation =
+        checkedIncrement(accessCounter, "access counter");
     *victim = SfLine{};
     victim->valid = true;
     victim->tag = sfTag(block_addr);
@@ -923,14 +945,17 @@ HnfSLCSFBackend::installSlc(uint64_t block_addr, HnfSlcState state,
                      const ArraySnapshot* target,
                      const DirtyVictimWritePermit* permit)
 {
+    panic_if(data.size() != blockSize,
+             "HnfSLCSF refuses incomplete SLC line install "
+             "addr=%#llx bytes=%u/%u\n",
+             static_cast<unsigned long long>(block_addr),
+             static_cast<unsigned>(data.size()), blockSize);
     SlcLine& line = allocateSlc(block_addr, target, permit);
     line.valid = true;
     line.state = state;
     line.owner = requester;
-    line.data.assign(blockSize, 0);
-    const size_t bytes = std::min<size_t>(blockSize, data.size());
-    std::copy(data.begin(), data.begin() + bytes, line.data.begin());
-    line.generation = ++accessCounter;
+    line.data = data;
+    line.generation = checkedIncrement(accessCounter, "access counter");
     line.lastUse = accessCounter;
 }
 
@@ -941,7 +966,7 @@ HnfSLCSFBackend::invalidateSlc(uint64_t block_addr)
         line->valid = false;
         line->state = HnfSlcState::I;
         line->data.clear();
-        line->generation = ++accessCounter;
+        line->generation = checkedIncrement(accessCounter, "access counter");
         line->lastUse = accessCounter;
     }
 }
@@ -953,7 +978,7 @@ HnfSLCSFBackend::invalidateSf(uint64_t block_addr)
         line->valid = false;
         line->state = HnfSfState::I;
         line->sharers = 0;
-        line->generation = ++accessCounter;
+        line->generation = checkedIncrement(accessCounter, "access counter");
         line->lastUse = accessCounter;
     }
 }
@@ -1041,23 +1066,26 @@ HnfSLCSFBackend::validateLookupSnapshot(
 void
 HnfSLCSFBackend::invalidateCommitTokens()
 {
-    panic_if(lookupEpoch == std::numeric_limits<uint64_t>::max(),
-             "HnfSLCSF lookup epoch space exhausted\n");
-    ++lookupEpoch;
+    checkedIncrement(lookupEpoch, "lookup epoch");
     dirtyVictimSeals.clear();
 }
 
 void
 HnfSLCSFBackend::recordAccess(uint64_t block_addr)
 {
-    const uint64_t access = ++accessCounter;
+    // Preflight both durable counters so exhaustion cannot leave a partially
+    // recorded lookup before the second increment is attempted.
+    requireIncrementable(accessCounter, "access counter");
+    requireIncrementable(lookupAccessCount, "lookup access counter");
+    const uint64_t access =
+        checkedIncrement(accessCounter, "access counter");
     if (SlcLine* line = findSlc(block_addr)) {
         line->lastUse = access;
     }
     if (SfLine* line = findSf(block_addr)) {
         line->lastUse = access;
     }
-    ++lookupAccessCount;
+    checkedIncrement(lookupAccessCount, "lookup access counter");
 }
 
 HnfSLCSFBackend::LookupObservation
@@ -1218,7 +1246,7 @@ HnfSLCSFBackend::commitRead(uint64_t block_addr, uint32_t requester,
             line.owner = requester;
         }
         line.state = data_dirty ? HnfSfState::SN : HnfSfState::EN;
-        line.generation = ++accessCounter;
+        line.generation = checkedIncrement(accessCounter, "access counter");
         line.lastUse = accessCounter;
         break;
       }
@@ -1231,7 +1259,8 @@ HnfSLCSFBackend::commitRead(uint64_t block_addr, uint32_t requester,
             line.state = HnfSfState::EU;
             line.owner = requester;
             line.sharers = requesterBit;
-            line.generation = ++accessCounter;
+            line.generation =
+                checkedIncrement(accessCounter, "access counter");
             line.lastUse = accessCounter;
         }
         break;
@@ -1268,7 +1297,7 @@ HnfSLCSFBackend::completeMaintenance(uint64_t block_addr, uint32_t requester,
         line.state = HnfSfState::EU;
         line.owner = requester;
         line.sharers = requesterMask(requester);
-        line.generation = ++accessCounter;
+        line.generation = checkedIncrement(accessCounter, "access counter");
         line.lastUse = accessCounter;
         break;
       }
@@ -1303,13 +1332,20 @@ HnfSLCSFBackend::removeSharer(uint64_t block_addr, uint32_t requester)
     } else if (hasSingleBit(line->sharers)) {
         line->owner = __builtin_ctzll(line->sharers);
         line->state = HnfSfState::SU;
-        line->generation = ++accessCounter;
+        line->generation = checkedIncrement(accessCounter, "access counter");
         line->lastUse = accessCounter;
     } else {
+        // Vector states still retain one canonical representative for the
+        // SEQ completion identity.  If that representative is the sharer
+        // being removed, select a remaining sharer before the entry can be
+        // displaced into SEQ.
+        if (line->owner == requester) {
+            line->owner = __builtin_ctzll(line->sharers);
+        }
         const SlcLine* slcLine = findSlc(block_addr);
         line->state = slcLine && isDirty(slcLine->state) ?
             HnfSfState::SN : HnfSfState::EN;
-        line->generation = ++accessCounter;
+        line->generation = checkedIncrement(accessCounter, "access counter");
         line->lastUse = accessCounter;
     }
     checkLineInvariant(block_addr);
@@ -1413,7 +1449,7 @@ HnfSLCSFBackend::writeLine(uint64_t block_addr, uint32_t requester,
         line.sharers |= requesterMask(requester);
         line.owner = requester;
         line.state = HnfSfState::EN;
-        line.generation = ++accessCounter;
+        line.generation = checkedIncrement(accessCounter, "access counter");
         line.lastUse = accessCounter;
         break;
       }
@@ -1558,8 +1594,8 @@ HnfSLCSFBackend::markSeqIssued(
     panic_if(!entry || entry->victim.issued,
              "HnfSLCSF issues invalid/duplicate SEQ id=%llu\n",
              static_cast<unsigned long long>(id));
-    panic_if(completion_transaction_id == 0,
-             "HnfSLCSF issues SEQ id=%llu without completion txn identity\n",
+    panic_if(completion_opcode == 0 || completion_transaction_id == 0,
+             "HnfSLCSF issues SEQ id=%llu without completion identity\n",
              static_cast<unsigned long long>(id));
     entry->victim.issued = true;
     entry->phase = SeqPhase::Issued;
@@ -1716,6 +1752,13 @@ HnfSLCSFBackend::checkLineInvariant(uint64_t block_addr) const
              "HnfSLCSF valid SF line has no sharer addr=%#llx state=%u\n",
              static_cast<unsigned long long>(block_addr),
              static_cast<unsigned>(sfLine->state));
+    panic_if(sfLine &&
+                 (sfLine->owner >= 64 ||
+                  (sfLine->sharers & (1ULL << sfLine->owner)) == 0),
+             "HnfSLCSF SF owner is not a sharer addr=%#llx owner=%u "
+             "sharers=%#llx\n",
+             static_cast<unsigned long long>(block_addr), sfLine->owner,
+             static_cast<unsigned long long>(sfLine->sharers));
     panic_if(sfLine && sfLine->state == HnfSfState::EU &&
                  (!hasSingleBit(sfLine->sharers) || slcLine),
              "HnfSLCSF EU invariant failed addr=%#llx sharers=%#llx slc=%u\n",
@@ -1775,19 +1818,154 @@ HnfSLCSFBackend::lineStateFingerprint(uint64_t block_addr) const
     return hash;
 }
 
+HnfSLCSFBackend::ProtectedStateSnapshot
+HnfSLCSFBackend::protectedStateSnapshot(
+    uint64_t block_addr, bool include_allocators) const
+{
+    ProtectedStateSnapshot snapshot;
+    auto& words = snapshot.metadata;
+    const auto append_data = [&snapshot, &words](
+                                 const std::vector<uint8_t>& data) {
+        words.push_back(data.size());
+        snapshot.data.insert(snapshot.data.end(), data.begin(), data.end());
+    };
+
+    // The epoch is part of the validity domain for every commit token.  The
+    // global access counter is deliberately omitted: unrelated sets may make
+    // progress while this request is waiting, while the selected ways carry
+    // the exact generation/replacement values that matter locally.
+    words.push_back(lookupEpoch);
+    words.push_back(include_allocators);
+    if (include_allocators) {
+        words.push_back(accessCounter);
+        words.push_back(lookupAccessCount);
+        words.push_back(nextSeqId);
+    }
+    words.push_back(slcSet(block_addr));
+    words.push_back(sfSet(block_addr));
+
+    const auto& slc_set = slc[slcSet(block_addr)];
+    words.push_back(slc_set.size());
+    for (size_t way = 0; way < slc_set.size(); ++way) {
+        const SlcLine& line = slc_set[way];
+        words.push_back(way);
+        words.push_back(line.valid);
+        words.push_back(line.tag);
+        words.push_back(static_cast<uint8_t>(line.state));
+        words.push_back(line.owner);
+        words.push_back(line.generation);
+        words.push_back(line.lastUse);
+        append_data(line.data);
+    }
+
+    const auto& sf_set = sf[sfSet(block_addr)];
+    words.push_back(sf_set.size());
+    for (size_t way = 0; way < sf_set.size(); ++way) {
+        const SfLine& line = sf_set[way];
+        words.push_back(way);
+        words.push_back(line.valid);
+        words.push_back(line.tag);
+        words.push_back(static_cast<uint8_t>(line.state));
+        words.push_back(line.homeNodeId);
+        words.push_back(line.owner);
+        words.push_back(line.sharers);
+        words.push_back(line.generation);
+        words.push_back(line.lastUse);
+    }
+
+    // An SF displacement creates a SEQ owner for another address in the same
+    // set.  Include every such entry, not only an entry whose address equals
+    // the request address, so a failed mutation cannot leak a victim while
+    // restoring the selected SF way and evade the equality check.
+    size_t matching_seq = 0;
+    for (const SeqEntry& entry : seq) {
+        matching_seq += entry.valid &&
+            sfSet(entry.victim.blockAddr) == sfSet(block_addr);
+    }
+    words.push_back(matching_seq);
+    for (size_t slot = 0; slot < seq.size(); ++slot) {
+        const SeqEntry& entry = seq[slot];
+        if (!entry.valid ||
+            sfSet(entry.victim.blockAddr) != sfSet(block_addr)) {
+            continue;
+        }
+        words.push_back(slot);
+        words.push_back(static_cast<uint8_t>(entry.phase));
+        words.push_back(entry.victim.id);
+        words.push_back(entry.victim.blockAddr);
+        words.push_back(entry.victim.homeNodeId);
+        words.push_back(static_cast<uint8_t>(entry.victim.state));
+        words.push_back(entry.victim.owner);
+        words.push_back(entry.victim.sharers);
+        words.push_back(entry.victim.issued);
+        words.push_back(entry.completionOpcode);
+        words.push_back(entry.completionTransactionId);
+        words.push_back(entry.committedDirty);
+        words.push_back(entry.completionLease.has_value());
+        if (entry.completionLease) {
+            const SlcSfCompletionLease& lease = *entry.completionLease;
+            words.push_back(static_cast<uint8_t>(lease.kind()));
+            words.push_back(lease.nonce());
+            words.push_back(lease.reqId().value);
+            words.push_back(lease.pocEntryId());
+            words.push_back(lease.lineAddress());
+            words.push_back(lease.requester());
+            words.push_back(lease.opcode());
+            words.push_back(lease.linkSequence());
+            words.push_back(lease.transactionId());
+            words.push_back(lease.objectId());
+        }
+        append_data(entry.committedData);
+    }
+    size_t matching_pending = 0;
+    for (SeqId id : seqPending) {
+        const SeqEntry* entry = findSeq(id);
+        matching_pending += entry &&
+            sfSet(entry->victim.blockAddr) == sfSet(block_addr);
+    }
+    words.push_back(matching_pending);
+    for (SeqId id : seqPending) {
+        const SeqEntry* entry = findSeq(id);
+        if (entry && sfSet(entry->victim.blockAddr) == sfSet(block_addr)) {
+            words.push_back(id);
+        }
+    }
+    return snapshot;
+}
+
 void
 HnfSLCSFBackend::checkGlobalInvariants() const
 {
+    std::unordered_set<uint64_t> validSlcAddresses;
     for (uint32_t set = 0; set < slcSets; ++set) {
         for (uint32_t lhs = 0; lhs < slcWays; ++lhs) {
             const SlcLine& line = slc[set][lhs];
+            panic_if(line.valid != (line.state != HnfSlcState::I),
+                     "HnfSLCSF SLC valid/state mismatch set=%u way=%u "
+                     "valid=%u state=%u\n", set, lhs, line.valid,
+                     static_cast<unsigned>(line.state));
             if (!line.valid) {
+                panic_if(!line.data.empty(),
+                         "HnfSLCSF invalid SLC line retains data "
+                         "set=%u way=%u bytes=%u\n", set, lhs,
+                         static_cast<unsigned>(line.data.size()));
                 continue;
             }
-            panic_if(isDirty(line.state) && line.data.size() != blockSize,
-                     "HnfSLCSF dirty line lacks full data set=%u way=%u "
+            panic_if(line.data.size() != blockSize,
+                     "HnfSLCSF valid line lacks full data set=%u way=%u "
                      "bytes=%u/%u\n", set, lhs,
                      static_cast<unsigned>(line.data.size()), blockSize);
+            panic_if(line.tag >
+                         (std::numeric_limits<uint64_t>::max() / blockSize -
+                          set) / slcSets,
+                     "HnfSLCSF SLC address overflows set=%u way=%u "
+                     "tag=%#llx\n", set, lhs,
+                     static_cast<unsigned long long>(line.tag));
+            const uint64_t address =
+                (line.tag * slcSets + set) * blockSize;
+            panic_if(!validSlcAddresses.emplace(address).second,
+                     "HnfSLCSF duplicate SLC address=%#llx\n",
+                     static_cast<unsigned long long>(address));
             for (uint32_t rhs = lhs + 1; rhs < slcWays; ++rhs) {
                 panic_if(slc[set][rhs].valid &&
                              slc[set][rhs].tag == line.tag,
@@ -1797,12 +1975,46 @@ HnfSLCSFBackend::checkGlobalInvariants() const
             }
         }
     }
+    std::unordered_set<uint64_t> validSfAddresses;
     for (uint32_t set = 0; set < sfSets; ++set) {
         for (uint32_t lhs = 0; lhs < sfWays; ++lhs) {
             const SfLine& line = sf[set][lhs];
+            panic_if(line.valid != (line.state != HnfSfState::I),
+                     "HnfSLCSF SF valid/state mismatch set=%u way=%u "
+                     "valid=%u state=%u\n", set, lhs, line.valid,
+                     static_cast<unsigned>(line.state));
             if (!line.valid) {
+                panic_if(line.sharers != 0,
+                         "HnfSLCSF invalid SF line retains sharers "
+                         "set=%u way=%u mask=%#llx\n", set, lhs,
+                         static_cast<unsigned long long>(line.sharers));
                 continue;
             }
+            panic_if(line.sharers == 0 || line.owner >= 64 ||
+                         (line.sharers & (1ULL << line.owner)) == 0,
+                     "HnfSLCSF SF owner/sharer mismatch set=%u way=%u "
+                     "owner=%u mask=%#llx\n", set, lhs, line.owner,
+                     static_cast<unsigned long long>(line.sharers));
+            panic_if(line.state == HnfSfState::EU &&
+                         !hasSingleBit(line.sharers),
+                     "HnfSLCSF EU line is not exclusive set=%u way=%u "
+                     "mask=%#llx\n", set, lhs,
+                     static_cast<unsigned long long>(line.sharers));
+            panic_if(line.tag >
+                         (std::numeric_limits<uint64_t>::max() / blockSize -
+                          set) / sfSets,
+                     "HnfSLCSF SF address overflows set=%u way=%u "
+                     "tag=%#llx\n", set, lhs,
+                     static_cast<unsigned long long>(line.tag));
+            const uint64_t address =
+                (line.tag * sfSets + set) * blockSize;
+            panic_if(!validSfAddresses.emplace(address).second,
+                     "HnfSLCSF duplicate SF address=%#llx\n",
+                     static_cast<unsigned long long>(address));
+            panic_if(line.state == HnfSfState::EU &&
+                         validSlcAddresses.count(address),
+                     "HnfSLCSF EU line also resides in SLC addr=%#llx\n",
+                     static_cast<unsigned long long>(address));
             for (uint32_t rhs = lhs + 1; rhs < sfWays; ++rhs) {
                 panic_if(sf[set][rhs].valid && sf[set][rhs].tag == line.tag,
                          "HnfSLCSF duplicate SF tag set=%u ways=%u,%u "
@@ -1812,13 +2024,53 @@ HnfSLCSFBackend::checkGlobalInvariants() const
         }
     }
 
+    std::unordered_set<SeqId> pending_ids;
+    for (SeqId id : seqPending) {
+        panic_if(id == 0 || !pending_ids.emplace(id).second,
+                 "HnfSLCSF duplicate/invalid pending SEQ id=%llu\n",
+                 static_cast<unsigned long long>(id));
+    }
+    std::unordered_set<SeqId> seq_ids;
+    std::unordered_set<uint64_t> seq_addresses;
     for (size_t lhs = 0; lhs < seq.size(); ++lhs) {
         const SeqEntry& entry = seq[lhs];
         if (!entry.valid) {
-            continue;
-        }
-        panic_if(entry.victim.id == 0 ||
+            panic_if(entry.phase != SeqPhase::Pending ||
+                         entry.victim.id != 0 ||
+                         entry.victim.blockAddr != 0 ||
+                         entry.victim.homeNodeId != 0 ||
+                         entry.victim.state != HnfSfState::I ||
+                         entry.victim.owner != 0 ||
+                         entry.victim.sharers != 0 || entry.victim.issued ||
+                         entry.completionOpcode != 0 ||
+                         entry.completionTransactionId != 0 ||
+                         entry.completionLease || entry.committedDirty ||
+                         !entry.committedData.empty(),
+                     "HnfSLCSF non-canonical empty SEQ slot=%u\n",
+                     static_cast<unsigned>(lhs));
+                continue;
+            }
+        const bool pending = entry.phase == SeqPhase::Pending;
+        const bool claimed = entry.phase == SeqPhase::Claimed ||
+            entry.phase == SeqPhase::CommittedAwaitAck;
+        const bool address_aligned =
+            entry.victim.blockAddr % blockSize == 0;
+        panic_if(entry.victim.id == 0 || !address_aligned ||
+                     entry.victim.state == HnfSfState::I ||
+                     entry.victim.sharers == 0 || entry.victim.owner >= 64 ||
+                     (entry.victim.sharers &
+                      (1ULL << entry.victim.owner)) == 0 ||
+                     (entry.victim.state == HnfSfState::EU &&
+                      !hasSingleBit(entry.victim.sharers)) ||
+                     entry.victim.issued == pending ||
+                     pending_ids.count(entry.victim.id) !=
+                         static_cast<size_t>(pending) ||
+                     static_cast<bool>(entry.completionLease) != claimed ||
+                     (entry.completionLease &&
+                      !entry.completionLease->valid()) ||
                      (entry.committedDirty &&
+                      entry.committedData.size() != blockSize) ||
+                     (!entry.committedData.empty() &&
                       entry.committedData.size() != blockSize),
                  "HnfSLCSF invalid SEQ victim slot=%u id=%llu dirty=%u "
                  "bytes=%u/%u\n", static_cast<unsigned>(lhs),
@@ -1826,6 +2078,65 @@ HnfSLCSFBackend::checkGlobalInvariants() const
                  entry.committedDirty,
                  static_cast<unsigned>(entry.committedData.size()),
                  blockSize);
+        switch (entry.phase) {
+          case SeqPhase::Pending:
+            panic_if(entry.completionOpcode != 0 ||
+                         entry.completionTransactionId != 0 ||
+                         entry.committedDirty ||
+                         !entry.committedData.empty(),
+                     "HnfSLCSF pending SEQ carries completion state "
+                     "slot=%u id=%llu\n", static_cast<unsigned>(lhs),
+                     static_cast<unsigned long long>(entry.victim.id));
+            break;
+          case SeqPhase::Issued:
+            panic_if(entry.completionOpcode == 0 ||
+                         entry.completionTransactionId == 0 ||
+                         entry.committedDirty ||
+                         !entry.committedData.empty(),
+                     "HnfSLCSF issued SEQ has non-canonical completion "
+                     "state slot=%u id=%llu\n",
+                     static_cast<unsigned>(lhs),
+                     static_cast<unsigned long long>(entry.victim.id));
+            break;
+          case SeqPhase::Claimed:
+            panic_if(entry.completionOpcode == 0 ||
+                         entry.completionTransactionId == 0 ||
+                         !entry.completionLease ||
+                         !seqLeaseMatches(entry, *entry.completionLease) ||
+                         entry.committedDirty ||
+                         !entry.committedData.empty(),
+                     "HnfSLCSF claimed SEQ has mismatched ownership "
+                     "slot=%u id=%llu\n", static_cast<unsigned>(lhs),
+                     static_cast<unsigned long long>(entry.victim.id));
+            break;
+          case SeqPhase::CommittedAwaitAck:
+            panic_if(entry.completionOpcode == 0 ||
+                         entry.completionTransactionId == 0 ||
+                         !entry.completionLease ||
+                         !seqLeaseMatches(entry, *entry.completionLease),
+                     "HnfSLCSF committed SEQ has mismatched ownership "
+                     "slot=%u id=%llu\n", static_cast<unsigned>(lhs),
+                     static_cast<unsigned long long>(entry.victim.id));
+            break;
+          default:
+            panic("HnfSLCSF SEQ has invalid phase slot=%u id=%llu\n",
+                  static_cast<unsigned>(lhs),
+                  static_cast<unsigned long long>(entry.victim.id));
+        }
+        panic_if(entry.victim.id >= nextSeqId,
+                 "HnfSLCSF SEQ allocator did not advance past id=%llu "
+                 "next=%llu\n",
+                 static_cast<unsigned long long>(entry.victim.id),
+                 static_cast<unsigned long long>(nextSeqId));
+        panic_if(!seq_ids.emplace(entry.victim.id).second ||
+                     !seq_addresses.emplace(entry.victim.blockAddr).second,
+                 "HnfSLCSF duplicate SEQ identity/address slot=%u id=%llu "
+                 "addr=%#llx\n", static_cast<unsigned>(lhs),
+                 static_cast<unsigned long long>(entry.victim.id),
+                 static_cast<unsigned long long>(entry.victim.blockAddr));
+        panic_if(validSfAddresses.count(entry.victim.blockAddr),
+                 "HnfSLCSF SEQ victim still resides in SF addr=%#llx\n",
+                 static_cast<unsigned long long>(entry.victim.blockAddr));
         for (size_t rhs = lhs + 1; rhs < seq.size(); ++rhs) {
             panic_if(seq[rhs].valid &&
                          (seq[rhs].victim.id == entry.victim.id ||
@@ -1839,13 +2150,41 @@ HnfSLCSFBackend::checkGlobalInvariants() const
                          entry.victim.blockAddr));
         }
     }
+    panic_if(pending_ids.size() !=
+                 std::count_if(seq.begin(), seq.end(), [](const SeqEntry& e) {
+                     return e.valid && e.phase == SeqPhase::Pending;
+                 }),
+             "HnfSLCSF pending SEQ queue does not exactly match entries\n");
 
     size_t counted_seq_reservations = 0;
+    std::unordered_set<uint32_t> reserved_sets;
     for (const auto& [owner, reservation] : sfReservations) {
-        panic_if(reservation.set >= sfSets,
-                 "HnfSLCSF SF reservation owner=%u has invalid set=%u\n",
-                 owner, reservation.set);
+        const bool address_aligned =
+            reservation.blockAddr % blockSize == 0;
+        panic_if(reservation.set >= sfSets ||
+                     !address_aligned ||
+                     sfSet(reservation.blockAddr) != reservation.set ||
+                     issuedSfSetOwners[reservation.set] !=
+                         static_cast<int64_t>(owner) ||
+                     !reserved_sets.emplace(reservation.set).second,
+                 "HnfSLCSF malformed SF reservation owner=%u set=%u "
+                 "addr=%#llx\n", owner, reservation.set,
+                 static_cast<unsigned long long>(reservation.blockAddr));
         counted_seq_reservations += reservation.seqSlot;
+    }
+    for (uint32_t set = 0; set < sfSets; ++set) {
+        const int64_t owner = issuedSfSetOwners[set];
+        if (owner < 0) {
+            panic_if(reserved_sets.count(set),
+                     "HnfSLCSF SF set=%u reservation lacks owner\n", set);
+            continue;
+        }
+        const auto reservation = sfReservations.find(
+            static_cast<uint32_t>(owner));
+        panic_if(reservation == sfReservations.end() ||
+                     reservation->second.set != set,
+                 "HnfSLCSF SF set=%u owner=%lld lacks reservation\n",
+                 set, static_cast<long long>(owner));
     }
     panic_if(counted_seq_reservations != reservedSeqSlots,
              "HnfSLCSF SEQ reservation count mismatch map=%u count=%u\n",
@@ -1856,6 +2195,30 @@ HnfSLCSFBackend::checkGlobalInvariants() const
              "HnfSLCSF dirty-victim seals exceed SLC slots (%u/%u)\n",
              static_cast<unsigned>(dirtyVictimSeals.size()),
              slcSets * slcWays);
+    std::unordered_set<uint64_t> victim_ids;
+    for (const auto& [slot, seal] : dirtyVictimSeals) {
+        const auto& target = seal.targetSnapshot;
+        const bool replacement_aligned =
+            seal.replacementAddress % blockSize == 0;
+        const bool victim_aligned = seal.victimAddress % blockSize == 0;
+        panic_if(slot >= static_cast<uint64_t>(slcSets) * slcWays ||
+                     target.slc.set >= slcSets ||
+                     target.slc.way >= slcWays ||
+                     target.sf.set >= sfSets || target.sf.way >= sfWays ||
+                     slot != static_cast<uint64_t>(target.slc.set) * slcWays +
+                         target.slc.way || seal.victimId.value == 0 ||
+                     !replacement_aligned || !victim_aligned ||
+                     slcSet(seal.replacementAddress) != target.slc.set ||
+                     sfSet(seal.replacementAddress) != target.sf.set ||
+                     slcSet(seal.victimAddress) != target.slc.set ||
+                     !victim_ids.emplace(seal.victimId.value).second,
+                 "HnfSLCSF malformed dirty-victim seal slot=%llu "
+                 "victim=%llu replacement=%#llx displaced=%#llx\n",
+                 static_cast<unsigned long long>(slot),
+                 static_cast<unsigned long long>(seal.victimId.value),
+                 static_cast<unsigned long long>(seal.replacementAddress),
+                 static_cast<unsigned long long>(seal.victimAddress));
+    }
     assertSeqAccounting();
 }
 
@@ -2005,6 +2368,8 @@ HnfSLCSFBackend::serializePersistentState(CheckpointOut& cp) const
 void
 HnfSLCSFBackend::unserializePersistentState(CheckpointIn& cp)
 {
+    fatal_if(isBusy(),
+             "HnfSLCSF refuses to restore over live backend ownership\n");
     uint32_t format_version = 0;
     uint32_t saved_block_size = 0;
     uint32_t saved_slc_sets = 0;
@@ -2030,7 +2395,7 @@ HnfSLCSFBackend::unserializePersistentState(CheckpointIn& cp)
     paramIn(cp, "lookupAccessCount", lookupAccessCount);
     paramIn(cp, "nextSeqId", nextSeqId);
     fatal_if(lookupEpoch == 0 || nextSeqId == 0,
-             "HnfSLCSF checkpoint contains invalid next identity\n");
+             "HnfSLCSF checkpoint contains invalid zero identities\n");
 
     std::vector<uint32_t> slc_valid;
     std::vector<uint64_t> slc_tag;
@@ -2059,15 +2424,39 @@ HnfSLCSFBackend::unserializePersistentState(CheckpointIn& cp)
              "HnfSLCSF checkpoint has malformed SLC arrays\n");
     size_t data_offset = 0;
     uint64_t max_identity = 0;
+    std::vector<std::unordered_set<uint64_t>> restored_slc_tags(slcSets);
+    std::unordered_set<uint64_t> restored_slc_addresses;
     for (size_t i = 0; i < slc_lines; ++i) {
-        fatal_if(slc_state[i] > static_cast<uint32_t>(HnfSlcState::MN) ||
-                     slc_data_size[i] > blockSize ||
-                     data_offset + slc_data_size[i] > slc_data.size(),
+        const uint32_t set = i / slcWays;
+        const uint32_t way = i % slcWays;
+        fatal_if(slc_valid[i] > 1 ||
+                     slc_state[i] >
+                         static_cast<uint32_t>(HnfSlcState::MN) ||
+                     data_offset > slc_data.size() ||
+                     slc_data_size[i] > slc_data.size() - data_offset,
                  "HnfSLCSF checkpoint has invalid SLC line\n");
+        const bool valid = slc_valid[i] == 1;
+        const auto state = static_cast<HnfSlcState>(slc_state[i]);
+        fatal_if(valid != (state != HnfSlcState::I) ||
+                     slc_data_size[i] != (valid ? blockSize : 0),
+                 "HnfSLCSF checkpoint SLC valid/state/data mismatch "
+                 "set=%u way=%u\n", set, way);
+        if (valid) {
+            fatal_if(slc_tag[i] >
+                         (std::numeric_limits<uint64_t>::max() / blockSize -
+                          set) / slcSets ||
+                         !restored_slc_tags[set].emplace(slc_tag[i]).second,
+                     "HnfSLCSF checkpoint has duplicate/overflowing SLC "
+                     "tag set=%u way=%u\n", set, way);
+            const uint64_t address =
+                (slc_tag[i] * slcSets + set) * blockSize;
+            fatal_if(!restored_slc_addresses.emplace(address).second,
+                     "HnfSLCSF checkpoint has duplicate SLC address\n");
+        }
         SlcLine& line = slc[i / slcWays][i % slcWays];
-        line.valid = slc_valid[i];
+        line.valid = valid;
         line.tag = slc_tag[i];
-        line.state = static_cast<HnfSlcState>(slc_state[i]);
+        line.state = state;
         line.owner = slc_owner[i];
         line.generation = slc_generation[i];
         line.lastUse = slc_last_use[i];
@@ -2108,13 +2497,43 @@ HnfSLCSFBackend::unserializePersistentState(CheckpointIn& cp)
                  sf_generation.size() != sf_lines ||
                  sf_last_use.size() != sf_lines,
              "HnfSLCSF checkpoint has malformed SF arrays\n");
+    std::vector<std::unordered_set<uint64_t>> restored_sf_tags(sfSets);
     for (size_t i = 0; i < sf_lines; ++i) {
-        fatal_if(sf_state[i] > static_cast<uint32_t>(HnfSfState::SN),
+        const uint32_t set = i / sfWays;
+        const uint32_t way = i % sfWays;
+        fatal_if(sf_valid[i] > 1 ||
+                     sf_state[i] > static_cast<uint32_t>(HnfSfState::SN),
                  "HnfSLCSF checkpoint has invalid SF state\n");
+        const bool valid = sf_valid[i] == 1;
+        const auto state = static_cast<HnfSfState>(sf_state[i]);
+        fatal_if(valid != (state != HnfSfState::I) ||
+                     (!valid && sf_sharers[i] != 0) ||
+                     (valid &&
+                      (sf_sharers[i] == 0 || sf_owner[i] >= 64 ||
+                       (sf_sharers[i] & (1ULL << sf_owner[i])) == 0)) ||
+                     (state == HnfSfState::EU &&
+                      !hasSingleBit(sf_sharers[i])),
+                 "HnfSLCSF checkpoint SF valid/state/owner mismatch "
+                 "set=%u way=%u\n", set, way);
+        if (valid) {
+            fatal_if(sf_tag[i] >
+                         (std::numeric_limits<uint64_t>::max() / blockSize -
+                          set) / sfSets ||
+                         !restored_sf_tags[set].emplace(sf_tag[i]).second,
+                     "HnfSLCSF checkpoint has duplicate/overflowing SF "
+                     "tag set=%u way=%u\n", set, way);
+            const uint64_t address =
+                (sf_tag[i] * sfSets + set) * blockSize;
+            fatal_if(state == HnfSfState::EU &&
+                         restored_slc_addresses.count(address),
+                     "HnfSLCSF checkpoint EU line also resides in SLC "
+                     "addr=%#llx\n",
+                     static_cast<unsigned long long>(address));
+        }
         SfLine& line = sf[i / sfWays][i % sfWays];
-        line.valid = sf_valid[i];
+        line.valid = valid;
         line.tag = sf_tag[i];
-        line.state = static_cast<HnfSfState>(sf_state[i]);
+        line.state = state;
         line.homeNodeId = sf_home_node[i];
         line.owner = sf_owner[i];
         line.sharers = sf_sharers[i];
@@ -2168,34 +2587,33 @@ HnfSLCSFBackend::unserializePersistentState(CheckpointIn& cp)
                  seq_dirty.size() != seq_entries ||
                  seq_data_size.size() != seq_entries,
              "HnfSLCSF checkpoint has malformed SEQ arrays\n");
+    fatal_if(!pending.empty(),
+             "HnfSLCSF restore requires an empty drained SEQ queue\n");
     data_offset = 0;
     for (size_t i = 0; i < seq_entries; ++i) {
-        fatal_if(seq_phase[i] >
+        fatal_if(seq_valid[i] > 1 || seq_dirty[i] > 1 ||
+                     seq_phase[i] >
                          static_cast<uint32_t>(SeqPhase::CommittedAwaitAck) ||
                      seq_state[i] > static_cast<uint32_t>(HnfSfState::SN) ||
-                     seq_data_size[i] > blockSize ||
-                     data_offset + seq_data_size[i] > seq_data.size(),
+                     data_offset > seq_data.size() ||
+                     seq_data_size[i] > seq_data.size() - data_offset,
                  "HnfSLCSF checkpoint has invalid SEQ entry\n");
-        SeqEntry& entry = seq[i];
-        entry = SeqEntry{};
-        entry.valid = seq_valid[i];
-        entry.phase = static_cast<SeqPhase>(seq_phase[i]);
-        entry.victim = {seq_id[i], seq_address[i], seq_home_node[i],
-                        static_cast<HnfSfState>(seq_state[i]), seq_owner[i],
-                        seq_sharers[i],
-                        entry.phase != SeqPhase::Pending};
-        entry.completionOpcode = seq_opcode[i];
-        entry.completionTransactionId = seq_transaction[i];
-        entry.committedDirty = seq_dirty[i];
-        for (size_t j = 0; j < seq_data_size[i]; ++j) {
-            fatal_if(seq_data[data_offset] > UINT8_MAX,
-                     "HnfSLCSF checkpoint has invalid SEQ data byte\n");
-            entry.committedData.push_back(seq_data[data_offset++]);
-        }
+        fatal_if(seq_valid[i] != 0 ||
+                     seq_phase[i] !=
+                         static_cast<uint32_t>(SeqPhase::Pending) ||
+                     seq_id[i] != 0 || seq_address[i] != 0 ||
+                     seq_home_node[i] != 0 ||
+                     seq_state[i] != static_cast<uint32_t>(HnfSfState::I) ||
+                     seq_owner[i] != 0 || seq_sharers[i] != 0 ||
+                     seq_opcode[i] != 0 || seq_transaction[i] != 0 ||
+                     seq_dirty[i] != 0 || seq_data_size[i] != 0,
+                 "HnfSLCSF checkpoint contains non-canonical drained "
+                 "SEQ slot=%u\n", static_cast<unsigned>(i));
+        seq[i] = SeqEntry{};
     }
     fatal_if(data_offset != seq_data.size(),
              "HnfSLCSF checkpoint has trailing SEQ data\n");
-    seqPending.assign(pending.begin(), pending.end());
+    seqPending.clear();
 
     // The supported format is drained-only. Recreate transient containers
     // empty and reject an image that claims otherwise.
@@ -2207,7 +2625,7 @@ HnfSLCSFBackend::unserializePersistentState(CheckpointIn& cp)
     sfReservations.clear();
     dirtyVictimSeals.clear();
     reservedSeqSlots = 0;
-    assertSeqAccounting();
+    checkGlobalInvariants();
 }
 
 } // namespace gem5::Chi

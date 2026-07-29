@@ -52,6 +52,28 @@ class HnfSLCSFBackend
         LookupSnapshot snapshot{};
     };
 
+    /**
+     * Collision-free snapshot of the storage protected by one line request.
+     *
+     * Metadata and bytes are kept separately but compared exactly.  This is
+     * used for Replay/Error/Cancel immutability checks; a hash is useful for
+     * diagnostics, but cannot prove that persistent state was unchanged.
+     */
+    struct ProtectedStateSnapshot
+    {
+        std::vector<uint64_t> metadata;
+        std::vector<uint8_t> data;
+
+        bool operator==(const ProtectedStateSnapshot& other) const
+        {
+            return metadata == other.metadata && data == other.data;
+        }
+        bool operator!=(const ProtectedStateSnapshot& other) const
+        {
+            return !(*this == other);
+        }
+    };
+
     struct SeqVictim
     {
         SeqId id = 0;
@@ -164,6 +186,10 @@ class HnfSLCSFBackend
 
     /** Stable fingerprint proving Replay did not change its protected sets. */
     uint64_t lineStateFingerprint(uint64_t block_addr) const;
+
+    /** Exact protected-set/SEQ state used for non-mutating terminal proofs. */
+    ProtectedStateSnapshot protectedStateSnapshot(
+        uint64_t block_addr, bool include_allocators = false) const;
 
     bool isBusy() const
     {

@@ -2,9 +2,12 @@
 #define __CHICOMMONPORT__HH__
 
 #include <deque>
+#include <functional>
 #include <optional>
 #include <queue>
+#include <utility>
 
+#include "base/logging.hh"
 #include "mem/cache/CHI/base/BasicChiComponent.hh"
 #include "mem/cache/CHI/base/ChiChannel.hh"
 #include "mem/port.hh"
@@ -28,6 +31,9 @@ class ChiCommonPort : public Port
     };
 
 public:
+    using RxAdmissionCallback =
+        std::function<bool(ChannelType, const FlitVariant&)>;
+
     explicit ChiCommonPort(const std::string& name,
                             ruby::Consumer* m_consumer ,
                            PortID id = InvalidPortID,
@@ -43,30 +49,41 @@ public:
 
     // Credit management
     void increaseRxCredit(ChannelType ch, uint8_t val = 1) {
-        auto idx = static_cast<size_t>(ch);
+        const size_t idx = checkedChannelIndex(ch);
         rxCredit[idx] += val;
         checkRxCredit(ch);
     }
 
     void increaseTxCredit(ChannelType ch, uint8_t val = 1) {
-        auto idx = static_cast<size_t>(ch);
+        const size_t idx = checkedChannelIndex(ch);
         txCredit[idx] += val;
         checkTxCredit(ch);
     }
 
     void checkRxCredit(ChannelType ch) const {
-        auto idx = static_cast<size_t>(ch);
+        const size_t idx = checkedChannelIndex(ch);
         assert(rxCredit[idx] <= rxCreditLimit[idx] && "Rx credit overflow!");
     }
 
     void checkTxCredit(ChannelType ch) const {
-        auto idx = static_cast<size_t>(ch);
+        const size_t idx = checkedChannelIndex(ch);
         assert(txCredit[idx] <= txCreditLimit[idx] && "Tx credit overflow!");
     }
 
     // RX enqueue
     bool enqueueRx(ChannelType ch, const FlitVariant& f) {
         return enqueueFlit(QueueKind::Rx, ch, f);
+    }
+
+    /**
+     * Gate a new flit before the destination consumes credit or owns it.
+     *
+     * This is intentionally an admission hook, rather than a dequeue filter:
+     * a draining endpoint can reject new requests without hiding already
+     * accepted flits in the private RX queue or leaking their credits.
+     */
+    void setRxAdmissionCallback(RxAdmissionCallback callback) {
+        rxAdmissionCallback = std::move(callback);
     }
 
     // TX enqueue
@@ -88,23 +105,25 @@ public:
     }
 
     bool hasRxFlit(ChannelType ch) const {
-        return !rx_queue[static_cast<size_t>(ch)].empty();
+        return !rx_queue[checkedChannelIndex(ch)].empty();
     }
 
     bool hasTxFlit(ChannelType ch) const {
-        return !tx_queue[static_cast<size_t>(ch)].empty();
+        return !tx_queue[checkedChannelIndex(ch)].empty();
     }
 
     bool hasTxCredit(ChannelType ch) const {
-        return txCredit[static_cast<size_t>(ch)] > 0;
+        return txCredit[checkedChannelIndex(ch)] > 0;
     }
 
     bool peerHasRxCredit(ChannelType ch) const {
-        return targetPort().rxCredit[static_cast<size_t>(ch)] > 0;
+        const size_t idx = checkedChannelIndex(ch);
+        return targetPort().rxCredit[idx] > 0;
     }
 
     bool peerHasTxCredit(ChannelType ch) const {
-        return targetPort().txCredit[static_cast<size_t>(ch)] > 0;
+        const size_t idx = checkedChannelIndex(ch);
+        return targetPort().txCredit[idx] > 0;
     }
 
     // TX dequeue
@@ -114,11 +133,21 @@ public:
 
 private:
 
+    static size_t
+    checkedChannelIndex(ChannelType ch)
+    {
+        const size_t idx = static_cast<size_t>(ch);
+        panic_if(idx >= NUM_CH, "ChiCommonPort invalid channel=%u\n",
+                 static_cast<unsigned>(ch));
+        return idx;
+    }
+
     ruby::Consumer *m_consumer;
     std::array<uint8_t, NUM_CH> rxCredit{};
     std::array<uint8_t, NUM_CH> rxCreditLimit{};
     std::array<uint8_t, NUM_CH> txCredit{};
     std::array<uint8_t, NUM_CH> txCreditLimit{};
+    RxAdmissionCallback rxAdmissionCallback;
 
 
 
@@ -181,11 +210,15 @@ private:
     bool
     enqueueFlit(QueueKind kind, ChannelType ch, const FlitVariant& f)
     {
+        const size_t idx = checkedChannelIndex(ch);
         ChiCommonPort& dst = targetPort();
         auto& credit = dst.creditArray(kind);
         const auto& creditLimit = dst.creditLimitArray(kind);
         auto* queues = dst.queueArray(kind);
-        size_t idx = static_cast<size_t>(ch);
+        if (kind == QueueKind::Rx && dst.rxAdmissionCallback &&
+            !dst.rxAdmissionCallback(ch, f)) {
+            return false;
+        }
         if (credit[idx] == 0) {
             return false;
         }
@@ -200,9 +233,9 @@ private:
     std::optional<FlitVariant>
     dequeueFlit(QueueKind kind, ChannelType ch)
     {
+        const size_t idx = checkedChannelIndex(ch);
         auto& credit = creditArray(kind);
         auto* queues = queueArray(kind);
-        size_t idx = static_cast<size_t>(ch);
         if (queues[idx].empty()) {
             return std::nullopt;
         }
@@ -216,8 +249,8 @@ private:
     std::optional<FlitVariant>
     dequeueFlitNoCredit(QueueKind kind, ChannelType ch)
     {
+        const size_t idx = checkedChannelIndex(ch);
         auto* queues = queueArray(kind);
-        size_t idx = static_cast<size_t>(ch);
         if (queues[idx].empty()) {
             return std::nullopt;
         }

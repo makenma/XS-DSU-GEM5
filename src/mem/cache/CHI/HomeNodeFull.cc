@@ -73,7 +73,7 @@ HomeNodeFull::drain()
         d2Active = true;
         slcsf->sealAdmission();
     }
-    if (hasLinkWork()) {
+    if (linklayer.hasWork()) {
         ruby::Consumer::scheduleEvent(Cycles(1));
     }
     return d2Active && !hasLinkWork() && slcsf->completelyIdle() ?
@@ -87,10 +87,24 @@ HomeNodeFull::drainResume()
     d1Complete = false;
     d2Active = false;
     linklayer.resumeNewRequests();
-    slcsf->drainResume();
-    if (hasLinkWork()) {
+    // SlcSnoopFilter is an independently registered Drainable. DrainManager
+    // resumes it exactly once; directly calling its override here would resume
+    // the child once with DrainState::Drained and then a second time normally.
+    if (linklayer.hasWork()) {
         ruby::Consumer::scheduleEvent(Cycles(1));
     }
+}
+
+void
+HomeNodeFull::loadState(CheckpointIn& cp)
+{
+    fatal_if(!cp.sectionExists(name()),
+             "%s checkpoint is missing its required object section\n",
+             name());
+    fatal_if(!cp.sectionExists(name() + ".slcsfRequester"),
+             "%s checkpoint is missing the SLCSF requester identity section\n",
+             name());
+    BasicChiComponent::loadState(cp);
 }
 
 void
@@ -136,7 +150,7 @@ HomeNodeFull::getPort(const std::string& if_name, PortID idx)
 bool
 HomeNodeFull::hasLinkWork() const
 {
-    return linklayer.hasWork() || cc.hasWork();
+    return linklayer.hasProtocolOwnershipForDrain() || cc.hasWork();
 }
 
 
