@@ -10,8 +10,9 @@ class SlcSnoopFilter(ClockedObject):
     cxx_header = "mem/cache/CHI/SlcSnoopFilter.hh"
     cxx_class = "gem5::Chi::SlcSnoopFilter"
 
-    # Parent proxies preserve the existing HomeNodeFull configuration surface
-    # during the standalone-object migration.
+    # These are the canonical runtime parameters. Parent proxies preserve the
+    # old HomeNodeFull paths as defaults, while explicit child values win by
+    # normal SimObject parameter resolution.
     block_size = Param.Unsigned(Parent.block_size, "Cache line size")
     slc_num_sets = Param.UInt32(Parent.slc_num_sets, "Modeled SLC sets")
     slc_num_ways = Param.UInt32(Parent.slc_num_ways, "Modeled SLC ways")

@@ -25,11 +25,14 @@ class HomeNodeFull(BasicChiComponent):
     direct_sn_fake_data = Param.Bool(
         True,
         "Generate zero CompData after direct ReadNoSnp when no real SN exists")
-    slc_num_sets = Param.UInt32(1024, "Number of modeled SLC sets")
-    slc_num_ways = Param.UInt32(16, "Number of modeled SLC ways")
-    sf_num_sets = Param.UInt32(1024, "Number of modeled SF sets")
-    sf_num_ways = Param.UInt32(16, "Number of modeled SF ways")
-    seq_entries = Param.UInt32(8, "SF victim SEQ entries")
+    # Compatibility parameter surface. The SlcSnoopFilter child resolves
+    # these through Parent proxies; runtime C++ reads only the child params.
+    # An explicitly configured child parameter therefore takes precedence.
+    slc_num_sets = Param.UInt32(1024, "Default modeled SLC sets")
+    slc_num_ways = Param.UInt32(16, "Default modeled SLC ways")
+    sf_num_sets = Param.UInt32(1024, "Default modeled SF sets")
+    sf_num_ways = Param.UInt32(16, "Default modeled SF ways")
+    seq_entries = Param.UInt32(8, "Default SF victim SEQ entries")
     slcsf_lookup_latency = Param.Cycles(4, "SLCSF lookup service latency")
     slcsf_fill_latency = Param.Cycles(4, "SLCSF fill service latency")
     slcsf_update_latency = Param.Cycles(3, "SLCSF update service latency")

@@ -115,6 +115,9 @@ Started: 2026-07-28T20:49:07+08:00
 - When extracting an embedded service into a SimObject, let the ClockedObject
   own the ordinary noncopyable service by value and let its parent and clients
   retain only configured or non-owning pointers across the ownership boundary.
+- Preserve legacy parent configuration paths as Parent-proxy defaults on the
+  canonical child; verify final precedence and clock ownership in generated
+  config.ini rather than relying on pre-resolution Python assignments.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -1248,4 +1251,24 @@ Started: 2026-07-28T20:49:07+08:00
   timing/lifecycle ownership boundary before event migration by owning the
   established ordinary service as a noncopyable value member and exposing
   only a narrow non-owning service reference to existing clients.
+---
+
+## 2026-07-29 15:59 - US-029
+- Story: Make child parameters the single runtime source
+- What was implemented: Documented HomeNodeFull geometry and pipeline
+  parameters as compatibility defaults and the SlcSnoopFilter parameters as
+  the canonical runtime source. Added an instantiate-only gem5 smoke that
+  inspects generated config.ini for defaults, parent-only legacy overrides,
+  mixed explicit child overrides, and an independent child clock domain.
+- Files changed: `src/mem/cache/CHI/HomeNodeFull.py`,
+  `src/mem/cache/CHI/SlcSnoopFilter.py`,
+  `tests/gem5/chi/slcsf_child_params.py`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and the standalone
+  owner plus four CHI GTest binaries; the config.ini smoke printed
+  `SLCSF_CHILD_PARAMS_PASS`; all 176 GTests passed (1 standalone owner, 18
+  POCQ, 2 SEQ POCQ, 111 SLCSF, and 44 controller). Python bytecode compilation,
+  changed-file gem5 style, and `git diff --check` passed.
+- Learnings for future iterations: Parent proxies provide compatibility
+  without creating a second runtime configuration source, and generated
+  config.ini is the right boundary for proving explicit child precedence.
 ---
