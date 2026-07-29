@@ -141,6 +141,9 @@ Started: 2026-07-28T20:49:07+08:00
 - Restore a drained child symmetrically at each serialization ownership
   boundary, validate geometry and monotonic identities before installation,
   then reopen registered admission without rerunning cold `initState()`.
+- Under concurrent service, prove Replay immutability at the request's locked
+  SLC/SF set boundary; a whole-backend fingerprint falsely attributes legal
+  different-set commits to the replaying request.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -1490,4 +1493,28 @@ Started: 2026-07-28T20:49:07+08:00
   unit-testable telemetry while forwarding the same events to a ClockedObject
   stats group; keeping telemetry out of checkpoint state prevents observation
   from becoming part of coherence correctness.
+---
+
+## 2026-07-29 18:58 - US-038
+- Story: Add correlated traces and fail-fast invariants
+- What was implemented: Added request-lifecycle traces correlating request and
+  POCQ identities, line, operation, absolute accepted/issue/complete/visible
+  ticks, terminal status, and Replay reason. Added accepted-versus-terminal
+  accounting, permanent request-ID uniqueness, response-ID uniqueness, strict
+  visible-time ordering, token-before-commit enforcement, Replay immutability
+  fingerprints, and fail-fast storage, victim, queue, lock, reservation, and
+  SEQ invariants.
+- Files changed: `src/mem/cache/CHI/HnfSLCSF.hh`, `HnfSLCSF.cc`,
+  `HnfSLCSF.test.cc`, `HnfSLCSFBackend.hh`, `HnfSLCSFBackend.cc`,
+  `HnfCoherencyController.test.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and all four CHI
+  GTest binaries successfully; all 190 tests passed (18 POCQ, 2 SEQ POCQ,
+  122 SLCSF, and 48 controller). Default and forced SF=64x4/SEQ=4 four-core
+  litmus runs each passed all 7 workloads with `CHI_LITMUS_PASS
+  total_errors=0`; every hart reported alias `0x50000001f0`, pressure
+  `0x2800000000ffc000`, and BAD count 0. Changed C++ passed `python3
+  util/style.py --modifications`; `git diff --check` passed.
+- Learnings for future iterations: Replay immutability checks must include
+  replacement state throughout the protected sets while excluding unrelated
+  different-set commits that can complete concurrently.
 ---

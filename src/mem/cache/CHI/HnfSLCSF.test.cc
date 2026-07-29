@@ -5049,6 +5049,74 @@ TEST(HnfSlcSfStatsTest, DifferentSetConcurrencySamplesTwoInflight)
     EXPECT_EQ(stats.setLockConflicts, 0);
 }
 
+TEST(HnfSlcSfInvariantTest, CorrelatesLifecycleWithAbsoluteTicks)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.lookupLatency = 4;
+    HnfSLCSF model(64, 4, 2, 4, 2, 8, config);
+    model.wakeup(100);
+    auto request = lookupRequest(9201, TestAddr, 777);
+    ASSERT_EQ(model.tryEnqueue(std::move(request)),
+              SlcSfEnqueueResult::Accepted);
+
+    model.wakeup(110);
+    model.wakeup(120);
+    model.wakeup(130);
+    model.wakeup(140);
+    model.wakeup(150);
+    EXPECT_FALSE(model.lastCompletedTrace().has_value());
+    model.wakeup(160);
+
+    ASSERT_TRUE(model.lastCompletedTrace().has_value());
+    const HnfSLCSFTraceRecord& trace = *model.lastCompletedTrace();
+    EXPECT_EQ(trace.reqId, SlcSfReqId{9201});
+    EXPECT_EQ(trace.pocEntryId, 777);
+    EXPECT_EQ(trace.lineAddress, TestAddr);
+    EXPECT_EQ(trace.operation, SlcSfOperationKind::Lookup);
+    EXPECT_EQ(trace.acceptedTick, 100);
+    EXPECT_EQ(trace.issueTick, 110);
+    EXPECT_EQ(trace.completeTick, 150);
+    EXPECT_EQ(trace.visibleTick, 160);
+    EXPECT_GT(trace.visibleTick, trace.acceptedTick);
+    EXPECT_EQ(trace.status, SlcSfTerminalStatus::Done);
+    EXPECT_FALSE(trace.replayReason.has_value());
+    EXPECT_EQ(model.acceptedRequestCount(), 1);
+    EXPECT_EQ(model.terminalDoneCount(), 1);
+
+    ASSERT_TRUE(model.popVisibleResponse().has_value());
+    auto duplicate = lookupRequest(9201, TestAddr + 64, 778);
+    EXPECT_ANY_THROW(model.tryEnqueue(std::move(duplicate)));
+}
+
+TEST(HnfSlcSfInvariantTest, TerminalTotalsCoverDoneReplayAndError)
+{
+    HnfSLCSF model(64, 4, 2, 4, 2);
+    model.commitRead(
+        TestAddr, 7, PocqTxnKind::ReadShared, lineData(0x81), false);
+    const SlcSfCommitToken token =
+        completeLookupToken(model, 9210, TestAddr);
+    model.removeSharer(TestAddr, 7);
+
+    const SlcSfResponse replay = completeMutation(
+        model, makeSlcSfRemoveSharerReq(
+            mutationHeader(9211), token, token.lookupReqId));
+    ASSERT_EQ(replay.status(), SlcSfTerminalStatus::Replay);
+    ASSERT_TRUE(model.lastCompletedTrace().has_value());
+    EXPECT_EQ(model.lastCompletedTrace()->replayReason,
+              SlcSfReplayReason::StaleCommitToken);
+
+    const SlcSfResponse error = completeMutation(
+        model, makeSlcSfReleaseDirtyVictimReq(
+            mutationHeader(9212), SlcSfVictimId{9999}));
+    ASSERT_EQ(error.status(), SlcSfTerminalStatus::Error);
+    EXPECT_EQ(model.acceptedRequestCount(), 3);
+    EXPECT_EQ(model.terminalDoneCount(), 1);
+    EXPECT_EQ(model.terminalReplayCount(), 1);
+    EXPECT_EQ(model.terminalErrorCount(), 1);
+    EXPECT_EQ(model.reqOutstanding(), 0);
+    EXPECT_EQ(model.respOccupied(), 0);
+}
+
 TEST(HnfSlcSfTest, CheckpointRequiresDrainedState)
 {
     HnfSLCSF model(64, 4, 2, 4, 2);

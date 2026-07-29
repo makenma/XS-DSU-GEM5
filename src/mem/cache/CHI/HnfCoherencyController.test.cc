@@ -1370,6 +1370,7 @@ TEST(HnfCoherencyControllerTest, DeferredWriteRetiresTokenExactlyOnce)
     RawReq blockerRaw{};
     blockerRaw.srcid = 63;
     SlcSfReqIdAllocator blockerIds;
+    blockerIds.restoreNextValue(900000);
     SlcSfRequest blocker = makeSlcSfLookupReq(
         makeSlcSfReqHeader(
             blockerIds, UINT32_MAX, TestAddr + BlockSize, blockerRaw),
@@ -1747,6 +1748,7 @@ TEST(HnfCoherencyControllerTest, UpdateNoCreditEventuallyProgresses)
     RawReq blockerRaw{};
     blockerRaw.srcid = 63;
     SlcSfReqIdAllocator blockerIds;
+    blockerIds.restoreNextValue(900000);
     SlcSfRequest blocker = makeSlcSfLookupReq(
         makeSlcSfReqHeader(
             blockerIds, UINT32_MAX, TestAddr + BlockSize, blockerRaw),
@@ -1859,6 +1861,7 @@ TEST(HnfCoherencyControllerTest, LookupNoCreditEventuallyProgresses)
     RawReq blockerRaw{};
     blockerRaw.srcid = 63;
     SlcSfReqIdAllocator blockerIds;
+    blockerIds.restoreNextValue(900000);
     SlcSfRequest blocker = makeSlcSfLookupReq(
         makeSlcSfReqHeader(
             blockerIds, UINT32_MAX, TestAddr + BlockSize, blockerRaw),
@@ -1911,6 +1914,7 @@ TEST(HnfCoherencyControllerTest, DrainDoesNotLoseIssuePendingIntent)
     RawReq blockerRaw{};
     blockerRaw.srcid = 63;
     SlcSfReqIdAllocator blockerIds;
+    blockerIds.restoreNextValue(900000);
     SlcSfRequest blocker = makeSlcSfLookupReq(
         makeSlcSfReqHeader(
             blockerIds, UINT32_MAX, TestAddr + BlockSize, blockerRaw),
@@ -2214,6 +2218,7 @@ TEST(HnfCoherencyControllerTest,
     RawReq blockerRaw{};
     blockerRaw.srcid = 63;
     SlcSfReqIdAllocator blockerIds;
+    blockerIds.restoreNextValue(900000);
     SlcSfRequest blocker = makeSlcSfLookupReq(
         makeSlcSfReqHeader(
             blockerIds, UINT32_MAX, TestAddr + BlockSize, blockerRaw),
@@ -2371,6 +2376,7 @@ TEST(HnfCoherencyControllerTest, ReadUpdateNoCreditRetriesWithoutDuplicate)
     RawReq blockerRaw{};
     blockerRaw.srcid = 63;
     SlcSfReqIdAllocator blockerIds;
+    blockerIds.restoreNextValue(900000);
     SlcSfRequest blocker = makeSlcSfLookupReq(
         makeSlcSfReqHeader(
             blockerIds, UINT32_MAX, TestAddr + BlockSize, blockerRaw),

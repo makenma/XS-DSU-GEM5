@@ -4,6 +4,8 @@
 #include <stdexcept>
 
 #include "base/logging.hh"
+#include "base/trace.hh"
+#include "debug/HnfSLCSF.hh"
 #include "sim/cur_tick.hh"
 
 namespace gem5::Chi
@@ -431,12 +433,29 @@ HnfSLCSF::tryEnqueue(SlcSfRequest&& request)
     }
 
     const auto& header = requestHeader(request);
-    panic_if(acceptedCycles.find(header.reqId.value) != acceptedCycles.end(),
+    panic_if(!header.reqId.valid() || acceptedIds.count(header.reqId.value),
              "HnfSLCSF duplicate accepted request ID=%llu\n",
              static_cast<unsigned long long>(header.reqId.value));
     const SlcSfStatOperation operation = statOperation(request);
     ++stats.operations[static_cast<size_t>(operation)];
     acceptedCycles.emplace(header.reqId.value, wakeupCycle);
+    acceptedIds.emplace(header.reqId.value, true);
+    activeTraces.emplace(
+        header.reqId.value,
+        HnfSLCSFTraceRecord{header.reqId, header.pocEntryId,
+                            header.lineAddress,
+                            slcSfResponseOperation(request), wakeupTick,
+                            0, 0, 0, SlcSfTerminalStatus::Error,
+                            std::nullopt});
+    ++acceptedTotal;
+    DPRINTF(HnfSLCSF,
+            "pipeline accepted req=%llu pocq=%u line=%#llx op=%u "
+            "accepted=%llu\n",
+            static_cast<unsigned long long>(header.reqId.value),
+            header.pocEntryId,
+            static_cast<unsigned long long>(header.lineAddress),
+            static_cast<unsigned>(slcSfResponseOperation(request)),
+            static_cast<unsigned long long>(wakeupTick));
     if (statsSink) {
         statsSink->accepted(operation);
     }
@@ -520,6 +539,7 @@ HnfSLCSF::wakeup(Tick now, uint64_t elapsedCycles)
         assertRequestAccounting();
         assertResponseAccounting();
         assertVictimAccounting();
+        assertGlobalInvariants();
         return;
     }
     // Registered boundary order is intentionally explicit.  In particular,
@@ -534,6 +554,7 @@ HnfSLCSF::wakeup(Tick now, uint64_t elapsedCycles)
     assertRequestAccounting();
     assertResponseAccounting();
     assertVictimAccounting();
+    assertGlobalInvariants();
 }
 
 size_t
@@ -678,6 +699,8 @@ HnfSLCSF::cancelRequest(
                         true});
             },
             inflight->request);
+        inflight->replayLineFingerprint = lineStateFingerprint(
+            requestHeader(inflight->request).lineAddress);
         finishInflight(
             *inflight, FinishReason::Cancelled, std::move(response));
         inflightRequests.erase(inflight);
@@ -996,6 +1019,34 @@ HnfSLCSF::promotePendingResponses()
                      accepted->second > wakeupCycle,
                  "HnfSLCSF visible response lacks acceptance cycle ID=%llu\n",
                  static_cast<unsigned long long>(req_id.value));
+        auto trace = activeTraces.find(req_id.value);
+        panic_if(trace == activeTraces.end() ||
+                     wakeupTick <= trace->second.acceptedTick,
+                 "HnfSLCSF visible tick is not after acceptance req=%llu "
+                 "accepted=%llu visible=%llu\n",
+                 static_cast<unsigned long long>(req_id.value),
+                 static_cast<unsigned long long>(
+                     trace == activeTraces.end() ? 0 :
+                         trace->second.acceptedTick),
+                 static_cast<unsigned long long>(wakeupTick));
+        trace->second.visibleTick = wakeupTick;
+        DPRINTF(HnfSLCSF,
+                "pipeline terminal req=%llu pocq=%u line=%#llx op=%u "
+                "accepted=%llu issue=%llu complete=%llu visible=%llu "
+                "status=%u replay=%d\n",
+                static_cast<unsigned long long>(req_id.value),
+                trace->second.pocEntryId,
+                static_cast<unsigned long long>(trace->second.lineAddress),
+                static_cast<unsigned>(trace->second.operation),
+                static_cast<unsigned long long>(trace->second.acceptedTick),
+                static_cast<unsigned long long>(trace->second.issueTick),
+                static_cast<unsigned long long>(trace->second.completeTick),
+                static_cast<unsigned long long>(trace->second.visibleTick),
+                static_cast<unsigned>(trace->second.status),
+                trace->second.replayReason ?
+                    static_cast<int>(*trace->second.replayReason) : -1);
+        completedTrace = trace->second;
+        activeTraces.erase(trace);
         const uint64_t latency = wakeupCycle - accepted->second;
         ++stats.acceptedToVisibleSamples;
         stats.acceptedToVisibleLatencyTotal += latency;
@@ -1020,6 +1071,10 @@ HnfSLCSF::completeInflightRequests()
         }
 
         if (!request->mutationStage) {
+            if (request->earlyLookupReplay) {
+                request->replayLineFingerprint = lineStateFingerprint(
+                    requestHeader(request->request).lineAddress);
+            }
             SlcSfResponse response = request->earlyLookupReplay ?
                 makeSlcSfReplayResponse(
                     std::get<SlcSfLookupReq>(request->request),
@@ -1223,6 +1278,18 @@ HnfSLCSF::assertVictimAccounting() const
              "HnfSLCSF VictimBuffer exceeds capacity occupancy=%u/%u\n",
              static_cast<unsigned>(victimBufferOccupancy()),
              static_cast<unsigned>(victimBuffer.size()));
+    for (const VictimEntry& entry : victimBuffer) {
+        const bool occupied = entry.state != VictimState::Free &&
+            entry.state != VictimState::Released;
+        panic_if(occupied &&
+                     (entry.id.value == 0 || !entry.snapshot ||
+                      !entry.snapshot->line.dirty ||
+                      entry.snapshot->line.data.size() != blockSizeBytes()),
+                 "HnfSLCSF dirty victim lacks reservation or full snapshot "
+                 "id=%llu state=%u\n",
+                 static_cast<unsigned long long>(entry.id.value),
+                 static_cast<unsigned>(entry.state));
+    }
 }
 
 SlcSfResponse
@@ -1725,6 +1792,10 @@ HnfSLCSF::prepareMutationResources(InflightRequest& request)
 void
 HnfSLCSF::executeMutation(InflightRequest& request)
 {
+    panic_if(!request.tokenValidated,
+             "HnfSLCSF mutation commit bypassed token validation req=%llu\n",
+             static_cast<unsigned long long>(
+                 requestHeader(request.request).reqId.value));
     const SlcSfReqHeader& header = requestHeader(request.request);
     const LookupSnapshot target = mutationTarget(request.request);
     const SlcSfSlcVictim* preserved_victim = request.slcVictim ?
@@ -1859,6 +1930,10 @@ HnfSLCSF::executeMutation(InflightRequest& request)
 void
 HnfSLCSF::advanceMutation(InflightRequest& request)
 {
+    if (!request.terminalReplayReason) {
+        request.replayLineFingerprint = lineStateFingerprint(
+            requestHeader(request.request).lineAddress);
+    }
     switch (*request.mutationStage) {
       case MutationStage::U0DecodeValidate: {
         request.resourcesPrepared = hasSfReservation(
@@ -1867,6 +1942,7 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
         // errors retain priority in the terminal status, but validation still
         // remains part of the common U0 boundary.
         const bool token_valid = validateMutationToken(request.request);
+        request.tokenValidated = token_valid;
         if (auto error = validateMutationRequest(request.request)) {
             request.terminalResponse = std::visit(
                 [&error](const auto& typed_request) {
@@ -1932,6 +2008,7 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
         }
         break;
       case MutationStage::U2ArrayWrite:
+        request.tokenValidated = false;
         panic_if(request.slcVictim.has_value() !=
                      request.slcVictimSeal.has_value(),
                  "HnfSLCSF U2 has unpaired dirty-victim snapshot/seal\n");
@@ -1957,6 +2034,7 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
             request.terminalReplayReason =
                 SlcSfReplayReason::StaleCommitToken;
         } else {
+            request.tokenValidated = true;
             executeMutation(request);
         }
         request.mutationStage = MutationStage::U3CheckLatch;
@@ -2029,6 +2107,13 @@ HnfSLCSF::finishInflight(
               reason == FinishReason::Cancelled) &&
                  request.mutationCommitted,
              "HnfSLCSF cannot roll back a committed mutation\n");
+    panic_if(reason == FinishReason::Replay &&
+                 lineStateFingerprint(header.lineAddress) !=
+                     request.replayLineFingerprint,
+             "HnfSLCSF Replay mutated persistent state req=%llu "
+             "line=%#llx\n",
+             static_cast<unsigned long long>(header.reqId.value),
+             static_cast<unsigned long long>(header.lineAddress));
 
     if (request.mutationCommitted) {
         checkLineInvariant(requestHeader(request.request).lineAddress);
@@ -2066,6 +2151,21 @@ HnfSLCSF::finishInflight(
         ++cancelledRequests;
     }
     recordTerminalStats(response);
+    auto trace = activeTraces.find(header.reqId.value);
+    panic_if(trace == activeTraces.end() || trace->second.completeTick != 0,
+             "HnfSLCSF duplicate or unknown terminal response req=%llu\n",
+             static_cast<unsigned long long>(header.reqId.value));
+    trace->second.completeTick = wakeupTick;
+    trace->second.status = response.status();
+    if (response.status() == SlcSfTerminalStatus::Replay) {
+        trace->second.replayReason =
+            std::get<SlcSfReplay>(response.payload()).reason;
+        ++terminalReplayTotal;
+    } else if (response.status() == SlcSfTerminalStatus::Done) {
+        ++terminalDoneTotal;
+    } else {
+        ++terminalErrorTotal;
+    }
     respPending.push_back(std::move(response));
     ++finishedRequests;
     request.cleanupDone = true;
@@ -2244,6 +2344,24 @@ HnfSLCSF::issueReadyRequests()
             early_lookup_replay, false, std::nullopt, std::nullopt,
             std::nullopt, std::nullopt, std::nullopt,
             set_lock_owner});
+        InflightRequest& inflight = inflightRequests.back();
+        const auto& header = requestHeader(inflight.request);
+        auto trace = activeTraces.find(header.reqId.value);
+        panic_if(trace == activeTraces.end() || trace->second.issueTick != 0,
+                 "HnfSLCSF duplicate or unknown issue req=%llu\n",
+                 static_cast<unsigned long long>(header.reqId.value));
+        trace->second.issueTick = wakeupTick;
+        DPRINTF(HnfSLCSF,
+                "pipeline issue req=%llu pocq=%u line=%#llx op=%u "
+                "accepted=%llu issue=%llu completeCycle=%llu\n",
+                static_cast<unsigned long long>(header.reqId.value),
+                header.pocEntryId,
+                static_cast<unsigned long long>(header.lineAddress),
+                static_cast<unsigned>(slcSfResponseOperation(
+                    inflight.request)),
+                static_cast<unsigned long long>(trace->second.acceptedTick),
+                static_cast<unsigned long long>(wakeupTick),
+                static_cast<unsigned long long>(wakeupCycle + latency));
         ++stats.serviceLatencySamples;
         stats.serviceLatencyTotal += latency;
         if (statsSink) {
@@ -2291,6 +2409,43 @@ HnfSLCSF::assertResponseAccounting() const
     panic_if(respOccupied() > config.respQueueEntries,
              "HnfSLCSF response accounting exceeds capacity (%zu/%zu)\n",
              respOccupied(), config.respQueueEntries);
+}
+
+void
+HnfSLCSF::assertGlobalInvariants() const
+{
+    const uint64_t terminal_total = terminalDoneTotal +
+        terminalReplayTotal + terminalErrorTotal;
+    panic_if(acceptedTotal != terminal_total + reqOutstanding(),
+             "HnfSLCSF accepted/terminal accounting mismatch accepted=%llu "
+             "terminal=%llu unterminated=%u\n",
+             static_cast<unsigned long long>(acceptedTotal),
+             static_cast<unsigned long long>(terminal_total),
+             static_cast<unsigned>(reqOutstanding()));
+    panic_if(activeTraces.size() != reqOutstanding() + respPending.size(),
+             "HnfSLCSF trace ownership mismatch active=%u requests=%u "
+             "pending=%u\n", static_cast<unsigned>(activeTraces.size()),
+             static_cast<unsigned>(reqOutstanding()),
+             static_cast<unsigned>(respPending.size()));
+    panic_if(setLockCount() > inflightRequests.size() * 2,
+             "HnfSLCSF set locks exceed in-flight ownership (%u/%u)\n",
+             static_cast<unsigned>(setLockCount()),
+             static_cast<unsigned>(inflightRequests.size() * 2));
+
+    std::unordered_map<uint64_t, bool> response_ids;
+    const auto record_response = [&response_ids](const SlcSfResponse& response) {
+        panic_if(response_ids.count(response.reqId().value),
+                 "HnfSLCSF duplicate response ID=%llu\n",
+                 static_cast<unsigned long long>(response.reqId().value));
+        response_ids.emplace(response.reqId().value, true);
+    };
+    for (const SlcSfResponse& response : respPending) {
+        record_response(response);
+    }
+    for (const SlcSfResponse& response : respVisible) {
+        record_response(response);
+    }
+    checkGlobalInvariants();
 }
 
 } // namespace gem5::Chi

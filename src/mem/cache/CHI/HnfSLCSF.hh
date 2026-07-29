@@ -112,6 +112,21 @@ struct HnfSLCSFStatsSnapshot
     uint64_t setLockConflicts = 0;
 };
 
+/** One fully correlated request lifecycle, retained for diagnostics/tests. */
+struct HnfSLCSFTraceRecord
+{
+    SlcSfReqId reqId{};
+    uint32_t pocEntryId = 0;
+    uint64_t lineAddress = 0;
+    SlcSfOperationKind operation = SlcSfOperationKind::Lookup;
+    Tick acceptedTick = 0;
+    Tick issueTick = 0;
+    Tick completeTick = 0;
+    Tick visibleTick = 0;
+    SlcSfTerminalStatus status = SlcSfTerminalStatus::Error;
+    std::optional<SlcSfReplayReason> replayReason;
+};
+
 /** Optional child-owned gem5 statistics sink. */
 class HnfSLCSFStatsSink
 {
@@ -312,6 +327,14 @@ class HnfSLCSF : public HnfSLCSFBackend
     std::optional<SlcSfResponse> popVisibleResponse();
     const HnfSLCSFPipelineConfig& pipelineConfig() const { return config; }
     const HnfSLCSFStatsSnapshot& statsSnapshot() const { return stats; }
+    uint64_t acceptedRequestCount() const { return acceptedTotal; }
+    uint64_t terminalDoneCount() const { return terminalDoneTotal; }
+    uint64_t terminalReplayCount() const { return terminalReplayTotal; }
+    uint64_t terminalErrorCount() const { return terminalErrorTotal; }
+    const std::optional<HnfSLCSFTraceRecord>& lastCompletedTrace() const
+    {
+        return completedTrace;
+    }
 
     /** Cancel accepted work only while it is still safe to discard. */
     SlcSfCancelResult cancelRequest(
@@ -389,6 +412,8 @@ class HnfSLCSF : public HnfSLCSFBackend
         std::optional<DirtyVictimSeal> slcVictimSeal;
         std::optional<SlcSfSfVictim> sfVictim;
         std::optional<uint64_t> setLockOwner;
+        bool tokenValidated = false;
+        uint64_t replayLineFingerprint = 0;
     };
 
     struct VictimEntry
@@ -452,6 +477,7 @@ class HnfSLCSF : public HnfSLCSFBackend
     void checkLifecycle() const;
     void assertRequestAccounting() const;
     void assertResponseAccounting() const;
+    void assertGlobalInvariants() const;
     void recordTerminalStats(const SlcSfResponse& response);
     void recordServiceStall(bool set_lock_conflict = false);
 
@@ -488,6 +514,13 @@ class HnfSLCSF : public HnfSLCSFBackend
     HnfSLCSFStatsSnapshot stats;
     HnfSLCSFStatsSink* statsSink = nullptr;
     std::unordered_map<uint64_t, uint64_t> acceptedCycles;
+    std::unordered_map<uint64_t, HnfSLCSFTraceRecord> activeTraces;
+    std::unordered_map<uint64_t, bool> acceptedIds;
+    std::optional<HnfSLCSFTraceRecord> completedTrace;
+    uint64_t acceptedTotal = 0;
+    uint64_t terminalDoneTotal = 0;
+    uint64_t terminalReplayTotal = 0;
+    uint64_t terminalErrorTotal = 0;
     std::function<void()> workAvailableCallback;
 };
 

@@ -159,6 +159,12 @@ class HnfSLCSFBackend
     /** Check the cross-array state invariant after a staged mutation. */
     void checkLineInvariant(uint64_t block_addr) const;
 
+    /** Check capacity, uniqueness, and persistent line-data invariants. */
+    void checkGlobalInvariants() const;
+
+    /** Stable fingerprint proving Replay did not change its protected sets. */
+    uint64_t lineStateFingerprint(uint64_t block_addr) const;
+
     bool isBusy() const
     {
         return seqOccupancy() != 0 || reservedSeqSlots != 0 ||

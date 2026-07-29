@@ -1723,6 +1723,142 @@ HnfSLCSFBackend::checkLineInvariant(uint64_t block_addr) const
              static_cast<unsigned long long>(sfLine->sharers), slcLine != nullptr);
 }
 
+uint64_t
+HnfSLCSFBackend::lineStateFingerprint(uint64_t block_addr) const
+{
+    uint64_t hash = 1469598103934665603ULL;
+    const auto mix = [&hash](uint64_t value) {
+        hash ^= value;
+        hash *= 1099511628211ULL;
+    };
+    const auto mix_data = [&mix](const std::vector<uint8_t>& data) {
+        mix(data.size());
+        for (uint8_t byte : data) {
+            mix(byte);
+        }
+    };
+
+    for (const SlcLine& line : slc[slcSet(block_addr)]) {
+        mix(line.valid);
+        mix(line.tag);
+        mix(static_cast<uint8_t>(line.state));
+        mix(line.owner);
+        mix(line.generation);
+        mix(line.lastUse);
+        mix_data(line.data);
+    }
+    for (const SfLine& line : sf[sfSet(block_addr)]) {
+        mix(line.valid);
+        mix(line.tag);
+        mix(static_cast<uint8_t>(line.state));
+        mix(line.homeNodeId);
+        mix(line.owner);
+        mix(line.sharers);
+        mix(line.generation);
+        mix(line.lastUse);
+    }
+    for (const SeqEntry& entry : seq) {
+        if (entry.valid && entry.victim.blockAddr == block_addr) {
+            mix(static_cast<uint8_t>(entry.phase));
+            mix(entry.victim.id);
+            mix(entry.victim.blockAddr);
+            mix(entry.victim.homeNodeId);
+            mix(static_cast<uint8_t>(entry.victim.state));
+            mix(entry.victim.owner);
+            mix(entry.victim.sharers);
+            mix(entry.completionOpcode);
+            mix(entry.completionTransactionId);
+            mix(entry.committedDirty);
+            mix_data(entry.committedData);
+        }
+    }
+    return hash;
+}
+
+void
+HnfSLCSFBackend::checkGlobalInvariants() const
+{
+    for (uint32_t set = 0; set < slcSets; ++set) {
+        for (uint32_t lhs = 0; lhs < slcWays; ++lhs) {
+            const SlcLine& line = slc[set][lhs];
+            if (!line.valid) {
+                continue;
+            }
+            panic_if(isDirty(line.state) && line.data.size() != blockSize,
+                     "HnfSLCSF dirty line lacks full data set=%u way=%u "
+                     "bytes=%u/%u\n", set, lhs,
+                     static_cast<unsigned>(line.data.size()), blockSize);
+            for (uint32_t rhs = lhs + 1; rhs < slcWays; ++rhs) {
+                panic_if(slc[set][rhs].valid &&
+                             slc[set][rhs].tag == line.tag,
+                         "HnfSLCSF duplicate SLC tag set=%u ways=%u,%u "
+                         "tag=%#llx\n", set, lhs, rhs,
+                         static_cast<unsigned long long>(line.tag));
+            }
+        }
+    }
+    for (uint32_t set = 0; set < sfSets; ++set) {
+        for (uint32_t lhs = 0; lhs < sfWays; ++lhs) {
+            const SfLine& line = sf[set][lhs];
+            if (!line.valid) {
+                continue;
+            }
+            for (uint32_t rhs = lhs + 1; rhs < sfWays; ++rhs) {
+                panic_if(sf[set][rhs].valid && sf[set][rhs].tag == line.tag,
+                         "HnfSLCSF duplicate SF tag set=%u ways=%u,%u "
+                         "tag=%#llx\n", set, lhs, rhs,
+                         static_cast<unsigned long long>(line.tag));
+            }
+        }
+    }
+
+    for (size_t lhs = 0; lhs < seq.size(); ++lhs) {
+        const SeqEntry& entry = seq[lhs];
+        if (!entry.valid) {
+            continue;
+        }
+        panic_if(entry.victim.id == 0 ||
+                     (entry.committedDirty &&
+                      entry.committedData.size() != blockSize),
+                 "HnfSLCSF invalid SEQ victim slot=%u id=%llu dirty=%u "
+                 "bytes=%u/%u\n", static_cast<unsigned>(lhs),
+                 static_cast<unsigned long long>(entry.victim.id),
+                 entry.committedDirty,
+                 static_cast<unsigned>(entry.committedData.size()),
+                 blockSize);
+        for (size_t rhs = lhs + 1; rhs < seq.size(); ++rhs) {
+            panic_if(seq[rhs].valid &&
+                         (seq[rhs].victim.id == entry.victim.id ||
+                          seq[rhs].victim.blockAddr ==
+                              entry.victim.blockAddr),
+                     "HnfSLCSF duplicate SEQ victim slots=%u,%u id=%llu "
+                     "addr=%#llx\n", static_cast<unsigned>(lhs),
+                     static_cast<unsigned>(rhs),
+                     static_cast<unsigned long long>(entry.victim.id),
+                     static_cast<unsigned long long>(
+                         entry.victim.blockAddr));
+        }
+    }
+
+    size_t counted_seq_reservations = 0;
+    for (const auto& [owner, reservation] : sfReservations) {
+        panic_if(reservation.set >= sfSets,
+                 "HnfSLCSF SF reservation owner=%u has invalid set=%u\n",
+                 owner, reservation.set);
+        counted_seq_reservations += reservation.seqSlot;
+    }
+    panic_if(counted_seq_reservations != reservedSeqSlots,
+             "HnfSLCSF SEQ reservation count mismatch map=%u count=%u\n",
+             static_cast<unsigned>(counted_seq_reservations),
+             static_cast<unsigned>(reservedSeqSlots));
+    panic_if(dirtyVictimSeals.size() >
+                 static_cast<size_t>(slcSets) * slcWays,
+             "HnfSLCSF dirty-victim seals exceed SLC slots (%u/%u)\n",
+             static_cast<unsigned>(dirtyVictimSeals.size()),
+             slcSets * slcWays);
+    assertSeqAccounting();
+}
+
 void
 HnfSLCSFBackend::serializePersistentState(CheckpointOut& cp) const
 {
