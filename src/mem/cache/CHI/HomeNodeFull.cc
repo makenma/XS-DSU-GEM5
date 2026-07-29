@@ -11,22 +11,21 @@ namespace gem5::Chi
 HomeNodeFull::HomeNodeFull(const HomeNodeFullParams& p)
     : BasicChiComponent(p),
     Consumer(this),
-    slcsf(p.block_size, p.slc_num_sets, p.slc_num_ways, p.sf_num_sets,
-          p.sf_num_ways, p.seq_entries,
-          makeEmbeddedSlcsfConfig(p, clockPeriod())),
+    slcsf(p.slcsf),
     cc(p.block_size, p.data_beat_bytes, p.num_poc_entries, p.sn_node_id,
        p.direct_sn_fake_data, p.rnf_slices, p.enable_retry),
     linklayer(this, p.block_size, p.data_beat_bytes, p.num_poc_entries,
               p.enable_retry),
     rxport(p.name + ".rxport", static_cast<ruby::Consumer*>(this),/*PortID*/ 0)
 {
+    panic_if(!slcsf, "HomeNodeFull requires an SlcSnoopFilter child\n");
     DPRINTF(HomeLinkLayer,
             "HomeNodeFull constructed block=%u beat=%u entries=%u "
             "retry=%u\n",
             p.block_size, p.data_beat_bytes, p.num_poc_entries,
             p.enable_retry);
     linklayer.setRxPort(&rxport);
-    cc.setSlcsf(&slcsf);
+    cc.setSlcsf(&slcsf->service());
     linklayer.setCc(&cc);
 }
 
@@ -37,7 +36,7 @@ HomeNodeFull::wakeup()
     // Stage A temporarily drives the embedded service from the HomeNode edge.
     // The standalone SLCSF migration removes this direct call.
     const bool needsNextEdge = advanceEmbeddedSlcsfStageA(
-        slcsf, curTick(), [this] { linklayer.wakeup(); },
+        slcsf->service(), curTick(), [this] { linklayer.wakeup(); },
         [this] { return linklayer.hasWork(); },
         [this] { return cc.hasWork(); });
     if (needsNextEdge) {
@@ -66,7 +65,7 @@ HomeNodeFull::hasLinkWork() const
 {
     // Link-layer work includes allocated and issue-pending CC entries. SLCSF
     // work is checked separately so it progresses without a new RX flit.
-    return slcsf.hasWork() || linklayer.hasWork() || cc.hasWork();
+    return slcsf->hasWork() || linklayer.hasWork() || cc.hasWork();
 }
 
 

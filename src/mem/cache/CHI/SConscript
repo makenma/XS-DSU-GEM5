@@ -11,6 +11,7 @@ SimObject('ChiRouterRefModel.py',sim_objects=['ChiRouterRefModel'])
 # Base CHI component + a concrete node
 SimObject('base/BasicChiComponent.py', sim_objects=['BasicChiComponent'])
 SimObject('HomeNodeFull.py', sim_objects=['HomeNodeFull'])
+SimObject('SlcSnoopFilter.py', sim_objects=['SlcSnoopFilter'])
 
 
 Source('Cache2ChiBridge.cc')
@@ -26,6 +27,7 @@ Source('HnfPOCQStateGraph.cc')
 Source('HnfSeqPOCQStateGraph.cc')
 Source('HnfSLCSF.cc')
 Source('HnfSLCSFBackend.cc')
+Source('SlcSnoopFilter.cc')
 
 GTest('hnf_pocq_state_graph.test',
       'HnfPOCQStateGraph.test.cc',
@@ -47,6 +49,10 @@ GTest('hnf_slcsf_backend.test',
       'HnfSLCSFBackend.test.cc',
       'HnfSLCSF.cc',
       'HnfSLCSFBackend.cc',
+      with_tag('gem5 trace'))
+
+GTest('slc_snoop_filter.test',
+      'SlcSnoopFilter.test.cc',
       with_tag('gem5 trace'))
 
 GTest('hnf_coherency_controller.test',
@@ -75,3 +81,4 @@ DebugFlag('HomeLinkLayer')
 DebugFlag('HnfCC')
 DebugFlag('HnfDirtyVictimE2E')
 DebugFlag('HnfSLCSF')
+DebugFlag('SlcSnoopFilter')

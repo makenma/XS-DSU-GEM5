@@ -2,8 +2,8 @@
 #define __HOMENODEFULL__HH__
 
 #include "mem/cache/CHI/HnfCoherencyController.hh"
-#include "mem/cache/CHI/HnfSLCSF.hh"
 #include "mem/cache/CHI/HomeLinkLayer.hh"
+#include "mem/cache/CHI/SlcSnoopFilter.hh"
 #include "mem/cache/CHI/base/BasicChiComponent.hh"
 #include "mem/ruby/common/Consumer.hh"
 #include "params/HomeNodeFull.hh"
@@ -27,7 +27,7 @@ class HomeNodeFull : public BasicChiComponent , public ruby::Consumer
         bool hasLinkWork() const;
         //HomeNodeFull* create() const;
     private:
-        HnfSLCSF slcsf;
+        SlcSnoopFilter* const slcsf;
         HnfCoherencyController cc;
         HomeLinkLayer   linklayer;
         ChiCommonPort   rxport;

@@ -112,6 +112,9 @@ Started: 2026-07-28T20:49:07+08:00
 - Validate independent concurrency limits in isolated subcases, then require
   every parallel regression to drain queues, locks, reservations, victims,
   and SEQ state so eventual progress cannot hide resource leakage.
+- When extracting an embedded service into a SimObject, let the ClockedObject
+  own the ordinary noncopyable service by value and let its parent and clients
+  retain only configured or non-owning pointers across the ownership boundary.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -1216,4 +1219,33 @@ Started: 2026-07-28T20:49:07+08:00
   should be tested independently so one throttle cannot mask another; crossed
   resource pairs plus a third conflicting request expose partial-acquisition
   deadlocks while mixed service latencies prove identity-safe completion.
+---
+
+## 2026-07-29 15:45 - US-028
+- Story: Create the standalone SlcSnoopFilter ClockedObject
+- What was implemented: Added a registered `SlcSnoopFilter` ClockedObject and
+  Python SimObject that owns the ordinary noncopyable `HnfSLCSF` storage and
+  service by value. `HomeNodeFull` now references its configured child instead
+  of embedding the timed top-level object, and CC retains a non-owning pointer
+  to the child-owned service. Parent-proxy defaults preserve unchanged default
+  HomeNode construction while stage-A scheduling remains until its own story.
+- Files changed: `src/mem/cache/CHI/SlcSnoopFilter.py`,
+  `src/mem/cache/CHI/SlcSnoopFilter.hh`,
+  `src/mem/cache/CHI/SlcSnoopFilter.cc`,
+  `src/mem/cache/CHI/SlcSnoopFilter.test.cc`,
+  `src/mem/cache/CHI/HomeNodeFull.py`,
+  `src/mem/cache/CHI/HomeNodeFull.hh`,
+  `src/mem/cache/CHI/HomeNodeFull.cc`, `src/mem/cache/CHI/SConscript`,
+  `prd.json`, and `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and the new
+  standalone wrapper GTest; its 1/1 test passed. A real gem5 instantiate smoke
+  constructed the C++ child successfully, and default `HomeNodeFull()` Python
+  construction contained the child without script changes. All four CHI
+  binaries passed 175/175 tests (18 POCQ, 2 SEQ POCQ, 111 SLCSF, and 44
+  controller). Python compilation, changed-file gem5 style, and
+  `git diff --check` passed.
+- Learnings for future iterations: A ClockedObject can establish the durable
+  timing/lifecycle ownership boundary before event migration by owning the
+  established ordinary service as a noncopyable value member and exposing
+  only a narrow non-owning service reference to existing clients.
 ---

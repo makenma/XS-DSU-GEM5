@@ -3,6 +3,7 @@ from m5.proxy import *
 
 # Inherit parameters (x/y/port/device/node_type) from BasicChiComponent.
 from m5.objects.BasicChiComponent import BasicChiComponent
+from m5.objects.SlcSnoopFilter import SlcSnoopFilter
 
 
 class HomeNodeFull(BasicChiComponent):
@@ -13,6 +14,8 @@ class HomeNodeFull(BasicChiComponent):
     cxx_class = "gem5::Chi::HomeNodeFull"
 
     rxport = SlavePort("CHI RX port")
+    slcsf = Param.SlcSnoopFilter(
+        SlcSnoopFilter(), "Standalone SLC and snoop-filter child")
 
     block_size = Param.Unsigned(Parent.cache_line_size, "Cache line size")
     data_beat_bytes = Param.UInt32(32, "Bytes carried by one CHI DAT beat")
