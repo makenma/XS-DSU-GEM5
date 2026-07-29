@@ -109,6 +109,9 @@ Started: 2026-07-28T20:49:07+08:00
 - Acquire multi-class transient resources atomically before exposing any
   ownership, then retain one owner token in the in-flight entry and release it
   through the common terminal finalizer for Done, Replay, Error, and cancel.
+- Validate independent concurrency limits in isolated subcases, then require
+  every parallel regression to drain queues, locks, reservations, victims,
+  and SEQ state so eventual progress cannot hide resource leakage.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -1189,4 +1192,28 @@ Started: 2026-07-28T20:49:07+08:00
 - Learnings for future iterations: Set conflicts should stall before request
   ownership enters the in-flight queue, and crossed SLC/SF mappings are
   deadlock-free when both classes are preflighted and installed atomically.
+---
+
+## 2026-07-29 15:28 - US-027
+- Story: Enable bounded multi-inflight service and out-of-order completion
+- What was implemented: Completed the parallel-mode gate with directed
+  coverage for overlapping different-set service, independent lookup/fill/
+  update issue widths, the global max-inflight cap, configured CC response
+  consumption, crossed SLC/SF set acquisition, and exact out-of-order
+  `(pocEntryId, reqId)` delivery. Added a common quiescence audit covering all
+  queue, lock, reservation, VictimBuffer, dirty-victim seal, and SEQ state.
+- Files changed: `src/mem/cache/CHI/HnfSLCSF.test.cc`,
+  `src/mem/cache/CHI/HnfCoherencyController.test.cc`, `prd.json`, and
+  `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and all four CHI
+  GTest binaries successfully; all 175 tests passed (18 POCQ, 2 SEQ POCQ,
+  111 SLCSF, and 44 controller). Default and forced SF=64x4/SEQ=4 four-core
+  litmus runs passed all seven workloads with `CHI_LITMUS_PASS total_errors=0`;
+  every hart retained alias checksum `0x50000001f0` and
+  pressure checksum `0x2800000000ffc000`. Changed C++ files passed
+  `python3 util/style.py --modifications`; `git diff --check` passed.
+- Learnings for future iterations: Per-pipe widths and a shared in-flight cap
+  should be tested independently so one throttle cannot mask another; crossed
+  resource pairs plus a third conflicting request expose partial-acquisition
+  deadlocks while mixed service latencies prove identity-safe completion.
 ---

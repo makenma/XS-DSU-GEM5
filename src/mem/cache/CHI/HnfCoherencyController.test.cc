@@ -2009,6 +2009,43 @@ TEST(HnfCoherencyControllerTest, ResponseConsumeWidthLimitsEachCcCycle)
               HnfCoherencyController::SlcLookupPhase::ResponseLatched);
 }
 
+TEST(HnfCoherencyControllerTest, ResponseConsumeWidthUsesConfiguredBudget)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.reqQueueEntries = 2;
+    config.respQueueEntries = 2;
+    config.maxInflight = 2;
+    config.lookupIssueWidth = 2;
+    config.responseConsumeWidth = 2;
+    config.enableSetLock = true;
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8, config);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 5101, 0, 96, 0x01, TestAddr), 0).accepted);
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(1, 5102, 4, 97, 0x01, TestAddr + BlockSize),
+        1).accepted);
+
+    Tick tick = 320;
+    for (size_t i = 0; i < 16 && slcsf.respVisibleCount() < 2; ++i) {
+        slcsf.wakeup(++tick);
+    }
+    ASSERT_EQ(slcsf.respVisibleCount(), 2);
+
+    cc.serviceInternalWork(tick);
+    EXPECT_EQ(slcsf.respVisibleCount(), 0);
+    EXPECT_EQ(cc.slcLookupPhase(0),
+              HnfCoherencyController::SlcLookupPhase::ResponseLatched);
+    EXPECT_EQ(cc.slcLookupPhase(1),
+              HnfCoherencyController::SlcLookupPhase::ResponseLatched);
+    EXPECT_NE(cc.slcLookupReqId(0), cc.slcLookupReqId(1));
+    EXPECT_EQ(cc.slcCommitToken(0).lookupReqId, cc.slcLookupReqId(0));
+    EXPECT_EQ(cc.slcCommitToken(1).lookupReqId, cc.slcLookupReqId(1));
+}
+
 TEST(HnfCoherencyControllerTest, MaintenanceResponseWaitsForSlcSfCommit)
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);

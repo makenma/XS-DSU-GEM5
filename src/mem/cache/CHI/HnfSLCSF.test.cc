@@ -333,6 +333,27 @@ expectSeqVictimsEqual(const HnfSLCSFBackend::SeqVictim& actual,
     EXPECT_EQ(actual.issued, expected.issued);
 }
 
+void
+expectConcurrentServiceEmpty(const HnfSLCSF& model)
+{
+    EXPECT_EQ(model.reqIngressCount(), 0);
+    EXPECT_EQ(model.reqReadyCount(), 0);
+    EXPECT_EQ(model.reqInflightCount(), 0);
+    EXPECT_EQ(model.reqOutstanding(), 0);
+    EXPECT_EQ(model.respReservedCount(), 0);
+    EXPECT_EQ(model.respPendingCount(), 0);
+    EXPECT_EQ(model.respVisibleCount(), 0);
+    EXPECT_EQ(model.respOccupied(), 0);
+    EXPECT_EQ(model.setLockCount(), 0);
+    EXPECT_EQ(model.sfReservationCount(), 0);
+    EXPECT_EQ(model.seqReservationCount(), 0);
+    EXPECT_EQ(model.seqOccupancy(), 0);
+    EXPECT_EQ(model.victimReservationCount(), 0);
+    EXPECT_EQ(model.victimBufferOccupancy(), 0);
+    EXPECT_EQ(model.dirtyVictimSealCount(), 0);
+    EXPECT_FALSE(model.hasWork());
+}
+
 } // anonymous namespace
 
 TEST(HnfSlcSfRequestTest, AllocatesMonotonicIdsIndependentOfLinkSequence)
@@ -1102,6 +1123,209 @@ TEST(HnfSlcSfSetLockTest, EveryTerminalPathReleasesLocksExactlyOnce)
     EXPECT_EQ(model.cancelRequest(77, SlcSfReqId{77}, 200),
               SlcSfCancelResult::Cancelled);
     EXPECT_EQ(model.setLockCount(), 0);
+}
+
+TEST(HnfSlcSfConcurrencyTest, DifferentSetsCompleteConcurrently)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.maxInflight = 2;
+    config.lookupIssueWidth = 2;
+    config.lookupLatency = 4;
+    config.enableSetLock = true;
+    HnfSLCSF model(64, 8, 2, 8, 2, 8, config);
+    auto first = lookupRequest(261, TestAddr, 2601);
+    auto second = lookupRequest(262, TestAddr + 64, 2602);
+
+    ASSERT_EQ(model.tryEnqueue(std::move(first)),
+              SlcSfEnqueueResult::Accepted);
+    ASSERT_EQ(model.tryEnqueue(std::move(second)),
+              SlcSfEnqueueResult::Accepted);
+    model.wakeup();
+    ASSERT_EQ(model.reqInflightCount(), 2);
+    EXPECT_EQ(model.reqReadyCount(), 0);
+    EXPECT_EQ(model.setLockCount(), 4);
+
+    model.wakeup();
+    EXPECT_EQ(model.reqInflightCount(), 2);
+    EXPECT_EQ(model.setLockCount(), 4);
+
+    std::set<std::pair<uint32_t, uint64_t>> completions;
+    for (size_t cycle = 0; cycle < 16 && completions.size() != 2; ++cycle) {
+        model.wakeup();
+        while (auto response = consumeVisibleResponse(model)) {
+            EXPECT_EQ(response->status(), SlcSfTerminalStatus::Done);
+            completions.emplace(
+                response->pocEntryId(), response->reqId().value);
+        }
+    }
+    EXPECT_EQ(completions,
+              (std::set<std::pair<uint32_t, uint64_t>>{
+                  {2601, 261}, {2602, 262}}));
+    expectConcurrentServiceEmpty(model);
+}
+
+TEST(HnfSlcSfConcurrencyTest, MaxInflightAndIssueWidthAreEnforced)
+{
+    const auto drain = [](HnfSLCSF& model, size_t expected) {
+        std::set<uint64_t> completions;
+        for (size_t cycle = 0;
+             cycle < 64 && completions.size() != expected; ++cycle) {
+            model.wakeup();
+            while (auto response = consumeVisibleResponse(model)) {
+                EXPECT_EQ(response->status(), SlcSfTerminalStatus::Done);
+                completions.insert(response->reqId().value);
+            }
+        }
+        EXPECT_EQ(completions.size(), expected);
+        expectConcurrentServiceEmpty(model);
+    };
+
+    {
+        HnfSLCSFPipelineConfig config{};
+        config.maxInflight = 4;
+        config.lookupIssueWidth = 2;
+        config.enableSetLock = true;
+        HnfSLCSF model(64, 8, 2, 8, 2, 8, config);
+        for (uint64_t i = 0; i < 4; ++i) {
+            auto request = lookupRequest(
+                270 + i, TestAddr + i * 64, 2700 + i);
+            ASSERT_EQ(model.tryEnqueue(std::move(request)),
+                      SlcSfEnqueueResult::Accepted);
+        }
+        model.wakeup();
+        EXPECT_EQ(model.reqInflightCount(), 2);
+        EXPECT_EQ(model.reqReadyCount(), 2);
+        drain(model, 4);
+    }
+
+    {
+        HnfSLCSFPipelineConfig config{};
+        config.maxInflight = 4;
+        config.fillIssueWidth = 1;
+        config.enableSetLock = true;
+        HnfSLCSF model(64, 8, 2, 8, 2, 8, config);
+        const auto first_token =
+            completeLookupToken(model, 280, TestAddr);
+        const auto second_token =
+            completeLookupToken(model, 281, TestAddr + 64);
+        auto first = fillRequest(
+            282, TestAddr, 2802, first_token, first_token.lookupReqId);
+        auto second = fillRequest(
+            283, TestAddr + 64, 2803, second_token,
+            second_token.lookupReqId);
+        ASSERT_EQ(model.tryEnqueue(std::move(first)),
+                  SlcSfEnqueueResult::Accepted);
+        ASSERT_EQ(model.tryEnqueue(std::move(second)),
+                  SlcSfEnqueueResult::Accepted);
+        model.wakeup();
+        EXPECT_EQ(model.reqInflightCount(), 1);
+        EXPECT_EQ(model.reqReadyCount(), 1);
+        drain(model, 2);
+    }
+
+    {
+        HnfSLCSFPipelineConfig config{};
+        config.maxInflight = 4;
+        config.updateIssueWidth = 1;
+        config.enableSetLock = true;
+        HnfSLCSF model(64, 8, 2, 8, 2, 8, config);
+        const auto first_token =
+            completeLookupToken(model, 290, TestAddr);
+        const auto second_token =
+            completeLookupToken(model, 291, TestAddr + 64);
+        auto first = makeSlcSfRemoveSharerReq(
+            mutationHeader(292, TestAddr), first_token,
+            first_token.lookupReqId);
+        auto second = makeSlcSfRemoveSharerReq(
+            mutationHeader(293, TestAddr + 64), second_token,
+            second_token.lookupReqId);
+        ASSERT_EQ(model.tryEnqueue(std::move(first)),
+                  SlcSfEnqueueResult::Accepted);
+        ASSERT_EQ(model.tryEnqueue(std::move(second)),
+                  SlcSfEnqueueResult::Accepted);
+        model.wakeup();
+        EXPECT_EQ(model.reqInflightCount(), 1);
+        EXPECT_EQ(model.reqReadyCount(), 1);
+        drain(model, 2);
+    }
+
+    {
+        HnfSLCSFPipelineConfig config{};
+        config.maxInflight = 2;
+        config.lookupIssueWidth = 4;
+        config.enableSetLock = true;
+        HnfSLCSF model(64, 8, 2, 8, 2, 8, config);
+        for (uint64_t i = 0; i < 4; ++i) {
+            auto request = lookupRequest(
+                300 + i, TestAddr + i * 64, 3000 + i);
+            ASSERT_EQ(model.tryEnqueue(std::move(request)),
+                      SlcSfEnqueueResult::Accepted);
+        }
+        model.wakeup();
+        EXPECT_EQ(model.reqInflightCount(), 2);
+        EXPECT_EQ(model.reqReadyCount(), 2);
+        drain(model, 4);
+    }
+}
+
+TEST(HnfSlcSfConcurrencyTest,
+     CrossedSlcSfSetsMakeProgressWithOutOfOrderResponses)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.reqQueueEntries = 4;
+    config.respQueueEntries = 4;
+    config.maxInflight = 3;
+    config.lookupIssueWidth = 3;
+    config.fillIssueWidth = 1;
+    config.lookupLatency = 6;
+    config.fillLatency = 2;
+    config.enableSetLock = true;
+    HnfSLCSF model(64, 2, 4, 3, 4, 8, config);
+
+    // With the 2-set SLC and 3-set SF, these acquire crossed pairs:
+    // first=(SLC 0, SF 1), second=(SLC 1, SF 0). The third request needs
+    // (SLC 0, SF 0), so it must acquire neither resource until both owners
+    // have made progress and released their atomic pairs.
+    const uint64_t first_addr = TestAddr + 4 * 64;
+    const uint64_t second_addr = TestAddr + 3 * 64;
+    const uint64_t third_addr = TestAddr;
+    const auto second_token =
+        completeLookupToken(model, 310, second_addr);
+    auto first = lookupRequest(311, first_addr, 3101);
+    auto second = fillRequest(
+        312, second_addr, 3102, second_token,
+        second_token.lookupReqId);
+    auto third = lookupRequest(313, third_addr, 3103);
+
+    ASSERT_EQ(model.tryEnqueue(std::move(first)),
+              SlcSfEnqueueResult::Accepted);
+    ASSERT_EQ(model.tryEnqueue(std::move(second)),
+              SlcSfEnqueueResult::Accepted);
+    ASSERT_EQ(model.tryEnqueue(std::move(third)),
+              SlcSfEnqueueResult::Accepted);
+    model.wakeup();
+    ASSERT_EQ(model.reqInflightCount(), 2);
+    EXPECT_EQ(model.reqReadyCount(), 1);
+    EXPECT_EQ(model.setLockCount(), 4);
+
+    std::vector<std::pair<uint32_t, uint64_t>> completion_order;
+    for (size_t cycle = 0;
+         cycle < 32 && completion_order.size() != 3; ++cycle) {
+        model.wakeup();
+        while (auto response = consumeVisibleResponse(model)) {
+            EXPECT_EQ(response->status(), SlcSfTerminalStatus::Done);
+            completion_order.emplace_back(
+                response->pocEntryId(), response->reqId().value);
+        }
+    }
+    ASSERT_EQ(completion_order.size(), 3);
+    EXPECT_EQ(completion_order[0],
+              (std::pair<uint32_t, uint64_t>{3102, 312}));
+    EXPECT_EQ(completion_order[1],
+              (std::pair<uint32_t, uint64_t>{3101, 311}));
+    EXPECT_EQ(completion_order[2],
+              (std::pair<uint32_t, uint64_t>{3103, 313}));
+    expectConcurrentServiceEmpty(model);
 }
 
 TEST(HnfSlcSfQueueTest, CompletedResponseNotVisibleUntilNextCycle)
