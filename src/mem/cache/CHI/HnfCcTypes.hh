@@ -150,11 +150,40 @@ struct HnfCcRetireInfo
 {
     bool valid = false;
     int tokenId = -1;
+    uint64_t allocationSeq = 0;
     uint8_t resourceClass = 0;
     uint8_t reqPriority = 0;
     uint32_t srcid = 0;
+    uint32_t txnid = 0;
     uint8_t pcrdtype = 0;
 };
+
+struct HnfCcAllocationIdentity
+{
+    uint64_t sequence = 0;
+    uint32_t srcid = 0;
+    uint32_t txnid = 0;
+};
+
+enum class HnfCcIdentityMatch : uint8_t
+{
+    Active,
+    StaleGeneration,
+    CorruptOwner
+};
+
+inline constexpr HnfCcIdentityMatch
+classifyHnfCcIdentity(const HnfCcAllocationIdentity& active,
+                      const HnfCcAllocationIdentity& event)
+{
+    if (active.sequence != event.sequence) {
+        return HnfCcIdentityMatch::StaleGeneration;
+    }
+    if (active.srcid != event.srcid || active.txnid != event.txnid) {
+        return HnfCcIdentityMatch::CorruptOwner;
+    }
+    return HnfCcIdentityMatch::Active;
+}
 
 struct HnfCcTxReq
 {

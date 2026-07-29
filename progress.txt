@@ -1043,3 +1043,30 @@ Started: 2026-07-28T20:49:07+08:00
   invalidation has replaced the classic cache target and made returned data
   mandatory.
 ---
+
+## 2026-07-29 13:25 - US-016--US-023 strict recovery
+- Story: Close strict ownership and downstream-protocol gaps found by the
+  post-Ralph audit.
+- What was implemented: Split read data from retained write payloads and
+  validate exact asynchronous operation identities; made deferred LinkLayer
+  retire ABA-safe; sealed dirty replacements behind a private, VictimId-bound
+  backend capability; implemented a real independent dirty-victim CHI
+  WriteNoSnpFull/DBID/DAT/Comp transaction with RetryAck/PCrdGrant handling;
+  and added a production-used Chi2ClassicMemBridge transaction policy. The
+  dirty-victim TxnID allocator now explicitly avoids the requester TxnID.
+- Files changed: `src/mem/cache/CHI/Chi2ClassicMemBridge.cc/.hh/.test.cc`,
+  `src/mem/cache/CHI/Chi2ClassicMemTxnPolicy.hh`, `HnfCcTypes.hh/.test.cc`,
+  `HnfCoherencyController.cc/.hh/.test.cc`, `HnfSLCSF.cc/.hh`,
+  `HnfSLCSFBackend.cc/.hh/.test.cc`, `HnfSLCSFResponse.hh`,
+  `HomeLinkLayer.cc/.hh`, `HomeNodeFull.cc`, and `SConscript`.
+- Checks run and their results: `gem5.opt` rebuilt; HnfCcTypes 2/2,
+  HnfSLCSFBackend 4/4, HnfSLCSF 97/97, HnfCoherencyController 42/42, and the
+  production SN policy 5/5 passed. Changed files passed gem5 style and
+  `git diff --check`. Independent strict reviews marked US-022 and US-023
+  complete; US-021/US-024 durable visible-response acknowledgement remains the
+  next recovery patch.
+- Learnings for future iterations: Acceptance at a queue or protocol boundary
+  must be recorded at the actual consumer handshake, and an internal wire
+  transaction needs an explicitly disjoint identity even when allocator ranges
+  normally make collisions unlikely.
+---

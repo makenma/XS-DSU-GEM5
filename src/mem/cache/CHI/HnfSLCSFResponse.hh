@@ -147,6 +147,16 @@ slcSfResponseOperation(const SlcSfEvictReq& request)
     return slcSfResponseOperation(request.kind());
 }
 
+inline SlcSfOperationKind
+slcSfResponseOperation(const SlcSfRequest& request)
+{
+    return std::visit(
+        [](const auto& typed_request) {
+            return slcSfResponseOperation(typed_request);
+        },
+        request);
+}
+
 /**
  * One self-contained terminal completion.
  *

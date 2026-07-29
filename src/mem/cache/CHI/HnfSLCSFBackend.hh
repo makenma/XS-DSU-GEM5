@@ -6,12 +6,15 @@
 #include <deque>
 #include <optional>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "mem/cache/CHI/HnfSLCSFRequest.hh"
 
 namespace gem5::Chi
 {
+
+class HnfSLCSF;
 
 class HnfSLCSFBackend
 {
@@ -68,13 +71,13 @@ class HnfSLCSFBackend
     bool hasSfReservation(uint32_t entry) const;
     size_t sfReservationCount() const { return sfReservations.size(); }
     size_t seqReservationCount() const { return reservedSeqSlots; }
+    size_t dirtyVictimSealCount() const { return dirtyVictimSeals.size(); }
     void commitRead(uint64_t block_addr, uint32_t requester,
                     PocqTxnKind txn, const std::vector<uint8_t>& data,
                     bool data_dirty, uint32_t home_node_id = 0,
                     const LookupSnapshot* target = nullptr,
                     std::optional<uint32_t> reservation_owner = std::nullopt,
-                    SeqVictim* sf_victim = nullptr,
-                    const SlcSfSlcVictim* preserved_victim = nullptr);
+                    SeqVictim* sf_victim = nullptr);
     void completeMaintenance(uint64_t block_addr, uint32_t requester,
                              PocqTxnKind txn,
                              uint32_t home_node_id = 0,
@@ -88,22 +91,19 @@ class HnfSLCSFBackend
                          const LookupSnapshot* target = nullptr,
                          std::optional<uint32_t> reservation_owner =
                              std::nullopt,
-                         SeqVictim* sf_victim = nullptr,
-                         const SlcSfSlcVictim* preserved_victim = nullptr);
+                         SeqVictim* sf_victim = nullptr);
     void writeLine(uint64_t block_addr, uint32_t requester,
                    const std::vector<uint8_t>& data,
                    PocqTxnKind txn = PocqTxnKind::WriteUnique,
                    uint32_t home_node_id = 0,
                    const LookupSnapshot* target = nullptr,
                    std::optional<uint32_t> reservation_owner = std::nullopt,
-                   SeqVictim* sf_victim = nullptr,
-                   const SlcSfSlcVictim* preserved_victim = nullptr);
+                   SeqVictim* sf_victim = nullptr);
     void flushSf(uint64_t block_addr);
     void flushL3(uint64_t block_addr);
     void writeL3FlushSf(uint64_t block_addr, uint32_t requester,
                         const std::vector<uint8_t>& data,
-                        const LookupSnapshot* target = nullptr,
-                        const SlcSfSlcVictim* preserved_victim = nullptr);
+                        const LookupSnapshot* target = nullptr);
 
     bool hasPendingSeq() const { return !seqPending.empty(); }
     SeqVictim frontPendingSeq() const;
@@ -126,8 +126,6 @@ class HnfSLCSFBackend
         const LookupSnapshot* target = nullptr) const;
     std::optional<uint64_t> dirtySlcVictimAddress(
         uint64_t block_addr, const LookupSnapshot& target) const;
-    SlcSfSlcVictim snapshotDirtySlcVictim(
-        uint64_t block_addr, const LookupSnapshot& target) const;
 
     /** Validate a prior lookup snapshot without consulting replacement order. */
     bool validateLookupSnapshot(
@@ -149,6 +147,35 @@ class HnfSLCSFBackend
     bool isBusy() const { return seqOccupancy() != 0; }
 
   private:
+    friend class HnfSLCSF;
+
+    /**
+     * Non-forgeable proof that a dirty displacement was copied before U2.
+     *
+     * Only the backend can construct this type, and only the timing adapter
+     * may present an installed VictimBuffer snapshot for authorization.  The
+     * proof binds the stable VictimId, both addresses, and every lookup-token
+     * version/replacement field used to select the displaced way.
+     */
+    class DirtyVictimWritePermit
+    {
+      private:
+        friend class HnfSLCSFBackend;
+
+        DirtyVictimWritePermit(
+            uint64_t replacement_address, uint64_t victim_address,
+            LookupSnapshot target, SlcSfSlcVictim victim)
+            : replacementAddress(replacement_address),
+              victimAddress(victim_address), targetSnapshot(std::move(target)),
+              victimSnapshot(std::move(victim))
+        {}
+
+        uint64_t replacementAddress = 0;
+        uint64_t victimAddress = 0;
+        LookupSnapshot targetSnapshot{};
+        SlcSfSlcVictim victimSnapshot{};
+    };
+
     struct SlcLine
     {
         bool valid = false;
@@ -185,6 +212,14 @@ class HnfSLCSFBackend
         bool seqSlot = false;
     };
 
+    struct DirtyVictimSeal
+    {
+        SlcSfVictimId victimId{};
+        uint64_t replacementAddress = 0;
+        uint64_t victimAddress = 0;
+        LookupSnapshot targetSnapshot{};
+    };
+
     uint32_t blockSize = 64;
     uint32_t slcSets = 1024;
     uint32_t slcWays = 16;
@@ -200,6 +235,9 @@ class HnfSLCSFBackend
     // on CommitToken validation instead of holding a set across waits.
     std::vector<int64_t> issuedSfSetOwners;
     std::unordered_map<uint32_t, SfReservation> sfReservations;
+    // One bounded seal per physical SLC slot. A seal is produced while the
+    // VictimBuffer entry is installed and consumed exactly once at U2.
+    std::unordered_map<uint64_t, DirtyVictimSeal> dirtyVictimSeals;
     size_t reservedSeqSlots = 0;
     uint64_t accessCounter = 0;
     uint64_t lookupEpoch = 1;
@@ -220,7 +258,7 @@ class HnfSLCSFBackend
     const SfLine* findSf(uint64_t block_addr) const;
     SlcLine& allocateSlc(uint64_t block_addr,
                          const ArraySnapshot* target = nullptr,
-                         const SlcSfSlcVictim* preserved_victim = nullptr);
+                         const DirtyVictimWritePermit* permit = nullptr);
     SfLine& allocateSf(uint64_t block_addr, uint32_t home_node_id,
                        const ArraySnapshot* target = nullptr,
                        std::optional<uint32_t> reservation_owner =
@@ -246,9 +284,54 @@ class HnfSLCSFBackend
     void installSlc(uint64_t block_addr, HnfSlcState state,
                     uint32_t requester, const std::vector<uint8_t>& data,
                     const ArraySnapshot* target = nullptr,
-                    const SlcSfSlcVictim* preserved_victim = nullptr);
+                    const DirtyVictimWritePermit* permit = nullptr);
     void invalidateSlc(uint64_t block_addr);
     void invalidateSf(uint64_t block_addr);
+
+    SlcSfSlcVictim snapshotDirtySlcVictim(
+        SlcSfVictimId victim_id, uint64_t block_addr,
+        const LookupSnapshot& target);
+    DirtyVictimWritePermit authorizeDirtyVictimWrite(
+        uint64_t block_addr, const LookupSnapshot& target,
+        const SlcSfSlcVictim& preserved_victim);
+    bool dirtyVictimWriteCanProceed(
+        uint64_t block_addr, const LookupSnapshot& target,
+        const SlcSfSlcVictim& preserved_victim) const;
+    void discardDirtyVictimSeal(
+        SlcSfVictimId victim_id, uint64_t block_addr,
+        const LookupSnapshot& target);
+    void validateDirtyVictimWritePermit(
+        uint64_t block_addr, const SlcLine& victim,
+        const DirtyVictimWritePermit& permit) const;
+    bool exactSnapshotMatches(
+        uint64_t block_addr, const LookupSnapshot& snapshot) const;
+
+    // Trusted timing-adapter entry points.  They are deliberately private so
+    // synchronous backend callers cannot bypass the bounded VictimBuffer by
+    // supplying an arbitrary preservation pointer.
+    void commitRead(uint64_t block_addr, uint32_t requester,
+                    PocqTxnKind txn, const std::vector<uint8_t>& data,
+                    bool data_dirty, uint32_t home_node_id,
+                    const LookupSnapshot* target,
+                    std::optional<uint32_t> reservation_owner,
+                    SeqVictim* sf_victim,
+                    const SlcSfSlcVictim* preserved_victim);
+    void fillCleanShared(uint64_t block_addr, uint32_t requester,
+                         const std::vector<uint8_t>& data,
+                         const LookupSnapshot* target,
+                         std::optional<uint32_t> reservation_owner,
+                         SeqVictim* sf_victim,
+                         const SlcSfSlcVictim* preserved_victim);
+    void writeLine(uint64_t block_addr, uint32_t requester,
+                   const std::vector<uint8_t>& data, PocqTxnKind txn,
+                   uint32_t home_node_id, const LookupSnapshot* target,
+                   std::optional<uint32_t> reservation_owner,
+                   SeqVictim* sf_victim,
+                   const SlcSfSlcVictim* preserved_victim);
+    void writeL3FlushSf(uint64_t block_addr, uint32_t requester,
+                        const std::vector<uint8_t>& data,
+                        const LookupSnapshot* target,
+                        const SlcSfSlcVictim* preserved_victim);
 };
 
 } // namespace gem5::Chi

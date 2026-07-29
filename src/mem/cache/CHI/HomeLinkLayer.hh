@@ -189,6 +189,7 @@ class HomeLinkLayer : public ruby::Consumer
         uint8_t resourceClass = 0;
         uint8_t reqPriority = 0;
         uint32_t ownerSrcid = 0;
+        uint32_t ownerTxnid = 0;
         uint8_t pcrdtype = 0;
         uint64_t allocatedSeq = 0;
         uint64_t allocatedCycle = 0;
@@ -213,9 +214,11 @@ class HomeLinkLayer : public ruby::Consumer
     {
         bool valid = false;
         int tokenId = -1;
+        uint64_t allocationSeq = 0;
         uint8_t resourceClass = 0;
         uint8_t reqPriority = 0;
         uint32_t srcid = 0;
+        uint32_t txnid = 0;
         uint8_t pcrdtype = 0;
     };
 
@@ -323,6 +326,9 @@ class HomeLinkLayer : public ruby::Consumer
     void queueCcAdmit(const PipeEntry& entry, const RawReq& req,
                       int tokenId, LlPriority prio, bool isStatic);
     void processCcAdmitResult(const CcAdmitResult& result);
+    bool tokenEventIsStale(const ResourceToken& token,
+                           uint64_t allocation_seq, uint32_t srcid,
+                           uint32_t txnid, const char* event) const;
     void queueRetire(uint32_t entry);
     void queueRetire(const HnfCcRetireInfo& info);
 

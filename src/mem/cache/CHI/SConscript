@@ -35,8 +35,16 @@ GTest('hnf_seq_pocq_state_graph.test',
       'HnfSeqPOCQStateGraph.test.cc',
       'HnfSeqPOCQStateGraph.cc')
 
+GTest('hnf_cc_types.test', 'HnfCcTypes.test.cc')
+
 GTest('hnf_slcsf.test',
       'HnfSLCSF.test.cc',
+      'HnfSLCSF.cc',
+      'HnfSLCSFBackend.cc',
+      with_tag('gem5 trace'))
+
+GTest('hnf_slcsf_backend.test',
+      'HnfSLCSFBackend.test.cc',
       'HnfSLCSF.cc',
       'HnfSLCSFBackend.cc',
       with_tag('gem5 trace'))
@@ -53,6 +61,9 @@ GTest('hnf_coherency_controller.test',
 GTest('cache2chi_bridge.test',
       'Cache2ChiBridge.test.cc',
       with_tag('gem5 trace'))
+
+GTest('chi2classic_mem_bridge.test',
+      'Chi2ClassicMemBridge.test.cc')
 
 DebugFlag('Cache2ChiBridge')
 DebugFlag('Chi2ClassicMemBridge')

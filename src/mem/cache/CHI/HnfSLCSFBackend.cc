@@ -160,7 +160,7 @@ HnfSLCSFBackend::findSf(uint64_t block_addr) const
 HnfSLCSFBackend::SlcLine&
 HnfSLCSFBackend::allocateSlc(uint64_t block_addr,
                              const ArraySnapshot* target,
-                             const SlcSfSlcVictim* preserved_victim)
+                             const DirtyVictimWritePermit* permit)
 {
     panic_if(target &&
                  (target->set != slcSet(block_addr) ||
@@ -170,6 +170,10 @@ HnfSLCSFBackend::allocateSlc(uint64_t block_addr,
     if (SlcLine* hit = findSlc(block_addr)) {
         panic_if(target && &slc[target->set][target->way] != hit,
                  "HnfSLCSF token SLC hit way changed before mutation\n");
+        panic_if(permit,
+                 "HnfSLCSF dirty-victim permit supplied for SLC hit "
+                 "addr=%#llx\n",
+                 static_cast<unsigned long long>(block_addr));
         hit->lastUse = ++accessCounter;
         return *hit;
     }
@@ -186,24 +190,25 @@ HnfSLCSFBackend::allocateSlc(uint64_t block_addr,
             });
     }
     if (victim->valid) {
-        panic_if(isDirty(victim->state) && !preserved_victim,
+        panic_if(isDirty(victim->state) && !permit,
                  "HnfSLCSF dirty SLC victim requires VictimBuffer before "
                  "replacement set=%u tag=%llu state=%u\n",
                  slcSet(block_addr),
                  static_cast<unsigned long long>(victim->tag),
                  static_cast<unsigned>(victim->state));
         if (isDirty(victim->state)) {
-            const uint64_t victim_addr =
-                (victim->tag * slcSets + slcSet(block_addr)) * blockSize;
-            panic_if(preserved_victim->lineAddress != victim_addr ||
-                         preserved_victim->state != victim->state ||
-                         preserved_victim->owner != victim->owner ||
-                         preserved_victim->line.data != victim->data ||
-                         !preserved_victim->line.dirty,
-                     "HnfSLCSF preserved dirty-victim snapshot mismatch "
-                     "addr=%#llx\n",
-                     static_cast<unsigned long long>(victim_addr));
+            validateDirtyVictimWritePermit(block_addr, *victim, *permit);
+        } else {
+            panic_if(permit,
+                     "HnfSLCSF dirty-victim permit targets clean "
+                     "displacement addr=%#llx\n",
+                     static_cast<unsigned long long>(block_addr));
         }
+    } else {
+        panic_if(permit,
+                 "HnfSLCSF dirty-victim permit targets empty SLC way "
+                 "addr=%#llx\n",
+                 static_cast<unsigned long long>(block_addr));
     }
 
     const uint64_t generation = ++accessCounter;
@@ -228,8 +233,15 @@ HnfSLCSFBackend::dirtySlcVictimAddress(
 
 SlcSfSlcVictim
 HnfSLCSFBackend::snapshotDirtySlcVictim(
-    uint64_t block_addr, const LookupSnapshot& target) const
+    SlcSfVictimId victim_id, uint64_t block_addr,
+    const LookupSnapshot& target)
 {
+    panic_if(victim_id.value == 0,
+             "HnfSLCSF seals dirty victim without stable ID\n");
+    panic_if(!validateLookupSnapshot(block_addr, target),
+             "HnfSLCSF seals dirty victim with stale lookup snapshot "
+             "addr=%#llx\n",
+             static_cast<unsigned long long>(block_addr));
     const auto victim_addr = dirtySlcVictimAddress(block_addr, target);
     panic_if(!victim_addr,
              "HnfSLCSF snapshots a non-dirty SLC displacement\n");
@@ -237,10 +249,178 @@ HnfSLCSFBackend::snapshotDirtySlcVictim(
     panic_if(victim.data.size() != blockSize,
              "HnfSLCSF dirty SLC victim has incomplete data bytes=%u/%u\n",
              static_cast<unsigned>(victim.data.size()), blockSize);
-    return SlcSfSlcVictim{
-        {}, *victim_addr, victim.state, victim.owner,
+    SlcSfSlcVictim snapshot{
+        victim_id, *victim_addr, victim.state, victim.owner,
         SlcSfCacheLine{victim.data, std::vector<uint8_t>(blockSize, 0xff),
                        true}};
+    LookupSnapshot full_target = target;
+    full_target.slc.replacementStamp =
+        slc[target.slc.set][target.slc.way].lastUse;
+    full_target.sf.replacementStamp =
+        sf[target.sf.set][target.sf.way].lastUse;
+    const uint64_t slot =
+        static_cast<uint64_t>(target.slc.set) * slcWays + target.slc.way;
+    dirtyVictimSeals[slot] = DirtyVictimSeal{
+        victim_id, block_addr, *victim_addr, std::move(full_target)};
+    return snapshot;
+}
+
+bool
+HnfSLCSFBackend::exactSnapshotMatches(
+    uint64_t block_addr, const LookupSnapshot& snapshot) const
+{
+    if (snapshot.lookupEpoch != lookupEpoch) {
+        return false;
+    }
+    const auto matches = [](const auto& lines, uint32_t expected_set,
+                            uint64_t expected_tag,
+                            const ArraySnapshot& recorded) {
+        if (recorded.set != expected_set || recorded.way >= lines.size()) {
+            return false;
+        }
+        const auto hit = std::find_if(
+            lines.begin(), lines.end(), [expected_tag](const auto& line) {
+                return line.valid && line.tag == expected_tag;
+            });
+        const bool current_hit = hit != lines.end();
+        if (recorded.hit != current_hit ||
+            (current_hit &&
+             static_cast<size_t>(std::distance(lines.begin(), hit)) !=
+                 recorded.way)) {
+            return false;
+        }
+        return lines[recorded.way].generation == recorded.generation &&
+            lines[recorded.way].lastUse == recorded.replacementStamp;
+    };
+    return matches(slc[slcSet(block_addr)], slcSet(block_addr),
+                   slcTag(block_addr), snapshot.slc) &&
+        matches(sf[sfSet(block_addr)], sfSet(block_addr),
+                sfTag(block_addr), snapshot.sf);
+}
+
+HnfSLCSFBackend::DirtyVictimWritePermit
+HnfSLCSFBackend::authorizeDirtyVictimWrite(
+    uint64_t block_addr, const LookupSnapshot& target,
+    const SlcSfSlcVictim& preserved_victim)
+{
+    panic_if(!dirtyVictimWriteCanProceed(
+                 block_addr, target, preserved_victim),
+             "HnfSLCSF dirty-victim authorization failed "
+             "addr=%#llx victim=%llu\n",
+             static_cast<unsigned long long>(block_addr),
+             static_cast<unsigned long long>(
+                 preserved_victim.victimId.value));
+    const uint64_t slot =
+        static_cast<uint64_t>(target.slc.set) * slcWays + target.slc.way;
+    const auto found = dirtyVictimSeals.find(slot);
+    const DirtyVictimSeal seal = found->second;
+    dirtyVictimSeals.erase(found);
+    return DirtyVictimWritePermit(
+        block_addr, seal.victimAddress, seal.targetSnapshot, preserved_victim);
+}
+
+bool
+HnfSLCSFBackend::dirtyVictimWriteCanProceed(
+    uint64_t block_addr, const LookupSnapshot& target,
+    const SlcSfSlcVictim& preserved_victim) const
+{
+    if (target.slc.set >= slc.size() ||
+        target.slc.way >= slc[target.slc.set].size() ||
+        target.sf.set >= sf.size() ||
+        target.sf.way >= sf[target.sf.set].size() ||
+        !validateLookupSnapshot(block_addr, target)) {
+        return false;
+    }
+    const auto victim_addr = dirtySlcVictimAddress(block_addr, target);
+    if (!victim_addr) {
+        return false;
+    }
+    const uint64_t slot =
+        static_cast<uint64_t>(target.slc.set) * slcWays + target.slc.way;
+    const auto found = dirtyVictimSeals.find(slot);
+    if (found == dirtyVictimSeals.end()) {
+        return false;
+    }
+    const DirtyVictimSeal& seal = found->second;
+    const auto same_array_token = [](const ArraySnapshot& lhs,
+                                     const ArraySnapshot& rhs) {
+        return lhs.hit == rhs.hit && lhs.set == rhs.set &&
+            lhs.way == rhs.way && lhs.generation == rhs.generation;
+    };
+    if (seal.victimId.value != preserved_victim.victimId.value ||
+        seal.replacementAddress != block_addr ||
+        seal.victimAddress != *victim_addr ||
+        seal.targetSnapshot.lookupEpoch != target.lookupEpoch ||
+        !same_array_token(seal.targetSnapshot.slc, target.slc) ||
+        !same_array_token(seal.targetSnapshot.sf, target.sf) ||
+        !exactSnapshotMatches(block_addr, seal.targetSnapshot)) {
+        return false;
+    }
+    const SlcLine& victim = slc[target.slc.set][target.slc.way];
+    const bool full_mask =
+        preserved_victim.line.byteMask.size() == blockSize &&
+        std::all_of(preserved_victim.line.byteMask.begin(),
+                    preserved_victim.line.byteMask.end(),
+                    [](uint8_t byte) { return byte == 0xff; });
+    return preserved_victim.victimId.value != 0 &&
+        preserved_victim.lineAddress == *victim_addr &&
+        preserved_victim.state == victim.state &&
+        preserved_victim.owner == victim.owner &&
+        preserved_victim.line.data.size() == blockSize &&
+        preserved_victim.line.data == victim.data && full_mask &&
+        preserved_victim.line.dirty;
+}
+
+void
+HnfSLCSFBackend::discardDirtyVictimSeal(
+    SlcSfVictimId victim_id, uint64_t block_addr,
+    const LookupSnapshot& target)
+{
+    if (target.slc.set >= slcSets || target.slc.way >= slcWays) {
+        return;
+    }
+    const uint64_t slot =
+        static_cast<uint64_t>(target.slc.set) * slcWays + target.slc.way;
+    const auto found = dirtyVictimSeals.find(slot);
+    if (found == dirtyVictimSeals.end()) {
+        return;
+    }
+    const DirtyVictimSeal& seal = found->second;
+    if (seal.victimId.value == victim_id.value &&
+        seal.replacementAddress == block_addr &&
+        seal.targetSnapshot.lookupEpoch == target.lookupEpoch &&
+        seal.targetSnapshot.slc.set == target.slc.set &&
+        seal.targetSnapshot.slc.way == target.slc.way &&
+        seal.targetSnapshot.slc.generation == target.slc.generation) {
+        dirtyVictimSeals.erase(found);
+    }
+}
+
+void
+HnfSLCSFBackend::validateDirtyVictimWritePermit(
+    uint64_t block_addr, const SlcLine& victim,
+    const DirtyVictimWritePermit& permit) const
+{
+    panic_if(permit.replacementAddress != block_addr ||
+                 permit.victimSnapshot.victimId.value == 0 ||
+                 !exactSnapshotMatches(block_addr, permit.targetSnapshot),
+             "HnfSLCSF dirty-victim write permit identity/version "
+             "mismatch addr=%#llx victim=%llu\n",
+             static_cast<unsigned long long>(block_addr),
+             static_cast<unsigned long long>(
+                 permit.victimSnapshot.victimId.value));
+    const uint64_t victim_addr =
+        (victim.tag * slcSets + slcSet(block_addr)) * blockSize;
+    const SlcSfSlcVictim& snapshot = permit.victimSnapshot;
+    panic_if(permit.victimAddress != victim_addr ||
+                 snapshot.lineAddress != victim_addr ||
+                 snapshot.state != victim.state ||
+                 snapshot.owner != victim.owner ||
+                 snapshot.line.data != victim.data || !snapshot.line.dirty,
+             "HnfSLCSF dirty-victim write permit snapshot changed "
+             "addr=%#llx victim=%llu\n",
+             static_cast<unsigned long long>(victim_addr),
+             static_cast<unsigned long long>(snapshot.victimId.value));
 }
 
 bool
@@ -686,10 +866,9 @@ void
 HnfSLCSFBackend::installSlc(uint64_t block_addr, HnfSlcState state,
                      uint32_t requester, const std::vector<uint8_t>& data,
                      const ArraySnapshot* target,
-                     const SlcSfSlcVictim* preserved_victim)
+                     const DirtyVictimWritePermit* permit)
 {
-    SlcLine& line = allocateSlc(
-        block_addr, target, preserved_victim);
+    SlcLine& line = allocateSlc(block_addr, target, permit);
     line.valid = true;
     line.state = state;
     line.owner = requester;
@@ -810,6 +989,7 @@ HnfSLCSFBackend::invalidateCommitTokens()
     panic_if(lookupEpoch == std::numeric_limits<uint64_t>::max(),
              "HnfSLCSF lookup epoch space exhausted\n");
     ++lookupEpoch;
+    dirtyVictimSeals.clear();
 }
 
 void
@@ -938,16 +1118,39 @@ HnfSLCSFBackend::commitRead(uint64_t block_addr, uint32_t requester,
                      bool data_dirty, uint32_t home_node_id,
                      const LookupSnapshot* target,
                      std::optional<uint32_t> reservation_owner,
+                     SeqVictim* sf_victim)
+{
+    commitRead(block_addr, requester, txn, data, data_dirty, home_node_id,
+               target, reservation_owner, sf_victim, nullptr);
+}
+
+void
+HnfSLCSFBackend::commitRead(uint64_t block_addr, uint32_t requester,
+                     PocqTxnKind txn, const std::vector<uint8_t>& data,
+                     bool data_dirty, uint32_t home_node_id,
+                     const LookupSnapshot* target,
+                     std::optional<uint32_t> reservation_owner,
                      SeqVictim* sf_victim,
                      const SlcSfSlcVictim* preserved_victim)
 {
+    std::optional<DirtyVictimWritePermit> permit;
+    if (preserved_victim) {
+        panic_if(!target,
+                 "HnfSLCSF dirty-victim authorization requires commit "
+                 "token addr=%#llx\n",
+                 static_cast<unsigned long long>(block_addr));
+        permit.emplace(authorizeDirtyVictimWrite(
+            block_addr, *target, *preserved_victim));
+    }
+    const DirtyVictimWritePermit* write_permit =
+        permit ? &*permit : nullptr;
     const uint64_t requesterBit = requesterMask(requester);
     switch (txn) {
       case PocqTxnKind::ReadShared: {
         installSlc(block_addr,
                    data_dirty ? HnfSlcState::MN : HnfSlcState::EN,
                    requester, data, target ? &target->slc : nullptr,
-                   preserved_victim);
+                   write_permit);
         SfLine& line = allocateSf(
             block_addr, home_node_id, target ? &target->sf : nullptr,
             reservation_owner, sf_victim);
@@ -1062,6 +1265,17 @@ HnfSLCSFBackend::fillCleanShared(uint64_t block_addr, uint32_t requester,
                           const std::vector<uint8_t>& data,
                           const LookupSnapshot* target,
                           std::optional<uint32_t> reservation_owner,
+                          SeqVictim* sf_victim)
+{
+    fillCleanShared(block_addr, requester, data, target, reservation_owner,
+                    sf_victim, nullptr);
+}
+
+void
+HnfSLCSFBackend::fillCleanShared(uint64_t block_addr, uint32_t requester,
+                          const std::vector<uint8_t>& data,
+                          const LookupSnapshot* target,
+                          std::optional<uint32_t> reservation_owner,
                           SeqVictim* sf_victim,
                           const SlcSfSlcVictim* preserved_victim)
 {
@@ -1075,9 +1289,31 @@ HnfSLCSFBackend::writeLine(uint64_t block_addr, uint32_t requester,
                     const std::vector<uint8_t>& data, PocqTxnKind txn,
                     uint32_t home_node_id, const LookupSnapshot* target,
                     std::optional<uint32_t> reservation_owner,
+                    SeqVictim* sf_victim)
+{
+    writeLine(block_addr, requester, data, txn, home_node_id, target,
+              reservation_owner, sf_victim, nullptr);
+}
+
+void
+HnfSLCSFBackend::writeLine(uint64_t block_addr, uint32_t requester,
+                    const std::vector<uint8_t>& data, PocqTxnKind txn,
+                    uint32_t home_node_id, const LookupSnapshot* target,
+                    std::optional<uint32_t> reservation_owner,
                     SeqVictim* sf_victim,
                     const SlcSfSlcVictim* preserved_victim)
 {
+    std::optional<DirtyVictimWritePermit> permit;
+    if (preserved_victim) {
+        panic_if(!target,
+                 "HnfSLCSF dirty-victim authorization requires commit "
+                 "token addr=%#llx\n",
+                 static_cast<unsigned long long>(block_addr));
+        permit.emplace(authorizeDirtyVictimWrite(
+            block_addr, *target, *preserved_victim));
+    }
+    const DirtyVictimWritePermit* write_permit =
+        permit ? &*permit : nullptr;
     switch (txn) {
       case PocqTxnKind::WriteBackFull:
       case PocqTxnKind::WriteEvictFull: {
@@ -1094,7 +1330,7 @@ HnfSLCSFBackend::writeLine(uint64_t block_addr, uint32_t requester,
         }
         installSlc(
             block_addr, HnfSlcState::MU, requester, data,
-            target ? &target->slc : nullptr, preserved_victim);
+            target ? &target->slc : nullptr, write_permit);
         removeSharer(block_addr, requester);
         if (const SfLine* line = findSf(block_addr); line && line->valid) {
             SlcLine* slcLine = findSlc(block_addr);
@@ -1105,7 +1341,7 @@ HnfSLCSFBackend::writeLine(uint64_t block_addr, uint32_t requester,
       case PocqTxnKind::WriteCleanFull: {
         installSlc(
             block_addr, HnfSlcState::EN, requester, data,
-            target ? &target->slc : nullptr, preserved_victim);
+            target ? &target->slc : nullptr, write_permit);
         SfLine& line = allocateSf(
             block_addr, home_node_id, target ? &target->sf : nullptr,
             reservation_owner, sf_victim);
@@ -1119,7 +1355,7 @@ HnfSLCSFBackend::writeLine(uint64_t block_addr, uint32_t requester,
       case PocqTxnKind::WriteUnique:
         installSlc(
             block_addr, HnfSlcState::MU, requester, data,
-            target ? &target->slc : nullptr, preserved_victim);
+            target ? &target->slc : nullptr, write_permit);
         invalidateSf(block_addr);
         break;
       default:
@@ -1155,11 +1391,29 @@ HnfSLCSFBackend::flushL3(uint64_t block_addr)
 void
 HnfSLCSFBackend::writeL3FlushSf(uint64_t block_addr, uint32_t requester,
                                 const std::vector<uint8_t>& data,
+                                const LookupSnapshot* target)
+{
+    writeL3FlushSf(block_addr, requester, data, target, nullptr);
+}
+
+void
+HnfSLCSFBackend::writeL3FlushSf(uint64_t block_addr, uint32_t requester,
+                                const std::vector<uint8_t>& data,
                                 const LookupSnapshot* target,
                                 const SlcSfSlcVictim* preserved_victim)
 {
+    std::optional<DirtyVictimWritePermit> permit;
+    if (preserved_victim) {
+        panic_if(!target,
+                 "HnfSLCSF dirty-victim authorization requires commit "
+                 "token addr=%#llx\n",
+                 static_cast<unsigned long long>(block_addr));
+        permit.emplace(authorizeDirtyVictimWrite(
+            block_addr, *target, *preserved_victim));
+    }
     installSlc(block_addr, HnfSlcState::MU, requester, data,
-               target ? &target->slc : nullptr, preserved_victim);
+               target ? &target->slc : nullptr,
+               permit ? &*permit : nullptr);
     invalidateSf(block_addr);
     checkLineInvariant(block_addr);
 }

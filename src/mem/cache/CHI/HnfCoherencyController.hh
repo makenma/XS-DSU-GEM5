@@ -40,7 +40,13 @@ class HnfCoherencyController
 
     enum class DirtyVictimPhase : uint8_t
     {
-        Writeback,
+        ReqQueued,
+        WaitDbid,
+        DataQueued,
+        WaitComp,
+        RetryPending,
+        DownstreamErrorHeld,
+        CompletedAwaitRelease,
         ReleaseIssuePending,
         ReleaseWaiting
     };
@@ -48,7 +54,8 @@ class HnfCoherencyController
     HnfCoherencyController(uint32_t block_size, uint32_t data_beat_bytes,
                            uint32_t num_entries, uint32_t sn_node_id,
                            bool direct_sn_fake_data,
-                           uint32_t rnf_slices);
+                           uint32_t rnf_slices,
+                           bool enable_retry = true);
 
     void setSlcsf(HnfSLCSF* slcsf) { slcsfUnit = slcsf; }
 
@@ -129,7 +136,11 @@ class HnfCoherencyController
         bool needsCompAck = false;
         bool expectsWriteData = false;
         std::optional<uint32_t> sleepingOn;
-        std::vector<uint8_t> data;
+        // Read/snoop/MC data and requester write payload have independent
+        // lifetimes. In particular, a write performs its lookup after RXDAT,
+        // so a lookup hit must never overwrite the buffered write bytes.
+        std::vector<uint8_t> readData;
+        std::vector<uint8_t> writePayload;
         HnfSlcLookupResult slcLookupResult{};
         SlcLookupPhase slcLookupPhase = SlcLookupPhase::None;
         SlcSfReqId slcLookupReqId{};
@@ -138,6 +149,7 @@ class HnfCoherencyController
         SlcSfCommitToken slcCommitToken{};
         SlcUpdatePhase slcUpdatePhase = SlcUpdatePhase::None;
         SlcSfReqId slcUpdateReqId{};
+        std::optional<SlcSfOperationKind> expectedSlcUpdateOperation;
         std::optional<SlcSfRequest> pendingSlcUpdate;
         std::optional<SlcSfResponse> latchedSlcUpdateResponse;
         Tick retryNotBeforeTick = 0;
@@ -170,9 +182,17 @@ class HnfCoherencyController
         SlcSfSlcVictim victim;
         uint32_t downstreamTxnId = 0;
         uint32_t homeNodeId = 0;
+        uint8_t dbid = 0;
+        uint8_t activePcrdtype = 0;
+        uint8_t retryPcrdtype = 0;
+        bool activeAllowRetry = false;
+        bool requestQueued = false;
         bool requestSent = false;
+        bool writebackMarked = false;
+        bool dataQueued = false;
         bool dataSent = false;
-        DirtyVictimPhase phase = DirtyVictimPhase::Writeback;
+        bool completionSeen = false;
+        DirtyVictimPhase phase = DirtyVictimPhase::ReqQueued;
         SlcSfReqId releaseReqId{};
         std::optional<SlcSfRequest> pendingRelease;
     };
@@ -185,6 +205,7 @@ class HnfCoherencyController
     uint32_t maxEntries = 32;
     uint32_t snNodeId = 0;
     bool directSnFakeData = true;
+    bool dirtyVictimRetryEnabled = true;
     uint32_t rnfSlices = 1;
     uint32_t nextSnoopTxnId = 0x80000000U;
     uint32_t nextDirtyVictimTxnId = 0x40000000U;
@@ -231,10 +252,16 @@ class HnfCoherencyController
     void wakeSleepingEntries(uint64_t addr);
     bool hasMainAddressHazard(uint64_t addr) const;
     uint32_t allocateSnoopTxnId();
-    uint32_t allocateDirtyVictimTxnId();
+    uint32_t allocateDirtyVictimTxnId(uint32_t requester_txnid);
     void startDirtyVictimWriteback(uint32_t entry,
                                    const SlcSfSlcVictim& victim);
+    void queueDirtyVictimRequest(DirtyVictimTxn& transaction,
+                                 bool allow_retry, uint8_t pcrdtype);
     void queueDirtyVictimData(DirtyVictimTxn& transaction);
+    bool dirtyVictimResponseMatches(const DirtyVictimTxn& transaction,
+                                    const RawRsp& rsp) const;
+    void completeDirtyVictimWriteback(DirtyVictimTxn& transaction,
+                                      const RawRsp& rsp);
     void startDirtyVictimRelease(DirtyVictimTxn& transaction);
     void tryIssueDirtyVictimRelease(DirtyVictimTxn& transaction);
     void retryDirtyVictimReleases();

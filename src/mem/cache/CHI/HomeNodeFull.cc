@@ -15,7 +15,7 @@ HomeNodeFull::HomeNodeFull(const HomeNodeFullParams& p)
           p.sf_num_ways, p.seq_entries,
           makeEmbeddedSlcsfConfig(p, clockPeriod())),
     cc(p.block_size, p.data_beat_bytes, p.num_poc_entries, p.sn_node_id,
-       p.direct_sn_fake_data, p.rnf_slices),
+       p.direct_sn_fake_data, p.rnf_slices, p.enable_retry),
     linklayer(this, p.block_size, p.data_beat_bytes, p.num_poc_entries,
               p.enable_retry),
     rxport(p.name + ".rxport", static_cast<ruby::Consumer*>(this),/*PortID*/ 0)

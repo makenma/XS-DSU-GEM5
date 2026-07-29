@@ -849,8 +849,7 @@ HnfSLCSF::reserveDirtyVictim(
     request.slcVictimId = entry->id;
 
     SlcSfSlcVictim snapshot = snapshotDirtySlcVictim(
-        replacement_addr, target);
-    snapshot.victimId = entry->id;
+        entry->id, replacement_addr, target);
     entry->snapshot = snapshot;
     entry->state = VictimState::InstalledSnapshot;
     request.slcVictim = std::move(snapshot);
@@ -898,6 +897,10 @@ HnfSLCSF::cancelDirtyVictimReservation(InflightRequest& request)
                         entry->state != VictimState::InstalledSnapshot),
              "HnfSLCSF cancels invalid dirty-victim reservation=%llu\n",
              static_cast<unsigned long long>(request.slcVictimId->value));
+    discardDirtyVictimSeal(
+        *request.slcVictimId,
+        requestHeader(request.request).lineAddress,
+        mutationTarget(request.request));
     entry->state = VictimState::Released;
     entry->snapshot.reset();
     entry->lineAddress = 0;
@@ -1198,6 +1201,13 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
         if (!validateMutationToken(request.request)) {
             request.terminalReplayReason =
                 SlcSfReplayReason::StaleCommitToken;
+        } else if (request.slcVictim &&
+                   !dirtyVictimWriteCanProceed(
+                       requestHeader(request.request).lineAddress,
+                       mutationTarget(request.request),
+                       *request.slcVictim)) {
+            request.terminalReplayReason =
+                SlcSfReplayReason::StaleCommitToken;
         } else {
             executeMutation(request);
         }
@@ -1257,6 +1267,9 @@ HnfSLCSF::finishInflight(
     panic_if(response.reqId() != header.reqId ||
                  response.pocEntryId() != header.pocEntryId,
              "HnfSLCSF final response identity disagrees with request\n");
+    panic_if(response.operationKind() !=
+                 slcSfResponseOperation(request.request),
+             "HnfSLCSF final response operation disagrees with request\n");
     const SlcSfTerminalStatus expected =
         reason == FinishReason::Done ? SlcSfTerminalStatus::Done :
         reason == FinishReason::Error ? SlcSfTerminalStatus::Error :

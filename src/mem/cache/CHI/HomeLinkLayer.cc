@@ -411,6 +411,29 @@ HomeLinkLayer::doCcResultAndRetire()
                  static_cast<size_t>(ev.tokenId) >= tokens.size(),
                  "HNF retire invalid token=%d\n", ev.tokenId);
         ResourceToken& token = tokens[ev.tokenId];
+        if (tokenEventIsStale(
+                token, ev.allocationSeq, ev.srcid, ev.txnid, "retire")) {
+            continue;
+        }
+        if (token.state == TokenState::RetireHeldForPCrdGrant ||
+            token.state == TokenState::StaticReserved) {
+            DPRINTF(HomeLinkLayer,
+                    "ignore duplicate retire token=%d seq=%llu state=%u\n",
+                    ev.tokenId,
+                    static_cast<unsigned long long>(ev.allocationSeq),
+                    static_cast<unsigned>(token.state));
+            continue;
+        }
+        panic_if(token.state != TokenState::WorkingDynamic &&
+                     token.state != TokenState::WorkingStatic &&
+                     token.state != TokenState::WorkingFvb,
+                 "HNF retire token=%d seq=%llu has invalid state=%u\n",
+                 ev.tokenId,
+                 static_cast<unsigned long long>(ev.allocationSeq),
+                 static_cast<unsigned>(token.state));
+        panic_if(token.resourceClass != ev.resourceClass,
+                 "HNF retire token=%d resource class changed %u != %u\n",
+                 ev.tokenId, token.resourceClass, ev.resourceClass);
         if (token.resourceClass == static_cast<uint8_t>(ResourceClass::Fvb)) {
             releaseToken(token);
             continue;
@@ -722,6 +745,11 @@ HomeLinkLayer::doStageRsp(PipeEntry& entry, RawRsp& rsp)
     const auto decoded = decodeRsp(rsp.opcode);
     panic_if(decoded.minor != RspMinor::CompAck &&
                  decoded.minor != RspMinor::Comp &&
+                 decoded.minor != RspMinor::CompDBIDResp &&
+                 decoded.minor != RspMinor::DBIDResp &&
+                 decoded.minor != RspMinor::DBIDRespOrd &&
+                 decoded.minor != RspMinor::RetryAck &&
+                 decoded.minor != RspMinor::PCrdGrant &&
                  decoded.minor != RspMinor::SnpResp &&
                  decoded.minor != RspMinor::SnpRespFwded,
              "HNF RXRSP unsupported opcode=0x%x txn=%u\n",
@@ -941,6 +969,7 @@ HomeLinkLayer::reserveTokenPendingCcAck(int tokenId, const PipeEntry& entry,
     token.state = TokenState::AllocPendingCcAck;
     token.reqPriority = static_cast<uint8_t>(prio);
     token.ownerSrcid = req.srcid;
+    token.ownerTxnid = req.txnid;
     token.pcrdtype = req.pcrdtype;
     token.allocatedSeq = entry.seq;
     token.allocatedCycle = llCycle;
@@ -1055,7 +1084,15 @@ HomeLinkLayer::processCcAdmitResult(const CcAdmitResult& result)
              "HNF CC admit invalid token=%d\n", result.tokenId);
 
     ResourceToken& token = tokens[result.tokenId];
+    if (tokenEventIsStale(
+            token, result.seq, result.req.srcid, result.req.txnid,
+            "CC admit result")) {
+        return;
+    }
     if (!result.accepted) {
+        panic_if(token.state != TokenState::AllocPendingCcAck,
+                 "HNF rejected CC admit token=%d not pending state=%u\n",
+                 result.tokenId, static_cast<unsigned>(token.state));
         releaseToken(token);
         return;
     }
@@ -1076,6 +1113,34 @@ HomeLinkLayer::processCcAdmitResult(const CcAdmitResult& result)
             static_cast<unsigned long long>(llCycle + 1));
 }
 
+bool
+HomeLinkLayer::tokenEventIsStale(
+    const ResourceToken& token, uint64_t allocation_seq, uint32_t srcid,
+    uint32_t txnid, const char* event) const
+{
+    const HnfCcIdentityMatch match = classifyHnfCcIdentity(
+        HnfCcAllocationIdentity{
+            token.allocatedSeq, token.ownerSrcid, token.ownerTxnid},
+        HnfCcAllocationIdentity{allocation_seq, srcid, txnid});
+    if (match == HnfCcIdentityMatch::StaleGeneration) {
+        DPRINTF(HomeLinkLayer,
+                "ignore stale %s token=%d eventSeq=%llu activeSeq=%llu "
+                "src=%u txn=%u\n",
+                event, token.id,
+                static_cast<unsigned long long>(allocation_seq),
+                static_cast<unsigned long long>(token.allocatedSeq),
+                srcid, txnid);
+        return true;
+    }
+    panic_if(match == HnfCcIdentityMatch::CorruptOwner,
+             "HNF %s token=%d seq=%llu identity changed "
+             "event=(%u,%u) active=(%u,%u)\n",
+             event, token.id,
+             static_cast<unsigned long long>(allocation_seq), srcid, txnid,
+             token.ownerSrcid, token.ownerTxnid);
+    return false;
+}
+
 void
 HomeLinkLayer::queueRetire(uint32_t entry)
 {
@@ -1091,9 +1156,11 @@ HomeLinkLayer::queueRetire(const HnfCcRetireInfo& info)
     CcRetireEvent ev{};
     ev.valid = true;
     ev.tokenId = info.tokenId;
+    ev.allocationSeq = info.allocationSeq;
     ev.resourceClass = info.resourceClass;
     ev.reqPriority = info.reqPriority;
     ev.srcid = info.srcid;
+    ev.txnid = info.txnid;
     ev.pcrdtype = info.pcrdtype;
     ccRetireQ.push_back(ev);
 }
@@ -1163,9 +1230,11 @@ HomeLinkLayer::retireEntry(uint32_t entry)
     CcRetireEvent ev{};
     ev.valid = true;
     ev.tokenId = txn.tokenId;
+    ev.allocationSeq = token.allocatedSeq;
     ev.resourceClass = token.resourceClass;
     ev.reqPriority = token.reqPriority;
     ev.srcid = txn.key.srcid;
+    ev.txnid = txn.key.txnid;
     ev.pcrdtype = txn.req.pcrdtype;
     ccRetireQ.push_back(ev);
 

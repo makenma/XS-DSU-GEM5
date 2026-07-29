@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "mem/cache/CHI/Chi2ClassicMemTxnPolicy.hh"
 #include "mem/cache/CHI/base/ChiChannel.hh"
 #include "mem/cache/CHI/base/ChiCommonPort.hh"
 #include "mem/packet.hh"
@@ -54,10 +55,20 @@ class Chi2ClassicMemBridge : public ClockedObject, public ruby::Consumer
 
     struct TxnEntry
     {
+        enum class Kind : uint8_t
+        {
+            Read,
+            Write
+        };
+
+        using Phase = Chi2ClassicMemTxnPolicy::Phase;
+
         RawReq req{};
+        Kind kind = Kind::Read;
+        Phase phase = Phase::MemReqQueued;
         PacketPtr pkt = nullptr;
         uint32_t expectedBytes = 0;
-        bool responseSeen = false;
+        uint8_t dbid = 0;
     };
 
     ChiCommonPort chiPort;
@@ -71,8 +82,13 @@ class Chi2ClassicMemBridge : public ClockedObject, public ruby::Consumer
     const RequestorID requestorId;
 
     std::unordered_map<uint32_t, TxnEntry> txns;
+    std::optional<RawReq> pendingReq;
+    std::deque<uint32_t> memReqQ;
     std::deque<RawDat> txDatQ;
+    std::deque<RawRsp> txRspQ;
     PacketPtr blockedPkt = nullptr;
+    bool memReqBlocked = false;
+    uint8_t nextDbid = 1;
     EventFunctionWrapper pumpEvent;
 
     void schedulePump();
@@ -80,13 +96,20 @@ class Chi2ClassicMemBridge : public ClockedObject, public ruby::Consumer
     bool hasPumpWork() const;
 
     void drainChiReq();
+    void drainChiDat();
+    bool tryAcceptPendingReq();
     void acceptReadNoSnp(const RawReq& req);
+    bool acceptWriteNoSnpFull(const RawReq& req);
+    void acceptWriteData(const RawDat& dat);
+    std::optional<uint8_t> allocateDbid();
     PacketPtr makeReadPacket(const RawReq& req);
-    bool sendMemPacket(PacketPtr pkt);
+    PacketPtr makeWritePacket(const TxnEntry& txn, const RawDat& dat);
+    void sendPendingMemReq();
     bool recvMemResp(PacketPtr pkt);
     void queueCompData(const TxnEntry& txn, const uint8_t* data,
                        uint32_t data_bytes);
     void sendPendingDat();
+    void sendPendingRsp();
     uint32_t expectedDataBytes(const RawReq& req) const;
 };
 

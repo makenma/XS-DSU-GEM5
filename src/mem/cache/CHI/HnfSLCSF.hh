@@ -175,6 +175,8 @@ class HnfSLCSF : public HnfSLCSFBackend
     void resumeFromDrain();
 
   private:
+    friend class HnfSLCSFBackendPermitTestAccess;
+
     enum class FinishReason : uint8_t
     {
         Done,
