@@ -66,6 +66,12 @@ isAdmitEvict(const PocqEvent& event)
 }
 
 bool
+isEvictTxn(PocqTxnKind txn)
+{
+    return txn == PocqTxnKind::Evict;
+}
+
+bool
 isAdmitWrite(const PocqEvent& event)
 {
     return isAdmit(event) && isWriteTxn(event.txn);
@@ -81,7 +87,8 @@ bool
 isLookupNeedsSnoop(const PocqEvent& event)
 {
     return event.kind == PocqEventKind::SlcLookupDone && !event.replay &&
-        event.needsSnoop && !isWriteTxn(event.txn);
+        event.needsSnoop && !isWriteTxn(event.txn) &&
+        !isEvictTxn(event.txn);
 }
 
 bool
@@ -110,6 +117,13 @@ isLookupWriteDone(const PocqEvent& event)
 {
     return event.kind == PocqEventKind::SlcLookupDone && !event.replay &&
         isWriteTxn(event.txn);
+}
+
+bool
+isLookupEvictDone(const PocqEvent& event)
+{
+    return event.kind == PocqEventKind::SlcLookupDone && !event.replay &&
+        isEvictTxn(event.txn);
 }
 
 bool
@@ -152,6 +166,13 @@ isSlcMaintenanceDone(const PocqEvent& event)
 {
     return event.kind == PocqEventKind::SlcUpdateDone && !event.replay &&
         isMaintenanceTxn(event.txn);
+}
+
+bool
+isSlcEvictDone(const PocqEvent& event)
+{
+    return event.kind == PocqEventKind::SlcUpdateDone && !event.replay &&
+        isEvictTxn(event.txn);
 }
 
 bool
@@ -257,9 +278,8 @@ POCQ_StateGraph::POCQ_StateGraph()
                   {PocqActionKind::DoSlcLookup});
     addTransition(idle, slcLookup, isAdmitMaintenanceLookup,
                   {PocqActionKind::DoSlcLookup});
-    addTransition(idle, idle, isAdmitEvict,
-                  {PocqActionKind::RemoveSharer,
-                   PocqActionKind::QueueComp});
+    addTransition(idle, slcLookup, isAdmitEvict,
+                  {PocqActionKind::DoSlcLookup});
     addTransition(idle, waitWriteData, isAdmitWrite,
                   {PocqActionKind::QueueCompDBIDResp,
                    PocqActionKind::WaitWriteData});
@@ -275,6 +295,8 @@ POCQ_StateGraph::POCQ_StateGraph()
                   {PocqActionKind::CommitMaintenance});
     addTransition(slcLookup, slcUpdateIssue, isLookupWriteDone,
                   {PocqActionKind::StoreWriteData});
+    addTransition(slcLookup, slcUpdateIssue, isLookupEvictDone,
+                  {PocqActionKind::RemoveSharer});
     addTransition(waitSnoop, slcUpdateIssue, isSnoopDoneReadWithData,
                   {PocqActionKind::UpdateSlcSf});
     addTransition(waitSnoop, issueMcRead, isSnoopDoneReadNeedsMemory,
@@ -295,6 +317,8 @@ POCQ_StateGraph::POCQ_StateGraph()
                   {PocqActionKind::QueueComp});
     addTransition(slcUpdateWait, idle, isSlcWriteDone,
                   {PocqActionKind::Retire});
+    addTransition(slcUpdateWait, idle, isSlcEvictDone,
+                  {PocqActionKind::QueueComp});
     addTransition(txLink, waitCompAck, isTxLinkDoneNeedsCompAck,
                   {PocqActionKind::WaitCompAck});
     addTransition(txLink, idle, isTxLinkDoneNoCompAck,

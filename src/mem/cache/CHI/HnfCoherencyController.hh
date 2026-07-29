@@ -181,6 +181,7 @@ class HnfCoherencyController
     void queueSnoops(uint32_t entry);
     void startSlcUpdate(uint32_t entry);
     void completeMaintenance(uint32_t entry);
+    void removeSharer(uint32_t entry);
     void completeSnoopTarget(uint32_t entry, uint32_t responder,
                              bool has_data);
     uint32_t targetRouteId(uint32_t target, uint64_t addr) const;

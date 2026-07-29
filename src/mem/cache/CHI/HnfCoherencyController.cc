@@ -189,8 +189,7 @@ HnfCoherencyController::executePocqAction(uint32_t entryId,
         return std::nullopt;
 
       case PocqActionKind::RemoveSharer:
-        slcsfUnit->removeSharer(entry.blockAddr, entry.req.srcid);
-        slcsfUnit->releaseSfResources(entryId);
+        removeSharer(entryId);
         return std::nullopt;
 
       case PocqActionKind::UpdateSlcSf:
@@ -516,6 +515,27 @@ HnfCoherencyController::completeMaintenance(uint32_t entryId)
         makeSlcSfCompleteMaintenanceReq(
             std::move(header), entry.txnKind, entry.req.tgtid,
             entry.slcCommitToken, entry.slcLookupReqId));
+    entry.slcUpdatePhase = SlcUpdatePhase::IssuePending;
+    tryIssueSlcUpdate(entryId);
+}
+
+void
+HnfCoherencyController::removeSharer(uint32_t entryId)
+{
+    Entry& entry = entries[entryId];
+    panic_if(entry.txnKind != PocqTxnKind::Evict,
+             "HnfCC entry=%u starts remove-sharer for txn=%u\n", entryId,
+             static_cast<unsigned>(entry.txnKind));
+    panic_if(entry.slcUpdatePhase != SlcUpdatePhase::None,
+             "HnfCC entry=%u starts remove-sharer with phase=%u\n", entryId,
+             static_cast<unsigned>(entry.slcUpdatePhase));
+
+    SlcSfReqHeader header = makeSlcSfReqHeader(
+        slcSfReqIds, entryId, entry.blockAddr, entry.req, entry.seq,
+        entry.acceptCycle);
+    entry.slcUpdateReqId = header.reqId;
+    entry.pendingSlcUpdate = SlcSfRequest(makeSlcSfRemoveSharerReq(
+        std::move(header), entry.slcCommitToken, entry.slcLookupReqId));
     entry.slcUpdatePhase = SlcUpdatePhase::IssuePending;
     tryIssueSlcUpdate(entryId);
 }
@@ -1490,7 +1510,10 @@ HnfCoherencyController::consumeSlcsfResponse(SlcSfResponse response)
             SlcSfOperationKind::CompleteMaintenance;
         const bool writeLine = response.operationKind() ==
             SlcSfOperationKind::WriteLine;
-        panic_if((!commitRead && !maintenance && !writeLine) ||
+        const bool removeSharer = response.operationKind() ==
+            SlcSfOperationKind::RemoveSharer;
+        panic_if((!commitRead && !maintenance && !writeLine &&
+                  !removeSharer) ||
                      entry.slcUpdatePhase != SlcUpdatePhase::Waiting ||
                      entry.latchedSlcUpdateResponse ||
                      entry.slcUpdateReqId != response.reqId(),
@@ -1510,9 +1533,11 @@ HnfCoherencyController::consumeSlcsfResponse(SlcSfResponse response)
             } else {
                 const auto* update =
                     std::get_if<SlcSfUpdateResponse>(&response.payload());
-                panic_if(!update || update->updateKind !=
-                             SlcSfUpdateKind::CompleteMaintenance,
-                         "HnfCC entry=%u maintenance Done has bad payload\n",
+                const SlcSfUpdateKind expected = maintenance ?
+                    SlcSfUpdateKind::CompleteMaintenance :
+                    SlcSfUpdateKind::RemoveSharer;
+                panic_if(!update || update->updateKind != expected,
+                         "HnfCC entry=%u update Done has bad payload\n",
                          entryId);
             }
             entry.latchedSlcUpdateResponse = std::move(response);

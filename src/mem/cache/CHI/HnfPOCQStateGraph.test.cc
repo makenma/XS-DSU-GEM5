@@ -201,15 +201,24 @@ TEST(HnfPocqStateGraphTest, MaintenanceSnoopAlsoWaitsForSlcUpdate)
                PocqActionKind::CommitMaintenance);
 }
 
-TEST(HnfPocqStateGraphTest, EvictQueuesCompWithoutLookup)
+TEST(HnfPocqStateGraphTest, EvictWaitsForRemoveSharerUpdate)
 {
     POCQ_StateGraph graph;
     PocqState state = PocqState::Idle;
 
-    expectActions(graph.tryStep(state, admit(PocqTxnKind::Evict)),
-                  PocqState::Idle,
-                  {PocqActionKind::RemoveSharer,
-                   PocqActionKind::QueueComp});
+    expectStep(graph.tryStep(state, admit(PocqTxnKind::Evict)),
+               PocqState::SlcLookup, PocqActionKind::DoSlcLookup);
+    expectStep(
+        graph.tryStep(
+            state, lookupDone(PocqTxnKind::Evict, true, true, true)),
+        PocqState::SlcUpdateIssue, PocqActionKind::RemoveSharer);
+    expectActions(
+        graph.tryStep(state, event(PocqEventKind::SlcUpdateAccepted)),
+        PocqState::SlcUpdateWait, {});
+    PocqEvent done = event(PocqEventKind::SlcUpdateDone);
+    done.txn = PocqTxnKind::Evict;
+    expectStep(graph.tryStep(state, done), PocqState::Idle,
+               PocqActionKind::QueueComp);
 }
 
 TEST(HnfPocqStateGraphTest, ReadUniqueWaitsForSnoopBeforeData)
@@ -357,8 +366,8 @@ TEST(HnfPocqStateGraphTest, EverySupportedTransactionHasAnAdmitPath)
         PocqState state = PocqState::Idle;
         const auto step = graph.tryStep(state, admit(PocqTxnKind::Evict));
         ASSERT_TRUE(step.stepped);
-        EXPECT_EQ(state, PocqState::Idle);
-        EXPECT_EQ(step.actions.front(), PocqActionKind::RemoveSharer);
+        EXPECT_EQ(state, PocqState::SlcLookup);
+        EXPECT_EQ(step.actions.front(), PocqActionKind::DoSlcLookup);
     }
 
     for (PocqTxnKind txn : writes) {

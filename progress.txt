@@ -75,6 +75,9 @@ Started: 2026-07-28T20:49:07+08:00
 - Route side effects produced by periodic controller service through an owned
   deferred queue, include that queue in work detection, and let the owning
   event loop drain it exactly once on a later scheduling boundary.
+- For a directory-only transaction that still requires token validation,
+  perform a registered lookup first and issue the typed mutation from the
+  lookup-completion graph edge; emit protocol completion only after Done.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -807,4 +810,29 @@ Started: 2026-07-28T20:49:07+08:00
   should only start an owned delayed operation; retirement produced later by
   controller service needs an explicit queue so scheduling and token release
   cannot silently discard or duplicate it.
+---
+
+## 2026-07-29 10:39 - US-018
+- Story: Make eviction and remove-sharer asynchronous
+- What was implemented: Routed Evict through a registered lookup followed by
+  explicit SLCSF update issue and wait states. RemoveSharer now uses an owned
+  typed request and exact terminal-response validation; Comp and retirement
+  occur only after Done. NoCredit retains one request identity, while stale
+  Replay preserves directory state and restarts from a fresh lookup after its
+  absolute deadline.
+- Files changed: `src/mem/cache/CHI/HnfPOCQStateGraph.cc`,
+  `src/mem/cache/CHI/HnfPOCQStateGraph.test.cc`,
+  `src/mem/cache/CHI/HnfCoherencyController.hh`,
+  `src/mem/cache/CHI/HnfCoherencyController.cc`,
+  `src/mem/cache/CHI/HnfCoherencyController.test.cc`, `prd.json`, and
+  `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and all four CHI
+  GTest binaries successfully; all 129 tests passed (18 POCQ, 2 SEQ POCQ,
+  80 SLCSF, and 29 controller), retaining all baseline passes; changed C++
+  files passed `python3 util/style.py --modifications`; `git diff --check`
+  passed.
+- Learnings for future iterations: Even a directory-only protocol operation
+  needs a fresh versioned lookup before delayed mutation; sharing the update
+  admission and response machinery then gives NoCredit and Replay the same
+  single-owner guarantees as read, maintenance, and write paths.
 ---
