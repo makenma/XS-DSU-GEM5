@@ -138,7 +138,7 @@ HnfSLCSF::validateConfig(const HnfSLCSFPipelineConfig& config)
         config.updateLatency == 0 || config.victimLatency == 0 ||
         config.sfEvictLatency == 0 || config.replayPenalty == 0 ||
         config.victimBufferEntries == 0 ||
-        config.responseConsumeWidth == 0) {
+        config.responseConsumeWidth == 0 || config.childClockPeriod == 0) {
         throw std::invalid_argument(
             "HnfSLCSF queue sizes, VictimBuffer, max inflight, widths, "
             "latencies, and replay penalty must be positive");
@@ -151,6 +151,43 @@ HnfSLCSF::validateConfig(const HnfSLCSFPipelineConfig& config)
         throw std::invalid_argument(
             "HnfSLCSF max inflight above one requires set locking");
     }
+}
+
+uint64_t
+HnfSLCSF::serviceLatency(const SlcSfRequest& request) const
+{
+    const uint64_t latency = std::visit(
+        [this](const auto& typed_request) {
+            using Request = std::decay_t<decltype(typed_request)>;
+            if constexpr (std::is_same_v<Request, SlcSfLookupReq>) {
+                return config.lookupLatency;
+            } else if constexpr (std::is_same_v<Request, SlcSfFillReq>) {
+                return config.fillLatency;
+            } else {
+                return config.updateLatency;
+            }
+        },
+        request);
+    return std::max<uint64_t>(1, latency);
+}
+
+Tick
+HnfSLCSF::replayDeadline() const
+{
+    panic_if(config.replayPenalty > MaxTick / config.childClockPeriod,
+             "HnfSLCSF replay penalty conversion overflows");
+    const Tick penalty = config.replayPenalty * config.childClockPeriod;
+    panic_if(penalty > MaxTick - wakeupTick,
+             "HnfSLCSF replay deadline overflows");
+    return wakeupTick + penalty;
+}
+
+bool
+HnfSLCSF::lookupReplaysAtL0(const SlcSfRequest& request) const
+{
+    const auto* lookup_request = std::get_if<SlcSfLookupReq>(&request);
+    return lookup_request &&
+        probe(makeBackendLookupRequest(*lookup_request)).result.replay;
 }
 
 SlcSfEnqueueResult
@@ -275,18 +312,61 @@ HnfSLCSF::completeInflightRequests()
 {
     for (auto request = inflightRequests.begin();
          request != inflightRequests.end();) {
-        if (request->completeCycle > wakeupCycle) {
+        if (!request->mutationStage &&
+            request->completeCycle > wakeupCycle) {
             ++request;
             continue;
         }
 
         if (!request->mutationStage) {
-            respPending.push_back(makeTerminalResponse(request->request));
+            if (request->earlyLookupReplay) {
+                const auto& lookup =
+                    std::get<SlcSfLookupReq>(request->request);
+                respPending.push_back(makeSlcSfReplayResponse(
+                    lookup,
+                    SlcSfReplay{
+                        SlcSfReplayReason::SeqConflict,
+                        replayDeadline(), true}));
+            } else {
+                respPending.push_back(
+                    makeTerminalResponse(request->request));
+            }
             request = inflightRequests.erase(request);
             continue;
         }
 
-        advanceMutation(*request);
+        const size_t transitions = [&request] {
+            switch (*request->mutationStage) {
+              case MutationStage::U0DecodeValidate:
+                return 4;
+              case MutationStage::U1PrepareResources:
+                return 3;
+              case MutationStage::U2ArrayWrite:
+                return 2;
+              case MutationStage::U3CheckLatch:
+                return 1;
+            }
+            panic("HnfSLCSF invalid mutation stage\n");
+        }();
+        const uint64_t remaining_wakeups =
+            request->completeCycle > wakeupCycle ?
+                request->completeCycle - wakeupCycle + 1 : 1;
+        const size_t advances = remaining_wakeups < transitions ?
+            transitions - remaining_wakeups + 1 : 1;
+        const bool was_stalled = request->mutationStalled;
+        for (size_t i = 0; i < advances && request->mutationStage; ++i) {
+            const MutationStage previous = *request->mutationStage;
+            advanceMutation(*request);
+            if (request->mutationStage &&
+                *request->mutationStage == previous) {
+                request->mutationStalled = true;
+                break;
+            }
+            request->mutationStalled = false;
+            if (was_stalled) {
+                break;
+            }
+        }
         if (request->mutationStage) {
             ++request;
         } else {
@@ -316,13 +396,11 @@ HnfSLCSF::makeTerminalResponse(const SlcSfRequest& request)
                 HnfSlcLookupResult result = HnfSLCSFBackend::lookup(
                     makeBackendLookupRequest(typed_request), &snapshot);
                 if (result.replay) {
-                    panic_if(wakeupTick == MaxTick,
-                             "HnfSLCSF cannot schedule a retry after MaxTick");
                     return makeSlcSfReplayResponse(
                         typed_request,
                         SlcSfReplay{
                             SlcSfReplayReason::SeqConflict,
-                            wakeupTick + 1, true});
+                            replayDeadline(), true});
                 }
 
                 SlcSfCommitToken token{};
@@ -586,18 +664,18 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
                 request.request);
             request.mutationStage = MutationStage::U3CheckLatch;
         } else if (!token_valid) {
-            panic_if(config.replayPenalty > MaxTick - wakeupTick,
-                     "HnfSLCSF stale-token retry tick overflows");
             request.terminalResponse = std::visit(
                 [this](const auto& typed_request) {
                     return makeSlcSfReplayResponse(
                         typed_request,
                         SlcSfReplay{
                             SlcSfReplayReason::StaleCommitToken,
-                            wakeupTick + config.replayPenalty, true});
+                            replayDeadline(), true});
                 },
                 request.request);
             request.mutationStage = MutationStage::U3CheckLatch;
+            request.completeCycle = wakeupCycle;
+            latchMutationResponse(request);
         } else {
             request.mutationStage = MutationStage::U1PrepareResources;
         }
@@ -605,57 +683,68 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
       }
       case MutationStage::U1PrepareResources:
         if (!validateMutationToken(request.request)) {
-            panic_if(config.replayPenalty > MaxTick - wakeupTick,
-                     "HnfSLCSF stale-token retry tick overflows");
             request.terminalResponse = std::visit(
                 [this](const auto& typed_request) {
                     return makeSlcSfReplayResponse(
                         typed_request,
                         SlcSfReplay{
                             SlcSfReplayReason::StaleCommitToken,
-                            wakeupTick + config.replayPenalty, true});
+                            replayDeadline(), true});
                 },
                 request.request);
             request.mutationStage = MutationStage::U3CheckLatch;
+            request.completeCycle = std::max(
+                request.completeCycle, wakeupCycle + 1);
         } else if (prepareMutationResources(request)) {
             request.mutationStage = MutationStage::U2ArrayWrite;
         }
         break;
       case MutationStage::U2ArrayWrite:
         if (!validateMutationToken(request.request)) {
-            panic_if(config.replayPenalty > MaxTick - wakeupTick,
-                     "HnfSLCSF stale-token retry tick overflows");
             request.terminalResponse = std::visit(
                 [this](const auto& typed_request) {
                     return makeSlcSfReplayResponse(
                         typed_request,
                         SlcSfReplay{
                             SlcSfReplayReason::StaleCommitToken,
-                            wakeupTick + config.replayPenalty, true});
+                            replayDeadline(), true});
                 },
                 request.request);
         } else {
             executeMutation(request);
         }
         request.mutationStage = MutationStage::U3CheckLatch;
+        if (request.terminalResponse) {
+            request.completeCycle = std::max(
+                request.completeCycle, wakeupCycle + 1);
+        }
+        if (request.completeCycle <= wakeupCycle) {
+            latchMutationResponse(request);
+        }
         break;
       case MutationStage::U3CheckLatch:
-        if (request.mutationCommitted) {
-            checkLineInvariant(requestHeader(request.request).lineAddress);
+        if (request.completeCycle <= wakeupCycle) {
+            latchMutationResponse(request);
         }
-        if (!request.terminalResponse) {
-            request.terminalResponse = makeTerminalResponse(request.request);
-        }
-        respPending.push_back(std::move(*request.terminalResponse));
-        if (request.resourcesPrepared) {
-            releaseSfResources(
-                requestHeader(request.request).pocEntryId);
-            request.resourcesPrepared = false;
-        }
-        request.mutationStage.reset();
         break;
     }
-    request.completeCycle = wakeupCycle + 1;
+}
+
+void
+HnfSLCSF::latchMutationResponse(InflightRequest& request)
+{
+    if (request.mutationCommitted) {
+        checkLineInvariant(requestHeader(request.request).lineAddress);
+    }
+    if (!request.terminalResponse) {
+        request.terminalResponse = makeTerminalResponse(request.request);
+    }
+    respPending.push_back(std::move(*request.terminalResponse));
+    if (request.resourcesPrepared) {
+        releaseSfResources(requestHeader(request.request).pocEntryId);
+        request.resourcesPrepared = false;
+    }
+    request.mutationStage.reset();
 }
 
 bool
@@ -727,13 +816,19 @@ HnfSLCSF::issueReadyRequests()
         // emplacing it, and only a successfully emplaced request is erased
         // from ready, so issue and reservation are one state transition.
         const bool mutation = pipe != RequestPipe::Lookup;
-        const uint64_t latency = mutation ? 1 :
-            std::max<uint64_t>(1, config.lookupLatency);
+        const bool early_lookup_replay =
+            !mutation && lookupReplaysAtL0(*request);
+        uint64_t latency = serviceLatency(*request);
+        if (early_lookup_replay) {
+            latency = 1;
+        }
+        panic_if(latency > UINT64_MAX - wakeupCycle,
+                 "HnfSLCSF service completion cycle overflows");
         inflightRequests.push_back(InflightRequest{
             std::move(*request), wakeupCycle, wakeupCycle + latency,
             mutation ? std::optional<MutationStage>(
                            MutationStage::U0DecodeValidate) : std::nullopt,
-            std::nullopt, false, false});
+            std::nullopt, false, false, false, early_lookup_replay});
         request = reqReady.erase(request);
         ++*issued;
     }

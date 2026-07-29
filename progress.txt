@@ -54,6 +54,10 @@ Started: 2026-07-28T20:49:07+08:00
 - Revalidate a versioned mutation snapshot immediately before the sole write
   after any resource stall, and use its recorded ways for both preflight and
   allocation so replacement touches cannot redirect the commit.
+- Assign each issued service request an earliest completion cycle from its
+  operation class; deadline-driven catch-up may traverse multiple structural
+  stages on one edge but must stop at a resource stall, while early Replay
+  explicitly replaces the deadline with the one-cycle completion rule.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -628,4 +632,26 @@ Started: 2026-07-28T20:49:07+08:00
   untrusted token being checked. Exact-target resource preflight must ignore
   unrelated free ways, upgrade an adopted reservation atomically, and retain
   cleanup ownership on early terminal paths as well as successful writes.
+---
+
+## 2026-07-29 08:38 - US-014
+- Story: Apply base per-operation service latency
+- What was implemented: Added issue-time latency mapping for Lookup, Fill,
+  Update, and Evict requests; normal mutations retain their staged semantics
+  with deadline-driven short-latency catch-up that stops at resource stalls.
+  L0 decisions are latched at issue, L0 and U0 Replay complete after one child
+  cycle, later Replay never shortens the original service deadline, and replay
+  penalties convert through the HomeNode clock period into absolute Ticks.
+- Files changed: `src/mem/cache/CHI/HnfSLCSF.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.test.cc`,
+  `src/mem/cache/CHI/HomeNodeFull.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and all four CHI
+  GTest binaries successfully; all 107 tests passed (15 POCQ, 2 SEQ POCQ,
+  76 SLCSF, and 14 controller), retaining all 36 baseline passes; changed C++
+  files passed `python3 util/style.py`; `git diff --check` passed.
+- Learnings for future iterations: A configured service latency is an earliest
+  issue-to-completion deadline, so resource stalls may extend it without
+  collapsing registered stage boundaries; retry deadlines require an explicit
+  child-cycle-to-Tick conversion at the semantic completion boundary.
 ---

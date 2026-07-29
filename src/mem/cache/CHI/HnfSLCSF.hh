@@ -38,11 +38,12 @@ struct HnfSLCSFPipelineConfig
     size_t victimBufferEntries = 2;
     size_t responseConsumeWidth = 1;
     bool enableSetLock = false;
+    Tick childClockPeriod = 1;
 };
 
 template <class Params>
 HnfSLCSFPipelineConfig
-makeEmbeddedSlcsfConfig(const Params& p)
+makeEmbeddedSlcsfConfig(const Params& p, Tick child_clock_period = 1)
 {
     HnfSLCSFPipelineConfig config{};
     config.reqQueueEntries = p.slcsf_req_queue_entries;
@@ -60,6 +61,7 @@ makeEmbeddedSlcsfConfig(const Params& p)
     config.victimBufferEntries = p.slcsf_victim_buffer_entries;
     config.responseConsumeWidth = p.slcsf_response_consume_width;
     config.enableSetLock = p.slcsf_enable_set_lock;
+    config.childClockPeriod = child_clock_period;
     return config;
 }
 
@@ -142,9 +144,14 @@ class HnfSLCSF : public HnfSLCSFBackend
         std::optional<SlcSfResponse> terminalResponse;
         bool resourcesPrepared = false;
         bool mutationCommitted = false;
+        bool mutationStalled = false;
+        bool earlyLookupReplay = false;
     };
 
     static void validateConfig(const HnfSLCSFPipelineConfig& config);
+    uint64_t serviceLatency(const SlcSfRequest& request) const;
+    Tick replayDeadline() const;
+    bool lookupReplaysAtL0(const SlcSfRequest& request) const;
     void promotePendingResponses();
     void completeInflightRequests();
     SlcSfResponse makeTerminalResponse(const SlcSfRequest& request);
@@ -154,6 +161,7 @@ class HnfSLCSF : public HnfSLCSFBackend
     bool prepareMutationResources(InflightRequest& request);
     void executeMutation(InflightRequest& request);
     void advanceMutation(InflightRequest& request);
+    void latchMutationResponse(InflightRequest& request);
     void promoteIngressRequests();
     void issueReadyRequests();
     void updateRegisteredCredits();
