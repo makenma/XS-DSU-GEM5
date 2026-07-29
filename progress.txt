@@ -69,6 +69,9 @@ Started: 2026-07-28T20:49:07+08:00
   but before the sole write, so reservation ownership and cleanup stay proven.
 - Pass the owner's absolute Tick into controller service boundaries that gate
   retries; a no-argument test seam must not be used by production scheduling.
+- When multiple transaction classes share asynchronous issue and wait nodes,
+  discriminate their terminal graph edges and response payloads by operation
+  kind so each class emits only its own protocol completion.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -755,4 +758,26 @@ Started: 2026-07-28T20:49:07+08:00
   for visible graph topology. A Replay deadline must gate every wake path, and
   response latching must precede retry selection when visibility can coincide
   with the first eligible edge.
+---
+
+## 2026-07-29 10:21 - US-016
+- Story: Make maintenance POCQ updates asynchronous
+- What was implemented: Routed maintenance lookup and snoop completion through
+  explicit SLCSF update issue and wait states. Maintenance now sends an owned
+  CompleteMaintenance request, validates its typed terminal response, and
+  queues Comp only on a later controller cycle after Done. NoCredit retains
+  one request and identity, while stale-token Replay releases reservations,
+  waits for its absolute deadline, and restarts from a fresh lookup.
+- Files changed: `src/mem/cache/CHI/HnfPOCQStateGraph.cc`,
+  `src/mem/cache/CHI/HnfPOCQStateGraph.test.cc`,
+  `src/mem/cache/CHI/HnfCoherencyController.cc`,
+  `src/mem/cache/CHI/HnfCoherencyController.test.cc`, `prd.json`, and
+  `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and all four CHI
+  GTest binaries successfully; all 124 tests passed (18 POCQ, 2 SEQ POCQ,
+  80 SLCSF, and 24 controller); changed C++ files passed
+  `python3 util/style.py --modifications`; `git diff --check` passed.
+- Learnings for future iterations: A shared asynchronous update phase can
+  serve multiple operation classes safely when request construction, response
+  validation, and terminal graph edges retain concrete operation identity.
 ---

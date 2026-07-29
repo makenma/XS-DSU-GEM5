@@ -504,9 +504,20 @@ void
 HnfCoherencyController::completeMaintenance(uint32_t entryId)
 {
     Entry& entry = entries[entryId];
-    slcsfUnit->completeMaintenance(entry.blockAddr, entry.req.srcid,
-                                   entry.txnKind, entry.req.tgtid);
-    slcsfUnit->releaseSfResources(entryId);
+    panic_if(entry.slcUpdatePhase != SlcUpdatePhase::None,
+             "HnfCC entry=%u starts maintenance with phase=%u\n", entryId,
+             static_cast<unsigned>(entry.slcUpdatePhase));
+
+    SlcSfReqHeader header = makeSlcSfReqHeader(
+        slcSfReqIds, entryId, entry.blockAddr, entry.req, entry.seq,
+        entry.acceptCycle);
+    entry.slcUpdateReqId = header.reqId;
+    entry.pendingSlcUpdate = SlcSfRequest(
+        makeSlcSfCompleteMaintenanceReq(
+            std::move(header), entry.txnKind, entry.req.tgtid,
+            entry.slcCommitToken, entry.slcLookupReqId));
+    entry.slcUpdatePhase = SlcUpdatePhase::IssuePending;
+    tryIssueSlcUpdate(entryId);
 }
 
 void
@@ -1267,9 +1278,10 @@ HnfCoherencyController::tryIssueSlcUpdate(uint32_t entryId)
         DPRINTF(HnfCC, "CC entry=%u issued SLCSF update req=%llu\n",
                 entryId, static_cast<unsigned long long>(reqId.value));
     } else {
-        const SlcSfFillReq* request =
-            std::get_if<SlcSfFillReq>(&*entry.pendingSlcUpdate);
-        panic_if(!request || request->header.reqId != reqId,
+        const SlcSfReqId retainedId = std::visit(
+            [](const auto& request) { return request.header.reqId; },
+            *entry.pendingSlcUpdate);
+        panic_if(retainedId != reqId,
                  "HnfCC entry=%u rejected update changed ownership/id\n",
                  entryId);
     }
@@ -1426,8 +1438,11 @@ HnfCoherencyController::consumeSlcsfResponse(SlcSfResponse response)
              "HnfCC response has invalid POCQ entry=%u\n", entryId);
     Entry& entry = entries[entryId];
     if (response.operationKind() != SlcSfOperationKind::Lookup) {
-        panic_if(response.operationKind() !=
-                     SlcSfOperationKind::CommitRead ||
+        const bool commitRead = response.operationKind() ==
+            SlcSfOperationKind::CommitRead;
+        const bool maintenance = response.operationKind() ==
+            SlcSfOperationKind::CompleteMaintenance;
+        panic_if((!commitRead && !maintenance) ||
                      entry.slcUpdatePhase != SlcUpdatePhase::Waiting ||
                      entry.latchedSlcUpdateResponse ||
                      entry.slcUpdateReqId != response.reqId(),
@@ -1436,12 +1451,21 @@ HnfCoherencyController::consumeSlcsfResponse(SlcSfResponse response)
                  static_cast<unsigned long long>(response.reqId().value));
 
         if (response.status() == SlcSfTerminalStatus::Done) {
-            const auto* fill =
-                std::get_if<SlcSfFillResponse>(&response.payload());
-            panic_if(!fill ||
-                         fill->updateKind != SlcSfUpdateKind::CommitRead,
-                     "HnfCC entry=%u update Done has bad payload\n",
-                     entryId);
+            if (commitRead) {
+                const auto* fill =
+                    std::get_if<SlcSfFillResponse>(&response.payload());
+                panic_if(!fill || fill->updateKind !=
+                             SlcSfUpdateKind::CommitRead,
+                         "HnfCC entry=%u read update Done has bad payload\n",
+                         entryId);
+            } else {
+                const auto* update =
+                    std::get_if<SlcSfUpdateResponse>(&response.payload());
+                panic_if(!update || update->updateKind !=
+                             SlcSfUpdateKind::CompleteMaintenance,
+                         "HnfCC entry=%u maintenance Done has bad payload\n",
+                         entryId);
+            }
             entry.latchedSlcUpdateResponse = std::move(response);
             entry.slcUpdatePhase = SlcUpdatePhase::ResponseLatched;
         } else if (response.status() == SlcSfTerminalStatus::Replay) {

@@ -469,6 +469,7 @@ TEST(HnfCoherencyControllerTest, EverySupportedTransactionCompletes)
         ReadWithCompAck,
         ReadNoSnp,
         ImmediateComp,
+        Maintenance,
         CopyBackWrite,
         NonCopyBackWrite,
     };
@@ -489,11 +490,11 @@ TEST(HnfCoherencyControllerTest, EverySupportedTransactionCompletes)
         {"ReadOnce", PocqTxnKind::ReadOnce, 0x03,
          Flow::ReadWithCompAck},
         {"CleanInvalid", PocqTxnKind::CleanInvalid, 0x09,
-         Flow::ImmediateComp},
+         Flow::Maintenance},
         {"MakeInvalid", PocqTxnKind::MakeInvalid, 0x0a,
-         Flow::ImmediateComp},
+         Flow::Maintenance},
         {"MakeUnique", PocqTxnKind::MakeUnique, 0x0c,
-         Flow::ImmediateComp},
+         Flow::Maintenance},
         {"Evict", PocqTxnKind::Evict, 0x0d,
          Flow::ImmediateComp},
         {"WriteBackFull", PocqTxnKind::WriteBackFull, 0x5b,
@@ -552,7 +553,14 @@ TEST(HnfCoherencyControllerTest, EverySupportedTransactionCompletes)
                 ASSERT_TRUE(retired);
                 EXPECT_EQ(retired->tokenId, 0);
             }
-        } else if (test.flow == Flow::ImmediateComp) {
+        } else if (test.flow == Flow::ImmediateComp ||
+                   test.flow == Flow::Maintenance) {
+            if (test.flow == Flow::Maintenance) {
+                ASSERT_EQ(cc.slcUpdatePhase(0),
+                          HnfCoherencyController::SlcUpdatePhase::Waiting);
+                EXPECT_FALSE(cc.hasTxRsp());
+                pumpUpdate(cc, slcsf, 0, tick);
+            }
             ASSERT_TRUE(cc.hasTxRsp());
             ASSERT_TRUE(cc.frontTxRsp().retire);
             EXPECT_EQ(cc.frontTxRsp().retire->tokenId, 0);
@@ -746,6 +754,177 @@ TEST(HnfCoherencyControllerTest, ResponseConsumeWidthLimitsEachCcCycle)
               HnfCoherencyController::SlcLookupPhase::None);
     EXPECT_EQ(cc.slcLookupPhase(1),
               HnfCoherencyController::SlcLookupPhase::ResponseLatched);
+}
+
+TEST(HnfCoherencyControllerTest, MaintenanceResponseWaitsForSlcSfCommit)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    slcsf.commitRead(TestAddr, 0, PocqTxnKind::ReadShared,
+                     lineData(0x21), false, HnfNode);
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 6901, 0, 99, 0x09), 0).accepted);
+
+    Tick tick = 350;
+    pumpLookup(cc, slcsf, 0, tick);
+    ASSERT_EQ(cc.slcUpdatePhase(0),
+              HnfCoherencyController::SlcUpdatePhase::Waiting);
+    EXPECT_EQ(cc.pocqState(0), PocqState::SlcUpdateWait);
+    EXPECT_FALSE(cc.hasTxRsp());
+
+    for (size_t i = 0; i < 3; ++i) {
+        cc.serviceInternalWork(tick);
+        EXPECT_EQ(cc.slcUpdatePhase(0),
+                  HnfCoherencyController::SlcUpdatePhase::Waiting);
+        EXPECT_FALSE(cc.hasTxRsp());
+    }
+
+    for (size_t i = 0; i < 32 && slcsf.respVisibleCount() == 0; ++i) {
+        slcsf.wakeup(++tick);
+    }
+    ASSERT_EQ(slcsf.respVisibleCount(), 1);
+    EXPECT_FALSE(cc.hasTxRsp());
+
+    cc.serviceInternalWork(tick);
+    EXPECT_EQ(cc.slcUpdatePhase(0),
+              HnfCoherencyController::SlcUpdatePhase::ResponseLatched);
+    EXPECT_EQ(cc.pocqState(0), PocqState::SlcUpdateWait);
+    EXPECT_FALSE(cc.hasTxRsp());
+
+    cc.serviceInternalWork(tick);
+    ASSERT_TRUE(cc.hasTxRsp());
+    ASSERT_TRUE(cc.frontTxRsp().retire);
+    EXPECT_EQ(cc.frontTxRsp().retire->tokenId, 0);
+    EXPECT_EQ(cc.slcUpdatePhase(0),
+              HnfCoherencyController::SlcUpdatePhase::None);
+    EXPECT_FALSE(slcsf.hasSfReservation(0));
+}
+
+TEST(HnfCoherencyControllerTest,
+     MaintenanceNoCreditRetriesWithoutDuplicateRequest)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.reqQueueEntries = 1;
+    config.respQueueEntries = 1;
+    config.maxInflight = 1;
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8, config);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    slcsf.commitRead(TestAddr, 0, PocqTxnKind::ReadShared,
+                     lineData(0x25), false, HnfNode);
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 6902, 0, 100, 0x09), 0).accepted);
+
+    Tick tick = 375;
+    for (size_t i = 0; i < 32 && slcsf.respVisibleCount() == 0; ++i) {
+        slcsf.wakeup(++tick);
+    }
+    ASSERT_EQ(slcsf.respVisibleCount(), 1);
+    cc.serviceInternalWork(tick);
+    ASSERT_EQ(cc.slcLookupPhase(0),
+              HnfCoherencyController::SlcLookupPhase::ResponseLatched);
+
+    RawReq blockerRaw{};
+    blockerRaw.srcid = 63;
+    SlcSfReqIdAllocator blockerIds;
+    SlcSfRequest blocker = makeSlcSfLookupReq(
+        makeSlcSfReqHeader(
+            blockerIds, UINT32_MAX, TestAddr + BlockSize, blockerRaw),
+        PocqTxnKind::ReadShared);
+    ASSERT_EQ(slcsf.tryEnqueue(std::move(blocker)),
+              SlcSfEnqueueResult::Accepted);
+
+    cc.serviceInternalWork(tick);
+    ASSERT_EQ(cc.slcUpdatePhase(0),
+              HnfCoherencyController::SlcUpdatePhase::IssuePending);
+    EXPECT_EQ(cc.pocqState(0), PocqState::SlcUpdateIssue);
+    const SlcSfReqId updateId = cc.slcUpdateReqId(0);
+    for (size_t i = 0; i < 3; ++i) {
+        cc.serviceInternalWork(tick);
+        EXPECT_EQ(cc.slcUpdatePhase(0),
+                  HnfCoherencyController::SlcUpdatePhase::IssuePending);
+        EXPECT_EQ(cc.slcUpdateReqId(0), updateId);
+        EXPECT_EQ(slcsf.reqOutstanding(), 1);
+        EXPECT_FALSE(cc.hasTxRsp());
+    }
+
+    for (size_t i = 0; i < 32 && slcsf.respVisibleCount() == 0; ++i) {
+        slcsf.wakeup(++tick);
+    }
+    ASSERT_TRUE(slcsf.popVisibleResponse());
+    cc.serviceInternalWork(tick);
+    ASSERT_EQ(cc.slcUpdatePhase(0),
+              HnfCoherencyController::SlcUpdatePhase::Waiting);
+    EXPECT_EQ(cc.slcUpdateReqId(0), updateId);
+    EXPECT_EQ(slcsf.reqOutstanding(), 1);
+    EXPECT_FALSE(cc.hasTxRsp());
+
+    pumpUpdate(cc, slcsf, 0, tick);
+    EXPECT_TRUE(cc.hasTxRsp());
+}
+
+TEST(HnfCoherencyControllerTest,
+     MaintenanceReplayRestartsFromFreshLookup)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.replayPenalty = 3;
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8, config);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    slcsf.commitRead(TestAddr, 0, PocqTxnKind::ReadShared,
+                     lineData(0x29), false, HnfNode);
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 6903, 0, 101, 0x09), 0).accepted);
+
+    Tick tick = 390;
+    for (size_t i = 0; i < 32 && slcsf.respVisibleCount() == 0; ++i) {
+        slcsf.wakeup(++tick);
+    }
+    ASSERT_EQ(slcsf.respVisibleCount(), 1);
+    cc.serviceInternalWork(tick);
+    ASSERT_EQ(cc.slcLookupPhase(0),
+              HnfCoherencyController::SlcLookupPhase::ResponseLatched);
+
+    slcsf.completeMaintenance(
+        TestAddr, 0, PocqTxnKind::CleanInvalid, HnfNode);
+    cc.serviceInternalWork(tick);
+    ASSERT_EQ(cc.slcUpdatePhase(0),
+              HnfCoherencyController::SlcUpdatePhase::Waiting);
+
+    for (size_t i = 0; i < 32 &&
+         cc.slcUpdatePhase(0) !=
+             HnfCoherencyController::SlcUpdatePhase::ReplayWait; ++i) {
+        pumpOnce(cc, slcsf, tick);
+    }
+    ASSERT_EQ(cc.slcUpdatePhase(0),
+              HnfCoherencyController::SlcUpdatePhase::ReplayWait);
+    EXPECT_EQ(cc.pocqState(0), PocqState::Sleep);
+    EXPECT_FALSE(cc.hasTxRsp());
+    EXPECT_FALSE(slcsf.hasSfReservation(0));
+    const Tick deadline = cc.slcsfRetryNotBeforeTick(0);
+    EXPECT_GT(deadline, tick);
+
+    cc.serviceInternalWork(deadline - 1);
+    EXPECT_EQ(cc.pocqState(0), PocqState::Sleep);
+    cc.serviceInternalWork(deadline);
+    ASSERT_EQ(cc.slcLookupPhase(0),
+              HnfCoherencyController::SlcLookupPhase::Waiting);
+    const SlcSfReqId freshLookup = cc.slcLookupReqId(0);
+    EXPECT_TRUE(freshLookup.valid());
+
+    tick = deadline;
+    pumpLookup(cc, slcsf, 0, tick);
+    ASSERT_EQ(cc.slcUpdatePhase(0),
+              HnfCoherencyController::SlcUpdatePhase::Waiting);
+    pumpUpdate(cc, slcsf, 0, tick);
+    EXPECT_TRUE(cc.hasTxRsp());
 }
 
 TEST(HnfCoherencyControllerTest, ReadResponseWaitsForSlcSfCommit)

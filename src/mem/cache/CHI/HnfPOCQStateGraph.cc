@@ -129,7 +129,15 @@ isSnoopDoneMaintenance(const PocqEvent& event)
 bool
 isSlcUpdateDone(const PocqEvent& event)
 {
-    return event.kind == PocqEventKind::SlcUpdateDone && !event.replay;
+    return event.kind == PocqEventKind::SlcUpdateDone && !event.replay &&
+        !isMaintenanceTxn(event.txn);
+}
+
+bool
+isSlcMaintenanceDone(const PocqEvent& event)
+{
+    return event.kind == PocqEventKind::SlcUpdateDone && !event.replay &&
+        isMaintenanceTxn(event.txn);
 }
 
 bool
@@ -249,16 +257,14 @@ POCQ_StateGraph::POCQ_StateGraph()
                   {PocqActionKind::UpdateSlcSf});
     addTransition(slcLookup, issueMcRead, isLookupMissNeedingMemory,
                   {PocqActionKind::QueueTxReq});
-    addTransition(slcLookup, idle, isLookupMaintenanceDone,
-                  {PocqActionKind::CommitMaintenance,
-                   PocqActionKind::QueueComp});
+    addTransition(slcLookup, slcUpdateIssue, isLookupMaintenanceDone,
+                  {PocqActionKind::CommitMaintenance});
     addTransition(waitSnoop, slcUpdateIssue, isSnoopDoneReadWithData,
                   {PocqActionKind::UpdateSlcSf});
     addTransition(waitSnoop, issueMcRead, isSnoopDoneReadNeedsMemory,
                   {PocqActionKind::QueueTxReq});
-    addTransition(waitSnoop, idle, isSnoopDoneMaintenance,
-                  {PocqActionKind::CommitMaintenance,
-                   PocqActionKind::QueueComp});
+    addTransition(waitSnoop, slcUpdateIssue, isSnoopDoneMaintenance,
+                  {PocqActionKind::CommitMaintenance});
     addTransition(issueMcRead, txLink, isMcDataDoneReadNoSnp,
                   {PocqActionKind::QueueCompData});
     addTransition(issueMcRead, slcUpdateIssue, isMcDataDone,
@@ -269,6 +275,8 @@ POCQ_StateGraph::POCQ_StateGraph()
                   {PocqActionKind::SleepForReplay});
     addTransition(slcUpdateWait, txLink, isSlcUpdateDone,
                   {PocqActionKind::QueueCompData});
+    addTransition(slcUpdateWait, idle, isSlcMaintenanceDone,
+                  {PocqActionKind::QueueComp});
     addTransition(txLink, waitCompAck, isTxLinkDoneNeedsCompAck,
                   {PocqActionKind::WaitCompAck});
     addTransition(txLink, idle, isTxLinkDoneNoCompAck,

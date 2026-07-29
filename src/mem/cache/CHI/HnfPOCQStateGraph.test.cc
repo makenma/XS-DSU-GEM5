@@ -162,7 +162,7 @@ TEST(HnfPocqStateGraphTest, ReplaySleeps)
     EXPECT_EQ(state, PocqState::Sleep);
 }
 
-TEST(HnfPocqStateGraphTest, MaintenanceLookupQueuesComp)
+TEST(HnfPocqStateGraphTest, MaintenanceWaitsForSlcUpdateBeforeComp)
 {
     POCQ_StateGraph graph;
     PocqState state = PocqState::Idle;
@@ -170,11 +170,35 @@ TEST(HnfPocqStateGraphTest, MaintenanceLookupQueuesComp)
     expectStep(graph.tryStep(state, admit(PocqTxnKind::CleanInvalid)),
                PocqState::SlcLookup, PocqActionKind::DoSlcLookup);
 
-    expectActions(graph.tryStep(
-                      state, lookupDone(PocqTxnKind::CleanInvalid, true)),
-                  PocqState::Idle,
-                  {PocqActionKind::CommitMaintenance,
-                   PocqActionKind::QueueComp});
+    expectStep(graph.tryStep(
+                   state, lookupDone(PocqTxnKind::CleanInvalid, true)),
+               PocqState::SlcUpdateIssue,
+               PocqActionKind::CommitMaintenance);
+    expectActions(
+        graph.tryStep(state, event(PocqEventKind::SlcUpdateAccepted)),
+        PocqState::SlcUpdateWait, {});
+    PocqEvent done = event(PocqEventKind::SlcUpdateDone);
+    done.txn = PocqTxnKind::CleanInvalid;
+    expectStep(graph.tryStep(state, done), PocqState::Idle,
+               PocqActionKind::QueueComp);
+}
+
+TEST(HnfPocqStateGraphTest, MaintenanceSnoopAlsoWaitsForSlcUpdate)
+{
+    POCQ_StateGraph graph;
+    PocqState state = PocqState::SlcLookup;
+
+    expectStep(graph.tryStep(
+                   state,
+                   lookupDone(PocqTxnKind::MakeInvalid, true, true, true)),
+               PocqState::WaitSnoop, PocqActionKind::QueueSnoops);
+
+    PocqEvent snoopDone{};
+    snoopDone.kind = PocqEventKind::SnoopDone;
+    snoopDone.txn = PocqTxnKind::MakeInvalid;
+    expectStep(graph.tryStep(state, snoopDone),
+               PocqState::SlcUpdateIssue,
+               PocqActionKind::CommitMaintenance);
 }
 
 TEST(HnfPocqStateGraphTest, EvictQueuesCompWithoutLookup)
