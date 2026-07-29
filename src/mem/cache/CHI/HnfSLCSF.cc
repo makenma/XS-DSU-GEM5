@@ -126,6 +126,86 @@ mutationTarget(const SlcSfRequest& request)
 
 } // anonymous namespace
 
+HnfSLCSFSetLockManager::HnfSLCSFSetLockManager(
+    size_t slc_sets, size_t sf_sets)
+    : slcOwners(slc_sets), sfOwners(sf_sets)
+{
+    if (slc_sets == 0 || sf_sets == 0) {
+        throw std::invalid_argument(
+            "HnfSLCSF set lock manager requires nonzero set counts");
+    }
+}
+
+bool
+HnfSLCSFSetLockManager::tryAcquire(
+    uint64_t owner, const SlcSfSetLockRequest& request)
+{
+    if (owner == 0) {
+        throw std::invalid_argument("HnfSLCSF set lock owner must be nonzero");
+    }
+    if ((request.slcSet && *request.slcSet >= slcOwners.size()) ||
+        (request.sfSet && *request.sfSet >= sfOwners.size())) {
+        throw std::out_of_range("HnfSLCSF set lock index is out of range");
+    }
+    if (holds(owner)) {
+        throw std::logic_error("HnfSLCSF set lock owner already holds locks");
+    }
+    if ((request.slcSet && slcOwners[*request.slcSet]) ||
+        (request.sfSet && sfOwners[*request.sfSet])) {
+        return false;
+    }
+
+    const Holder holder{owner, request.mode};
+    if (request.slcSet) {
+        slcOwners[*request.slcSet] = holder;
+    }
+    if (request.sfSet) {
+        sfOwners[*request.sfSet] = holder;
+    }
+    return true;
+}
+
+void
+HnfSLCSFSetLockManager::release(uint64_t owner)
+{
+    bool released = false;
+    for (auto& holder : slcOwners) {
+        if (holder && holder->owner == owner) {
+            holder.reset();
+            released = true;
+        }
+    }
+    for (auto& holder : sfOwners) {
+        if (holder && holder->owner == owner) {
+            holder.reset();
+            released = true;
+        }
+    }
+    if (!released) {
+        throw std::logic_error("HnfSLCSF releases an unowned set lock");
+    }
+}
+
+bool
+HnfSLCSFSetLockManager::holds(uint64_t owner) const
+{
+    const auto owned = [owner](const std::optional<Holder>& holder) {
+        return holder && holder->owner == owner;
+    };
+    return std::any_of(slcOwners.begin(), slcOwners.end(), owned) ||
+        std::any_of(sfOwners.begin(), sfOwners.end(), owned);
+}
+
+size_t
+HnfSLCSFSetLockManager::heldLockCount() const
+{
+    const auto occupied = [](const std::optional<Holder>& holder) {
+        return holder.has_value();
+    };
+    return std::count_if(slcOwners.begin(), slcOwners.end(), occupied) +
+        std::count_if(sfOwners.begin(), sfOwners.end(), occupied);
+}
+
 HnfSLCSF::HnfSLCSF(uint32_t block_size, uint32_t slc_num_sets,
                    uint32_t slc_num_ways, uint32_t sf_num_sets,
                    uint32_t sf_num_ways, uint32_t seq_entries,
@@ -133,6 +213,7 @@ HnfSLCSF::HnfSLCSF(uint32_t block_size, uint32_t slc_num_sets,
     : HnfSLCSFBackend(block_size, slc_num_sets, slc_num_ways,
                       sf_num_sets, sf_num_ways, seq_entries),
       config(pipeline_config), victimBuffer(config.victimBufferEntries),
+      setLocks(slc_num_sets, sf_num_sets),
       completionProducer(std::make_shared<const uint8_t>(0)),
       visibleReqCredits(config.reqQueueEntries)
 {
@@ -1608,6 +1689,10 @@ HnfSLCSF::finishInflight(
         releaseSfResources(requestHeader(request.request).pocEntryId);
         request.resourcesPrepared = false;
     }
+    if (request.setLockOwner) {
+        setLocks.release(*request.setLockOwner);
+        request.setLockOwner.reset();
+    }
     if (reason == FinishReason::Replay) {
         ++correctnessReplays;
     } else if (reason == FinishReason::Cancelled) {
@@ -1688,6 +1773,24 @@ HnfSLCSF::issueReadyRequests()
             continue;
         }
 
+        std::optional<uint64_t> set_lock_owner;
+        if (config.enableSetLock) {
+            panic_if(nextSetLockOwner == 0 ||
+                         nextSetLockOwner == UINT64_MAX,
+                     "HnfSLCSF set lock owner ID overflows\n");
+            const auto& header = requestHeader(*request);
+            const SlcSfSetLockRequest lock_request{
+                slcSet(header.lineAddress), sfSet(header.lineAddress),
+                pipe == RequestPipe::Lookup ? SlcSfSetLockMode::Read :
+                                              SlcSfSetLockMode::Write};
+            if (!setLocks.tryAcquire(nextSetLockOwner, lock_request)) {
+                ++serviceStalls;
+                ++request;
+                continue;
+            }
+            set_lock_owner = nextSetLockOwner++;
+        }
+
         // The in-flight entry is the reservation.  Capacity is checked before
         // emplacing it, and only a successfully emplaced request is erased
         // from ready, so issue and reservation are one state transition.
@@ -1708,7 +1811,8 @@ HnfSLCSF::issueReadyRequests()
                            MutationStage::U0DecodeValidate) : std::nullopt,
             std::nullopt, std::nullopt, adopted_reservation, false, false,
             early_lookup_replay, false, std::nullopt, std::nullopt,
-            std::nullopt, std::nullopt, std::nullopt});
+            std::nullopt, std::nullopt, std::nullopt,
+            set_lock_owner});
         request = reqReady.erase(request);
         ++*issued;
     }

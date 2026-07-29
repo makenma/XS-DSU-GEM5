@@ -106,6 +106,9 @@ Started: 2026-07-28T20:49:07+08:00
 - Give cross-component machine traces explicit provenance instead of inferring
   an internal transaction from opcode or ID ranges; validate configuration,
   payload identity, ordering, and workload oracles together.
+- Acquire multi-class transient resources atomically before exposing any
+  ownership, then retain one owner token in the in-flight entry and release it
+  through the common terminal finalizer for Done, Replay, Error, and cancel.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -1163,4 +1166,27 @@ Started: 2026-07-28T20:49:07+08:00
 - Learnings for future iterations: A full-system pass needs both end-to-end
   data/correlation evidence and complete timing-port retry propagation; unit
   controller models do not establish either property.
+---
+
+## 2026-07-29 15:11 - US-026
+- Story: Implement deadlock-free SLC and SF set conflict protection
+- What was implemented: Added an exclusive SLC/SF set lock manager with atomic
+  dual-class acquisition, integrated lock admission into the issue boundary,
+  retained ownership for the complete in-flight service window, and released
+  locks through the common terminal cleanup path. Same-set lookup and mutation
+  work now serializes while different sets can issue concurrently; conflict
+  retries remain ready without partial lock ownership.
+- Files changed: `src/mem/cache/CHI/HnfSLCSF.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.cc`,
+  `src/mem/cache/CHI/HnfSLCSF.test.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and all four CHI
+  GTest binaries successfully; all 171 tests passed (18 POCQ, 2 SEQ POCQ,
+  108 SLCSF, and 43 controller). Focused coverage verifies same-set
+  serialization, lookup/update exclusion, atomic crossed-set acquisition,
+  conflict retry without leakage, and exact cleanup for Done, Replay, Error,
+  and cancellation. Changed C++ files passed gem5 style via
+  `python3 util/style.py --modifications`; `git diff --check` passed.
+- Learnings for future iterations: Set conflicts should stall before request
+  ownership enters the in-flight queue, and crossed SLC/SF mappings are
+  deadlock-free when both classes are preflighted and installed atomically.
 ---

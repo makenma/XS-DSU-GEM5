@@ -961,6 +961,149 @@ TEST(HnfSlcSfQueueTest, RejectsInvalidStageAServiceConfiguration)
     expectInvalid(config);
 }
 
+TEST(HnfSlcSfSetLockTest, SameSetOperationsSerialize)
+{
+    HnfSLCSFSetLockManager locks(4, 4);
+    ASSERT_TRUE(locks.tryAcquire(
+        1, SlcSfSetLockRequest{0, std::nullopt,
+                               SlcSfSetLockMode::Read}));
+    EXPECT_FALSE(locks.tryAcquire(
+        2, SlcSfSetLockRequest{0, std::nullopt,
+                               SlcSfSetLockMode::Write}));
+    EXPECT_TRUE(locks.tryAcquire(
+        2, SlcSfSetLockRequest{1, std::nullopt,
+                               SlcSfSetLockMode::Write}));
+    EXPECT_EQ(locks.heldLockCount(), 2);
+    locks.release(1);
+    locks.release(2);
+    EXPECT_EQ(locks.heldLockCount(), 0);
+}
+
+TEST(HnfSlcSfSetLockTest, CrossedAcquisitionIsAtomicAndDeadlockFree)
+{
+    HnfSLCSFSetLockManager locks(4, 4);
+    ASSERT_TRUE(locks.tryAcquire(
+        1, SlcSfSetLockRequest{0, 1, SlcSfSetLockMode::Write}));
+    EXPECT_FALSE(locks.tryAcquire(
+        2, SlcSfSetLockRequest{2, 1, SlcSfSetLockMode::Write}));
+    EXPECT_EQ(locks.heldLockCount(), 2);
+    EXPECT_FALSE(locks.holds(2));
+    locks.release(1);
+    ASSERT_TRUE(locks.tryAcquire(
+        2, SlcSfSetLockRequest{2, 1, SlcSfSetLockMode::Write}));
+    locks.release(2);
+    EXPECT_EQ(locks.heldLockCount(), 0);
+}
+
+TEST(HnfSlcSfSetLockTest, LookupAndUpdateSameSetMutuallyExclude)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.maxInflight = 2;
+    config.lookupLatency = 4;
+    config.updateLatency = 1;
+    config.enableSetLock = true;
+    HnfSLCSF model(64, 4, 2, 4, 2, 8, config);
+    const auto token = completeLookupToken(model, 69, TestAddr);
+    auto lookup_request = lookupRequest(70, TestAddr);
+    auto update_request = makeSlcSfRemoveSharerReq(
+        mutationHeader(71, TestAddr), token, token.lookupReqId);
+
+    ASSERT_EQ(model.tryEnqueue(std::move(lookup_request)),
+              SlcSfEnqueueResult::Accepted);
+    ASSERT_EQ(model.tryEnqueue(std::move(update_request)),
+              SlcSfEnqueueResult::Accepted);
+    model.wakeup();
+    EXPECT_EQ(model.reqInflightCount(), 1);
+    EXPECT_EQ(model.reqReadyCount(), 1);
+    EXPECT_EQ(model.setLockCount(), 2);
+
+    for (size_t cycle = 0; cycle < 16 && model.reqOutstanding(); ++cycle) {
+        model.wakeup();
+        while (model.popVisibleResponse()) {}
+    }
+    EXPECT_EQ(model.reqOutstanding(), 0);
+    EXPECT_EQ(model.setLockCount(), 0);
+}
+
+TEST(HnfSlcSfSetLockTest, StalledLockAcquisitionLeaksNoLock)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.maxInflight = 2;
+    config.lookupLatency = 3;
+    config.enableSetLock = true;
+    HnfSLCSF model(64, 4, 2, 4, 2, 8, config);
+    auto first = lookupRequest(72, TestAddr);
+    auto stalled = lookupRequest(73, TestAddr);
+    ASSERT_EQ(model.tryEnqueue(std::move(first)),
+              SlcSfEnqueueResult::Accepted);
+    ASSERT_EQ(model.tryEnqueue(std::move(stalled)),
+              SlcSfEnqueueResult::Accepted);
+
+    model.wakeup();
+    EXPECT_EQ(model.reqInflightCount(), 1);
+    EXPECT_EQ(model.reqReadyCount(), 1);
+    EXPECT_EQ(model.setLockCount(), 2);
+    model.wakeup();
+    EXPECT_EQ(model.setLockCount(), 2);
+
+    EXPECT_EQ(model.cancelRequest(72, SlcSfReqId{72}, 100),
+              SlcSfCancelResult::Cancelled);
+    EXPECT_EQ(model.setLockCount(), 0);
+    model.wakeup(101);
+    EXPECT_EQ(model.reqInflightCount(), 1);
+    EXPECT_EQ(model.reqReadyCount(), 0);
+    EXPECT_EQ(model.setLockCount(), 2);
+    for (size_t cycle = 0; cycle < 8 && model.reqOutstanding(); ++cycle) {
+        model.wakeup(102 + cycle);
+    }
+    EXPECT_EQ(model.setLockCount(), 0);
+}
+
+TEST(HnfSlcSfSetLockTest, EveryTerminalPathReleasesLocksExactlyOnce)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.lookupLatency = 1;
+    config.updateLatency = 1;
+    config.enableSetLock = true;
+    HnfSLCSF model(64, 4, 2, 4, 2, 8, config);
+    const auto complete = [&model](SlcSfRequest request) {
+        EXPECT_EQ(model.tryEnqueue(std::move(request)),
+                  SlcSfEnqueueResult::Accepted);
+        model.wakeup();
+        EXPECT_EQ(model.setLockCount(), 2);
+        for (size_t cycle = 0; cycle < 8 && model.reqOutstanding(); ++cycle) {
+            model.wakeup();
+        }
+        EXPECT_EQ(model.reqOutstanding(), 0);
+        EXPECT_EQ(model.setLockCount(), 0);
+        model.wakeup();
+        return model.popVisibleResponse();
+    };
+
+    auto done = complete(lookupRequest(74, TestAddr));
+    ASSERT_TRUE(done.has_value());
+    EXPECT_EQ(done->status(), SlcSfTerminalStatus::Done);
+
+    auto replay = complete(fillRequest(75, TestAddr));
+    ASSERT_TRUE(replay.has_value());
+    EXPECT_EQ(replay->status(), SlcSfTerminalStatus::Replay);
+
+    auto error = complete(makeSlcSfCommitReadReq(
+        mutationHeader(76, TestAddr), PocqTxnKind::Unknown,
+        lineData(0x76), false));
+    ASSERT_TRUE(error.has_value());
+    EXPECT_EQ(error->status(), SlcSfTerminalStatus::Error);
+
+    auto cancelled = lookupRequest(77, TestAddr);
+    ASSERT_EQ(model.tryEnqueue(std::move(cancelled)),
+              SlcSfEnqueueResult::Accepted);
+    model.wakeup();
+    ASSERT_EQ(model.setLockCount(), 2);
+    EXPECT_EQ(model.cancelRequest(77, SlcSfReqId{77}, 200),
+              SlcSfCancelResult::Cancelled);
+    EXPECT_EQ(model.setLockCount(), 0);
+}
+
 TEST(HnfSlcSfQueueTest, CompletedResponseNotVisibleUntilNextCycle)
 {
     const HnfSLCSFPipelineConfig config{8, 8, 1, 1, 1, 1, 1};
@@ -1001,9 +1144,9 @@ TEST(HnfSlcSfQueueTest, AcceptedRequestProducesExactlyOneTerminalResponse)
     HnfSLCSFPipelineConfig config{3, 3, 3, 3, 1, 1, 1};
     config.enableSetLock = true;
     HnfSLCSF model(64, 4, 2, 4, 2, 8, config);
-    auto first = lookupRequest(31);
-    auto second = lookupRequest(32);
-    auto third = lookupRequest(33);
+    auto first = lookupRequest(31, TestAddr);
+    auto second = lookupRequest(32, TestAddr + 64);
+    auto third = lookupRequest(33, TestAddr + 128);
 
     ASSERT_EQ(model.tryEnqueue(std::move(first)),
               SlcSfEnqueueResult::Accepted);
@@ -1167,10 +1310,11 @@ TEST(HnfSlcSfQueueTest, MixedPipesCompleteOutOfAcceptanceOrder)
     config.enableSetLock = true;
     HnfSLCSF model(64, 4, 2, 4, 2, 8, config);
     auto first_lookup = lookupRequest(61, TestAddr, 601);
-    auto second_lookup = lookupRequest(62, TestAddr, 602);
-    const auto fill_token = completeLookupToken(model, 600, TestAddr);
+    auto second_lookup = lookupRequest(62, TestAddr + 128, 602);
+    const uint64_t fill_addr = TestAddr + 64;
+    const auto fill_token = completeLookupToken(model, 600, fill_addr);
     auto fill = fillRequest(
-        63, TestAddr, 603, fill_token, fill_token.lookupReqId);
+        63, fill_addr, 603, fill_token, fill_token.lookupReqId);
 
     ASSERT_EQ(model.tryEnqueue(std::move(first_lookup)),
               SlcSfEnqueueResult::Accepted);

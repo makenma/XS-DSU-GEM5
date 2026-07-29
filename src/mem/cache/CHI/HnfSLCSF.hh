@@ -39,6 +39,47 @@ enum class SlcSfCompletionAckResult : uint8_t
     Stale
 };
 
+enum class SlcSfSetLockMode : uint8_t
+{
+    Read,
+    Write
+};
+
+struct SlcSfSetLockRequest
+{
+    std::optional<uint32_t> slcSet;
+    std::optional<uint32_t> sfSet;
+    SlcSfSetLockMode mode = SlcSfSetLockMode::Read;
+};
+
+/**
+ * Exclusive SLC/SF set ownership for an issued service window.
+ *
+ * Both requested lock classes are checked before either is installed. This
+ * makes crossed SLC/SF set requests retry without partial ownership and
+ * therefore avoids lock-order deadlock.
+ */
+class HnfSLCSFSetLockManager
+{
+  public:
+    HnfSLCSFSetLockManager(size_t slc_sets, size_t sf_sets);
+
+    bool tryAcquire(uint64_t owner, const SlcSfSetLockRequest& request);
+    void release(uint64_t owner);
+    bool holds(uint64_t owner) const;
+    size_t heldLockCount() const;
+
+  private:
+    struct Holder
+    {
+        uint64_t owner = 0;
+        SlcSfSetLockMode mode = SlcSfSetLockMode::Read;
+    };
+
+    std::vector<std::optional<Holder>> slcOwners;
+    std::vector<std::optional<Holder>> sfOwners;
+};
+
 struct HnfSLCSFPipelineConfig
 {
     size_t reqQueueEntries = 8;
@@ -164,6 +205,7 @@ class HnfSLCSF : public HnfSLCSFBackend
     uint64_t correctnessReplayCount() const { return correctnessReplays; }
     uint64_t finishedRequestCount() const { return finishedRequests; }
     uint64_t cancelledRequestCount() const { return cancelledRequests; }
+    size_t setLockCount() const { return setLocks.heldLockCount(); }
     const SlcSfResponse* frontVisibleResponse() const;
     SlcSfCompletionAckResult acknowledgeVisibleCompletion(
         const SlcSfResponse& response);
@@ -226,6 +268,7 @@ class HnfSLCSF : public HnfSLCSFBackend
         std::optional<SlcSfSlcVictim> slcVictim;
         std::optional<DirtyVictimSeal> slcVictimSeal;
         std::optional<SlcSfSfVictim> sfVictim;
+        std::optional<uint64_t> setLockOwner;
     };
 
     struct VictimEntry
@@ -299,10 +342,12 @@ class HnfSLCSF : public HnfSLCSFBackend
     std::deque<SlcSfResponse> respPending;
     std::deque<SlcSfResponse> respVisible;
     std::vector<VictimEntry> victimBuffer;
+    HnfSLCSFSetLockManager setLocks;
     /** Opaque identity shared only with leases minted by this service. */
     std::shared_ptr<const uint8_t> completionProducer;
     uint64_t nextVictimId = 1;
     uint64_t nextCompletionNonce = 1;
+    uint64_t nextSetLockOwner = 1;
     size_t visibleReqCredits = 0;
     uint64_t wakeupCycle = 0;
     Tick wakeupTick = 0;
