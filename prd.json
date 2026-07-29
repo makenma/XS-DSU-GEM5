@@ -260,7 +260,7 @@
       ],
       "priority": 14,
       "passes": true,
-      "notes": "Acceptance recovery verified: U2/U3 wait for the configured deadline, short latencies catch up without skipping semantics, resource stalls stop catch-up, and terminal Replay deadlines are formed at cleanup. The expanded operation, early-Replay, stale-token, and stall regressions pass with all 111 CHI tests."
+      "notes": "Acceptance recovery verified: U1 stale-token stalls, U2 writes, and U3 cleanup honor the configured deadline; short latencies catch up without skipping semantics; resource stalls stop catch-up; and terminal Replay deadlines are formed at cleanup. The expanded operation, CHI Evict control-flow, typed Evict mapping, early-Replay, stale-token, and stall regressions pass with all 120 CHI tests."
     },
     {
       "id": "US-015",
@@ -280,7 +280,7 @@
       ],
       "priority": 15,
       "passes": true,
-      "notes": ""
+      "notes": "Acceptance recovery verified: the actual POCQ topology distinguishes SlcUpdateIssue from SlcUpdateWait, and only an accepted owned request crosses between them. NoCredit preserves one request and ID. Lookup and update Replay both traverse the graph to Sleep, clear attempt-derived state, release reservations exactly once, ignore ordinary same-address retire wakeups, and restart with a fresh lookup on the first eligible CC edge, including the penalty-one visible-response boundary. All 120 CHI tests pass."
     },
     {
       "id": "US-016",

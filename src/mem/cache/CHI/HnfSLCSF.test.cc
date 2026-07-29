@@ -1379,10 +1379,12 @@ TEST(HnfSlcSfMutationServiceTest,
         token.lookupReqId);
     ASSERT_EQ(model.tryEnqueue(std::move(request)),
               SlcSfEnqueueResult::Accepted);
-    model.wakeup();
-    model.wakeup();
-    model.wakeup();
-    model.wakeup();
+    model.wakeup(1000);
+    const uint64_t issue_cycle = model.currentCycle();
+    model.wakeup(1010);
+    model.wakeup(1020);
+    model.wakeup(1030);
+    EXPECT_EQ(model.currentCycle(), issue_cycle + 3);
     EXPECT_EQ(model.mutationStageCount(
                   HnfSLCSF::MutationStage::U1PrepareResources), 1);
     EXPECT_FALSE(model.hasSfReservation(1351));
@@ -1394,13 +1396,41 @@ TEST(HnfSlcSfMutationServiceTest,
     // otherwise remain stalled forever on the now-stale dirty snapshot.
     model.writeLine(
         dirty_addr, 3, lineData(0x71), PocqTxnKind::WriteUnique);
-    std::optional<SlcSfResponse> response;
-    for (size_t cycle = 0; cycle < 8 && !response; ++cycle) {
-        model.wakeup();
-        response = model.popVisibleResponse();
-    }
+    const auto intervening = model.probe(HnfSlcLookupReq{
+        0, RawReq{}, PocqTxnKind::Unknown, dirty_addr});
+
+    model.wakeup(1040);
+    EXPECT_EQ(model.currentCycle(), issue_cycle + 4);
+    EXPECT_EQ(model.mutationStageCount(
+                  HnfSLCSF::MutationStage::U3CheckLatch), 1);
+    EXPECT_EQ(model.respPendingCount(), 0);
+    EXPECT_EQ(model.sfReservationCount(), 0);
+    EXPECT_EQ(model.seqReservationCount(), 0);
+    const auto after_stale = model.probe(HnfSlcLookupReq{
+        0, RawReq{}, PocqTxnKind::Unknown, dirty_addr});
+    expectLookupResultsEqual(after_stale.result, intervening.result);
+    expectArraySnapshotsEqual(
+        after_stale.snapshot.slc, intervening.snapshot.slc);
+    expectArraySnapshotsEqual(
+        after_stale.snapshot.sf, intervening.snapshot.sf);
+
+    model.wakeup(1050);
+    EXPECT_EQ(model.currentCycle(), issue_cycle + 5);
+    EXPECT_EQ(model.reqInflightCount(), 0);
+    EXPECT_EQ(model.respPendingCount(), 1);
+    EXPECT_EQ(model.respVisibleCount(), 0);
+    model.wakeup(1060);
+    auto response = model.popVisibleResponse();
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(response->status(), SlcSfTerminalStatus::Replay);
+    const auto& replay = std::get<SlcSfReplay>(response->payload());
+    EXPECT_EQ(replay.reason, SlcSfReplayReason::StaleCommitToken);
+    EXPECT_EQ(
+        replay.retryNotBeforeTick,
+        1050 + model.pipelineConfig().replayPenalty *
+                   model.pipelineConfig().childClockPeriod);
+    EXPECT_TRUE(replay.redoLookup);
+    EXPECT_FALSE(model.popVisibleResponse().has_value());
     EXPECT_EQ(model.sfReservationCount(), 0);
     EXPECT_EQ(model.seqReservationCount(), 0);
     EXPECT_EQ(model.reqOutstanding(), 0);

@@ -129,7 +129,19 @@ isSnoopDoneMaintenance(const PocqEvent& event)
 bool
 isSlcUpdateDone(const PocqEvent& event)
 {
-    return event.kind == PocqEventKind::SlcUpdateDone;
+    return event.kind == PocqEventKind::SlcUpdateDone && !event.replay;
+}
+
+bool
+isSlcUpdateAccepted(const PocqEvent& event)
+{
+    return event.kind == PocqEventKind::SlcUpdateAccepted;
+}
+
+bool
+isSlcUpdateReplay(const PocqEvent& event)
+{
+    return event.kind == PocqEventKind::SlcUpdateDone && event.replay;
 }
 
 bool
@@ -196,7 +208,8 @@ POCQ_StateGraph::POCQ_StateGraph()
     : idle(PocqState::Idle),
       slcLookup(PocqState::SlcLookup),
       waitSnoop(PocqState::WaitSnoop),
-      slcUpdate(PocqState::SlcUpdate),
+      slcUpdateIssue(PocqState::SlcUpdateIssue),
+      slcUpdateWait(PocqState::SlcUpdateWait),
       txLink(PocqState::TxLink),
       waitCompAck(PocqState::WaitCompAck),
       issueMcRead(PocqState::IssueMcRead),
@@ -207,7 +220,8 @@ POCQ_StateGraph::POCQ_StateGraph()
     addNode(idle);
     addNode(slcLookup);
     addNode(waitSnoop);
-    addNode(slcUpdate);
+    addNode(slcUpdateIssue);
+    addNode(slcUpdateWait);
     addNode(txLink);
     addNode(waitCompAck);
     addNode(issueMcRead);
@@ -231,14 +245,14 @@ POCQ_StateGraph::POCQ_StateGraph()
                   {PocqActionKind::SleepForReplay});
     addTransition(slcLookup, waitSnoop, isLookupNeedsSnoop,
                   {PocqActionKind::QueueSnoops});
-    addTransition(slcLookup, slcUpdate, isLookupHit,
+    addTransition(slcLookup, slcUpdateIssue, isLookupHit,
                   {PocqActionKind::UpdateSlcSf});
     addTransition(slcLookup, issueMcRead, isLookupMissNeedingMemory,
                   {PocqActionKind::QueueTxReq});
     addTransition(slcLookup, idle, isLookupMaintenanceDone,
                   {PocqActionKind::CommitMaintenance,
                    PocqActionKind::QueueComp});
-    addTransition(waitSnoop, slcUpdate, isSnoopDoneReadWithData,
+    addTransition(waitSnoop, slcUpdateIssue, isSnoopDoneReadWithData,
                   {PocqActionKind::UpdateSlcSf});
     addTransition(waitSnoop, issueMcRead, isSnoopDoneReadNeedsMemory,
                   {PocqActionKind::QueueTxReq});
@@ -247,9 +261,13 @@ POCQ_StateGraph::POCQ_StateGraph()
                    PocqActionKind::QueueComp});
     addTransition(issueMcRead, txLink, isMcDataDoneReadNoSnp,
                   {PocqActionKind::QueueCompData});
-    addTransition(issueMcRead, slcUpdate, isMcDataDone,
+    addTransition(issueMcRead, slcUpdateIssue, isMcDataDone,
                   {PocqActionKind::UpdateSlcSf});
-    addTransition(slcUpdate, txLink, isSlcUpdateDone,
+    addTransition(slcUpdateIssue, slcUpdateWait,
+                  isSlcUpdateAccepted, {});
+    addTransition(slcUpdateWait, sleep, isSlcUpdateReplay,
+                  {PocqActionKind::SleepForReplay});
+    addTransition(slcUpdateWait, txLink, isSlcUpdateDone,
                   {PocqActionKind::QueueCompData});
     addTransition(txLink, waitCompAck, isTxLinkDoneNeedsCompAck,
                   {PocqActionKind::WaitCompAck});
@@ -342,8 +360,10 @@ POCQ_StateGraph::stateName(PocqState state)
         return "SlcLookup";
       case PocqState::WaitSnoop:
         return "WaitSnoop";
-      case PocqState::SlcUpdate:
-        return "SlcUpdate";
+      case PocqState::SlcUpdateIssue:
+        return "SlcUpdateIssue";
+      case PocqState::SlcUpdateWait:
+        return "SlcUpdateWait";
       case PocqState::TxLink:
         return "TxLink";
       case PocqState::WaitCompAck:
@@ -368,6 +388,8 @@ POCQ_StateGraph::eventName(PocqEventKind event)
         return "Admit";
       case PocqEventKind::SlcLookupDone:
         return "SlcLookupDone";
+      case PocqEventKind::SlcUpdateAccepted:
+        return "SlcUpdateAccepted";
       case PocqEventKind::SlcUpdateDone:
         return "SlcUpdateDone";
       case PocqEventKind::SnoopDone:
@@ -447,8 +469,10 @@ POCQ_StateGraph::nodeFor(PocqState state) const
         return slcLookup;
       case PocqState::WaitSnoop:
         return waitSnoop;
-      case PocqState::SlcUpdate:
-        return slcUpdate;
+      case PocqState::SlcUpdateIssue:
+        return slcUpdateIssue;
+      case PocqState::SlcUpdateWait:
+        return slcUpdateWait;
       case PocqState::TxLink:
         return txLink;
       case PocqState::WaitCompAck:

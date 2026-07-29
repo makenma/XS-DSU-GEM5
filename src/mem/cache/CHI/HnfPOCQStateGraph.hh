@@ -40,7 +40,7 @@ class PocqNode : public DGNode<PocqNode, PocqEdge>
     void setSubGraph(POCQ_StateGraph* graph) { subGraph = graph; }
     POCQ_StateGraph* getSubGraph() const { return subGraph; }
 
-    // Recursive debug print: "SlcLookup > SlcUpdate > Idle"
+    // Recursive debug print: "SlcLookup > SlcUpdateIssue > Idle"
     void printState(std::ostream& os) const;
 
   private:
@@ -107,7 +107,8 @@ class POCQ_StateGraph : public DirectedGraph<PocqNode, PocqEdge>
     PocqNode idle;
     PocqNode slcLookup;
     PocqNode waitSnoop;
-    PocqNode slcUpdate;
+    PocqNode slcUpdateIssue;
+    PocqNode slcUpdateWait;
     PocqNode txLink;
     PocqNode waitCompAck;
     PocqNode issueMcRead;

@@ -45,7 +45,8 @@ enum class PocqState : uint8_t
     Idle,
     SlcLookup,
     WaitSnoop,
-    SlcUpdate,
+    SlcUpdateIssue,
+    SlcUpdateWait,
     TxLink,
     WaitCompAck,
     IssueMcRead,
@@ -58,6 +59,7 @@ enum class PocqEventKind : uint8_t
 {
     Admit,
     SlcLookupDone,
+    SlcUpdateAccepted,
     SlcUpdateDone,
     SnoopDone,
     TxLinkDone,

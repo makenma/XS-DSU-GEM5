@@ -248,7 +248,9 @@ HnfCoherencyController::executePocqAction(uint32_t entryId,
         return retireEntry(entryId);
 
       case PocqActionKind::SleepForReplay:
-        slcsfUnit->releaseSfResources(entryId);
+        if (slcsfUnit->hasSfReservation(entryId)) {
+            slcsfUnit->releaseSfResources(entryId);
+        }
         entry.state = HnfCcEntryState::Sleep;
         entry.slcsfReplay = true;
         DPRINTF(HnfCC, "CC entry=%u sleeps for SLCSF replay\n", entryId);
@@ -1033,7 +1035,8 @@ HnfCoherencyController::wakeSleepingEntries(uint64_t addr)
 {
     for (uint32_t i = 0; i < entries.size(); ++i) {
         Entry& entry = entries[i];
-        if (entry.state != HnfCcEntryState::Sleep || entry.blockAddr != addr) {
+        if (entry.state != HnfCcEntryState::Sleep ||
+            entry.blockAddr != addr || entry.slcsfReplay) {
             continue;
         }
         if (hasAddressHazard(i, addr)) {
@@ -1226,6 +1229,9 @@ HnfCoherencyController::retrySlcsfReplayEntries(Tick currentTick)
             !entry.slcsfReplay || currentTick < entry.retryNotBeforeTick) {
             continue;
         }
+        if (hasAddressHazard(i, entry.blockAddr)) {
+            continue;
+        }
         DPRINTF(HnfCC,
                 "CC retries SLCSF replay entry=%u addr=%#llx\n", i,
                 static_cast<unsigned long long>(entry.blockAddr));
@@ -1253,6 +1259,11 @@ HnfCoherencyController::tryIssueSlcUpdate(uint32_t entryId)
     if (result == SlcSfEnqueueResult::Accepted) {
         entry.pendingSlcUpdate.reset();
         entry.slcUpdatePhase = SlcUpdatePhase::Waiting;
+        PocqEvent accepted{};
+        accepted.kind = PocqEventKind::SlcUpdateAccepted;
+        accepted.txn = entry.txnKind;
+        panic_if(stepPocq(entryId, accepted),
+                 "HnfCC entry=%u retired while issuing update\n", entryId);
         DPRINTF(HnfCC, "CC entry=%u issued SLCSF update req=%llu\n",
                 entryId, static_cast<unsigned long long>(reqId.value));
     } else {
@@ -1364,13 +1375,12 @@ HnfCoherencyController::handleSlcsfReplay(
     uint32_t entryId, const SlcSfResponse& response)
 {
     Entry& entry = entries.at(entryId);
+    const bool lookup =
+        response.operationKind() == SlcSfOperationKind::Lookup;
     const auto* replay = std::get_if<SlcSfReplay>(&response.payload());
     panic_if(!replay,
              "HnfCC entry=%u Replay has invalid payload\n", entryId);
 
-    if (response.operationKind() == SlcSfOperationKind::Lookup) {
-        slcsfUnit->releaseSfResources(entryId);
-    }
     if (entry.snoopTxnId != 0) {
         snoopTxnToEntry.erase(entry.snoopTxnId);
     }
@@ -1382,6 +1392,7 @@ HnfCoherencyController::handleSlcsfReplay(
     entry.slcLookupPhase = SlcLookupPhase::None;
     entry.pendingSlcUpdate.reset();
     entry.latchedSlcUpdateResponse.reset();
+    entry.slcUpdateReqId = SlcSfReqId{};
     entry.data.clear();
     entry.responseDataDirty = false;
     entry.snoopTxnId = 0;
@@ -1389,13 +1400,17 @@ HnfCoherencyController::handleSlcsfReplay(
     entry.snoopDataReceived = false;
     entry.mcReadIssued = false;
     entry.mcDataBytes = 0;
-    entry.pocqState = PocqState::Idle;
-    entry.state = HnfCcEntryState::Sleep;
-    entry.slcsfReplay = true;
     entry.retryNotBeforeTick = replay->retryNotBeforeTick;
-    entry.slcUpdatePhase =
-        response.operationKind() == SlcSfOperationKind::Lookup ?
+    entry.slcUpdatePhase = lookup ?
         SlcUpdatePhase::None : SlcUpdatePhase::ReplayWait;
+
+    PocqEvent replayDone{};
+    replayDone.kind = lookup ?
+        PocqEventKind::SlcLookupDone : PocqEventKind::SlcUpdateDone;
+    replayDone.txn = entry.txnKind;
+    replayDone.replay = true;
+    panic_if(stepPocq(entryId, replayDone),
+             "HnfCC entry=%u retired while handling Replay\n", entryId);
 
     DPRINTF(HnfCC,
             "CC entry=%u waits until tick=%llu after SLCSF replay\n",
@@ -1506,8 +1521,8 @@ HnfCoherencyController::serviceInternalWork(Tick currentTick)
                !hasMainAddressHazard(seqPocqEntry.blockAddr)) {
         stepSeqPocq({SeqPocqEventKind::HazardClear});
     }
-    retrySlcsfReplayEntries(currentTick);
     latchVisibleSlcResponses();
+    retrySlcsfReplayEntries(currentTick);
 }
 
 HnfCoherencyController::SlcLookupPhase
@@ -1544,6 +1559,18 @@ SlcSfReqId
 HnfCoherencyController::slcUpdateReqId(uint32_t entry) const
 {
     return entries.at(entry).slcUpdateReqId;
+}
+
+PocqState
+HnfCoherencyController::pocqState(uint32_t entry) const
+{
+    return entries.at(entry).pocqState;
+}
+
+Tick
+HnfCoherencyController::slcsfRetryNotBeforeTick(uint32_t entry) const
+{
+    return entries.at(entry).retryNotBeforeTick;
 }
 
 bool

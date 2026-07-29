@@ -65,6 +65,8 @@ class HnfCoherencyController
     const SlcSfCommitToken& slcCommitToken(uint32_t entry) const;
     SlcUpdatePhase slcUpdatePhase(uint32_t entry) const;
     SlcSfReqId slcUpdateReqId(uint32_t entry) const;
+    PocqState pocqState(uint32_t entry) const;
+    Tick slcsfRetryNotBeforeTick(uint32_t entry) const;
 
     bool hasWork() const;
     bool hasTxReq() const { return !txReqQ.empty(); }

@@ -108,7 +108,10 @@ TEST(HnfPocqStateGraphTest, SlcHitPath)
     EXPECT_EQ(state, PocqState::SlcLookup);
 
     expectStep(graph.tryStep(state, lookupDone(true, true, false)),
-               PocqState::SlcUpdate, PocqActionKind::UpdateSlcSf);
+               PocqState::SlcUpdateIssue, PocqActionKind::UpdateSlcSf);
+    expectActions(
+        graph.tryStep(state, event(PocqEventKind::SlcUpdateAccepted)),
+        PocqState::SlcUpdateWait, {});
     expectStep(graph.tryStep(state, event(PocqEventKind::SlcUpdateDone)),
                PocqState::TxLink, PocqActionKind::QueueCompData);
     expectStep(graph.tryStep(state, event(PocqEventKind::TxLinkDone)),
@@ -126,7 +129,10 @@ TEST(HnfPocqStateGraphTest, SlcMissIssuesMemoryRead)
     expectStep(graph.tryStep(state, lookupDone(false, false, false)),
                PocqState::IssueMcRead, PocqActionKind::QueueTxReq);
     expectStep(graph.tryStep(state, event(PocqEventKind::McDataDone)),
-               PocqState::SlcUpdate, PocqActionKind::UpdateSlcSf);
+               PocqState::SlcUpdateIssue, PocqActionKind::UpdateSlcSf);
+    expectActions(
+        graph.tryStep(state, event(PocqEventKind::SlcUpdateAccepted)),
+        PocqState::SlcUpdateWait, {});
     expectStep(graph.tryStep(state, event(PocqEventKind::SlcUpdateDone)),
                PocqState::TxLink, PocqActionKind::QueueCompData);
 }
@@ -197,10 +203,43 @@ TEST(HnfPocqStateGraphTest, ReadUniqueWaitsForSnoopBeforeData)
     done.txn = PocqTxnKind::ReadUnique;
     done.dataAvailable = true;
     done.needsCompAck = true;
-    expectStep(graph.tryStep(state, done), PocqState::SlcUpdate,
+    expectStep(graph.tryStep(state, done), PocqState::SlcUpdateIssue,
                PocqActionKind::UpdateSlcSf);
+    expectActions(
+        graph.tryStep(state, event(PocqEventKind::SlcUpdateAccepted)),
+        PocqState::SlcUpdateWait, {});
     expectStep(graph.tryStep(state, event(PocqEventKind::SlcUpdateDone)),
                PocqState::TxLink, PocqActionKind::QueueCompData);
+}
+
+TEST(HnfPocqStateGraphTest, UpdateReplaySleepsFromWaitState)
+{
+    POCQ_StateGraph graph;
+    PocqState state = PocqState::SlcUpdateWait;
+    PocqEvent replay{};
+    replay.kind = PocqEventKind::SlcUpdateDone;
+    replay.replay = true;
+
+    expectStep(graph.tryStep(state, replay), PocqState::Sleep,
+               PocqActionKind::SleepForReplay);
+}
+
+TEST(HnfPocqStateGraphTest, UpdateCannotCompleteBeforeAcceptance)
+{
+    POCQ_StateGraph graph;
+    PocqState state = PocqState::SlcUpdateIssue;
+
+    const PocqStepResult done =
+        graph.tryStep(state, event(PocqEventKind::SlcUpdateDone));
+    EXPECT_FALSE(done.stepped);
+    EXPECT_EQ(state, PocqState::SlcUpdateIssue);
+
+    PocqEvent replay{};
+    replay.kind = PocqEventKind::SlcUpdateDone;
+    replay.replay = true;
+    const PocqStepResult replay_result = graph.tryStep(state, replay);
+    EXPECT_FALSE(replay_result.stepped);
+    EXPECT_EQ(state, PocqState::SlcUpdateIssue);
 }
 
 TEST(HnfPocqStateGraphTest, SnoopWithoutDataFallsBackToMemory)
@@ -345,7 +384,7 @@ TEST(HnfPocqStateGraphTest, CompositeNodeEnterAndStepSubGraph)
     topActive.setSubGraph(&subGraph);
     // Add parent-level transitions (in addition to built-in ones).
     // The built-in constructor already has: Idle --Admit--> SlcLookup
-    // and SlcLookup branches to Sleep/SlcUpdate/IssueMcRead.
+    // and SlcLookup branches to Sleep/SlcUpdateIssue/IssueMcRead.
     // We add: SlcLookup --CompAck--> Idle for sub-graph exit path.
     topGraph.addTransition(topActive, topIdle, isCompAck,
                            {PocqActionKind::Retire});
