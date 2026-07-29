@@ -136,6 +136,9 @@ Started: 2026-07-28T20:49:07+08:00
 - At a drained checkpoint boundary, serialize durable child storage and
   service identities separately from the parent-owned request allocator, and
   assert that neither clock events nor protocol/transient owners remain.
+- Restore a drained child symmetrically at each serialization ownership
+  boundary, validate geometry and monotonic identities before installation,
+  then reopen registered admission without rerunning cold `initState()`.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -1438,4 +1441,28 @@ Started: 2026-07-28T20:49:07+08:00
   child service and parent request producer, but a coordinated drained-only
   contract makes the serialized format contain durable state only and avoids
   reconstructing half-completed pipeline ownership.
+---
+
+## 2026-07-29 17:51 - US-036
+- Story: Restore SLCSF state without reinitialization or ID rollback
+- What was implemented: Added symmetric drained-state restore for complete
+  SLC, SF, SEQ, VictimBuffer, replacement/version counters, timed-service
+  lifecycle, standalone child, and HomeNode controller identity ownership.
+  Restore validates checkpoint format and geometry, preserves monotonic next
+  IDs, reopens registered request credit without cold initialization, and
+  leaves no duplicate initialization or service event pending.
+- Files changed: `src/mem/cache/CHI/HnfSLCSFBackend.hh/.cc`,
+  `HnfSLCSFRequest.hh`, `HnfSLCSF.hh/.cc/.test.cc`,
+  `HnfCoherencyController.hh/.cc/.test.cc`, `SlcSnoopFilter.hh/.cc`,
+  `HomeNodeFull.hh/.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and all relevant
+  CHI GTest binaries successfully; all 198 tests passed (18 POCQ, 2 SEQ POCQ,
+  4 backend, 115 SLCSF, 48 controller, and 11 standalone child). The required
+  restore regressions and controller next-request-ID test passed. Changed C++
+  files passed `python3 util/style.py --modifications`; `git diff --check`
+  passed.
+- Learnings for future iterations: Restore must validate flattened array
+  shape and allocator high-water marks before making state live, and a drained
+  image can resume immediately by restoring initialized state and registered
+  credit while leaving transient queues and events empty.
 ---

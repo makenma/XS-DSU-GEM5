@@ -82,6 +82,15 @@ class SlcSfReqIdAllocator
 
     uint64_t nextValue() const { return nextId; }
 
+    void restoreNextValue(uint64_t next_id)
+    {
+        if (next_id == 0) {
+            throw std::invalid_argument(
+                "SLCSF restored request ID must be non-zero");
+        }
+        nextId = next_id;
+    }
+
   private:
     uint64_t nextId = 1;
 };

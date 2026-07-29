@@ -130,6 +130,7 @@ class HnfSLCSFBackend
     size_t seqCapacity() const { return seq.size(); }
     uint64_t currentLookupEpoch() const { return lookupEpoch; }
     uint64_t currentLookupAccessCount() const { return lookupAccessCount; }
+    SeqId nextSeqIdentity() const { return nextSeqId; }
     uint32_t blockSizeBytes() const { return blockSize; }
 
     /** Report an unsupported dirty SLC displacement without changing state. */
@@ -166,6 +167,8 @@ class HnfSLCSFBackend
 
     /** Serialize durable array and identity state at an idle boundary. */
     void serializePersistentState(CheckpointOut& cp) const;
+    /** Restore durable array and identity state into an idle backend. */
+    void unserializePersistentState(CheckpointIn& cp);
 
   protected:
     /** Clear all persistent storage for a simulator cold start. */

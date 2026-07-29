@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "base/gtest/serialization_fixture.hh"
 #include "mem/cache/CHI/HnfCoherencyController.hh"
 #include "mem/cache/CHI/HnfSLCSF.hh"
 
@@ -19,6 +20,9 @@ constexpr uint32_t BeatSize = 32;
 constexpr uint32_t HnfNode = 0x90;
 constexpr uint32_t SnNode = 0x80;
 constexpr uint64_t TestAddr = 0x80004040;
+
+class HnfCcCheckpointTest : public SerializationFixture
+{};
 
 std::vector<uint8_t>
 lineData(uint8_t seed)
@@ -2730,6 +2734,36 @@ TEST(HnfCoherencyControllerTest,
     EXPECT_NE(contents.find("nextSnoopTransactionId="), std::string::npos);
     EXPECT_NE(contents.find("nextDirtyVictimTransactionId="),
               std::string::npos);
+}
+
+TEST_F(HnfCcCheckpointTest, RestorePreservesControllerRequestIdentity)
+{
+    HnfCoherencyController original(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    std::ostringstream checkpoint;
+    {
+        Serializable::ScopedCheckpointSection section(checkpoint, "cc");
+        original.serializeSlcsfIdentityState(checkpoint);
+    }
+    std::string contents = checkpoint.str();
+    const std::string old_value = "nextRequestId=1\n";
+    const size_t request_id = contents.find(old_value);
+    ASSERT_NE(request_id, std::string::npos);
+    contents.replace(request_id, old_value.size(), "nextRequestId=701\n");
+    simulateSerialization(contents);
+
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+    HnfCoherencyController restored(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    CheckpointIn input(getDirName());
+    {
+        Serializable::ScopedCheckpointSection section(input, "cc");
+        restored.unserializeSlcsfIdentityState(input);
+    }
+    restored.setSlcsf(&slcsf);
+    ASSERT_TRUE(restored.acceptLinkReq(
+        makeRead(0, 7001, 3, 97, 0x01), 0).accepted);
+    EXPECT_EQ(restored.slcLookupReqId(0), SlcSfReqId{701});
 }
 
 } // namespace gem5::Chi

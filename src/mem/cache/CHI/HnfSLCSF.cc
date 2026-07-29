@@ -809,6 +809,115 @@ HnfSLCSF::serializePersistentState(CheckpointOut& cp) const
 }
 
 void
+HnfSLCSF::unserializePersistentState(CheckpointIn& cp)
+{
+    bool saved_initialized = false;
+    size_t saved_victim_entries = 0;
+    paramIn(cp, "initialized", saved_initialized);
+    paramIn(cp, "wakeupCycle", wakeupCycle);
+    paramIn(cp, "wakeupTick", wakeupTick);
+    paramIn(cp, "nextVictimId", nextVictimId);
+    paramIn(cp, "nextReservationId", nextCompletionNonce);
+    paramIn(cp, "nextSetLockOwner", nextSetLockOwner);
+    paramIn(cp, "victimBufferEntries", saved_victim_entries);
+    fatal_if(!saved_initialized || saved_victim_entries != victimBuffer.size() ||
+                 nextVictimId == 0 || nextCompletionNonce == 0 ||
+                 nextSetLockOwner == 0,
+             "HnfSLCSF checkpoint has invalid lifecycle or next IDs\n");
+
+    std::vector<uint64_t> victim_id;
+    std::vector<uint32_t> victim_state;
+    std::vector<uint64_t> victim_address;
+    std::vector<uint32_t> victim_snapshot_valid;
+    std::vector<uint32_t> victim_snapshot_state;
+    std::vector<uint32_t> victim_snapshot_owner;
+    std::vector<uint32_t> victim_snapshot_dirty;
+    std::vector<uint64_t> victim_snapshot_data_size;
+    std::vector<uint32_t> victim_snapshot_data;
+    arrayParamIn(cp, "victimId", victim_id);
+    arrayParamIn(cp, "victimState", victim_state);
+    arrayParamIn(cp, "victimAddress", victim_address);
+    arrayParamIn(cp, "victimSnapshotValid", victim_snapshot_valid);
+    arrayParamIn(cp, "victimSnapshotState", victim_snapshot_state);
+    arrayParamIn(cp, "victimSnapshotOwner", victim_snapshot_owner);
+    arrayParamIn(cp, "victimSnapshotDirty", victim_snapshot_dirty);
+    arrayParamIn(cp, "victimSnapshotDataSize", victim_snapshot_data_size);
+    arrayParamIn(cp, "victimSnapshotData", victim_snapshot_data);
+    const size_t entries = victimBuffer.size();
+    fatal_if(victim_id.size() != entries || victim_state.size() != entries ||
+                 victim_address.size() != entries ||
+                 victim_snapshot_valid.size() != entries ||
+                 victim_snapshot_state.size() != entries ||
+                 victim_snapshot_owner.size() != entries ||
+                 victim_snapshot_dirty.size() != entries ||
+                 victim_snapshot_data_size.size() != entries,
+             "HnfSLCSF checkpoint has malformed VictimBuffer arrays\n");
+    size_t data_offset = 0;
+    uint64_t max_victim_id = 0;
+    for (size_t i = 0; i < entries; ++i) {
+        fatal_if(victim_state[i] >
+                         static_cast<uint32_t>(VictimState::Released) ||
+                     (victim_state[i] !=
+                          static_cast<uint32_t>(VictimState::Free) &&
+                      victim_state[i] !=
+                          static_cast<uint32_t>(VictimState::Released)) ||
+                     victim_snapshot_state[i] >
+                         static_cast<uint32_t>(HnfSlcState::MN) ||
+                     victim_snapshot_data_size[i] > blockSizeBytes() ||
+                     data_offset + victim_snapshot_data_size[i] >
+                         victim_snapshot_data.size(),
+                 "HnfSLCSF restore requires a drained VictimBuffer\n");
+        VictimEntry& entry = victimBuffer[i];
+        entry = VictimEntry{};
+        entry.id = SlcSfVictimId{victim_id[i]};
+        entry.state = static_cast<VictimState>(victim_state[i]);
+        entry.lineAddress = victim_address[i];
+        if (victim_snapshot_valid[i]) {
+            SlcSfCacheLine line;
+            line.dirty = victim_snapshot_dirty[i];
+            line.byteMask.assign(blockSizeBytes(), 0xff);
+            for (size_t j = 0; j < victim_snapshot_data_size[i]; ++j) {
+                fatal_if(victim_snapshot_data[data_offset] > UINT8_MAX,
+                         "HnfSLCSF checkpoint has invalid victim data byte\n");
+                line.data.push_back(victim_snapshot_data[data_offset++]);
+            }
+            entry.snapshot = SlcSfSlcVictim{
+                entry.id, entry.lineAddress,
+                static_cast<HnfSlcState>(victim_snapshot_state[i]),
+                victim_snapshot_owner[i], std::move(line)};
+        } else {
+            fatal_if(victim_snapshot_data_size[i] != 0,
+                     "HnfSLCSF invalid absent victim snapshot data\n");
+        }
+        max_victim_id = std::max(max_victim_id, entry.id.value);
+    }
+    fatal_if(data_offset != victim_snapshot_data.size() ||
+                 nextVictimId <= max_victim_id,
+             "HnfSLCSF checkpoint victim identity rolled back\n");
+
+    {
+        Serializable::ScopedCheckpointSection backend_section(cp, "backend");
+        HnfSLCSFBackend::unserializePersistentState(cp);
+    }
+
+    reqIngress.clear();
+    reqReady.clear();
+    inflightRequests.clear();
+    respPending.clear();
+    respVisible.clear();
+    initialized = true;
+    initializationCyclesRemaining = 0;
+    drainRequested = false;
+    draining = false;
+    visibleReqCredits = 0;
+    updateRegisteredCredits();
+    checkLifecycle();
+    assertVictimAccounting();
+    assertRequestAccounting();
+    assertResponseAccounting();
+}
+
+void
 HnfSLCSF::promotePendingResponses()
 {
     while (!respPending.empty()) {

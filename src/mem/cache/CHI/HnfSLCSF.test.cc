@@ -9,6 +9,7 @@
 #include <variant>
 #include <vector>
 
+#include "base/gtest/serialization_fixture.hh"
 #include "mem/cache/CHI/HnfSLCSF.hh"
 #include "mem/cache/CHI/HnfSLCSFRequest.hh"
 #include "mem/cache/CHI/HnfSLCSFResponse.hh"
@@ -22,6 +23,21 @@ namespace
 constexpr uint64_t TestAddr = 0x80004000;
 constexpr uint8_t CleanInvalidOpcode = 0x09;
 constexpr uint8_t WriteNoSnpFullOpcode = 0x5c;
+
+class HnfSlcSfCheckpointTest : public SerializationFixture
+{};
+
+void
+replaceCheckpointValue(std::string& checkpoint, const std::string& name,
+                       const std::string& value)
+{
+    const size_t begin = checkpoint.find(name + "=");
+    ASSERT_NE(begin, std::string::npos);
+    const size_t value_begin = begin + name.size() + 1;
+    const size_t end = checkpoint.find('\n', value_begin);
+    ASSERT_NE(end, std::string::npos);
+    checkpoint.replace(value_begin, end - value_begin, value);
+}
 
 static_assert(!std::is_copy_constructible_v<HnfSLCSF>);
 static_assert(!std::is_copy_assignable_v<HnfSLCSF>);
@@ -58,6 +74,18 @@ lookup(HnfSLCSF& model, uint64_t addr, uint32_t requester,
     req.req.srcid = requester;
     req.txn = txn;
     return model.lookup(req);
+}
+
+HnfSLCSFBackend::LookupObservation
+probeLookup(HnfSLCSF& model, uint64_t addr, uint32_t requester,
+            PocqTxnKind txn = PocqTxnKind::ReadShared)
+{
+    HnfSlcLookupReq req{};
+    req.entry = 3;
+    req.blockAddr = addr;
+    req.req.srcid = requester;
+    req.txn = txn;
+    return model.probe(req);
 }
 
 std::vector<uint8_t>
@@ -4931,6 +4959,135 @@ TEST(HnfSlcSfTest, CheckpointContentIncludesPersistentState)
     EXPECT_NE(contents.find("sfReplacementStamp="), std::string::npos);
     EXPECT_NE(contents.find("seqValid="), std::string::npos);
     EXPECT_NE(contents.find("seqPending="), std::string::npos);
+}
+
+TEST_F(HnfSlcSfCheckpointTest, DrainedCheckpointRestoresSlcSfState)
+{
+    HnfSLCSF original(64, 4, 2, 4, 2);
+    const auto data = lineData(0x37);
+    original.commitRead(
+        TestAddr, 5, PocqTxnKind::ReadShared, data, true, 17);
+    original.commitRead(
+        TestAddr, 9, PocqTxnKind::ReadShared, data, true, 17);
+    const auto before = probeLookup(original, TestAddr, 5);
+    original.beginDraining();
+
+    std::ostringstream checkpoint;
+    {
+        Serializable::ScopedCheckpointSection section(checkpoint, "model");
+        original.serializePersistentState(checkpoint);
+    }
+    simulateSerialization(checkpoint.str());
+
+    HnfSLCSF restored(64, 4, 2, 4, 2);
+    CheckpointIn input(getDirName());
+    {
+        Serializable::ScopedCheckpointSection section(input, "model");
+        restored.unserializePersistentState(input);
+    }
+    const auto after = probeLookup(restored, TestAddr, 5);
+
+    expectLookupResultsEqual(after.result, before.result);
+    EXPECT_EQ(after.snapshot.lookupEpoch, before.snapshot.lookupEpoch);
+    expectArraySnapshotsEqual(after.snapshot.slc, before.snapshot.slc);
+    expectArraySnapshotsEqual(after.snapshot.sf, before.snapshot.sf);
+    EXPECT_TRUE(after.result.dataDirty);
+    EXPECT_EQ(after.result.data, data);
+    EXPECT_EQ(after.result.rnfid, 5);
+    EXPECT_EQ(after.result.rnfvec, (1ULL << 5) | (1ULL << 9));
+    EXPECT_TRUE(restored.isInitialized());
+    EXPECT_FALSE(restored.isDrainRequested());
+    EXPECT_FALSE(restored.isAdmissionSealed());
+    EXPECT_EQ(restored.registeredReqCredits(),
+              restored.pipelineConfig().reqQueueEntries);
+    EXPECT_FALSE(restored.needsServiceWakeup());
+}
+
+TEST_F(HnfSlcSfCheckpointTest, RestorePreservesReplacementAndNextIds)
+{
+    constexpr uint64_t addr_a = TestAddr;
+    constexpr uint64_t addr_b = TestAddr + 64;
+    constexpr uint64_t addr_c = TestAddr + 128;
+    HnfSLCSF original(64, 1, 2, 1, 4);
+    original.fillCleanShared(addr_a, 1, lineData(0x11));
+    original.fillCleanShared(addr_b, 2, lineData(0x22));
+    lookup(original, addr_a, 1, PocqTxnKind::ReadShared);
+    const auto before_a = probeLookup(original, addr_a, 1);
+    const auto before_b = probeLookup(original, addr_b, 2);
+    original.beginDraining();
+
+    std::ostringstream checkpoint;
+    {
+        Serializable::ScopedCheckpointSection section(checkpoint, "model");
+        original.serializePersistentState(checkpoint);
+    }
+    std::string contents = checkpoint.str();
+    replaceCheckpointValue(contents, "nextVictimId", "41");
+    replaceCheckpointValue(contents, "nextReservationId", "51");
+    replaceCheckpointValue(contents, "nextSetLockOwner", "61");
+    replaceCheckpointValue(contents, "nextSeqId", "71");
+    simulateSerialization(contents);
+
+    HnfSLCSF restored(64, 1, 2, 1, 4);
+    CheckpointIn input(getDirName());
+    {
+        Serializable::ScopedCheckpointSection section(input, "model");
+        restored.unserializePersistentState(input);
+    }
+    const auto restored_a = probeLookup(restored, addr_a, 1);
+    const auto restored_b = probeLookup(restored, addr_b, 2);
+    expectArraySnapshotsEqual(restored_a.snapshot.slc,
+                              before_a.snapshot.slc);
+    expectArraySnapshotsEqual(restored_b.snapshot.slc,
+                              before_b.snapshot.slc);
+    EXPECT_EQ(restored.nextVictimIdentity(), 41);
+    EXPECT_EQ(restored.nextReservationIdentity(), 51);
+    EXPECT_EQ(restored.nextSetLockIdentity(), 61);
+    EXPECT_EQ(restored.nextSeqIdentity(), 71);
+
+    original.fillCleanShared(addr_c, 3, lineData(0x33));
+    restored.fillCleanShared(addr_c, 3, lineData(0x33));
+    for (const uint64_t address : {addr_a, addr_b, addr_c}) {
+        const auto expected = probeLookup(original, address, 3);
+        const auto actual = probeLookup(restored, address, 3);
+        expectLookupResultsEqual(actual.result, expected.result);
+        expectArraySnapshotsEqual(actual.snapshot.slc,
+                                  expected.snapshot.slc);
+    }
+}
+
+TEST_F(HnfSlcSfCheckpointTest, RestoredFilterAcceptsNewWork)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.lookupLatency = 2;
+    HnfSLCSF original(64, 4, 2, 4, 2, 8, config);
+    original.beginDraining();
+    std::ostringstream checkpoint;
+    {
+        Serializable::ScopedCheckpointSection section(checkpoint, "model");
+        original.serializePersistentState(checkpoint);
+    }
+    simulateSerialization(checkpoint.str());
+
+    HnfSLCSF restored(64, 4, 2, 4, 2, 8, config);
+    CheckpointIn input(getDirName());
+    {
+        Serializable::ScopedCheckpointSection section(input, "model");
+        restored.unserializePersistentState(input);
+    }
+    auto request = lookupRequest(9002, TestAddr, 902);
+    ASSERT_EQ(restored.tryEnqueue(std::move(request)),
+              SlcSfEnqueueResult::Accepted);
+    std::optional<SlcSfResponse> response;
+    for (size_t cycle = 0; cycle < 16 && !response; ++cycle) {
+        restored.wakeup(100 + cycle);
+        response = consumeVisibleResponse(restored);
+    }
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->status(), SlcSfTerminalStatus::Done);
+    EXPECT_EQ(response->reqId(), SlcSfReqId{9002});
+    EXPECT_EQ(response->pocEntryId(), 902);
+    EXPECT_TRUE(restored.isInitialized());
 }
 
 } // namespace gem5::Chi

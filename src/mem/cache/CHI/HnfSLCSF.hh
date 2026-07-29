@@ -254,6 +254,9 @@ class HnfSLCSF : public HnfSLCSFBackend
     bool isInitialized() const { return initialized; }
     bool isDrainRequested() const { return drainRequested; }
     bool isAdmissionSealed() const { return draining; }
+    uint64_t nextVictimIdentity() const { return nextVictimId; }
+    uint64_t nextReservationIdentity() const { return nextCompletionNonce; }
+    uint64_t nextSetLockIdentity() const { return nextSetLockOwner; }
 
     /** Reset persistent and transient state and enter modeled cold init. */
     void resetForColdStart();
@@ -266,6 +269,8 @@ class HnfSLCSF : public HnfSLCSFBackend
 
     /** Serialize only after coordinated drain has sealed all admission. */
     void serializePersistentState(CheckpointOut& cp) const;
+    /** Restore a drained image as initialized, idle, and admission-ready. */
+    void unserializePersistentState(CheckpointIn& cp);
 
 #ifdef UNIT_TEST
     /** Narrow fault injection; absent from production builds. */

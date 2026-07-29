@@ -2334,6 +2334,19 @@ HnfCoherencyController::serializeSlcsfIdentityState(CheckpointOut& cp) const
     paramOut(cp, "nextDirtyVictimTransactionId", nextDirtyVictimTxnId);
 }
 
+void
+HnfCoherencyController::unserializeSlcsfIdentityState(CheckpointIn& cp)
+{
+    panic_if(hasWork() || mayGenerateSlcsfIntent() ||
+                 !deferredRetireQ.empty(),
+             "HNF CC restore requires an idle controller\n");
+    uint64_t next_request_id = 0;
+    paramIn(cp, "nextRequestId", next_request_id);
+    paramIn(cp, "nextSnoopTransactionId", nextSnoopTxnId);
+    paramIn(cp, "nextDirtyVictimTransactionId", nextDirtyVictimTxnId);
+    slcSfReqIds.restoreNextValue(next_request_id);
+}
+
 bool
 HnfCoherencyController::hasWork() const
 {

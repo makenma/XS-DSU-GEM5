@@ -106,6 +106,18 @@ HomeNodeFull::serialize(CheckpointOut& cp) const
 }
 
 void
+HomeNodeFull::unserialize(CheckpointIn& cp)
+{
+    BasicChiComponent::unserialize(cp);
+    Serializable::ScopedCheckpointSection section(cp, "slcsfRequester");
+    cc.unserializeSlcsfIdentityState(cp);
+    d1Active = false;
+    d1Complete = false;
+    d2Active = false;
+    linklayer.resumeNewRequests();
+}
+
+void
 HomeNodeFull::print(std::ostream& out) const
 {
     out << "HomeNodeFull(" << name() << ")";

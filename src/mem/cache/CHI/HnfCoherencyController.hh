@@ -94,6 +94,8 @@ class HnfCoherencyController
     bool mayGenerateSlcsfIntent() const;
     /** Serialize controller-owned SLCSF identities at parent drain. */
     void serializeSlcsfIdentityState(CheckpointOut& cp) const;
+    /** Restore controller-owned SLCSF identities without reuse. */
+    void unserializeSlcsfIdentityState(CheckpointIn& cp);
     bool hasTxReq() const { return !txReqQ.empty(); }
     bool hasTxSnp() const { return !txSnpQ.empty(); }
     bool hasTxDat() const { return !txDatQ.empty(); }

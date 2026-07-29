@@ -85,6 +85,18 @@ SlcSnoopFilter::serialize(CheckpointOut& cp) const
     slcsf.serializePersistentState(cp);
 }
 
+void
+SlcSnoopFilter::unserialize(CheckpointIn& cp)
+{
+    panic_if(serviceEvent.scheduled(),
+             "%s cannot restore over a scheduled service event\n", name());
+    ClockedObject::unserialize(cp);
+    Serializable::ScopedCheckpointSection section(cp, "slcsf");
+    slcsf.unserializePersistentState(cp);
+    scheduledServiceCycle = slcsf.currentCycle();
+    lastServiceTick.reset();
+}
+
 std::optional<Tick>
 SlcSnoopFilter::calculateNextWakeup() const
 {

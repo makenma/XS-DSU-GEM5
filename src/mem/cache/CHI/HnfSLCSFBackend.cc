@@ -1866,4 +1866,212 @@ HnfSLCSFBackend::serializePersistentState(CheckpointOut& cp) const
     arrayParamOut(cp, "seqPending", pending);
 }
 
+void
+HnfSLCSFBackend::unserializePersistentState(CheckpointIn& cp)
+{
+    uint32_t format_version = 0;
+    uint32_t saved_block_size = 0;
+    uint32_t saved_slc_sets = 0;
+    uint32_t saved_slc_ways = 0;
+    uint32_t saved_sf_sets = 0;
+    uint32_t saved_sf_ways = 0;
+    size_t saved_seq_entries = 0;
+    paramIn(cp, "formatVersion", format_version);
+    paramIn(cp, "blockSize", saved_block_size);
+    paramIn(cp, "slcSets", saved_slc_sets);
+    paramIn(cp, "slcWays", saved_slc_ways);
+    paramIn(cp, "sfSets", saved_sf_sets);
+    paramIn(cp, "sfWays", saved_sf_ways);
+    paramIn(cp, "seqEntries", saved_seq_entries);
+    fatal_if(format_version != 1 || saved_block_size != blockSize ||
+                 saved_slc_sets != slcSets || saved_slc_ways != slcWays ||
+                 saved_sf_sets != sfSets || saved_sf_ways != sfWays ||
+                 saved_seq_entries != seq.size(),
+             "HnfSLCSF checkpoint geometry or format mismatch\n");
+
+    paramIn(cp, "accessCounter", accessCounter);
+    paramIn(cp, "lookupEpoch", lookupEpoch);
+    paramIn(cp, "lookupAccessCount", lookupAccessCount);
+    paramIn(cp, "nextSeqId", nextSeqId);
+    fatal_if(lookupEpoch == 0 || nextSeqId == 0,
+             "HnfSLCSF checkpoint contains invalid next identity\n");
+
+    std::vector<uint32_t> slc_valid;
+    std::vector<uint64_t> slc_tag;
+    std::vector<uint32_t> slc_state;
+    std::vector<uint32_t> slc_owner;
+    std::vector<uint64_t> slc_generation;
+    std::vector<uint64_t> slc_last_use;
+    std::vector<uint64_t> slc_data_size;
+    std::vector<uint32_t> slc_data;
+    arrayParamIn(cp, "slcValid", slc_valid);
+    arrayParamIn(cp, "slcTag", slc_tag);
+    arrayParamIn(cp, "slcState", slc_state);
+    arrayParamIn(cp, "slcOwner", slc_owner);
+    arrayParamIn(cp, "slcGeneration", slc_generation);
+    arrayParamIn(cp, "slcReplacementStamp", slc_last_use);
+    arrayParamIn(cp, "slcDataSize", slc_data_size);
+    arrayParamIn(cp, "slcData", slc_data);
+    const size_t slc_lines = static_cast<size_t>(slcSets) * slcWays;
+    fatal_if(slc_valid.size() != slc_lines ||
+                 slc_tag.size() != slc_lines ||
+                 slc_state.size() != slc_lines ||
+                 slc_owner.size() != slc_lines ||
+                 slc_generation.size() != slc_lines ||
+                 slc_last_use.size() != slc_lines ||
+                 slc_data_size.size() != slc_lines,
+             "HnfSLCSF checkpoint has malformed SLC arrays\n");
+    size_t data_offset = 0;
+    uint64_t max_identity = 0;
+    for (size_t i = 0; i < slc_lines; ++i) {
+        fatal_if(slc_state[i] > static_cast<uint32_t>(HnfSlcState::MN) ||
+                     slc_data_size[i] > blockSize ||
+                     data_offset + slc_data_size[i] > slc_data.size(),
+                 "HnfSLCSF checkpoint has invalid SLC line\n");
+        SlcLine& line = slc[i / slcWays][i % slcWays];
+        line.valid = slc_valid[i];
+        line.tag = slc_tag[i];
+        line.state = static_cast<HnfSlcState>(slc_state[i]);
+        line.owner = slc_owner[i];
+        line.generation = slc_generation[i];
+        line.lastUse = slc_last_use[i];
+        line.data.clear();
+        for (size_t j = 0; j < slc_data_size[i]; ++j) {
+            fatal_if(slc_data[data_offset] > UINT8_MAX,
+                     "HnfSLCSF checkpoint has invalid SLC data byte\n");
+            line.data.push_back(slc_data[data_offset++]);
+        }
+        max_identity = std::max(
+            max_identity, std::max(line.generation, line.lastUse));
+    }
+    fatal_if(data_offset != slc_data.size(),
+             "HnfSLCSF checkpoint has trailing SLC data\n");
+
+    std::vector<uint32_t> sf_valid;
+    std::vector<uint64_t> sf_tag;
+    std::vector<uint32_t> sf_state;
+    std::vector<uint32_t> sf_home_node;
+    std::vector<uint32_t> sf_owner;
+    std::vector<uint64_t> sf_sharers;
+    std::vector<uint64_t> sf_generation;
+    std::vector<uint64_t> sf_last_use;
+    arrayParamIn(cp, "sfValid", sf_valid);
+    arrayParamIn(cp, "sfTag", sf_tag);
+    arrayParamIn(cp, "sfState", sf_state);
+    arrayParamIn(cp, "sfHomeNodeId", sf_home_node);
+    arrayParamIn(cp, "sfOwner", sf_owner);
+    arrayParamIn(cp, "sfSharers", sf_sharers);
+    arrayParamIn(cp, "sfGeneration", sf_generation);
+    arrayParamIn(cp, "sfReplacementStamp", sf_last_use);
+    const size_t sf_lines = static_cast<size_t>(sfSets) * sfWays;
+    fatal_if(sf_valid.size() != sf_lines || sf_tag.size() != sf_lines ||
+                 sf_state.size() != sf_lines ||
+                 sf_home_node.size() != sf_lines ||
+                 sf_owner.size() != sf_lines ||
+                 sf_sharers.size() != sf_lines ||
+                 sf_generation.size() != sf_lines ||
+                 sf_last_use.size() != sf_lines,
+             "HnfSLCSF checkpoint has malformed SF arrays\n");
+    for (size_t i = 0; i < sf_lines; ++i) {
+        fatal_if(sf_state[i] > static_cast<uint32_t>(HnfSfState::SN),
+                 "HnfSLCSF checkpoint has invalid SF state\n");
+        SfLine& line = sf[i / sfWays][i % sfWays];
+        line.valid = sf_valid[i];
+        line.tag = sf_tag[i];
+        line.state = static_cast<HnfSfState>(sf_state[i]);
+        line.homeNodeId = sf_home_node[i];
+        line.owner = sf_owner[i];
+        line.sharers = sf_sharers[i];
+        line.generation = sf_generation[i];
+        line.lastUse = sf_last_use[i];
+        max_identity = std::max(
+            max_identity, std::max(line.generation, line.lastUse));
+    }
+    fatal_if(accessCounter < max_identity,
+             "HnfSLCSF checkpoint generation allocator rolled back\n");
+
+    std::vector<uint32_t> seq_valid;
+    std::vector<uint32_t> seq_phase;
+    std::vector<uint64_t> seq_id;
+    std::vector<uint64_t> seq_address;
+    std::vector<uint32_t> seq_home_node;
+    std::vector<uint32_t> seq_state;
+    std::vector<uint32_t> seq_owner;
+    std::vector<uint64_t> seq_sharers;
+    std::vector<uint32_t> seq_opcode;
+    std::vector<uint32_t> seq_transaction;
+    std::vector<uint32_t> seq_dirty;
+    std::vector<uint64_t> seq_data_size;
+    std::vector<uint32_t> seq_data;
+    std::vector<uint64_t> pending;
+    arrayParamIn(cp, "seqValid", seq_valid);
+    arrayParamIn(cp, "seqPhase", seq_phase);
+    arrayParamIn(cp, "seqId", seq_id);
+    arrayParamIn(cp, "seqAddress", seq_address);
+    arrayParamIn(cp, "seqHomeNodeId", seq_home_node);
+    arrayParamIn(cp, "seqState", seq_state);
+    arrayParamIn(cp, "seqOwner", seq_owner);
+    arrayParamIn(cp, "seqSharers", seq_sharers);
+    arrayParamIn(cp, "seqCompletionOpcode", seq_opcode);
+    arrayParamIn(cp, "seqCompletionTransactionId", seq_transaction);
+    arrayParamIn(cp, "seqCommittedDirty", seq_dirty);
+    arrayParamIn(cp, "seqCommittedDataSize", seq_data_size);
+    arrayParamIn(cp, "seqCommittedData", seq_data);
+    arrayParamIn(cp, "seqPending", pending);
+    const size_t seq_entries = seq.size();
+    fatal_if(seq_valid.size() != seq_entries ||
+                 seq_phase.size() != seq_entries ||
+                 seq_id.size() != seq_entries ||
+                 seq_address.size() != seq_entries ||
+                 seq_home_node.size() != seq_entries ||
+                 seq_state.size() != seq_entries ||
+                 seq_owner.size() != seq_entries ||
+                 seq_sharers.size() != seq_entries ||
+                 seq_opcode.size() != seq_entries ||
+                 seq_transaction.size() != seq_entries ||
+                 seq_dirty.size() != seq_entries ||
+                 seq_data_size.size() != seq_entries,
+             "HnfSLCSF checkpoint has malformed SEQ arrays\n");
+    data_offset = 0;
+    for (size_t i = 0; i < seq_entries; ++i) {
+        fatal_if(seq_phase[i] >
+                         static_cast<uint32_t>(SeqPhase::CommittedAwaitAck) ||
+                     seq_state[i] > static_cast<uint32_t>(HnfSfState::SN) ||
+                     seq_data_size[i] > blockSize ||
+                     data_offset + seq_data_size[i] > seq_data.size(),
+                 "HnfSLCSF checkpoint has invalid SEQ entry\n");
+        SeqEntry& entry = seq[i];
+        entry = SeqEntry{};
+        entry.valid = seq_valid[i];
+        entry.phase = static_cast<SeqPhase>(seq_phase[i]);
+        entry.victim = {seq_id[i], seq_address[i], seq_home_node[i],
+                        static_cast<HnfSfState>(seq_state[i]), seq_owner[i],
+                        seq_sharers[i],
+                        entry.phase != SeqPhase::Pending};
+        entry.completionOpcode = seq_opcode[i];
+        entry.completionTransactionId = seq_transaction[i];
+        entry.committedDirty = seq_dirty[i];
+        for (size_t j = 0; j < seq_data_size[i]; ++j) {
+            fatal_if(seq_data[data_offset] > UINT8_MAX,
+                     "HnfSLCSF checkpoint has invalid SEQ data byte\n");
+            entry.committedData.push_back(seq_data[data_offset++]);
+        }
+    }
+    fatal_if(data_offset != seq_data.size(),
+             "HnfSLCSF checkpoint has trailing SEQ data\n");
+    seqPending.assign(pending.begin(), pending.end());
+
+    // The supported format is drained-only. Recreate transient containers
+    // empty and reject an image that claims otherwise.
+    fatal_if(std::any_of(seq.begin(), seq.end(),
+                         [](const SeqEntry& entry) { return entry.valid; }) ||
+                 !seqPending.empty(),
+             "HnfSLCSF restore requires a drained SEQ\n");
+    std::fill(issuedSfSetOwners.begin(), issuedSfSetOwners.end(), -1);
+    sfReservations.clear();
+    dirtyVictimSeals.clear();
+    reservedSeqSlots = 0;
+    assertSeqAccounting();
+}
+
 } // namespace gem5::Chi
