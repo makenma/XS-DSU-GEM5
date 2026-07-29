@@ -26,7 +26,9 @@ class HomeNodeFull : public BasicChiComponent , public ruby::Consumer
                   PortID idx = InvalidPortID) override;
         bool hasLinkWork() const;
         DrainState drain() override;
+        void drainResume() override;
         bool drainD1Complete() const { return d1Complete; }
+        bool drainD2Active() const { return d2Active; }
         //HomeNodeFull* create() const;
     private:
         SlcSnoopFilter* const slcsf;
@@ -35,6 +37,9 @@ class HomeNodeFull : public BasicChiComponent , public ruby::Consumer
         ChiCommonPort   rxport;
         bool d1Active = false;
         bool d1Complete = false;
+        bool d2Active = false;
+
+        void advanceDrain();
 
 
 

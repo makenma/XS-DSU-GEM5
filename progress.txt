@@ -130,6 +130,9 @@ Started: 2026-07-28T20:49:07+08:00
 - Split coordinated drain into an upstream quiesce request and a later service
   admission seal; conservatively keep every allocated protocol owner visible
   until it can no longer create a delayed child intent.
+- Define drain completion as the conjunction of parent protocol idleness and
+  child queue, response, transient-resource, victim, and SEQ idleness; resume
+  both admission domains and recalculate registered credit together.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -1385,4 +1388,26 @@ Started: 2026-07-28T20:49:07+08:00
   boundary, not at the child request queue; requests owned by main, SEQ, or
   victim transactions remain admissible until the parent proves no such owner
   can create another intent.
+---
+
+## 2026-07-29 17:14 - US-034
+- Story: Seal, finish, and resume coordinated drain
+- What was implemented: Added the explicit HomeNode D1-to-D2 transition,
+  sealed child admission only after upstream intent exhaustion, kept normal
+  controller/link service active during D2, and signaled completion only when
+  both ownership domains are empty. Added exact child idle accounting across
+  queues, responses, locks, reservations, VictimBuffer, and SEQ/FVB state,
+  plus coordinated resume with restored RX admission and registered credit.
+- Files changed: `src/mem/cache/CHI/HnfSLCSFBackend.hh`, `HnfSLCSF.hh/.cc`,
+  `SlcSnoopFilter.hh/.cc/.test.cc`, `HomeLinkLayer.hh`,
+  `HomeNodeFull.hh/.cc`, `prd.json`, and `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and all relevant
+  CHI GTests successfully; all 191 tests passed (18 POCQ, 2 SEQ POCQ,
+  4 backend, 110 SLCSF, 46 controller, and 11 standalone child). The focused
+  drain regression covered ingress, ready, in-flight, pending-response, and
+  visible-response starts. Changed C++ files passed `python3 util/style.py
+  --modifications`; `git diff --check` passed.
+- Learnings for future iterations: A coordinated parent/child drain needs one
+  explicit admission-seal boundary and a complete ownership predicate; queue
+  emptiness alone misses durable responses and transient resource owners.
 ---

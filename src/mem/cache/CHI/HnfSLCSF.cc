@@ -734,6 +734,8 @@ HnfSLCSF::resumeFromDrain()
 {
     drainRequested = false;
     draining = false;
+    updateRegisteredCredits();
+    checkLifecycle();
 }
 
 void

@@ -246,8 +246,10 @@ class HnfSLCSF : public HnfSLCSFBackend
     bool isBusy() const
     {
         return hasWork() || HnfSLCSFBackend::isBusy() ||
-            victimBufferOccupancy() != 0;
+            victimBufferOccupancy() != 0 || setLockCount() != 0;
     }
+    /** No accepted, durable, or transient owner remains at a drain boundary. */
+    bool isCompletelyIdle() const { return initialized && !isBusy(); }
 
     bool isInitialized() const { return initialized; }
     bool isDrainRequested() const { return drainRequested; }

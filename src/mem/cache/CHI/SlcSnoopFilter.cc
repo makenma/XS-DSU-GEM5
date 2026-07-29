@@ -35,6 +35,46 @@ SlcSnoopFilter::startup()
     ensureWakeup();
 }
 
+DrainState
+SlcSnoopFilter::drain()
+{
+    // The parent owns the D1 -> D2 boundary.  Merely record the request here;
+    // allocated upstream protocol owners must remain able to enqueue in D1.
+    slcsf.requestDrain();
+    return slcsf.isCompletelyIdle() ? DrainState::Drained :
+                                      DrainState::Draining;
+}
+
+void
+SlcSnoopFilter::sealAdmission()
+{
+    slcsf.beginDraining();
+    ensureWakeup();
+    testDrainComplete();
+}
+
+void
+SlcSnoopFilter::testDrainComplete()
+{
+    if (slcsf.isCompletelyIdle()) {
+        signalDrainDone();
+    }
+}
+
+void
+SlcSnoopFilter::drainResume()
+{
+    const bool had_credit = slcsf.registeredReqCredits() != 0;
+    slcsf.resumeFromDrain();
+    ensureWakeup();
+    if (!had_credit && slcsf.registeredReqCredits() != 0 &&
+        futureWakeupCallback) {
+        panic_if(curTick() == MaxTick,
+                 "%s cannot notify its owner after MaxTick\n", name());
+        futureWakeupCallback(curTick() + 1);
+    }
+}
+
 std::optional<Tick>
 SlcSnoopFilter::calculateNextWakeup() const
 {
@@ -95,6 +135,7 @@ SlcSnoopFilter::processServiceEvent()
                  "%s cannot notify its owner after MaxTick\n", name());
         futureWakeupCallback(curTick() + 1);
     }
+    testDrainComplete();
     ensureWakeup();
 }
 

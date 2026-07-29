@@ -97,9 +97,15 @@ class SlcSnoopFilter : public ClockedObject
     bool initialized() const { return slcsf.isInitialized(); }
     void requestDrain() { slcsf.requestDrain(); }
     bool drainRequested() const { return slcsf.isDrainRequested(); }
+    bool admissionSealed() const { return slcsf.isAdmissionSealed(); }
+    bool completelyIdle() const { return slcsf.isCompletelyIdle(); }
+    void sealAdmission();
+    void testDrainComplete();
 
     void initState() override;
     void startup() override;
+    DrainState drain() override;
+    void drainResume() override;
 
     /** Register the owner callback used only to request a future wakeup. */
     void setFutureWakeupCallback(std::function<void(Tick)> callback)

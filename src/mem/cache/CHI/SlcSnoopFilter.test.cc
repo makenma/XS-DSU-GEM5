@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <set>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -290,6 +291,120 @@ TEST(SlcSnoopFilterTest, CrossClockReplayUsesAbsoluteChildTick)
     EXPECT_EQ(replay.reason, SlcSfReplayReason::StaleCommitToken);
     EXPECT_EQ(replay.retryNotBeforeTick, 219);
     EXPECT_GT(replay.retryNotBeforeTick, 213);
+}
+
+TEST(SlcSnoopFilterTest, DrainWaitsForAllAcceptedWork)
+{
+    enum class StartingState
+    {
+        Ingress,
+        Ready,
+        Inflight,
+        RespPending,
+        RespVisible
+    };
+
+    for (const StartingState state : {
+             StartingState::Ingress, StartingState::Ready,
+             StartingState::Inflight, StartingState::RespPending,
+             StartingState::RespVisible}) {
+        HnfSLCSFPipelineConfig config{};
+        config.reqQueueEntries = 2;
+        config.respQueueEntries = 1;
+        config.maxInflight = 1;
+        config.lookupLatency = 1;
+        HnfSLCSF service(64, 4, 2, 4, 2, 8, config);
+        uint64_t next_id = 100;
+        size_t accepted = 0;
+        std::set<uint64_t> completed;
+
+        const auto enqueue = [&] {
+            auto request = lookupRequest(next_id++);
+            ASSERT_EQ(service.tryEnqueue(std::move(request)),
+                      SlcSfEnqueueResult::Accepted);
+            ++accepted;
+        };
+        const auto consume = [&] {
+            while (auto response = service.popVisibleResponse()) {
+                EXPECT_EQ(response->status(), SlcSfTerminalStatus::Done);
+                completed.insert(response->reqId().value);
+            }
+        };
+
+        enqueue();
+        if (state != StartingState::Ingress) {
+            service.wakeup(10);
+        }
+        if (state == StartingState::Ready) {
+            service.wakeup(20);
+            service.wakeup(30);
+            ASSERT_EQ(service.respVisibleCount(), 1);
+            enqueue();
+            service.wakeup(40);
+            ASSERT_EQ(service.reqReadyCount(), 1);
+        } else if (state == StartingState::Inflight) {
+            ASSERT_EQ(service.reqInflightCount(), 1);
+        } else if (state == StartingState::RespPending) {
+            service.wakeup(20);
+            ASSERT_EQ(service.respPendingCount(), 1);
+        } else if (state == StartingState::RespVisible) {
+            service.wakeup(20);
+            service.wakeup(30);
+            ASSERT_EQ(service.respVisibleCount(), 1);
+        }
+
+        service.requestDrain();
+        auto d1_request = lookupRequest(next_id++);
+        const SlcSfEnqueueResult d1_result =
+            service.tryEnqueue(std::move(d1_request));
+        EXPECT_EQ(d1_result, SlcSfEnqueueResult::Accepted);
+        if (d1_result == SlcSfEnqueueResult::Accepted) {
+            ++accepted;
+        }
+        service.beginDraining();
+        auto rejected = lookupRequest(next_id++);
+        EXPECT_EQ(service.tryEnqueue(std::move(rejected)),
+                  SlcSfEnqueueResult::Draining);
+        EXPECT_FALSE(service.isCompletelyIdle());
+
+        Tick tick = 50;
+        for (size_t edge = 0;
+             edge < 32 && (!service.isCompletelyIdle() ||
+                            completed.size() != accepted);
+             ++edge) {
+            consume();
+            if (service.needsServiceWakeup()) {
+                service.wakeup(tick += 10);
+            }
+        }
+        consume();
+        EXPECT_EQ(completed.size(), accepted);
+        EXPECT_EQ(service.finishedRequestCount(), accepted);
+        EXPECT_EQ(service.reqOutstanding(), 0);
+        EXPECT_EQ(service.respOccupied(), 0);
+        EXPECT_TRUE(service.isCompletelyIdle());
+    }
+}
+
+TEST(SlcSnoopFilterTest, DrainResumeRestoresAdmission)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.reqQueueEntries = 2;
+    HnfSLCSF service(64, 4, 2, 4, 2, 8, config);
+    service.beginDraining();
+    EXPECT_EQ(service.registeredReqCredits(), 0);
+
+    auto rejected = lookupRequest(201);
+    EXPECT_EQ(service.tryEnqueue(std::move(rejected)),
+              SlcSfEnqueueResult::Draining);
+    service.resumeFromDrain();
+
+    EXPECT_FALSE(service.isDrainRequested());
+    EXPECT_FALSE(service.isAdmissionSealed());
+    EXPECT_EQ(service.registeredReqCredits(), 2);
+    EXPECT_EQ(service.tryEnqueue(std::move(rejected)),
+              SlcSfEnqueueResult::Accepted);
+    EXPECT_TRUE(service.needsServiceWakeup());
 }
 
 } // namespace

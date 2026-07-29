@@ -35,6 +35,7 @@ class HomeLinkLayer : public ruby::Consumer
     void print(std::ostream& out) const override;
     bool hasWork() const;
     void quiesceNewRequests() { acceptNewRxReq = false; }
+    void resumeNewRequests() { acceptNewRxReq = true; }
     bool newRequestsQuiesced() const { return !acceptNewRxReq; }
     bool mayGenerateSlcsfIntent() const;
 

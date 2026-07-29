@@ -37,8 +37,28 @@ HomeNodeFull::wakeup()
 {
     DPRINTF(HomeLinkLayer, "HomeNodeFull wakeup\n");
     linklayer.wakeup();
-    if (d1Active && !linklayer.mayGenerateSlcsfIntent()) {
+    advanceDrain();
+}
+
+void
+HomeNodeFull::advanceDrain()
+{
+    if (!d1Active) {
+        return;
+    }
+
+    if (!d2Active && !linklayer.mayGenerateSlcsfIntent()) {
         d1Complete = true;
+        d2Active = true;
+        slcsf->sealAdmission();
+    }
+
+    // D2 continues normal link/controller service.  In particular, visible
+    // child responses, deferred retires, downstream TX, and completions all
+    // remain work until both ownership domains are empty.
+    if (d2Active && !hasLinkWork() && slcsf->completelyIdle()) {
+        slcsf->testDrainComplete();
+        signalDrainDone();
     }
 }
 
@@ -49,11 +69,28 @@ HomeNodeFull::drain()
     linklayer.quiesceNewRequests();
     slcsf->requestDrain();
     d1Complete = !linklayer.mayGenerateSlcsfIntent();
-    if (!d1Complete && hasLinkWork()) {
+    if (d1Complete) {
+        d2Active = true;
+        slcsf->sealAdmission();
+    }
+    if (hasLinkWork()) {
         ruby::Consumer::scheduleEvent(Cycles(1));
     }
-    // US-034 owns the D2 seal, final empty check, and signalDrainDone().
-    return DrainState::Draining;
+    return d2Active && !hasLinkWork() && slcsf->completelyIdle() ?
+        DrainState::Drained : DrainState::Draining;
+}
+
+void
+HomeNodeFull::drainResume()
+{
+    d1Active = false;
+    d1Complete = false;
+    d2Active = false;
+    linklayer.resumeNewRequests();
+    slcsf->drainResume();
+    if (hasLinkWork()) {
+        ruby::Consumer::scheduleEvent(Cycles(1));
+    }
 }
 
 void

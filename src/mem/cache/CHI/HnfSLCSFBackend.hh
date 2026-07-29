@@ -157,7 +157,11 @@ class HnfSLCSFBackend
     /** Check the cross-array state invariant after a staged mutation. */
     void checkLineInvariant(uint64_t block_addr) const;
 
-    bool isBusy() const { return seqOccupancy() != 0; }
+    bool isBusy() const
+    {
+        return seqOccupancy() != 0 || reservedSeqSlots != 0 ||
+            !sfReservations.empty() || !dirtyVictimSeals.empty();
+    }
 
   protected:
     /** Clear all persistent storage for a simulator cold start. */
