@@ -27,21 +27,16 @@ HomeNodeFull::HomeNodeFull(const HomeNodeFullParams& p)
     linklayer.setRxPort(&rxport);
     cc.setSlcsf(&slcsf->service());
     linklayer.setCc(&cc);
+    slcsf->setFutureWakeupCallback([this](Tick earliest) {
+        ruby::Consumer::scheduleEventAbsolute(earliest);
+    });
 }
 
 void
 HomeNodeFull::wakeup()
 {
     DPRINTF(HomeLinkLayer, "HomeNodeFull wakeup\n");
-    // Stage A temporarily drives the embedded service from the HomeNode edge.
-    // The standalone SLCSF migration removes this direct call.
-    const bool needsNextEdge = advanceEmbeddedSlcsfStageA(
-        slcsf->service(), curTick(), [this] { linklayer.wakeup(); },
-        [this] { return linklayer.hasWork(); },
-        [this] { return cc.hasWork(); });
-    if (needsNextEdge) {
-        scheduleEvent(Cycles(1));
-    }
+    linklayer.wakeup();
 }
 
 void
@@ -63,9 +58,7 @@ HomeNodeFull::getPort(const std::string& if_name, PortID idx)
 bool
 HomeNodeFull::hasLinkWork() const
 {
-    // Link-layer work includes allocated and issue-pending CC entries. SLCSF
-    // work is checked separately so it progresses without a new RX flit.
-    return slcsf->hasWork() || linklayer.hasWork() || cc.hasWork();
+    return linklayer.hasWork() || cc.hasWork();
 }
 
 

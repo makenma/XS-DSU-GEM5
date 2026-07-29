@@ -913,39 +913,6 @@ TEST(HnfSlcSfQueueTest, HomeNodeParametersMapToPipelineConfig)
     EXPECT_TRUE(overridden.pipelineConfig().enableSetLock);
 }
 
-TEST(HnfSlcSfQueueTest, StageASchedulerCompletesLookupWithoutAnotherRxFlit)
-{
-    HnfSLCSF model(64, 4, 2, 4, 2);
-    auto request = lookupRequest(20);
-    ASSERT_EQ(model.tryEnqueue(std::move(request)),
-              SlcSfEnqueueResult::Accepted);
-
-    std::optional<SlcSfResponse> response;
-    Tick tick = 100;
-    size_t homeNodeWakeups = 0;
-    bool nextEdgeScheduled = true;
-    while (nextEdgeScheduled && !response) {
-        const auto previousCycle = model.currentCycle();
-        nextEdgeScheduled = advanceEmbeddedSlcsfStageA(
-            model, tick++,
-            [&] {
-                EXPECT_EQ(model.currentCycle(), previousCycle + 1);
-                if (model.respVisibleCount() != 0) {
-                    response = model.popVisibleResponse();
-                }
-            },
-            [] { return false; }, [] { return false; });
-        ++homeNodeWakeups;
-        ASSERT_LT(homeNodeWakeups, 16);
-    }
-
-    ASSERT_TRUE(response.has_value());
-    EXPECT_EQ(response->reqId(), SlcSfReqId{20});
-    EXPECT_EQ(response->status(), SlcSfTerminalStatus::Done);
-    EXPECT_FALSE(nextEdgeScheduled);
-    EXPECT_FALSE(model.hasWork());
-}
-
 TEST(HnfSlcSfQueueTest, RejectsInvalidStageAServiceConfiguration)
 {
     const auto expectInvalid = [](HnfSLCSFPipelineConfig config) {

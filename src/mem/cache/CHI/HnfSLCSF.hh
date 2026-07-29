@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -171,6 +172,12 @@ class HnfSLCSF : public HnfSLCSFBackend
      */
     SlcSfEnqueueResult tryEnqueue(SlcSfRequest&& request);
 
+    /** Notify the timing owner after an accepted request creates work. */
+    void setWorkAvailableCallback(std::function<void()> callback)
+    {
+        workAvailableCallback = std::move(callback);
+    }
+
     /** Advance the registered request boundary at the current simulator tick. */
     void wakeup();
 
@@ -223,6 +230,8 @@ class HnfSLCSF : public HnfSLCSFBackend
                              uint64_t expected_line_address) const;
 
     bool hasWork() const;
+    /** Work which requires another service clock edge, excluding visible data. */
+    bool needsServiceWakeup() const;
     bool isBusy() const
     {
         return hasWork() || HnfSLCSFBackend::isBusy() ||
@@ -360,6 +369,7 @@ class HnfSLCSF : public HnfSLCSFBackend
     uint64_t correctnessReplays = 0;
     uint64_t finishedRequests = 0;
     uint64_t cancelledRequests = 0;
+    std::function<void()> workAvailableCallback;
 };
 
 #ifdef UNIT_TEST
@@ -377,18 +387,6 @@ HnfSLCSF::corruptInstalledDirtyVictimIdForTest(
     return false;
 }
 #endif
-
-template <class LinkWakeup, class LinkHasWork, class CcHasWork>
-bool
-advanceEmbeddedSlcsfStageA(HnfSLCSF& slcsf, Tick now,
-                           LinkWakeup&& linkWakeup,
-                           LinkHasWork&& linkHasWork,
-                           CcHasWork&& ccHasWork)
-{
-    slcsf.wakeup(now);
-    linkWakeup();
-    return slcsf.hasWork() || linkHasWork() || ccHasWork();
-}
 
 } // namespace gem5::Chi
 

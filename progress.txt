@@ -118,6 +118,9 @@ Started: 2026-07-28T20:49:07+08:00
 - Preserve legacy parent configuration paths as Parent-proxy defaults on the
   canonical child; verify final precedence and clock ownership in generated
   config.ini rather than relying on pre-resolution Python assignments.
+- Let an ordinary service report newly available work without owning events;
+  its ClockedObject wrapper should schedule the sole service event and notify
+  consumers only about registered transitions on a strictly future edge.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -1271,4 +1274,32 @@ Started: 2026-07-28T20:49:07+08:00
 - Learnings for future iterations: Parent proxies provide compatibility
   without creating a second runtime configuration source, and generated
   config.ini is the right boundary for proving explicit child precedence.
+---
+
+## 2026-07-29 16:15 - US-030
+- Story: Drive SLCSF with its own clock event and future notifications
+- What was implemented: Added the standalone child's EventFunctionWrapper as
+  the sole SLCSF advance source, scheduled it from accepted service work, and
+  removed direct advancement from HomeNodeFull. Registered response-visible
+  and zero-to-nonzero credit transitions now request a strictly future owner
+  wakeup without consuming responses or stepping the controller in the child
+  callback. Added absolute-Tick 3:7 cross-clock coverage for double buffering,
+  response delivery, future wakeup rounding, and Replay deadlines.
+- Files changed: `src/mem/cache/CHI/HnfSLCSF.hh`,
+  `src/mem/cache/CHI/HnfSLCSF.cc`, `src/mem/cache/CHI/HnfSLCSF.test.cc`,
+  `src/mem/cache/CHI/SlcSnoopFilter.hh`,
+  `src/mem/cache/CHI/SlcSnoopFilter.cc`,
+  `src/mem/cache/CHI/SlcSnoopFilter.test.cc`,
+  `src/mem/cache/CHI/HomeNodeFull.cc`, `src/mem/cache/CHI/SConscript`,
+  `prd.json`, and `progress.txt`.
+- Checks run and their results: Built `build/RISCV/gem5.opt` and the standalone
+  child plus all four CHI GTest binaries successfully; all 177 tests passed
+  (3 child, 18 POCQ, 2 SEQ POCQ, 110 SLCSF, and 44 controller). The generated
+  config.ini smoke printed `SLCSF_CHILD_PARAMS_PASS` for inherited and
+  independent child clocks. Changed C++ passed `python3 util/style.py
+  --modifications`; `git diff --check` passed.
+- Learnings for future iterations: Cross-clock producers should own their
+  service event, expose registered state only at their own edges, and wake
+  consumers through future absolute-Tick notifications rather than callbacks
+  that perform consumer work directly.
 ---

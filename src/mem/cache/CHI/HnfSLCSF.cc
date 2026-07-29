@@ -403,6 +403,9 @@ HnfSLCSF::tryEnqueue(SlcSfRequest&& request)
     reqIngress.push_back(std::move(request));
     --visibleReqCredits;
     assertRequestAccounting();
+    if (workAvailableCallback) {
+        workAvailableCallback();
+    }
     return SlcSfEnqueueResult::Accepted;
 }
 
@@ -604,6 +607,12 @@ bool
 HnfSLCSF::hasWork() const
 {
     return reqOutstanding() != 0 || respOccupied() != 0;
+}
+
+bool
+HnfSLCSF::needsServiceWakeup() const
+{
+    return reqOutstanding() != 0 || !respPending.empty();
 }
 
 void

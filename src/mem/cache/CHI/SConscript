@@ -53,6 +53,8 @@ GTest('hnf_slcsf_backend.test',
 
 GTest('slc_snoop_filter.test',
       'SlcSnoopFilter.test.cc',
+      'HnfSLCSF.cc',
+      'HnfSLCSFBackend.cc',
       with_tag('gem5 trace'))
 
 GTest('hnf_coherency_controller.test',
