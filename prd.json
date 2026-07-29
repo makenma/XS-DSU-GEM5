@@ -260,7 +260,7 @@
       ],
       "priority": 14,
       "passes": true,
-      "notes": ""
+      "notes": "Acceptance recovery verified: U2/U3 wait for the configured deadline, short latencies catch up without skipping semantics, resource stalls stop catch-up, and terminal Replay deadlines are formed at cleanup. The expanded operation, early-Replay, stale-token, and stall regressions pass with all 111 CHI tests."
     },
     {
       "id": "US-015",

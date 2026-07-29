@@ -142,6 +142,7 @@ class HnfSLCSF : public HnfSLCSFBackend
         uint64_t completeCycle = 0;
         std::optional<MutationStage> mutationStage;
         std::optional<SlcSfResponse> terminalResponse;
+        std::optional<SlcSfReplayReason> terminalReplayReason;
         bool resourcesPrepared = false;
         bool mutationCommitted = false;
         bool mutationStalled = false;

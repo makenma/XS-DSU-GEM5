@@ -335,35 +335,31 @@ HnfSLCSF::completeInflightRequests()
             continue;
         }
 
-        const size_t transitions = [&request] {
-            switch (*request->mutationStage) {
-              case MutationStage::U0DecodeValidate:
-                return 4;
-              case MutationStage::U1PrepareResources:
-                return 3;
-              case MutationStage::U2ArrayWrite:
-                return 2;
-              case MutationStage::U3CheckLatch:
-                return 1;
-            }
-            panic("HnfSLCSF invalid mutation stage\n");
-        }();
-        const uint64_t remaining_wakeups =
-            request->completeCycle > wakeupCycle ?
-                request->completeCycle - wakeupCycle + 1 : 1;
-        const size_t advances = remaining_wakeups < transitions ?
-            transitions - remaining_wakeups + 1 : 1;
-        const bool was_stalled = request->mutationStalled;
+        // Preserve a registered stage boundary before the service deadline.
+        // Once the deadline is reached, a bounded catch-up may traverse the
+        // remaining stages on this wakeup so short configured latencies remain
+        // observable without skipping validation, reservation, write, or
+        // terminal cleanup. A resource stall leaves the stage unchanged, and
+        // stale U1/U2 validation extends completeCycle; either condition stops
+        // catch-up until a later wakeup.
+        const bool resumed_from_stall = request->mutationStalled;
+        const bool before_deadline = request->completeCycle > wakeupCycle;
+        const bool may_advance_before_deadline =
+            *request->mutationStage == MutationStage::U0DecodeValidate ||
+            *request->mutationStage == MutationStage::U1PrepareResources;
+        const size_t advances = resumed_from_stall ? 1 :
+            before_deadline ? (may_advance_before_deadline ? 1 : 0) : 4;
         for (size_t i = 0; i < advances && request->mutationStage; ++i) {
             const MutationStage previous = *request->mutationStage;
             advanceMutation(*request);
             if (request->mutationStage &&
                 *request->mutationStage == previous) {
-                request->mutationStalled = true;
+                request->mutationStalled =
+                    previous == MutationStage::U1PrepareResources;
                 break;
             }
             request->mutationStalled = false;
-            if (was_stalled) {
+            if (request->completeCycle > wakeupCycle) {
                 break;
             }
         }
@@ -664,15 +660,8 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
                 request.request);
             request.mutationStage = MutationStage::U3CheckLatch;
         } else if (!token_valid) {
-            request.terminalResponse = std::visit(
-                [this](const auto& typed_request) {
-                    return makeSlcSfReplayResponse(
-                        typed_request,
-                        SlcSfReplay{
-                            SlcSfReplayReason::StaleCommitToken,
-                            replayDeadline(), true});
-                },
-                request.request);
+            request.terminalReplayReason =
+                SlcSfReplayReason::StaleCommitToken;
             request.mutationStage = MutationStage::U3CheckLatch;
             request.completeCycle = wakeupCycle;
             latchMutationResponse(request);
@@ -683,15 +672,8 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
       }
       case MutationStage::U1PrepareResources:
         if (!validateMutationToken(request.request)) {
-            request.terminalResponse = std::visit(
-                [this](const auto& typed_request) {
-                    return makeSlcSfReplayResponse(
-                        typed_request,
-                        SlcSfReplay{
-                            SlcSfReplayReason::StaleCommitToken,
-                            replayDeadline(), true});
-                },
-                request.request);
+            request.terminalReplayReason =
+                SlcSfReplayReason::StaleCommitToken;
             request.mutationStage = MutationStage::U3CheckLatch;
             request.completeCycle = std::max(
                 request.completeCycle, wakeupCycle + 1);
@@ -701,20 +683,13 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
         break;
       case MutationStage::U2ArrayWrite:
         if (!validateMutationToken(request.request)) {
-            request.terminalResponse = std::visit(
-                [this](const auto& typed_request) {
-                    return makeSlcSfReplayResponse(
-                        typed_request,
-                        SlcSfReplay{
-                            SlcSfReplayReason::StaleCommitToken,
-                            replayDeadline(), true});
-                },
-                request.request);
+            request.terminalReplayReason =
+                SlcSfReplayReason::StaleCommitToken;
         } else {
             executeMutation(request);
         }
         request.mutationStage = MutationStage::U3CheckLatch;
-        if (request.terminalResponse) {
+        if (request.terminalResponse || request.terminalReplayReason) {
             request.completeCycle = std::max(
                 request.completeCycle, wakeupCycle + 1);
         }
@@ -735,6 +710,16 @@ HnfSLCSF::latchMutationResponse(InflightRequest& request)
 {
     if (request.mutationCommitted) {
         checkLineInvariant(requestHeader(request.request).lineAddress);
+    }
+    if (request.terminalReplayReason) {
+        const SlcSfReplayReason reason = *request.terminalReplayReason;
+        request.terminalResponse = std::visit(
+            [this, reason](const auto& typed_request) {
+                return makeSlcSfReplayResponse(
+                    typed_request,
+                    SlcSfReplay{reason, replayDeadline(), true});
+            },
+            request.request);
     }
     if (!request.terminalResponse) {
         request.terminalResponse = makeTerminalResponse(request.request);
@@ -828,7 +813,8 @@ HnfSLCSF::issueReadyRequests()
             std::move(*request), wakeupCycle, wakeupCycle + latency,
             mutation ? std::optional<MutationStage>(
                            MutationStage::U0DecodeValidate) : std::nullopt,
-            std::nullopt, false, false, false, early_lookup_replay});
+            std::nullopt, std::nullopt, false, false, false,
+            early_lookup_replay});
         request = reqReady.erase(request);
         ++*issued;
     }
