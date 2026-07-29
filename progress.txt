@@ -144,6 +144,9 @@ Started: 2026-07-28T20:49:07+08:00
 - Under concurrent service, prove Replay immutability at the request's locked
   SLC/SF set boundary; a whole-backend fingerprint falsely attributes legal
   different-set commits to the replaying request.
+- In an evolving implementation plan, keep historical design rationale but add
+  one clearly authoritative shipped-status section with explicit precedence,
+  exact validation commands, and supported lifecycle boundaries.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -1517,4 +1520,27 @@ Started: 2026-07-28T20:49:07+08:00
 - Learnings for future iterations: Replay immutability checks must include
   replacement state throughout the protected sets while excluding unrelated
   different-set commits that can complete concurrently.
+---
+
+## 2026-07-29 19:06 - US-039
+- Story: Update implementation-status and validation documentation
+- What was implemented: Added an authoritative shipped-status section to the
+  pipeline implementation plan covering the actual ten-test semantic baseline,
+  standalone child/service/backend ownership, registered POCQ lookup and update
+  paths, service-latency boundaries, deferred retire, unreachable Flush action
+  coverage, stage-7 files, checkpoint contents, and exact final-gate commands.
+  Added the final defaults, parent compatibility and child override precedence,
+  independent-clock ownership, and drained-checkpoint-only limitation to the
+  target architecture implementation status.
+- Files changed: `src/doc/CHI/HNF_SLCSF_Pipeline_Implementation_Plan.md`,
+  `src/doc/CHI/HNF_SLCSF_Gem5_Spec.md`, `prd.json`, and `progress.txt`.
+- Checks run and their results: `build/RISCV/gem5.opt` and all four documented
+  CHI GTest binaries built successfully; all 190 tests passed (18 POCQ, 2 SEQ
+  POCQ, 122 SLCSF, and 48 controller); `git diff --check` passed. The change set
+  contains documentation and story metadata only, with no build logs, m5out
+  output, or generated binaries.
+- Learnings for future iterations: Preserve a design plan's historical context
+  while placing final ownership, timing definitions, compatibility precedence,
+  validation commands, and unsupported lifecycle boundaries in one explicit
+  authoritative section.
 ---

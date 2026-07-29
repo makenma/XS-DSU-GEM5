@@ -316,6 +316,40 @@ Next PoCQ cycle:
 
 这样即使 CC 和 SLCSF 共用一个 event queue，也不会依赖同 tick 的事件执行顺序。
 
+## 1.7 当前实现状态（2026-07）
+
+目标架构已落地为 `HomeNodeFull.slcsf` child
+`SlcSnoopFilter : ClockedObject`。child 按值拥有普通、不可复制的
+`HnfSLCSF` service，而 HomeNode 和 CC 只保留配置所有权或非拥有指针。
+child 的独立 `EventFunctionWrapper` 是 service 的唯一推进源；默认继承
+HomeNode 时钟域，也可显式配置不同 child `clk_domain`。
+
+当前默认值如下：
+
+| 类别 | 默认值 |
+| --- | --- |
+| geometry | block size 继承 `cache_line_size`；SLC `1024 x 16`；SF `1024 x 16`；SEQ `8` |
+| latency | init `16`；lookup `4`；fill `4`；update `3`；dirty victim `3`；SF evict `2`；replay `2` child cycles |
+| capacity | request queue `8`；response queue `8`；VictimBuffer `2`；max in-flight `1` |
+| width | lookup/fill/update issue width 均为 `1`；CC response-consume width `1` |
+| concurrency | set lock 默认关闭；`max_inflight > 1` 时必须显式开启 |
+
+`HomeNodeFull.py` 保留了原有 geometry 和 `slcsf_*` 参数路径作为
+兼容表面。`SlcSnoopFilter.py` 上的同名 canonical child 参数通过
+`Parent` proxy 把这些 parent 值作为默认值；因此旧的
+`system.home_node[...].sf_num_sets/sf_num_ways/seq_entries` 等 override 继续有效。
+如果用户显式构造 `SlcSnoopFilter(...)` 并设置 child 参数，正常
+SimObject 解析规则使 child override 优先于 parent 默认值；C++ 只读取
+child 中解析后的最终值，不实现第二套优先级。
+
+当前 checkpoint 支持边界仍是 **drained checkpoint only**。HomeNode 必须先
+停止新 RXREQ，等所有已分配事务不再产生 child intent，再 seal child
+admission；只有 parent protocol/deferred-retire 和 child queue/response/in-flight/
+lock/VictimBuffer/SEQ 均空闲时才能序列化。恢复会保持 SLC/SF/
+SEQ 持久状态、replacement/generation 和所有 monotonic next IDs，不会再执行
+cold `initState()`。活动队列、半完成响应、deferred retire 或未释放 owner
+的 checkpoint 会 fail fast，目前不支持。
+
 ---
 
 # 2. 建议的文件组织
