@@ -102,7 +102,21 @@ void
 pumpOnce(HnfCoherencyController& cc, HnfSLCSF& slcsf, Tick& tick)
 {
     slcsf.wakeup(++tick);
-    cc.serviceInternalWork();
+    cc.serviceInternalWork(tick);
+}
+
+void
+pumpUpdate(HnfCoherencyController& cc, HnfSLCSF& slcsf,
+           uint32_t entry, Tick& tick)
+{
+    for (size_t i = 0; i < 32; ++i) {
+        if (cc.slcUpdatePhase(entry) ==
+            HnfCoherencyController::SlcUpdatePhase::None) {
+            return;
+        }
+        pumpOnce(cc, slcsf, tick);
+    }
+    FAIL() << "SLCSF update did not complete";
 }
 
 void
@@ -144,6 +158,7 @@ TEST(HnfCoherencyControllerTest, RetireWakesOneSameAddressSleeper)
     const auto data = lineData(0x10);
     EXPECT_FALSE(cc.acceptRxDat(makeCompData(1, 0, false, data)));
     EXPECT_FALSE(cc.acceptRxDat(makeCompData(1, BeatSize, true, data)));
+    pumpUpdate(cc, slcsf, 0, tick);
     ASSERT_TRUE(cc.hasTxDat());
     cc.popTxDat();
     ASSERT_TRUE(cc.hasTxDat());
@@ -154,6 +169,7 @@ TEST(HnfCoherencyControllerTest, RetireWakesOneSameAddressSleeper)
     EXPECT_EQ(retired->tokenId, 0);
 
     pumpLookup(cc, slcsf, 1, tick);
+    pumpUpdate(cc, slcsf, 1, tick);
     ASSERT_TRUE(cc.hasTxDat());
     EXPECT_EQ(cc.frontTxDat().entry, 1);
 }
@@ -196,6 +212,7 @@ TEST(HnfCoherencyControllerTest, ReadUniqueSnoopsAllOtherSharers)
     EXPECT_FALSE(cc.hasTxDat());
     EXPECT_FALSE(cc.acceptRxRsp(makeRsp(4, first.snp.txnid, 0x01)));
 
+    pumpUpdate(cc, slcsf, 0, tick);
     ASSERT_TRUE(cc.hasTxDat());
     EXPECT_EQ(cc.frontTxDat().entry, 0);
     const auto final = lookup(slcsf, 8, PocqTxnKind::ReadUnique);
@@ -428,6 +445,7 @@ TEST(HnfCoherencyControllerTest, SeqReservationReplayMakesProgress)
 
     EXPECT_FALSE(cc.acceptRxDat(makeCompData(1, 0, false, data)));
     EXPECT_FALSE(cc.acceptRxDat(makeCompData(1, BeatSize, true, data)));
+    pumpUpdate(cc, slcsf, 0, tick);
     ASSERT_EQ(slcsf.seqOccupancy(), 1);
 
     cc.serviceInternalWork();
@@ -516,6 +534,9 @@ TEST(HnfCoherencyControllerTest, EverySupportedTransactionCompletes)
             EXPECT_FALSE(cc.acceptRxDat(makeCompData(1, 0, false, data)));
             const auto dataRetire =
                 cc.acceptRxDat(makeCompData(1, BeatSize, true, data));
+            if (test.flow != Flow::ReadNoSnp) {
+                pumpUpdate(cc, slcsf, 0, tick);
+            }
             ASSERT_TRUE(cc.hasTxDat());
             cc.popTxDat();
             ASSERT_TRUE(cc.hasTxDat());
@@ -679,9 +700,13 @@ TEST(HnfCoherencyControllerTest, LookupResponseIsConsumedInLaterCcCycle)
     EXPECT_NE(token.slc.generation, 0);
     EXPECT_NE(token.sf.generation, 0);
 
-    cc.serviceInternalWork();
+    cc.serviceInternalWork(tick);
     EXPECT_EQ(cc.slcLookupPhase(0),
               HnfCoherencyController::SlcLookupPhase::None);
+    EXPECT_EQ(cc.slcUpdatePhase(0),
+              HnfCoherencyController::SlcUpdatePhase::Waiting);
+    EXPECT_FALSE(cc.hasTxDat());
+    pumpUpdate(cc, slcsf, 0, tick);
     EXPECT_TRUE(cc.hasTxDat());
 }
 
@@ -721,6 +746,191 @@ TEST(HnfCoherencyControllerTest, ResponseConsumeWidthLimitsEachCcCycle)
               HnfCoherencyController::SlcLookupPhase::None);
     EXPECT_EQ(cc.slcLookupPhase(1),
               HnfCoherencyController::SlcLookupPhase::ResponseLatched);
+}
+
+TEST(HnfCoherencyControllerTest, ReadResponseWaitsForSlcSfCommit)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    const auto data = lineData(0x31);
+    slcsf.commitRead(TestAddr, 0, PocqTxnKind::ReadShared,
+                     data, false, HnfNode);
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 7001, 0, 101, 0x01), 0).accepted);
+
+    Tick tick = 400;
+    pumpLookup(cc, slcsf, 0, tick);
+    ASSERT_EQ(cc.slcUpdatePhase(0),
+              HnfCoherencyController::SlcUpdatePhase::Waiting);
+    EXPECT_FALSE(cc.hasTxDat());
+
+    for (size_t i = 0; i < 3; ++i) {
+        cc.serviceInternalWork(tick);
+        EXPECT_EQ(cc.slcUpdatePhase(0),
+                  HnfCoherencyController::SlcUpdatePhase::Waiting);
+        EXPECT_FALSE(cc.hasTxDat());
+    }
+
+    pumpUpdate(cc, slcsf, 0, tick);
+    EXPECT_TRUE(cc.hasTxDat());
+}
+
+TEST(HnfCoherencyControllerTest, ReadUpdateNoCreditRetriesWithoutDuplicate)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.reqQueueEntries = 1;
+    config.respQueueEntries = 1;
+    config.maxInflight = 1;
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8, config);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    const auto data = lineData(0x39);
+    slcsf.commitRead(TestAddr, 0, PocqTxnKind::ReadShared,
+                     data, false, HnfNode);
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 7010, 0, 110, 0x01), 0).accepted);
+
+    Tick tick = 450;
+    for (size_t i = 0; i < 32 && slcsf.respVisibleCount() == 0; ++i) {
+        slcsf.wakeup(++tick);
+    }
+    ASSERT_EQ(slcsf.respVisibleCount(), 1);
+    cc.serviceInternalWork(tick);
+    ASSERT_EQ(cc.slcLookupPhase(0),
+              HnfCoherencyController::SlcLookupPhase::ResponseLatched);
+
+    RawReq blockerRaw{};
+    blockerRaw.srcid = 63;
+    SlcSfReqIdAllocator blockerIds;
+    SlcSfRequest blocker = makeSlcSfLookupReq(
+        makeSlcSfReqHeader(
+            blockerIds, UINT32_MAX, TestAddr + BlockSize, blockerRaw),
+        PocqTxnKind::ReadShared);
+    ASSERT_EQ(slcsf.tryEnqueue(std::move(blocker)),
+              SlcSfEnqueueResult::Accepted);
+
+    cc.serviceInternalWork(tick);
+    ASSERT_EQ(cc.slcUpdatePhase(0),
+              HnfCoherencyController::SlcUpdatePhase::IssuePending);
+    const SlcSfReqId updateId = cc.slcUpdateReqId(0);
+    for (size_t i = 0; i < 3; ++i) {
+        cc.serviceInternalWork(tick);
+        EXPECT_EQ(cc.slcUpdatePhase(0),
+                  HnfCoherencyController::SlcUpdatePhase::IssuePending);
+        EXPECT_EQ(cc.slcUpdateReqId(0), updateId);
+        EXPECT_EQ(slcsf.reqOutstanding(), 1);
+        EXPECT_FALSE(cc.hasTxDat());
+    }
+
+    for (size_t i = 0; i < 32 && slcsf.respVisibleCount() == 0; ++i) {
+        slcsf.wakeup(++tick);
+    }
+    ASSERT_EQ(slcsf.respVisibleCount(), 1);
+    ASSERT_TRUE(slcsf.popVisibleResponse());
+    cc.serviceInternalWork(tick);
+    ASSERT_EQ(cc.slcUpdatePhase(0),
+              HnfCoherencyController::SlcUpdatePhase::Waiting);
+    EXPECT_EQ(cc.slcUpdateReqId(0), updateId);
+    EXPECT_EQ(slcsf.reqOutstanding(), 1);
+
+    for (size_t i = 0; i < 3; ++i) {
+        cc.serviceInternalWork(tick);
+        EXPECT_EQ(cc.slcUpdatePhase(0),
+                  HnfCoherencyController::SlcUpdatePhase::Waiting);
+        EXPECT_EQ(slcsf.reqOutstanding(), 1);
+    }
+    pumpUpdate(cc, slcsf, 0, tick);
+    EXPECT_TRUE(cc.hasTxDat());
+}
+
+TEST(HnfCoherencyControllerTest, ReservationHeldUntilUpdateResponse)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    const auto data = lineData(0x41);
+    slcsf.commitRead(TestAddr, 0, PocqTxnKind::ReadShared,
+                     data, false, HnfNode);
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 7002, 0, 102, 0x01), 0).accepted);
+
+    Tick tick = 500;
+    pumpLookup(cc, slcsf, 0, tick);
+    ASSERT_EQ(cc.slcUpdatePhase(0),
+              HnfCoherencyController::SlcUpdatePhase::Waiting);
+    EXPECT_TRUE(slcsf.hasSfReservation(0));
+    EXPECT_FALSE(cc.hasTxDat());
+
+    for (size_t i = 0; i < 32 && slcsf.respVisibleCount() == 0; ++i) {
+        slcsf.wakeup(++tick);
+    }
+    ASSERT_EQ(slcsf.respVisibleCount(), 1);
+    EXPECT_FALSE(slcsf.hasSfReservation(0));
+    EXPECT_FALSE(cc.hasTxDat());
+
+    cc.serviceInternalWork(tick);
+    EXPECT_EQ(cc.slcUpdatePhase(0),
+              HnfCoherencyController::SlcUpdatePhase::ResponseLatched);
+    EXPECT_FALSE(cc.hasTxDat());
+    cc.serviceInternalWork(tick);
+    EXPECT_TRUE(cc.hasTxDat());
+}
+
+TEST(HnfCoherencyControllerTest, FreshLookupAfterStaleReplayCommits)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.replayPenalty = 3;
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8, config);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    const auto data = lineData(0x51);
+    slcsf.commitRead(TestAddr, 0, PocqTxnKind::ReadShared,
+                     data, false, HnfNode);
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(0, 7003, 0, 103, 0x01), 0).accepted);
+
+    Tick tick = 600;
+    pumpLookup(cc, slcsf, 0, tick);
+    ASSERT_EQ(cc.slcUpdatePhase(0),
+              HnfCoherencyController::SlcUpdatePhase::Waiting);
+    const SlcSfReqId staleLookupId = cc.slcLookupReqId(0);
+    const SlcSfReqId staleUpdateId = cc.slcUpdateReqId(0);
+    slcsf.invalidateCommitTokens();
+
+    for (size_t i = 0; i < 32 &&
+         cc.slcUpdatePhase(0) !=
+             HnfCoherencyController::SlcUpdatePhase::ReplayWait; ++i) {
+        pumpOnce(cc, slcsf, tick);
+    }
+    ASSERT_EQ(cc.slcUpdatePhase(0),
+              HnfCoherencyController::SlcUpdatePhase::ReplayWait);
+    EXPECT_FALSE(cc.hasTxDat());
+    EXPECT_FALSE(slcsf.hasSfReservation(0));
+    EXPECT_FALSE(cc.slcCommitToken(0).lookupReqId.valid());
+
+    const Tick replayObserved = tick;
+    cc.serviceInternalWork(replayObserved);
+    EXPECT_EQ(cc.slcUpdatePhase(0),
+              HnfCoherencyController::SlcUpdatePhase::ReplayWait);
+
+    for (size_t i = 0; i < 64 && !cc.hasTxDat(); ++i) {
+        pumpOnce(cc, slcsf, tick);
+    }
+    ASSERT_TRUE(cc.hasTxDat());
+    EXPECT_EQ(cc.slcUpdatePhase(0),
+              HnfCoherencyController::SlcUpdatePhase::None);
+    EXPECT_NE(cc.slcLookupReqId(0), staleLookupId);
+    EXPECT_NE(cc.slcUpdateReqId(0), staleUpdateId);
+    EXPECT_TRUE(cc.slcCommitToken(0).lookupReqId.valid());
 }
 
 TEST(HnfCoherencyControllerTest, MismatchedLookupResponseIsRejected)

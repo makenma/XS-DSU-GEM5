@@ -29,6 +29,15 @@ class HnfCoherencyController
         ResponseLatched
     };
 
+    enum class SlcUpdatePhase : uint8_t
+    {
+        None,
+        IssuePending,
+        Waiting,
+        ResponseLatched,
+        ReplayWait
+    };
+
     HnfCoherencyController(uint32_t block_size, uint32_t data_beat_bytes,
                            uint32_t num_entries, uint32_t sn_node_id,
                            bool direct_sn_fake_data,
@@ -41,6 +50,7 @@ class HnfCoherencyController
     std::optional<HnfCcRetireInfo> acceptRxRsp(const RawRsp& rsp);
     std::optional<HnfCcRetireInfo> acceptRxDat(const RawDat& dat);
     void serviceInternalWork();
+    void serviceInternalWork(Tick current_tick);
 
     /**
      * Validate and latch one terminal SLCSF response.  This is public so the
@@ -53,6 +63,8 @@ class HnfCoherencyController
     SlcSfReqId slcLookupReqId(uint32_t entry) const;
     const HnfSlcLookupResult& slcLookupResult(uint32_t entry) const;
     const SlcSfCommitToken& slcCommitToken(uint32_t entry) const;
+    SlcUpdatePhase slcUpdatePhase(uint32_t entry) const;
+    SlcSfReqId slcUpdateReqId(uint32_t entry) const;
 
     bool hasWork() const;
     bool hasTxReq() const { return !txReqQ.empty(); }
@@ -102,7 +114,11 @@ class HnfCoherencyController
         std::optional<SlcSfRequest> pendingSlcLookup;
         std::optional<SlcSfResponse> latchedSlcResponse;
         SlcSfCommitToken slcCommitToken{};
-        bool slcUpdatePending = false;
+        SlcUpdatePhase slcUpdatePhase = SlcUpdatePhase::None;
+        SlcSfReqId slcUpdateReqId{};
+        std::optional<SlcSfRequest> pendingSlcUpdate;
+        std::optional<SlcSfResponse> latchedSlcUpdateResponse;
+        Tick retryNotBeforeTick = 0;
         bool responseDataDirty = false;
         uint32_t snoopTxnId = 0;
         uint64_t snoopPendingTargets = 0;
@@ -158,7 +174,7 @@ class HnfCoherencyController
         uint32_t entry, PocqActionKind action, const PocqEvent& event);
     void startReadFlow(uint32_t entry);
     void queueSnoops(uint32_t entry);
-    void commitRead(uint32_t entry);
+    void startSlcUpdate(uint32_t entry);
     void completeMaintenance(uint32_t entry);
     void completeSnoopTarget(uint32_t entry, uint32_t responder,
                              bool has_data);
@@ -177,11 +193,15 @@ class HnfCoherencyController
     void stepSeqPocq(const SeqPocqEvent& event);
     void queueSeqSnoops();
     void completeSeqSnoopTarget(uint32_t responder, bool has_data);
-    void retrySlcsfReplayEntries();
+    void retrySlcsfReplayEntries(Tick current_tick);
     void retryPendingSlcLookups();
+    void retryPendingSlcUpdates();
     void continueLatchedSlcLookups();
+    void continueLatchedSlcUpdates();
     void latchVisibleSlcResponses();
     void tryIssueSlcLookup(uint32_t entry);
+    void tryIssueSlcUpdate(uint32_t entry);
+    void handleSlcsfReplay(uint32_t entry, const SlcSfResponse& response);
 };
 
 } // namespace gem5::Chi

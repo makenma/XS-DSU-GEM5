@@ -181,7 +181,7 @@ HnfCoherencyController::executePocqAction(uint32_t entryId,
         return std::nullopt;
 
       case PocqActionKind::CommitRead:
-        commitRead(entryId);
+        startSlcUpdate(entryId);
         return std::nullopt;
 
       case PocqActionKind::CommitMaintenance:
@@ -194,17 +194,8 @@ HnfCoherencyController::executePocqAction(uint32_t entryId,
         return std::nullopt;
 
       case PocqActionKind::UpdateSlcSf:
-        if (entry.slcUpdatePending) {
-            commitRead(entryId);
-            entry.slcUpdatePending = false;
-        }
-        {
-            PocqEvent updateDone{};
-            updateDone.kind = PocqEventKind::SlcUpdateDone;
-            updateDone.txn = entry.txnKind;
-            updateDone.needsCompAck = entry.needsCompAck;
-            return stepPocq(entryId, updateDone);
-        }
+        startSlcUpdate(entryId);
+        return std::nullopt;
 
       case PocqActionKind::QueueTxReq:
         queueMcRead(entryId);
@@ -485,17 +476,26 @@ HnfCoherencyController::queueSnoops(uint32_t entryId)
 }
 
 void
-HnfCoherencyController::commitRead(uint32_t entryId)
+HnfCoherencyController::startSlcUpdate(uint32_t entryId)
 {
     Entry& entry = entries[entryId];
     panic_if(entry.data.size() < blockSize,
-             "HnfCC entry=%u commits read with %u/%u data bytes\n",
+             "HnfCC entry=%u starts read update with %u/%u data bytes\n",
              entryId, static_cast<unsigned>(entry.data.size()), blockSize);
-    slcsfUnit->commitRead(entry.blockAddr, entry.req.srcid, entry.txnKind,
-                         entry.data, entry.responseDataDirty,
-                         entry.req.tgtid);
-    slcsfUnit->releaseSfResources(entryId);
-    entry.slcUpdatePending = false;
+    panic_if(entry.slcUpdatePhase != SlcUpdatePhase::None,
+             "HnfCC entry=%u starts update with phase=%u\n", entryId,
+             static_cast<unsigned>(entry.slcUpdatePhase));
+
+    SlcSfReqHeader header = makeSlcSfReqHeader(
+        slcSfReqIds, entryId, entry.blockAddr, entry.req, entry.seq,
+        entry.acceptCycle);
+    entry.slcUpdateReqId = header.reqId;
+    entry.pendingSlcUpdate = SlcSfRequest(makeSlcSfCommitReadReq(
+        std::move(header), entry.txnKind, entry.data,
+        entry.responseDataDirty, entry.req.tgtid, {}, entry.slcCommitToken,
+        entry.slcLookupReqId));
+    entry.slcUpdatePhase = SlcUpdatePhase::IssuePending;
+    tryIssueSlcUpdate(entryId);
 }
 
 void
@@ -754,7 +754,6 @@ HnfCoherencyController::notifyTxReqSent(uint32_t entryId)
 
     entry.data.assign(blockSize, 0);
     entry.responseDataDirty = false;
-    entry.slcUpdatePending = true;
     PocqEvent mcDataDone{};
     mcDataDone.kind = PocqEventKind::McDataDone;
     mcDataDone.txn = entry.txnKind;
@@ -916,7 +915,6 @@ HnfCoherencyController::acceptRxDat(const RawDat& dat)
     }
 
     entry.responseDataDirty = false;
-    entry.slcUpdatePending = true;
     const uint64_t completedAddr = entry.blockAddr;
     const uint32_t requester = entry.req.srcid;
     const uint32_t requesterTxn = entry.req.txnid;
@@ -1220,18 +1218,49 @@ HnfCoherencyController::completeSeqSnoopTarget(uint32_t responder,
 }
 
 void
-HnfCoherencyController::retrySlcsfReplayEntries()
+HnfCoherencyController::retrySlcsfReplayEntries(Tick currentTick)
 {
     for (uint32_t i = 0; i < entries.size(); ++i) {
         Entry& entry = entries[i];
         if (entry.state != HnfCcEntryState::Sleep ||
-            !entry.slcsfReplay) {
+            !entry.slcsfReplay || currentTick < entry.retryNotBeforeTick) {
             continue;
         }
         DPRINTF(HnfCC,
                 "CC retries SLCSF replay entry=%u addr=%#llx\n", i,
                 static_cast<unsigned long long>(entry.blockAddr));
+        if (entry.slcUpdatePhase == SlcUpdatePhase::ReplayWait) {
+            entry.slcUpdatePhase = SlcUpdatePhase::None;
+        }
         startReadFlow(i);
+    }
+}
+
+void
+HnfCoherencyController::tryIssueSlcUpdate(uint32_t entryId)
+{
+    Entry& entry = entries.at(entryId);
+    panic_if(entry.slcUpdatePhase != SlcUpdatePhase::IssuePending ||
+                 !entry.pendingSlcUpdate,
+             "HnfCC entry=%u retries update without pending request\n",
+             entryId);
+    const SlcSfReqId reqId = entry.slcUpdateReqId;
+    panic_if(!reqId.valid(), "HnfCC entry=%u has invalid update reqId\n",
+             entryId);
+
+    const SlcSfEnqueueResult result =
+        slcsfUnit->tryEnqueue(std::move(*entry.pendingSlcUpdate));
+    if (result == SlcSfEnqueueResult::Accepted) {
+        entry.pendingSlcUpdate.reset();
+        entry.slcUpdatePhase = SlcUpdatePhase::Waiting;
+        DPRINTF(HnfCC, "CC entry=%u issued SLCSF update req=%llu\n",
+                entryId, static_cast<unsigned long long>(reqId.value));
+    } else {
+        const SlcSfFillReq* request =
+            std::get_if<SlcSfFillReq>(&*entry.pendingSlcUpdate);
+        panic_if(!request || request->header.reqId != reqId,
+                 "HnfCC entry=%u rejected update changed ownership/id\n",
+                 entryId);
     }
 }
 
@@ -1274,6 +1303,16 @@ HnfCoherencyController::retryPendingSlcLookups()
 }
 
 void
+HnfCoherencyController::retryPendingSlcUpdates()
+{
+    for (uint32_t i = 0; i < entries.size(); ++i) {
+        if (entries[i].slcUpdatePhase == SlcUpdatePhase::IssuePending) {
+            tryIssueSlcUpdate(i);
+        }
+    }
+}
+
+void
 HnfCoherencyController::continueLatchedSlcLookups()
 {
     for (uint32_t i = 0; i < entries.size(); ++i) {
@@ -1300,14 +1339,107 @@ HnfCoherencyController::continueLatchedSlcLookups()
 }
 
 void
+HnfCoherencyController::continueLatchedSlcUpdates()
+{
+    for (uint32_t i = 0; i < entries.size(); ++i) {
+        Entry& entry = entries[i];
+        if (entry.slcUpdatePhase != SlcUpdatePhase::ResponseLatched) {
+            continue;
+        }
+        panic_if(!entry.latchedSlcUpdateResponse,
+                 "HnfCC entry=%u has update phase without response\n", i);
+        entry.latchedSlcUpdateResponse.reset();
+        entry.slcUpdatePhase = SlcUpdatePhase::None;
+
+        PocqEvent updateDone{};
+        updateDone.kind = PocqEventKind::SlcUpdateDone;
+        updateDone.txn = entry.txnKind;
+        updateDone.needsCompAck = entry.needsCompAck;
+        stepPocq(i, updateDone);
+    }
+}
+
+void
+HnfCoherencyController::handleSlcsfReplay(
+    uint32_t entryId, const SlcSfResponse& response)
+{
+    Entry& entry = entries.at(entryId);
+    const auto* replay = std::get_if<SlcSfReplay>(&response.payload());
+    panic_if(!replay,
+             "HnfCC entry=%u Replay has invalid payload\n", entryId);
+
+    if (response.operationKind() == SlcSfOperationKind::Lookup) {
+        slcsfUnit->releaseSfResources(entryId);
+    }
+    if (entry.snoopTxnId != 0) {
+        snoopTxnToEntry.erase(entry.snoopTxnId);
+    }
+    entry.slcLookupResult = HnfSlcLookupResult{};
+    entry.slcCommitToken = SlcSfCommitToken{};
+    entry.slcLookupReqId = SlcSfReqId{};
+    entry.pendingSlcLookup.reset();
+    entry.latchedSlcResponse.reset();
+    entry.slcLookupPhase = SlcLookupPhase::None;
+    entry.pendingSlcUpdate.reset();
+    entry.latchedSlcUpdateResponse.reset();
+    entry.data.clear();
+    entry.responseDataDirty = false;
+    entry.snoopTxnId = 0;
+    entry.snoopPendingTargets = 0;
+    entry.snoopDataReceived = false;
+    entry.mcReadIssued = false;
+    entry.mcDataBytes = 0;
+    entry.pocqState = PocqState::Idle;
+    entry.state = HnfCcEntryState::Sleep;
+    entry.slcsfReplay = true;
+    entry.retryNotBeforeTick = replay->retryNotBeforeTick;
+    entry.slcUpdatePhase =
+        response.operationKind() == SlcSfOperationKind::Lookup ?
+        SlcUpdatePhase::None : SlcUpdatePhase::ReplayWait;
+
+    DPRINTF(HnfCC,
+            "CC entry=%u waits until tick=%llu after SLCSF replay\n",
+            entryId,
+            static_cast<unsigned long long>(entry.retryNotBeforeTick));
+}
+
+void
 HnfCoherencyController::consumeSlcsfResponse(SlcSfResponse response)
 {
     const uint32_t entryId = response.pocEntryId();
     panic_if(entryId >= entries.size(),
              "HnfCC response has invalid POCQ entry=%u\n", entryId);
     Entry& entry = entries[entryId];
-    panic_if(response.operationKind() != SlcSfOperationKind::Lookup ||
-                 entry.slcLookupPhase != SlcLookupPhase::Waiting ||
+    if (response.operationKind() != SlcSfOperationKind::Lookup) {
+        panic_if(response.operationKind() !=
+                     SlcSfOperationKind::CommitRead ||
+                     entry.slcUpdatePhase != SlcUpdatePhase::Waiting ||
+                     entry.latchedSlcUpdateResponse ||
+                     entry.slcUpdateReqId != response.reqId(),
+                 "HnfCC unexpected update response entry=%u req=%llu\n",
+                 entryId,
+                 static_cast<unsigned long long>(response.reqId().value));
+
+        if (response.status() == SlcSfTerminalStatus::Done) {
+            const auto* fill =
+                std::get_if<SlcSfFillResponse>(&response.payload());
+            panic_if(!fill ||
+                         fill->updateKind != SlcSfUpdateKind::CommitRead,
+                     "HnfCC entry=%u update Done has bad payload\n",
+                     entryId);
+            entry.latchedSlcUpdateResponse = std::move(response);
+            entry.slcUpdatePhase = SlcUpdatePhase::ResponseLatched;
+        } else if (response.status() == SlcSfTerminalStatus::Replay) {
+            handleSlcsfReplay(entryId, response);
+        } else {
+            panic("HnfCC entry=%u update req=%llu failed\n", entryId,
+                  static_cast<unsigned long long>(
+                      entry.slcUpdateReqId.value));
+        }
+        return;
+    }
+
+    panic_if(entry.slcLookupPhase != SlcLookupPhase::Waiting ||
                  entry.latchedSlcResponse ||
                  entry.slcLookupReqId != response.reqId(),
              "HnfCC unexpected lookup response entry=%u req=%llu\n",
@@ -1322,9 +1454,8 @@ HnfCoherencyController::consumeSlcsfResponse(SlcSfResponse response)
         entry.slcLookupResult = lookup->result;
         entry.slcCommitToken = lookup->token;
     } else if (response.status() == SlcSfTerminalStatus::Replay) {
-        entry.slcLookupResult = HnfSlcLookupResult{};
-        entry.slcLookupResult.replay = true;
-        entry.slcCommitToken = SlcSfCommitToken{};
+        handleSlcsfReplay(entryId, response);
+        return;
     } else {
         panic("HnfCC entry=%u lookup req=%llu failed\n", entryId,
               static_cast<unsigned long long>(entry.slcLookupReqId.value));
@@ -1357,7 +1488,15 @@ HnfCoherencyController::latchVisibleSlcResponses()
 void
 HnfCoherencyController::serviceInternalWork()
 {
+    serviceInternalWork(0);
+}
+
+void
+HnfCoherencyController::serviceInternalWork(Tick currentTick)
+{
+    continueLatchedSlcUpdates();
     continueLatchedSlcLookups();
+    retryPendingSlcUpdates();
     retryPendingSlcLookups();
     if (!seqPocqEntry.valid && slcsfUnit &&
         slcsfUnit->hasPendingSeq()) {
@@ -1367,7 +1506,7 @@ HnfCoherencyController::serviceInternalWork()
                !hasMainAddressHazard(seqPocqEntry.blockAddr)) {
         stepSeqPocq({SeqPocqEventKind::HazardClear});
     }
-    retrySlcsfReplayEntries();
+    retrySlcsfReplayEntries(currentTick);
     latchVisibleSlcResponses();
 }
 
@@ -1393,6 +1532,18 @@ const SlcSfCommitToken&
 HnfCoherencyController::slcCommitToken(uint32_t entry) const
 {
     return entries.at(entry).slcCommitToken;
+}
+
+HnfCoherencyController::SlcUpdatePhase
+HnfCoherencyController::slcUpdatePhase(uint32_t entry) const
+{
+    return entries.at(entry).slcUpdatePhase;
+}
+
+SlcSfReqId
+HnfCoherencyController::slcUpdateReqId(uint32_t entry) const
+{
+    return entries.at(entry).slcUpdateReqId;
 }
 
 bool

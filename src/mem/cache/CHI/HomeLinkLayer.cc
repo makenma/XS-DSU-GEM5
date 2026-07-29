@@ -142,7 +142,7 @@ HomeLinkLayer::wakeup()
 
     doCcResultAndRetire();
     if (cc) {
-        cc->serviceInternalWork();
+        cc->serviceInternalWork(curTick());
     }
     doTxReqArb();
     doTxSnpArb();

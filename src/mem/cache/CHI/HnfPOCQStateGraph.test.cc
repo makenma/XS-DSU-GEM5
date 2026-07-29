@@ -107,10 +107,10 @@ TEST(HnfPocqStateGraphTest, SlcHitPath)
                PocqState::SlcLookup, PocqActionKind::DoSlcLookup);
     EXPECT_EQ(state, PocqState::SlcLookup);
 
-    expectActions(graph.tryStep(state, lookupDone(true, true, false)),
-                  PocqState::TxLink,
-                  {PocqActionKind::CommitRead,
-                   PocqActionKind::QueueCompData});
+    expectStep(graph.tryStep(state, lookupDone(true, true, false)),
+               PocqState::SlcUpdate, PocqActionKind::UpdateSlcSf);
+    expectStep(graph.tryStep(state, event(PocqEventKind::SlcUpdateDone)),
+               PocqState::TxLink, PocqActionKind::QueueCompData);
     expectStep(graph.tryStep(state, event(PocqEventKind::TxLinkDone)),
                PocqState::WaitCompAck, PocqActionKind::WaitCompAck);
     expectStep(graph.tryStep(state, event(PocqEventKind::CompAck)),
@@ -197,9 +197,10 @@ TEST(HnfPocqStateGraphTest, ReadUniqueWaitsForSnoopBeforeData)
     done.txn = PocqTxnKind::ReadUnique;
     done.dataAvailable = true;
     done.needsCompAck = true;
-    expectActions(graph.tryStep(state, done), PocqState::TxLink,
-                  {PocqActionKind::CommitRead,
-                   PocqActionKind::QueueCompData});
+    expectStep(graph.tryStep(state, done), PocqState::SlcUpdate,
+               PocqActionKind::UpdateSlcSf);
+    expectStep(graph.tryStep(state, event(PocqEventKind::SlcUpdateDone)),
+               PocqState::TxLink, PocqActionKind::QueueCompData);
 }
 
 TEST(HnfPocqStateGraphTest, SnoopWithoutDataFallsBackToMemory)

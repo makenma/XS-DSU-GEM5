@@ -231,17 +231,15 @@ POCQ_StateGraph::POCQ_StateGraph()
                   {PocqActionKind::SleepForReplay});
     addTransition(slcLookup, waitSnoop, isLookupNeedsSnoop,
                   {PocqActionKind::QueueSnoops});
-    addTransition(slcLookup, txLink, isLookupHit,
-                  {PocqActionKind::CommitRead,
-                   PocqActionKind::QueueCompData});
+    addTransition(slcLookup, slcUpdate, isLookupHit,
+                  {PocqActionKind::UpdateSlcSf});
     addTransition(slcLookup, issueMcRead, isLookupMissNeedingMemory,
                   {PocqActionKind::QueueTxReq});
     addTransition(slcLookup, idle, isLookupMaintenanceDone,
                   {PocqActionKind::CommitMaintenance,
                    PocqActionKind::QueueComp});
-    addTransition(waitSnoop, txLink, isSnoopDoneReadWithData,
-                  {PocqActionKind::CommitRead,
-                   PocqActionKind::QueueCompData});
+    addTransition(waitSnoop, slcUpdate, isSnoopDoneReadWithData,
+                  {PocqActionKind::UpdateSlcSf});
     addTransition(waitSnoop, issueMcRead, isSnoopDoneReadNeedsMemory,
                   {PocqActionKind::QueueTxReq});
     addTransition(waitSnoop, idle, isSnoopDoneMaintenance,
