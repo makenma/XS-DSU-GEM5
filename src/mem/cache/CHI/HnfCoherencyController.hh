@@ -6,6 +6,7 @@
 #include <deque>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "mem/cache/CHI/HnfPOCQStateGraph.hh"
@@ -108,6 +109,8 @@ class HnfCoherencyController
 
     size_t dirtyVictimTransactionCount() const
     { return dirtyVictimTxns.size(); }
+    size_t pendingDirtyVictimRequesterCount() const
+    { return dirtyVictimRequesters.size(); }
     std::optional<SlcSfVictimId> dirtyVictimForTxn(
         uint32_t downstream_txn_id) const;
     DirtyVictimPhase dirtyVictimPhase(SlcSfVictimId id) const;
@@ -222,6 +225,7 @@ class HnfCoherencyController
     std::unordered_map<uint32_t, uint32_t> snoopTxnToEntry;
     std::unordered_map<uint64_t, DirtyVictimTxn> dirtyVictimTxns;
     std::unordered_map<uint32_t, uint64_t> dirtyVictimTxnIds;
+    std::unordered_set<uint64_t> dirtyVictimRequesters;
 
     uint64_t blockAddr(const RawReq& req) const;
     uint32_t expectedDataBytes(const RawReq& req) const;
@@ -248,6 +252,8 @@ class HnfCoherencyController
     void storeWriteData(uint32_t entry);
     void deferRetire(std::optional<HnfCcRetireInfo> retire);
     HnfCcRetireInfo retireEntry(uint32_t entry);
+    bool dirtyVictimRequesterTracked(const Entry& entry) const;
+    bool traceDirtyVictimRequesterDone(uint32_t srcid, uint32_t txnid);
     HnfCcRetireInfo makeRetireInfo(const Entry& entry) const;
     void wakeSleepingEntries(uint64_t addr);
     bool hasMainAddressHazard(uint64_t addr) const;

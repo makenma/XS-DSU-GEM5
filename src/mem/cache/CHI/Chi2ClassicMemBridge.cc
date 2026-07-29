@@ -10,6 +10,7 @@
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "debug/Chi2ClassicMemBridge.hh"
+#include "debug/HnfDirtyVictimE2E.hh"
 #include "mem/cache/CHI/base/ReqOpcode.hh"
 #include "mem/packet.hh"
 #include "mem/request.hh"
@@ -360,6 +361,18 @@ Chi2ClassicMemBridge::acceptWriteData(const RawDat& dat)
              dat.srcid, dat.tgtid,
              static_cast<unsigned>(dat.data.size()), txn.expectedBytes);
 
+    if (Chi2ClassicMemTxnPolicy::isHnfDirtyVictimWriteback(
+            txn.req, blockSize)) {
+        DPRINTF(HnfDirtyVictimE2E,
+                "SN_DV_DAT txn=%u addr=%#llx dbid=%u bytes=%u "
+                "data_hash=%016llx\n",
+                dat.txnid,
+                static_cast<unsigned long long>(txn.req.addr), dat.dbid,
+                static_cast<unsigned>(dat.data.size()),
+                static_cast<unsigned long long>(
+                    Chi2ClassicMemTxnPolicy::traceDataHash(dat.data)));
+    }
+
     txn.pkt = makeWritePacket(txn, dat);
     const auto next = Chi2ClassicMemTxnPolicy::transition(
         txn.phase, Chi2ClassicMemTxnPolicy::Event::WriteDataAccepted);
@@ -411,6 +424,12 @@ Chi2ClassicMemBridge::recvMemResp(PacketPtr pkt)
              name(), static_cast<unsigned>(txn.phase), state->txnid);
 
     if (txn.kind == TxnEntry::Kind::Write) {
+        if (Chi2ClassicMemTxnPolicy::isHnfDirtyVictimWriteback(
+                txn.req, blockSize)) {
+            DPRINTF(HnfDirtyVictimE2E,
+                    "SN_DV_COMP txn=%u dbid=%u error=%u\n",
+                    state->txnid, txn.dbid, pkt->isError() ? 1 : 0);
+        }
         DPRINTF(Chi2ClassicMemBridge,
                 "classic WriteResp received txn=%u addr=%#llx cmd=%s\n",
                 state->txnid,

@@ -231,7 +231,7 @@ HnfSLCSFBackend::dirtySlcVictimAddress(
     return (victim.tag * slcSets + target.slc.set) * blockSize;
 }
 
-SlcSfSlcVictim
+HnfSLCSFBackend::DirtyVictimCapture
 HnfSLCSFBackend::snapshotDirtySlcVictim(
     SlcSfVictimId victim_id, uint64_t block_addr,
     const LookupSnapshot& target)
@@ -258,11 +258,34 @@ HnfSLCSFBackend::snapshotDirtySlcVictim(
         slc[target.slc.set][target.slc.way].lastUse;
     full_target.sf.replacementStamp =
         sf[target.sf.set][target.sf.way].lastUse;
+    DirtyVictimSeal seal{
+        victim_id, block_addr, *victim_addr, std::move(full_target)};
     const uint64_t slot =
         static_cast<uint64_t>(target.slc.set) * slcWays + target.slc.way;
-    dirtyVictimSeals[slot] = DirtyVictimSeal{
-        victim_id, block_addr, *victim_addr, std::move(full_target)};
-    return snapshot;
+    const bool inserted = dirtyVictimSeals.emplace(slot, seal).second;
+    panic_if(!inserted,
+             "HnfSLCSF dirty-victim slot already sealed set=%u way=%u\n",
+             target.slc.set, target.slc.way);
+    return DirtyVictimCapture{std::move(snapshot), std::move(seal)};
+}
+
+bool
+HnfSLCSFBackend::exactDirtyVictimSealMatches(
+    const DirtyVictimSeal& lhs, const DirtyVictimSeal& rhs)
+{
+    const auto same_array = [](const ArraySnapshot& left,
+                               const ArraySnapshot& right) {
+        return left.hit == right.hit && left.set == right.set &&
+            left.way == right.way &&
+            left.generation == right.generation &&
+            left.replacementStamp == right.replacementStamp;
+    };
+    return lhs.victimId.value == rhs.victimId.value &&
+        lhs.replacementAddress == rhs.replacementAddress &&
+        lhs.victimAddress == rhs.victimAddress &&
+        lhs.targetSnapshot.lookupEpoch == rhs.targetSnapshot.lookupEpoch &&
+        same_array(lhs.targetSnapshot.slc, rhs.targetSnapshot.slc) &&
+        same_array(lhs.targetSnapshot.sf, rhs.targetSnapshot.sf);
 }
 
 bool
@@ -301,10 +324,11 @@ HnfSLCSFBackend::exactSnapshotMatches(
 HnfSLCSFBackend::DirtyVictimWritePermit
 HnfSLCSFBackend::authorizeDirtyVictimWrite(
     uint64_t block_addr, const LookupSnapshot& target,
-    const SlcSfSlcVictim& preserved_victim)
+    const SlcSfSlcVictim& preserved_victim,
+    const DirtyVictimSeal& installed_seal)
 {
     panic_if(!dirtyVictimWriteCanProceed(
-                 block_addr, target, preserved_victim),
+                 block_addr, target, preserved_victim, installed_seal),
              "HnfSLCSF dirty-victim authorization failed "
              "addr=%#llx victim=%llu\n",
              static_cast<unsigned long long>(block_addr),
@@ -313,6 +337,14 @@ HnfSLCSFBackend::authorizeDirtyVictimWrite(
     const uint64_t slot =
         static_cast<uint64_t>(target.slc.set) * slcWays + target.slc.way;
     const auto found = dirtyVictimSeals.find(slot);
+    panic_if(found == dirtyVictimSeals.end() ||
+                 !exactDirtyVictimSealMatches(
+                     found->second, installed_seal),
+             "HnfSLCSF dirty-victim authorization lost exact seal "
+             "addr=%#llx victim=%llu\n",
+             static_cast<unsigned long long>(block_addr),
+             static_cast<unsigned long long>(
+                 preserved_victim.victimId.value));
     const DirtyVictimSeal seal = found->second;
     dirtyVictimSeals.erase(found);
     return DirtyVictimWritePermit(
@@ -322,7 +354,8 @@ HnfSLCSFBackend::authorizeDirtyVictimWrite(
 bool
 HnfSLCSFBackend::dirtyVictimWriteCanProceed(
     uint64_t block_addr, const LookupSnapshot& target,
-    const SlcSfSlcVictim& preserved_victim) const
+    const SlcSfSlcVictim& preserved_victim,
+    const DirtyVictimSeal& installed_seal) const
 {
     if (target.slc.set >= slc.size() ||
         target.slc.way >= slc[target.slc.set].size() ||
@@ -341,19 +374,19 @@ HnfSLCSFBackend::dirtyVictimWriteCanProceed(
     if (found == dirtyVictimSeals.end()) {
         return false;
     }
-    const DirtyVictimSeal& seal = found->second;
     const auto same_array_token = [](const ArraySnapshot& lhs,
                                      const ArraySnapshot& rhs) {
         return lhs.hit == rhs.hit && lhs.set == rhs.set &&
             lhs.way == rhs.way && lhs.generation == rhs.generation;
     };
-    if (seal.victimId.value != preserved_victim.victimId.value ||
-        seal.replacementAddress != block_addr ||
-        seal.victimAddress != *victim_addr ||
-        seal.targetSnapshot.lookupEpoch != target.lookupEpoch ||
-        !same_array_token(seal.targetSnapshot.slc, target.slc) ||
-        !same_array_token(seal.targetSnapshot.sf, target.sf) ||
-        !exactSnapshotMatches(block_addr, seal.targetSnapshot)) {
+    if (!exactDirtyVictimSealMatches(found->second, installed_seal) ||
+        installed_seal.victimId.value != preserved_victim.victimId.value ||
+        installed_seal.replacementAddress != block_addr ||
+        installed_seal.victimAddress != *victim_addr ||
+        installed_seal.targetSnapshot.lookupEpoch != target.lookupEpoch ||
+        !same_array_token(installed_seal.targetSnapshot.slc, target.slc) ||
+        !same_array_token(installed_seal.targetSnapshot.sf, target.sf) ||
+        !exactSnapshotMatches(block_addr, installed_seal.targetSnapshot)) {
         return false;
     }
     const SlcLine& victim = slc[target.slc.set][target.slc.way];
@@ -373,27 +406,27 @@ HnfSLCSFBackend::dirtyVictimWriteCanProceed(
 
 void
 HnfSLCSFBackend::discardDirtyVictimSeal(
-    SlcSfVictimId victim_id, uint64_t block_addr,
-    const LookupSnapshot& target)
+    const DirtyVictimSeal& installed_seal)
 {
-    if (target.slc.set >= slcSets || target.slc.way >= slcWays) {
+    const ArraySnapshot& target = installed_seal.targetSnapshot.slc;
+    if (target.set >= slcSets || target.way >= slcWays) {
         return;
     }
     const uint64_t slot =
-        static_cast<uint64_t>(target.slc.set) * slcWays + target.slc.way;
+        static_cast<uint64_t>(target.set) * slcWays + target.way;
     const auto found = dirtyVictimSeals.find(slot);
     if (found == dirtyVictimSeals.end()) {
+        // Lifecycle invalidation may have already discarded every seal.
         return;
     }
-    const DirtyVictimSeal& seal = found->second;
-    if (seal.victimId.value == victim_id.value &&
-        seal.replacementAddress == block_addr &&
-        seal.targetSnapshot.lookupEpoch == target.lookupEpoch &&
-        seal.targetSnapshot.slc.set == target.slc.set &&
-        seal.targetSnapshot.slc.way == target.slc.way &&
-        seal.targetSnapshot.slc.generation == target.slc.generation) {
-        dirtyVictimSeals.erase(found);
-    }
+    panic_if(!exactDirtyVictimSealMatches(found->second, installed_seal),
+             "HnfSLCSF refuses mismatched dirty-victim seal discard "
+             "victim=%llu addr=%#llx\n",
+             static_cast<unsigned long long>(
+                 installed_seal.victimId.value),
+             static_cast<unsigned long long>(
+                 installed_seal.replacementAddress));
+    dirtyVictimSeals.erase(found);
 }
 
 void
@@ -701,7 +734,11 @@ HnfSLCSFBackend::installSeqVictim(
     snapshot.owner = victim.owner;
     snapshot.sharers = victim.sharers;
     slot->valid = true;
+    slot->phase = SeqPhase::Pending;
     slot->victim = snapshot;
+    slot->completionLease.reset();
+    slot->committedDirty = false;
+    slot->committedData.clear();
     seqPending.push_back(snapshot.id);
     if (installed) {
         *installed = snapshot;
@@ -1121,7 +1158,7 @@ HnfSLCSFBackend::commitRead(uint64_t block_addr, uint32_t requester,
                      SeqVictim* sf_victim)
 {
     commitRead(block_addr, requester, txn, data, data_dirty, home_node_id,
-               target, reservation_owner, sf_victim, nullptr);
+               target, reservation_owner, sf_victim, nullptr, nullptr);
 }
 
 void
@@ -1131,8 +1168,12 @@ HnfSLCSFBackend::commitRead(uint64_t block_addr, uint32_t requester,
                      const LookupSnapshot* target,
                      std::optional<uint32_t> reservation_owner,
                      SeqVictim* sf_victim,
-                     const SlcSfSlcVictim* preserved_victim)
+                     const SlcSfSlcVictim* preserved_victim,
+                     const DirtyVictimSeal* installed_seal)
 {
+    panic_if(static_cast<bool>(preserved_victim) !=
+                 static_cast<bool>(installed_seal),
+             "HnfSLCSF dirty-victim snapshot/seal pairing mismatch\n");
     std::optional<DirtyVictimWritePermit> permit;
     if (preserved_victim) {
         panic_if(!target,
@@ -1140,7 +1181,7 @@ HnfSLCSFBackend::commitRead(uint64_t block_addr, uint32_t requester,
                  "token addr=%#llx\n",
                  static_cast<unsigned long long>(block_addr));
         permit.emplace(authorizeDirtyVictimWrite(
-            block_addr, *target, *preserved_victim));
+            block_addr, *target, *preserved_victim, *installed_seal));
     }
     const DirtyVictimWritePermit* write_permit =
         permit ? &*permit : nullptr;
@@ -1268,7 +1309,7 @@ HnfSLCSFBackend::fillCleanShared(uint64_t block_addr, uint32_t requester,
                           SeqVictim* sf_victim)
 {
     fillCleanShared(block_addr, requester, data, target, reservation_owner,
-                    sf_victim, nullptr);
+                    sf_victim, nullptr, nullptr);
 }
 
 void
@@ -1277,11 +1318,13 @@ HnfSLCSFBackend::fillCleanShared(uint64_t block_addr, uint32_t requester,
                           const LookupSnapshot* target,
                           std::optional<uint32_t> reservation_owner,
                           SeqVictim* sf_victim,
-                          const SlcSfSlcVictim* preserved_victim)
+                          const SlcSfSlcVictim* preserved_victim,
+                          const DirtyVictimSeal* installed_seal)
 {
     commitRead(
         block_addr, requester, PocqTxnKind::ReadShared, data, false, 0,
-        target, reservation_owner, sf_victim, preserved_victim);
+        target, reservation_owner, sf_victim, preserved_victim,
+        installed_seal);
 }
 
 void
@@ -1292,7 +1335,7 @@ HnfSLCSFBackend::writeLine(uint64_t block_addr, uint32_t requester,
                     SeqVictim* sf_victim)
 {
     writeLine(block_addr, requester, data, txn, home_node_id, target,
-              reservation_owner, sf_victim, nullptr);
+              reservation_owner, sf_victim, nullptr, nullptr);
 }
 
 void
@@ -1301,8 +1344,12 @@ HnfSLCSFBackend::writeLine(uint64_t block_addr, uint32_t requester,
                     uint32_t home_node_id, const LookupSnapshot* target,
                     std::optional<uint32_t> reservation_owner,
                     SeqVictim* sf_victim,
-                    const SlcSfSlcVictim* preserved_victim)
+                    const SlcSfSlcVictim* preserved_victim,
+                    const DirtyVictimSeal* installed_seal)
 {
+    panic_if(static_cast<bool>(preserved_victim) !=
+                 static_cast<bool>(installed_seal),
+             "HnfSLCSF dirty-victim snapshot/seal pairing mismatch\n");
     std::optional<DirtyVictimWritePermit> permit;
     if (preserved_victim) {
         panic_if(!target,
@@ -1310,7 +1357,7 @@ HnfSLCSFBackend::writeLine(uint64_t block_addr, uint32_t requester,
                  "token addr=%#llx\n",
                  static_cast<unsigned long long>(block_addr));
         permit.emplace(authorizeDirtyVictimWrite(
-            block_addr, *target, *preserved_victim));
+            block_addr, *target, *preserved_victim, *installed_seal));
     }
     const DirtyVictimWritePermit* write_permit =
         permit ? &*permit : nullptr;
@@ -1393,15 +1440,19 @@ HnfSLCSFBackend::writeL3FlushSf(uint64_t block_addr, uint32_t requester,
                                 const std::vector<uint8_t>& data,
                                 const LookupSnapshot* target)
 {
-    writeL3FlushSf(block_addr, requester, data, target, nullptr);
+    writeL3FlushSf(block_addr, requester, data, target, nullptr, nullptr);
 }
 
 void
 HnfSLCSFBackend::writeL3FlushSf(uint64_t block_addr, uint32_t requester,
                                 const std::vector<uint8_t>& data,
                                 const LookupSnapshot* target,
-                                const SlcSfSlcVictim* preserved_victim)
+                                const SlcSfSlcVictim* preserved_victim,
+                                const DirtyVictimSeal* installed_seal)
 {
+    panic_if(static_cast<bool>(preserved_victim) !=
+                 static_cast<bool>(installed_seal),
+             "HnfSLCSF dirty-victim snapshot/seal pairing mismatch\n");
     std::optional<DirtyVictimWritePermit> permit;
     if (preserved_victim) {
         panic_if(!target,
@@ -1409,7 +1460,7 @@ HnfSLCSFBackend::writeL3FlushSf(uint64_t block_addr, uint32_t requester,
                  "token addr=%#llx\n",
                  static_cast<unsigned long long>(block_addr));
         permit.emplace(authorizeDirtyVictimWrite(
-            block_addr, *target, *preserved_victim));
+            block_addr, *target, *preserved_victim, *installed_seal));
     }
     installSlc(block_addr, HnfSlcState::MU, requester, data,
                target ? &target->slc : nullptr,
@@ -1448,8 +1499,15 @@ bool
 HnfSLCSFBackend::seqCompletionMatches(SeqId id, uint64_t block_addr) const
 {
     const SeqEntry* entry = findSeq(id);
-    return entry && entry->victim.issued &&
+    return entry && entry->phase == SeqPhase::Issued &&
         entry->victim.blockAddr == block_addr;
+}
+
+std::optional<HnfSLCSFBackend::SeqPhase>
+HnfSLCSFBackend::seqPhase(SeqId id) const
+{
+    const SeqEntry* entry = findSeq(id);
+    return entry ? std::optional<SeqPhase>(entry->phase) : std::nullopt;
 }
 
 size_t
@@ -1471,7 +1529,9 @@ HnfSLCSFBackend::frontPendingSeq() const
 }
 
 void
-HnfSLCSFBackend::markSeqIssued(SeqId id)
+HnfSLCSFBackend::markSeqIssued(
+    SeqId id, uint8_t completion_opcode,
+    uint32_t completion_transaction_id)
 {
     panic_if(seqPending.empty() || seqPending.front() != id,
              "HnfSLCSF issues SEQ id=%llu out of order\n",
@@ -1480,37 +1540,147 @@ HnfSLCSFBackend::markSeqIssued(SeqId id)
     panic_if(!entry || entry->victim.issued,
              "HnfSLCSF issues invalid/duplicate SEQ id=%llu\n",
              static_cast<unsigned long long>(id));
+    panic_if(completion_transaction_id == 0,
+             "HnfSLCSF issues SEQ id=%llu without completion txn identity\n",
+             static_cast<unsigned long long>(id));
     entry->victim.issued = true;
+    entry->phase = SeqPhase::Issued;
+    entry->completionOpcode = completion_opcode;
+    entry->completionTransactionId = completion_transaction_id;
     seqPending.pop_front();
     DPRINTF(HnfSLCSF, "SEQ issue id=%llu addr=%#llx\n",
             static_cast<unsigned long long>(id),
             static_cast<unsigned long long>(entry->victim.blockAddr));
 }
 
-void
-HnfSLCSFBackend::completeSfEvict(SeqId id, const std::vector<uint8_t>& data,
-                          bool dirty_data)
+bool
+HnfSLCSFBackend::seqCompletionClaimable(
+    SeqId id, const SlcSfReqHeader& header) const
+{
+    const SeqEntry* entry = findSeq(id);
+    return entry && entry->phase == SeqPhase::Issued &&
+        entry->victim.blockAddr == header.lineAddress &&
+        entry->victim.owner == header.requester &&
+        header.pocEntryId == UINT32_MAX &&
+        header.opcode == entry->completionOpcode &&
+        header.trace.linkSequence == id &&
+        header.trace.transactionId == entry->completionTransactionId;
+}
+
+bool
+HnfSLCSFBackend::claimSeqCompletion(
+    SeqId id, const SlcSfCompletionLease& lease)
 {
     SeqEntry* entry = findSeq(id);
-    panic_if(!entry || !entry->victim.issued,
-             "HnfSLCSF completes invalid/unissued SEQ id=%llu\n",
+    if (!entry || entry->phase != SeqPhase::Issued ||
+        entry->completionLease) {
+        return false;
+    }
+    entry->completionLease = lease;
+    if (!seqLeaseMatches(*entry, lease)) {
+        entry->completionLease.reset();
+        return false;
+    }
+    entry->phase = SeqPhase::Claimed;
+    return true;
+}
+
+bool
+HnfSLCSFBackend::seqLeaseMatches(
+    const SeqEntry& entry, const SlcSfCompletionLease& lease) const
+{
+    return entry.valid && lease.valid() &&
+        lease.kind() == SlcSfCompletionKind::CompleteSfEvict &&
+        entry.completionLease && *entry.completionLease == lease &&
+        entry.victim.issued &&
+        lease.objectId() == entry.victim.id &&
+        lease.lineAddress() == entry.victim.blockAddr &&
+        lease.requester() == entry.victim.owner &&
+        lease.pocEntryId() == UINT32_MAX &&
+        lease.opcode() == entry.completionOpcode &&
+        lease.linkSequence() == entry.victim.id &&
+        lease.transactionId() == entry.completionTransactionId &&
+        (entry.phase != SeqPhase::CommittedAwaitAck ||
+         !entry.committedDirty || entry.committedData.size() == blockSize);
+}
+
+bool
+HnfSLCSFBackend::seqClaimMatches(
+    const SlcSfCompletionLease& lease) const
+{
+    const SeqEntry* entry = findSeq(lease.objectId());
+    return entry && entry->phase == SeqPhase::Claimed &&
+        seqLeaseMatches(*entry, lease);
+}
+
+void
+HnfSLCSFBackend::releaseSeqClaim(
+    const SlcSfCompletionLease& lease)
+{
+    SeqEntry* entry = findSeq(lease.objectId());
+    if (!entry || entry->phase != SeqPhase::Claimed ||
+        !seqLeaseMatches(*entry, lease)) {
+        return;
+    }
+    entry->phase = SeqPhase::Issued;
+    entry->completionLease.reset();
+}
+
+void
+HnfSLCSFBackend::commitClaimedSfEvict(
+    SeqId id, const std::vector<uint8_t>& data, bool dirty_data,
+    const SlcSfCompletionLease& lease)
+{
+    SeqEntry* entry = findSeq(id);
+    panic_if(!entry || entry->phase != SeqPhase::Claimed ||
+                 lease.objectId() != id ||
+                 !seqLeaseMatches(*entry, lease),
+             "HnfSLCSF commits unclaimed SEQ id=%llu\n",
              static_cast<unsigned long long>(id));
-    const uint64_t addr = entry->victim.blockAddr;
-    const uint32_t owner = entry->victim.owner;
     if (dirty_data) {
-        panic_if(data.size() < blockSize,
-                 "HnfSLCSF SEQ id=%llu dirty data is short (%u/%u)\n",
+        panic_if(data.size() != blockSize,
+                 "HnfSLCSF SEQ id=%llu dirty data size is invalid (%u/%u)\n",
                  static_cast<unsigned long long>(id),
                  static_cast<unsigned>(data.size()), blockSize);
-        installSlc(addr, HnfSlcState::MU, owner, data);
+        installSlc(
+            entry->victim.blockAddr, HnfSlcState::MU,
+            entry->victim.owner, data);
     }
+    entry->committedDirty = dirty_data;
+    entry->committedData = data;
+    entry->phase = SeqPhase::CommittedAwaitAck;
+    DPRINTF(HnfSLCSF,
+            "SEQ durable complete id=%llu addr=%#llx dirty=%u "
+            "awaiting ack occupancy=%u/%u\n",
+            static_cast<unsigned long long>(id),
+            static_cast<unsigned long long>(entry->victim.blockAddr),
+            dirty_data, static_cast<unsigned>(seqOccupancy()),
+            static_cast<unsigned>(seq.size()));
+}
+
+bool
+HnfSLCSFBackend::acknowledgeSfEvict(
+    const SlcSfCompletionLease& lease)
+{
+    if (!lease.valid() ||
+        lease.kind() != SlcSfCompletionKind::CompleteSfEvict) {
+        return false;
+    }
+    SeqEntry* entry = findSeq(lease.objectId());
+    if (!entry || entry->phase != SeqPhase::CommittedAwaitAck ||
+        !seqLeaseMatches(*entry, lease)) {
+        return false;
+    }
+    const SeqId id = entry->victim.id;
+    const uint64_t addr = entry->victim.blockAddr;
     *entry = SeqEntry{};
     DPRINTF(HnfSLCSF,
-            "SEQ complete id=%llu addr=%#llx dirty=%u occupancy=%u/%u\n",
+            "SEQ ack id=%llu addr=%#llx occupancy=%u/%u\n",
             static_cast<unsigned long long>(id),
-            static_cast<unsigned long long>(addr), dirty_data,
+            static_cast<unsigned long long>(addr),
             static_cast<unsigned>(seqOccupancy()),
             static_cast<unsigned>(seq.size()));
+    return true;
 }
 
 void

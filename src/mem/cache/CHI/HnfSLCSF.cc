@@ -133,6 +133,7 @@ HnfSLCSF::HnfSLCSF(uint32_t block_size, uint32_t slc_num_sets,
     : HnfSLCSFBackend(block_size, slc_num_sets, slc_num_ways,
                       sf_num_sets, sf_num_ways, seq_entries),
       config(pipeline_config), victimBuffer(config.victimBufferEntries),
+      completionProducer(std::make_shared<const uint8_t>(0)),
       visibleReqCredits(config.reqQueueEntries)
 {
     validateConfig(config);
@@ -366,6 +367,62 @@ HnfSLCSF::respOccupied() const
     return inflightRequests.size() + respPending.size() + respVisible.size();
 }
 
+const SlcSfResponse*
+HnfSLCSF::frontVisibleResponse() const
+{
+    return respVisible.empty() ? nullptr : &respVisible.front();
+}
+
+SlcSfCompletionAckResult
+HnfSLCSF::acknowledgeVisibleCompletion(const SlcSfResponse& response)
+{
+    if (respVisible.empty()) {
+        return SlcSfCompletionAckResult::NotVisible;
+    }
+    const SlcSfResponse& visible = respVisible.front();
+    if (visible.reqId() != response.reqId() ||
+        visible.pocEntryId() != response.pocEntryId() ||
+        visible.operationKind() != response.operationKind() ||
+        visible.status() != SlcSfTerminalStatus::Done ||
+        response.status() != SlcSfTerminalStatus::Done) {
+        return SlcSfCompletionAckResult::IdentityMismatch;
+    }
+    const auto* visible_update =
+        std::get_if<SlcSfUpdateResponse>(&visible.payload());
+    const auto* supplied_update =
+        std::get_if<SlcSfUpdateResponse>(&response.payload());
+    if (!visible_update || !supplied_update ||
+        visible_update->updateKind != supplied_update->updateKind ||
+        visible_update->sfVictim || supplied_update->sfVictim ||
+        !visible_update->completionLease ||
+        !supplied_update->completionLease ||
+        *visible_update->completionLease !=
+            *supplied_update->completionLease) {
+        return SlcSfCompletionAckResult::IdentityMismatch;
+    }
+
+    const SlcSfCompletionLease& lease =
+        *visible_update->completionLease;
+    bool acknowledged = false;
+    if (lease.kind() == SlcSfCompletionKind::CompleteSfEvict &&
+        visible_update->updateKind == SlcSfUpdateKind::CompleteSfEvict) {
+        acknowledged = acknowledgeSfEvict(lease);
+    } else if (
+        lease.kind() == SlcSfCompletionKind::ReleaseDirtyVictim &&
+        visible_update->updateKind ==
+            SlcSfUpdateKind::ReleaseDirtyVictim) {
+        acknowledged = acknowledgeDirtyVictimRelease(lease);
+    } else {
+        return SlcSfCompletionAckResult::IdentityMismatch;
+    }
+    if (!acknowledged) {
+        return SlcSfCompletionAckResult::Stale;
+    }
+    respVisible.pop_front();
+    assertResponseAccounting();
+    return SlcSfCompletionAckResult::Acknowledged;
+}
+
 std::optional<SlcSfResponse>
 HnfSLCSF::popVisibleResponse()
 {
@@ -373,6 +430,12 @@ HnfSLCSF::popVisibleResponse()
     if (respVisible.empty()) {
         return std::nullopt;
     }
+    const auto* update =
+        std::get_if<SlcSfUpdateResponse>(&respVisible.front().payload());
+    panic_if(
+        respVisible.front().status() == SlcSfTerminalStatus::Done && update &&
+            update->completionLease,
+        "HnfSLCSF durable Done requires acknowledgeVisibleCompletion\n");
 
     SlcSfResponse response = std::move(respVisible.front());
     respVisible.pop_front();
@@ -618,32 +681,91 @@ HnfSLCSF::dirtyVictimState(SlcSfVictimId id) const
 }
 
 void
-HnfSLCSF::markDirtyVictimWritebackIssued(SlcSfVictimId id)
+HnfSLCSF::markDirtyVictimWritebackIssued(
+    SlcSfVictimId id, uint32_t requester, uint8_t opcode,
+    uint32_t downstreamTxnId)
 {
     VictimEntry* entry = findDirtyVictim(id);
     panic_if(!entry || entry->state != VictimState::HandedOff,
              "HnfSLCSF writeback for unknown or non-handed-off victim=%llu\n",
              static_cast<unsigned long long>(id.value));
+    panic_if(downstreamTxnId == 0,
+             "HnfSLCSF writeback victim=%llu lacks txn identity\n",
+             static_cast<unsigned long long>(id.value));
     entry->state = VictimState::WritebackIssued;
+    entry->writebackRequester = requester;
+    entry->writebackOpcode = opcode;
+    entry->writebackTxnId = downstreamTxnId;
     assertVictimAccounting();
 }
 
-void
-HnfSLCSF::releaseDirtyVictim(SlcSfVictimId id)
+bool
+HnfSLCSF::victimLeaseMatches(
+    const VictimEntry& entry, const SlcSfCompletionLease& lease) const
+{
+    const bool full_dirty_snapshot = entry.snapshot &&
+        entry.snapshot->victimId.value == entry.id.value &&
+        entry.snapshot->lineAddress == entry.lineAddress &&
+        (entry.snapshot->state == HnfSlcState::MU ||
+         entry.snapshot->state == HnfSlcState::MN) &&
+        entry.snapshot->line.dirty &&
+        entry.snapshot->line.data.size() == blockSizeBytes() &&
+        entry.snapshot->line.byteMask.size() == blockSizeBytes() &&
+        std::all_of(
+            entry.snapshot->line.byteMask.begin(),
+            entry.snapshot->line.byteMask.end(),
+            [](uint8_t byte) { return byte == 0xff; });
+    return lease.valid() &&
+        lease.kind() == SlcSfCompletionKind::ReleaseDirtyVictim &&
+        full_dirty_snapshot &&
+        entry.completionLease && *entry.completionLease == lease &&
+        lease.objectId() == entry.id.value &&
+        lease.pocEntryId() == UINT32_MAX &&
+        lease.lineAddress() == entry.lineAddress &&
+        lease.requester() == entry.writebackRequester &&
+        lease.opcode() == entry.writebackOpcode &&
+        lease.linkSequence() == entry.id.value &&
+        lease.transactionId() == entry.writebackTxnId;
+}
+
+bool
+HnfSLCSF::commitDirtyVictimRelease(
+    SlcSfVictimId id, const SlcSfCompletionLease& lease)
 {
     VictimEntry* entry = findDirtyVictim(id);
-    panic_if(!entry || entry->state == VictimState::Released ||
-                 entry->state == VictimState::Free,
-             "HnfSLCSF duplicate or unknown dirty-victim release=%llu\n",
-             static_cast<unsigned long long>(id.value));
-    panic_if(entry->state != VictimState::HandedOff &&
-                 entry->state != VictimState::WritebackIssued,
-             "HnfSLCSF releases dirty victim before handoff=%llu\n",
-             static_cast<unsigned long long>(id.value));
+    if (!entry || entry->state != VictimState::ReleaseClaimed ||
+        !victimLeaseMatches(*entry, lease)) {
+        return false;
+    }
+    entry->state = VictimState::ReleaseCommittedAwaitAck;
+    assertVictimAccounting();
+    return true;
+}
+
+bool
+HnfSLCSF::acknowledgeDirtyVictimRelease(
+    const SlcSfCompletionLease& lease)
+{
+    if (!lease.valid() ||
+        lease.kind() != SlcSfCompletionKind::ReleaseDirtyVictim) {
+        return false;
+    }
+    VictimEntry* entry = findDirtyVictim(
+        SlcSfVictimId{lease.objectId()});
+    if (!entry ||
+        entry->state != VictimState::ReleaseCommittedAwaitAck ||
+        !victimLeaseMatches(*entry, lease)) {
+        return false;
+    }
     entry->state = VictimState::Released;
     entry->snapshot.reset();
     entry->lineAddress = 0;
+    entry->writebackRequester = 0;
+    entry->writebackOpcode = 0;
+    entry->writebackTxnId = 0;
+    entry->completionLease.reset();
     assertVictimAccounting();
+    return true;
 }
 
 void
@@ -659,10 +781,12 @@ SlcSfResponse
 HnfSLCSF::makeTerminalResponse(
     const SlcSfRequest& request,
     std::optional<SlcSfSlcVictim> slc_victim,
-    std::optional<SlcSfSfVictim> sf_victim)
+    std::optional<SlcSfSfVictim> sf_victim,
+    std::optional<SlcSfCompletionLease> completion_lease)
 {
     return std::visit(
-        [this, &slc_victim, &sf_victim](const auto& typed_request) {
+        [this, &slc_victim, &sf_victim,
+         &completion_lease](const auto& typed_request) {
             using Request = std::decay_t<decltype(typed_request)>;
             if constexpr (std::is_same_v<Request, SlcSfLookupReq>) {
                 HnfSLCSFBackend::LookupSnapshot snapshot{};
@@ -694,7 +818,8 @@ HnfSLCSF::makeTerminalResponse(
                     std::move(sf_victim));
             } else if constexpr (std::is_same_v<Request, SlcSfUpdateReq>) {
                 return makeSlcSfDoneResponse(
-                    typed_request, std::move(sf_victim));
+                    typed_request, std::move(sf_victim),
+                    std::move(completion_lease));
             } else {
                 return makeSlcSfDoneResponse(
                     typed_request, std::move(sf_victim));
@@ -759,11 +884,11 @@ HnfSLCSF::validateMutationRequest(const SlcSfRequest& request) const
                         } else if constexpr (std::is_same_v<
                                                  Operation,
                                                  SlcSfCompleteSfEvict>) {
-                            return seqCompletionMatches(
+                                return seqCompletionClaimable(
                                        operation.seqId.value,
-                                       typed_request.header.lineAddress) &&
+                                       typed_request.header) &&
                                 (!operation.snoopData.dirty ||
-                                 operation.snoopData.data.size() >=
+                                 operation.snoopData.data.size() ==
                                      blockSizeBytes());
                         } else if constexpr (std::is_same_v<
                                                  Operation,
@@ -771,7 +896,19 @@ HnfSLCSF::validateMutationRequest(const SlcSfRequest& request) const
                             const VictimEntry* victim = findDirtyVictim(
                                 operation.victimId);
                             return victim && victim->state ==
-                                VictimState::WritebackIssued;
+                                    VictimState::WritebackIssued &&
+                                typed_request.header.pocEntryId ==
+                                    UINT32_MAX &&
+                                typed_request.header.lineAddress ==
+                                    victim->lineAddress &&
+                                typed_request.header.requester ==
+                                    victim->writebackRequester &&
+                                typed_request.header.opcode ==
+                                    victim->writebackOpcode &&
+                                typed_request.header.trace.linkSequence ==
+                                    operation.victimId.value &&
+                                typed_request.header.trace.transactionId ==
+                                    victim->writebackTxnId;
                         } else {
                             return std::is_same_v<Operation,
                                                   SlcSfRemoveSharer>;
@@ -819,6 +956,100 @@ HnfSLCSF::validateMutationToken(const SlcSfRequest& request) const
 }
 
 bool
+HnfSLCSF::claimDurableCompletion(InflightRequest& request)
+{
+    const auto* update = std::get_if<SlcSfUpdateReq>(&request.request);
+    if (!update) {
+        return true;
+    }
+    const bool durable =
+        std::holds_alternative<SlcSfCompleteSfEvict>(update->operation) ||
+        std::holds_alternative<SlcSfReleaseDirtyVictim>(update->operation);
+    if (!durable) {
+        return true;
+    }
+    if (request.completionLease) {
+        return durableClaimMatches(request);
+    }
+    panic_if(nextCompletionNonce == 0,
+             "HnfSLCSF completion lease nonce space exhausted\n");
+
+    if (const auto* complete =
+            std::get_if<SlcSfCompleteSfEvict>(&update->operation)) {
+        SlcSfCompletionLease lease{
+            completionProducer,
+            SlcSfCompletionKind::CompleteSfEvict,
+            nextCompletionNonce++, update->header, complete->seqId.value};
+        if (!claimSeqCompletion(complete->seqId.value, lease)) {
+            return false;
+        }
+        request.completionLease = lease;
+        return true;
+    }
+
+    const auto& release =
+        std::get<SlcSfReleaseDirtyVictim>(update->operation);
+    VictimEntry* victim = findDirtyVictim(release.victimId);
+    if (!victim || victim->state != VictimState::WritebackIssued) {
+        return false;
+    }
+    SlcSfCompletionLease lease{
+        completionProducer,
+        SlcSfCompletionKind::ReleaseDirtyVictim,
+        nextCompletionNonce++, update->header, release.victimId.value};
+    victim->completionLease = lease;
+    if (!victimLeaseMatches(*victim, lease)) {
+        victim->completionLease.reset();
+        return false;
+    }
+    victim->state = VictimState::ReleaseClaimed;
+    request.completionLease = lease;
+    return true;
+}
+
+bool
+HnfSLCSF::durableClaimMatches(const InflightRequest& request) const
+{
+    if (!request.completionLease) {
+        const auto* update = std::get_if<SlcSfUpdateReq>(&request.request);
+        return !update ||
+            (!std::holds_alternative<SlcSfCompleteSfEvict>(
+                 update->operation) &&
+             !std::holds_alternative<SlcSfReleaseDirtyVictim>(
+                 update->operation));
+    }
+    const SlcSfCompletionLease& lease = *request.completionLease;
+    if (lease.kind() == SlcSfCompletionKind::CompleteSfEvict) {
+        return seqClaimMatches(lease);
+    }
+    const VictimEntry* victim = findDirtyVictim(
+        SlcSfVictimId{lease.objectId()});
+    return victim && victim->state == VictimState::ReleaseClaimed &&
+        victimLeaseMatches(*victim, lease);
+}
+
+void
+HnfSLCSF::rollbackDurableClaim(InflightRequest& request)
+{
+    if (!request.completionLease || request.mutationCommitted) {
+        return;
+    }
+    const SlcSfCompletionLease lease = *request.completionLease;
+    if (lease.kind() == SlcSfCompletionKind::CompleteSfEvict) {
+        releaseSeqClaim(lease);
+    } else {
+        VictimEntry* victim = findDirtyVictim(
+            SlcSfVictimId{lease.objectId()});
+        if (victim && victim->state == VictimState::ReleaseClaimed &&
+            victimLeaseMatches(*victim, lease)) {
+            victim->state = VictimState::WritebackIssued;
+            victim->completionLease.reset();
+        }
+    }
+    request.completionLease.reset();
+}
+
+bool
 HnfSLCSF::reserveDirtyVictim(
     InflightRequest& request, const LookupSnapshot& target)
 {
@@ -846,13 +1077,18 @@ HnfSLCSF::reserveDirtyVictim(
     entry->state = VictimState::Reserved;
     entry->lineAddress = *victim_addr;
     entry->snapshot.reset();
+    entry->writebackRequester = 0;
+    entry->writebackOpcode = 0;
+    entry->writebackTxnId = 0;
+    entry->completionLease.reset();
     request.slcVictimId = entry->id;
 
-    SlcSfSlcVictim snapshot = snapshotDirtySlcVictim(
+    DirtyVictimCapture capture = snapshotDirtySlcVictim(
         entry->id, replacement_addr, target);
-    entry->snapshot = snapshot;
+    entry->snapshot = capture.victim;
     entry->state = VictimState::InstalledSnapshot;
-    request.slcVictim = std::move(snapshot);
+    request.slcVictim = std::move(capture.victim);
+    request.slcVictimSeal = std::move(capture.seal);
     assertVictimAccounting();
     return true;
 }
@@ -897,14 +1133,18 @@ HnfSLCSF::cancelDirtyVictimReservation(InflightRequest& request)
                         entry->state != VictimState::InstalledSnapshot),
              "HnfSLCSF cancels invalid dirty-victim reservation=%llu\n",
              static_cast<unsigned long long>(request.slcVictimId->value));
-    discardDirtyVictimSeal(
-        *request.slcVictimId,
-        requestHeader(request.request).lineAddress,
-        mutationTarget(request.request));
+    panic_if(!request.slcVictimSeal,
+             "HnfSLCSF dirty-victim cancellation lacks installed seal\n");
+    discardDirtyVictimSeal(*request.slcVictimSeal);
     entry->state = VictimState::Released;
     entry->snapshot.reset();
     entry->lineAddress = 0;
+    entry->writebackRequester = 0;
+    entry->writebackOpcode = 0;
+    entry->writebackTxnId = 0;
+    entry->completionLease.reset();
     request.slcVictim.reset();
+    request.slcVictimSeal.reset();
     request.slcVictimId.reset();
     assertVictimAccounting();
 }
@@ -1041,15 +1281,24 @@ HnfSLCSF::executeMutation(InflightRequest& request)
     const LookupSnapshot target = mutationTarget(request.request);
     const SlcSfSlcVictim* preserved_victim = request.slcVictim ?
         &*request.slcVictim : nullptr;
+    const DirtyVictimSeal* installed_seal = request.slcVictimSeal ?
+        &*request.slcVictimSeal : nullptr;
+    panic_if(static_cast<bool>(preserved_victim) !=
+                 static_cast<bool>(installed_seal),
+             "HnfSLCSF mutation has unpaired dirty-victim snapshot/seal\n");
+    const SlcSfCompletionLease* completion_lease =
+        request.completionLease ? &*request.completionLease : nullptr;
     SeqVictim sf_victim{};
     std::visit(
-        [this, &header, &target, &sf_victim, preserved_victim](
+        [this, &header, &target, &sf_victim, preserved_victim,
+         installed_seal,
+         completion_lease](
             const auto& typed_request) {
             using Request = std::decay_t<decltype(typed_request)>;
             if constexpr (std::is_same_v<Request, SlcSfFillReq>) {
                 std::visit(
                     [this, &header, &target, &sf_victim,
-                     preserved_victim](
+                     preserved_victim, installed_seal](
                         const auto& operation) {
                         using Operation =
                             std::decay_t<decltype(operation)>;
@@ -1061,7 +1310,7 @@ HnfSLCSF::executeMutation(InflightRequest& request)
                                 operation.line.dirty,
                                 operation.homeNodeId, &target,
                                 header.pocEntryId, &sf_victim,
-                                preserved_victim);
+                                preserved_victim, installed_seal);
                         } else if constexpr (std::is_same_v<
                                                  Operation,
                                                  SlcSfFillCleanShared>) {
@@ -1069,7 +1318,7 @@ HnfSLCSF::executeMutation(InflightRequest& request)
                                 header.lineAddress, header.requester,
                                 operation.line.data, &target,
                                 header.pocEntryId, &sf_victim,
-                                preserved_victim);
+                                preserved_victim, installed_seal);
                         } else if constexpr (std::is_same_v<
                                                  Operation,
                                                  SlcSfWriteLine>) {
@@ -1078,20 +1327,21 @@ HnfSLCSF::executeMutation(InflightRequest& request)
                                 operation.line.data, operation.txn,
                                 operation.homeNodeId, &target,
                                 header.pocEntryId, &sf_victim,
-                                preserved_victim);
+                                preserved_victim, installed_seal);
                         } else if constexpr (std::is_same_v<
                                                  Operation,
                                                  SlcSfWriteL3FlushSf>) {
                             writeL3FlushSf(
                                 header.lineAddress, header.requester,
                                 operation.line.data, &target,
-                                preserved_victim);
+                                preserved_victim, installed_seal);
                         }
                     },
                     typed_request.operation);
             } else if constexpr (std::is_same_v<Request, SlcSfUpdateReq>) {
                 std::visit(
-                    [this, &header, &target, &sf_victim](
+                    [this, &header, &target, &sf_victim,
+                     completion_lease](
                         const auto& operation) {
                         using Operation =
                             std::decay_t<decltype(operation)>;
@@ -1110,14 +1360,23 @@ HnfSLCSF::executeMutation(InflightRequest& request)
                         } else if constexpr (std::is_same_v<
                                                  Operation,
                                                  SlcSfCompleteSfEvict>) {
-                            completeSfEvict(
+                            panic_if(!completion_lease,
+                                     "HnfSLCSF SEQ commit lacks lease\n");
+                            commitClaimedSfEvict(
                                 operation.seqId.value,
                                 operation.snoopData.data,
-                                operation.snoopData.dirty);
+                                operation.snoopData.dirty,
+                                *completion_lease);
                         } else if constexpr (std::is_same_v<
                                                  Operation,
                                                  SlcSfReleaseDirtyVictim>) {
-                            releaseDirtyVictim(operation.victimId);
+                            panic_if(
+                                !completion_lease ||
+                                    !commitDirtyVictimRelease(
+                                        operation.victimId,
+                                        *completion_lease),
+                                "HnfSLCSF dirty-victim commit lacks "
+                                "exact lease\n");
                         }
                     },
                     typed_request.operation);
@@ -1142,6 +1401,9 @@ HnfSLCSF::executeMutation(InflightRequest& request)
             SlcSfSeqId{sf_victim.id}, sf_victim.blockAddr,
             sf_victim.homeNodeId, sf_victim.state, sf_victim.owner,
             sf_victim.sharers};
+    }
+    if (preserved_victim) {
+        request.slcVictimSeal.reset();
     }
     request.mutationCommitted = true;
 }
@@ -1171,13 +1433,37 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
             request.mutationStage = MutationStage::U3CheckLatch;
             request.completeCycle = wakeupCycle;
             latchMutationResponse(request);
+        } else if (!claimDurableCompletion(request)) {
+            request.terminalResponse = std::visit(
+                [](const auto& typed_request) {
+                    return makeSlcSfErrorResponse(
+                        typed_request,
+                        SlcSfError{
+                            SlcSfErrorCode::UnknownCompletion,
+                            "durable completion owner is already claimed"});
+                },
+                request.request);
+            request.mutationStage = MutationStage::U3CheckLatch;
         } else {
             request.mutationStage = MutationStage::U1PrepareResources;
         }
         break;
       }
       case MutationStage::U1PrepareResources:
-        if (!validateMutationToken(request.request)) {
+        if (!durableClaimMatches(request)) {
+            request.terminalResponse = std::visit(
+                [](const auto& typed_request) {
+                    return makeSlcSfErrorResponse(
+                        typed_request,
+                        SlcSfError{
+                            SlcSfErrorCode::UnknownCompletion,
+                            "durable completion claim changed before U1"});
+                },
+                request.request);
+            request.mutationStage = MutationStage::U3CheckLatch;
+            request.completeCycle = std::max(
+                request.completeCycle, wakeupCycle + 1);
+        } else if (!validateMutationToken(request.request)) {
             request.terminalReplayReason =
                 SlcSfReplayReason::StaleCommitToken;
             request.mutationStage = MutationStage::U3CheckLatch;
@@ -1198,14 +1484,28 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
         }
         break;
       case MutationStage::U2ArrayWrite:
-        if (!validateMutationToken(request.request)) {
+        panic_if(request.slcVictim.has_value() !=
+                     request.slcVictimSeal.has_value(),
+                 "HnfSLCSF U2 has unpaired dirty-victim snapshot/seal\n");
+        if (!durableClaimMatches(request)) {
+            request.terminalResponse = std::visit(
+                [](const auto& typed_request) {
+                    return makeSlcSfErrorResponse(
+                        typed_request,
+                        SlcSfError{
+                            SlcSfErrorCode::UnknownCompletion,
+                            "durable completion claim changed before U2"});
+                },
+                request.request);
+        } else if (!validateMutationToken(request.request)) {
             request.terminalReplayReason =
                 SlcSfReplayReason::StaleCommitToken;
         } else if (request.slcVictim &&
                    !dirtyVictimWriteCanProceed(
                        requestHeader(request.request).lineAddress,
                        mutationTarget(request.request),
-                       *request.slcVictim)) {
+                       *request.slcVictim,
+                       *request.slcVictimSeal)) {
             request.terminalReplayReason =
                 SlcSfReplayReason::StaleCommitToken;
         } else {
@@ -1244,7 +1544,7 @@ HnfSLCSF::latchMutationResponse(InflightRequest& request)
     if (!request.terminalResponse) {
         request.terminalResponse = makeTerminalResponse(
             request.request, std::move(request.slcVictim),
-            std::move(request.sfVictim));
+            std::move(request.sfVictim), request.completionLease);
     }
     const SlcSfTerminalStatus status = request.terminalResponse->status();
     const FinishReason reason = status == SlcSfTerminalStatus::Done ?
@@ -1287,6 +1587,8 @@ HnfSLCSF::finishInflight(
     }
     if (request.slcVictimId) {
         if (reason == FinishReason::Done && request.mutationCommitted) {
+            panic_if(request.slcVictimSeal,
+                     "HnfSLCSF hands off dirty victim with live seal\n");
             VictimEntry* entry = findDirtyVictim(*request.slcVictimId);
             panic_if(!entry ||
                          entry->state != VictimState::InstalledSnapshot ||
@@ -1298,6 +1600,9 @@ HnfSLCSF::finishInflight(
         } else {
             cancelDirtyVictimReservation(request);
         }
+    }
+    if (reason != FinishReason::Done || !request.mutationCommitted) {
+        rollbackDurableClaim(request);
     }
     if (request.resourcesPrepared) {
         releaseSfResources(requestHeader(request.request).pocEntryId);
@@ -1314,6 +1619,7 @@ HnfSLCSF::finishInflight(
     request.mutationStage.reset();
     request.terminalResponse.reset();
     request.terminalReplayReason.reset();
+    request.completionLease.reset();
     assertVictimAccounting();
 }
 
@@ -1402,7 +1708,7 @@ HnfSLCSF::issueReadyRequests()
                            MutationStage::U0DecodeValidate) : std::nullopt,
             std::nullopt, std::nullopt, adopted_reservation, false, false,
             early_lookup_replay, false, std::nullopt, std::nullopt,
-            std::nullopt});
+            std::nullopt, std::nullopt, std::nullopt});
         request = reqReady.erase(request);
         ++*issued;
     }

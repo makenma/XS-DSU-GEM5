@@ -21,6 +21,14 @@ class HnfSLCSFBackend
   public:
     using SeqId = uint64_t;
 
+    enum class SeqPhase : uint8_t
+    {
+        Pending,
+        Issued,
+        Claimed,
+        CommittedAwaitAck
+    };
+
     struct ArraySnapshot
     {
         bool hit = false;
@@ -57,6 +65,10 @@ class HnfSLCSFBackend
     HnfSLCSFBackend(uint32_t block_size, uint32_t slc_num_sets,
                     uint32_t slc_num_ways, uint32_t sf_num_sets,
                     uint32_t sf_num_ways, uint32_t seq_entries = 8);
+    HnfSLCSFBackend(const HnfSLCSFBackend&) = delete;
+    HnfSLCSFBackend& operator=(const HnfSLCSFBackend&) = delete;
+    HnfSLCSFBackend(HnfSLCSFBackend&&) = delete;
+    HnfSLCSFBackend& operator=(HnfSLCSFBackend&&) = delete;
 
     /** Inspect lookup semantics and version snapshots without side effects. */
     LookupObservation probe(const HnfSlcLookupReq& req) const;
@@ -107,11 +119,12 @@ class HnfSLCSFBackend
 
     bool hasPendingSeq() const { return !seqPending.empty(); }
     SeqVictim frontPendingSeq() const;
-    void markSeqIssued(SeqId id);
-    void completeSfEvict(SeqId id, const std::vector<uint8_t>& data,
-                         bool dirty_data);
+    void markSeqIssued(
+        SeqId id, uint8_t completion_opcode,
+        uint32_t completion_transaction_id);
     bool seqContains(uint64_t block_addr) const;
     bool seqCompletionMatches(SeqId id, uint64_t block_addr) const;
+    std::optional<SeqPhase> seqPhase(SeqId id) const;
     size_t seqOccupancy() const;
     size_t seqCapacity() const { return seq.size(); }
     uint64_t currentLookupEpoch() const { return lookupEpoch; }
@@ -202,7 +215,13 @@ class HnfSLCSFBackend
     struct SeqEntry
     {
         bool valid = false;
+        SeqPhase phase = SeqPhase::Pending;
         SeqVictim victim{};
+        uint8_t completionOpcode = 0;
+        uint32_t completionTransactionId = 0;
+        std::optional<SlcSfCompletionLease> completionLease;
+        bool committedDirty = false;
+        std::vector<uint8_t> committedData;
     };
 
     struct SfReservation
@@ -218,6 +237,12 @@ class HnfSLCSFBackend
         uint64_t replacementAddress = 0;
         uint64_t victimAddress = 0;
         LookupSnapshot targetSnapshot{};
+    };
+
+    struct DirtyVictimCapture
+    {
+        SlcSfSlcVictim victim{};
+        DirtyVictimSeal seal{};
     };
 
     uint32_t blockSize = 64;
@@ -281,6 +306,18 @@ class HnfSLCSFBackend
     void assertSeqAccounting() const;
     SeqEntry* findSeq(SeqId id);
     const SeqEntry* findSeq(SeqId id) const;
+    bool seqCompletionClaimable(
+        SeqId id, const SlcSfReqHeader& header) const;
+    bool claimSeqCompletion(
+        SeqId id, const SlcSfCompletionLease& lease);
+    bool seqLeaseMatches(
+        const SeqEntry& entry, const SlcSfCompletionLease& lease) const;
+    bool seqClaimMatches(const SlcSfCompletionLease& lease) const;
+    void releaseSeqClaim(const SlcSfCompletionLease& lease);
+    void commitClaimedSfEvict(
+        SeqId id, const std::vector<uint8_t>& data, bool dirty_data,
+        const SlcSfCompletionLease& lease);
+    bool acknowledgeSfEvict(const SlcSfCompletionLease& lease);
     void installSlc(uint64_t block_addr, HnfSlcState state,
                     uint32_t requester, const std::vector<uint8_t>& data,
                     const ArraySnapshot* target = nullptr,
@@ -288,18 +325,20 @@ class HnfSLCSFBackend
     void invalidateSlc(uint64_t block_addr);
     void invalidateSf(uint64_t block_addr);
 
-    SlcSfSlcVictim snapshotDirtySlcVictim(
+    DirtyVictimCapture snapshotDirtySlcVictim(
         SlcSfVictimId victim_id, uint64_t block_addr,
         const LookupSnapshot& target);
     DirtyVictimWritePermit authorizeDirtyVictimWrite(
         uint64_t block_addr, const LookupSnapshot& target,
-        const SlcSfSlcVictim& preserved_victim);
+        const SlcSfSlcVictim& preserved_victim,
+        const DirtyVictimSeal& installed_seal);
     bool dirtyVictimWriteCanProceed(
         uint64_t block_addr, const LookupSnapshot& target,
-        const SlcSfSlcVictim& preserved_victim) const;
-    void discardDirtyVictimSeal(
-        SlcSfVictimId victim_id, uint64_t block_addr,
-        const LookupSnapshot& target);
+        const SlcSfSlcVictim& preserved_victim,
+        const DirtyVictimSeal& installed_seal) const;
+    void discardDirtyVictimSeal(const DirtyVictimSeal& installed_seal);
+    static bool exactDirtyVictimSealMatches(
+        const DirtyVictimSeal& lhs, const DirtyVictimSeal& rhs);
     void validateDirtyVictimWritePermit(
         uint64_t block_addr, const SlcLine& victim,
         const DirtyVictimWritePermit& permit) const;
@@ -315,23 +354,27 @@ class HnfSLCSFBackend
                     const LookupSnapshot* target,
                     std::optional<uint32_t> reservation_owner,
                     SeqVictim* sf_victim,
-                    const SlcSfSlcVictim* preserved_victim);
+                    const SlcSfSlcVictim* preserved_victim,
+                    const DirtyVictimSeal* installed_seal);
     void fillCleanShared(uint64_t block_addr, uint32_t requester,
                          const std::vector<uint8_t>& data,
                          const LookupSnapshot* target,
                          std::optional<uint32_t> reservation_owner,
                          SeqVictim* sf_victim,
-                         const SlcSfSlcVictim* preserved_victim);
+                         const SlcSfSlcVictim* preserved_victim,
+                         const DirtyVictimSeal* installed_seal);
     void writeLine(uint64_t block_addr, uint32_t requester,
                    const std::vector<uint8_t>& data, PocqTxnKind txn,
                    uint32_t home_node_id, const LookupSnapshot* target,
                    std::optional<uint32_t> reservation_owner,
                    SeqVictim* sf_victim,
-                   const SlcSfSlcVictim* preserved_victim);
+                   const SlcSfSlcVictim* preserved_victim,
+                   const DirtyVictimSeal* installed_seal);
     void writeL3FlushSf(uint64_t block_addr, uint32_t requester,
                         const std::vector<uint8_t>& data,
                         const LookupSnapshot* target,
-                        const SlcSfSlcVictim* preserved_victim);
+                        const SlcSfSlcVictim* preserved_victim,
+                        const DirtyVictimSeal* installed_seal);
 };
 
 } // namespace gem5::Chi

@@ -30,6 +30,22 @@ class Chi2ClassicMemTxnPolicy
     static constexpr uint8_t DBIDRespOpcode = 0x06;
     static constexpr uint8_t RespSC = 0x01;
 
+    /**
+     * Stable hash used only by the dirty-victim trace contract.  FNV-1a is
+     * deliberately small and deterministic so the HNF producer and SN
+     * consumer can report the same full-line identity without dumping data.
+     */
+    static uint64_t
+    traceDataHash(const std::vector<uint8_t>& data)
+    {
+        uint64_t hash = 14695981039346656037ULL;
+        for (const uint8_t byte : data) {
+            hash ^= byte;
+            hash *= 1099511628211ULL;
+        }
+        return hash;
+    }
+
     enum class Phase : uint8_t
     {
         MemReqQueued,
@@ -61,6 +77,12 @@ class Chi2ClassicMemTxnPolicy
             decodeReq(req.opcode).minor == ReqMinor::WriteNoSnp &&
             expectedDataBytes(req, block_size) == block_size &&
             (req.addr % block_size) == 0;
+    }
+
+    static bool
+    isHnfDirtyVictimWriteback(const RawReq& req, uint32_t block_size)
+    {
+        return req.hnfDirtyVictim && isWriteNoSnpFull(req, block_size);
     }
 
     static bool

@@ -236,6 +236,14 @@ L2CacheWrapper::SliceCPUSidePort::recvReqRetry()
 }
 
 void
+L2CacheWrapper::SliceCPUSidePort::recvRetrySnoopResp()
+{
+    DPRINTF(L2CacheWrapper,
+            "Got snoop resp retry from slice %d, forwarding to CPU\n", id);
+    owner.cpu_side_port.sendRetrySnoopResp();
+}
+
+void
 L2CacheWrapper::SliceCPUSidePort::recvRangeChange()
 {
     DPRINTF(L2CacheWrapper, "Got range change from slice %d. Propagating to CPU.\n", id);

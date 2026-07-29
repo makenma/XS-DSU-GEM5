@@ -151,6 +151,42 @@ TEST(Chi2ClassicMemBridgePolicyTest,
 }
 
 TEST(Chi2ClassicMemBridgePolicyTest,
+     DirtyVictimTraceHashIsStableAndPayloadSensitive)
+{
+    std::vector<uint8_t> line(64);
+    for (size_t index = 0; index < line.size(); ++index) {
+        line[index] = static_cast<uint8_t>(index);
+    }
+
+    EXPECT_EQ(Policy::traceDataHash({}), 0xcbf29ce484222325ULL);
+    EXPECT_EQ(Policy::traceDataHash(line), 0x8368214f77995ee5ULL);
+
+    std::vector<uint8_t> changed = line;
+    changed[37] ^= 0x80;
+    EXPECT_NE(Policy::traceDataHash(changed),
+              Policy::traceDataHash(line));
+    changed[37] ^= 0x80;
+    EXPECT_EQ(Policy::traceDataHash(changed),
+              Policy::traceDataHash(line));
+}
+
+TEST(Chi2ClassicMemBridgePolicyTest,
+     DirtyVictimTraceRequiresExplicitProducerProvenance)
+{
+    RawReq ordinary = makeWriteReq();
+    ordinary.txnid = 0x40000000U;
+    ordinary.traceTag = true;
+    EXPECT_FALSE(Policy::isHnfDirtyVictimWriteback(ordinary, 64));
+
+    RawReq dirtyVictim = ordinary;
+    dirtyVictim.hnfDirtyVictim = true;
+    EXPECT_TRUE(Policy::isHnfDirtyVictimWriteback(dirtyVictim, 64));
+
+    dirtyVictim.opcode = Policy::ReadNoSnpOpcode;
+    EXPECT_FALSE(Policy::isHnfDirtyVictimWriteback(dirtyVictim, 64));
+}
+
+TEST(Chi2ClassicMemBridgePolicyTest,
      ClassicRequestBackpressureRetainsPacketPhase)
 {
     const auto blocked = Policy::transition(

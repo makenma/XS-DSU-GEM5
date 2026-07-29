@@ -64,6 +64,9 @@ namespace Chi
         bool        traceTag = false;
         uint8_t     srcType = 0;
         uint8_t     ldid = 0;
+        // Internal provenance carried losslessly with the modeled flit. This
+        // is not inferred from transaction-number ranges or CHI attributes.
+        bool        hnfDirtyVictim = false;
     };
 
     struct RawRsp:BaseFlit

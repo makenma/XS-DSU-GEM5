@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
@@ -13,6 +14,8 @@
 
 namespace gem5::Chi
 {
+
+class HnfSLCSF;
 
 /** A service-local request identity, deliberately distinct from LinkLayer seq. */
 struct SlcSfReqId
@@ -148,6 +151,93 @@ struct SlcSfVictimId
 {
     uint64_t value = 0;
 };
+
+/**
+ * Opaque proof that one ownerless mutation reached durable U2 state.
+ *
+ * Only the SLCSF service can mint a lease.  Consumers may copy and inspect it
+ * but cannot manufacture a nonce for another SEQ or VictimBuffer owner.
+ */
+enum class SlcSfCompletionKind : uint8_t
+{
+    CompleteSfEvict,
+    ReleaseDirtyVictim
+};
+
+class SlcSfCompletionLease
+{
+  public:
+    bool valid() const
+    {
+        return completionProducer && leaseNonce != 0 && requestId.valid();
+    }
+    SlcSfCompletionKind kind() const { return completionKind; }
+    uint64_t nonce() const { return leaseNonce; }
+    SlcSfReqId reqId() const { return requestId; }
+    uint32_t pocEntryId() const { return pocId; }
+    uint64_t lineAddress() const { return address; }
+    uint32_t requester() const { return requesterId; }
+    uint8_t opcode() const { return requestOpcode; }
+    uint64_t linkSequence() const { return traceLinkSequence; }
+    uint32_t transactionId() const { return traceTransactionId; }
+    uint64_t objectId() const { return ownerObjectId; }
+
+  private:
+    friend class HnfSLCSF;
+    friend bool operator==(
+        const SlcSfCompletionLease&, const SlcSfCompletionLease&);
+
+    SlcSfCompletionLease() = default;
+    SlcSfCompletionLease(
+        std::shared_ptr<const uint8_t> producer,
+        SlcSfCompletionKind kind, uint64_t nonce,
+        const SlcSfReqHeader& header, uint64_t object_id)
+        : completionProducer(std::move(producer)),
+          completionKind(kind), leaseNonce(nonce),
+          requestId(header.reqId), pocId(header.pocEntryId),
+          address(header.lineAddress), requesterId(header.requester),
+          requestOpcode(header.opcode),
+          traceLinkSequence(header.trace.linkSequence),
+          traceTransactionId(header.trace.transactionId),
+          ownerObjectId(object_id)
+    {}
+
+    std::shared_ptr<const uint8_t> completionProducer;
+    SlcSfCompletionKind completionKind =
+        SlcSfCompletionKind::CompleteSfEvict;
+    uint64_t leaseNonce = 0;
+    SlcSfReqId requestId{};
+    uint32_t pocId = 0;
+    uint64_t address = 0;
+    uint32_t requesterId = 0;
+    uint8_t requestOpcode = 0;
+    uint64_t traceLinkSequence = 0;
+    uint32_t traceTransactionId = 0;
+    uint64_t ownerObjectId = 0;
+};
+
+inline bool
+operator==(const SlcSfCompletionLease& lhs,
+           const SlcSfCompletionLease& rhs)
+{
+    return lhs.completionProducer == rhs.completionProducer &&
+        lhs.kind() == rhs.kind() && lhs.nonce() == rhs.nonce() &&
+        lhs.reqId() == rhs.reqId() &&
+        lhs.pocEntryId() == rhs.pocEntryId() &&
+        lhs.lineAddress() == rhs.lineAddress() &&
+        lhs.requester() == rhs.requester() &&
+        lhs.opcode() == rhs.opcode() &&
+        lhs.linkSequence() == rhs.linkSequence() &&
+        lhs.transactionId() == rhs.transactionId() &&
+        lhs.objectId() == rhs.objectId();
+}
+
+inline bool
+operator!=(const SlcSfCompletionLease& lhs,
+           const SlcSfCompletionLease& rhs)
+{
+    return !(lhs == rhs);
+}
 
 /** Owned snapshot of a dirty line displaced from the SLC. */
 struct SlcSfSlcVictim

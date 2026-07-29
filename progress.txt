@@ -97,6 +97,15 @@ Started: 2026-07-28T20:49:07+08:00
 - Keep an acknowledged resource owner work-visible after downstream completion
   until its typed release request returns terminal Done; retain one request ID
   and owned message across NoCredit retries.
+- Treat a durable terminal response as a producer-bound acknowledgement lease:
+  pending/visible response ownership must remain allocated until the consumer
+  ACKs the exact current response, and the producing service must be noncopyable.
+- Whenever a timing wrapper forwards `sendTimingSnoopResp()` and can propagate
+  backpressure, its corresponding RequestPort must forward
+  `recvRetrySnoopResp()` to the original upstream sender.
+- Give cross-component machine traces explicit provenance instead of inferring
+  an internal transaction from opcode or ID ranges; validate configuration,
+  payload identity, ordering, and workload oracles together.
 ---
 
 ## 2026-07-28 21:01 - US-001
@@ -1069,4 +1078,89 @@ Started: 2026-07-28T20:49:07+08:00
   must be recorded at the actual consumer handshake, and an internal wire
   transaction needs an explicitly disjoint identity even when allocator ranges
   normally make collisions unlikely.
+---
+
+## 2026-07-29 13:42 - Strict audit reopened US-021, US-022, and US-024
+- Story: Reconcile green PRD flags with requirement-by-requirement evidence.
+- What was found: CompleteSfEvict and ReleaseDirtyVictim freed bounded storage
+  while their Done response was merely pending/visible rather than explicitly
+  acknowledged. The dirty-victim preservation tests also exposed an overbroad
+  test friend, a stale-signature access probe, incomplete seal-discard identity,
+  and no InstalledSnapshot cancel/drain coverage. Finally, the claimed
+  forced-small-SLC test was only a controller unit harness and never traversed
+  HomeNodeFull, the router, Chi2ClassicMemBridge, or classic timing memory.
+- Tracking action: Set US-021, US-022, and US-024 back to `passes: false`.
+  Durable completion is being changed to Claimed -> CommittedAwaitAck with an
+  exact visible-response lease; the capability and real 64x1-SLC end-to-end
+  gaps remain mandatory before those stories are marked complete again.
+- Learnings for future iterations: A passing named test is not sufficient when
+  it does not exercise the production ownership boundary named by the
+  criterion. Resource reuse must be tied to an exact consumer acknowledgement,
+  not merely response construction or queue visibility.
+---
+
+## 2026-07-29 14:48 - US-021 strict recovery
+- Story: Complete SF eviction through an asynchronous update
+- What was implemented: Replaced response-visible retirement with a private
+  producer-bound completion lease and explicit Claimed -> CommittedAwaitAck ->
+  exact ACK lifecycle. The lease binds every request/resource/CHI identity,
+  identical cross-service responses cannot release one another, and both the
+  service and storage backend are noncopyable so C++ copy/base-assignment
+  cannot duplicate a producer or live owner.
+- Files changed: `HnfSLCSFRequest.hh`, `HnfSLCSFResponse.hh`,
+  `HnfSLCSF.hh/.cc`, `HnfSLCSFBackend.hh/.cc`,
+  `HnfSLCSF.test.cc`, and `HnfCoherencyController.cc/.test.cc`.
+- Checks run and their results: `gem5.opt` built; SLCSF 103/103, backend 4/4,
+  and controller 43/43 passed. Independent strict re-audit found no remaining
+  defined-C++-API forge, replay, copy, resource-reuse, or ACK bypass.
+- Learnings for future iterations: Response construction and queue visibility
+  are not consumer acknowledgement; bounded storage remains owned until an
+  exact response from the exact producer is accepted.
+---
+
+## 2026-07-29 14:49 - US-022 strict recovery
+- Story: Implement the dirty SLC VictimBuffer
+- What was implemented: Removed the broad test friend and retained only a
+  UNIT_TEST-scoped narrow fault seam absent from production objects. U1 now
+  carries the complete private dirty-victim seal through U2; one shared exact
+  matcher covers victim ID, both addresses, epoch, and all SLC/SF hit/set/way,
+  generation, and replacement-stamp fields for preflight, authorization, and
+  discard. InstalledSnapshot cancellation and drain paths consume or clean the
+  seal without losing the old dirty line or downstream owner.
+- Files changed: `HnfSLCSF.hh/.cc`, `HnfSLCSFBackend.hh/.cc`,
+  `HnfSLCSFBackend.test.cc`, and `HnfSLCSF.test.cc`.
+- Checks run and their results: Backend 4/4, SLCSF 103/103, and controller
+  43/43 passed using ordinary direct GTest targets; production objects built,
+  and `nm` confirmed no fault-injection symbol. Private-signature negative
+  probes include a matching public positive control. Independent strict audit
+  marked every capability and lifecycle criterion PASS.
+- Learnings for future iterations: A preservation snapshot is evidence only
+  when paired with an unforgeable, one-shot handle that binds the complete
+  replacement decision and cannot be copied through the public base object.
+---
+
+## 2026-07-29 14:50 - US-024 strict recovery
+- Story: Release dirty victims after downstream completion
+- What was implemented: Kept VictimBuffer ownership through durable release
+  ACK, added explicit dirty-victim provenance on the HNF-to-SN request, and
+  emitted five low-noise machine markers under `HnfDirtyVictimE2E`. A shared
+  FNV-1a hash proves the bridge accepted the exact 64-byte victim payload; a
+  checker correlates downstream DAT/Comp, exact release, and independent
+  requester completion while validating the real topology and workload
+  oracles. The forced run exposed a missing classic snoop-response retry path;
+  all three xs_l2 forwarding RequestPorts now propagate that retry correctly.
+- Files changed: `HnfCcTypes.hh`, `HnfCoherencyController.hh/.cc/.test.cc`,
+  `Chi2ClassicMemTxnPolicy.hh`, `Chi2ClassicMemBridge.cc/.test.cc`,
+  `base/ChiChannel.hh`, `SConscript`, `CacheWrapper.hh/.cc`,
+  `L2CacheWrapper.hh/.cc`, and the dirty-victim checker plus Python tests.
+- Checks run and their results: `gem5.opt` built; HNF CC types 2/2, bridge
+  policy 7/7, backend 4/4, SLCSF 103/103, controller 43/43, and checker pyunit
+  19/19 passed. The final real 4-core HomeNodeFull/router/
+  Chi2ClassicMemBridge/classic-memory run used SLC=64x1 and VictimBuffer=2,
+  exited normally at tick 694797507, passed all 7 litmus tests, produced the
+  exact four-hart alias/pressure checksums with BAD=0, and the checker reported
+  `HNF_DIRTY_VICTIM_E2E_PASS chains=5296` with no panic or watchdog marker.
+- Learnings for future iterations: A full-system pass needs both end-to-end
+  data/correlation evidence and complete timing-port retry propagation; unit
+  controller models do not establish either property.
 ---

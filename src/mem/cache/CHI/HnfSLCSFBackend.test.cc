@@ -7,38 +7,24 @@
 #include <utility>
 #include <vector>
 
+#ifndef UNIT_TEST
+#define UNIT_TEST
+#endif
 #include "mem/cache/CHI/HnfSLCSF.hh"
 
 namespace gem5::Chi
 {
-
-class HnfSLCSFBackendPermitTestAccess
-{
-  public:
-    static bool
-    replaceInstalledDirtyVictimId(
-        HnfSLCSF& model, SlcSfVictimId replacement)
-    {
-        auto request = std::find_if(
-            model.inflightRequests.begin(), model.inflightRequests.end(),
-            [](const auto& candidate) {
-                return candidate.mutationStage ==
-                           HnfSLCSF::MutationStage::U2ArrayWrite &&
-                    candidate.slcVictim.has_value();
-            });
-        if (request == model.inflightRequests.end()) {
-            return false;
-        }
-        request->slcVictim->victimId = replacement;
-        return true;
-    }
-};
 
 namespace
 {
 
 constexpr uint64_t VictimAddr = 0x80008000;
 constexpr uint64_t ReplacementAddr = VictimAddr + 64;
+
+static_assert(!std::is_copy_constructible_v<HnfSLCSFBackend>);
+static_assert(!std::is_copy_assignable_v<HnfSLCSFBackend>);
+static_assert(!std::is_move_constructible_v<HnfSLCSFBackend>);
+static_assert(!std::is_move_assignable_v<HnfSLCSFBackend>);
 
 std::vector<uint8_t>
 lineData(uint8_t seed)
@@ -67,10 +53,18 @@ struct CanSnapshotDirtyVictim : public std::false_type
 template <class Backend>
 struct CanSnapshotDirtyVictim<Backend, std::void_t<decltype(
     std::declval<Backend&>().snapshotDirtySlcVictim(
-        ReplacementAddr,
+        std::declval<SlcSfVictimId>(), ReplacementAddr,
         std::declval<const typename Backend::LookupSnapshot&>()))>> :
     public std::true_type
 {};
+
+struct PublicDirtyVictimSnapshotApi
+{
+    using LookupSnapshot = HnfSLCSFBackend::LookupSnapshot;
+
+    SlcSfSlcVictim snapshotDirtySlcVictim(
+        SlcSfVictimId, uint64_t, const LookupSnapshot&);
+};
 
 template <class Backend, class = void>
 struct CanSupplyCommitReadPreservation : public std::false_type
@@ -137,6 +131,7 @@ struct CanSupplyFlushPreservation<Backend, std::void_t<decltype(
 
 static_assert(!ExposesDirtyVictimWritePermit<HnfSLCSFBackend>::value);
 static_assert(!CanSnapshotDirtyVictim<HnfSLCSFBackend>::value);
+static_assert(CanSnapshotDirtyVictim<PublicDirtyVictimSnapshotApi>::value);
 static_assert(!CanSupplyCommitReadPreservation<HnfSLCSFBackend>::value);
 static_assert(!CanSupplyFillPreservation<HnfSLCSFBackend>::value);
 static_assert(!CanSupplyWritePreservation<HnfSLCSFBackend>::value);
@@ -327,8 +322,8 @@ TEST(HnfSlcSfBackendPermitTest,
                   HnfSLCSF::MutationStage::U2ArrayWrite), 1);
     ASSERT_EQ(model.victimReservationCount(), 1);
     ASSERT_EQ(model.dirtyVictimSealCount(), 1);
-    ASSERT_TRUE(HnfSLCSFBackendPermitTestAccess::
-        replaceInstalledDirtyVictimId(model, SlcSfVictimId{999}));
+    ASSERT_TRUE(model.corruptInstalledDirtyVictimIdForTest(
+        SlcSfVictimId{999}));
 
     auto response = complete(model);
     ASSERT_TRUE(response.has_value());

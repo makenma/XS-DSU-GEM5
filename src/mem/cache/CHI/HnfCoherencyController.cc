@@ -5,6 +5,8 @@
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "debug/HnfCC.hh"
+#include "debug/HnfDirtyVictimE2E.hh"
+#include "mem/cache/CHI/Chi2ClassicMemTxnPolicy.hh"
 #include "mem/cache/CHI/HnfSLCSF.hh"
 #include "mem/cache/CHI/base/DatOpcode.hh"
 #include "mem/cache/CHI/base/ReqOpcode.hh"
@@ -95,6 +97,12 @@ txnExpectsWriteData(PocqTxnKind txn)
         txn == PocqTxnKind::WriteCleanFull ||
         txn == PocqTxnKind::WriteUnique ||
         txn == PocqTxnKind::WriteEvictFull;
+}
+
+uint64_t
+requesterTraceKey(uint32_t srcid, uint32_t txnid)
+{
+    return (static_cast<uint64_t>(srcid) << 32) | txnid;
 }
 
 } // anonymous namespace
@@ -684,6 +692,8 @@ HnfCoherencyController::queueComp(uint32_t entryId)
     rsp.pcrdtype = entry.req.pcrdtype;
     rsp.rspKind = RspKind::MainPath;
     out.retire = makeRetireInfo(entry);
+    out.traceDirtyVictimRequesterDone =
+        dirtyVictimRequesterTracked(entry);
     txRspQ.push_back(out);
 
     const uint64_t addr = entry.blockAddr;
@@ -821,7 +831,10 @@ HnfCoherencyController::notifyTxReqSent(const HnfCcTxReq& request)
         transaction->second.phase = DirtyVictimPhase::WaitDbid;
         if (!transaction->second.writebackMarked) {
             slcsfUnit->markDirtyVictimWritebackIssued(
-                SlcSfVictimId{*request.dirtyVictimId});
+                SlcSfVictimId{*request.dirtyVictimId},
+                transaction->second.victim.owner,
+                request.req.opcode,
+                transaction->second.downstreamTxnId);
             transaction->second.writebackMarked = true;
         }
         return;
@@ -1074,13 +1087,6 @@ HnfCoherencyController::frontTxRsp() const
     return txRspQ.front();
 }
 
-void
-HnfCoherencyController::popTxRsp()
-{
-    panic_if(txRspQ.empty(), "HnfCC popTxRsp on empty queue\n");
-    txRspQ.pop_front();
-}
-
 std::optional<HnfCcRetireInfo>
 HnfCoherencyController::acceptRxRsp(const RawRsp& rsp)
 {
@@ -1224,6 +1230,46 @@ HnfCoherencyController::makeRetireInfo(const Entry& entry) const
     return info;
 }
 
+void
+HnfCoherencyController::popTxRsp()
+{
+    panic_if(txRspQ.empty(), "HnfCC popTxRsp on empty queue\n");
+    const HnfCcTxRsp& response = txRspQ.front();
+    if (response.traceDirtyVictimRequesterDone) {
+        panic_if(!traceDirtyVictimRequesterDone(
+                     response.rsp.tgtid, response.rsp.txnid),
+                 "HnfCC lost dirty-victim requester before TXRSP "
+                 "src=%u txn=%u\n",
+                 response.rsp.tgtid, response.rsp.txnid);
+    }
+    txRspQ.pop_front();
+}
+
+bool
+HnfCoherencyController::dirtyVictimRequesterTracked(
+    const Entry& entry) const
+{
+    const uint64_t key = requesterTraceKey(entry.req.srcid, entry.req.txnid);
+    return dirtyVictimRequesters.count(key) != 0;
+}
+
+bool
+HnfCoherencyController::traceDirtyVictimRequesterDone(
+    uint32_t srcid, uint32_t txnid)
+{
+    const uint64_t key = requesterTraceKey(srcid, txnid);
+    const auto requester = dirtyVictimRequesters.find(key);
+    if (requester == dirtyVictimRequesters.end()) {
+        return false;
+    }
+
+    DPRINTF(HnfDirtyVictimE2E,
+            "HNF_DV_REQUESTER_DONE src=%u txn=%u\n",
+            srcid, txnid);
+    dirtyVictimRequesters.erase(requester);
+    return true;
+}
+
 HnfCcRetireInfo
 HnfCoherencyController::retireEntry(uint32_t entryId)
 {
@@ -1232,6 +1278,7 @@ HnfCoherencyController::retireEntry(uint32_t entryId)
     Entry& entry = entries[entryId];
     HnfCcRetireInfo info = makeRetireInfo(entry);
     const uint64_t addr = entry.blockAddr;
+    traceDirtyVictimRequesterDone(entry.req.srcid, entry.req.txnid);
     entry = Entry{};
     wakeSleepingEntries(addr);
     return info;
@@ -1338,6 +1385,15 @@ HnfCoherencyController::startDirtyVictimWriteback(
     transaction.downstreamTxnId =
         allocateDirtyVictimTxnId(entries[entryId].req.txnid);
     transaction.homeNodeId = entries[entryId].req.tgtid;
+    const uint32_t requester_src = entries[entryId].req.srcid;
+    const uint32_t requester_txn = entries[entryId].req.txnid;
+    const uint64_t requester_key =
+        requesterTraceKey(requester_src, requester_txn);
+    panic_if(dirtyVictimRequesters.count(requester_key),
+             "HnfCC requester src=%u txn=%u caused a second live "
+             "dirty victim\n",
+             requester_src, requester_txn);
+    dirtyVictimRequesters.insert(requester_key);
     const uint32_t txn_id = transaction.downstreamTxnId;
     dirtyVictimTxnIds.emplace(txn_id, victim.victimId.value);
     auto [it, inserted] = dirtyVictimTxns.emplace(
@@ -1346,6 +1402,15 @@ HnfCoherencyController::startDirtyVictimWriteback(
 
     queueDirtyVictimRequest(
         it->second, dirtyVictimRetryEnabled, 0);
+
+    DPRINTF(HnfDirtyVictimE2E,
+            "HNF_DV_START victim=%llu txn=%u addr=%#llx "
+            "requester_src=%u requester_txn=%u data_hash=%016llx\n",
+            static_cast<unsigned long long>(victim.victimId.value), txn_id,
+            static_cast<unsigned long long>(victim.lineAddress),
+            requester_src, requester_txn,
+            static_cast<unsigned long long>(
+                Chi2ClassicMemTxnPolicy::traceDataHash(victim.line.data)));
 
     DPRINTF(HnfCC,
             "CC dirty victim=%llu queues WriteNoSnpFull addr=%#llx "
@@ -1381,6 +1446,7 @@ HnfCoherencyController::queueDirtyVictimRequest(
     out.req.addr = transaction.victim.lineAddress;
     out.req.size = static_cast<uint8_t>(blockSize);
     out.req.ReturnNid = transaction.homeNodeId;
+    out.req.hnfDirtyVictim = true;
     txReqQ.push_back(std::move(out));
     transaction.activeAllowRetry = allowRetry;
     transaction.activePcrdtype = pcrdtype;
@@ -1491,11 +1557,12 @@ HnfCoherencyController::startDirtyVictimRelease(DirtyVictimTxn& transaction)
                  transaction.victim.victimId.value));
 
     RawReq release{};
-    release.srcid = 0;
+    release.srcid = transaction.victim.owner;
     release.txnid = transaction.downstreamTxnId;
     release.opcode = ReqOp::WriteNoSnpFull;
     SlcSfReqHeader header = makeSlcSfReqHeader(
-        slcSfReqIds, UINT32_MAX, transaction.victim.lineAddress, release);
+        slcSfReqIds, UINT32_MAX, transaction.victim.lineAddress, release,
+        transaction.victim.victimId.value);
     transaction.releaseReqId = header.reqId;
     transaction.pendingRelease = SlcSfRequest(
         makeSlcSfReleaseDirtyVictimReq(
@@ -1552,7 +1619,9 @@ HnfCoherencyController::startSeqPocq()
              "HnfCC starts SEQ POCQ without a pending victim\n");
 
     const HnfSLCSF::SeqVictim victim = slcsfUnit->frontPendingSeq();
-    slcsfUnit->markSeqIssued(victim.id);
+    const uint32_t snoop_txn_id = allocateSnoopTxnId();
+    slcsfUnit->markSeqIssued(
+        victim.id, SnpOp::CleanInvalid, snoop_txn_id);
 
     seqPocqEntry = SeqPocqEntry{};
     seqPocqEntry.valid = true;
@@ -1561,6 +1630,7 @@ HnfCoherencyController::startSeqPocq()
     seqPocqEntry.homeNodeId = victim.homeNodeId;
     seqPocqEntry.owner = victim.owner;
     seqPocqEntry.sharers = victim.sharers;
+    seqPocqEntry.snoopTxnId = snoop_txn_id;
     seqPocqEntry.data.assign(blockSize, 0);
 
     DPRINTF(HnfCC,
@@ -1633,6 +1703,7 @@ HnfCoherencyController::tryIssueSeqComplete()
         header.requester = seqPocqEntry.owner;
         header.opcode = SnpOp::CleanInvalid;
         header.trace.linkSequence = seqPocqEntry.seqId;
+        header.trace.transactionId = seqPocqEntry.snoopTxnId;
         seqPocqEntry.completeReqId = header.reqId;
         seqPocqEntry.pendingComplete = makeSlcSfCompleteSfEvictReq(
             header, SlcSfSeqId{seqPocqEntry.seqId}, seqPocqEntry.data,
@@ -1661,7 +1732,8 @@ HnfCoherencyController::queueSeqSnoops()
              static_cast<unsigned long long>(seqPocqEntry.seqId),
              static_cast<unsigned long long>(seqPocqEntry.sharers));
 
-    seqPocqEntry.snoopTxnId = allocateSnoopTxnId();
+    panic_if(seqPocqEntry.snoopTxnId == 0,
+             "HnfCC queues SEQ snoop without transaction identity\n");
     seqPocqEntry.pendingTargets = seqPocqEntry.sharers;
     for (uint32_t target = 0; target < 64; ++target) {
         if ((seqPocqEntry.pendingTargets & (1ULL << target)) == 0) {
@@ -1717,7 +1789,6 @@ HnfCoherencyController::completeSeqSnoopTarget(uint32_t responder,
                 seqPocqEntry.pendingTargets));
 
     if (seqPocqEntry.pendingTargets == 0) {
-        seqPocqEntry.snoopTxnId = 0;
         stepSeqPocq({SeqPocqEventKind::SnoopDone});
     }
 }
@@ -1973,8 +2044,33 @@ HnfCoherencyController::consumeSlcsfResponse(SlcSfResponse response)
         const auto* update =
             std::get_if<SlcSfUpdateResponse>(&response.payload());
         panic_if(!update || update->updateKind !=
-                     SlcSfUpdateKind::ReleaseDirtyVictim,
+                     SlcSfUpdateKind::ReleaseDirtyVictim ||
+                     update->sfVictim ||
+                     !update->completionLease,
                  "HnfCC dirty-victim release Done has bad payload\n");
+        const SlcSfCompletionLease& lease = *update->completionLease;
+        panic_if(
+            lease.kind() != SlcSfCompletionKind::ReleaseDirtyVictim ||
+                lease.reqId() != transaction->second.releaseReqId ||
+                lease.pocEntryId() != UINT32_MAX ||
+                lease.objectId() != transaction->first ||
+                lease.lineAddress() !=
+                    transaction->second.victim.lineAddress ||
+                lease.requester() != transaction->second.victim.owner ||
+                lease.opcode() != ReqOp::WriteNoSnpFull ||
+                lease.linkSequence() != transaction->first ||
+                lease.transactionId() !=
+                    transaction->second.downstreamTxnId,
+            "HnfCC dirty-victim release lease identity mismatch\n");
+        panic_if(
+            slcsfUnit->acknowledgeVisibleCompletion(response) !=
+                SlcSfCompletionAckResult::Acknowledged,
+            "HnfCC dirty-victim release ack was not exact/visible\n");
+        DPRINTF(HnfDirtyVictimE2E,
+                "HNF_DV_RELEASE victim=%llu txn=%u release_req=%llu\n",
+                static_cast<unsigned long long>(transaction->first),
+                transaction->second.downstreamTxnId,
+                static_cast<unsigned long long>(response.reqId().value));
         DPRINTF(HnfCC,
                 "CC dirty victim=%llu release req=%llu completed\n",
                 static_cast<unsigned long long>(transaction->first),
@@ -1999,8 +2095,26 @@ HnfCoherencyController::consumeSlcsfResponse(SlcSfResponse response)
         const auto* update =
             std::get_if<SlcSfUpdateResponse>(&response.payload());
         panic_if(!update ||
-                     update->updateKind != SlcSfUpdateKind::CompleteSfEvict,
+                     update->updateKind != SlcSfUpdateKind::CompleteSfEvict ||
+                     update->sfVictim ||
+                     !update->completionLease,
                  "HnfCC SEQ completion Done has bad payload\n");
+        const SlcSfCompletionLease& lease = *update->completionLease;
+        panic_if(
+            lease.kind() != SlcSfCompletionKind::CompleteSfEvict ||
+                lease.reqId() != seqPocqEntry.completeReqId ||
+                lease.pocEntryId() != UINT32_MAX ||
+                lease.objectId() != seqPocqEntry.seqId ||
+                lease.lineAddress() != seqPocqEntry.blockAddr ||
+                lease.requester() != seqPocqEntry.owner ||
+                lease.opcode() != SnpOp::CleanInvalid ||
+                lease.linkSequence() != seqPocqEntry.seqId ||
+                lease.transactionId() != seqPocqEntry.snoopTxnId,
+            "HnfCC SEQ completion lease identity mismatch\n");
+        panic_if(
+            slcsfUnit->acknowledgeVisibleCompletion(response) !=
+                SlcSfCompletionAckResult::Acknowledged,
+            "HnfCC SEQ completion ack was not exact/visible\n");
         stepSeqPocq({SeqPocqEventKind::CompleteDone});
         return;
     }
@@ -2101,6 +2215,19 @@ HnfCoherencyController::latchVisibleSlcResponses()
 {
     const size_t budget = slcsfUnit->pipelineConfig().responseConsumeWidth;
     for (size_t consumed = 0; consumed < budget; ++consumed) {
+        const SlcSfResponse* visible = slcsfUnit->frontVisibleResponse();
+        if (!visible) {
+            break;
+        }
+        const bool durable =
+            visible->operationKind() ==
+                SlcSfOperationKind::CompleteSfEvict ||
+            visible->operationKind() ==
+                SlcSfOperationKind::ReleaseDirtyVictim;
+        if (durable) {
+            consumeSlcsfResponse(*visible);
+            continue;
+        }
         auto response = slcsfUnit->popVisibleResponse();
         if (!response) {
             break;

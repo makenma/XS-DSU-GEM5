@@ -181,6 +181,7 @@ reachDirtyVictimWriteback(HnfCoherencyController& cc, HnfSLCSF& slcsf,
     ASSERT_TRUE(cc.hasTxReq());
     const HnfCcTxReq read = cc.frontTxReq();
     ASSERT_FALSE(read.dirtyVictimId.has_value());
+    EXPECT_FALSE(read.req.hnfDirtyVictim);
     EXPECT_EQ(read.entry, 0);
     cc.popTxReq();
     cc.notifyTxReqSent(read);
@@ -218,6 +219,7 @@ TEST(HnfCoherencyControllerTest, DirtyVictimDataSurvivesWriteback)
     EXPECT_EQ(writeback.req.addr, TestAddr);
     EXPECT_EQ(writeback.req.AllowRetry, 0);
     EXPECT_EQ(writeback.req.srcid, HnfNode);
+    EXPECT_TRUE(writeback.req.hnfDirtyVictim);
     EXPECT_EQ(writeback.req.tgtid, SnNode);
     EXPECT_NE(writeback.req.txnid, 1);
     EXPECT_NE(writeback.req.txnid, 121);
@@ -365,6 +367,7 @@ TEST(HnfCoherencyControllerTest,
     const HnfCcTxReq initial = cc.frontTxReq();
     const SlcSfVictimId victim_id{*initial.dirtyVictimId};
     ASSERT_EQ(initial.req.AllowRetry, 1);
+    EXPECT_TRUE(initial.req.hnfDirtyVictim);
     cc.popTxReq();
     cc.notifyTxReqSent(initial);
 
@@ -390,6 +393,7 @@ TEST(HnfCoherencyControllerTest,
     EXPECT_EQ(retried.req.txnid, initial.req.txnid);
     EXPECT_EQ(retried.req.AllowRetry, 0);
     EXPECT_EQ(retried.req.pcrdtype, 7);
+    EXPECT_TRUE(retried.req.hnfDirtyVictim);
     EXPECT_EQ(cc.dirtyVictimTransactionCount(), 1);
 
     for (size_t i = 0; i < 3; ++i) {
@@ -619,21 +623,25 @@ TEST(HnfCoherencyControllerTest, ReleaseDirtyVictimFreesExactlyOneEntry)
     ASSERT_TRUE(release_id.valid());
     EXPECT_EQ(slcsf.victimBufferOccupancy(), 1);
 
+    bool saw_committed_await_ack = false;
     for (size_t i = 0;
          i < 32 && cc.dirtyVictimTransactionCount() != 0; ++i) {
         pumpOnce(cc, slcsf, tick);
         if (cc.dirtyVictimTransactionCount() != 0) {
             EXPECT_EQ(cc.dirtyVictimReleaseReqId(victim_id), release_id);
             if (slcsf.dirtyVictimState(victim_id) ==
-                HnfSLCSF::VictimState::Released) {
-                // U2 made the release reusable only together with a durable
-                // terminal response that is pending or visible to the CC.
+                HnfSLCSF::VictimState::ReleaseCommittedAwaitAck) {
+                // U2 retains ownership until the CC acknowledges the exact
+                // durable terminal response.
                 EXPECT_GT(slcsf.respOccupied(), 0);
+                EXPECT_EQ(slcsf.victimBufferOccupancy(), 1);
+                saw_committed_await_ack = true;
             } else {
                 EXPECT_EQ(slcsf.victimBufferOccupancy(), 1);
             }
         }
     }
+    EXPECT_TRUE(saw_committed_await_ack);
     EXPECT_EQ(cc.dirtyVictimTransactionCount(), 0);
     EXPECT_EQ(slcsf.dirtyVictimState(victim_id),
               HnfSLCSF::VictimState::Released);
@@ -653,7 +661,9 @@ TEST(HnfCoherencyControllerTest,
     slcsf.writeLine(
         TestAddr, 0, victim_data, PocqTxnKind::WriteUnique, HnfNode);
     Tick tick = 1400;
+    EXPECT_EQ(cc.pendingDirtyVictimRequesterCount(), 0);
     reachDirtyVictimWriteback(cc, slcsf, tick, fill_data);
+    EXPECT_EQ(cc.pendingDirtyVictimRequesterCount(), 1);
     const HnfCcTxReq writeback = cc.frontTxReq();
     const SlcSfVictimId victim_id{*writeback.dirtyVictimId};
     EXPECT_EQ(writeback.req.opcode, 0x5c);
@@ -675,6 +685,7 @@ TEST(HnfCoherencyControllerTest,
     EXPECT_EQ(cc.dirtyVictimTransactionCount(), 0);
     EXPECT_EQ(slcsf.dirtyVictimState(victim_id),
               HnfSLCSF::VictimState::Released);
+    EXPECT_EQ(cc.pendingDirtyVictimRequesterCount(), 1);
 
     // The requester independently reaches normal completion.
     cc.serviceInternalWork(tick);
@@ -688,6 +699,59 @@ TEST(HnfCoherencyControllerTest,
     const auto retired = cc.acceptRxRsp(makeRsp(4, 121, 0x02));
     ASSERT_TRUE(retired.has_value());
     EXPECT_EQ(retired->tokenId, 0);
+    EXPECT_EQ(cc.pendingDirtyVictimRequesterCount(), 0);
+}
+
+TEST(HnfCoherencyControllerTest,
+     DirtyVictimRequesterMayRetireBeforeVictimRelease)
+{
+    HnfSLCSF slcsf(BlockSize, 1, 1, 1, 1);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+
+    slcsf.writeLine(
+        TestAddr, 0, lineData(0xf4),
+        PocqTxnKind::WriteUnique, HnfNode);
+    Tick tick = 1450;
+    reachDirtyVictimWriteback(
+        cc, slcsf, tick, lineData(0xf5), TestAddr + BlockSize, 125);
+    const HnfCcTxReq writeback = cc.frontTxReq();
+    const SlcSfVictimId victim_id{*writeback.dirtyVictimId};
+    EXPECT_EQ(cc.pendingDirtyVictimRequesterCount(), 1);
+
+    // Requester completion is independent of the downstream writeback.  It
+    // may retire while that writeback is still waiting for a DBID.
+    cc.serviceInternalWork(tick);
+    size_t requester_beats = 0;
+    while (cc.hasTxDat()) {
+        EXPECT_FALSE(cc.frontTxDat().dirtyVictimId.has_value());
+        ++requester_beats;
+        cc.popTxDat();
+    }
+    EXPECT_EQ(requester_beats, 2);
+    const auto retired = cc.acceptRxRsp(makeRsp(4, 125, 0x02));
+    ASSERT_TRUE(retired.has_value());
+    EXPECT_EQ(cc.pendingDirtyVictimRequesterCount(), 0);
+    EXPECT_EQ(cc.dirtyVictimTransactionCount(), 1);
+
+    cc.popTxReq();
+    cc.notifyTxReqSent(writeback);
+    acceptDirtyVictimDbid(cc, writeback, 14);
+    ASSERT_TRUE(cc.hasTxDat());
+    ASSERT_EQ(cc.frontTxDat().dirtyVictimId,
+              writeback.dirtyVictimId);
+    cc.popTxDat();
+    EXPECT_FALSE(cc.acceptRxRsp(
+        makeDirtyVictimRsp(writeback, 0x04, 14)));
+    for (size_t i = 0;
+         i < 32 && cc.dirtyVictimTransactionCount() != 0; ++i) {
+        pumpOnce(cc, slcsf, tick);
+    }
+    EXPECT_EQ(cc.dirtyVictimTransactionCount(), 0);
+    EXPECT_EQ(slcsf.dirtyVictimState(victim_id),
+              HnfSLCSF::VictimState::Released);
+    EXPECT_EQ(cc.pendingDirtyVictimRequesterCount(), 0);
 }
 
 TEST(HnfCoherencyControllerTest, RetireWakesOneSameAddressSleeper)
@@ -791,6 +855,7 @@ TEST(HnfCoherencyControllerTest, SeqDoesNotRetireBeforeCompleteSfEvictResponse)
     slcsf.commitRead(replacementAddr, 4, PocqTxnKind::ReadUnique,
                      data, false, HnfNode);
     ASSERT_EQ(slcsf.seqOccupancy(), 1);
+    const HnfSLCSF::SeqVictim seq_victim = slcsf.frontPendingSeq();
 
     cc.serviceInternalWork();
     ASSERT_TRUE(cc.hasTxSnp());
@@ -812,10 +877,13 @@ TEST(HnfCoherencyControllerTest, SeqDoesNotRetireBeforeCompleteSfEvictResponse)
         EXPECT_TRUE(cc.hasActiveSeqPocq());
     }
     pumpOnce(cc, slcsf, tick);
-    EXPECT_EQ(slcsf.seqOccupancy(), 0);
+    EXPECT_EQ(slcsf.seqOccupancy(), 1);
+    EXPECT_EQ(slcsf.seqPhase(seq_victim.id),
+              HnfSLCSF::SeqPhase::CommittedAwaitAck);
     EXPECT_EQ(slcsf.respPendingCount(), 1);
     EXPECT_TRUE(cc.hasActiveSeqPocq());
     pumpOnce(cc, slcsf, tick);
+    EXPECT_EQ(slcsf.seqOccupancy(), 0);
     EXPECT_FALSE(cc.hasActiveSeqPocq());
 
     HnfSlcLookupReq req{};
@@ -1197,11 +1265,15 @@ TEST(HnfCoherencyControllerTest, EverySupportedTransactionCompletes)
             }
             ASSERT_TRUE(cc.hasTxRsp());
             ASSERT_TRUE(cc.frontTxRsp().retire);
+            EXPECT_FALSE(
+                cc.frontTxRsp().traceDirtyVictimRequesterDone);
             EXPECT_EQ(cc.frontTxRsp().retire->tokenId, 0);
             cc.popTxRsp();
         } else {
             ASSERT_TRUE(cc.hasTxRsp());
             EXPECT_FALSE(cc.frontTxRsp().retire);
+            EXPECT_FALSE(
+                cc.frontTxRsp().traceDirtyVictimRequesterDone);
             cc.popTxRsp();
 
             const auto data = lineData(0xe0 + i);

@@ -211,6 +211,8 @@ struct HnfCcTxRsp
     uint32_t entry = 0;
     RawRsp rsp{};
     std::optional<HnfCcRetireInfo> retire;
+    // Delays REQUESTER_DONE until HomeLinkLayer accepts this response.
+    bool traceDirtyVictimRequesterDone = false;
 };
 
 struct HnfSlcLookupReq

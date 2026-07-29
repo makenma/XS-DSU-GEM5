@@ -109,6 +109,14 @@ CacheWrapper::innerCpuPortRecvReqRetry()
 }
 
 void
+CacheWrapper::innerCpuPortRecvRetrySnoopResp()
+{
+    DPRINTF(CacheWrapper,
+            "Got snoop resp retry from inner cache, forwarding to CPU side\n");
+    cpu_side_port.sendRetrySnoopResp();
+}
+
+void
 CacheWrapper::innerCpuPortRecvTimingSnoopReq(PacketPtr pkt)
 {
     DPRINTF(CacheWrapper, "Got snoop from inner cache for addr: %#x\n", pkt->getAddr());
@@ -211,6 +219,14 @@ CacheWrapper::memSidePortRecvReqRetry()
 {
     DPRINTF(CacheWrapper, "Got req retry from memory side\n");
     inner_mem_port.sendRetryReq();
+}
+
+void
+CacheWrapper::memSidePortRecvRetrySnoopResp()
+{
+    DPRINTF(CacheWrapper,
+            "Got snoop resp retry from memory side, forwarding to inner cache\n");
+    inner_mem_port.sendRetrySnoopResp();
 }
 
 void

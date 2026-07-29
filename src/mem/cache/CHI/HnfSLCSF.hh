@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -28,6 +29,14 @@ enum class SlcSfCancelResult : uint8_t
     NotCancellable,
     TooLate,
     NotFound
+};
+
+enum class SlcSfCompletionAckResult : uint8_t
+{
+    Acknowledged,
+    NotVisible,
+    IdentityMismatch,
+    Stale
 };
 
 struct HnfSLCSFPipelineConfig
@@ -99,6 +108,8 @@ class HnfSLCSF : public HnfSLCSFBackend
         InstalledSnapshot,
         HandedOff,
         WritebackIssued,
+        ReleaseClaimed,
+        ReleaseCommittedAwaitAck,
         Released
     };
 
@@ -106,6 +117,10 @@ class HnfSLCSF : public HnfSLCSFBackend
              uint32_t slc_num_ways, uint32_t sf_num_sets,
              uint32_t sf_num_ways, uint32_t seq_entries = 8,
              HnfSLCSFPipelineConfig pipeline_config = {});
+    HnfSLCSF(const HnfSLCSF&) = delete;
+    HnfSLCSF& operator=(const HnfSLCSF&) = delete;
+    HnfSLCSF(HnfSLCSF&&) = delete;
+    HnfSLCSF& operator=(HnfSLCSF&&) = delete;
 
     /**
      * Transfer request ownership into this wakeup's ingress buffer.
@@ -133,8 +148,9 @@ class HnfSLCSF : public HnfSLCSFBackend
     size_t victimBufferOccupancy() const;
     size_t victimReservationCount() const;
     std::optional<VictimState> dirtyVictimState(SlcSfVictimId id) const;
-    void markDirtyVictimWritebackIssued(SlcSfVictimId id);
-    void releaseDirtyVictim(SlcSfVictimId id);
+    void markDirtyVictimWritebackIssued(
+        SlcSfVictimId id, uint32_t requester, uint8_t opcode,
+        uint32_t downstream_txn_id);
 
     size_t respReservedCount() const { return inflightRequests.size(); }
     size_t respPendingCount() const { return respPending.size(); }
@@ -148,6 +164,10 @@ class HnfSLCSF : public HnfSLCSFBackend
     uint64_t correctnessReplayCount() const { return correctnessReplays; }
     uint64_t finishedRequestCount() const { return finishedRequests; }
     uint64_t cancelledRequestCount() const { return cancelledRequests; }
+    const SlcSfResponse* frontVisibleResponse() const;
+    SlcSfCompletionAckResult acknowledgeVisibleCompletion(
+        const SlcSfResponse& response);
+    /** Pop only ordinary terminal responses; durable Done requires exact ACK. */
     std::optional<SlcSfResponse> popVisibleResponse();
     const HnfSLCSFPipelineConfig& pipelineConfig() const { return config; }
 
@@ -174,9 +194,12 @@ class HnfSLCSF : public HnfSLCSFBackend
     void beginDraining();
     void resumeFromDrain();
 
-  private:
-    friend class HnfSLCSFBackendPermitTestAccess;
+#ifdef UNIT_TEST
+    /** Narrow fault injection; absent from production builds. */
+    bool corruptInstalledDirtyVictimIdForTest(SlcSfVictimId replacement);
+#endif
 
+  private:
     enum class FinishReason : uint8_t
     {
         Done,
@@ -198,8 +221,10 @@ class HnfSLCSF : public HnfSLCSFBackend
         bool mutationStalled = false;
         bool earlyLookupReplay = false;
         bool cleanupDone = false;
+        std::optional<SlcSfCompletionLease> completionLease;
         std::optional<SlcSfVictimId> slcVictimId;
         std::optional<SlcSfSlcVictim> slcVictim;
+        std::optional<DirtyVictimSeal> slcVictimSeal;
         std::optional<SlcSfSfVictim> sfVictim;
     };
 
@@ -209,6 +234,10 @@ class HnfSLCSF : public HnfSLCSFBackend
         VictimState state = VictimState::Free;
         uint64_t lineAddress = 0;
         std::optional<SlcSfSlcVictim> snapshot;
+        uint32_t writebackRequester = 0;
+        uint8_t writebackOpcode = 0;
+        uint32_t writebackTxnId = 0;
+        std::optional<SlcSfCompletionLease> completionLease;
     };
 
     static void validateConfig(const HnfSLCSFPipelineConfig& config);
@@ -222,7 +251,9 @@ class HnfSLCSF : public HnfSLCSFBackend
     SlcSfResponse makeTerminalResponse(
         const SlcSfRequest& request,
         std::optional<SlcSfSlcVictim> slc_victim = std::nullopt,
-        std::optional<SlcSfSfVictim> sf_victim = std::nullopt);
+        std::optional<SlcSfSfVictim> sf_victim = std::nullopt,
+        std::optional<SlcSfCompletionLease> completion_lease =
+            std::nullopt);
     std::optional<SlcSfError> validateMutationRequest(
         const SlcSfRequest& request) const;
     bool validateMutationToken(const SlcSfRequest& request) const;
@@ -232,6 +263,16 @@ class HnfSLCSF : public HnfSLCSFBackend
     std::optional<SlcSfReplayReason> dirtyVictimReservationFailure(
         uint64_t replacement_addr, const LookupSnapshot& target) const;
     void cancelDirtyVictimReservation(InflightRequest& request);
+    bool claimDurableCompletion(InflightRequest& request);
+    bool durableClaimMatches(const InflightRequest& request) const;
+    void rollbackDurableClaim(InflightRequest& request);
+    bool victimLeaseMatches(
+        const VictimEntry& entry,
+        const SlcSfCompletionLease& lease) const;
+    bool commitDirtyVictimRelease(
+        SlcSfVictimId id, const SlcSfCompletionLease& lease);
+    bool acknowledgeDirtyVictimRelease(
+        const SlcSfCompletionLease& lease);
     void rollbackPreparedResources(InflightRequest& request);
     VictimEntry* findDirtyVictim(SlcSfVictimId id);
     const VictimEntry* findDirtyVictim(SlcSfVictimId id) const;
@@ -258,7 +299,10 @@ class HnfSLCSF : public HnfSLCSFBackend
     std::deque<SlcSfResponse> respPending;
     std::deque<SlcSfResponse> respVisible;
     std::vector<VictimEntry> victimBuffer;
+    /** Opaque identity shared only with leases minted by this service. */
+    std::shared_ptr<const uint8_t> completionProducer;
     uint64_t nextVictimId = 1;
+    uint64_t nextCompletionNonce = 1;
     size_t visibleReqCredits = 0;
     uint64_t wakeupCycle = 0;
     Tick wakeupTick = 0;
@@ -272,6 +316,22 @@ class HnfSLCSF : public HnfSLCSFBackend
     uint64_t finishedRequests = 0;
     uint64_t cancelledRequests = 0;
 };
+
+#ifdef UNIT_TEST
+inline bool
+HnfSLCSF::corruptInstalledDirtyVictimIdForTest(
+    SlcSfVictimId replacement)
+{
+    for (InflightRequest& request : inflightRequests) {
+        if (request.mutationStage == MutationStage::U2ArrayWrite &&
+            request.slcVictim && request.slcVictimSeal) {
+            request.slcVictim->victimId = replacement;
+            return true;
+        }
+    }
+    return false;
+}
+#endif
 
 template <class LinkWakeup, class LinkHasWork, class CcHasWork>
 bool
