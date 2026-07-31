@@ -47,18 +47,19 @@ HomeNodeFull::advanceDrain()
         return;
     }
 
-    if (!d2Active && !linklayer.mayGenerateSlcsfIntent()) {
-        d1Complete = true;
-        d2Active = true;
-        slcsf->sealAdmission();
-    }
-
-    // D2 continues normal link/controller service.  In particular, visible
-    // child responses, deferred retires, downstream TX, and completions all
-    // remain work until both ownership domains are empty.
-    if (d2Active && !hasLinkWork() && slcsf->completelyIdle()) {
+    // Drain is a global fixed-point operation.  Do not quiesce RX admission:
+    // an O3 request may still be traversing an RN-F/router when this HN-F is
+    // visited during an earlier drain pass.  Rejecting it would leave the CPU
+    // permanently waiting for a response.  A later global pass rechecks this
+    // node after every producer has drained.
+    const bool ready = !hasLinkWork() && slcsf->completelyIdle();
+    d1Complete = ready;
+    d2Active = ready;
+    if (ready) {
         slcsf->testDrainComplete();
-        signalDrainDone();
+        if (drainState() == DrainState::Draining) {
+            signalDrainDone();
+        }
     }
 }
 
@@ -66,18 +67,16 @@ DrainState
 HomeNodeFull::drain()
 {
     d1Active = true;
-    linklayer.quiesceNewRequests();
+    // Admission must remain enabled until the global drain fixed point.
+    linklayer.resumeNewRequests();
     slcsf->requestDrain();
-    d1Complete = !linklayer.mayGenerateSlcsfIntent();
-    if (d1Complete) {
-        d2Active = true;
-        slcsf->sealAdmission();
-    }
+    const bool ready = !hasLinkWork() && slcsf->completelyIdle();
+    d1Complete = ready;
+    d2Active = ready;
     if (linklayer.hasWork()) {
         ruby::Consumer::scheduleEvent(Cycles(1));
     }
-    return d2Active && !hasLinkWork() && slcsf->completelyIdle() ?
-        DrainState::Drained : DrainState::Draining;
+    return ready ? DrainState::Drained : DrainState::Draining;
 }
 
 void
@@ -111,8 +110,8 @@ void
 HomeNodeFull::serialize(CheckpointOut& cp) const
 {
     panic_if(!d1Active || !d1Complete || !d2Active || hasLinkWork() ||
-                 !slcsf->admissionSealed() || !slcsf->completelyIdle(),
-             "%s checkpoint requires coordinated parent/SLCSF drain\n",
+                 !slcsf->drainRequested() || !slcsf->completelyIdle(),
+             "%s checkpoint requires global parent/SLCSF drain fixed point\n",
              name());
     BasicChiComponent::serialize(cp);
     Serializable::ScopedCheckpointSection section(cp, "slcsfRequester");

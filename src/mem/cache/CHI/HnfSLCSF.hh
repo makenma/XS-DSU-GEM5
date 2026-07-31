@@ -9,6 +9,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -137,8 +138,14 @@ class HnfSLCSFStatsSink
     virtual void sampledOccupancy(size_t req, size_t resp, size_t inflight,
                                   uint64_t cycles, bool req_full,
                                   bool resp_full) = 0;
+    virtual void sampledStorage(uint64_t valid_lines,
+                                uint64_t capacity_lines,
+                                uint32_t max_valid_ways,
+                                uint64_t cycles) = 0;
     virtual void issued(uint64_t configured_latency) = 0;
-    virtual void victim(SlcSfStatVictim victim) = 0;
+    virtual void victim(
+        SlcSfStatVictim victim, uint32_t requester, uint32_t set,
+        HnfSLCSFBackend::SlcReplacementPolicy policy) = 0;
     virtual void terminal(const SlcSfResponse& response) = 0;
     virtual void becameVisible(uint64_t latency) = 0;
     virtual void rejectedNoCredit() = 0;
@@ -202,6 +209,11 @@ struct HnfSLCSFPipelineConfig
     bool enableSetLock = false;
     Tick childClockPeriod = 1;
     size_t initLatency = 16;
+    // Keep policy fields trailing so existing positional test/config
+    // initializers preserve their historical queue/latency meaning.
+    std::string slcReplacementPolicy = "lru";
+    uint64_t slcReplacementSeed = 1;
+    bool allowReplacementPolicyOverride = false;
 };
 
 template <class Params>
@@ -209,6 +221,10 @@ HnfSLCSFPipelineConfig
 makeEmbeddedSlcsfConfig(const Params& p, Tick child_clock_period = 1)
 {
     HnfSLCSFPipelineConfig config{};
+    config.slcReplacementPolicy = p.slc_replacement_policy;
+    config.slcReplacementSeed = p.slc_replacement_seed;
+    config.allowReplacementPolicyOverride =
+        p.slc_restore_allow_policy_override;
     config.reqQueueEntries = p.slcsf_req_queue_entries;
     config.respQueueEntries = p.slcsf_resp_queue_entries;
     config.maxInflight = p.slcsf_max_inflight;

@@ -119,6 +119,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
 
     for (int i = 0; i < MaxThreads; i++) {
         setThreadStatus(i, Idle);
+        stalls[i].decode = false;
+        stalls[i].drain = false;
         decoder[i] = nullptr;
         threads[i].fetchpc.reset(params.isa[0]->newPCState());
         macroop[i] = nullptr;
@@ -406,6 +408,8 @@ Fetch::startupStage()
 void
 Fetch::clearStates(ThreadID tid)
 {
+    stalls[tid].decode = false;
+    stalls[tid].drain = false;
     setThreadStatus(tid, Running);
     set(threads[tid].fetchpc, cpu->pcState(tid));
     macroop[tid] = NULL;
@@ -429,6 +433,8 @@ Fetch::resetStage()
 
     // Setup PC and nextPC with initial state.
     for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        stalls[tid].decode = false;
+        stalls[tid].drain = false;
         setThreadStatus(tid, Running);
         set(threads[tid].fetchpc, cpu->pcState(tid));
         macroop[tid] = NULL;
@@ -643,6 +649,10 @@ Fetch::processCacheCompletion(PacketPtr pkt)
 void
 Fetch::drainResume()
 {
+    for (ThreadID tid = 0; tid < numThreads; ++tid) {
+        stalls[tid].decode = false;
+        stalls[tid].drain = false;
+    }
 }
 
 void
@@ -656,7 +666,8 @@ Fetch::drainSanityCheck() const
 
     for (ThreadID i = 0; i < numThreads; ++i) {
         assert(threads[i].cacheReq.packets.empty());
-        assert(fetchStatus[i] == Idle);
+        assert(fetchStatus[i] == Idle ||
+               (fetchStatus[i] == Blocked && stalls[i].drain));
     }
 
     branchPred->drainSanityCheck();
@@ -676,8 +687,12 @@ Fetch::isDrained() const
         if (!fetchQueue[i].empty())
             return false;
 
-        // Return false if not idle or drain stalled
+        // A drain-stalled thread is intentionally blocked until the global
+        // drain manager resumes every object.
         if (fetchStatus[i] != Idle) {
+            if (fetchStatus[i] == Blocked && stalls[i].drain) {
+                continue;
+            }
             return false;
         }
     }
@@ -700,6 +715,11 @@ Fetch::takeOverFrom()
 void
 Fetch::drainStall(ThreadID tid)
 {
+    assert(cpu->isDraining());
+    if (!stalls[tid].drain) {
+        DPRINTF(Drain, "%i: Thread drained.\n", tid);
+        stalls[tid].drain = true;
+    }
 }
 
 void
@@ -1422,6 +1442,16 @@ Fetch::checkSignalsAndUpdate(ThreadID tid)
         return true;
     }
 
+    // drainStall() is synchronous with commit and must dominate every normal
+    // frontend wakeup.  Without this latch, the decoupled frontend changes a
+    // squashed thread back to Running and the global drain never converges.
+    if (stalls[tid].drain) {
+        if (fetchStatus[tid] != Blocked) {
+            setThreadStatus(tid, Blocked);
+        }
+        return true;
+    }
+
     if (handleDecodeSquash(tid)) {
         return true;
     }
@@ -1750,6 +1780,11 @@ Fetch::fetch(bool &status_change)
     auto tid = dbpbtb->getTargetTid();
 
     if (tid == InvalidThreadID) {
+        return;
+    }
+
+    if (stalls[tid].drain) {
+        ++fetchStats.pendingDrainCycles;
         return;
     }
 

@@ -199,6 +199,12 @@ class IEW
     /** Has the stage drained? */
     bool isDrained() const;
 
+    /** Start flushing transient LSQ state for a CPU drain. */
+    void startDraining() { ldstQueue.startDraining(); }
+
+    /** Resume the LSQ after a CPU drain. */
+    void drainResume() { ldstQueue.drainResume(); }
+
     /** Takes over from another CPU's thread. */
     void takeOverFrom();
 

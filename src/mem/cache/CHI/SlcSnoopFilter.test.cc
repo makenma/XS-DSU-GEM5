@@ -542,13 +542,13 @@ TEST(SlcSnoopFilterTest, DrainWaitsForAllAcceptedWork)
     }
 }
 
-TEST(SlcSnoopFilterTest, DrainReadinessRequiresSealedAdmission)
+TEST(SlcSnoopFilterTest, DrainReadinessRequiresRequestAndGlobalIdle)
 {
     HnfSLCSF service(64, 4, 2, 4, 2);
 
     EXPECT_FALSE(slcSnoopFilterDrainReady(service));
     service.requestDrain();
-    EXPECT_FALSE(slcSnoopFilterDrainReady(service));
+    EXPECT_TRUE(slcSnoopFilterDrainReady(service));
     service.beginDraining();
     EXPECT_TRUE(slcSnoopFilterDrainReady(service));
 }

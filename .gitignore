@@ -70,3 +70,7 @@ AGENTS.md
 microbench/build/
 microbench/output/
 microbench/dramsim3*
+
+# Local state for the Codex Ralph runner
+/.ralph/
+!/progress.txt

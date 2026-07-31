@@ -5,6 +5,7 @@
 
 #include "base/trace.hh"
 #include "debug/SlcSnoopFilter.hh"
+#include "sim/sim_exit.hh"
 
 namespace gem5::Chi
 {
@@ -38,6 +39,28 @@ SlcSnoopFilter::SlcSnoopFilterStats::SlcSnoopFilterStats(
                "Dirty SLC victims produced"),
       ADD_STAT(sfVictims, statistics::units::Count::get(),
                "SF victims produced"),
+      ADD_STAT(slcValidLines, statistics::units::Count::get(),
+               "Current valid lines in shared HNF SLC"),
+      ADD_STAT(slcPeakValidLines, statistics::units::Count::get(),
+               "Peak valid lines in shared HNF SLC during this stats window"),
+      ADD_STAT(slcCapacityLines, statistics::units::Count::get(),
+               "Configured shared HNF SLC capacity in cache lines"),
+      ADD_STAT(slcOccupancyPercent, statistics::units::Ratio::get(),
+               "Current shared HNF SLC occupancy in percent"),
+      ADD_STAT(maxValidWaysPerSet, statistics::units::Count::get(),
+               "Maximum valid-way count among shared HNF SLC sets"),
+      ADD_STAT(fullSlcCycles, statistics::units::Cycle::get(),
+               "Child cycles for which every shared HNF SLC line was valid"),
+      ADD_STAT(replacementAttempts, statistics::units::Count::get(),
+               "Committed SLC allocations that displaced a valid line"),
+      ADD_STAT(totalSlcVictims, statistics::units::Count::get(),
+               "Total committed clean and dirty SLC victims"),
+      ADD_STAT(victimByRequester, statistics::units::Count::get(),
+               "Committed SLC victims by CHI requester node ID"),
+      ADD_STAT(victimBySet, statistics::units::Count::get(),
+               "Committed SLC victims by set index"),
+      ADD_STAT(victimByPolicy, statistics::units::Count::get(),
+               "Committed SLC victims by replacement policy"),
       ADD_STAT(staleTokenReplays, statistics::units::Count::get(),
                "Replays caused by stale commit tokens"),
       ADD_STAT(resourceConflictReplays, statistics::units::Count::get(),
@@ -69,6 +92,18 @@ SlcSnoopFilter::SlcSnoopFilterStats::SlcSnoopFilterStats(
       ADD_STAT(acceptedToVisibleLatency, statistics::units::Cycle::get(),
                "Cycles from accepted request to visible response")
 {
+    victimByRequester.init(64).flags(statistics::nozero);
+    for (size_t requester = 0; requester < 64; ++requester) {
+        victimByRequester.subname(requester, std::to_string(requester));
+    }
+    victimBySet.init(p.slc_num_sets).flags(statistics::nozero);
+    for (size_t set = 0; set < p.slc_num_sets; ++set) {
+        victimBySet.subname(set, std::to_string(set));
+    }
+    victimByPolicy.init(3).flags(statistics::nozero);
+    victimByPolicy.subname(0, "lru");
+    victimByPolicy.subname(1, "random");
+    victimByPolicy.subname(2, "srrip");
     requestOccupancy.init(0, p.slcsf_req_queue_entries, 1);
     responseOccupancy.init(0, p.slcsf_resp_queue_entries, 1);
     inflightOccupancy.init(0, p.slcsf_max_inflight, 1);
@@ -92,6 +127,23 @@ SlcSnoopFilter::SlcSnoopFilterStats::SlcSnoopFilterStats(
     configuredServiceLatency.init(0, std::max<size_t>(1, max_service_latency),
                                   1);
     acceptedToVisibleLatency.init(0);
+}
+
+void
+SlcSnoopFilter::SlcSnoopFilterStats::sampledStorage(
+    uint64_t valid_lines, uint64_t capacity_lines,
+    uint32_t max_valid_ways, uint64_t cycles)
+{
+    slcValidLines = valid_lines;
+    slcPeakValidLines = std::max<double>(slcPeakValidLines.value(),
+                                         valid_lines);
+    slcCapacityLines = capacity_lines;
+    slcOccupancyPercent = capacity_lines == 0 ? 0.0 :
+        100.0 * valid_lines / capacity_lines;
+    maxValidWaysPerSet = max_valid_ways;
+    if (valid_lines == capacity_lines) {
+        fullSlcCycles += cycles;
+    }
 }
 
 void
@@ -128,7 +180,9 @@ SlcSnoopFilter::SlcSnoopFilterStats::issued(uint64_t configured_latency)
 }
 
 void
-SlcSnoopFilter::SlcSnoopFilterStats::victim(SlcSfStatVictim victim)
+SlcSnoopFilter::SlcSnoopFilterStats::victim(
+    SlcSfStatVictim victim, uint32_t requester, uint32_t set,
+    HnfSLCSFBackend::SlcReplacementPolicy policy)
 {
     switch (victim) {
       case SlcSfStatVictim::CleanSlc: ++cleanSlcVictims; break;
@@ -136,6 +190,17 @@ SlcSnoopFilter::SlcSnoopFilterStats::victim(SlcSfStatVictim victim)
       case SlcSfStatVictim::Sf: ++sfVictims; break;
       case SlcSfStatVictim::NumVictims:
         panic("SlcSnoopFilter received invalid victim statistic\n");
+    }
+    if (victim == SlcSfStatVictim::CleanSlc ||
+        victim == SlcSfStatVictim::DirtySlc) {
+        panic_if(requester >= victimByRequester.size() ||
+                     set >= victimBySet.size(),
+                 "SlcSnoopFilter received invalid SLC victim attribution\n");
+        ++replacementAttempts;
+        ++totalSlcVictims;
+        ++victimByRequester[requester];
+        ++victimBySet[set];
+        ++victimByPolicy[static_cast<size_t>(policy)];
     }
 }
 
@@ -194,13 +259,20 @@ SlcSnoopFilter::SlcSnoopFilter(const SlcSnoopFilterParams& p)
                    name() + ".serviceEvent"),
       slcsf(p.block_size, p.slc_num_sets, p.slc_num_ways, p.sf_num_sets,
             p.sf_num_ways, p.seq_entries,
-            makeEmbeddedSlcsfConfig(p, clockPeriod()), &stats)
+            makeEmbeddedSlcsfConfig(p, clockPeriod()), &stats),
+      exitOnSlcFull(p.exit_on_slc_full)
 {
     slcsf.setWorkAvailableCallback([this] { ensureWakeup(); });
     DPRINTF(SlcSnoopFilter,
-            "Created block=%u SLC=%ux%u SF=%ux%u SEQ=%u\n",
-            p.block_size, p.slc_num_sets, p.slc_num_ways, p.sf_num_sets,
-            p.sf_num_ways, p.seq_entries);
+            "Created block=%u SLC=%ux%u policy=%s seed=%llu "
+            "SF=%ux%u SEQ=%u\n",
+            p.block_size, p.slc_num_sets, p.slc_num_ways,
+            p.slc_replacement_policy.c_str(),
+            static_cast<unsigned long long>(p.slc_replacement_seed),
+            p.sf_num_sets, p.sf_num_ways, p.seq_entries);
+    stats.sampledStorage(
+        slcsf.slcValidLineCount(), slcsf.slcCapacityLineCount(),
+        slcsf.maxValidWaysInSet(), 0);
 }
 
 void
@@ -220,8 +292,9 @@ SlcSnoopFilter::startup()
 DrainState
 SlcSnoopFilter::drain()
 {
-    // The parent owns the D1 -> D2 boundary.  Merely record the request here;
-    // allocated upstream protocol owners must remain able to enqueue in D1.
+    // Keep admission open until gem5 reaches its global drain fixed point.
+    // Upstream CPUs and routers drain concurrently, so an ordinary request
+    // can legitimately arrive after this object's first drain() call.
     slcsf.requestDrain();
     return slcSnoopFilterDrainReady(slcsf) ?
         DrainState::Drained : DrainState::Draining;
@@ -238,7 +311,8 @@ SlcSnoopFilter::sealAdmission()
 void
 SlcSnoopFilter::testDrainComplete()
 {
-    if (slcSnoopFilterDrainReady(slcsf)) {
+    if (drainState() == DrainState::Draining &&
+        slcSnoopFilterDrainReady(slcsf)) {
         signalDrainDone();
     }
 }
@@ -276,6 +350,9 @@ void
 SlcSnoopFilter::preDumpStats()
 {
     slcsf.settleOccupancy(curTick());
+    stats.sampledStorage(
+        slcsf.slcValidLineCount(), slcsf.slcCapacityLineCount(),
+        slcsf.maxValidWaysInSet(), 0);
     ClockedObject::preDumpStats();
 }
 
@@ -284,9 +361,23 @@ SlcSnoopFilter::resetStats()
 {
     slcsf.settleOccupancy(curTick());
     ClockedObject::resetStats();
+    stats.sampledStorage(
+        slcsf.slcValidLineCount(), slcsf.slcCapacityLineCount(),
+        slcsf.maxValidWaysInSet(), 0);
     // Start the post-reset window at the reset Tick, even when it is between
     // child edges.
     slcsf.settleOccupancy(curTick());
+}
+
+void
+SlcSnoopFilter::rearmSlcFullExit()
+{
+    panic_if(!exitOnSlcFull,
+             "%s cannot rearm a disabled SLC-full exit\n", name());
+    panic_if(slcValidLineCount() == slcCapacityLineCount(),
+             "%s can rearm the SLC-full exit only while below capacity\n",
+             name());
+    fullExitSignaled = false;
 }
 
 void
@@ -377,6 +468,11 @@ SlcSnoopFilter::processServiceEvent()
     const bool had_credit = slcsf.registeredReqCreditGrants() != 0;
     const bool was_drain_ready = slcSnoopFilterDrainReady(slcsf);
     slcsf.wakeup(curTick(), elapsed_cycles);
+    if (exitOnSlcFull && !fullExitSignaled &&
+        slcsf.slcValidLineCount() == slcsf.slcCapacityLineCount()) {
+        fullExitSignaled = true;
+        exitSimLoop("shared HNF SLC reached full capacity");
+    }
     lastServiceTick = curTick();
     const SlcSnoopFilterAdvance advance{
         slcsf.needsServiceWakeup(),

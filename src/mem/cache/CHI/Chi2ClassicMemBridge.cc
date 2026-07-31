@@ -124,7 +124,8 @@ Chi2ClassicMemBridge::makeReadPacket(const RawReq& req)
         std::make_shared<Request>(req.addr, bytes, 0, requestorId);
     auto* pkt = new Packet(request, MemCmd::ReadReq);
     pkt->allocate();
-    pkt->pushSenderState(new SnfSenderState(req.txnid));
+    pkt->pushSenderState(
+        new SnfSenderState(Chi2ClassicTxnKey::fromReq(req)));
     return pkt;
 }
 
@@ -137,7 +138,8 @@ Chi2ClassicMemBridge::makeWritePacket(const TxnEntry& txn,
     auto* pkt = new Packet(request, MemCmd::WriteReq);
     pkt->allocate();
     std::memcpy(pkt->getPtr<uint8_t>(), dat.data.data(), txn.expectedBytes);
-    pkt->pushSenderState(new SnfSenderState(txn.req.txnid));
+    pkt->pushSenderState(
+        new SnfSenderState(Chi2ClassicTxnKey::fromReq(txn.req)));
     return pkt;
 }
 
@@ -148,14 +150,16 @@ Chi2ClassicMemBridge::sendPendingMemReq()
         return;
     }
 
-    const uint32_t txnid = memReqQ.front();
-    auto it = txns.find(txnid);
+    const Chi2ClassicTxnKey key = memReqQ.front();
+    auto it = txns.find(key);
     panic_if(it == txns.end(),
-             "%s has classic request for unknown txnid=%u\n", name(), txnid);
+             "%s has classic request for unknown src=%u txnid=%u\n",
+             name(), key.srcId, key.txnId);
     TxnEntry& txn = it->second;
     panic_if(txn.phase != TxnEntry::Phase::MemReqQueued || !txn.pkt,
-             "%s has invalid queued classic request txnid=%u phase=%u\n",
-             name(), txnid, static_cast<unsigned>(txn.phase));
+             "%s has invalid queued classic request src=%u txnid=%u "
+             "phase=%u\n", name(), key.srcId, key.txnId,
+             static_cast<unsigned>(txn.phase));
     panic_if(blockedPkt && blockedPkt != txn.pkt,
              "%s changed classic packet while retry was pending\n", name());
 
@@ -165,14 +169,15 @@ Chi2ClassicMemBridge::sendPendingMemReq()
         txn.phase, Chi2ClassicMemTxnPolicy::Event::ClassicRequestSent,
         accepted);
     panic_if(!next,
-             "%s has illegal classic-request transition txnid=%u phase=%u\n",
-             name(), txnid, static_cast<unsigned>(txn.phase));
+             "%s has illegal classic-request transition src=%u txnid=%u "
+             "phase=%u\n", name(), key.srcId, key.txnId,
+             static_cast<unsigned>(txn.phase));
     if (!accepted) {
         blockedPkt = pkt;
         memReqBlocked = true;
         DPRINTF(Chi2ClassicMemBridge,
-                "classic %s blocked txn=%u addr=%#llx size=%u\n",
-                pkt->cmdString().c_str(), txnid,
+                "classic %s blocked src=%u txn=%u addr=%#llx size=%u\n",
+                pkt->cmdString().c_str(), key.srcId, key.txnId,
                 static_cast<unsigned long long>(pkt->getAddr()),
                 pkt->getSize());
         return;
@@ -184,8 +189,8 @@ Chi2ClassicMemBridge::sendPendingMemReq()
     memReqQ.pop_front();
     txn.phase = *next;
     DPRINTF(Chi2ClassicMemBridge,
-            "classic %s sent txn=%u addr=%#llx size=%u\n",
-            pkt->cmdString().c_str(), txnid,
+            "classic %s sent src=%u txn=%u addr=%#llx size=%u\n",
+            pkt->cmdString().c_str(), key.srcId, key.txnId,
             static_cast<unsigned long long>(pkt->getAddr()), pkt->getSize());
 }
 
@@ -200,7 +205,8 @@ Chi2ClassicMemBridge::acceptReadNoSnp(const RawReq& req)
         return;
     }
 
-    panic_if(txns.count(req.txnid),
+    const Chi2ClassicTxnKey key = Chi2ClassicTxnKey::fromReq(req);
+    panic_if(txns.count(key),
              "%s duplicate ReadNoSnp txnid=%u src=%u\n",
              name(), req.txnid, req.srcid);
 
@@ -210,7 +216,7 @@ Chi2ClassicMemBridge::acceptReadNoSnp(const RawReq& req)
     entry.phase = TxnEntry::Phase::MemReqQueued;
     entry.expectedBytes = expectedDataBytes(req);
     entry.pkt = makeReadPacket(req);
-    const bool inserted = txns.emplace(req.txnid, std::move(entry)).second;
+    const bool inserted = txns.emplace(key, std::move(entry)).second;
     panic_if(!inserted, "%s failed to insert ReadNoSnp txnid=%u\n",
              name(), req.txnid);
 
@@ -219,7 +225,7 @@ Chi2ClassicMemBridge::acceptReadNoSnp(const RawReq& req)
             "to classic\n",
             req.srcid, req.tgtid, req.txnid,
             static_cast<unsigned long long>(req.addr), entry.expectedBytes);
-    memReqQ.push_back(req.txnid);
+    memReqQ.push_back(key);
 }
 
 std::optional<uint8_t>
@@ -254,7 +260,8 @@ Chi2ClassicMemBridge::acceptWriteNoSnpFull(const RawReq& req)
              "expected exact opcode and aligned full line of %u bytes\n",
              name(), req.txnid, static_cast<unsigned long long>(req.addr),
              expectedDataBytes(req), blockSize);
-    panic_if(txns.count(req.txnid),
+    const Chi2ClassicTxnKey key = Chi2ClassicTxnKey::fromReq(req);
+    panic_if(txns.count(key),
              "%s duplicate WriteNoSnpFull txnid=%u src=%u\n",
              name(), req.txnid, req.srcid);
 
@@ -269,12 +276,13 @@ Chi2ClassicMemBridge::acceptWriteNoSnpFull(const RawReq& req)
     entry.phase = TxnEntry::Phase::WriteDataPending;
     entry.expectedBytes = expectedDataBytes(req);
     entry.dbid = *dbid;
-    auto [it, inserted] = txns.emplace(req.txnid, std::move(entry));
+    auto [it, inserted] = txns.emplace(key, std::move(entry));
     panic_if(!inserted, "%s failed to insert WriteNoSnpFull txnid=%u\n",
              name(), req.txnid);
 
     const RawRsp rsp = Chi2ClassicMemTxnPolicy::makeDbidResp(
-        it->second.req, it->second.dbid, nodeId, hnfNodeId);
+        it->second.req, it->second.dbid, nodeId,
+        Chi2ClassicTxnKey::responseTarget(it->second.req, hnfNodeId));
     const bool accepted = chiPort.enqueueRx(RSP, rsp);
     panic_if(!accepted,
              "%s lost reserved RSP credit for WriteNoSnpFull txnid=%u\n",
@@ -342,10 +350,11 @@ Chi2ClassicMemBridge::drainChiReq()
 void
 Chi2ClassicMemBridge::acceptWriteData(const RawDat& dat)
 {
-    auto it = txns.find(dat.txnid);
+    const Chi2ClassicTxnKey key = Chi2ClassicTxnKey::fromWriteData(dat);
+    auto it = txns.find(key);
     panic_if(it == txns.end(),
-             "%s got write DAT for unknown txnid=%u dbid=%u\n",
-             name(), dat.txnid, dat.dbid);
+             "%s got write DAT for unknown src=%u txnid=%u dbid=%u\n",
+             name(), dat.srcid, dat.txnid, dat.dbid);
     TxnEntry& txn = it->second;
     panic_if(txn.kind != TxnEntry::Kind::Write ||
                  txn.phase != TxnEntry::Phase::WriteDataPending,
@@ -380,7 +389,7 @@ Chi2ClassicMemBridge::acceptWriteData(const RawDat& dat)
              "%s has illegal write-data transition txnid=%u phase=%u\n",
              name(), dat.txnid, static_cast<unsigned>(txn.phase));
     txn.phase = *next;
-    memReqQ.push_back(dat.txnid);
+    memReqQ.push_back(key);
     DPRINTF(Chi2ClassicMemBridge,
             "accept NonCopyBackWriteData txn=%u dbid=%u bytes=%u\n",
             dat.txnid, dat.dbid, static_cast<unsigned>(dat.data.size()));
@@ -403,40 +412,46 @@ Chi2ClassicMemBridge::recvMemResp(PacketPtr pkt)
     panic_if(!state, "%s got classic response without SNF sender state\n",
              name());
 
-    auto it = txns.find(state->txnid);
+    auto it = txns.find(state->key);
     panic_if(it == txns.end(),
-             "%s got classic response for unknown txnid=%u\n",
-             name(), state->txnid);
+             "%s got classic response for unknown src=%u txnid=%u\n",
+             name(), state->key.srcId, state->key.txnId);
 
     TxnEntry& txn = it->second;
     panic_if(pkt != txn.pkt,
-             "%s got response packet mismatch txnid=%u\n",
-             name(), state->txnid);
+             "%s got response packet mismatch src=%u txnid=%u\n",
+             name(), state->key.srcId, state->key.txnId);
     panic_if(!pkt->isResponse(),
-             "%s got non-response classic packet cmd=%s txnid=%u\n",
-             name(), pkt->cmdString().c_str(), state->txnid);
+             "%s got non-response classic packet cmd=%s src=%u txnid=%u\n",
+             name(), pkt->cmdString().c_str(), state->key.srcId,
+             state->key.txnId);
 
     const auto next = Chi2ClassicMemTxnPolicy::transition(
         txn.phase,
         Chi2ClassicMemTxnPolicy::Event::ClassicResponseReceived);
     panic_if(!next,
-             "%s got classic response in invalid phase=%u txnid=%u\n",
-             name(), static_cast<unsigned>(txn.phase), state->txnid);
+             "%s got classic response in invalid phase=%u src=%u "
+             "txnid=%u\n", name(), static_cast<unsigned>(txn.phase),
+             state->key.srcId, state->key.txnId);
 
     if (txn.kind == TxnEntry::Kind::Write) {
         if (Chi2ClassicMemTxnPolicy::isHnfDirtyVictimWriteback(
                 txn.req, blockSize)) {
             DPRINTF(HnfDirtyVictimE2E,
                     "SN_DV_COMP txn=%u dbid=%u error=%u\n",
-                    state->txnid, txn.dbid, pkt->isError() ? 1 : 0);
+                    state->key.txnId, txn.dbid, pkt->isError() ? 1 : 0);
         }
         DPRINTF(Chi2ClassicMemBridge,
                 "classic WriteResp received txn=%u addr=%#llx cmd=%s\n",
-                state->txnid,
+                state->key.txnId,
                 static_cast<unsigned long long>(pkt->getAddr()),
                 pkt->cmdString().c_str());
-        txRspQ.push_back(Chi2ClassicMemTxnPolicy::makeComp(
-            txn.req, txn.dbid, nodeId, hnfNodeId, pkt->isError()));
+        txRspQ.push_back(
+            {state->key,
+             Chi2ClassicMemTxnPolicy::makeComp(
+                 txn.req, txn.dbid, nodeId,
+                 Chi2ClassicTxnKey::responseTarget(txn.req, hnfNodeId),
+                 pkt->isError())});
         txn.phase = *next;
 
         Packet::SenderState* popped = pkt->popSenderState();
@@ -456,7 +471,8 @@ Chi2ClassicMemBridge::recvMemResp(PacketPtr pkt)
 
     DPRINTF(Chi2ClassicMemBridge,
             "classic ReadResp received txn=%u addr=%#llx bytes=%u cmd=%s\n",
-            state->txnid, static_cast<unsigned long long>(pkt->getAddr()),
+            state->key.txnId,
+            static_cast<unsigned long long>(pkt->getAddr()),
             pkt->getSize(), pkt->cmdString().c_str());
     queueCompData(txn, src, std::min<uint32_t>(txn.expectedBytes,
                                                pkt->getSize()));
@@ -476,13 +492,15 @@ Chi2ClassicMemBridge::queueCompData(const TxnEntry& txn,
                                     uint32_t data_bytes)
 {
     const uint32_t bytes = txn.expectedBytes;
+    const uint32_t responseTarget =
+        Chi2ClassicTxnKey::responseTarget(txn.req, hnfNodeId);
     for (uint32_t offset = 0, dataid = 0; offset < bytes;
          offset += dataBeatBytes, ++dataid) {
         const uint32_t beatBytes = std::min(dataBeatBytes, bytes - offset);
         RawDat dat{};
         dat.qos = txn.req.qos;
         dat.srcid = nodeId ? nodeId : txn.req.tgtid;
-        dat.tgtid = hnfNodeId ? hnfNodeId : txn.req.srcid;
+        dat.tgtid = responseTarget;
         dat.txnid = txn.req.txnid;
         dat.opcode = Chi2ClassicMemTxnPolicy::CompDataOpcode;
         dat.last = (offset + beatBytes) >= bytes;
@@ -499,27 +517,29 @@ Chi2ClassicMemBridge::queueCompData(const TxnEntry& txn,
         }
         dat.byteEnable.assign(beatBytes, 1);
         dat.chunkValid.assign((beatBytes + 7) / 8, 1);
-        txDatQ.push_back(std::move(dat));
+        txDatQ.push_back(
+            {Chi2ClassicTxnKey::fromReq(txn.req), std::move(dat)});
     }
 
     DPRINTF(Chi2ClassicMemBridge,
             "queue CompData txn=%u beats=%u bytes=%u sn=%u hnf=%u\n",
             txn.req.txnid, (bytes + dataBeatBytes - 1) / dataBeatBytes,
-            bytes, nodeId, hnfNodeId);
+            bytes, nodeId, responseTarget);
 }
 
 void
 Chi2ClassicMemBridge::sendPendingDat()
 {
     while (!txDatQ.empty()) {
-        RawDat dat = txDatQ.front();
+        const PendingDat& pending = txDatQ.front();
+        const RawDat& dat = pending.flit;
         auto txn = txns.end();
         if (dat.last) {
-            txn = txns.find(dat.txnid);
+            txn = txns.find(pending.key);
             panic_if(txn == txns.end() ||
                          txn->second.kind != TxnEntry::Kind::Read,
-                     "%s completed unknown/non-read txnid=%u\n",
-                     name(), dat.txnid);
+                     "%s completed unknown/non-read src=%u txnid=%u\n",
+                     name(), pending.key.srcId, pending.key.txnId);
         }
 
         const bool accepted = chiPort.enqueueRx(DAT, dat);
@@ -562,12 +582,13 @@ void
 Chi2ClassicMemBridge::sendPendingRsp()
 {
     while (!txRspQ.empty()) {
-        const RawRsp& rsp = txRspQ.front();
-        auto txn = txns.find(rsp.txnid);
+        const PendingRsp& pending = txRspQ.front();
+        const RawRsp& rsp = pending.flit;
+        auto txn = txns.find(pending.key);
         panic_if(txn == txns.end() ||
                      txn->second.kind != TxnEntry::Kind::Write,
-                 "%s completed unknown/non-write txnid=%u\n",
-                 name(), rsp.txnid);
+                 "%s completed unknown/non-write src=%u txnid=%u\n",
+                 name(), pending.key.srcId, pending.key.txnId);
 
         const bool accepted = chiPort.enqueueRx(RSP, rsp);
         const auto next = Chi2ClassicMemTxnPolicy::transition(

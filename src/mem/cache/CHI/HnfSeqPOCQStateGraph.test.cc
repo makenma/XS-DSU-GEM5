@@ -33,6 +33,16 @@ TEST(HnfSeqPocqStateGraphTest, NoHazardSnoopsThenCompletes)
     EXPECT_EQ(state, SeqPocqState::CompleteWait);
     EXPECT_TRUE(step.actions.empty());
 
+    step = graph.tryStep(state, {SeqPocqEventKind::CompleteReplay});
+    ASSERT_TRUE(step.stepped);
+    EXPECT_EQ(state, SeqPocqState::CompleteIssue);
+    EXPECT_TRUE(step.actions.empty());
+
+    step = graph.tryStep(state, {SeqPocqEventKind::CompleteAccepted});
+    ASSERT_TRUE(step.stepped);
+    EXPECT_EQ(state, SeqPocqState::CompleteWait);
+    EXPECT_TRUE(step.actions.empty());
+
     step = graph.tryStep(state, {SeqPocqEventKind::CompleteDone});
     ASSERT_TRUE(step.stepped);
     EXPECT_EQ(state, SeqPocqState::Idle);

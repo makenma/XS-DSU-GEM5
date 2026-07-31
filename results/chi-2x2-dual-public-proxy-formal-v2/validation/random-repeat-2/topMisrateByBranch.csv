@@ -1,0 +1,6 @@
+pc,type,mispredicts,total,misPermil,dirMiss,tgtMiss,noPredMiss
+f3a26,0,44,132,333,42,0,2
+f3802,0,47,191,246,45,0,2
+f4b1e,0,31,158,196,28,0,3
+f3800,0,30,201,149,29,0,1
+f493a,0,10,111,90,9,0,1

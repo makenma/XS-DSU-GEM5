@@ -1,0 +1,112 @@
+{
+  "checkpoint_full_retry_limit": 8,
+  "checkpoint_refill_max_ticks": 1000000000,
+  "classification": "public-source proxy; not SPEC CPU2006",
+  "common_checkpoint": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-formal-v2/warmup/common_full_cpt",
+  "experiment_mode": "roi",
+  "fill_max_ticks": 200000000000,
+  "min_roi_insts_per_core": 100000,
+  "phases": {
+    "restore": {
+      "cpu_active_threads": [
+        1,
+        1
+      ],
+      "cpu_insts": [
+        0,
+        0
+      ],
+      "max_valid_ways_per_set": 16,
+      "slc_capacity_lines": 16384,
+      "slc_valid_lines": 16384,
+      "tick": 1378457841
+    },
+    "restore_drained": {
+      "cpu_active_threads": [
+        0,
+        0
+      ],
+      "cpu_insts": [
+        0,
+        0
+      ],
+      "tick": 1378457840
+    },
+    "roi_end": {
+      "cpu_active_threads": [
+        1,
+        1
+      ],
+      "cpu_insts": [
+        6351515,
+        944552
+      ],
+      "exit_cause": "simulate() limit reached",
+      "exit_code": 0,
+      "measured_cpu_insts": [
+        6351515,
+        944552
+      ],
+      "tick": 3378457841
+    },
+    "roi_start": {
+      "cpu_active_threads": [
+        1,
+        1
+      ],
+      "cpu_insts": [
+        0,
+        0
+      ],
+      "tick": 1378457841
+    }
+  },
+  "policy": "srrip",
+  "processes": [
+    {
+      "argv": [
+        "/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4/shor-rv64-static",
+        "1397",
+        "8"
+      ],
+      "cpu_id": 0,
+      "cwd": "/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4",
+      "elf": "/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4/shor-rv64-static",
+      "pid": 100
+    },
+    {
+      "argv": [
+        "/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/bin/tokenring-rv64-static",
+        "-f",
+        "/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/share/tokenring/omnetpp.ini"
+      ],
+      "cpu_id": 1,
+      "cwd": "/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/share/tokenring",
+      "elf": "/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/bin/tokenring-rv64-static",
+      "pid": 101
+    }
+  ],
+  "random_seed": 20260730,
+  "roi_ticks": 2000000000,
+  "schema_version": 1,
+  "settle_ticks": 2000000,
+  "stats_sections": {
+    "replacement_roi": 0
+  },
+  "topology": {
+    "cpu0_rnf": "0x00@router(0,0)/P0D0",
+    "cpu1_rnf": "0x04@router(0,0)/P1D0",
+    "cpus": 2,
+    "hnf": "0x90@router(1,1)/P0D0",
+    "hnfs": 1,
+    "mesh": "2x2",
+    "rnfs": 2,
+    "slc": {
+      "bytes": 1048576,
+      "line_bytes": 64,
+      "sets": 1024,
+      "ways": 16
+    },
+    "sn": "0x80@router(1,0)/P0D0"
+  }
+}

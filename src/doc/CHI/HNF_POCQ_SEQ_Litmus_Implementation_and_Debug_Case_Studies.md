@@ -781,17 +781,33 @@ panic 为：
 HnfCC CompAck entry state is not WaitCompAck
 ```
 
-**根因推断**
+**根因**
 
 可用 TxnID 太少时，bridge 在旧事务的 CompAck 已进入 RSP channel、但 HNF 尚未消费之前立即复用同一个 `(SrcID, TxnID)` 发新 REQ。REQ 与 RSP 是独立通道，router/HNF 的消费顺序可能让新 REQ 先被观察，随后旧 CompAck 命中新 entry。
 
-**当前状态**
+**修复**
 
-这个问题未在本轮修复。目标配置使用默认 `num_txns=32`，正常回归和强制 SEQ 回归都不触发。
+`num_txns` 现在只限制同时 outstanding 的 RN transaction 数量，不再
+定义可循环复用的 TxnID 池。Bridge 在 32-bit 空间单调分配 TxnID；
+`freeTxn()` 释放容量后，下一条 REQ 仍取得新 ID。多个共享同一 SrcID 的
+slice bridge 使用交错 namespace，保证 `(TxnID - 1) mod count` 不同。
+命名空间耗尽时显式 fatal，绝不静默回卷。
 
-**使用约束**
+因此即使旧 CompAck 仍在独立 RSP channel 中，新 REQ 也不会携带相同
+`(SrcID, TxnID)`。
 
-在实现 TxnID quarantine、generation 或明确的跨通道复用顺序前，不要把 `Cache2ChiBridge.num_txns` 降到 1 或 4。后续修复应增加独立的低 TxnID 压力测试。
+**回归**
+
+```text
+QueuedCompAckCannotAliasNextReqWithOneOutstandingSlot
+OutstandingLimitDoesNotDefineTxnIdRecyclingWindow
+NonZeroBaseInterleavedNamespacesNeverCross
+TxnIdExhaustionDoesNotWrap
+TxnIdNamespaceGeometryIsValidated
+```
+
+公开 OMNeT++ Token Ring 代理负载随后在 pseudo-random 与 LRU 下各运行
+5.1M committed instructions，均正常退出，不再触发该断言。
 
 **经验**
 
@@ -1017,7 +1033,8 @@ CPU reader value
 ## 13. 已知限制与后续工作
 
 1. `Cache2ChiBridge` 仍不支持 atomic/LockedRMW，litmus barrier 因此不使用 AMO。
-2. 低 `num_txns` 下的 TxnID 跨通道快速复用尚未修复。
+2. RN TxnID 采用不回卷的 32-bit 单调 namespace；极长仿真若耗尽 namespace
+   会显式 fatal，需要未来的端到端 generation/消费确认机制才能安全回收。
 3. CPU workload 无法自然生成全部 12 类 CHI request，全覆盖依赖 CC 定向测试。
 4. 当前一次只执行一个内部 SEQ POCQ，SEQ storage 中其他 victim 排队等待。
 5. 当前 SLC/SF 是功能模型，不等价于完整 RTL pipeline timing。

@@ -1,0 +1,37 @@
+{
+  "classification": "public-source proxy; not SPEC CPU2006",
+  "status": "passed",
+  "policy": "random",
+  "seed": 20260730,
+  "checkpoint": "../warmup/common_full_cpt",
+  "repeats": 3,
+  "ticks_per_repeat": 50000000,
+  "common_numeric_stats": 10129,
+  "finite_numeric_stats": 10035,
+  "nondeterministic_host_only_stats": [
+    "hostInstRate",
+    "hostOpRate",
+    "hostSeconds",
+    "hostTickRate"
+  ],
+  "differing_finite_simulated_stats_after_host_exclusion": 0,
+  "identical_key_stats": {
+    "cpu0_committed_insts": [182111, 182111, 182111],
+    "cpu1_committed_insts": [26227, 26227, 26227],
+    "cycles_per_core": [114942, 114942, 114942],
+    "clean_slc_victims": [31, 31, 31],
+    "dirty_slc_victims": [283, 283, 283],
+    "total_slc_victims": [314, 314, 314],
+    "replacement_attempts": [314, 314, 314],
+    "slc_valid_lines_at_end": [16345, 16345, 16345],
+    "slc_peak_valid_lines": [16384, 16384, 16384],
+    "full_slc_cycles": [3252, 3252, 3252],
+    "hnf_service_stalls": [11371, 11371, 11371]
+  },
+  "run_directories": [
+    "random-repeat-1",
+    "random-repeat-2",
+    "random-repeat-3"
+  ],
+  "warning": "These are short determinism checks, not the 2B-tick formal policy result and not SPEC CPU2006 scores."
+}

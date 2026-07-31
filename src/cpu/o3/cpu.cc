@@ -948,6 +948,7 @@ CPU::drain()
     // the fetch stage to stall. The pipeline will be drained once all
     // in-flight instructions have retired.
     commit.drain();
+    iew.startDraining();
 
     // Wake the CPU and record activity so everything can drain out if
     // the CPU was not able to immediately drain.
@@ -964,6 +965,14 @@ CPU::drain()
         }
 
         wakeCPU();
+        // A late cache/TLB completion can make fetch non-drained after this
+        // CPU already signalled an earlier global drain pass.  In that case
+        // activityRec may still be active while the first pass has
+        // descheduled tickEvent, causing wakeCPU() to return without actually
+        // scheduling the state transition back to the drain stall.
+        if (!tickEvent.scheduled()) {
+            schedule(tickEvent, clockEdge());
+        }
         activityRec.activity();
 
         DPRINTF(Drain, "CPU not drained\n");
@@ -1067,6 +1076,7 @@ CPU::drainResume()
     verifyMemoryMode();
 
     fetch.drainResume();
+    iew.drainResume();
     commit.drainResume();
 
     _status = Idle;

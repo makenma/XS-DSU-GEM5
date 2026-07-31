@@ -810,6 +810,10 @@ class LSQ
     void drainSanityCheck() const;
     /** Has the LSQ drained? */
     bool isDrained() const;
+    /** Start flushing transient store-buffer state for a CPU drain. */
+    void startDraining();
+    /** Clear the CPU-drain store-buffer flush state. */
+    void drainResume();
     /** Takes over execution from another CPU's thread. */
     void takeOverFrom();
 
@@ -1169,6 +1173,7 @@ class LSQ
     const uint32_t maxStoreBufferEntriesAcceptedFromSQPerCycle = 2;
     StoreBuffer storeBuffer;
     bool _storeBufferFlushing = false;
+    bool _storeBufferDrainPending = false;
     uint64_t storeBufferWritebackInactive = 0;
     StoreBufferEntry *blockedSbufferEntry = nullptr;
     ThreadID nextStoreBufferOffloadTid = InvalidThreadID;

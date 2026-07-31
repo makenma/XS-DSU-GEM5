@@ -4,7 +4,10 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cstdint>
+#include <limits>
+#include <unordered_set>
 #include <vector>
 
 #include "mem/cache/CHI/Cache2ChiBridge.hh"
@@ -155,6 +158,22 @@ class Cache2ChiBridgeProtocolTestPeer
     {
         return snoop.nextDataBeat;
     }
+
+    static std::optional<uint32_t>
+    allocateTxnId(uint64_t& next_id, size_t outstanding,
+                  uint32_t max_outstanding, uint32_t namespace_count = 1)
+    {
+        return Cache2ChiBridge::allocateMonotonicTxnId(
+            next_id, outstanding, max_outstanding, namespace_count);
+    }
+
+    static uint64_t
+    firstTxnId(uint32_t base, uint32_t namespace_id,
+               uint32_t namespace_count)
+    {
+        return Cache2ChiBridge::firstTxnIdInNamespace(
+            base, namespace_id, namespace_count);
+    }
 };
 
 TEST(Cache2ChiBridgeProtocolTest,
@@ -187,6 +206,116 @@ TEST(Cache2ChiBridgeProtocolTest, OrdinaryReadNeverBecomesUpgradeResponse)
 {
     EXPECT_FALSE(Cache2ChiBridge::retainPromotedUpgradeResponse(
         false, true, true));
+}
+
+TEST(Cache2ChiBridgeProtocolTest, Cmn16HnfHashMatchesManualBitLanes)
+{
+    constexpr uint32_t HnfCount = 16;
+    constexpr uint8_t PaBits = 48;
+    for (unsigned outputBit = 0; outputBit < 4; ++outputBit) {
+        for (unsigned bit = 6 + outputBit; bit < PaBits; bit += 4) {
+            EXPECT_EQ(Cache2ChiBridge::cmnHnfIndex(
+                          1ULL << bit, HnfCount, PaBits),
+                      1U << outputBit);
+        }
+    }
+}
+
+TEST(Cache2ChiBridgeProtocolTest, Cmn16HnfHashBalancesConsecutiveLines)
+{
+    std::array<uint32_t, 16> counts{};
+    for (uint32_t line = 0; line < 16 * 64; ++line) {
+        ++counts[Cache2ChiBridge::cmnHnfIndex(
+            static_cast<Addr>(line) << 6, counts.size(), 48)];
+    }
+    for (const uint32_t count : counts) {
+        EXPECT_EQ(count, 64);
+    }
+}
+
+TEST(Cache2ChiBridgeProtocolTest, CmnHashRejectsUnsupportedGeometry)
+{
+    EXPECT_ANY_THROW(Cache2ChiBridge::cmnHnfIndex(0, 0, 48));
+    EXPECT_ANY_THROW(Cache2ChiBridge::cmnHnfIndex(0, 3, 48));
+    EXPECT_ANY_THROW(Cache2ChiBridge::cmnHnfIndex(0, 128, 48));
+    EXPECT_ANY_THROW(Cache2ChiBridge::cmnHnfIndex(0, 16, 5));
+    EXPECT_ANY_THROW(Cache2ChiBridge::cmnHnfIndex(0, 16, 65));
+}
+
+TEST(Cache2ChiBridgeProtocolTest,
+     QueuedCompAckCannotAliasNextReqWithOneOutstandingSlot)
+{
+    uint64_t next_id = 1;
+
+    const auto old_req = Cache2ChiBridgeProtocolTestPeer::allocateTxnId(
+        next_id, 0, 1);
+    ASSERT_TRUE(old_req);
+    EXPECT_FALSE(Cache2ChiBridgeProtocolTestPeer::allocateTxnId(
+        next_id, 1, 1));
+
+    // Model enqueueRx(RSP, old CompAck) followed by local freeTxn().  The
+    // CompAck may still be in the independent RSP channel, but releasing the
+    // sole outstanding slot must not make its ID eligible for the new REQ.
+    const auto new_req = Cache2ChiBridgeProtocolTestPeer::allocateTxnId(
+        next_id, 0, 1);
+    ASSERT_TRUE(new_req);
+    EXPECT_NE(*new_req, *old_req);
+    EXPECT_EQ(*new_req, *old_req + 1);
+}
+
+TEST(Cache2ChiBridgeProtocolTest,
+     OutstandingLimitDoesNotDefineTxnIdRecyclingWindow)
+{
+    uint64_t next_id = 1025;
+    for (uint32_t expected = 1025; expected < 1153; ++expected) {
+        const auto id = Cache2ChiBridgeProtocolTestPeer::allocateTxnId(
+            next_id, 0, 1);
+        ASSERT_TRUE(id);
+        EXPECT_EQ(*id, expected);
+    }
+}
+
+TEST(Cache2ChiBridgeProtocolTest,
+     NonZeroBaseInterleavedNamespacesNeverCross)
+{
+    constexpr uint32_t NamespaceCount = 4;
+    constexpr uint32_t BaseSpacing = 1024;
+    std::array<uint64_t, NamespaceCount> next_ids{};
+    std::unordered_set<uint32_t> allocated;
+
+    for (uint32_t ns = 0; ns < NamespaceCount; ++ns) {
+        next_ids[ns] = Cache2ChiBridgeProtocolTestPeer::firstTxnId(
+            ns * BaseSpacing, ns, NamespaceCount);
+        EXPECT_EQ((next_ids[ns] - 1) % NamespaceCount, ns);
+    }
+
+    for (uint32_t epoch = 0; epoch < 4096; ++epoch) {
+        for (uint32_t ns = 0; ns < NamespaceCount; ++ns) {
+            const auto id = Cache2ChiBridgeProtocolTestPeer::allocateTxnId(
+                next_ids[ns], 0, 1, NamespaceCount);
+            ASSERT_TRUE(id);
+            EXPECT_EQ((*id - 1) % NamespaceCount, ns);
+            EXPECT_TRUE(allocated.insert(*id).second)
+                << "duplicate TxnID " << *id << " in namespace " << ns;
+        }
+    }
+}
+
+TEST(Cache2ChiBridgeProtocolTest, TxnIdExhaustionDoesNotWrap)
+{
+    uint64_t next_id = std::numeric_limits<uint32_t>::max() - 2ULL;
+    const auto last = Cache2ChiBridgeProtocolTestPeer::allocateTxnId(
+        next_id, 0, 1, 4);
+    ASSERT_TRUE(last);
+    EXPECT_EQ(*last, std::numeric_limits<uint32_t>::max() - 2U);
+    EXPECT_FALSE(Cache2ChiBridgeProtocolTestPeer::allocateTxnId(
+        next_id, 0, 1, 4));
+}
+
+TEST(Cache2ChiBridgeProtocolTest, TxnIdNamespaceGeometryIsValidated)
+{
+    EXPECT_ANY_THROW(Cache2ChiBridgeProtocolTestPeer::firstTxnId(0, 0, 0));
+    EXPECT_ANY_THROW(Cache2ChiBridgeProtocolTestPeer::firstTxnId(0, 4, 4));
 }
 
 TEST(Cache2ChiBridgeProtocolTest, ReadDataAcceptsTerminalBeatFirst)

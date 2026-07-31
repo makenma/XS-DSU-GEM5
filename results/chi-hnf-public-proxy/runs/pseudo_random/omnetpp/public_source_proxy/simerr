@@ -1,0 +1,38 @@
+build/RISCV/base/loader/image_file_data.cc:104: info: Loading file /home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2-rv64/samples/tokenring/tokenring-rv64-static
+build/RISCV/base/loader/image_file_data.cc:124: info: File size is 2656240 bytes
+build/RISCV/base/loader/image_file_data.cc:130: info: First 4 bytes are 0x7f 0x45 0x4c 0x46
+build/RISCV/base/loader/image_file_data.cc:132: info: Mapped start address is ELF, 0x7fa2691b9000
+build/RISCV/mem/dram_interface.cc:690: warn: DRAM device capacity (16384 Mbytes) does not match the address range assigned (1024 Mbytes)
+build/RISCV/mem/dram_interface.cc:690: warn: DRAM device capacity (16384 Mbytes) does not match the address range assigned (1024 Mbytes)
+build/RISCV/base/statistics.hh:281: warn: One of the stats is a legacy stat. Legacy stat is a stat that does not belong to any statistics::Group. Legacy stat is deprecated.
+build/RISCV/base/statistics.hh:281: warn: One of the stats is a legacy stat. Legacy stat is a stat that does not belong to any statistics::Group. Legacy stat is deprecated.
+build/RISCV/base/stats/storage.hh:279: warn: Bucket size (20) does not divide range [1:64] into equal-sized buckets. Rounding up.
+build/RISCV/cpu/o3/issue_queue.cc:947: warn: No config for opClass: IprAccess
+build/RISCV/cpu/o3/issue_queue.cc:947: warn: No config for opClass: InstPrefetch
+build/RISCV/base/loader/image_file_data.cc:104: info: Loading file /home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2-rv64/samples/tokenring/tokenring-rv64-static
+build/RISCV/base/loader/image_file_data.cc:124: info: File size is 2656240 bytes
+build/RISCV/base/loader/image_file_data.cc:130: info: First 4 bytes are 0x7f 0x45 0x4c 0x46
+build/RISCV/base/loader/image_file_data.cc:132: info: Mapped start address is ELF, 0x7fa1e89b9000
+build/RISCV/cpu/base.cc:243: warn: Difftest is disabled
+build/RISCV/base/stats/storage.hh:279: warn: Bucket size (20) does not divide range [1:500] into equal-sized buckets. Rounding up.
+build/RISCV/base/stats/storage.hh:279: warn: Bucket size (20) does not divide range [1:500] into equal-sized buckets. Rounding up.
+build/RISCV/cpu/o3/cpu.cc:247: warn: Setting isa ptr of cpu to 0x55707a7a4a20
+build/RISCV/mem/cache/replacement_policies/tree_plru_rp.cc:108: warn: Number of leaves must be non-zero and a power of 2
+build/RISCV/mem/cache/prefetch/associative_set_impl.hh:45: warn: The number of entries of an AssociativeSet<> must be a power of 2
+build/RISCV/mem/cache/prefetch/associative_set_impl.hh:47: warn: The associativity of an AssociativeSet<> must be a power of 2
+build/RISCV/mem/cache/prefetch/associative_set_impl.hh:45: warn: The number of entries of an AssociativeSet<> must be a power of 2
+build/RISCV/mem/cache/prefetch/associative_set_impl.hh:47: warn: The associativity of an AssociativeSet<> must be a power of 2
+build/RISCV/base/remote_gdb.cc:381: warn: Sockets disabled, not accepting gdb connections
+build/RISCV/sim/simulate.cc:194: info: Entering event queue @ 0.  Starting simulation...
+build/RISCV/cpu/pred/btb/microtage.cc:824: warn: MicroTAGE: branch 0x110ede exceeds block [0, 0) (blockSize=0, instShift=1, maxPositions=32); clamping index
+build/RISCV/sim/syscall_emul.cc:85: warn: ignoring syscall set_robust_list(...)
+      (further warnings will be suppressed)
+build/RISCV/sim/syscall_emul.hh:1015: warn: readlink() called on '/proc/self/exe' may yield unexpected results in various settings.
+      Returning '/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2-rv64/samples/tokenring/tokenring-rv64-static'
+build/RISCV/sim/mem_state.cc:443: info: Increasing stack size by one page.
+build/RISCV/sim/syscall_emul.cc:74: warn: ignoring syscall mprotect(...)
+build/RISCV/cpu/o3/issue_queue.cc:333: warn: Tt's should not happen on classic cache, it may be wrong delay of load wake or missed loadcancel in lsq
+Will trigger stat dump and reset
+build/RISCV/sim/simulate.cc:194: info: Entering event queue @ 127143975.  Starting simulation...
+build/RISCV/sim/syscall_emul.cc:85: warn: ignoring syscall rt_sigaction(...)
+      (further warnings will be suppressed)

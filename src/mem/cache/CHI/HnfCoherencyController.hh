@@ -88,6 +88,8 @@ class HnfCoherencyController
     bool hasActiveSeqPocq() const { return seqPocqEntry.valid; }
     SlcSfReqId seqCompleteReqId() const
     { return seqPocqEntry.completeReqId; }
+    Tick seqRetryNotBeforeTick() const
+    { return seqPocqEntry.retryNotBeforeTick; }
 
     bool hasWork() const;
     /** Existing protocol owners which may still create an SLCSF intent. */
@@ -211,6 +213,7 @@ class HnfCoherencyController
         DataAssembly dataAssembly;
         SlcSfReqId completeReqId{};
         std::optional<SlcSfRequest> pendingComplete;
+        Tick retryNotBeforeTick = 0;
     };
 
     struct DirtyVictimTxn
@@ -302,6 +305,10 @@ class HnfCoherencyController
     uint32_t allocateDirtyVictimTxnId(uint32_t requester_txnid);
     void startDirtyVictimWriteback(uint32_t entry,
                                    const SlcSfSlcVictim& victim);
+    void startDirtyVictimWriteback(
+        const SlcSfSlcVictim& victim, uint32_t home_node_id,
+        uint32_t requester_src, uint32_t requester_txn,
+        bool track_requester);
     void queueDirtyVictimRequest(DirtyVictimTxn& transaction,
                                  bool allow_retry, uint8_t pcrdtype);
     void queueDirtyVictimData(DirtyVictimTxn& transaction);

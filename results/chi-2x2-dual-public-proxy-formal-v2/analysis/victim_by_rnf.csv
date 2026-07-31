@@ -1,0 +1,7 @@
+policy,requester_id,rnf,victims
+lru,0,RNF0/CPU0,51007
+lru,4,RNF1/CPU1,6918
+random,0,RNF0/CPU0,51669
+random,4,RNF1/CPU1,7466
+srrip,0,RNF0/CPU0,51286
+srrip,4,RNF1/CPU1,6906

@@ -1,0 +1,38 @@
+{
+  "classification": "public-source proxy; not SPEC CPU2006",
+  "status": "passed",
+  "build": "RISCV gem5.opt up to date",
+  "cpp_unit_tests": {
+    "executables": 9,
+    "passed": 268,
+    "failed": 0
+  },
+  "formal_runs": {
+    "policies": 3,
+    "ticks_each": 2000000000,
+    "validated": true
+  },
+  "artifact_audit": {
+    "required_artifacts": 16,
+    "json_files_parsed_before_this_record": 29,
+    "csv_schemas_validated": 7,
+    "manifest_hash_entries_validated": 12,
+    "manifest_sha256": "a77560b71e465fcc25e19780170b52061e641d6e03801a3ba518d22a7252d2de"
+  },
+  "random_reproducibility": {
+    "repeats": 3,
+    "ticks_each": 50000000,
+    "differing_finite_simulated_stats_after_host_exclusion": 0
+  },
+  "ppt": {
+    "slides": 17,
+    "reopened": true,
+    "rendered": true,
+    "out_of_bounds_shapes": 0,
+    "sha256": "bfdc5684e5854e4836284a9f589af0cf046bba9bd86342760a3bb297b5c535e1",
+    "size_bytes": 70221
+  },
+  "python_compile": "passed",
+  "git_diff_check": "passed",
+  "warning": "No result in this directory is a SPEC CPU2006 score."
+}

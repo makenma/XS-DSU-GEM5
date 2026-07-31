@@ -1,0 +1,4 @@
+workload,pseudo_random_ipc,lru_ipc,lru_vs_pseudo_random_percent,pseudo_random_slc_victims,lru_slc_victims,replacement_activated,measurement_insts_relative_delta
+libquantum,2.287361,2.287361,0.0,0.0,0.0,False,0.0
+omnetpp,2.233796,2.233796,0.0,0.0,0.0,False,0.0
+geomean,,,0.0,,,,

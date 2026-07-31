@@ -68,6 +68,7 @@ struct SlcSfFillResponse
 struct SlcSfUpdateResponse
 {
     SlcSfUpdateKind updateKind = SlcSfUpdateKind::CompleteMaintenance;
+    std::optional<SlcSfSlcVictim> slcVictim;
     std::optional<SlcSfSfVictim> sfVictim;
     std::optional<SlcSfCompletionLease> completionLease;
 };
@@ -198,6 +199,7 @@ class SlcSfResponse
 
     static SlcSfResponse done(
         const SlcSfUpdateReq& request,
+        std::optional<SlcSfSlcVictim> slc_victim = std::nullopt,
         std::optional<SlcSfSfVictim> sf_victim = std::nullopt,
         std::optional<SlcSfCompletionLease> completion_lease = std::nullopt)
     {
@@ -205,7 +207,7 @@ class SlcSfResponse
             request.header, slcSfResponseOperation(request),
             SlcSfTerminalStatus::Done,
             SlcSfUpdateResponse{
-                request.kind(), std::move(sf_victim),
+                request.kind(), std::move(slc_victim), std::move(sf_victim),
                 std::move(completion_lease)});
     }
 
@@ -272,11 +274,13 @@ makeSlcSfDoneResponse(
 inline SlcSfResponse
 makeSlcSfDoneResponse(
     const SlcSfUpdateReq& request,
+    std::optional<SlcSfSlcVictim> slc_victim = std::nullopt,
     std::optional<SlcSfSfVictim> sf_victim = std::nullopt,
     std::optional<SlcSfCompletionLease> completion_lease = std::nullopt)
 {
     return SlcSfResponse::done(
-        request, std::move(sf_victim), std::move(completion_lease));
+        request, std::move(slc_victim), std::move(sf_victim),
+        std::move(completion_lease));
 }
 
 inline SlcSfResponse

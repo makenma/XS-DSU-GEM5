@@ -1,0 +1,41 @@
+{
+  "classification": "public-source proxy; not SPEC CPU2006",
+  "status": "passed",
+  "build": {
+    "binary": "../../../build/RISCV/gem5.opt",
+    "sha256": "8ed7c46276d0b08affb375a52edf9f14fa050af203c38cec5f9c994e42bc066c",
+    "status": "passed"
+  },
+  "cpp_unit_tests": {
+    "status": "passed",
+    "executables": 9,
+    "tests": 268,
+    "failed": 0,
+    "breakdown": {
+      "hnf_slcsf.test.opt": 133,
+      "slc_snoop_filter.test.opt": 17,
+      "hnf_slcsf_backend.test.opt": 21,
+      "hnf_coherency_controller.test.opt": 62,
+      "cache2chi_bridge.test.opt": 17,
+      "chi2classic_mem_bridge.test.opt": 9,
+      "hnf_seq_pocq_state_graph.test.opt": 2,
+      "home_link_layer.test.opt": 5,
+      "hnf_cc_types.test.opt": 2
+    }
+  },
+  "formal_runs": {
+    "status": "passed",
+    "policies": ["lru", "random", "srrip"],
+    "ticks_each": 2000000000,
+    "same_checkpoint": true,
+    "both_cpus_active_at_end": true,
+    "peak_slc_lines_each": 16384,
+    "slc_capacity_lines": 16384,
+    "victim_conservation_each": true
+  },
+  "random_reproducibility": "random_reproducibility.json",
+  "manifest_hashes": "passed",
+  "json_csv_schema": "passed",
+  "git_diff_check": "passed",
+  "warning": "The workloads are public-source proxies. No value is a SPEC CPU2006 score."
+}

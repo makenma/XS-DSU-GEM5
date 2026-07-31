@@ -2411,8 +2411,12 @@ void
 TLB::serialize(CheckpointOut &cp) const
 {
     // Only store the entries in use.
-    printf("serialize\n");
-    uint32_t _size = size - freeList.size();
+    uint32_t _size = 0;
+    for (const auto &entry : tlb) {
+        if (entry.trieHandle != nullptr) {
+            ++_size;
+        }
+    }
     SERIALIZE_SCALAR(_size);
     SERIALIZE_SCALAR(lruSeq);
 
@@ -2427,7 +2431,6 @@ void
 TLB::unserialize(CheckpointIn &cp)
 {
     // Do not allow to restore with a smaller tlb.
-    printf("unserialize\n");
     uint32_t _size;
     UNSERIALIZE_SCALAR(_size);
     if (_size > size) {
@@ -2435,6 +2438,22 @@ TLB::unserialize(CheckpointIn &cp)
     }
 
     UNSERIALIZE_SCALAR(lruSeq);
+
+    // Shared L2 TLBs use the level-specific tlbL2* arrays rather than the
+    // legacy base `tlb` array, so their base freeList is intentionally empty.
+    // Older checkpoints nevertheless wrote `size` as _size even though they
+    // emitted no Entry sections.  Treat that impossible placeholder as an
+    // empty, cold shared TLB instead of dereferencing an empty freeList.
+    if (_size > freeList.size()) {
+        if ((isTheSharedL2 || isStage2) && freeList.empty()) {
+            warn("Discarding invalid legacy shared-L2 TLB placeholder "
+                 "(%u entries); level-specific TLB state was not serialized\n",
+                 _size);
+            return;
+        }
+        fatal("TLB checkpoint contains %u entries but only %zu free slots "
+              "are available", _size, freeList.size());
+    }
 
     for (uint32_t x = 0; x < _size; x++) {
         TlbEntry *newEntry = freeList.front();

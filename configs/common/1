@@ -1,0 +1,79 @@
+: kmhv2_helloworld.py [-h] [-n NUM_CPUS] [--sys-voltage SYS_VOLTAGE] [--sys-clock SYS_CLOCK] [--list-mem-types]
+                           [--mem-type {CfiMemory,DDR3_1600_8x8,DDR3_2133_8x8,DDR4_2400_16x4,DDR4_2400_4x16,DDR4_2400_8x8,DRAMInterface,DRAMsim3,GDDR5_4000_2x32,HBM_1000_4H_1x128,HBM_1000_4H_1x64,HBM_2000_4H_1x64,HMC_2500_1x32,LPDDR2_S4_1066_1x32,LPDDR3_1600_1x32,LPDDR5_5500_1x16_8B_BL32,LPDDR5_5500_1x16_BG_BL16,LPDDR5_5500_1x16_BG_BL32,LPDDR5_6400_1x16_8B_BL32,LPDDR5_6400_1x16_BG_BL16,LPDDR5_6400_1x16_BG_BL32,NVMInterface,NVM_2400_1x64,QoSMemSinkInterface,SimpleMemory,WideIO_200_1x128}]
+                           [--mem-channels MEM_CHANNELS] [--mem-ranks MEM_RANKS] [--mem-size MEM_SIZE] [--enable-dram-powerdown] [--mem-channels-intlv MEM_CHANNELS_INTLV] [--dramsim3-ini DRAMSIM3_INI] [--ramulator2-ini RAMULATOR2_INI] [--caches] [--l2cache] [--l3cache] [--no-l3cache]
+                           [--l1-to-l2-pf-hint] [--l2-to-l3-pf-hint] [--num-dirs NUM_DIRS] [--num-l2caches NUM_L2CACHES] [--num-l3caches NUM_L3CACHES] [--l1d_size L1D_SIZE] [--l1d_assoc L1D_ASSOC] [--l1i_size L1I_SIZE] [--l1i_assoc L1I_ASSOC] [--l2_size L2_SIZE] [--l2_assoc L2_ASSOC]
+                           [--l2_slices L2_SLICES] [--classic-l2] [--l3_size L3_SIZE] [--l3_assoc L3_ASSOC] [--cacheline_size CACHELINE_SIZE] [--ideal-cache] [--no-pf]
+                           [--l1i-hwp-type {AMPMPrefetcher,BOPPrefetcher,BertiPrefetcher,CDP,CMCPrefetcher,CompositeWithWorkerPrefetcher,DCPTPrefetcher,DespacitoStreamPrefetcher,FallenBOPPrefetcher,IPCPrefetcher,IndirectMemoryPrefetcher,IrregularStreamBufferPrefetcher,L2CompositeWithWorkerPrefetcher,L3CompositeWithWorkerPrefetcher,LearnedBOPPrefetcher,MultiPrefetcher,OptPrefetcher,PIFPrefetcher,PrefetcherForwarder,SBOOEPrefetcher,STeMSPrefetcher,SignaturePathPrefetcher,SignaturePathPrefetcherV2,SlimAMPMPrefetcher,SmallBOPPrefetcher,StridePrefetcher,TaggedPrefetcher,WorkerPrefetcher,XSCompositePrefetcher,XSPhysicalSmallBOP,XSStridePrefetcher,XSVirtualLargeBOP,XsStreamPrefetcher}]
+                           [--l1d-hwp-type {AMPMPrefetcher,BOPPrefetcher,BertiPrefetcher,CDP,CMCPrefetcher,CompositeWithWorkerPrefetcher,DCPTPrefetcher,DespacitoStreamPrefetcher,FallenBOPPrefetcher,IPCPrefetcher,IndirectMemoryPrefetcher,IrregularStreamBufferPrefetcher,L2CompositeWithWorkerPrefetcher,L3CompositeWithWorkerPrefetcher,LearnedBOPPrefetcher,MultiPrefetcher,OptPrefetcher,PIFPrefetcher,PrefetcherForwarder,SBOOEPrefetcher,STeMSPrefetcher,SignaturePathPrefetcher,SignaturePathPrefetcherV2,SlimAMPMPrefetcher,SmallBOPPrefetcher,StridePrefetcher,TaggedPrefetcher,WorkerPrefetcher,XSCompositePrefetcher,XSPhysicalSmallBOP,XSStridePrefetcher,XSVirtualLargeBOP,XsStreamPrefetcher}]
+                           [--l2-hwp-type {AMPMPrefetcher,BOPPrefetcher,BertiPrefetcher,CDP,CMCPrefetcher,CompositeWithWorkerPrefetcher,DCPTPrefetcher,DespacitoStreamPrefetcher,FallenBOPPrefetcher,IPCPrefetcher,IndirectMemoryPrefetcher,IrregularStreamBufferPrefetcher,L2CompositeWithWorkerPrefetcher,L3CompositeWithWorkerPrefetcher,LearnedBOPPrefetcher,MultiPrefetcher,OptPrefetcher,PIFPrefetcher,PrefetcherForwarder,SBOOEPrefetcher,STeMSPrefetcher,SignaturePathPrefetcher,SignaturePathPrefetcherV2,SlimAMPMPrefetcher,SmallBOPPrefetcher,StridePrefetcher,TaggedPrefetcher,WorkerPrefetcher,XSCompositePrefetcher,XSPhysicalSmallBOP,XSStridePrefetcher,XSVirtualLargeBOP,XsStreamPrefetcher}]
+                           [--l2-wrapper-hwp-type {AMPMPrefetcher,BOPPrefetcher,BertiPrefetcher,CDP,CMCPrefetcher,CompositeWithWorkerPrefetcher,DCPTPrefetcher,DespacitoStreamPrefetcher,FallenBOPPrefetcher,IPCPrefetcher,IndirectMemoryPrefetcher,IrregularStreamBufferPrefetcher,L2CompositeWithWorkerPrefetcher,L3CompositeWithWorkerPrefetcher,LearnedBOPPrefetcher,MultiPrefetcher,OptPrefetcher,PIFPrefetcher,PrefetcherForwarder,SBOOEPrefetcher,STeMSPrefetcher,SignaturePathPrefetcher,SignaturePathPrefetcherV2,SlimAMPMPrefetcher,SmallBOPPrefetcher,StridePrefetcher,TaggedPrefetcher,WorkerPrefetcher,XSCompositePrefetcher,XSPhysicalSmallBOP,XSStridePrefetcher,XSVirtualLargeBOP,XsStreamPrefetcher}]
+                           [--l3-hwp-type {AMPMPrefetcher,BOPPrefetcher,BertiPrefetcher,CDP,CMCPrefetcher,CompositeWithWorkerPrefetcher,DCPTPrefetcher,DespacitoStreamPrefetcher,FallenBOPPrefetcher,IPCPrefetcher,IndirectMemoryPrefetcher,IrregularStreamBufferPrefetcher,L2CompositeWithWorkerPrefetcher,L3CompositeWithWorkerPrefetcher,LearnedBOPPrefetcher,MultiPrefetcher,OptPrefetcher,PIFPrefetcher,PrefetcherForwarder,SBOOEPrefetcher,STeMSPrefetcher,SignaturePathPrefetcher,SignaturePathPrefetcherV2,SlimAMPMPrefetcher,SmallBOPPrefetcher,StridePrefetcher,TaggedPrefetcher,WorkerPrefetcher,XSCompositePrefetcher,XSPhysicalSmallBOP,XSStridePrefetcher,XSVirtualLargeBOP,XsStreamPrefetcher}]
+                           [-m TICKS] [--maxtime MAXTIME] [-P PARAM] [--dump-commit] [--dump-start DUMP_START] [--dump-loop-pred] [--enable-arch-db] [--arch-db-file ARCH_DB_FILE] [--arch-db-fromstart ARCH_DB_FROMSTART] [--enable-rolling ENABLE_ROLLING] [--memchecker]
+                           [--external-memory-system EXTERNAL_MEMORY_SYSTEM] [--ruby] [--list-cpu-types]
+                           [--cpu-type {AtomicSimpleCPU,BaseAtomicSimpleCPU,BaseMinorCPU,BaseNonCachingSimpleCPU,BaseO3CPU,BaseTimingSimpleCPU,DerivO3CPU,MinorCPU,NonCachingSimpleCPU,O3CPU,RiscvAtomicSimpleCPU,RiscvMinorCPU,RiscvNonCachingSimpleCPU,RiscvO3CPU,RiscvTimingSimpleCPU,TimingSimpleCPU,TraceCPU}]
+                           [--list-bp-types] [--list-indirect-bp-types]
+                           [--bp-type {BiModeBP,DecoupledBPUWithBTB,DecoupledBPUWithFTB,DecoupledStreamBPU,LTAGE,LocalBP,MultiperspectivePerceptron64KB,MultiperspectivePerceptron8KB,MultiperspectivePerceptronTAGE64KB,MultiperspectivePerceptronTAGE8KB,TAGE,TAGE_SC_L_64KB,TAGE_SC_L_8KB,TournamentBP}]
+                           [--indirect-bp-type {ITTAGE,SimpleIndirectPredictor}] [--enable-bp-db [ENABLE_BP_DB ...]] [--disable-sc] [--disable-mgsc] [--enable-loop-buffer] [--enable-loop-predictor] [--enable-jump-ahead-predictor] [--list-rp-types] [--kmh-align] [--functional-tlb]
+                           [--open-sv48] [--list-hwp-types] [--l1d-enable-spp] [--l1d-enable-cplx] [--short-stride-thres SHORT_STRIDE_THRES] [--pht-pf-level PHT_PF_LEVEL] [--cpu-clock CPU_CLOCK] [-I MAXINSTS] [--enable-riscv-vector] [--restore-rvv-cpt] [--restore-rvh-cpt] [--xiangshan-ecore]
+                           [--ideal-kmhv3] [--warmup-insts-no-switch WARMUP_INSTS_NO_SWITCH] [--stats-root STATS_ROOT] [--xiangshan-system] [--enable-h-gcpt] --generic-rv-cpt GENERIC_RV_CPT [--gcpt-restorer GCPT_RESTORER] [--raw-cpt] [--mmc-img MMC_IMG] [--mmc-cptbin MMC_CPTBIN]
+                           [--enable-difftest] [--difftest-ref-so DIFFTEST_REF_SO]
+kmhv2_helloworld.py: error: unrecognized arguments: -ideal-cache
+
+
+0: system.remote_gdb: listening for remote gdb on port 7000
+      0: system.chi_bridges0: Got range change from memory side
+      0: system.chi_bridges1: Got range change from memory side
+      0: system.chi_bridges2: Got range change from memory side
+      0: system.chi_bridges3: Got range change from memory side
+Registering probe listeners for BaseO3CPU system.cpu
+Registering probe listeners for Prefetcher system.cpu.dcache.prefetcher
+system.cpu.dcache.prefetcher addTLB system.cpu.mmu.dtb
+system.cpu.dcache.prefetcher addHintDownStream system.l2_wrappers.prefetcher
+Registering probe listeners for Prefetcher system.cpu.dcache.prefetcher.berti
+Registering probe listeners for Prefetcher system.cpu.dcache.prefetcher.bop_large
+Registering probe listeners for Prefetcher system.cpu.dcache.prefetcher.bop_learned
+Registering probe listeners for Prefetcher system.cpu.dcache.prefetcher.bop_small
+Registering probe listeners for Prefetcher system.cpu.dcache.prefetcher.cmc
+Registering probe listeners for Prefetcher system.cpu.dcache.prefetcher.ipcp
+Registering probe listeners for Prefetcher system.cpu.dcache.prefetcher.opt
+Registering probe listeners for Prefetcher system.cpu.dcache.prefetcher.spp
+Registering probe listeners for Prefetcher system.cpu.dcache.prefetcher.sstride
+Registering probe listeners for Prefetcher system.cpu.dcache.prefetcher.xsstream
+Registering inner cache accessors for L2CacheWrapper system.l2_wrappers
+Registering probe listeners for Prefetcher system.l2_wrappers.prefetcher
+system.l2_wrappers.prefetcher addTLB system.cpu.mmu.dtb
+system.l2_wrappers.prefetcher addHintDownStream system.l3.prefetcher
+Registering probe listeners for Prefetcher system.l2_wrappers.prefetcher.bop_large
+Registering probe listeners for Prefetcher system.l2_wrappers.prefetcher.bop_small
+Registering probe listeners for Prefetcher system.l2_wrappers.prefetcher.cdp
+Registering probe listeners for Prefetcher system.l2_wrappers.prefetcher.cmc
+Registering probe listeners for Prefetcher system.l2_wrappers.prefetcher.despacito_stream
+Registering inner cache accessor for L2CacheSlice system.l2_wrappers.slices0
+Registering probe listeners for Prefetcher system.l2_wrappers.slices0.inner_cache.prefetcher
+system.l2_wrappers.slices0.inner_cache.prefetcher addTLB system.cpu.mmu.dtb
+Registering inner cache accessor for L2CacheSlice system.l2_wrappers.slices1
+Registering probe listeners for Prefetcher system.l2_wrappers.slices1.inner_cache.prefetcher
+system.l2_wrappers.slices1.inner_cache.prefetcher addTLB system.cpu.mmu.dtb
+Registering inner cache accessor for L2CacheSlice system.l2_wrappers.slices2
+Registering probe listeners for Prefetcher system.l2_wrappers.slices2.inner_cache.prefetcher
+system.l2_wrappers.slices2.inner_cache.prefetcher addTLB system.cpu.mmu.dtb
+Registering inner cache accessor for L2CacheSlice system.l2_wrappers.slices3
+Registering probe listeners for Prefetcher system.l2_wrappers.slices3.inner_cache.prefetcher
+system.l2_wrappers.slices3.inner_cache.prefetcher addTLB system.cpu.mmu.dtb
+Registering probe listeners for Prefetcher system.l3.prefetcher
+build/RISCV/mem/physical.cc:509: warn: Unserializing physical memory from file /home/makenma/project/xs-gem5/nexus-am/apps/coremark/build/coremark-riscv64-xs.bin
+build/RISCV/mem/physical.cc:580: info: copying /home/makenma/project/xs-gem5/nexus-am/apps/coremark/build/coremark-riscv64-xs.bin to pmem 0x7f452278d000
+build/RISCV/mem/physical.cc:610: info: First 4 bytes are 0x93 0x0 0x0 0x0
+build/RISCV/sim/system.cc:561: info: Restored from Xiangshan RISC-V Checkpoint
+**** REAL SIMULATION ****
+build/RISCV/sim/simulate.cc:194: info: Entering event queue @ 0.  Starting simulation...
+   2997: system.chi_bridges0: cacheRecvTimingReq: cmd=ReadSharedReq addr=0x80000000 size=64
+   3330: system.chi_bridges0: Converted read packet to CHI req: addr=0x80000000, size=64
+   3330: system.chi_bridges1: cacheRecvTimingReq: cmd=ReadSharedReq addr=0x80000040 size=64
+   3663: system.chi_bridges1: Converted read packet to CHI req: addr=0x80000040, size=64
+build/RISCV/cpu/o3/commit.cc:114: warn: rob was empty, may be fetch or rename stuck
+build/RISCV/cpu/o3/commit.cc:116: panic: Commit stage is stucked for more than 40,000 cycles!
+Last commit cycle: 0, current cycle: 80010, suggested --debug-start=18446744073709485016 --debug-end=16650
+Memory Usage: 8653876 KBytes
+Program aborted at tick 26643330
+^CAborted (core dumped)

@@ -1178,6 +1178,105 @@ TEST(HnfCoherencyControllerTest, SeqPocqPreservesDirtySnoopData)
     EXPECT_EQ(result.data, dirtyData);
 }
 
+TEST(HnfCoherencyControllerTest,
+     SeqCompletionReplaysUntilVictimBufferIsReleased)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.victimBufferEntries = 1;
+    config.replayPenalty = 3;
+    HnfSLCSF slcsf(BlockSize, 1, 1, 1, 1, 4, config);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4, false);
+    cc.setSlcsf(&slcsf);
+
+    const uint64_t first_victim_addr = TestAddr;
+    const uint64_t resident_addr = TestAddr + BlockSize;
+    const uint64_t seq_addr = TestAddr + 2 * BlockSize;
+    const uint64_t sf_replacement_addr = TestAddr + 3 * BlockSize;
+    slcsf.writeLine(
+        first_victim_addr, 0, lineData(0xb0),
+        PocqTxnKind::WriteUnique, HnfNode);
+
+    Tick tick = 2000;
+    reachDirtyVictimWriteback(
+        cc, slcsf, tick, lineData(0xb1), resident_addr, 8121);
+    ASSERT_TRUE(cc.hasTxReq());
+    const HnfCcTxReq first_writeback = cc.frontTxReq();
+    ASSERT_TRUE(first_writeback.dirtyVictimId.has_value());
+    EXPECT_EQ(slcsf.victimBufferOccupancy(), 1);
+
+    // Leave the first victim handed off so the sole VictimBuffer entry stays
+    // occupied.  Build an independent SF victim whose dirty snoop completion
+    // must replace this second dirty SLC resident.
+    slcsf.writeLine(
+        resident_addr, 4, lineData(0xb2),
+        PocqTxnKind::WriteUnique, HnfNode);
+    slcsf.commitRead(
+        seq_addr, 0, PocqTxnKind::ReadUnique,
+        lineData(0xb3), false, HnfNode);
+    slcsf.commitRead(
+        sf_replacement_addr, 4, PocqTxnKind::ReadUnique,
+        lineData(0xb4), false, HnfNode);
+    ASSERT_TRUE(slcsf.hasPendingSeq());
+
+    cc.serviceInternalWork(tick);
+    ASSERT_TRUE(cc.hasTxSnp());
+    const HnfCcTxSnp snoop = cc.frontTxSnp();
+    ASSERT_EQ(snoop.snp.addr, seq_addr);
+    cc.popTxSnp();
+    const auto seq_data = lineData(0xb5);
+    EXPECT_FALSE(cc.acceptRxDat(makeSnoopData(
+        0, snoop.snp.txnid, 0, false, seq_data)));
+    EXPECT_FALSE(cc.acceptRxDat(makeSnoopData(
+        0, snoop.snp.txnid, BeatSize, true, seq_data)));
+    const SlcSfReqId first_completion = cc.seqCompleteReqId();
+    ASSERT_TRUE(first_completion.valid());
+
+    for (size_t i = 0; i < 32 && cc.seqCompleteReqId().valid(); ++i) {
+        pumpOnce(cc, slcsf, tick);
+    }
+    ASSERT_TRUE(cc.hasActiveSeqPocq());
+    EXPECT_FALSE(cc.seqCompleteReqId().valid());
+    EXPECT_GT(cc.seqRetryNotBeforeTick(), tick);
+    EXPECT_EQ(slcsf.victimBufferOccupancy(), 1);
+    EXPECT_TRUE(slcsf.seqContains(seq_addr));
+
+    // Complete the first writeback and its durable release.  The SEQ retry
+    // then acquires the freed slot, hands off the resident dirty line, and
+    // retires without re-snooping or losing its dirty data.
+    cc.popTxReq();
+    cc.notifyTxReqSent(first_writeback);
+    acceptDirtyVictimDbid(cc, first_writeback, 31);
+    while (cc.hasTxDat() &&
+           !cc.frontTxDat().dirtyVictimId.has_value()) {
+        cc.popTxDat();
+    }
+    ASSERT_TRUE(cc.hasTxDat());
+    ASSERT_EQ(cc.frontTxDat().dirtyVictimId,
+              first_writeback.dirtyVictimId);
+    cc.popTxDat();
+    EXPECT_FALSE(cc.acceptRxRsp(
+        makeDirtyVictimRsp(first_writeback, 0x04, 31)));
+
+    for (size_t i = 0; i < 128 && cc.hasActiveSeqPocq(); ++i) {
+        pumpOnce(cc, slcsf, tick);
+    }
+    EXPECT_FALSE(cc.hasActiveSeqPocq());
+    EXPECT_FALSE(slcsf.seqContains(seq_addr));
+    const HnfSlcLookupResult installed = [&]() {
+        HnfSlcLookupReq req{};
+        req.req.srcid = 0;
+        req.blockAddr = seq_addr;
+        req.txn = PocqTxnKind::ReadShared;
+        return slcsf.lookup(req);
+    }();
+    EXPECT_TRUE(installed.slcHit);
+    EXPECT_TRUE(installed.dataDirty);
+    EXPECT_EQ(installed.data, seq_data);
+    EXPECT_EQ(cc.dirtyVictimTransactionCount(), 1);
+    EXPECT_EQ(slcsf.victimBufferOccupancy(), 1);
+}
+
 TEST(HnfCoherencyControllerTest, ReadNoSnpReturnsWithoutAllocatingSlcSf)
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);

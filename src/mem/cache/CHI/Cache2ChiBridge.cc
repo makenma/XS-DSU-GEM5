@@ -78,7 +78,11 @@ Cache2ChiBridge::Cache2ChiBridge(const Cache2ChiBridgeParams& p)
       memPort(p.name + ".mem_side", this),
       nodeId(p.node_id),
       homeNodeId(p.home_node_id),
+      homeNodeIds(p.home_node_ids.begin(), p.home_node_ids.end()),
+      hnfHashPaBits(p.hnf_hash_pa_bits),
       txnIdBase(p.txnid_base),
+      txnIdNamespace(p.txnid_namespace_id),
+      txnIdNamespaceCount(p.txnid_namespace_count),
       maxTxns(p.num_txns),
       blockSize(p.block_size),
       dataBeatBytes(p.data_beat_bytes),
@@ -93,11 +97,46 @@ Cache2ChiBridge::Cache2ChiBridge(const Cache2ChiBridgeParams& p)
     fatal_if(1 + (blockSize - 1) / dataBeatBytes > UINT8_MAX + 1,
              "%s block requires more than the 8-bit DataID space\n", name());
     fatal_if(maxTxns == 0, "%s requires num_txns > 0\n", name());
-    fatal_if(static_cast<uint64_t>(txnIdBase) + maxTxns >
-                 std::numeric_limits<uint32_t>::max(),
-             "%s txnid_base=%u num_txns=%u exceeds uint32 TxnID range\n",
-             name(), txnIdBase, maxTxns);
-    nextTxnId = txnIdBase + 1;
+    fatal_if(hnfHashPaBits < 6 || hnfHashPaBits > 64,
+             "%s hnf_hash_pa_bits=%u must be in [6, 64]\n", name(),
+             hnfHashPaBits);
+    fatal_if(!homeNodeIds.empty() &&
+                 (homeNodeIds.size() > 64 ||
+                  !isPowerOf2(homeNodeIds.size())),
+             "%s home_node_ids count=%llu must be a power of two <= 64\n",
+             name(),
+             static_cast<unsigned long long>(homeNodeIds.size()));
+    if (!homeNodeIds.empty()) {
+        std::unordered_set<uint32_t> uniqueTargets(
+            homeNodeIds.begin(), homeNodeIds.end());
+        fatal_if(uniqueTargets.size() != homeNodeIds.size(),
+                 "%s home_node_ids must contain unique target IDs\n", name());
+    }
+    fatal_if(txnIdNamespaceCount == 0 ||
+                 txnIdNamespace >= txnIdNamespaceCount,
+             "%s requires txnid_namespace_id=%u < "
+             "txnid_namespace_count=%u\n",
+             name(), txnIdNamespace, txnIdNamespaceCount);
+    nextTxnId = firstTxnIdInNamespace(
+        txnIdBase, txnIdNamespace, txnIdNamespaceCount);
+    const uint64_t max_txnid = std::numeric_limits<uint32_t>::max();
+    const uint64_t namespace_capacity = nextTxnId <= max_txnid ?
+        1 + (max_txnid - nextTxnId) / txnIdNamespaceCount : 0;
+    fatal_if(maxTxns > namespace_capacity,
+             "%s TxnID namespace %u/%u above base=%u cannot represent "
+             "num_txns=%u simultaneous transactions\n",
+             name(), txnIdNamespace, txnIdNamespaceCount, txnIdBase,
+             maxTxns);
+}
+
+uint32_t
+Cache2ChiBridge::selectHomeNode(Addr address) const
+{
+    if (homeNodeIds.empty()) {
+        return homeNodeId;
+    }
+    return homeNodeIds[cmnHnfIndex(
+        address, homeNodeIds.size(), hnfHashPaBits)];
 }
 
 Cache2ChiBridge::CacheSidePort::CacheSidePort(
@@ -163,14 +202,17 @@ Cache2ChiBridge::hasPumpWork() const
 std::optional<uint32_t>
 Cache2ChiBridge::allocateTxnId()
 {
-    for (uint32_t i = 0; i < maxTxns; ++i) {
-        uint32_t id = nextTxnId;
-        nextTxnId = id >= txnIdBase + maxTxns ? txnIdBase + 1 : id + 1;
-        if (!txns.count(id)) {
-            return id;
-        }
-    }
-    return std::nullopt;
+    const auto id = allocateMonotonicTxnId(
+        nextTxnId, txns.size(), maxTxns, txnIdNamespaceCount);
+    fatal_if(!id && txns.size() < maxTxns,
+             "%s exhausted monotonic 32-bit CHI TxnID namespace %u/%u; "
+             "refusing to wrap because an older cross-channel flit may "
+             "still carry a retired ID\n",
+             name(), txnIdNamespace, txnIdNamespaceCount);
+    panic_if(id && txns.count(*id),
+             "%s monotonic allocator produced active txnid=%u\n",
+             name(), id ? *id : 0);
+    return id;
 }
 
 void
@@ -318,7 +360,7 @@ Cache2ChiBridge::mapToReq(const MemoryIntent& intent, PacketPtr pkt,
     req.size = static_cast<uint8_t>(pkt->getSize());
     req.qos = pkt->qosValue();
     req.srcid = nodeId;
-    req.tgtid = homeNodeId;
+    req.tgtid = selectHomeNode(req.addr);
     req.txnid = txnid;
     req.stage = 0;
     req.AllowRetry = enableRetry ? 1 : 0;
@@ -367,7 +409,7 @@ Cache2ChiBridge::mapToReq(const MemoryIntent& intent, PacketPtr pkt,
 
 std::vector<RawDat>
 Cache2ChiBridge::packDataBeats(const MemoryIntent& intent, PacketPtr pkt,
-                               uint32_t txnid) const
+                               const RawReq& req) const
 {
     std::vector<RawDat> beats;
     if (!intent.carriesData) {
@@ -379,7 +421,7 @@ Cache2ChiBridge::packDataBeats(const MemoryIntent& intent, PacketPtr pkt,
 
     DPRINTF(Cache2ChiBridge,
             "pack classic data txnid=%u cmd=%s addr=%#llx bytes=%u\n",
-            txnid, pkt->cmdString().c_str(),
+            req.txnid, pkt->cmdString().c_str(),
             static_cast<unsigned long long>(pkt->getAddr()), pkt->getSize());
     const uint8_t* src = pkt->getConstPtr<uint8_t>();
     const uint32_t pktSize = pkt->getSize();
@@ -395,12 +437,12 @@ Cache2ChiBridge::packDataBeats(const MemoryIntent& intent, PacketPtr pkt,
         RawDat dat{};
         dat.qos = pkt->qosValue();
         dat.srcid = nodeId;
-        dat.tgtid = homeNodeId;
-        dat.txnid = txnid;
+        dat.tgtid = req.tgtid;
+        dat.txnid = req.txnid;
         dat.opcode = static_cast<uint8_t>(opcode);
         dat.stage = 0;
         dat.last = (copied + beatBytes) == pktSize;
-        dat.HomeNID = homeNodeId;
+        dat.HomeNID = req.tgtid;
         dat.dbid = 0;
         dat.dataid = static_cast<uint8_t>(dataid);
         dat.resp = static_cast<uint8_t>(RespState::Unknown);
@@ -564,7 +606,7 @@ Cache2ChiBridge::pump()
         txn.intent = intent;
         txn.intent.respondAsUpgrade = promotedUpgradePkts.count(pkt) != 0;
         txn.req = mapToReq(intent, pkt, *txnid);
-        txn.dataBeats = packDataBeats(intent, pkt, *txnid);
+        txn.dataBeats = packDataBeats(intent, pkt, txn.req);
         txn.readExpectedBytes = intent.expectsData ? pkt->getSize() : 0;
 
         DPRINTF(Cache2ChiBridge,
@@ -1023,7 +1065,7 @@ Cache2ChiBridge::makeCompAck(const TxnEntry& txn) const
     RawRsp ack{};
     ack.qos = txn.req.qos;
     ack.srcid = nodeId;
-    ack.tgtid = homeNodeId;
+    ack.tgtid = txn.req.tgtid;
     ack.txnid = txn.txnid;
     ack.opcode = RspOp::CompAck;
     ack.stage = 0;

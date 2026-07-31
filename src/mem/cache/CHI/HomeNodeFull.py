@@ -30,6 +30,16 @@ class HomeNodeFull(BasicChiComponent):
     # An explicitly configured child parameter therefore takes precedence.
     slc_num_sets = Param.UInt32(1024, "Default modeled SLC sets")
     slc_num_ways = Param.UInt32(16, "Default modeled SLC ways")
+    slc_replacement_policy = Param.String(
+        "lru",
+        "Default SLC replacement policy: lru, random, or srrip",
+    )
+    slc_replacement_seed = Param.UInt64(
+        1, "Default deterministic SLC pseudo-random replacement seed")
+    slc_restore_allow_policy_override = Param.Bool(
+        False,
+        "Allow an experiment-generated checkpoint to start a new SLC policy",
+    )
     sf_num_sets = Param.UInt32(1024, "Default modeled SF sets")
     sf_num_ways = Param.UInt32(16, "Default modeled SF ways")
     seq_entries = Param.UInt32(8, "Default SF victim SEQ entries")

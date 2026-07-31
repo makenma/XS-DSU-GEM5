@@ -1,0 +1,31 @@
+{
+  "checkpoint": "/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4/shor-rv64-static",
+  "command": [
+    "/home/makenma/project/xs-gem5/GEM5/build/RISCV/gem5.opt",
+    "--outdir=/home/makenma/project/xs-gem5/GEM5/results/chi-hnf-public-proxy/runs/pseudo_random/libquantum/public_source_proxy",
+    "/home/makenma/project/xs-gem5/GEM5/configs/example/kmhv2_chi_6x4_hnf_se.py",
+    "--mem-type=DDR4_2400_8x8",
+    "--mem-channels=2",
+    "--mem-size=2GB",
+    "--maxinsts=5100000",
+    "--warmup-insts-no-switch=100000",
+    "--cmd=/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4/shor-rv64-static",
+    "--options=1397 8",
+    "--workload-cwd=/home/makenma/project/xs-gem5/GEM5/results/chi-hnf-public-proxy/runs/pseudo_random/libquantum/public_source_proxy",
+    "--disable-difftest",
+    "--slc-replacement-policy=pseudo_random",
+    "--slc-replacement-seed=1"
+  ],
+  "finished_at": "2026-07-30T00:22:56.412109+00:00",
+  "input_mode": "public_static_elf_se",
+  "outdir": "/home/makenma/project/xs-gem5/GEM5/results/chi-hnf-public-proxy/runs/pseudo_random/libquantum/public_source_proxy",
+  "policy": "pseudo_random",
+  "returncode": 0,
+  "seed": 1,
+  "skipped": false,
+  "slice_id": "public_source_proxy",
+  "started_at": "2026-07-30T00:20:43.446064+00:00",
+  "weight": 1.0,
+  "workload": "libquantum",
+  "workload_options": "1397 8"
+}

@@ -14,8 +14,76 @@ namespace
 {
 
 constexpr int DevicePortCount = 16;
+constexpr std::array<const char *, 4> ChannelNames = {
+    "REQ", "RSP", "SNP", "DAT"
+};
+constexpr std::array<const char *, 4> DirectionNames = {
+    "E", "S", "W", "N"
+};
+constexpr std::array<const char *, 4> LocalPortNames = {
+    "P0", "P1", "P2", "P3"
+};
 
 } // anonymous namespace
+
+ChiRouterRefModel::RouterStats::RouterStats(statistics::Group *parent)
+    : statistics::Group(parent, "trafficStats"),
+      ADD_STAT(localInjectedFlits, statistics::units::Count::get(),
+               "Flits accepted from local endpoints, counted once at "
+               "router ingress"),
+      ADD_STAT(localDeliveredFlits, statistics::units::Count::get(),
+               "Flits successfully enqueued to local endpoints, counted "
+               "once at router egress"),
+      ADD_STAT(internalReceivedFlits, statistics::units::Count::get(),
+               "Flits accepted from directional links by CHI channel and "
+               "E/S/W/N ingress direction"),
+      ADD_STAT(internalSentFlits, statistics::units::Count::get(),
+               "Flits successfully enqueued on directional links by CHI "
+               "channel and E/S/W/N egress direction"),
+      ADD_STAT(internalOutputStallCycles, statistics::units::Cycle::get(),
+               "Pending directional-output flit-cycles blocked by link "
+               "credit or peer backpressure"),
+      ADD_STAT(localInjectionStallCycles, statistics::units::Cycle::get(),
+               "Pending local-injection P-port cycles blocked by router "
+               "ingress credit"),
+      ADD_STAT(localDeliveryStallCycles, statistics::units::Cycle::get(),
+               "Non-empty local-delivery P-port cycles unable to send a "
+               "flit because of credit or endpoint backpressure")
+{
+    localInjectedFlits.init(RefChannels).flags(statistics::total);
+    localDeliveredFlits.init(RefChannels).flags(statistics::total);
+    internalReceivedFlits.init(RefChannels, DirectionNum)
+        .flags(statistics::total);
+    internalSentFlits.init(RefChannels, DirectionNum)
+        .flags(statistics::total);
+    internalOutputStallCycles.init(RefChannels, DirectionNum)
+        .flags(statistics::total);
+    localInjectionStallCycles.init(RefChannels, DefaultPNum)
+        .flags(statistics::total);
+    localDeliveryStallCycles.init(RefChannels, DefaultPNum)
+        .flags(statistics::total);
+
+    for (int c = 0; c < RefChannels; ++c) {
+        localInjectedFlits.subname(c, ChannelNames[c]);
+        localDeliveredFlits.subname(c, ChannelNames[c]);
+
+        internalReceivedFlits.subname(c, ChannelNames[c]);
+        internalSentFlits.subname(c, ChannelNames[c]);
+        internalOutputStallCycles.subname(c, ChannelNames[c]);
+        localInjectionStallCycles.subname(c, ChannelNames[c]);
+        localDeliveryStallCycles.subname(c, ChannelNames[c]);
+    }
+
+    for (int d = 0; d < DirectionNum; ++d) {
+        internalReceivedFlits.ysubname(d, DirectionNames[d]);
+        internalSentFlits.ysubname(d, DirectionNames[d]);
+        internalOutputStallCycles.ysubname(d, DirectionNames[d]);
+    }
+    for (int p = 0; p < DefaultPNum; ++p) {
+        localInjectionStallCycles.ysubname(p, LocalPortNames[p]);
+        localDeliveryStallCycles.ysubname(p, LocalPortNames[p]);
+    }
+}
 
 ChiRouterRefModel::ChiRouterRefModel(const Params &p)
     : BasicChiComponent(p),
@@ -28,7 +96,8 @@ ChiRouterRefModel::ChiRouterRefModel(const Params &p)
       dNum(p.dnum),
       internalNum(p.internal_ports_num),
       pTxDepth(p.p_tx_depth),
-      pCandDepth(p.p_cand_depth)
+      pCandDepth(p.p_cand_depth),
+      stats(this)
 {
     fatal_if(pNum != DefaultPNum || dNum != DefaultDNum ||
                  internalNum != InternalNum,
@@ -255,6 +324,7 @@ ChiRouterRefModel::sampleRxPorts()
                 tr.fromInternalPeerPort = from_peer;
                 inputQ[c][src].push_back(tr);
                 inputFlitvQ[c][src].push_back(tr);
+                stats.internalReceivedFlits[c][src % DirectionNum]++;
 
                 DPRINTF(ChiRouterRefModel,
                         "[RX_INT] ch=%s dir=%s src=%d route=0x%x out=%s "
@@ -304,6 +374,7 @@ ChiRouterRefModel::sampleRxPorts()
                                              -1);
                     tr.fromLocalPort = from_local;
                     inputQ[c][src].push_back(tr);
+                    stats.localInjectedFlits[c]++;
 
                     DPRINTF(ChiRouterRefModel,
                             "[RX_PDEV] ch=%s dir=%s local=%u p=%d d=%d route=0x%x "
@@ -466,6 +537,7 @@ ChiRouterRefModel::ptxDrainByCreditStage(ChannelType ch)
         }
 
         if (!sent) {
+            stats.localDeliveryStallCycles[c][p]++;
             DPRINTF(ChiRouterRefModel,
                     "[P_TX_STALL] ch=%s p=%d tx=%llu no_credit_or_match\n",
                     channelName(ch), p,
@@ -499,6 +571,10 @@ ChiRouterRefModel::outSendCommitStage(ChannelType ch)
                     continue;
                 }
                 if (!canSendOut(ch, r, out, head.dir)) {
+                    const int direction = directionIndex(out);
+                    if (direction >= 0) {
+                        stats.internalOutputStallCycles[c][direction]++;
+                    }
                     continue;
                 }
             }
@@ -672,8 +748,14 @@ ChiRouterRefModel::doOutputArbitration(ChannelType ch)
                 }
             } else {
                 RoutedFlit head;
-                if (!peekInbufFlit(ch, r, win_ip, out, head) ||
-                    !canSendOut(ch, r, out, head.dir)) {
+                if (!peekInbufFlit(ch, r, win_ip, out, head)) {
+                    continue;
+                }
+                if (!canSendOut(ch, r, out, head.dir)) {
+                    const int direction = directionIndex(out);
+                    if (direction >= 0) {
+                        stats.internalOutputStallCycles[c][direction]++;
+                    }
                     continue;
                 }
             }
@@ -710,6 +792,12 @@ ChiRouterRefModel::pdevArbStage(ChannelType ch)
 
     for (int p = 0; p < DefaultPNum; ++p) {
         if (!hasPdevCredit(ch, p)) {
+            const bool pending = std::any_of(
+                pdevReqPipe[c][p].begin(), pdevReqPipe[c][p].end(),
+                [](bool requested) { return requested; });
+            if (pending) {
+                stats.localInjectionStallCycles[c][p]++;
+            }
             DPRINTF(ChiRouterRefModel,
                     "[PDEV_ARB_BP] ch=%s p=%d no_credit credit=%d\n",
                     channelName(ch), p, mdlCredit[c][p]);
@@ -1038,6 +1126,27 @@ ChiRouterRefModel::outPortName(OutPort op) const
         return "OUT_N_EXT";
       default:
         return "OUT_UNKNOWN";
+    }
+}
+
+int
+ChiRouterRefModel::directionIndex(OutPort op) const
+{
+    switch (op) {
+      case OUT_E:
+      case OUT_E_EXT:
+        return 0;
+      case OUT_S:
+      case OUT_S_EXT:
+        return 1;
+      case OUT_W:
+      case OUT_W_EXT:
+        return 2;
+      case OUT_N:
+      case OUT_N_EXT:
+        return 3;
+      default:
+        return -1;
     }
 }
 
@@ -1646,6 +1755,12 @@ ChiRouterRefModel::sendToInternal(ChannelType ch, int router, OutPort out,
         return false;
     }
 
+    const int direction = directionIndex(out);
+    panic_if(direction < 0,
+             "%s internal send used non-directional output %s\n",
+             name(), outPortName(out));
+    stats.internalSentFlits[chIdx(ch)][direction]++;
+
     DPRINTF(ChiRouterRefModel,
             "[TX_INT] ch=%s dir=%s r=%d out=%s internal_idx=%d seq=%llu "
             "tgt=%u\n",
@@ -1670,6 +1785,8 @@ ChiRouterRefModel::sendToDevice(ChannelType ch, int p, int d,
     if (!sent) {
         return false;
     }
+
+    stats.localDeliveredFlits[chIdx(ch)]++;
 
     DPRINTF(ChiRouterRefModel,
             "[TX_PDEV] ch=%s dir=%s p=%d d=%d seq=%llu tgt=%u\n",

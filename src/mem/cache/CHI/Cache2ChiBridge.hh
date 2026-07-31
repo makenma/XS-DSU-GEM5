@@ -53,6 +53,10 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
         return promoted && !(snoopPrecedes && snoopInvalidates);
     }
 
+    /** Arm CMN SCG XOR selector for a power-of-two HN-F target table. */
+    static uint32_t cmnHnfIndex(Addr address, size_t hnf_count,
+                                uint8_t pa_bits);
+
   private:
 #ifdef UNIT_TEST
     friend class Cache2ChiBridgeProtocolTestPeer;
@@ -246,10 +250,12 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     AddrRangeList cacheGetAddrRanges() const;
 
     MemoryIntent classify(PacketPtr pkt) const;
-    RawReq mapToReq(const MemoryIntent& intent, PacketPtr pkt, uint32_t txnid) const;
+    RawReq mapToReq(const MemoryIntent& intent, PacketPtr pkt,
+                    uint32_t txnid) const;
     std::vector<RawDat> packDataBeats(const MemoryIntent& intent,
                                       PacketPtr pkt,
-                                      uint32_t txnid) const;
+                                      const RawReq& req) const;
+    uint32_t selectHomeNode(Addr address) const;
 
     // Mem side port methods
     virtual bool memSidePortRecvTimingResp(PacketPtr pkt);
@@ -275,13 +281,19 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
 
     const uint32_t nodeId;
     const uint32_t homeNodeId;
+    const std::vector<uint32_t> homeNodeIds;
+    const uint8_t hnfHashPaBits;
     const uint32_t txnIdBase;
+    const uint32_t txnIdNamespace;
+    const uint32_t txnIdNamespaceCount;
     const uint32_t maxTxns;
     const uint32_t blockSize;
     const uint32_t dataBeatBytes;
     const bool enableRetry;
     const bool sinkHnfTxReq;
-    uint32_t nextTxnId = 1;
+    // Keep the allocation cursor wider than the modeled CHI field so that
+    // exhaustion is distinguishable from an accidental uint32_t wrap.
+    uint64_t nextTxnId = 1;
     uint32_t nextSnoopTxnId = 1;
 
     /** ============ Event pump ============ */
@@ -292,6 +304,11 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     bool hasPumpWork() const;
 
     std::optional<uint32_t> allocateTxnId();
+    static uint64_t firstTxnIdInNamespace(
+        uint32_t base, uint32_t namespace_id, uint32_t namespace_count);
+    static std::optional<uint32_t> allocateMonotonicTxnId(
+        uint64_t& next_id, size_t outstanding, uint32_t max_outstanding,
+        uint32_t namespace_count);
     void freeTxn(uint32_t txnid);
     uint32_t allocateSnoopTxnId();
 

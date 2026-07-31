@@ -1,0 +1,263 @@
+{
+  "checkpoint_full_retry_limit": 8,
+  "checkpoint_refill_max_ticks": 1000000000,
+  "classification": "public-source proxy; not SPEC CPU2006",
+  "common_checkpoint": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-formal/warmup/common_full_cpt",
+  "experiment_mode": "warmup",
+  "fill_max_ticks": 5000000000,
+  "min_roi_insts_per_core": 100000,
+  "phases": {
+    "checkpoint": {
+      "cpu_active_threads": [
+        1,
+        1
+      ],
+      "cpu_insts": [
+        4394492,
+        3175617
+      ],
+      "max_valid_ways_per_set": 16,
+      "slc_capacity_lines": 16384,
+      "slc_valid_lines": 16384,
+      "tick": 1378457840
+    },
+    "cold_start": {
+      "cpu_active_threads": [
+        1,
+        1
+      ],
+      "cpu_insts": [
+        0,
+        0
+      ],
+      "tick": 0
+    },
+    "first_full": {
+      "cpu_active_threads": [
+        1,
+        1
+      ],
+      "cpu_insts": [
+        4132939,
+        3146279
+      ],
+      "exit_cause": "shared HNF SLC reached full capacity",
+      "exit_code": 0,
+      "tick": 1264513580
+    },
+    "post_settle": {
+      "cpu_active_threads": [
+        1,
+        1
+      ],
+      "cpu_insts": [
+        4133659,
+        3146462
+      ],
+      "exit_cause": "simulate() limit reached",
+      "exit_code": 0,
+      "tick": 1264613580
+    },
+    "pre_checkpoint_active": {
+      "cpu_active_threads": [
+        1,
+        1
+      ],
+      "cpu_insts": [
+        4133659,
+        3146462
+      ],
+      "tick": 1264613580
+    },
+    "pre_checkpoint_boundary_attempts": [
+      {
+        "active_boundary": {
+          "cpu_active_threads": [
+            1,
+            1
+          ],
+          "cpu_insts": [
+            4133659,
+            3146462
+          ],
+          "max_valid_ways_per_set": 16,
+          "slc_capacity_lines": 16384,
+          "slc_valid_lines": 16384,
+          "tick": 1264613580
+        },
+        "attempt": 1,
+        "drained_boundary": {
+          "cpu_active_threads": [
+            1,
+            1
+          ],
+          "cpu_insts": [
+            4133660,
+            3146463
+          ],
+          "max_valid_ways_per_set": 16,
+          "slc_capacity_lines": 16384,
+          "slc_valid_lines": 16383,
+          "tick": 1269456080
+        },
+        "refill_end": {
+          "cpu_active_threads": [
+            1,
+            1
+          ],
+          "cpu_insts": [
+            4394491,
+            3175616
+          ],
+          "exit_cause": "shared HNF SLC reached full capacity",
+          "exit_code": 0,
+          "max_valid_ways_per_set": 16,
+          "slc_capacity_lines": 16384,
+          "slc_valid_lines": 16384,
+          "tick": 1369829432
+        },
+        "refill_start": {
+          "cpu_active_threads": [
+            1,
+            1
+          ],
+          "cpu_insts": [
+            4133660,
+            3146463
+          ],
+          "max_valid_ways_per_set": 16,
+          "slc_capacity_lines": 16384,
+          "slc_valid_lines": 16383,
+          "tick": 1269456081
+        }
+      },
+      {
+        "active_boundary": {
+          "cpu_active_threads": [
+            1,
+            1
+          ],
+          "cpu_insts": [
+            4394491,
+            3175616
+          ],
+          "max_valid_ways_per_set": 16,
+          "slc_capacity_lines": 16384,
+          "slc_valid_lines": 16384,
+          "tick": 1369829432
+        },
+        "attempt": 2,
+        "drained_boundary": {
+          "cpu_active_threads": [
+            1,
+            1
+          ],
+          "cpu_insts": [
+            4394492,
+            3175617
+          ],
+          "max_valid_ways_per_set": 16,
+          "slc_capacity_lines": 16384,
+          "slc_valid_lines": 16384,
+          "tick": 1378457840
+        }
+      }
+    ],
+    "pre_checkpoint_drained": {
+      "cpu_active_threads": [
+        1,
+        1
+      ],
+      "cpu_insts": [
+        4394492,
+        3175617
+      ],
+      "max_valid_ways_per_set": 16,
+      "slc_capacity_lines": 16384,
+      "slc_valid_lines": 16384,
+      "tick": 1378457840
+    },
+    "pre_checkpoint_refill_1_start": {
+      "cpu_active_threads": [
+        1,
+        1
+      ],
+      "cpu_insts": [
+        4133660,
+        3146463
+      ],
+      "tick": 1269456081
+    },
+    "pre_checkpoint_retry_1_active": {
+      "cpu_active_threads": [
+        1,
+        1
+      ],
+      "cpu_insts": [
+        4394491,
+        3175616
+      ],
+      "tick": 1369829432
+    },
+    "pre_checkpoint_retry_1_drained": {
+      "cpu_active_threads": [
+        1,
+        1
+      ],
+      "cpu_insts": [
+        4394492,
+        3175617
+      ],
+      "tick": 1378457840
+    }
+  },
+  "policy": "lru",
+  "processes": [
+    {
+      "argv": [
+        "/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4/shor-rv64-static",
+        "1397",
+        "8"
+      ],
+      "cpu_id": 0,
+      "cwd": "/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4",
+      "elf": "/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4/shor-rv64-static",
+      "pid": 100
+    },
+    {
+      "argv": [
+        "/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/bin/tokenring-rv64-static",
+        "-f",
+        "/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/share/tokenring/omnetpp.ini"
+      ],
+      "cpu_id": 1,
+      "cwd": "/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/share/tokenring",
+      "elf": "/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/bin/tokenring-rv64-static",
+      "pid": 101
+    }
+  ],
+  "random_seed": 20260730,
+  "roi_ticks": 2000000000,
+  "schema_version": 1,
+  "settle_ticks": 100000,
+  "stats_sections": {
+    "first_full": 0,
+    "pre_checkpoint_drained": 1
+  },
+  "topology": {
+    "cpu0_rnf": "0x00@router(0,0)/P0D0",
+    "cpu1_rnf": "0x04@router(0,0)/P1D0",
+    "cpus": 2,
+    "hnf": "0x90@router(1,1)/P0D0",
+    "hnfs": 1,
+    "mesh": "2x2",
+    "rnfs": 2,
+    "slc": {
+      "bytes": 1048576,
+      "line_bytes": 64,
+      "sets": 1024,
+      "ways": 16
+    },
+    "sn": "0x80@router(1,0)/P0D0"
+  }
+}

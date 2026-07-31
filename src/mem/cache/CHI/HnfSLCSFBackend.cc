@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <stdexcept>
 #include <unordered_set>
 
 #include "base/logging.hh"
@@ -64,12 +65,21 @@ dataPrefix(const std::vector<uint8_t>& data)
 
 HnfSLCSFBackend::HnfSLCSFBackend(uint32_t block_size, uint32_t slc_num_sets,
                    uint32_t slc_num_ways, uint32_t sf_num_sets,
-                   uint32_t sf_num_ways, uint32_t seq_entries)
+                   uint32_t sf_num_ways, uint32_t seq_entries,
+                   const std::string& slc_replacement_policy,
+                   uint64_t slc_replacement_seed,
+                   bool allow_replacement_policy_override)
     : blockSize(block_size),
       slcSets(slc_num_sets),
       slcWays(slc_num_ways),
       sfSets(sf_num_sets),
       sfWays(sf_num_ways),
+      slcReplacementPolicy(
+          parseSlcReplacementPolicy(slc_replacement_policy)),
+      slcReplacementSeed(slc_replacement_seed),
+      slcPseudoRandomState(slc_replacement_seed),
+      allowReplacementPolicyOverride(allow_replacement_policy_override),
+      slcValidWaysPerSet(slc_num_sets, 0),
       slc(slc_num_sets, std::vector<SlcLine>(slc_num_ways)),
       sf(sf_num_sets, std::vector<SfLine>(sf_num_ways)),
       seq(seq_entries),
@@ -87,6 +97,8 @@ void
 HnfSLCSFBackend::resetStorageForColdStart()
 {
     slc.assign(slcSets, std::vector<SlcLine>(slcWays));
+    slcValidLinesCount = 0;
+    slcValidWaysPerSet.assign(slcSets, 0);
     sf.assign(sfSets, std::vector<SfLine>(sfWays));
     seq.assign(seq.size(), SeqEntry{});
     seqPending.clear();
@@ -98,7 +110,118 @@ HnfSLCSFBackend::resetStorageForColdStart()
     lookupEpoch = 1;
     lookupAccessCount = 0;
     nextSeqId = 1;
+    slcPseudoRandomState = slcReplacementSeed;
     assertSeqAccounting();
+}
+
+HnfSLCSFBackend::SlcReplacementPolicy
+HnfSLCSFBackend::parseSlcReplacementPolicy(const std::string& policy)
+{
+    if (policy == "lru" || policy == "lsu") {
+        return SlcReplacementPolicy::Lru;
+    }
+    if (policy == "random" || policy == "pseudo_random") {
+        return SlcReplacementPolicy::PseudoRandom;
+    }
+    if (policy == "srrip" || policy == "rrip") {
+        return SlcReplacementPolicy::Srrip;
+    }
+    throw std::invalid_argument(
+        "HnfSLCSF unknown SLC replacement policy '" + policy +
+        "' (expected lru, random, or srrip)");
+}
+
+uint64_t
+HnfSLCSFBackend::nextPseudoRandomState(uint64_t state)
+{
+    // SplitMix64's counter step and output permutation are fully specified
+    // uint64_t operations, making the stream independent of host libraries.
+    return state + 0x9e3779b97f4a7c15ULL;
+}
+
+uint64_t
+HnfSLCSFBackend::pseudoRandomOutput(uint64_t state)
+{
+    uint64_t value = state;
+    value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
+    return value ^ (value >> 31);
+}
+
+uint32_t
+HnfSLCSFBackend::selectSlcVictimWay(uint64_t block_addr) const
+{
+    const auto& set = slc[slcSet(block_addr)];
+    const auto invalid = std::find_if(
+        set.begin(), set.end(), [](const SlcLine& line) {
+            return !line.valid;
+        });
+    if (invalid != set.end()) {
+        return static_cast<uint32_t>(std::distance(set.begin(), invalid));
+    }
+
+    if (slcReplacementPolicy == SlcReplacementPolicy::PseudoRandom) {
+        const uint64_t next_state =
+            nextPseudoRandomState(slcPseudoRandomState);
+        return static_cast<uint32_t>(
+            pseudoRandomOutput(next_state) % slcWays);
+    }
+
+    if (slcReplacementPolicy == SlcReplacementPolicy::Srrip) {
+        const auto distant = std::find_if(
+            set.begin(), set.end(), [](const SlcLine& line) {
+                return line.rrpv == 3;
+            });
+        if (distant != set.end()) {
+            return static_cast<uint32_t>(
+                std::distance(set.begin(), distant));
+        }
+        const auto maximum = std::max_element(
+            set.begin(), set.end(), [](const SlcLine& lhs,
+                                      const SlcLine& rhs) {
+                return lhs.rrpv < rhs.rrpv;
+            });
+        panic_if(maximum == set.end(),
+                 "HnfSLCSF cannot choose an SRRIP victim from an empty set\n");
+        return static_cast<uint32_t>(std::distance(set.begin(), maximum));
+    }
+
+    const auto lru = std::min_element(
+        set.begin(), set.end(), [](const SlcLine& lhs, const SlcLine& rhs) {
+            return lhs.lastUse < rhs.lastUse;
+        });
+    panic_if(lru == set.end(),
+             "HnfSLCSF cannot choose a victim from an empty SLC set\n");
+    return static_cast<uint32_t>(std::distance(set.begin(), lru));
+}
+
+void
+HnfSLCSFBackend::ageSrripSetForMiss(uint64_t block_addr)
+{
+    if (slcReplacementPolicy != SlcReplacementPolicy::Srrip) {
+        return;
+    }
+    auto& set = slc[slcSet(block_addr)];
+    if (std::any_of(set.begin(), set.end(), [](const SlcLine& line) {
+            return !line.valid;
+        })) {
+        return;
+    }
+    const uint8_t maximum = std::max_element(
+        set.begin(), set.end(), [](const SlcLine& lhs, const SlcLine& rhs) {
+            return lhs.rrpv < rhs.rrpv;
+        })->rrpv;
+    const uint8_t increment = 3 - maximum;
+    for (SlcLine& line : set) {
+        line.rrpv = std::min<uint8_t>(3, line.rrpv + increment);
+    }
+}
+
+uint32_t
+HnfSLCSFBackend::maxValidWaysInSet() const
+{
+    return *std::max_element(
+        slcValidWaysPerSet.begin(), slcValidWaysPerSet.end());
 }
 
 uint64_t
@@ -208,20 +331,17 @@ HnfSLCSFBackend::allocateSlc(uint64_t block_addr,
                  "addr=%#llx\n",
                  static_cast<unsigned long long>(block_addr));
         hit->lastUse = checkedIncrement(accessCounter, "access counter");
+        if (slcReplacementPolicy == SlcReplacementPolicy::Srrip) {
+            hit->rrpv = 0;
+        }
         return *hit;
     }
 
+    ageSrripSetForMiss(block_addr);
     auto& set = slc[slcSet(block_addr)];
-    auto victim = target ? set.begin() + target->way :
-        std::find_if(set.begin(), set.end(), [](const SlcLine& line) {
-            return !line.valid;
-        });
-    if (victim == set.end()) {
-        victim = std::min_element(
-            set.begin(), set.end(), [](const SlcLine& lhs, const SlcLine& rhs) {
-                return lhs.lastUse < rhs.lastUse;
-            });
-    }
+    auto victim = set.begin() +
+        (target ? target->way : selectSlcVictimWay(block_addr));
+    const bool displaces_valid = victim->valid;
     if (victim->valid) {
         panic_if(isDirty(victim->state) && !permit,
                  "HnfSLCSF dirty SLC victim requires VictimBuffer before "
@@ -246,11 +366,20 @@ HnfSLCSFBackend::allocateSlc(uint64_t block_addr,
 
     const uint64_t generation =
         checkedIncrement(accessCounter, "access counter");
+    if (displaces_valid &&
+        slcReplacementPolicy == SlcReplacementPolicy::PseudoRandom) {
+        slcPseudoRandomState = nextPseudoRandomState(slcPseudoRandomState);
+    }
+    if (!displaces_valid) {
+        ++slcValidLinesCount;
+        ++slcValidWaysPerSet[slcSet(block_addr)];
+    }
     *victim = SlcLine{};
     victim->valid = true;
     victim->tag = slcTag(block_addr);
     victim->generation = generation;
     victim->lastUse = generation;
+    victim->rrpv = 2;
     return *victim;
 }
 
@@ -506,16 +635,8 @@ HnfSLCSFBackend::slcAllocationWouldDisplaceDirty(
         return set[target->slc.way].valid &&
             isDirty(set[target->slc.way].state);
     }
-    if (std::any_of(set.begin(), set.end(),
-                    [](const SlcLine& line) { return !line.valid; })) {
-        return false;
-    }
-    const auto victim = std::min_element(
-        set.begin(), set.end(),
-        [](const SlcLine& lhs, const SlcLine& rhs) {
-            return lhs.lastUse < rhs.lastUse;
-        });
-    return victim != set.end() && isDirty(victim->state);
+    const SlcLine& victim = set[selectSlcVictimWay(block_addr)];
+    return victim.valid && isDirty(victim.state);
 }
 
 bool
@@ -963,11 +1084,17 @@ void
 HnfSLCSFBackend::invalidateSlc(uint64_t block_addr)
 {
     if (SlcLine* line = findSlc(block_addr)) {
+        panic_if(slcValidLinesCount == 0 ||
+                     slcValidWaysPerSet[slcSet(block_addr)] == 0,
+                 "HnfSLCSF SLC occupancy underflows on invalidation\n");
+        --slcValidLinesCount;
+        --slcValidWaysPerSet[slcSet(block_addr)];
         line->valid = false;
         line->state = HnfSlcState::I;
         line->data.clear();
         line->generation = checkedIncrement(accessCounter, "access counter");
         line->lastUse = accessCounter;
+        line->rrpv = 3;
     }
 }
 
@@ -990,7 +1117,7 @@ HnfSLCSFBackend::snapshotLookup(uint64_t block_addr) const
     snapshot.lookupEpoch = lookupEpoch;
 
     const auto capture = [](const auto& lines, uint32_t set,
-                            uint64_t tag) {
+                            uint64_t tag, uint32_t miss_way) {
         ArraySnapshot array{};
         array.set = set;
         auto selected = std::find_if(
@@ -999,17 +1126,9 @@ HnfSLCSFBackend::snapshotLookup(uint64_t block_addr) const
             });
         array.hit = selected != lines.end();
         if (!array.hit) {
-            selected = std::find_if(
-                lines.begin(), lines.end(), [](const auto& line) {
-                    return !line.valid;
-                });
-            if (selected == lines.end()) {
-                selected = std::min_element(
-                    lines.begin(), lines.end(),
-                    [](const auto& lhs, const auto& rhs) {
-                        return lhs.lastUse < rhs.lastUse;
-                    });
-            }
+            panic_if(miss_way >= lines.size(),
+                     "HnfSLCSF snapshot victim way is out of range\n");
+            selected = lines.begin() + miss_way;
         }
         panic_if(selected == lines.end(),
                  "HnfSLCSF cannot snapshot an empty array set\n");
@@ -1021,8 +1140,26 @@ HnfSLCSFBackend::snapshotLookup(uint64_t block_addr) const
 
     const uint32_t slc_set = slcSet(block_addr);
     const uint32_t sf_set = sfSet(block_addr);
-    snapshot.slc = capture(slc[slc_set], slc_set, slcTag(block_addr));
-    snapshot.sf = capture(sf[sf_set], sf_set, sfTag(block_addr));
+    snapshot.slc = capture(
+        slc[slc_set], slc_set, slcTag(block_addr),
+        selectSlcVictimWay(block_addr));
+    const auto& sf_lines = sf[sf_set];
+    auto sf_victim = std::find_if(
+        sf_lines.begin(), sf_lines.end(), [](const SfLine& line) {
+            return !line.valid;
+        });
+    if (sf_victim == sf_lines.end()) {
+        sf_victim = std::min_element(
+            sf_lines.begin(), sf_lines.end(),
+            [](const SfLine& lhs, const SfLine& rhs) {
+                return lhs.lastUse < rhs.lastUse;
+            });
+    }
+    panic_if(sf_victim == sf_lines.end(),
+             "HnfSLCSF cannot snapshot an empty SF set\n");
+    snapshot.sf = capture(
+        sf_lines, sf_set, sfTag(block_addr),
+        static_cast<uint32_t>(std::distance(sf_lines.begin(), sf_victim)));
     return snapshot;
 }
 
@@ -1081,6 +1218,9 @@ HnfSLCSFBackend::recordAccess(uint64_t block_addr)
         checkedIncrement(accessCounter, "access counter");
     if (SlcLine* line = findSlc(block_addr)) {
         line->lastUse = access;
+        if (slcReplacementPolicy == SlcReplacementPolicy::Srrip) {
+            line->rrpv = 0;
+        }
     }
     if (SfLine* line = findSf(block_addr)) {
         line->lastUse = access;
@@ -1683,7 +1823,9 @@ HnfSLCSFBackend::releaseSeqClaim(
 void
 HnfSLCSFBackend::commitClaimedSfEvict(
     SeqId id, const std::vector<uint8_t>& data, bool dirty_data,
-    const SlcSfCompletionLease& lease)
+    const SlcSfCompletionLease& lease, const LookupSnapshot* target,
+    const SlcSfSlcVictim* preserved_victim,
+    const DirtyVictimSeal* installed_seal)
 {
     SeqEntry* entry = findSeq(id);
     panic_if(!entry || entry->phase != SeqPhase::Claimed ||
@@ -1691,6 +1833,18 @@ HnfSLCSFBackend::commitClaimedSfEvict(
                  !seqLeaseMatches(*entry, lease),
              "HnfSLCSF commits unclaimed SEQ id=%llu\n",
              static_cast<unsigned long long>(id));
+    panic_if(static_cast<bool>(preserved_victim) !=
+                 static_cast<bool>(installed_seal),
+             "HnfSLCSF SEQ dirty-victim snapshot/seal pairing mismatch\n");
+    std::optional<DirtyVictimWritePermit> permit;
+    if (preserved_victim) {
+        panic_if(!target,
+                 "HnfSLCSF SEQ dirty-victim authorization requires "
+                 "a stable target\n");
+        permit.emplace(authorizeDirtyVictimWrite(
+            entry->victim.blockAddr, *target, *preserved_victim,
+            *installed_seal));
+    }
     if (dirty_data) {
         panic_if(data.size() != blockSize,
                  "HnfSLCSF SEQ id=%llu dirty data size is invalid (%u/%u)\n",
@@ -1698,7 +1852,12 @@ HnfSLCSFBackend::commitClaimedSfEvict(
                  static_cast<unsigned>(data.size()), blockSize);
         installSlc(
             entry->victim.blockAddr, HnfSlcState::MU,
-            entry->victim.owner, data);
+            entry->victim.owner, data, target ? &target->slc : nullptr,
+            permit ? &*permit : nullptr);
+    } else {
+        panic_if(permit,
+                 "HnfSLCSF clean SEQ completion carries a dirty-victim "
+                 "permit\n");
     }
     entry->committedDirty = dirty_data;
     entry->committedData = data;
@@ -1788,6 +1947,7 @@ HnfSLCSFBackend::lineStateFingerprint(uint64_t block_addr) const
         mix(line.owner);
         mix(line.generation);
         mix(line.lastUse);
+        mix(line.rrpv);
         mix_data(line.data);
     }
     for (const SfLine& line : sf[sfSet(block_addr)]) {
@@ -1840,6 +2000,7 @@ HnfSLCSFBackend::protectedStateSnapshot(
         words.push_back(accessCounter);
         words.push_back(lookupAccessCount);
         words.push_back(nextSeqId);
+        words.push_back(slcPseudoRandomState);
     }
     words.push_back(slcSet(block_addr));
     words.push_back(sfSet(block_addr));
@@ -1855,6 +2016,7 @@ HnfSLCSFBackend::protectedStateSnapshot(
         words.push_back(line.owner);
         words.push_back(line.generation);
         words.push_back(line.lastUse);
+        words.push_back(line.rrpv);
         append_data(line.data);
     }
 
@@ -1937,9 +2099,14 @@ void
 HnfSLCSFBackend::checkGlobalInvariants() const
 {
     std::unordered_set<uint64_t> validSlcAddresses;
+    uint64_t counted_slc_lines = 0;
     for (uint32_t set = 0; set < slcSets; ++set) {
+        uint32_t counted_set_lines = 0;
         for (uint32_t lhs = 0; lhs < slcWays; ++lhs) {
             const SlcLine& line = slc[set][lhs];
+            panic_if(line.rrpv > 3,
+                     "HnfSLCSF invalid SLC RRPV set=%u way=%u rrpv=%u\n",
+                     set, lhs, static_cast<unsigned>(line.rrpv));
             panic_if(line.valid != (line.state != HnfSlcState::I),
                      "HnfSLCSF SLC valid/state mismatch set=%u way=%u "
                      "valid=%u state=%u\n", set, lhs, line.valid,
@@ -1951,6 +2118,8 @@ HnfSLCSFBackend::checkGlobalInvariants() const
                          static_cast<unsigned>(line.data.size()));
                 continue;
             }
+            ++counted_slc_lines;
+            ++counted_set_lines;
             panic_if(line.data.size() != blockSize,
                      "HnfSLCSF valid line lacks full data set=%u way=%u "
                      "bytes=%u/%u\n", set, lhs,
@@ -1974,7 +2143,18 @@ HnfSLCSFBackend::checkGlobalInvariants() const
                          static_cast<unsigned long long>(line.tag));
             }
         }
+        panic_if(counted_set_lines != slcValidWaysPerSet[set],
+                 "HnfSLCSF per-set occupancy mismatch set=%u "
+                 "tracked=%u counted=%u\n", set,
+                 slcValidWaysPerSet[set], counted_set_lines);
     }
+    panic_if(counted_slc_lines != slcValidLinesCount ||
+                 slcValidLinesCount > slcCapacityLineCount(),
+             "HnfSLCSF SLC occupancy mismatch tracked=%llu counted=%llu "
+             "capacity=%llu\n",
+             static_cast<unsigned long long>(slcValidLinesCount),
+             static_cast<unsigned long long>(counted_slc_lines),
+             static_cast<unsigned long long>(slcCapacityLineCount()));
     std::unordered_set<uint64_t> validSfAddresses;
     for (uint32_t set = 0; set < sfSets; ++set) {
         for (uint32_t lhs = 0; lhs < sfWays; ++lhs) {
@@ -2228,7 +2408,7 @@ HnfSLCSFBackend::serializePersistentState(CheckpointOut& cp) const
     panic_if(isBusy(),
              "HnfSLCSF checkpoint requires drained backend state\n");
 
-    constexpr uint32_t format_version = 1;
+    constexpr uint32_t format_version = 3;
     paramOut(cp, "formatVersion", format_version);
     paramOut(cp, "blockSize", blockSize);
     paramOut(cp, "slcSets", slcSets);
@@ -2236,6 +2416,11 @@ HnfSLCSFBackend::serializePersistentState(CheckpointOut& cp) const
     paramOut(cp, "sfSets", sfSets);
     paramOut(cp, "sfWays", sfWays);
     paramOut(cp, "seqEntries", seq.size());
+    paramOut(
+        cp, "slcReplacementPolicy",
+        static_cast<uint32_t>(slcReplacementPolicy));
+    paramOut(cp, "slcReplacementSeed", slcReplacementSeed);
+    paramOut(cp, "slcPseudoRandomState", slcPseudoRandomState);
     paramOut(cp, "accessCounter", accessCounter);
     paramOut(cp, "lookupEpoch", lookupEpoch);
     paramOut(cp, "lookupAccessCount", lookupAccessCount);
@@ -2247,6 +2432,7 @@ HnfSLCSFBackend::serializePersistentState(CheckpointOut& cp) const
     std::vector<uint32_t> slc_owner;
     std::vector<uint64_t> slc_generation;
     std::vector<uint64_t> slc_last_use;
+    std::vector<uint32_t> slc_rrpv;
     std::vector<uint64_t> slc_data_size;
     std::vector<uint32_t> slc_data;
     const size_t slc_lines = static_cast<size_t>(slcSets) * slcWays;
@@ -2256,6 +2442,7 @@ HnfSLCSFBackend::serializePersistentState(CheckpointOut& cp) const
     slc_owner.reserve(slc_lines);
     slc_generation.reserve(slc_lines);
     slc_last_use.reserve(slc_lines);
+    slc_rrpv.reserve(slc_lines);
     slc_data_size.reserve(slc_lines);
     for (const auto& set : slc) {
         for (const SlcLine& line : set) {
@@ -2265,6 +2452,7 @@ HnfSLCSFBackend::serializePersistentState(CheckpointOut& cp) const
             slc_owner.push_back(line.owner);
             slc_generation.push_back(line.generation);
             slc_last_use.push_back(line.lastUse);
+            slc_rrpv.push_back(line.rrpv);
             slc_data_size.push_back(line.data.size());
             for (uint8_t byte : line.data) {
                 slc_data.push_back(byte);
@@ -2277,6 +2465,7 @@ HnfSLCSFBackend::serializePersistentState(CheckpointOut& cp) const
     arrayParamOut(cp, "slcOwner", slc_owner);
     arrayParamOut(cp, "slcGeneration", slc_generation);
     arrayParamOut(cp, "slcReplacementStamp", slc_last_use);
+    arrayParamOut(cp, "slcRrpv", slc_rrpv);
     arrayParamOut(cp, "slcDataSize", slc_data_size);
     arrayParamOut(cp, "slcData", slc_data);
 
@@ -2384,11 +2573,43 @@ HnfSLCSFBackend::unserializePersistentState(CheckpointIn& cp)
     paramIn(cp, "sfSets", saved_sf_sets);
     paramIn(cp, "sfWays", saved_sf_ways);
     paramIn(cp, "seqEntries", saved_seq_entries);
-    fatal_if(format_version != 1 || saved_block_size != blockSize ||
+    fatal_if((format_version != 1 && format_version != 2 &&
+              format_version != 3) ||
+                 saved_block_size != blockSize ||
                  saved_slc_sets != slcSets || saved_slc_ways != slcWays ||
                  saved_sf_sets != sfSets || saved_sf_ways != sfWays ||
                  saved_seq_entries != seq.size(),
              "HnfSLCSF checkpoint geometry or format mismatch\n");
+
+    if (format_version >= 2) {
+        uint32_t saved_policy = 0;
+        uint64_t saved_seed = 0;
+        uint64_t saved_random_state = 0;
+        paramIn(cp, "slcReplacementPolicy", saved_policy);
+        paramIn(cp, "slcReplacementSeed", saved_seed);
+        paramIn(cp, "slcPseudoRandomState", saved_random_state);
+        const auto max_saved_policy = format_version == 2 ?
+            SlcReplacementPolicy::PseudoRandom :
+            SlcReplacementPolicy::Srrip;
+        const bool policy_mismatch = saved_policy !=
+            static_cast<uint32_t>(slcReplacementPolicy);
+        fatal_if(saved_policy > static_cast<uint32_t>(max_saved_policy) ||
+                     (policy_mismatch && !allowReplacementPolicyOverride),
+                 "HnfSLCSF checkpoint SLC replacement policy mismatch\n");
+        if (policy_mismatch) {
+            // An experiment-generated common warm-up checkpoint may seed
+            // several policy runs from byte-identical CPU/cache state.  The
+            // new policy starts its own deterministic metadata stream.
+            slcPseudoRandomState = slcReplacementSeed;
+        } else {
+            slcReplacementSeed = saved_seed;
+            slcPseudoRandomState = saved_random_state;
+        }
+    } else {
+        fatal_if(slcReplacementPolicy != SlcReplacementPolicy::Lru,
+                 "HnfSLCSF version-1 checkpoint requires LRU SLC policy\n");
+        slcPseudoRandomState = slcReplacementSeed;
+    }
 
     paramIn(cp, "accessCounter", accessCounter);
     paramIn(cp, "lookupEpoch", lookupEpoch);
@@ -2403,6 +2624,7 @@ HnfSLCSFBackend::unserializePersistentState(CheckpointIn& cp)
     std::vector<uint32_t> slc_owner;
     std::vector<uint64_t> slc_generation;
     std::vector<uint64_t> slc_last_use;
+    std::vector<uint32_t> slc_rrpv;
     std::vector<uint64_t> slc_data_size;
     std::vector<uint32_t> slc_data;
     arrayParamIn(cp, "slcValid", slc_valid);
@@ -2411,6 +2633,9 @@ HnfSLCSFBackend::unserializePersistentState(CheckpointIn& cp)
     arrayParamIn(cp, "slcOwner", slc_owner);
     arrayParamIn(cp, "slcGeneration", slc_generation);
     arrayParamIn(cp, "slcReplacementStamp", slc_last_use);
+    if (format_version >= 3) {
+        arrayParamIn(cp, "slcRrpv", slc_rrpv);
+    }
     arrayParamIn(cp, "slcDataSize", slc_data_size);
     arrayParamIn(cp, "slcData", slc_data);
     const size_t slc_lines = static_cast<size_t>(slcSets) * slcWays;
@@ -2420,16 +2645,21 @@ HnfSLCSFBackend::unserializePersistentState(CheckpointIn& cp)
                  slc_owner.size() != slc_lines ||
                  slc_generation.size() != slc_lines ||
                  slc_last_use.size() != slc_lines ||
+                 (format_version >= 3 && slc_rrpv.size() != slc_lines) ||
                  slc_data_size.size() != slc_lines,
              "HnfSLCSF checkpoint has malformed SLC arrays\n");
     size_t data_offset = 0;
     uint64_t max_identity = 0;
     std::vector<std::unordered_set<uint64_t>> restored_slc_tags(slcSets);
     std::unordered_set<uint64_t> restored_slc_addresses;
+    slcValidLinesCount = 0;
+    slcValidWaysPerSet.assign(slcSets, 0);
     for (size_t i = 0; i < slc_lines; ++i) {
         const uint32_t set = i / slcWays;
         const uint32_t way = i % slcWays;
-        fatal_if(slc_valid[i] > 1 ||
+        const uint32_t restored_rrpv = format_version >= 3 ?
+            slc_rrpv[i] : (slc_valid[i] ? 2 : 3);
+        fatal_if(slc_valid[i] > 1 || restored_rrpv > 3 ||
                      slc_state[i] >
                          static_cast<uint32_t>(HnfSlcState::MN) ||
                      data_offset > slc_data.size() ||
@@ -2442,6 +2672,8 @@ HnfSLCSFBackend::unserializePersistentState(CheckpointIn& cp)
                  "HnfSLCSF checkpoint SLC valid/state/data mismatch "
                  "set=%u way=%u\n", set, way);
         if (valid) {
+            ++slcValidLinesCount;
+            ++slcValidWaysPerSet[set];
             fatal_if(slc_tag[i] >
                          (std::numeric_limits<uint64_t>::max() / blockSize -
                           set) / slcSets ||
@@ -2460,6 +2692,7 @@ HnfSLCSFBackend::unserializePersistentState(CheckpointIn& cp)
         line.owner = slc_owner[i];
         line.generation = slc_generation[i];
         line.lastUse = slc_last_use[i];
+        line.rrpv = restored_rrpv;
         line.data.clear();
         for (size_t j = 0; j < slc_data_size[i]; ++j) {
             fatal_if(slc_data[data_offset] > UINT8_MAX,

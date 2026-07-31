@@ -1,0 +1,84 @@
+{
+  "checkpoint_full_retry_limit": 8,
+  "checkpoint_refill_max_ticks": 1000000000,
+  "classification": "public-source proxy; not SPEC CPU2006",
+  "common_checkpoint": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-formal-v2/warmup/common_full_cpt",
+  "common_checkpoint_files": {
+    "m5.cpt": {
+      "sha256": "65004b6a911bd5b10ced72c82c96c809d6a52997a403c8189e7ee3fba85bfc0d",
+      "size_bytes": 3406091
+    },
+    "system.physmem.store0.pmem": {
+      "sha256": "4ab74a09c280b240f1aa649c99b4c2d2725cbf42eb2971278df4e55de9111738",
+      "size_bytes": 2309431
+    }
+  },
+  "config": "/home/makenma/project/xs-gem5/GEM5/configs/example/kmhv2_chi_2x2_hnf_se.py",
+  "config_sha256": "187b71b560cf08fcdb65dc700d912e883976d9cedfb8df740e78b9dd1a0f1b4c",
+  "dependency_manifest": "/home/makenma/project/xs-gem5/workloads/dual-core-se-dependencies.json",
+  "dependency_manifest_sha256": "a4d2ab8bc2ca0f1a174c6ac0ebf6306ad2e3f72ed7435e5ef87c83e2db7854f8",
+  "fill_max_ticks": 5000000000,
+  "gem5_sha256": "8ed7c46276d0b08affb375a52edf9f14fa050af203c38cec5f9c994e42bc066c",
+  "git_commit": "2250441df2bdd173164d8484ae05b1d03103f4c7",
+  "memory": "1GB",
+  "min_roi_insts_per_core": 100000,
+  "policies": [
+    "lru",
+    "random",
+    "srrip"
+  ],
+  "replacement_policy_details": {
+    "lru": "true LRU; hit updates recency; oldest valid line wins",
+    "random": "fixed-seed uniform choice among valid ways in a full set",
+    "srrip": "deterministic 2-bit SRRIP; max=3, hit=0, insert=2"
+  },
+  "roi_ticks": 2000000000,
+  "runner": "/home/makenma/project/xs-gem5/GEM5/util/xs_scripts/chi_2x2_dual_proxy_experiment.py",
+  "runner_sha256": "d14b0cf05b301b369f3bb1317c95bc4a94e67c8885932c7a8a57cf9d26c3ca1b",
+  "delivery_artifacts": {
+    "README.md": "941813097d7a08089d4dc0377e47c96976b5afd38a11dfd636b52d8ec4341f28",
+    "EXPERIMENT_REPORT_ZH.md": "8b1ee41149b5b78627c056d4d6c7b18c3c96d2783ec9f59b90e88a9fde216656",
+    "analysis/summary.json": "ca549182363bed60ff53a27ea76e33b39ab42c2a20976b8918f97c066206f2f7",
+    "validation/random_reproducibility.json": "76a31ea0a0a1f1fe75c3626ea9c3f0d410f67a60f15907ad6671f94cbd336160",
+    "validation/ppt_render_report.json": "8de3b3df8640ab98b5c9c23a89059a80b94aa99e48cf4fd07761192767819667",
+    "双核2x2_CHI_公开源码代理_SLC替换策略分析.pptx": "bfdc5684e5854e4836284a9f589af0cf046bba9bd86342760a3bb297b5c535e1"
+  },
+  "presentation_generator": "/home/makenma/project/xs-gem5/GEM5/util/xs_scripts/chi_2x2_dual_proxy_presentation.py",
+  "presentation_generator_sha256": "4eea689e214cf496a689a1ef0c822675e1bd1b15dc0ffe2fa7ce704f5ec12208",
+  "validation": {
+    "cpp_unit_tests": "268/268 passed",
+    "formal_runs": "3/3 passed",
+    "ppt_reopen_render": "17/17 slides, 0 out-of-bounds shapes",
+    "random_reproducibility": "3/3 identical simulated stats; host-only rates excluded"
+  },
+  "runs": {
+    "lru": {
+      "host_elapsed_seconds": 556.8391728401184,
+      "return_code": 0,
+      "stderr": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-formal-v2/runs/lru/stderr.log",
+      "stdout": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-formal-v2/runs/lru/stdout.log"
+    },
+    "random": {
+      "host_elapsed_seconds": 594.0621247291565,
+      "return_code": 0,
+      "stderr": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-formal-v2/runs/random/stderr.log",
+      "stdout": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-formal-v2/runs/random/stdout.log"
+    },
+    "srrip": {
+      "host_elapsed_seconds": 561.5745711326599,
+      "return_code": 0,
+      "stderr": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-formal-v2/runs/srrip/stderr.log",
+      "stdout": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-formal-v2/runs/srrip/stdout.log"
+    },
+    "warmup": {
+      "host_elapsed_seconds": 379.3550202846527,
+      "return_code": 0,
+      "stderr": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-formal-v2/warmup/stderr.log",
+      "stdout": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-formal-v2/warmup/stdout.log"
+    }
+  },
+  "schema_version": 1,
+  "seed": 20260730,
+  "settle_ticks": 100000,
+  "warning": "These results are not SPEC CPU2006 scores."
+}

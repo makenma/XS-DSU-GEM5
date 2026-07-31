@@ -1,0 +1,4 @@
+policy,slcValidLines,slcPeakValidLines,slcCapacityLines,slcOccupancyPercent,maxValidWaysPerSet,fullSlcCycles
+lru,16382.0,16384.0,16384.0,99.987793,16.0,2859722.0
+random,16384.0,16384.0,16384.0,100.0,16.0,2813872.0
+srrip,16384.0,16384.0,16384.0,100.0,16.0,2866217.0

@@ -38,7 +38,13 @@ struct SlcSnoopFilterScheduleDecision
 inline bool
 slcSnoopFilterDrainReady(const HnfSLCSF& service)
 {
-    return service.isAdmissionSealed() && service.isCompletelyIdle();
+    // gem5 drains every object concurrently and repeats the global drain
+    // pass after producers have stopped.  A consumer must therefore keep
+    // accepting late requests while an earlier pass is in progress; sealing
+    // admission here can deadlock an O3 request which was still in flight
+    // when the HN-F was visited.  The final global fixed point guarantees
+    // that no producer can create more work.
+    return service.isDrainRequested() && service.isCompletelyIdle();
 }
 
 /** Split a long weighted statistics sample into the API's int-sized chunks. */
@@ -133,6 +139,19 @@ class SlcSnoopFilter : public ClockedObject
     bool drainRequested() const { return slcsf.isDrainRequested(); }
     bool admissionSealed() const { return slcsf.isAdmissionSealed(); }
     bool completelyIdle() const { return slcsf.isCompletelyIdle(); }
+    uint64_t slcValidLineCount() const
+    {
+        return slcsf.slcValidLineCount();
+    }
+    uint64_t slcCapacityLineCount() const
+    {
+        return slcsf.slcCapacityLineCount();
+    }
+    uint32_t maxValidWaysInSet() const
+    {
+        return slcsf.maxValidWaysInSet();
+    }
+    void rearmSlcFullExit();
     void sealAdmission();
     void testDrainComplete();
 
@@ -163,8 +182,14 @@ class SlcSnoopFilter : public ClockedObject
         void sampledOccupancy(size_t req, size_t resp, size_t inflight,
                               uint64_t cycles, bool req_full,
                               bool resp_full) override;
+        void sampledStorage(uint64_t valid_lines,
+                            uint64_t capacity_lines,
+                            uint32_t max_valid_ways,
+                            uint64_t cycles) override;
         void issued(uint64_t configured_latency) override;
-        void victim(SlcSfStatVictim victim) override;
+        void victim(
+            SlcSfStatVictim victim, uint32_t requester, uint32_t set,
+            HnfSLCSFBackend::SlcReplacementPolicy policy) override;
         void terminal(const SlcSfResponse& response) override;
         void becameVisible(uint64_t latency) override;
         void rejectedNoCredit() override;
@@ -183,6 +208,17 @@ class SlcSnoopFilter : public ClockedObject
         statistics::Scalar cleanSlcVictims;
         statistics::Scalar dirtySlcVictims;
         statistics::Scalar sfVictims;
+        statistics::Scalar slcValidLines;
+        statistics::Scalar slcPeakValidLines;
+        statistics::Scalar slcCapacityLines;
+        statistics::Scalar slcOccupancyPercent;
+        statistics::Scalar maxValidWaysPerSet;
+        statistics::Scalar fullSlcCycles;
+        statistics::Scalar replacementAttempts;
+        statistics::Scalar totalSlcVictims;
+        statistics::Vector victimByRequester;
+        statistics::Vector victimBySet;
+        statistics::Vector victimByPolicy;
         statistics::Scalar staleTokenReplays;
         statistics::Scalar resourceConflictReplays;
         statistics::Scalar seqConflictReplays;
@@ -209,6 +245,8 @@ class SlcSnoopFilter : public ClockedObject
     uint64_t scheduledServiceCycle = 0;
     std::optional<Tick> lastServiceTick;
     std::function<void(Tick)> futureWakeupCallback;
+    const bool exitOnSlcFull;
+    bool fullExitSignaled = false;
 };
 
 } // namespace gem5::Chi

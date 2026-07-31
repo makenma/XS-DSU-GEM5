@@ -1,0 +1,70 @@
+Global frequency set at 1000000000000 ticks per second
+Dispatch Grouping: No_OpClass 
+Dispatch Grouping: IntAlu 
+Dispatch Grouping: IntBr IntJp 
+Dispatch Grouping: IntMult 
+Dispatch Grouping: IntDiv Int2Fp 
+Dispatch Grouping: StoreData 
+Dispatch Grouping: FloatAdd FloatMult FloatMultAcc 
+Dispatch Grouping: FloatDiv FloatSqrt 
+Dispatch Grouping: FloatCmp FloatCvt FloatMv FloatMisc 
+Dispatch Grouping: IprAccess InstPrefetch 
+Dispatch Grouping: MemRead FloatMemRead VectorUnitStrideLoad VectorSegUnitStrideLoad VectorUnitStrideMaskLoad VectorSegUnitStrideMaskLoad VectorStridedLoad VectorSegStridedLoad VectorIndexedLoad VectorSegIndexedLoad VectorUnitStrideFaultOnlyFirstLoad VectorWholeRegisterLoad 
+Dispatch Grouping: MemWrite FloatMemWrite MemAtomic VectorUnitStrideStore VectorSegUnitStrideStore VectorUnitStrideMaskStore VectorStridedStore VectorIndexedStore VectorWholeRegisterStore 
+Dispatch Grouping: VectorIntegerArith VectorFloatArith VectorFloatConvert VectorIntegerReduce VectorFloatReduce VectorMisc VectorIntegerExtension VectorConfig 
+Dispatch Grouping: No_OpClass 
+Dispatch Grouping: IntAlu 
+Dispatch Grouping: IntBr IntJp 
+Dispatch Grouping: IntMult 
+Dispatch Grouping: IntDiv Int2Fp 
+Dispatch Grouping: StoreData 
+Dispatch Grouping: FloatAdd FloatMult FloatMultAcc 
+Dispatch Grouping: FloatDiv FloatSqrt 
+Dispatch Grouping: FloatCmp FloatCvt FloatMv FloatMisc 
+Dispatch Grouping: IprAccess InstPrefetch 
+Dispatch Grouping: MemRead FloatMemRead VectorUnitStrideLoad VectorSegUnitStrideLoad VectorUnitStrideMaskLoad VectorSegUnitStrideMaskLoad VectorStridedLoad VectorSegStridedLoad VectorIndexedLoad VectorSegIndexedLoad VectorUnitStrideFaultOnlyFirstLoad VectorWholeRegisterLoad 
+Dispatch Grouping: MemWrite FloatMemWrite MemAtomic VectorUnitStrideStore VectorSegUnitStrideStore VectorUnitStrideMaskStore VectorStridedStore VectorIndexedStore VectorWholeRegisterStore 
+Dispatch Grouping: VectorIntegerArith VectorFloatArith VectorFloatConvert VectorIntegerReduce VectorFloatReduce VectorMisc VectorIntegerExtension VectorConfig 
+gem5 Simulator System.  https://www.gem5.org
+gem5 is copyrighted software; use the --copyright option for details.
+
+gem5 version [DEVELOP-FOR-22.1]
+gem5 compiled Jul 31 2026 01:28:35
+gem5 started Jul 31 2026 01:39:07
+gem5 executing on MPcouple, pid 16
+command line: /home/makenma/project/xs-gem5/GEM5/build/RISCV/gem5.opt -d /home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-formal-v2/runs/lru /home/makenma/project/xs-gem5/GEM5/configs/example/kmhv2_chi_2x2_hnf_se.py -n 2 -c '/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4/shor-rv64-static;/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/bin/tokenring-rv64-static' --options '1397 8;-f /home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/share/tokenring/omnetpp.ini' --workload-cwds '/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4;/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/share/tokenring' --mem-size=1GB --experiment-mode=roi --slc-replacement-policy=lru --slc-replacement-seed=20260730 --roi-ticks=2000000000 --min-roi-insts-per-core=100000 --common-checkpoint=/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-formal-v2/warmup/common_full_cpt
+
+info: Standard input is not a terminal, disabling listeners.
+Attach 1 decoders to thread with addr: <orphan System>.cpu0.decoder
+Attach 1 decoders to thread with addr: <orphan System>.cpu1.decoder
+Finish memory system configuration
+CHI 2x2 dual-process SE topology (public proxies; NOT SPEC CPU2006):
+  CPU0 -> RNF 0x00 -> router(0,0) P0D0
+  CPU1 -> RNF 0x04 -> router(0,0) P1D0
+  shared HNF 0x90 -> router(1,1) P0D0, SLC 1MiB 1024x16x64B
+  shared SN  0x80 -> router(1,0) P0D0 -> memory
+  SLC policy: lru seed=20260730
+Registering probe listeners for BaseO3CPU system.cpu0
+Registering probe listeners for BaseO3CPU system.cpu1
+Registering inner cache accessors for L2CacheWrapper system.l2_wrappers0
+Registering probe listeners for Prefetcher system.l2_wrappers0.prefetcher
+Registering probe listeners for Prefetcher system.l2_wrappers0.prefetcher.bop_large
+Registering probe listeners for Prefetcher system.l2_wrappers0.prefetcher.bop_small
+Registering probe listeners for Prefetcher system.l2_wrappers0.prefetcher.cdp
+Registering probe listeners for Prefetcher system.l2_wrappers0.prefetcher.cmc
+Registering probe listeners for Prefetcher system.l2_wrappers0.prefetcher.despacito_stream
+Registering inner cache accessor for L2CacheSlice system.l2_wrappers0.slices0
+Registering inner cache accessor for L2CacheSlice system.l2_wrappers0.slices1
+Registering inner cache accessor for L2CacheSlice system.l2_wrappers0.slices2
+Registering inner cache accessor for L2CacheSlice system.l2_wrappers0.slices3
+Registering inner cache accessors for L2CacheWrapper system.l2_wrappers1
+Registering probe listeners for Prefetcher system.l2_wrappers1.prefetcher
+Registering probe listeners for Prefetcher system.l2_wrappers1.prefetcher.bop_large
+Registering probe listeners for Prefetcher system.l2_wrappers1.prefetcher.bop_small
+Registering probe listeners for Prefetcher system.l2_wrappers1.prefetcher.cdp
+Registering probe listeners for Prefetcher system.l2_wrappers1.prefetcher.cmc
+Registering probe listeners for Prefetcher system.l2_wrappers1.prefetcher.despacito_stream
+Registering inner cache accessor for L2CacheSlice system.l2_wrappers1.slices0
+Registering inner cache accessor for L2CacheSlice system.l2_wrappers1.slices1
+Registering inner cache accessor for L2CacheSlice system.l2_wrappers1.slices2
+Registering inner cache accessor for L2CacheSlice system.l2_wrappers1.slices3

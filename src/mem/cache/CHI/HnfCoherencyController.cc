@@ -1683,6 +1683,16 @@ HnfCoherencyController::startDirtyVictimWriteback(
 {
     panic_if(entryId >= entries.size() || !entryAllocated(entries[entryId]),
              "HnfCC starts dirty-victim writeback without requester entry\n");
+    startDirtyVictimWriteback(
+        victim, entries[entryId].req.tgtid, entries[entryId].req.srcid,
+        entries[entryId].req.txnid, true);
+}
+
+void
+HnfCoherencyController::startDirtyVictimWriteback(
+    const SlcSfSlcVictim& victim, uint32_t homeNodeId,
+    uint32_t requesterSrc, uint32_t requesterTxn, bool trackRequester)
+{
     panic_if(!victim.victimId.value || !victim.line.dirty ||
                  victim.line.data.size() != blockSize,
              "HnfCC invalid dirty-victim handoff id=%llu bytes=%u dirty=%u\n",
@@ -1696,17 +1706,17 @@ HnfCoherencyController::startDirtyVictimWriteback(
     DirtyVictimTxn transaction{};
     transaction.victim = victim;
     transaction.downstreamTxnId =
-        allocateDirtyVictimTxnId(entries[entryId].req.txnid);
-    transaction.homeNodeId = entries[entryId].req.tgtid;
-    const uint32_t requester_src = entries[entryId].req.srcid;
-    const uint32_t requester_txn = entries[entryId].req.txnid;
+        allocateDirtyVictimTxnId(requesterTxn);
+    transaction.homeNodeId = homeNodeId;
     const uint64_t requester_key =
-        requesterTraceKey(requester_src, requester_txn);
-    panic_if(dirtyVictimRequesters.count(requester_key),
+        requesterTraceKey(requesterSrc, requesterTxn);
+    panic_if(trackRequester && dirtyVictimRequesters.count(requester_key),
              "HnfCC requester src=%u txn=%u caused a second live "
              "dirty victim\n",
-             requester_src, requester_txn);
-    dirtyVictimRequesters.insert(requester_key);
+             requesterSrc, requesterTxn);
+    if (trackRequester) {
+        dirtyVictimRequesters.insert(requester_key);
+    }
     const uint32_t txn_id = transaction.downstreamTxnId;
     dirtyVictimTxnIds.emplace(txn_id, victim.victimId.value);
     auto [it, inserted] = dirtyVictimTxns.emplace(
@@ -1721,16 +1731,16 @@ HnfCoherencyController::startDirtyVictimWriteback(
             "requester_src=%u requester_txn=%u data_hash=%016llx\n",
             static_cast<unsigned long long>(victim.victimId.value), txn_id,
             static_cast<unsigned long long>(victim.lineAddress),
-            requester_src, requester_txn,
+            requesterSrc, requesterTxn,
             static_cast<unsigned long long>(
                 Chi2ClassicMemTxnPolicy::traceDataHash(victim.line.data)));
 
     DPRINTF(HnfCC,
             "CC dirty victim=%llu queues WriteNoSnpFull addr=%#llx "
-            "downstream txn=%u independently of entry=%u\n",
+            "downstream txn=%u requester src=%u txn=%u\n",
             static_cast<unsigned long long>(victim.victimId.value),
             static_cast<unsigned long long>(victim.lineAddress), txn_id,
-            entryId);
+            requesterSrc, requesterTxn);
 }
 
 void
@@ -2016,6 +2026,7 @@ HnfCoherencyController::tryIssueSeqComplete()
         slcsfUnit->tryEnqueue(std::move(*seqPocqEntry.pendingComplete));
     if (result == SlcSfEnqueueResult::Accepted) {
         seqPocqEntry.pendingComplete.reset();
+        seqPocqEntry.retryNotBeforeTick = 0;
         stepSeqPocq({SeqPocqEventKind::CompleteAccepted});
     } else {
         const auto* request =
@@ -2405,6 +2416,28 @@ HnfCoherencyController::consumeSlcsfResponse(SlcSfResponse response)
                      seqPocqEntry.completeReqId != response.reqId(),
                  "HnfCC unexpected SEQ completion response req=%llu\n",
                  static_cast<unsigned long long>(response.reqId().value));
+        if (response.status() == SlcSfTerminalStatus::Replay) {
+            const auto* replay =
+                std::get_if<SlcSfReplay>(&response.payload());
+            panic_if(!replay || entryId != UINT32_MAX,
+                     "HnfCC SEQ completion Replay has bad payload\n");
+            const Tick retry_not_before = replay->retryNotBeforeTick;
+            auto popped = slcsfUnit->popVisibleResponse();
+            panic_if(!popped || popped->reqId() != response.reqId() ||
+                         popped->status() !=
+                             SlcSfTerminalStatus::Replay,
+                     "HnfCC SEQ completion Replay was not visible/exact\n");
+            seqPocqEntry.retryNotBeforeTick = retry_not_before;
+            seqPocqEntry.completeReqId = SlcSfReqId{};
+            seqPocqEntry.pendingComplete.reset();
+            stepSeqPocq({SeqPocqEventKind::CompleteReplay});
+            DPRINTF(HnfCC,
+                    "SEQ POCQ id=%llu retries completion after tick=%llu\n",
+                    static_cast<unsigned long long>(seqPocqEntry.seqId),
+                    static_cast<unsigned long long>(
+                        seqPocqEntry.retryNotBeforeTick));
+            return;
+        }
         panic_if(response.status() != SlcSfTerminalStatus::Done,
                  "HnfCC SEQ completion req=%llu failed\n",
                  static_cast<unsigned long long>(response.reqId().value));
@@ -2427,10 +2460,21 @@ HnfCoherencyController::consumeSlcsfResponse(SlcSfResponse response)
                 lease.linkSequence() != seqPocqEntry.seqId ||
                 lease.transactionId() != seqPocqEntry.snoopTxnId,
             "HnfCC SEQ completion lease identity mismatch\n");
+        const std::optional<SlcSfSlcVictim> slc_victim =
+            update->slcVictim;
         panic_if(
             slcsfUnit->acknowledgeVisibleCompletion(response) !=
                 SlcSfCompletionAckResult::Acknowledged,
             "HnfCC SEQ completion ack was not exact/visible\n");
+        if (slc_victim) {
+            // A dirty SEQ snoop can install data into a full SLC set.  Its
+            // displaced dirty line is independent of any live main POCQ
+            // entry, but still follows the ordinary durable SN writeback and
+            // exact SLCSF release protocol.
+            startDirtyVictimWriteback(
+                *slc_victim, seqPocqEntry.homeNodeId,
+                seqPocqEntry.owner, seqPocqEntry.snoopTxnId, false);
+        }
         stepSeqPocq({SeqPocqEventKind::CompleteDone});
         return;
     }
@@ -2476,6 +2520,10 @@ HnfCoherencyController::consumeSlcsfResponse(SlcSfResponse response)
                         SlcSfUpdateKind::RemoveSharer;
                 panic_if(!update || update->updateKind != expectedKind,
                          "HnfCC entry=%u update Done has bad payload\n",
+                         entryId);
+                panic_if(update->slcVictim,
+                         "HnfCC entry=%u non-allocating update returned "
+                         "an SLC victim\n",
                          entryId);
             } else {
                 panic("HnfCC entry=%u has unsupported pending operation=%u\n",
@@ -2574,7 +2622,8 @@ HnfCoherencyController::serviceInternalWork(Tick currentTick)
                !hasMainAddressHazard(seqPocqEntry.blockAddr)) {
         stepSeqPocq({SeqPocqEventKind::HazardClear});
     } else if (seqPocqEntry.valid &&
-               seqPocqEntry.state == SeqPocqState::CompleteIssue) {
+               seqPocqEntry.state == SeqPocqState::CompleteIssue &&
+               currentTick >= seqPocqEntry.retryNotBeforeTick) {
         tryIssueSeqComplete();
     }
     latchVisibleSlcResponses();

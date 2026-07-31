@@ -1,0 +1,4 @@
+policy,replacementAttempts,cleanSlcVictims,dirtySlcVictims,totalSlcVictims,accepted_to_visible_latency_cycles
+lru,57925.0,6086.0,51839.0,57925.0,10.21277666150283
+random,59135.0,6451.0,52684.0,59135.0,9.967778487861551
+srrip,58192.0,5960.0,52232.0,58192.0,10.218917414223336

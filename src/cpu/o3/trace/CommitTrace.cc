@@ -48,7 +48,7 @@ class TraceCtrlFlowFault : public FaultBase
 bool
 Commit::traceMaybeExitOnPipelineDrainFromStuckCheck()
 {
-    if (cpu->isTraceMode() && cpu->isTracePipelineDrained()) {
+    if (cpu->isTraceMode() && cpu->isPipelineDrained()) {
         warn("[Commit] Trace mode pipeline drained without further commits; "
              "treating as normal exit instead of CommitStuck panic.\n");
         exitSimLoop("Trace-driven CPU drained (EOF or maxinsts)");
@@ -61,7 +61,7 @@ Commit::traceMaybeExitOnPipelineDrainFromStuckCheck()
 bool
 Commit::traceMaybeExitOnEofDrainFromTick()
 {
-    if (cpu->isTraceMode() && cpu->isTraceEOF() && cpu->isTracePipelineDrained()) {
+    if (cpu->isTraceMode() && cpu->isTraceEOF() && cpu->isPipelineDrained()) {
         warn("[Commit] Trace mode reached EOF and pipeline drained; exiting cleanly.\n");
         exitSimLoop("Trace-driven CPU reached EOF and drained");
         return true;

@@ -1,0 +1,5 @@
+policy,workload,slice_count,weight_sum,weighted_cpi,weighted_ipc,arithmetic_weighted_ipc,weighted_committed_insts,weighted_hnf_lookup_cv,weighted_slc_hits,weighted_sf_hits,weighted_miss_miss,weighted_clean_slc_victims,weighted_dirty_slc_victims,weighted_service_stalls,weighted_accepted_to_visible_latency,weighted_router_flits,weighted_router_stall_cycles,weighted_host_seconds
+lru,libquantum,1,1.0,0.43718503550598264,2.287361,2.287361,4999997.0,0.0007165442608807314,119.0,36885.0,52083.0,0.0,0.0,7219.0,6.039900866017388,1743688.0,0.0,120.45
+lru,omnetpp,1,1.0,0.44766845316224047,2.233796,2.233796,4999991.0,0.01989897240035336,634.0,658.0,8791.0,0.0,0.0,175.0,6.00835801946678,226928.0,0.0,78.86
+pseudo_random,libquantum,1,1.0,0.43718503550598264,2.287361,2.287361,4999997.0,0.0007165442608807314,119.0,36885.0,52083.0,0.0,0.0,7219.0,6.039900866017388,1743688.0,0.0,119.13
+pseudo_random,omnetpp,1,1.0,0.44766845316224047,2.233796,2.233796,4999991.0,0.01989897240035336,634.0,658.0,8791.0,0.0,0.0,175.0,6.00835801946678,226928.0,0.0,79.58

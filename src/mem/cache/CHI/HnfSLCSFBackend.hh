@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <deque>
 #include <optional>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -21,6 +22,13 @@ class HnfSLCSFBackend
 {
   public:
     using SeqId = uint64_t;
+
+    enum class SlcReplacementPolicy : uint8_t
+    {
+        Lru,
+        PseudoRandom,
+        Srrip
+    };
 
     enum class SeqPhase : uint8_t
     {
@@ -87,7 +95,10 @@ class HnfSLCSFBackend
 
     HnfSLCSFBackend(uint32_t block_size, uint32_t slc_num_sets,
                     uint32_t slc_num_ways, uint32_t sf_num_sets,
-                    uint32_t sf_num_ways, uint32_t seq_entries = 8);
+                    uint32_t sf_num_ways, uint32_t seq_entries = 8,
+                    const std::string& slc_replacement_policy = "lru",
+                    uint64_t slc_replacement_seed = 1,
+                    bool allow_replacement_policy_override = false);
     HnfSLCSFBackend(const HnfSLCSFBackend&) = delete;
     HnfSLCSFBackend& operator=(const HnfSLCSFBackend&) = delete;
     HnfSLCSFBackend(HnfSLCSFBackend&&) = delete;
@@ -154,6 +165,16 @@ class HnfSLCSFBackend
     uint64_t currentLookupAccessCount() const { return lookupAccessCount; }
     SeqId nextSeqIdentity() const { return nextSeqId; }
     uint32_t blockSizeBytes() const { return blockSize; }
+    uint64_t slcValidLineCount() const { return slcValidLinesCount; }
+    uint64_t slcCapacityLineCount() const
+    {
+        return static_cast<uint64_t>(slcSets) * slcWays;
+    }
+    uint32_t maxValidWaysInSet() const;
+    SlcReplacementPolicy slcReplacementPolicyKind() const
+    {
+        return slcReplacementPolicy;
+    }
 
     /** Report an unsupported dirty SLC displacement without changing state. */
     bool slcAllocationWouldDisplaceDirty(
@@ -244,6 +265,7 @@ class HnfSLCSFBackend
         uint32_t owner = 0;
         uint64_t generation = 0;
         uint64_t lastUse = 0;
+        uint8_t rrpv = 3;
         std::vector<uint8_t> data;
     };
 
@@ -297,6 +319,13 @@ class HnfSLCSFBackend
     uint32_t slcWays = 16;
     uint32_t sfSets = 1024;
     uint32_t sfWays = 16;
+    SlcReplacementPolicy slcReplacementPolicy =
+        SlcReplacementPolicy::Lru;
+    uint64_t slcReplacementSeed = 1;
+    uint64_t slcPseudoRandomState = 1;
+    bool allowReplacementPolicyOverride = false;
+    uint64_t slcValidLinesCount = 0;
+    std::vector<uint32_t> slcValidWaysPerSet;
 
     std::vector<std::vector<SlcLine>> slc;
     std::vector<std::vector<SfLine>> sf;
@@ -323,6 +352,12 @@ class HnfSLCSFBackend
     uint32_t sfSet(uint64_t block_addr) const;
     uint64_t requesterMask(uint32_t requester) const;
     uint64_t sfBlockAddr(uint64_t tag, uint32_t set) const;
+    static SlcReplacementPolicy parseSlcReplacementPolicy(
+        const std::string& policy);
+    static uint64_t nextPseudoRandomState(uint64_t state);
+    static uint64_t pseudoRandomOutput(uint64_t state);
+    uint32_t selectSlcVictimWay(uint64_t block_addr) const;
+    void ageSrripSetForMiss(uint64_t block_addr);
 
     SlcLine* findSlc(uint64_t block_addr);
     const SlcLine* findSlc(uint64_t block_addr) const;
@@ -363,7 +398,9 @@ class HnfSLCSFBackend
     void releaseSeqClaim(const SlcSfCompletionLease& lease);
     void commitClaimedSfEvict(
         SeqId id, const std::vector<uint8_t>& data, bool dirty_data,
-        const SlcSfCompletionLease& lease);
+        const SlcSfCompletionLease& lease, const LookupSnapshot* target,
+        const SlcSfSlcVictim* preserved_victim,
+        const DirtyVictimSeal* installed_seal);
     bool acknowledgeSfEvict(const SlcSfCompletionLease& lease);
     void installSlc(uint64_t block_addr, HnfSlcState state,
                     uint32_t requester, const std::vector<uint8_t>& data,

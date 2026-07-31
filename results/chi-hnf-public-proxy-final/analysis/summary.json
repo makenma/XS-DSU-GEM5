@@ -1,0 +1,200 @@
+{
+  "artifacts": {
+    "hnf_balance": "/home/makenma/project/xs-gem5/GEM5/results/chi-hnf-public-proxy-final/analysis/hnf_balance.csv",
+    "router_hotspots": "/home/makenma/project/xs-gem5/GEM5/results/chi-hnf-public-proxy-final/analysis/router_hotspots.csv",
+    "slices": "/home/makenma/project/xs-gem5/GEM5/results/chi-hnf-public-proxy-final/analysis/slices.csv"
+  },
+  "comparison": [
+    {
+      "lru_ipc": 2.287361,
+      "lru_slc_victims": 0.0,
+      "lru_vs_pseudo_random_percent": 0.0,
+      "measurement_insts_relative_delta": 0.0,
+      "pseudo_random_ipc": 2.287361,
+      "pseudo_random_slc_victims": 0.0,
+      "replacement_activated": false,
+      "workload": "libquantum"
+    },
+    {
+      "lru_ipc": 2.233796,
+      "lru_slc_victims": 0.0,
+      "lru_vs_pseudo_random_percent": 0.0,
+      "measurement_insts_relative_delta": 0.0,
+      "pseudo_random_ipc": 2.233796,
+      "pseudo_random_slc_victims": 0.0,
+      "replacement_activated": false,
+      "workload": "omnetpp"
+    },
+    {
+      "lru_ipc": null,
+      "lru_vs_pseudo_random_percent": 0.0,
+      "pseudo_random_ipc": null,
+      "workload": "geomean"
+    }
+  ],
+  "experiment": {
+    "binaries": {
+      "libquantum": "/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4/shor-rv64-static",
+      "omnetpp": "/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/bin/tokenring-rv64-static"
+    },
+    "binary_sha256": {
+      "libquantum": "e4e313b2a2c3dcb46a0be4e4295f7ab53820fcff2cb4ea0a10659187ae5a1b34",
+      "omnetpp": "2be6af6d4b687ae7f7a05375ed2a32132c1ff5b41a8506a6ce1e2927d2adb0b7"
+    },
+    "config": "/home/makenma/project/xs-gem5/GEM5/configs/example/kmhv2_chi_6x4_hnf_se.py",
+    "extra_args": [
+      "--mem-type=DDR4_2400_8x8",
+      "--mem-channels=2",
+      "--mem-size=2GB",
+      "--maxinsts=5100000",
+      "--warmup-insts-no-switch=100000"
+    ],
+    "gem5": "/home/makenma/project/xs-gem5/GEM5/build/RISCV/gem5.opt",
+    "input_files": {
+      "omnetpp_ini": "/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/share/tokenring/omnetpp.ini"
+    },
+    "input_mode": "public_static_elf_se",
+    "input_sha256": {
+      "omnetpp_ini": "70abfd7866f6c00aae898700ea7953265053a0722087d820c3977658ee0bc37c"
+    },
+    "min_measurement_insts": 4500000,
+    "policies": [
+      "pseudo_random",
+      "lru"
+    ],
+    "seed": 1,
+    "source_label": "Public open-source SPEC-like proxy workloads; not SPEC CPU2006 binaries, runs, or reportable scores",
+    "tool_files": {
+      "cache_config": "/home/makenma/project/xs-gem5/GEM5/configs/common/CacheConfig.py",
+      "config": "/home/makenma/project/xs-gem5/GEM5/configs/example/kmhv2_chi_6x4_hnf_se.py",
+      "fs_config": "/home/makenma/project/xs-gem5/GEM5/configs/common/FSConfig.py",
+      "gem5": "/home/makenma/project/xs-gem5/GEM5/build/RISCV/gem5.opt",
+      "mem_config": "/home/makenma/project/xs-gem5/GEM5/configs/common/MemConfig.py",
+      "options": "/home/makenma/project/xs-gem5/GEM5/configs/common/Options.py",
+      "runner": "/home/makenma/project/xs-gem5/GEM5/util/xs_scripts/chi_hnf_spec06.py",
+      "simulation": "/home/makenma/project/xs-gem5/GEM5/configs/common/Simulation.py",
+      "topology": "/home/makenma/project/xs-gem5/GEM5/configs/example/noc_config/chi_6x4_hnf.py",
+      "xiangshan": "/home/makenma/project/xs-gem5/GEM5/configs/common/xiangshan.py"
+    },
+    "tool_sha256": {
+      "cache_config": "c8dd47d04e1848fbe02bb757c62f97a0286cf2c909a79140dcbafe92a7eb89a9",
+      "config": "8f015a8d76aea9abfd03a5239488b05c664497054d469f2db0b7f65ac4867f57",
+      "fs_config": "ea4e61b98d0d3714ecc729038934b35555144cee09ada2ad63cb5ca7baa1c374",
+      "gem5": "eb5c90ceac2a3953b8704dc505d423667b45e3a9bd553fc9d3ecb1bd5f2f6427",
+      "mem_config": "913aeadc0219f3bc8500120b1028af1c02f02f06d182fddeefdcbd4d9bd47484",
+      "options": "43faf9715cbd25245b535c4da2b96139f75695aa0404087eb14b4478f8d4ba65",
+      "runner": "4ea8d70bc53afaa433a5c4c449aa09fd77543eeefcaff993358d54941b971a1c",
+      "simulation": "ed3ba2c4d52bd9b227950f9b282e1710695f9764962c9a25821625fe3d7b4b99",
+      "topology": "90911990b7d00b712f3ead28f210d18f6d7680cc033075143aaa41235c7865de",
+      "xiangshan": "fb6f2b74da416517b6f5b19ccc7b8d1f1a25cf2d9de35e607f0558fd11102838"
+    },
+    "workload_options": {
+      "libquantum": "1397 8",
+      "omnetpp": "-f /home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/share/tokenring/omnetpp.ini"
+    },
+    "workload_provenance": {
+      "libquantum": "libquantum 0.2.4 upstream Shor proxy (fixed RNG seed)",
+      "omnetpp": "OMNeT++ 3.3.2 public Token Ring sample proxy"
+    },
+    "workloads": [
+      "libquantum",
+      "omnetpp"
+    ]
+  },
+  "generated_at": "2026-07-30T00:56:40.003818+00:00",
+  "schema_version": 1,
+  "validity": {
+    "inactive_workloads": [
+      "libquantum",
+      "omnetpp"
+    ],
+    "note": "Replacement-policy attribution requires SLC victims in both policy runs; workloads listed as inactive are descriptive only.",
+    "replacement_activated_for_all_workloads": false
+  },
+  "workloads": [
+    {
+      "arithmetic_weighted_ipc": 2.287361,
+      "policy": "lru",
+      "slice_count": 1,
+      "weight_sum": 1.0,
+      "weighted_accepted_to_visible_latency": 6.039900866017388,
+      "weighted_clean_slc_victims": 0.0,
+      "weighted_committed_insts": 4999997.0,
+      "weighted_cpi": 0.43718503550598264,
+      "weighted_dirty_slc_victims": 0.0,
+      "weighted_hnf_lookup_cv": 0.0007165442608807314,
+      "weighted_host_seconds": 120.45,
+      "weighted_ipc": 2.287361,
+      "weighted_miss_miss": 52083.0,
+      "weighted_router_flits": 1743688.0,
+      "weighted_router_stall_cycles": 0.0,
+      "weighted_service_stalls": 7219.0,
+      "weighted_sf_hits": 36885.0,
+      "weighted_slc_hits": 119.0,
+      "workload": "libquantum"
+    },
+    {
+      "arithmetic_weighted_ipc": 2.233796,
+      "policy": "lru",
+      "slice_count": 1,
+      "weight_sum": 1.0,
+      "weighted_accepted_to_visible_latency": 6.00835801946678,
+      "weighted_clean_slc_victims": 0.0,
+      "weighted_committed_insts": 4999991.0,
+      "weighted_cpi": 0.44766845316224047,
+      "weighted_dirty_slc_victims": 0.0,
+      "weighted_hnf_lookup_cv": 0.01989897240035336,
+      "weighted_host_seconds": 78.86,
+      "weighted_ipc": 2.233796,
+      "weighted_miss_miss": 8791.0,
+      "weighted_router_flits": 226928.0,
+      "weighted_router_stall_cycles": 0.0,
+      "weighted_service_stalls": 175.0,
+      "weighted_sf_hits": 658.0,
+      "weighted_slc_hits": 634.0,
+      "workload": "omnetpp"
+    },
+    {
+      "arithmetic_weighted_ipc": 2.287361,
+      "policy": "pseudo_random",
+      "slice_count": 1,
+      "weight_sum": 1.0,
+      "weighted_accepted_to_visible_latency": 6.039900866017388,
+      "weighted_clean_slc_victims": 0.0,
+      "weighted_committed_insts": 4999997.0,
+      "weighted_cpi": 0.43718503550598264,
+      "weighted_dirty_slc_victims": 0.0,
+      "weighted_hnf_lookup_cv": 0.0007165442608807314,
+      "weighted_host_seconds": 119.13,
+      "weighted_ipc": 2.287361,
+      "weighted_miss_miss": 52083.0,
+      "weighted_router_flits": 1743688.0,
+      "weighted_router_stall_cycles": 0.0,
+      "weighted_service_stalls": 7219.0,
+      "weighted_sf_hits": 36885.0,
+      "weighted_slc_hits": 119.0,
+      "workload": "libquantum"
+    },
+    {
+      "arithmetic_weighted_ipc": 2.233796,
+      "policy": "pseudo_random",
+      "slice_count": 1,
+      "weight_sum": 1.0,
+      "weighted_accepted_to_visible_latency": 6.00835801946678,
+      "weighted_clean_slc_victims": 0.0,
+      "weighted_committed_insts": 4999991.0,
+      "weighted_cpi": 0.44766845316224047,
+      "weighted_dirty_slc_victims": 0.0,
+      "weighted_hnf_lookup_cv": 0.01989897240035336,
+      "weighted_host_seconds": 79.58,
+      "weighted_ipc": 2.233796,
+      "weighted_miss_miss": 8791.0,
+      "weighted_router_flits": 226928.0,
+      "weighted_router_stall_cycles": 0.0,
+      "weighted_service_stalls": 175.0,
+      "weighted_sf_hits": 658.0,
+      "weighted_slc_hits": 634.0,
+      "workload": "omnetpp"
+    }
+  ]
+}

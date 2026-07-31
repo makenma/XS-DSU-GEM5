@@ -76,6 +76,7 @@ class BaseO3CPU(BaseCPU):
     cxx_header = 'cpu/o3/dyn_inst.hh'
     cxx_exports = [
         PyBindMethod("addHintDownStream"),
+        PyBindMethod("numActiveThreads"),
     ]
 
     def __init__(self, **kwargs):

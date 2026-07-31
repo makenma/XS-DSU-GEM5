@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "base/statistics.hh"
 #include "mem/cache/CHI/base/BasicChiComponent.hh"
 #include "mem/cache/CHI/base/ChiCommonPort.hh"
 #include "params/ChiRouterRefModel.hh"
@@ -34,6 +35,7 @@ class ChiRouterRefModel : public BasicChiComponent, public ruby::Consumer
     static constexpr int MaxRouters = 2;
     static constexpr int DefaultPNum = 4;
     static constexpr int DefaultDNum = 4;
+    static constexpr int DirectionNum = 4;
     static constexpr int InternalNum = 8;
     static constexpr int InPortNum = 12;
     static constexpr int OutPortNum = 12;
@@ -225,6 +227,26 @@ class ChiRouterRefModel : public BasicChiComponent, public ruby::Consumer
 
     uint64_t nextSeq = 1;
 
+    struct RouterStats : public statistics::Group
+    {
+        explicit RouterStats(statistics::Group *parent);
+
+        /** Flits accepted from local endpoints, indexed by CHI channel. */
+        statistics::Vector localInjectedFlits;
+        /** Flits delivered to local endpoints, indexed by CHI channel. */
+        statistics::Vector localDeliveredFlits;
+        /** Directional-link ingress flits, indexed by channel/direction. */
+        statistics::Vector2d internalReceivedFlits;
+        /** Directional-link egress flits, indexed by channel/direction. */
+        statistics::Vector2d internalSentFlits;
+        /** Blocked directional-output flit-cycles by channel/direction. */
+        statistics::Vector2d internalOutputStallCycles;
+        /** Blocked local-injection P-port cycles by channel/P port. */
+        statistics::Vector2d localInjectionStallCycles;
+        /** Blocked local-delivery P-port cycles by channel/P port. */
+        statistics::Vector2d localDeliveryStallCycles;
+    } stats;
+
     void softReset();
     void initPdevAge();
     void initOutAge();
@@ -258,6 +280,7 @@ class ChiRouterRefModel : public BasicChiComponent, public ruby::Consumer
     const char *channelName(ChannelType ch) const;
     const char *inPortName(InPort ip) const;
     const char *outPortName(OutPort op) const;
+    int directionIndex(OutPort op) const;
 
     InPort srcToInport(int src_index) const;
     InPort pToInport(int p) const;

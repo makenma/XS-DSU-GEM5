@@ -48,6 +48,9 @@ static_assert(!std::is_move_assignable_v<HnfSLCSF>);
 
 struct StageAHomeNodeParams
 {
+    std::string slc_replacement_policy = "lru";
+    uint64_t slc_replacement_seed = 1;
+    bool slc_restore_allow_policy_override = false;
     size_t init_latency = 16;
     size_t slcsf_lookup_latency = 4;
     size_t slcsf_fill_latency = 4;
@@ -868,6 +871,8 @@ TEST(HnfSlcSfQueueTest, StageADefaultConfigurationIsSafe)
     const auto& config = model.pipelineConfig();
 
     EXPECT_EQ(config.lookupLatency, 4);
+    EXPECT_EQ(config.slcReplacementPolicy, "lru");
+    EXPECT_EQ(config.slcReplacementSeed, 1);
     EXPECT_EQ(config.fillLatency, 4);
     EXPECT_EQ(config.updateLatency, 3);
     EXPECT_EQ(config.victimLatency, 3);
@@ -891,6 +896,8 @@ TEST(HnfSlcSfQueueTest, HomeNodeParametersMapToPipelineConfig)
     StageAHomeNodeParams params{};
     auto config = makeEmbeddedSlcsfConfig(params);
 
+    EXPECT_EQ(config.slcReplacementPolicy, "lru");
+    EXPECT_EQ(config.slcReplacementSeed, 1);
     EXPECT_EQ(config.lookupLatency, 4);
     EXPECT_EQ(config.fillLatency, 4);
     EXPECT_EQ(config.updateLatency, 3);
@@ -909,6 +916,8 @@ TEST(HnfSlcSfQueueTest, HomeNodeParametersMapToPipelineConfig)
     EXPECT_EQ(config.initLatency, 16);
 
     params.init_latency = 25;
+    params.slc_replacement_policy = "pseudo_random";
+    params.slc_replacement_seed = 0x12345678;
     params.slcsf_lookup_latency = 11;
     params.slcsf_fill_latency = 12;
     params.slcsf_update_latency = 13;
@@ -927,6 +936,8 @@ TEST(HnfSlcSfQueueTest, HomeNodeParametersMapToPipelineConfig)
     config = makeEmbeddedSlcsfConfig(params, 8);
 
     EXPECT_EQ(config.lookupLatency, 11);
+    EXPECT_EQ(config.slcReplacementPolicy, "pseudo_random");
+    EXPECT_EQ(config.slcReplacementSeed, 0x12345678);
     EXPECT_EQ(config.fillLatency, 12);
     EXPECT_EQ(config.updateLatency, 13);
     EXPECT_EQ(config.victimLatency, 14);
@@ -946,6 +957,11 @@ TEST(HnfSlcSfQueueTest, HomeNodeParametersMapToPipelineConfig)
 
     HnfSLCSF overridden(64, 4, 2, 4, 2, 8, config);
     EXPECT_EQ(overridden.pipelineConfig().lookupLatency, 11);
+    EXPECT_EQ(
+        overridden.pipelineConfig().slcReplacementPolicy,
+        "pseudo_random");
+    EXPECT_EQ(
+        overridden.pipelineConfig().slcReplacementSeed, 0x12345678);
     EXPECT_EQ(overridden.pipelineConfig().maxInflight, 5);
     EXPECT_TRUE(overridden.pipelineConfig().enableSetLock);
 }
@@ -2257,6 +2273,60 @@ TEST(HnfSlcSfMutationServiceTest,
         model, fill.slcVictim->victimId, dirty_addr, 1, 3352, 1352);
     EXPECT_EQ(release.status(), SlcSfTerminalStatus::Done);
     EXPECT_EQ(model.victimBufferOccupancy(), 0);
+}
+
+TEST(HnfSlcSfMutationServiceTest,
+     DirtySfEvictCompletionPreservesAndHandsOffDirtySlcVictim)
+{
+    HnfSLCSFPipelineConfig config{};
+    config.victimLatency = 5;
+    HnfSLCSF model(64, 1, 1, 1, 1, 4, config);
+    const uint64_t dirty_addr = TestAddr;
+    const uint64_t seq_addr = TestAddr + 64;
+    const uint64_t sf_replacement_addr = TestAddr + 128;
+    const auto dirty_data = lineData(0xa5);
+    const auto seq_data = lineData(0xa6);
+
+    model.writeLine(
+        dirty_addr, 1, dirty_data, PocqTxnKind::WriteUnique);
+    model.commitRead(
+        seq_addr, 3, PocqTxnKind::ReadUnique, lineData(0xa7), false, 0x90);
+    model.commitRead(
+        sf_replacement_addr, 4, PocqTxnKind::ReadUnique,
+        lineData(0xa8), false, 0x90);
+    const HnfSLCSF::SeqVictim seq_victim = model.frontPendingSeq();
+    ASSERT_EQ(seq_victim.blockAddr, seq_addr);
+    constexpr uint32_t CompletionTxn = 3353;
+    model.markSeqIssued(
+        seq_victim.id, CleanInvalidOpcode, CompletionTxn);
+
+    const uint64_t issue_cycle = model.currentCycle();
+    const SlcSfResponse response = completeIssuedSfEvict(
+        model, seq_victim, CompletionTxn, 1353, seq_data, true);
+    ASSERT_EQ(response.status(), SlcSfTerminalStatus::Done);
+    const auto& update =
+        std::get<SlcSfUpdateResponse>(response.payload());
+    ASSERT_TRUE(update.slcVictim.has_value());
+    EXPECT_EQ(update.slcVictim->lineAddress, dirty_addr);
+    EXPECT_EQ(update.slcVictim->owner, 1);
+    EXPECT_TRUE(update.slcVictim->line.dirty);
+    EXPECT_EQ(update.slcVictim->line.data, dirty_data);
+    EXPECT_EQ(model.dirtyVictimState(update.slcVictim->victimId),
+              HnfSLCSF::VictimState::HandedOff);
+    EXPECT_FALSE(probeLookup(model, dirty_addr, 1).result.slcHit);
+    const auto installed = probeLookup(model, seq_addr, 3);
+    EXPECT_TRUE(installed.result.slcHit);
+    EXPECT_TRUE(installed.result.dataDirty);
+    EXPECT_EQ(installed.result.data, seq_data);
+    EXPECT_GE(
+        model.currentCycle(),
+        issue_cycle + config.updateLatency + config.victimLatency);
+
+    const SlcSfResponse release = completeDirtyVictimRelease(
+        model, update.slcVictim->victimId, dirty_addr, 1, 3354, 1354);
+    EXPECT_EQ(release.status(), SlcSfTerminalStatus::Done);
+    EXPECT_EQ(model.victimBufferOccupancy(), 0);
+    EXPECT_EQ(model.dirtyVictimSealCount(), 0);
 }
 
 TEST(HnfSlcSfMutationServiceTest,
@@ -5297,6 +5367,54 @@ TEST(HnfSlcSfInvariantTest, TerminalTotalsCoverDoneReplayAndError)
     EXPECT_EQ(model.respOccupied(), 0);
 }
 
+TEST(HnfSlcSfReplacementPolicyTest,
+     PseudoRandomTokenPreservesTheExactDirtyVictim)
+{
+    constexpr uint64_t Base = 0x93000000;
+    constexpr uint64_t Seed = 2;
+    HnfSLCSFPipelineConfig config{};
+    config.slcReplacementPolicy = "pseudo_random";
+    config.slcReplacementSeed = Seed;
+    HnfSLCSF model(64, 1, 4, 1, 8, 8, config);
+
+    std::vector<std::vector<uint8_t>> victim_data;
+    for (uint32_t way = 0; way < 4; ++way) {
+        victim_data.push_back(lineData(0xa0 + way));
+        model.writeLine(
+            Base + way * 64, way + 1, victim_data.back(),
+            PocqTxnKind::WriteUnique);
+    }
+
+    const uint64_t replacement = Base + 4 * 64;
+    const auto preflight = probeLookup(model, replacement, 7);
+    ASSERT_FALSE(preflight.result.slcHit);
+    ASSERT_EQ(preflight.snapshot.slc.way, 2);
+    ASSERT_TRUE(model.slcAllocationWouldDisplaceDirty(replacement));
+    const uint64_t expected_victim = Base + preflight.snapshot.slc.way * 64;
+
+    const SlcSfCommitToken token =
+        completeLookupToken(model, 9301, replacement);
+    EXPECT_EQ(token.slc.way, preflight.snapshot.slc.way);
+    const SlcSfResponse response = completeMutation(
+        model, fillRequest(
+            9302, replacement, 9302, token, token.lookupReqId));
+    ASSERT_EQ(response.status(), SlcSfTerminalStatus::Done);
+    const auto& fill = std::get<SlcSfFillResponse>(response.payload());
+    ASSERT_TRUE(fill.slcVictim.has_value());
+    EXPECT_EQ(fill.slcVictim->lineAddress, expected_victim);
+    EXPECT_EQ(fill.slcVictim->owner, 3);
+    EXPECT_EQ(fill.slcVictim->line.data, victim_data[2]);
+    EXPECT_TRUE(fill.slcVictim->line.dirty);
+    EXPECT_TRUE(probeLookup(model, replacement, 7).result.slcHit);
+    EXPECT_FALSE(probeLookup(model, expected_victim, 3).result.slcHit);
+
+    const SlcSfResponse release = completeDirtyVictimRelease(
+        model, fill.slcVictim->victimId, expected_victim,
+        fill.slcVictim->owner, 7300, 9303);
+    EXPECT_EQ(release.status(), SlcSfTerminalStatus::Done);
+    expectConcurrentServiceEmpty(model);
+}
+
 TEST(HnfSlcSfTest, CheckpointRequiresDrainedState)
 {
     HnfSLCSF model(64, 4, 2, 4, 2);
@@ -5332,6 +5450,9 @@ TEST(HnfSlcSfTest, CheckpointContentIncludesPersistentState)
     EXPECT_NE(contents.find("nextReservationId="), std::string::npos);
     EXPECT_NE(contents.find("nextSetLockOwner="), std::string::npos);
     EXPECT_NE(contents.find("victimState="), std::string::npos);
+    EXPECT_NE(contents.find("slcReplacementPolicy=0\n"), std::string::npos);
+    EXPECT_NE(contents.find("slcReplacementSeed=1\n"), std::string::npos);
+    EXPECT_NE(contents.find("slcPseudoRandomState=1\n"), std::string::npos);
     EXPECT_NE(contents.find("accessCounter="), std::string::npos);
     EXPECT_NE(contents.find("lookupEpoch="), std::string::npos);
     EXPECT_NE(contents.find("nextSeqId="), std::string::npos);
@@ -5348,6 +5469,20 @@ TEST(HnfSlcSfTest, CheckpointContentIncludesPersistentState)
     EXPECT_NE(contents.find("sfReplacementStamp="), std::string::npos);
     EXPECT_NE(contents.find("seqValid="), std::string::npos);
     EXPECT_NE(contents.find("seqPending="), std::string::npos);
+}
+
+TEST(HnfSlcSfTest, CheckpointAllowsGlobalIdleDrainWithoutSealingAdmission)
+{
+    HnfSLCSF model(64, 4, 2, 4, 2);
+    model.commitRead(TestAddr, 5, PocqTxnKind::ReadShared,
+                     lineData(0x42), false, 17);
+    model.requestDrain();
+
+    EXPECT_FALSE(model.isAdmissionSealed());
+    EXPECT_TRUE(model.isCompletelyIdle());
+    std::ostringstream checkpoint;
+    EXPECT_NO_THROW(model.serializePersistentState(checkpoint));
+    EXPECT_NE(checkpoint.str().find("initialized=true\n"), std::string::npos);
 }
 
 TEST_F(HnfSlcSfCheckpointTest, DrainedCheckpointRestoresSlcSfState)

@@ -1,0 +1,76 @@
+Global frequency set at 1000000000000 ticks per second
+Dispatch Grouping: No_OpClass 
+Dispatch Grouping: IntAlu 
+Dispatch Grouping: IntBr IntJp 
+Dispatch Grouping: IntMult 
+Dispatch Grouping: IntDiv Int2Fp 
+Dispatch Grouping: StoreData 
+Dispatch Grouping: FloatAdd FloatMult FloatMultAcc 
+Dispatch Grouping: FloatDiv FloatSqrt 
+Dispatch Grouping: FloatCmp FloatCvt FloatMv FloatMisc 
+Dispatch Grouping: IprAccess InstPrefetch 
+Dispatch Grouping: MemRead FloatMemRead VectorUnitStrideLoad VectorSegUnitStrideLoad VectorUnitStrideMaskLoad VectorSegUnitStrideMaskLoad VectorStridedLoad VectorSegStridedLoad VectorIndexedLoad VectorSegIndexedLoad VectorUnitStrideFaultOnlyFirstLoad VectorWholeRegisterLoad 
+Dispatch Grouping: MemWrite FloatMemWrite MemAtomic VectorUnitStrideStore VectorSegUnitStrideStore VectorUnitStrideMaskStore VectorStridedStore VectorIndexedStore VectorWholeRegisterStore 
+Dispatch Grouping: VectorIntegerArith VectorFloatArith VectorFloatConvert VectorIntegerReduce VectorFloatReduce VectorMisc VectorIntegerExtension VectorConfig 
+gem5 Simulator System.  https://www.gem5.org
+gem5 is copyrighted software; use the --copyright option for details.
+
+gem5 version [DEVELOP-FOR-22.1]
+gem5 compiled Jul 30 2026 07:15:58
+gem5 started Jul 30 2026 08:20:43
+gem5 executing on MPcouple, pid 9
+command line: /home/makenma/project/xs-gem5/GEM5/build/RISCV/gem5.opt --outdir=/home/makenma/project/xs-gem5/GEM5/results/chi-hnf-public-proxy/runs/pseudo_random/libquantum/public_source_proxy /home/makenma/project/xs-gem5/GEM5/configs/example/kmhv2_chi_6x4_hnf_se.py --mem-type=DDR4_2400_8x8 --mem-channels=2 --mem-size=2GB --maxinsts=5100000 --warmup-insts-no-switch=100000 --cmd=/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4/shor-rv64-static '--options=1397 8' --workload-cwd=/home/makenma/project/xs-gem5/GEM5/results/chi-hnf-public-proxy/runs/pseudo_random/libquantum/public_source_proxy --disable-difftest --slc-replacement-policy=pseudo_random --slc-replacement-seed=1
+
+info: Standard input is not a terminal, disabling listeners.
+Attach 1 decoders to thread with addr: <orphan System>.cpu.decoder
+create_prefetcher at l2: PrefetcherForwarder
+create_prefetcher at l2: PrefetcherForwarder
+create_prefetcher at l2: PrefetcherForwarder
+create_prefetcher at l2: PrefetcherForwarder
+create_prefetcher at l2_wrapper: L2CompositeWithWorkerPrefetcher
+create_prefetcher at l1i: None
+create_prefetcher at l1d: XSCompositePrefetcher
+Finish memory system configuration
+CHI figure-23.2 6x4 SE topology:
+  Routers:    24 (6x4 mesh)
+  HN-Fs:      16
+  SLC policy: pseudo_random (seed=1)
+  Workload:   /home/makenma/project/xs-gem5/workloads/libquantum-0.2.4/shor-rv64-static 1397 8
+  Clocks:     CPU 2.3GHz, Router/HN-F 1.8GHz
+No switch cpu_class provided
+Registering probe listeners for BaseO3CPU system.cpu
+Registering probe listeners for Prefetcher system.cpu.dcache.prefetcher
+system.cpu.dcache.prefetcher addTLB system.cpu.mmu.dtb
+system.cpu.dcache.prefetcher addHintDownStream system.l2_wrappers.prefetcher
+Registering probe listeners for Prefetcher system.cpu.dcache.prefetcher.berti
+Registering probe listeners for Prefetcher system.cpu.dcache.prefetcher.bop_large
+Registering probe listeners for Prefetcher system.cpu.dcache.prefetcher.bop_learned
+Registering probe listeners for Prefetcher system.cpu.dcache.prefetcher.bop_small
+Registering probe listeners for Prefetcher system.cpu.dcache.prefetcher.cmc
+Registering probe listeners for Prefetcher system.cpu.dcache.prefetcher.ipcp
+Registering probe listeners for Prefetcher system.cpu.dcache.prefetcher.opt
+Registering probe listeners for Prefetcher system.cpu.dcache.prefetcher.spp
+Registering probe listeners for Prefetcher system.cpu.dcache.prefetcher.sstride
+Registering probe listeners for Prefetcher system.cpu.dcache.prefetcher.xsstream
+Registering inner cache accessors for L2CacheWrapper system.l2_wrappers
+Registering probe listeners for Prefetcher system.l2_wrappers.prefetcher
+system.l2_wrappers.prefetcher addTLB system.cpu.mmu.dtb
+Registering probe listeners for Prefetcher system.l2_wrappers.prefetcher.bop_large
+Registering probe listeners for Prefetcher system.l2_wrappers.prefetcher.bop_small
+Registering probe listeners for Prefetcher system.l2_wrappers.prefetcher.cdp
+Registering probe listeners for Prefetcher system.l2_wrappers.prefetcher.cmc
+Registering probe listeners for Prefetcher system.l2_wrappers.prefetcher.despacito_stream
+Registering inner cache accessor for L2CacheSlice system.l2_wrappers.slices0
+Registering probe listeners for Prefetcher system.l2_wrappers.slices0.inner_cache.prefetcher
+system.l2_wrappers.slices0.inner_cache.prefetcher addTLB system.cpu.mmu.dtb
+Registering inner cache accessor for L2CacheSlice system.l2_wrappers.slices1
+Registering probe listeners for Prefetcher system.l2_wrappers.slices1.inner_cache.prefetcher
+system.l2_wrappers.slices1.inner_cache.prefetcher addTLB system.cpu.mmu.dtb
+Registering inner cache accessor for L2CacheSlice system.l2_wrappers.slices2
+Registering probe listeners for Prefetcher system.l2_wrappers.slices2.inner_cache.prefetcher
+system.l2_wrappers.slices2.inner_cache.prefetcher addTLB system.cpu.mmu.dtb
+Registering inner cache accessor for L2CacheSlice system.l2_wrappers.slices3
+Registering probe listeners for Prefetcher system.l2_wrappers.slices3.inner_cache.prefetcher
+system.l2_wrappers.slices3.inner_cache.prefetcher addTLB system.cpu.mmu.dtb
+**** REAL SIMULATION ****
+Exiting @ tick 1008577950 because a thread reached the max instruction count

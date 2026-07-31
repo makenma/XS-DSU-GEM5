@@ -27,6 +27,7 @@ enum class SeqPocqEventKind : uint8_t
     HazardClear,
     SnoopDone,
     CompleteAccepted,
+    CompleteReplay,
     CompleteDone
 };
 

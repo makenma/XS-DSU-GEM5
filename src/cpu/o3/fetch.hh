@@ -633,6 +633,9 @@ class Fetch
         bool drain; // stall due to drain
     };
 
+    /** Per-thread drain latch set synchronously by the commit stage. */
+    Stalls stalls[MaxThreads]{};
+
     /** Tracks which stages are telling fetch to stall. */
     StallSignals* stallSig;
 

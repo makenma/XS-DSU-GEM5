@@ -29,6 +29,7 @@
 #ifndef SRC_SIM_MEM_STATE_HH
 #define SRC_SIM_MEM_STATE_HH
 
+#include <algorithm>
 #include <list>
 #include <memory>
 #include <string>
@@ -186,6 +187,7 @@ class MemState : public Serializable
     serialize(CheckpointOut &cp) const override
     {
         paramOut(cp, "brkPoint", _brkPoint);
+        paramOut(cp, "endBrkPoint", _endBrkPoint);
         paramOut(cp, "stackBase", _stackBase);
         paramOut(cp, "stackSize", _stackSize);
         paramOut(cp, "maxStackSize", _maxStackSize);
@@ -208,6 +210,8 @@ class MemState : public Serializable
     unserialize(CheckpointIn &cp) override
     {
         paramIn(cp, "brkPoint", _brkPoint);
+        const bool restored_end_brk =
+            optParamIn(cp, "endBrkPoint", _endBrkPoint, false);
         paramIn(cp, "stackBase", _stackBase);
         paramIn(cp, "stackSize", _stackSize);
         paramIn(cp, "maxStackSize", _maxStackSize);
@@ -227,6 +231,21 @@ class MemState : public Serializable
             paramIn(cp, "addrRangeStart", start);
             paramIn(cp, "addrRangeEnd", end);
             _vmaList.emplace_back(AddrRange(start, end), _pageBytes, name);
+        }
+
+        // Older checkpoints serialized the current brk and the heap VMAs,
+        // but omitted the furthest point ever mapped by brk.  Leaving the
+        // constructor's initial value here makes the next brk expansion
+        // overlap restored heap VMAs and silently fail.  Reconstruct the
+        // watermark for backward compatibility; new checkpoints preserve it
+        // exactly, including the case where brk has receded.
+        if (!restored_end_brk) {
+            _endBrkPoint = roundUp(_brkPoint, _pageBytes);
+            for (auto &vma : _vmaList) {
+                if (vma.getName() == "heap") {
+                    _endBrkPoint = std::max(_endBrkPoint, vma.end());
+                }
+            }
         }
     }
 

@@ -56,6 +56,8 @@ connect_hnf(system, "default_hnf", HomeNodeFull())
 parent_values = {
     "slc_num_sets": 64,
     "slc_num_ways": 2,
+    "slc_replacement_policy": "pseudo_random",
+    "slc_replacement_seed": 4660,
     "sf_num_sets": 32,
     "sf_num_ways": 4,
     "seq_entries": 3,
@@ -80,6 +82,8 @@ connect_hnf(system, "parent_hnf", HomeNodeFull(**parent_values))
 child_values = {
     "init_latency": 17,
     "slc_num_sets": 128,
+    "slc_replacement_policy": "lsu",
+    "slc_replacement_seed": 22136,
     "sf_num_ways": 8,
     "seq_entries": 7,
     "slcsf_lookup_latency": 14,
@@ -110,6 +114,8 @@ expect_values(
         "block_size": 64,
         "slc_num_sets": 1024,
         "slc_num_ways": 16,
+        "slc_replacement_policy": "lru",
+        "slc_replacement_seed": 1,
         "sf_num_sets": 1024,
         "sf_num_ways": 16,
         "seq_entries": 8,

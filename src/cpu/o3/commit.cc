@@ -105,6 +105,18 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
       stuckCheckEvent([this]() {
         static std::vector<DynInstPtr> debug_insts;
         if (cpu->curCycle() - this->lastCommitCycle > 40000) {
+            // A globally draining system can spend much longer than the
+            // commit watchdog interval emptying caches and memory.  Once the
+            // complete O3 pipeline is empty, lack of commits is the intended
+            // state, not a forward-progress failure.
+            if (cpu->drainState() != DrainState::Running &&
+                cpu->isPipelineDrained()) {
+                lastCommitCycle = cpu->curCycle();
+                cpu->schedule(
+                    this->stuckCheckEvent,
+                    cpu->clockEdge(Cycles(40010)));
+                return;
+            }
             if (traceMaybeExitOnPipelineDrainFromStuckCheck()) {
                 return;
             }
@@ -213,8 +225,6 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
     faultNum.insert(RiscvISA::ExceptionCode::LOAD_G_PAGE);
     faultNum.insert(RiscvISA::ExceptionCode::STORE_G_PAGE);
 
-    cpu->schedule(stuckCheckEvent,
-                   cpu->clockEdge(Cycles(40000)));
 }
 
 std::string Commit::name() const { return cpu->name() + ".commit"; }
@@ -461,6 +471,13 @@ void Commit::setROB(ROB *rob_ptr) { rob = rob_ptr; }
 void
 Commit::startupStage()
 {
+    // Schedule relative to the instantiated time, not in the constructor.
+    // Constructors run at Tick 0 even when restoring a checkpoint, which
+    // otherwise leaves this watchdog event in the past at the first simulate.
+    lastCommitCycle = cpu->curCycle();
+    assert(!stuckCheckEvent.scheduled());
+    cpu->schedule(stuckCheckEvent, cpu->clockEdge(Cycles(40000)));
+
     rob->setActiveThreads(activeThreads);
     rob->resetEntries();
 

@@ -23,6 +23,13 @@ from common import Options
 from common.FUScheduler import *
 from m5.objects import PerfRecord
 
+from example.noc_config.chi_6x4_hnf import (
+    HNF_NODE_IDS as CHI_6X4_HNF_NODE_IDS,
+    MESH_COLUMNS as CHI_6X4_MESH_COLUMNS,
+    MESH_ROWS as CHI_6X4_MESH_ROWS,
+    chi_node_id as _chi_6x4_node_id,
+)
+
 
 class XiangshanCore(RiscvO3CPU):
     scheduler = KunminghuScheduler()
@@ -439,8 +446,13 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
     if getattr(args, "chi_test_mode", False):
         l2_slices = getattr(args, "l2_slices", 4)
         chi_2x2 = getattr(args, "chi_2x2_router_test_mode", False)
-        bridge_count = np if chi_2x2 else np * l2_slices
-        home_count = 1 if chi_2x2 else bridge_count
+        chi_6x4 = getattr(args, "chi_6x4_hnf_router_test_mode", False)
+        if chi_2x2 and chi_6x4:
+            raise RuntimeError("CHI 2x2 and 6x4 router modes are exclusive")
+        chi_router_mode = chi_2x2 or chi_6x4
+        bridge_count = np if chi_router_mode else np * l2_slices
+        home_count = (len(CHI_6X4_HNF_NODE_IDS) if chi_6x4 else
+                      (1 if chi_2x2 else bridge_count))
         test_sys.chi_bridges = [Cache2ChiBridge()
                                 for _ in range(bridge_count)]
         test_sys.home_node   = [HomeNodeFull()
@@ -452,6 +464,18 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
                 for x in range(2)
             ]
             test_sys.snf_bridge = Chi2ClassicMemBridge()
+        elif chi_6x4:
+            test_sys.chi_routers = [
+                ChiRouterRefModel(local_x=x, local_y=y, node_type="router")
+                for y in range(CHI_6X4_MESH_ROWS)
+                for x in range(CHI_6X4_MESH_COLUMNS)
+            ]
+            # This single classic-memory adapter is boundary plumbing, not an
+            # additional modeled NoC node from figure 23.2.
+            test_sys.snf_bridge = Chi2ClassicMemBridge()
+            test_sys._chi_router_6x4_snf_node_id = _chi_6x4_node_id(
+                5, 0, 0, 0
+            )
 
     test_sys.xiangshan_system = True
     test_sys.enable_difftest = args.enable_difftest
@@ -889,6 +913,19 @@ def xiangshan_system_init():
         action="store_true",
         default=False,
         help="Use BTBTAGEUpperBound in kmhv3 instead of the default BTBTAGE",
+    )
+    parser.add_argument(
+        "--slc-replacement-policy",
+        choices=("lru", "lsu", "pseudo_random"),
+        default="lru",
+        help=("SLC replacement policy for CHI HN-F models; 'lsu' is a "
+              "compatibility alias for LRU"),
+    )
+    parser.add_argument(
+        "--slc-replacement-seed",
+        type=lambda value: int(value, 0),
+        default=1,
+        help="Deterministic seed for pseudo_random SLC replacement",
     )
 
     # Add the ruby specific and protocol specific args

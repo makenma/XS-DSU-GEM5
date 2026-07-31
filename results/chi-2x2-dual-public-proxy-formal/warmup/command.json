@@ -1,0 +1,27 @@
+{
+  "argv": [
+    "/home/makenma/project/xs-gem5/GEM5/build/RISCV/gem5.opt",
+    "-d",
+    "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-formal/warmup",
+    "/home/makenma/project/xs-gem5/GEM5/configs/example/kmhv2_chi_2x2_hnf_se.py",
+    "-n",
+    "2",
+    "-c",
+    "/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4/shor-rv64-static;/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/bin/tokenring-rv64-static",
+    "--options",
+    "1397 8;-f /home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/share/tokenring/omnetpp.ini",
+    "--workload-cwds",
+    "/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4;/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/share/tokenring",
+    "--mem-size=1GB",
+    "--experiment-mode=warmup",
+    "--slc-replacement-policy=lru",
+    "--slc-replacement-seed=20260730",
+    "--fill-max-ticks=5000000000",
+    "--settle-ticks=100000",
+    "--checkpoint-full-retry-limit=8",
+    "--checkpoint-refill-max-ticks=1000000000",
+    "--common-checkpoint=/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-formal/warmup/common_full_cpt"
+  ],
+  "classification": "public-source proxy; not SPEC CPU2006",
+  "cwd": "/home/makenma/project/xs-gem5/GEM5"
+}

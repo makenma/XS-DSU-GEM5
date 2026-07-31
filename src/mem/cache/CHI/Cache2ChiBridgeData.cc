@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 
+#include "base/intmath.hh"
 #include "base/logging.hh"
 #include "mem/cache/CHI/Cache2ChiBridge.hh"
 #include "mem/cache/CHI/base/DatOpcode.hh"
@@ -26,6 +28,65 @@ isDirtyResponse(uint8_t response)
 }
 
 } // anonymous namespace
+
+uint32_t
+Cache2ChiBridge::cmnHnfIndex(Addr address, size_t hnf_count,
+                             uint8_t pa_bits)
+{
+    panic_if(hnf_count == 0 || hnf_count > 64 ||
+                 !isPowerOf2(hnf_count),
+             "CMN HNF count=%llu must be a power of two in [1, 64]\n",
+             static_cast<unsigned long long>(hnf_count));
+    panic_if(pa_bits < 6 || pa_bits > 64,
+             "CMN HNF hash PA width=%u must be in [6, 64]\n", pa_bits);
+
+    if (hnf_count == 1) {
+        return 0;
+    }
+
+    const unsigned index_bits = floorLog2(hnf_count);
+    uint32_t index = 0;
+    for (unsigned output_bit = 0; output_bit < index_bits; ++output_bit) {
+        unsigned parity = 0;
+        for (unsigned bit = 6 + output_bit; bit < pa_bits;
+             bit += index_bits) {
+            parity ^= (address >> bit) & 1;
+        }
+        index |= parity << output_bit;
+    }
+    return index;
+}
+
+std::optional<uint32_t>
+Cache2ChiBridge::allocateMonotonicTxnId(
+    uint64_t& next_id, size_t outstanding, uint32_t max_outstanding,
+    uint32_t namespace_count)
+{
+    if (outstanding >= max_outstanding || namespace_count == 0 ||
+        next_id > std::numeric_limits<uint32_t>::max()) {
+        return std::nullopt;
+    }
+    const uint32_t id = static_cast<uint32_t>(next_id);
+    next_id += namespace_count;
+    return id;
+}
+
+uint64_t
+Cache2ChiBridge::firstTxnIdInNamespace(
+    uint32_t base, uint32_t namespace_id, uint32_t namespace_count)
+{
+    panic_if(namespace_count == 0 || namespace_id >= namespace_count,
+             "invalid Cache2ChiBridge TxnID namespace %u/%u\n",
+             namespace_id, namespace_count);
+
+    const uint64_t first = static_cast<uint64_t>(namespace_id) + 1;
+    if (first > base) {
+        return first;
+    }
+    const uint64_t epochs =
+        (static_cast<uint64_t>(base) - first) / namespace_count + 1;
+    return first + epochs * namespace_count;
+}
 
 bool
 Cache2ChiBridge::advancePendingSnoopResponse(

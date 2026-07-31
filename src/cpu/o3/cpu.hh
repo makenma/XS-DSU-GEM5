@@ -380,12 +380,8 @@ class CPU : public BaseCPU
         return fetch.isTraceEOF();
     }
 
-    /**
-     * Wrapper for internal drain check used by trace-mode helpers.
-     * Keeps isCpuDrained() private while still allowing components
-     * like Commit to query whether the entire O3 pipeline is empty.
-     */
-    bool isTracePipelineDrained() const { return isCpuDrained(); }
+    /** Allow Commit helpers to distinguish a drained pipeline from a stall. */
+    bool isPipelineDrained() const { return isCpuDrained(); }
 
     /** Initiates a squash of all in-flight instructions for a given
      * thread.  The source of the squash is an external update of

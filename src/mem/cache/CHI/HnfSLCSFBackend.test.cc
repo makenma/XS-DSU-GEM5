@@ -9,6 +9,7 @@
 #include <limits>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -488,6 +489,120 @@ TEST(HnfSlcSfBackendInvariantTest,
     backend.checkGlobalInvariants();
 }
 
+TEST(HnfSlcSfBackendReplacementPolicyTest,
+     InvalidWaysPrecedeGoldenPseudoRandomVictims)
+{
+    constexpr uint64_t Seed = 0x123456789abcdef0ULL;
+    constexpr uint64_t Base = 0x90000000;
+    const std::vector<uint32_t> expected = {0, 0, 1, 3, 2, 1, 3, 3};
+    HnfSLCSFBackend backend(
+        64, 1, 4, 1, 32, 8, "pseudo_random", Seed);
+
+    // Empty ways are deterministic and do not consume the random stream.
+    for (uint32_t way = 0; way < 4; ++way) {
+        const uint64_t address = Base + way * 64;
+        const auto observation = probeLine(backend, address, way + 1);
+        EXPECT_FALSE(observation.result.slcHit);
+        EXPECT_EQ(observation.snapshot.slc.way, way);
+        backend.fillCleanShared(address, way + 1, lineData(0x10 + way));
+    }
+
+    for (size_t i = 0; i < expected.size(); ++i) {
+        const uint64_t address = Base + (4 + i) * 64;
+        const auto first = probeLine(backend, address, 20 + i);
+        const auto second = probeLine(backend, address, 20 + i);
+        expectLookupObservationsEqual(second, first);
+        EXPECT_EQ(first.snapshot.slc.way, expected[i]);
+        backend.fillCleanShared(address, 20 + i, lineData(0x30 + i));
+    }
+    backend.checkGlobalInvariants();
+}
+
+TEST(HnfSlcSfBackendReplacementPolicyTest,
+     LsuAliasesLruAndSfRemainsLru)
+{
+    constexpr uint64_t Base = 0x91000000;
+    HnfSLCSFBackend lru(64, 1, 4, 1, 4, 8, "lru", 2);
+    HnfSLCSFBackend alias(64, 1, 4, 1, 4, 8, "lsu", 99);
+    HnfSLCSFBackend pseudo(64, 1, 4, 1, 4, 8, "pseudo_random", 2);
+
+    for (uint32_t way = 0; way < 4; ++way) {
+        const uint64_t address = Base + way * 64;
+        for (HnfSLCSFBackend* backend : {&lru, &alias, &pseudo}) {
+            backend->fillCleanShared(
+                address, way + 1, lineData(0x40 + way));
+        }
+    }
+    RawReq raw{};
+    raw.srcid = 1;
+    const HnfSlcLookupReq touch{
+        7, raw, PocqTxnKind::ReadShared, Base};
+    ASSERT_NO_THROW(lru.lookup(touch));
+    ASSERT_NO_THROW(alias.lookup(touch));
+    ASSERT_NO_THROW(pseudo.lookup(touch));
+
+    const uint64_t replacement = Base + 4 * 64;
+    const auto lru_target = probeLine(lru, replacement, 9).snapshot;
+    const auto alias_target = probeLine(alias, replacement, 9).snapshot;
+    const auto pseudo_target = probeLine(pseudo, replacement, 9).snapshot;
+    EXPECT_EQ(lru_target.slc.way, 1);
+    EXPECT_EQ(alias_target.slc.way, lru_target.slc.way);
+    EXPECT_EQ(pseudo_target.slc.way, 2);
+    EXPECT_EQ(pseudo_target.sf.way, 1);
+
+    EXPECT_THROW(
+        HnfSLCSFBackend(64, 1, 4, 1, 4, 8, "not-a-policy", 1),
+        std::invalid_argument);
+}
+
+TEST(HnfSlcSfBackendReplacementPolicyTest,
+     SrripPromotesHitsAgesFullSetsAndChoosesDeterministically)
+{
+    constexpr uint64_t Base = 0x92000000;
+    HnfSLCSFBackend backend(64, 1, 4, 1, 16, 8, "srrip", 7);
+    HnfSLCSFBackend alias(64, 1, 4, 1, 16, 8, "rrip", 99);
+    EXPECT_EQ(alias.slcReplacementPolicyKind(),
+              HnfSLCSFBackend::SlcReplacementPolicy::Srrip);
+    EXPECT_EQ(backend.slcCapacityLineCount(), 4);
+    EXPECT_EQ(backend.slcValidLineCount(), 0);
+
+    for (uint32_t way = 0; way < 4; ++way) {
+        backend.fillCleanShared(
+            Base + way * 64, way + 1, lineData(0x50 + way));
+        EXPECT_EQ(backend.slcValidLineCount(), way + 1);
+        EXPECT_EQ(backend.maxValidWaysInSet(), way + 1);
+    }
+
+    RawReq raw{};
+    raw.srcid = 1;
+    ASSERT_NO_THROW(backend.lookup(HnfSlcLookupReq{
+        7, raw, PocqTxnKind::ReadShared, Base}));
+
+    // A hit promotes way 0 to RRPV 0.  The first full-set miss ages the
+    // other RRPV-2 lines to 3 and deterministically evicts way 1.
+    backend.fillCleanShared(Base + 4 * 64, 5, lineData(0x60));
+    EXPECT_TRUE(probeLine(backend, Base, 1).result.slcHit);
+    EXPECT_FALSE(probeLine(backend, Base + 64, 1).result.slcHit);
+
+    // Remaining RRPV-3 ways are selected before newly inserted RRPV-2 ways.
+    backend.fillCleanShared(Base + 5 * 64, 6, lineData(0x61));
+    EXPECT_FALSE(probeLine(backend, Base + 2 * 64, 1).result.slcHit);
+
+    // Once no line has RRPV 3, saturating aging makes the first maximum-RRPV
+    // line eligible.  Touching way 3 protects it from that replacement.
+    ASSERT_NO_THROW(backend.lookup(HnfSlcLookupReq{
+        7, raw, PocqTxnKind::ReadShared, Base + 3 * 64}));
+    backend.fillCleanShared(Base + 6 * 64, 7, lineData(0x62));
+    EXPECT_FALSE(probeLine(backend, Base + 4 * 64, 1).result.slcHit);
+    EXPECT_TRUE(probeLine(backend, Base + 3 * 64, 1).result.slcHit);
+    EXPECT_EQ(backend.slcValidLineCount(), 4);
+
+    backend.flushL3(Base);
+    EXPECT_EQ(backend.slcValidLineCount(), 3);
+    EXPECT_EQ(backend.maxValidWaysInSet(), 3);
+    backend.checkGlobalInvariants();
+}
+
 TEST_F(HnfSlcSfBackendCheckpointTest, RestoreRejectsNonBooleanPersistentFields)
 {
     const BackendGeometry geometry{};
@@ -790,6 +905,97 @@ TEST_F(HnfSlcSfBackendCheckpointTest,
         }
         EXPECT_EQ(serializeBackend(restored), state_before);
     }
+}
+
+TEST_F(HnfSlcSfBackendCheckpointTest,
+       PseudoRandomStreamResumesExactlyAfterRestore)
+{
+    constexpr uint64_t Base = 0x92000000;
+    constexpr uint64_t Seed = 0x123456789abcdef0ULL;
+    const BackendGeometry geometry{1, 4, 1, 32, 8};
+    HnfSLCSFBackend original(
+        64, geometry.slcSets, geometry.slcWays, geometry.sfSets,
+        geometry.sfWays, geometry.seqEntries, "pseudo_random", Seed);
+
+    for (uint32_t i = 0; i < 7; ++i) {
+        original.fillCleanShared(
+            Base + i * 64, i + 1, lineData(0x60 + i));
+    }
+    const std::string checkpoint = serializeBackend(original);
+    EXPECT_NE(
+        checkpoint.find("slcReplacementPolicy=1\n"), std::string::npos);
+    EXPECT_NE(
+        checkpoint.find("slcReplacementSeed=" + std::to_string(Seed) + "\n"),
+        std::string::npos);
+    EXPECT_NE(
+        checkpoint.find("slcPseudoRandomState="), std::string::npos);
+    simulateSerialization(checkpoint);
+
+    HnfSLCSFBackend wrong_policy(
+        64, geometry.slcSets, geometry.slcWays, geometry.sfSets,
+        geometry.sfWays, geometry.seqEntries, "lru", Seed);
+    {
+        CheckpointIn input(getDirName());
+        EXPECT_ANY_THROW({
+            Serializable::ScopedCheckpointSection section(input, "backend");
+            wrong_policy.unserializePersistentState(input);
+        });
+    }
+
+    HnfSLCSFBackend overridden_policy(
+        64, geometry.slcSets, geometry.slcWays, geometry.sfSets,
+        geometry.sfWays, geometry.seqEntries, "srrip", 77, true);
+    {
+        CheckpointIn input(getDirName());
+        Serializable::ScopedCheckpointSection section(input, "backend");
+        ASSERT_NO_THROW(
+            overridden_policy.unserializePersistentState(input));
+    }
+    EXPECT_EQ(overridden_policy.slcReplacementPolicyKind(),
+              HnfSLCSFBackend::SlcReplacementPolicy::Srrip);
+    EXPECT_EQ(overridden_policy.slcValidLineCount(),
+              original.slcValidLineCount());
+    for (uint32_t i = 0; i < 7; ++i) {
+        const auto overridden =
+            probeLine(overridden_policy, Base + i * 64, i + 1);
+        const auto source = probeLine(original, Base + i * 64, i + 1);
+        EXPECT_EQ(overridden.result.slcHit, source.result.slcHit);
+        if (source.result.slcHit) {
+            EXPECT_EQ(overridden.result.slcState, source.result.slcState);
+            EXPECT_EQ(overridden.result.dataDirty, source.result.dataDirty);
+            EXPECT_EQ(overridden.result.data, source.result.data);
+            EXPECT_EQ(overridden.snapshot.slc.way,
+                      source.snapshot.slc.way);
+            EXPECT_EQ(overridden.snapshot.slc.generation,
+                      source.snapshot.slc.generation);
+            EXPECT_EQ(overridden.snapshot.slc.replacementStamp,
+                      source.snapshot.slc.replacementStamp);
+        }
+    }
+
+    // The checkpointed stream state, including its original seed, supersedes
+    // the construction seed so continuation is bit-for-bit reproducible.
+    HnfSLCSFBackend restored(
+        64, geometry.slcSets, geometry.slcWays, geometry.sfSets,
+        geometry.sfWays, geometry.seqEntries, "pseudo_random", 0);
+    {
+        CheckpointIn input(getDirName());
+        Serializable::ScopedCheckpointSection section(input, "backend");
+        ASSERT_NO_THROW(restored.unserializePersistentState(input));
+    }
+    EXPECT_EQ(serializeBackend(restored), checkpoint);
+
+    for (uint32_t i = 7; i < 15; ++i) {
+        const uint64_t address = Base + i * 64;
+        const auto expected = probeLine(original, address, 40 + i);
+        const auto actual = probeLine(restored, address, 40 + i);
+        expectLookupObservationsEqual(actual, expected);
+        original.fillCleanShared(
+            address, 40 + i, lineData(0x60 + i));
+        restored.fillCleanShared(
+            address, 40 + i, lineData(0x60 + i));
+    }
+    EXPECT_EQ(serializeBackend(restored), serializeBackend(original));
 }
 
 TEST_F(HnfSlcSfBackendCheckpointTest, DrainedPersistentStateRoundTripsExactly)

@@ -2,8 +2,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
+#include "mem/cache/CHI/Chi2ClassicMemBridgeTxnKey.hh"
 #include "mem/cache/CHI/Chi2ClassicMemTxnPolicy.hh"
 #include "mem/cache/CHI/base/DatOpcode.hh"
 #include "mem/cache/CHI/base/ReqOpcode.hh"
@@ -278,6 +280,66 @@ TEST(Chi2ClassicMemBridgePolicyTest,
         *datPending, Policy::Event::ChiResponseSent, true);
     ASSERT_TRUE(complete);
     EXPECT_EQ(*complete, Policy::Phase::Complete);
+}
+
+TEST(Chi2ClassicMemBridgeIdentityTest,
+     SameTxnIdFromDifferentHnfsRemainIndependent)
+{
+    RawReq first = makeWriteReq();
+    first.srcid = 0x04;
+    first.txnid = 0x31;
+    RawReq second = first;
+    second.srcid = 0x84;
+
+    const Chi2ClassicTxnKey firstKey =
+        Chi2ClassicTxnKey::fromReq(first);
+    const Chi2ClassicTxnKey secondKey =
+        Chi2ClassicTxnKey::fromReq(second);
+    EXPECT_FALSE(firstKey == secondKey);
+
+    std::unordered_map<Chi2ClassicTxnKey, RawReq,
+                       Chi2ClassicTxnKeyHash> active;
+    ASSERT_TRUE(active.emplace(firstKey, first).second);
+    ASSERT_TRUE(active.emplace(secondKey, second).second);
+    EXPECT_EQ(active.size(), 2U);
+    EXPECT_EQ(active.at(firstKey).srcid, first.srcid);
+    EXPECT_EQ(active.at(secondKey).srcid, second.srcid);
+    EXPECT_EQ(Chi2ClassicTxnKey::responseTarget(first, 0), first.srcid);
+    EXPECT_EQ(Chi2ClassicTxnKey::responseTarget(second, 0), second.srcid);
+    EXPECT_EQ(Chi2ClassicTxnKey::responseTarget(first, 0x104), 0x104U);
+
+    RawDat firstDat = makeWriteDat(first, 7);
+    RawDat secondDat = makeWriteDat(second, 8);
+    EXPECT_EQ(Chi2ClassicTxnKey::fromWriteData(firstDat), firstKey);
+    EXPECT_EQ(Chi2ClassicTxnKey::fromWriteData(secondDat), secondKey);
+
+    // hnf_node_id == 0 selects the source HN-F of each original request.
+    // Thus a shared SN bridge returns same-numbered transactions to their
+    // respective HN-Fs rather than collapsing both onto one destination.
+    const RawRsp firstComp =
+        Policy::makeComp(first, firstDat.dbid, 0x280, 0, false);
+    const RawRsp secondComp =
+        Policy::makeComp(second, secondDat.dbid, 0x280, 0, false);
+    EXPECT_EQ(firstComp.txnid, secondComp.txnid);
+    EXPECT_EQ(firstComp.tgtid, first.srcid);
+    EXPECT_EQ(secondComp.tgtid, second.srcid);
+    EXPECT_NE(firstComp.tgtid, secondComp.tgtid);
+}
+
+TEST(Chi2ClassicMemBridgeIdentityTest,
+     DuplicateMeansSameSourceAndTxnId)
+{
+    RawReq original = makeWriteReq();
+    const Chi2ClassicTxnKey originalKey =
+        Chi2ClassicTxnKey::fromReq(original);
+
+    RawReq sameIdentity = original;
+    sameIdentity.addr += 0x1000;
+    EXPECT_EQ(Chi2ClassicTxnKey::fromReq(sameIdentity), originalKey);
+
+    RawReq independent = original;
+    independent.srcid++;
+    EXPECT_NE(Chi2ClassicTxnKey::fromReq(independent), originalKey);
 }
 
 } // anonymous namespace

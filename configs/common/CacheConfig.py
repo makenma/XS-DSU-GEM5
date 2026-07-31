@@ -48,6 +48,17 @@ from common.LSQBankConflict import set_lsq_bank_conflict_cache_params
 from common import ObjectList
 from common.PrefetcherConfig import *
 
+# The figure-23.2 topology description is intentionally kept independent of
+# gem5 objects.  This file supplies only the runnable-system boundary adapters
+# (one RN-F bridge per CPU and one shared classic-memory SN bridge).
+from example.noc_config.chi_6x4_hnf import (
+    HNF_NODE_IDS as CHI_6X4_HNF_NODE_IDS,
+    PHYSICAL_ADDRESS_BITS as CHI_6X4_PA_BITS,
+    chi_node_id as _chi_6x4_node_id,
+    connect_router_hnf_mesh as _connect_router_hnf_mesh_6x4,
+    router_index as _chi_router_6x4_index,
+)
+
 def _get_hwp(hwp_option):
     if hwp_option == None:
         return NULL
@@ -78,7 +89,7 @@ def _chi_node_id(x, y, p=0, d=0):
 def _chi_router_2x2(system, x, y):
     return system.chi_routers[y * 2 + x]
 
-def _connect_chi_router_2x2_mesh_once(system):
+def _connect_chi_router_2x2_mesh_once(options, system):
     if getattr(system, "_chi_router_2x2_mesh_connected", False):
         return
 
@@ -114,6 +125,15 @@ def _connect_chi_router_2x2_mesh_once(system):
     system.home_node[0].node_type = "hnf"
     system.home_node[0].sn_node_id = snf_id
     system.home_node[0].direct_sn_fake_data = False
+    replacement_policy = getattr(options, "slc_replacement_policy", "lru")
+    replacement_seed = getattr(options, "slc_replacement_seed", 1)
+    system.home_node[0].slc_replacement_policy = replacement_policy
+    system.home_node[0].slc_replacement_seed = replacement_seed
+    system.home_node[0].slcsf.slc_replacement_policy = replacement_policy
+    system.home_node[0].slcsf.slc_replacement_seed = replacement_seed
+    system.home_node[0].slcsf.exit_on_slc_full = getattr(
+        options, "exit_on_slc_full", False
+    )
     # Each CPU exposes one RNF endpoint after its L2 wrapper's internal xbar.
     system.home_node[0].rnf_slices = 1
     r11.local_ports[0] = system.home_node[0].rxport
@@ -148,7 +168,7 @@ def _connect_chi_router_2x2_bridge(options, system, cpu_idx, xbar):
     if options.num_cpus > 4:
         raise RuntimeError("CHI 2x2 router smoke supports at most four CPUs")
 
-    _connect_chi_router_2x2_mesh_once(system)
+    _connect_chi_router_2x2_mesh_once(options, system)
 
     bridge = system.chi_bridges[cpu_idx]
     bridge.node_id = _chi_rnf_node_id(cpu_idx)
@@ -161,6 +181,89 @@ def _connect_chi_router_2x2_bridge(options, system, cpu_idx, xbar):
     bridge.mem_side = system.membus.cpu_side_ports
     bridge.chi_side = _chi_router_2x2(
         system, 0, 0).device_ports[cpu_idx * 4]
+
+
+def _chi_router_6x4(system, x, y):
+    return system.chi_routers[_chi_router_6x4_index(x, y)]
+
+
+def _connect_chi_router_6x4_mesh_once(options, system):
+    """Wire the 24-router/16-HN-F mesh and its memory boundary once."""
+
+    if getattr(system, "_chi_router_6x4_mesh_connected", False):
+        return
+
+    _connect_router_hnf_mesh_6x4(system)
+
+    replacement_policy = getattr(options, "slc_replacement_policy", "lru")
+    replacement_seed = getattr(options, "slc_replacement_seed", 1)
+
+    # Figure 23.2 labels every HN-F with 2 MiB SLC and 2 MiB SF.  At a
+    # 64-byte line and 16 ways this corresponds to 2048 modeled sets.
+    for hnf in system.home_node:
+        hnf.sn_node_id = system._chi_router_6x4_snf_node_id
+        hnf.direct_sn_fake_data = False
+        hnf.rnf_slices = 1
+        hnf.slc_num_sets = 2048
+        hnf.slc_num_ways = 16
+        hnf.sf_num_sets = 2048
+        hnf.sf_num_ways = 16
+        hnf.slc_replacement_policy = replacement_policy
+        hnf.slc_replacement_seed = replacement_seed
+
+        # SlcSnoopFilter normally obtains these values through Parent
+        # proxies.  Set the canonical child parameters explicitly as well so
+        # a command-line policy can never be hidden by an earlier override.
+        hnf.slcsf.slc_num_sets = 2048
+        hnf.slcsf.slc_num_ways = 16
+        hnf.slcsf.sf_num_sets = 2048
+        hnf.slcsf.sf_num_ways = 16
+        hnf.slcsf.slc_replacement_policy = replacement_policy
+        hnf.slcsf.slc_replacement_seed = replacement_seed
+
+    # A real downstream memory path is required for data-bearing SPEC runs.
+    # The adapter is deliberately outside the router/HN-F topology model: it
+    # is placed at the unused P0/D0 endpoint of router (5,0), and all HN-Fs
+    # target it.  hnf_node_id=0 makes responses use the requesting HN-F SrcID.
+    snf = system.snf_bridge
+    snf.node_id = system._chi_router_6x4_snf_node_id
+    snf.hnf_node_id = 0
+    snf.block_size = system.cache_line_size
+    snf.max_outstanding = 512
+    _chi_router_6x4(system, 5, 0).local_ports[0] = snf.chi_side
+    snf.mem_side = system.membus.cpu_side_ports
+
+    system._chi_router_6x4_mesh_connected = True
+
+
+def _connect_chi_router_6x4_bridge(options, system, cpu_idx, xbar):
+    """Attach one post-L2 RN-F bridge and enable the CMN HN-F hash."""
+
+    if options.num_cpus > 4:
+        raise RuntimeError(
+            "CHI 6x4 HNF mode currently supports at most four CPUs"
+        )
+
+    _connect_chi_router_6x4_mesh_once(options, system)
+
+    # Keep requester IDs in [0, 63] for the HN-F snoop-filter sharer vector,
+    # and keep D[1:0] clear.  HnfCC uses those low bits for slices within one
+    # RN-F; assigning CPUs to D0 on the four west-edge routers therefore
+    # preserves each CPU's logical SrcID when targetRouteId() is formed.
+    rnf_node_id = _chi_6x4_node_id(0, cpu_idx, 0, 0)
+    bridge = system.chi_bridges[cpu_idx]
+    bridge.node_id = rnf_node_id
+    bridge.home_node_id = CHI_6X4_HNF_NODE_IDS[0]
+    bridge.home_node_ids = list(CHI_6X4_HNF_NODE_IDS)
+    bridge.hnf_hash_pa_bits = CHI_6X4_PA_BITS
+    bridge.txnid_base = 0
+    bridge.sink_hnf_txreq = False
+    bridge.wakeup_target = system.home_node[0]
+
+    xbar.mem_side_ports = bridge.cache_side
+    bridge.mem_side = system.membus.cpu_side_ports
+    bridge.chi_side = _chi_router_6x4(
+        system, 0, cpu_idx).device_ports[0]
 
 def config_classic_l2(options, system, l2_cache_class):
     # When using classic L2 cache, The prefetcher is inside the l2cache, instead of l2Wrapper
@@ -277,15 +380,24 @@ def config_aligned_l2(options, system, l2_cache_class):
 
             # Connect slice to the wrapper's cpu-side input and the internal xbar's cpu-side input
             cache_slice.cpu_side = l2_wrapper.slice_cpuside_ports
+            chi_router_mode = (
+                getattr(options, "chi_2x2_router_test_mode", False) or
+                getattr(options, "chi_6x4_hnf_router_test_mode", False)
+            )
             if (not getattr(options, "chi_test_mode", False) or
-                    getattr(options, "chi_2x2_router_test_mode", False)):
+                    chi_router_mode):
                 xbar.cpu_side_ports = cache_slice.mem_side
             else:
                 bridge_idx = i * num_l2_slices + j
                 bridge = system.chi_bridges[bridge_idx]
                 bridge.node_id = i
                 bridge.home_node_id = bridge_idx
+                # These slice bridges share one CHI SrcID.  Keep their
+                # monotonic TxnID streams disjoint even after the historical
+                # 1024-ID base spacing has been crossed.
                 bridge.txnid_base = _chi_bridge_txnid_base(j)
+                bridge.txnid_namespace_id = j
+                bridge.txnid_namespace_count = num_l2_slices
                 bridge.cache_side = cache_slice.mem_side
                 bridge.wakeup_target = system.home_node[bridge_idx]
                 system.home_node[bridge_idx].direct_sn_fake_data = False
@@ -294,6 +406,8 @@ def config_aligned_l2(options, system, l2_cache_class):
 
         if getattr(options, "chi_2x2_router_test_mode", False):
             _connect_chi_router_2x2_bridge(options, system, i, xbar)
+        elif getattr(options, "chi_6x4_hnf_router_test_mode", False):
+            _connect_chi_router_6x4_bridge(options, system, i, xbar)
 
         # Connect the wrapper to the L1-L2 bus
         l2_wrapper.cpu_side = system.tol2bus_list[i].mem_side_ports
@@ -383,10 +497,13 @@ def config_cache(options, system):
             system.l3.do_fast_writeline = not options.kmh_align
 
         for i in range(options.num_cpus):
-            chi_2x2 = getattr(options, "chi_2x2_router_test_mode", False)
-            if chi_2x2:
+            chi_router_mode = (
+                getattr(options, "chi_2x2_router_test_mode", False) or
+                getattr(options, "chi_6x4_hnf_router_test_mode", False)
+            )
+            if chi_router_mode:
                 if options.l3cache:
-                    raise RuntimeError("CHI 2x2 router mode does not use the "
+                    raise RuntimeError("CHI router modes do not use the "
                                        "classic shared L3 path")
                 # The xbar and bridge were connected in config_aligned_l2().
                 continue

@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "mem/cache/CHI/Chi2ClassicMemBridgeTxnKey.hh"
 #include "mem/cache/CHI/Chi2ClassicMemTxnPolicy.hh"
 #include "mem/cache/CHI/base/ChiChannel.hh"
 #include "mem/cache/CHI/base/ChiCommonPort.hh"
@@ -49,8 +50,8 @@ class Chi2ClassicMemBridge : public ClockedObject, public ruby::Consumer
 
     struct SnfSenderState : public Packet::SenderState
     {
-        explicit SnfSenderState(uint32_t txnid) : txnid(txnid) {}
-        uint32_t txnid;
+        explicit SnfSenderState(const Chi2ClassicTxnKey& key) : key(key) {}
+        Chi2ClassicTxnKey key;
     };
 
     struct TxnEntry
@@ -71,6 +72,18 @@ class Chi2ClassicMemBridge : public ClockedObject, public ruby::Consumer
         uint8_t dbid = 0;
     };
 
+    struct PendingDat
+    {
+        Chi2ClassicTxnKey key;
+        RawDat flit;
+    };
+
+    struct PendingRsp
+    {
+        Chi2ClassicTxnKey key;
+        RawRsp flit;
+    };
+
     ChiCommonPort chiPort;
     MemSidePort memPort;
 
@@ -81,11 +94,12 @@ class Chi2ClassicMemBridge : public ClockedObject, public ruby::Consumer
     const uint32_t maxOutstanding;
     const RequestorID requestorId;
 
-    std::unordered_map<uint32_t, TxnEntry> txns;
+    std::unordered_map<Chi2ClassicTxnKey, TxnEntry,
+                       Chi2ClassicTxnKeyHash> txns;
     std::optional<RawReq> pendingReq;
-    std::deque<uint32_t> memReqQ;
-    std::deque<RawDat> txDatQ;
-    std::deque<RawRsp> txRspQ;
+    std::deque<Chi2ClassicTxnKey> memReqQ;
+    std::deque<PendingDat> txDatQ;
+    std::deque<PendingRsp> txRspQ;
     PacketPtr blockedPkt = nullptr;
     bool memReqBlocked = false;
     uint8_t nextDbid = 1;

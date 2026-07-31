@@ -440,7 +440,35 @@ LSQ::isDrained() const
         drained = false;
     }
 
+    // Committed stores are removed from the per-thread SQ when they are
+    // copied into the shared store buffer.  That buffer is transient CPU
+    // state and is not serialized, so a checkpoint drain must wait for both
+    // unsent and in-flight store-buffer entries to complete.
+    if (!storeBufferEmpty()) {
+        DPRINTF(Drain, "Not drained, store buffer not empty.\n");
+        drained = false;
+    }
+
+    if (storeBufferBlocked()) {
+        DPRINTF(Drain, "Not drained, store buffer request blocked.\n");
+        drained = false;
+    }
+
     return drained;
+}
+
+void
+LSQ::startDraining()
+{
+    _storeBufferDrainPending = true;
+    cpu->activityThisCycle();
+}
+
+void
+LSQ::drainResume()
+{
+    _storeBufferDrainPending = false;
+    clearStoreBufferFlushing();
 }
 
 void
@@ -703,6 +731,13 @@ LSQ::processWriteback()
 
     storeBufferWriteback();
 
+    // Store-buffer responses do not otherwise keep the pipeline tick event
+    // alive.  During a drain, continue ticking until every committed store
+    // has left the SQ and the shared buffer, including entries awaiting a
+    // cache response or a retry opportunity.
+    if (_storeBufferDrainPending && (!sqEmpty() || !storeBufferEmpty())) {
+        cpu->activityThisCycle();
+    }
 
     if (storeBufferBlocked()) {
         // dont offload store to sbuffer when sbuffer is flushing
@@ -760,6 +795,7 @@ LSQ::processWriteback()
         ThreadID tid = *threads++;
         thread[tid].offloadToStoreBuffer(offload_quota[tid]);
     }
+
 }
 
 void
@@ -792,7 +828,7 @@ LSQ::storeBufferWriteback()
         }
 
         std::optional<StoreBufferEvictCause> cause;
-        if (storeBufferFlushing()) {
+        if (storeBufferFlushing() || _storeBufferDrainPending) {
             cause = StoreBufferEvictCause::Flush;
             DPRINTF(StoreBuffer, "sbuffer flushing\n");
         } else if (storeBuffer.unsentSize() > getSbufferEvictThreshold()) {
@@ -1487,7 +1523,7 @@ LSQ::willWB()
         return true;
     }
 
-    if (storeBufferFlushing()) {
+    if (storeBufferFlushing() || _storeBufferDrainPending) {
         return true;
     }
 

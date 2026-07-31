@@ -38,6 +38,11 @@ bool isCompleteDone(const SeqPocqEvent& event)
     return event.kind == SeqPocqEventKind::CompleteDone;
 }
 
+bool isCompleteReplay(const SeqPocqEvent& event)
+{
+    return event.kind == SeqPocqEventKind::CompleteReplay;
+}
+
 } // anonymous namespace
 
 SeqPocqEdge::SeqPocqEdge(
@@ -78,6 +83,7 @@ SEQ_POCQ_StateGraph::SEQ_POCQ_StateGraph()
     addTransition(waitSnoop, completeIssue, isSnoopDone,
                   {SeqPocqActionKind::IssueCompleteSfEvict});
     addTransition(completeIssue, completeWait, isCompleteAccepted, {});
+    addTransition(completeWait, completeIssue, isCompleteReplay, {});
     addTransition(completeWait, idle, isCompleteDone,
                   {SeqPocqActionKind::Retire});
 }
@@ -151,6 +157,7 @@ SEQ_POCQ_StateGraph::eventName(SeqPocqEventKind event)
       case SeqPocqEventKind::HazardClear: return "HazardClear";
       case SeqPocqEventKind::SnoopDone: return "SnoopDone";
       case SeqPocqEventKind::CompleteAccepted: return "CompleteAccepted";
+      case SeqPocqEventKind::CompleteReplay: return "CompleteReplay";
       case SeqPocqEventKind::CompleteDone: return "CompleteDone";
     }
     return "Unknown";

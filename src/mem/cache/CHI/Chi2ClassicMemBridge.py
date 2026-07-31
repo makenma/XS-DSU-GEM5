@@ -13,7 +13,10 @@ class Chi2ClassicMemBridge(ClockedObject):
 
     system = Param.System(Parent.any, "System this SN bridge belongs to")
     node_id = Param.UInt32(0, "SNF node id used as CHI SrcID")
-    hnf_node_id = Param.UInt32(0, "Default HNF node id")
+    hnf_node_id = Param.UInt32(
+        0,
+        "Fixed response HNF node id; 0 returns each response to its REQ SrcID",
+    )
     block_size = Param.Unsigned(Parent.cache_line_size, "Cache line size")
     data_beat_bytes = Param.UInt32(32, "Bytes carried by one CHI DAT beat")
     max_outstanding = Param.UInt32(32, "Maximum outstanding SN reads")
