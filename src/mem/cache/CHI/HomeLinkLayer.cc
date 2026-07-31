@@ -15,9 +15,11 @@ namespace gem5::Chi {
     if (!t->isCurrentStage(stage)) return;
 
 HomeLinkLayer::HomeLinkLayer( HomeNodeFull* hnf,
-                          const std::array<int, 4>& thresholds)
+                          const std::array<int, 4>& thresholds,
+                            const int RnfNum)
   : Consumer(hnf),
     m_homenode(hnf),
+    RnfNum(RnfNum),
     m_qosPool(thresholds)
 {
     reqFuncs = {
@@ -103,7 +105,14 @@ void HomeLinkLayer::doStageH0_Req(RawReq* Req) {
     m_homenode->scheduleEvent(gem5::Cycles(1));
 }
 void HomeLinkLayer::doStageH1_Req(RawReq* Req) {
-    IS_THIS_STAGE(Req, 1) Req->next_stage();
+    IS_THIS_STAGE(Req, 1)
+    if (m_qosPool.enqueue(Req->qos)){
+        //TODO: transfer flit to qocq entry then send req credit
+
+    }
+    else{
+    }
+    Req->next_stage();
     m_homenode->scheduleEvent(gem5::Cycles(1));
 }
 void HomeLinkLayer::doStageH2_Req(RawReq* Req) {

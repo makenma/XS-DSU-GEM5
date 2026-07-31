@@ -4,11 +4,14 @@
 #include <array>
 #include <deque>
 #include <type_traits>
+#include <unordered_map>
+#include <vector>
 
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "debug/HomeLinkLayer.hh"
 #include "mem/cache/CHI/base/BasicChiComponent.hh"
+#include "mem/cache/CHI/base/ChiChannel.hh"
 #include "mem/cache/CHI/base/ChiCommonPort.hh"
 #include "mem/ruby/common/Consumer.hh"
 
@@ -22,7 +25,10 @@ class HomeLinkLayer :  public ruby::Consumer
         template<typename FlitType>
         using MemFn = void (HomeLinkLayer::*)(FlitType*);
 
-        HomeLinkLayer(HomeNodeFull *HNF, const std::array<int, 4>& thresholds);
+        HomeLinkLayer(HomeNodeFull *HNF,
+            const std::array<int, 4>& thresholds,
+            const int RnfNum
+        );
         void wakeup();
         void print(std::ostream& out) const {};
         inline void setRxPort(ChiCommonPort* port) { rxport = port; }
@@ -37,11 +43,14 @@ class HomeLinkLayer :  public ruby::Consumer
             RawSnp{},
             RawDat{}
         };
+
+
         struct QosPool
         {
             enum PoolDim { QosCount, QosThreshold, PoolDimNum };
             enum PoolPriority { HighHigh, High, Medium, Low, PoolPriorityNum };
             std::array<std::array<int, PoolDimNum>, PoolPriorityNum> pool = {};
+
 
             PoolPriority WhichPriority(int qos){
                 switch (qos) {
@@ -53,11 +62,11 @@ class HomeLinkLayer :  public ruby::Consumer
                 }
             }
 
-            bool is_QosAvail(int qos, PoolPriority Pri)
+            bool is_CanPush(int qos, PoolPriority Pri)
             {
                 for (int p = Pri; p < PoolPriorityNum; ++p) {
-                    if (pool[QosCount][p] + 1 <= pool[QosThreshold][p]) {
-                        pool[QosCount][p]++;
+                    if (pool[p][QosCount] + 1 <= pool[p][QosThreshold]) {
+                        pool[p][QosCount]++;
                         return true;
                     }
                 }
@@ -67,7 +76,7 @@ class HomeLinkLayer :  public ruby::Consumer
             bool enqueue(int qos){
                 PoolPriority Pri;
                 Pri  = WhichPriority(qos);
-                return is_QosAvail(qos, Pri);
+                return is_CanPush(qos, Pri);
             }
 
             QosPool() = default;
@@ -78,11 +87,45 @@ class HomeLinkLayer :  public ruby::Consumer
                 }
             }
         };
+
+        struct PendingElement
+        {
+            int srcid;
+            int txnid;
+        };
+
+        struct PendingRetry:QosPool
+        {
+            std::array<std::vector<PendingElement>, PoolPriorityNum> PendingPool;
+
+            bool enqueue(RawReq req){
+                PoolPriority Pri = WhichPriority(req.qos);
+                if (PendingPool[Pri].size() == 256){
+                    panic("Retry overflow!!");
+                }
+                PendingElement ans;
+                ans.txnid = req.txnid;
+                ans.srcid = req.srcid;
+                PendingPool[Pri].push_back(ans);
+                return true;
+
+            }
+
+
+
+            PendingRetry() = default;
+
+
+        };
+
+        const int RnfNum;
         QosPool m_qosPool;
+        PendingRetry m_PendingRetry;
         std::array<MemFn<RawReq>, 4> reqFuncs;
         std::array<MemFn<RawRsp>, 4> rspFuncs;
         std::array<MemFn<RawSnp>, 4> snpFuncs;
         std::array<MemFn<RawDat>, 4> datFuncs;
+
 
         template<typename FlitType>
         auto& funcsFor();
