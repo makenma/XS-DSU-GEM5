@@ -285,8 +285,7 @@ HnfSLCSF::HnfSLCSF(uint32_t block_size, uint32_t slc_num_sets,
                       pipeline_config.slcReplacementPolicy,
                       pipeline_config.slcReplacementSeed,
                       pipeline_config.allowReplacementPolicyOverride),
-      config(pipeline_config), victimBuffer(config.victimBufferEntries),
-      setLocks(slc_num_sets, sf_num_sets),
+      config(pipeline_config), setLocks(slc_num_sets, sf_num_sets),
       completionProducer(std::make_shared<const uint8_t>(0)),
       visibleReqCredits(config.reqQueueEntries), statsSink(stats_sink)
 {
@@ -305,13 +304,12 @@ HnfSLCSF::validateConfig(const HnfSLCSFPipelineConfig& config)
         config.maxInflight == 0 || config.lookupIssueWidth == 0 ||
         config.fillIssueWidth == 0 || config.updateIssueWidth == 0 ||
         config.lookupLatency == 0 || config.fillLatency == 0 ||
-        config.updateLatency == 0 || config.victimLatency == 0 ||
-        config.sfEvictLatency == 0 || config.replayPenalty == 0 ||
-        config.victimBufferEntries == 0 ||
+        config.updateLatency == 0 || config.sfEvictLatency == 0 ||
+        config.replayPenalty == 0 ||
         config.responseConsumeWidth == 0 || config.childClockPeriod == 0) {
         throw std::invalid_argument(
-            "HnfSLCSF queue sizes, VictimBuffer, max inflight, widths, "
-            "latencies, and replay penalty must be positive");
+            "HnfSLCSF queue sizes, max inflight, widths, latencies, and "
+            "replay penalty must be positive");
     }
     if (config.maxInflight > config.reqQueueEntries) {
         throw std::invalid_argument(
@@ -389,19 +387,7 @@ HnfSLCSF::serviceLatency(const SlcSfRequest& request) const
                  "HnfSLCSF SF-evict latency overflows\n");
         latency += config.sfEvictLatency;
     }
-    if (mutationProducesDirtySlcVictim(request)) {
-        panic_if(config.victimLatency > UINT64_MAX - latency,
-                 "HnfSLCSF dirty-victim latency overflows\n");
-        latency += config.victimLatency;
-    }
     return std::max<uint64_t>(1, latency);
-}
-
-bool
-HnfSLCSF::mutationProducesDirtySlcVictim(
-    const SlcSfRequest& request) const
-{
-    return pendingSlcVictimKind(request) == SlcSfStatVictim::DirtySlc;
 }
 
 bool
@@ -768,11 +754,6 @@ HnfSLCSF::acknowledgeVisibleCompletion(const SlcSfResponse& response)
     if (lease.kind() == SlcSfCompletionKind::CompleteSfEvict &&
         visible_update->updateKind == SlcSfUpdateKind::CompleteSfEvict) {
         acknowledged = acknowledgeSfEvict(lease);
-    } else if (
-        lease.kind() == SlcSfCompletionKind::ReleaseDirtyVictim &&
-        visible_update->updateKind ==
-            SlcSfUpdateKind::ReleaseDirtyVictim) {
-        acknowledged = acknowledgeDirtyVictimRelease(lease);
     } else {
         return SlcSfCompletionAckResult::IdentityMismatch;
     }
@@ -838,9 +819,7 @@ HnfSLCSF::cancelRequest(
                 using Request = std::decay_t<decltype(typed_request)>;
                 if constexpr (std::is_same_v<Request, SlcSfUpdateReq>) {
                     return std::holds_alternative<SlcSfCompleteSfEvict>(
-                               typed_request.operation) ||
-                        std::holds_alternative<SlcSfReleaseDirtyVictim>(
-                            typed_request.operation);
+                        typed_request.operation);
                 }
                 return false;
             },
@@ -962,9 +941,6 @@ HnfSLCSF::resetForColdStart()
              "HnfSLCSF cold reset requires empty timing queues and locks\n");
     resetStorageForColdStart();
     runBackendGlobalInvariantCheck();
-    for (VictimEntry& entry : victimBuffer) {
-        entry = VictimEntry{};
-    }
     nextVictimId = 1;
     nextCompletionNonce = 1;
     nextSetLockOwner = 1;
@@ -1035,8 +1011,7 @@ HnfSLCSF::serializePersistentState(CheckpointOut& cp) const
              "ready ticks\n");
     panic_if(!respPending.empty() || !respVisible.empty(),
              "HnfSLCSF checkpoint requires empty response pipeline\n");
-    panic_if(setLockCount() != 0 || victimBufferOccupancy() != 0 ||
-                 HnfSLCSFBackend::isBusy(),
+    panic_if(setLockCount() != 0 || HnfSLCSFBackend::isBusy(),
              "HnfSLCSF checkpoint requires no reservations or active owners\n");
     panic_if(!isCompletelyIdle(),
              "HnfSLCSF checkpoint requires completely drained state\n");
@@ -1047,7 +1022,10 @@ HnfSLCSF::serializePersistentState(CheckpointOut& cp) const
     paramOut(cp, "nextVictimId", nextVictimId);
     paramOut(cp, "nextReservationId", nextCompletionNonce);
     paramOut(cp, "nextSetLockOwner", nextSetLockOwner);
-    paramOut(cp, "victimBufferEntries", victimBuffer.size());
+    // Keep the historical empty VictimBuffer fields in the checkpoint image
+    // so an old drained image remains readable.  They are format padding only:
+    // the RTL-aligned service has no SLC-side victim storage.
+    paramOut(cp, "victimBufferEntries", config.victimBufferEntries);
 
     std::vector<uint64_t> victim_id;
     std::vector<uint32_t> victim_state;
@@ -1058,11 +1036,9 @@ HnfSLCSF::serializePersistentState(CheckpointOut& cp) const
     std::vector<uint32_t> victim_snapshot_dirty;
     std::vector<uint64_t> victim_snapshot_data_size;
     std::vector<uint32_t> victim_snapshot_data;
-    for (size_t i = 0; i < victimBuffer.size(); ++i) {
-        // A serialized service is drained, so normalize both Free and
-        // Released implementation states to one canonical empty encoding.
+    for (size_t i = 0; i < config.victimBufferEntries; ++i) {
         victim_id.push_back(0);
-        victim_state.push_back(static_cast<uint32_t>(VictimState::Free));
+        victim_state.push_back(0);
         victim_address.push_back(0);
         victim_snapshot_valid.push_back(0);
         victim_snapshot_state.push_back(0);
@@ -1088,7 +1064,7 @@ void
 HnfSLCSF::unserializePersistentState(CheckpointIn& cp)
 {
     fatal_if(reqOutstanding() != 0 || respOccupied() != 0 ||
-                 victimBufferOccupancy() != 0 || setLockCount() != 0 ||
+                 setLockCount() != 0 ||
                  HnfSLCSFBackend::isBusy(),
              "HnfSLCSF refuses to restore over live timing/backend state\n");
     bool saved_initialized = false;
@@ -1100,7 +1076,8 @@ HnfSLCSF::unserializePersistentState(CheckpointIn& cp)
     paramIn(cp, "nextReservationId", nextCompletionNonce);
     paramIn(cp, "nextSetLockOwner", nextSetLockOwner);
     paramIn(cp, "victimBufferEntries", saved_victim_entries);
-    fatal_if(!saved_initialized || saved_victim_entries != victimBuffer.size() ||
+    fatal_if(!saved_initialized ||
+                 saved_victim_entries != config.victimBufferEntries ||
                  wakeupCycle == UINT64_MAX || wakeupTick == MaxTick ||
                  nextVictimId == 0 || nextCompletionNonce == 0 ||
                  nextSetLockOwner == 0,
@@ -1124,7 +1101,7 @@ HnfSLCSF::unserializePersistentState(CheckpointIn& cp)
     arrayParamIn(cp, "victimSnapshotDirty", victim_snapshot_dirty);
     arrayParamIn(cp, "victimSnapshotDataSize", victim_snapshot_data_size);
     arrayParamIn(cp, "victimSnapshotData", victim_snapshot_data);
-    const size_t entries = victimBuffer.size();
+    const size_t entries = config.victimBufferEntries;
     fatal_if(victim_id.size() != entries || victim_state.size() != entries ||
                  victim_address.size() != entries ||
                  victim_snapshot_valid.size() != entries ||
@@ -1138,8 +1115,7 @@ HnfSLCSF::unserializePersistentState(CheckpointIn& cp)
                      victim_snapshot_dirty[i] > 1,
                  "HnfSLCSF checkpoint has non-boolean victim fields\n");
         fatal_if(victim_id[i] != 0 ||
-                     victim_state[i] !=
-                         static_cast<uint32_t>(VictimState::Free) ||
+                     victim_state[i] != 0 ||
                      victim_address[i] != 0 ||
                      victim_snapshot_valid[i] != 0 ||
                      victim_snapshot_state[i] != 0 ||
@@ -1147,7 +1123,6 @@ HnfSLCSF::unserializePersistentState(CheckpointIn& cp)
                      victim_snapshot_dirty[i] != 0 ||
                      victim_snapshot_data_size[i] != 0,
                  "HnfSLCSF checkpoint VictimBuffer is not canonical empty\n");
-        victimBuffer[i] = VictimEntry{};
     }
     fatal_if(!victim_snapshot_data.empty(),
              "HnfSLCSF canonical VictimBuffer contains snapshot data\n");
@@ -1362,231 +1337,39 @@ HnfSLCSF::corruptInstalledDirtyVictimIdForTest(
 #endif
 
 size_t
-HnfSLCSF::victimBufferOccupancy() const
-{
-    return std::count_if(
-        victimBuffer.begin(), victimBuffer.end(), [](const VictimEntry& entry) {
-            return entry.state != VictimState::Free &&
-                entry.state != VictimState::Released;
-        });
-}
-
-size_t
 HnfSLCSF::victimReservationCount() const
 {
     return std::count_if(
-        victimBuffer.begin(), victimBuffer.end(), [](const VictimEntry& entry) {
-            return entry.state == VictimState::Reserved ||
-                entry.state == VictimState::InstalledSnapshot;
+        inflightRequests.begin(), inflightRequests.end(),
+        [](const InflightRequest& request) {
+            return request.slcVictimId.has_value();
         });
-}
-
-HnfSLCSF::VictimEntry*
-HnfSLCSF::findDirtyVictim(SlcSfVictimId id)
-{
-    auto entry = std::find_if(
-        victimBuffer.begin(), victimBuffer.end(), [id](const VictimEntry& e) {
-            return e.id.value == id.value;
-        });
-    return entry == victimBuffer.end() ? nullptr : &*entry;
-}
-
-const HnfSLCSF::VictimEntry*
-HnfSLCSF::findDirtyVictim(SlcSfVictimId id) const
-{
-    auto entry = std::find_if(
-        victimBuffer.begin(), victimBuffer.end(), [id](const VictimEntry& e) {
-            return e.id.value == id.value;
-        });
-    return entry == victimBuffer.end() ? nullptr : &*entry;
-}
-
-std::optional<HnfSLCSF::VictimState>
-HnfSLCSF::dirtyVictimState(SlcSfVictimId id) const
-{
-    const VictimEntry* entry = findDirtyVictim(id);
-    return entry ? std::optional<VictimState>(entry->state) : std::nullopt;
-}
-
-void
-HnfSLCSF::markDirtyVictimWritebackIssued(
-    SlcSfVictimId id, uint32_t requester, uint8_t opcode,
-    uint32_t downstreamTxnId)
-{
-    VictimEntry* entry = findDirtyVictim(id);
-    panic_if(!entry || entry->state != VictimState::HandedOff,
-             "HnfSLCSF writeback for unknown or non-handed-off victim=%llu\n",
-             static_cast<unsigned long long>(id.value));
-    panic_if(downstreamTxnId == 0,
-             "HnfSLCSF writeback victim=%llu lacks txn identity\n",
-             static_cast<unsigned long long>(id.value));
-    entry->state = VictimState::WritebackIssued;
-    entry->writebackRequester = requester;
-    entry->writebackOpcode = opcode;
-    entry->writebackTxnId = downstreamTxnId;
-    assertVictimAccounting();
-}
-
-bool
-HnfSLCSF::victimLeaseMatches(
-    const VictimEntry& entry, const SlcSfCompletionLease& lease) const
-{
-    const bool full_dirty_snapshot = entry.snapshot &&
-        entry.snapshot->victimId.value == entry.id.value &&
-        entry.snapshot->lineAddress == entry.lineAddress &&
-        (entry.snapshot->state == HnfSlcState::MU ||
-         entry.snapshot->state == HnfSlcState::MN) &&
-        entry.snapshot->line.dirty &&
-        entry.snapshot->line.data.size() == blockSizeBytes() &&
-        entry.snapshot->line.byteMask.size() == blockSizeBytes() &&
-        std::all_of(
-            entry.snapshot->line.byteMask.begin(),
-            entry.snapshot->line.byteMask.end(),
-            [](uint8_t byte) { return byte == 0xff; });
-    return lease.valid() &&
-        lease.kind() == SlcSfCompletionKind::ReleaseDirtyVictim &&
-        full_dirty_snapshot &&
-        entry.completionLease && *entry.completionLease == lease &&
-        lease.objectId() == entry.id.value &&
-        lease.pocEntryId() == UINT32_MAX &&
-        lease.lineAddress() == entry.lineAddress &&
-        lease.requester() == entry.writebackRequester &&
-        lease.opcode() == entry.writebackOpcode &&
-        lease.linkSequence() == entry.id.value &&
-        lease.transactionId() == entry.writebackTxnId;
-}
-
-bool
-HnfSLCSF::commitDirtyVictimRelease(
-    SlcSfVictimId id, const SlcSfCompletionLease& lease)
-{
-    VictimEntry* entry = findDirtyVictim(id);
-    if (!entry || entry->state != VictimState::ReleaseClaimed ||
-        !victimLeaseMatches(*entry, lease)) {
-        return false;
-    }
-    entry->state = VictimState::ReleaseCommittedAwaitAck;
-    assertVictimAccounting();
-    return true;
-}
-
-bool
-HnfSLCSF::acknowledgeDirtyVictimRelease(
-    const SlcSfCompletionLease& lease)
-{
-    if (!lease.valid() ||
-        lease.kind() != SlcSfCompletionKind::ReleaseDirtyVictim) {
-        return false;
-    }
-    VictimEntry* entry = findDirtyVictim(
-        SlcSfVictimId{lease.objectId()});
-    if (!entry ||
-        entry->state != VictimState::ReleaseCommittedAwaitAck ||
-        !victimLeaseMatches(*entry, lease)) {
-        return false;
-    }
-    entry->state = VictimState::Released;
-    entry->snapshot.reset();
-    entry->lineAddress = 0;
-    entry->writebackRequester = 0;
-    entry->writebackOpcode = 0;
-    entry->writebackTxnId = 0;
-    entry->completionLease.reset();
-    assertVictimAccounting();
-    return true;
 }
 
 void
 HnfSLCSF::assertVictimAccounting() const
 {
-    panic_if(victimBufferOccupancy() > victimBuffer.size(),
-             "HnfSLCSF VictimBuffer exceeds capacity occupancy=%u/%u\n",
-             static_cast<unsigned>(victimBufferOccupancy()),
-             static_cast<unsigned>(victimBuffer.size()));
-    std::unordered_set<uint64_t> victim_ids;
-    for (const VictimEntry& entry : victimBuffer) {
-        const bool empty = entry.state == VictimState::Free ||
-            entry.state == VictimState::Released;
-        const bool has_writeback = entry.writebackTxnId != 0;
-        const bool full_snapshot = entry.snapshot &&
-            entry.snapshot->victimId.value == entry.id.value &&
-            entry.snapshot->lineAddress == entry.lineAddress &&
-            (entry.snapshot->state == HnfSlcState::MU ||
-             entry.snapshot->state == HnfSlcState::MN) &&
-            entry.snapshot->line.dirty &&
-            entry.snapshot->line.data.size() == blockSizeBytes() &&
-            entry.snapshot->line.byteMask.size() == blockSizeBytes() &&
-            std::all_of(
-                entry.snapshot->line.byteMask.begin(),
-                entry.snapshot->line.byteMask.end(),
-                [](uint8_t byte) { return byte == 0xff; });
-        panic_if(empty &&
-                     (entry.snapshot || entry.lineAddress != 0 ||
-                      entry.writebackRequester != 0 ||
-                      entry.writebackOpcode != 0 || has_writeback ||
-                      entry.completionLease),
-                 "HnfSLCSF empty victim slot retains owned state id=%llu\n",
-                 static_cast<unsigned long long>(entry.id.value));
-        if (empty) {
-            continue;
-        }
-        panic_if(entry.id.value == 0 ||
-                     !victim_ids.insert(entry.id.value).second,
-                 "HnfSLCSF invalid/duplicate live victim id=%llu\n",
-                 static_cast<unsigned long long>(entry.id.value));
-        if (entry.state == VictimState::Reserved) {
-            panic_if(entry.snapshot || has_writeback || entry.completionLease,
-                     "HnfSLCSF reserved victim owns premature state\n");
-            continue;
-        }
-        panic_if(!full_snapshot,
-                 "HnfSLCSF live victim lacks exact full snapshot id=%llu "
-                 "state=%u\n",
-                 static_cast<unsigned long long>(entry.id.value),
-                 static_cast<unsigned>(entry.state));
-        const bool before_writeback =
-            entry.state == VictimState::InstalledSnapshot ||
-            entry.state == VictimState::HandedOff;
-        const bool claimed = entry.state == VictimState::ReleaseClaimed ||
-            entry.state == VictimState::ReleaseCommittedAwaitAck;
-        panic_if(before_writeback &&
-                     (entry.writebackRequester != 0 ||
-                      entry.writebackOpcode != 0 || has_writeback ||
-                      entry.completionLease),
-                 "HnfSLCSF pre-writeback victim owns completion state\n");
-        panic_if(entry.state == VictimState::WritebackIssued &&
-                     (!has_writeback || entry.completionLease),
-                 "HnfSLCSF issued victim has invalid lease/transaction\n");
-        panic_if(claimed &&
-                     (!has_writeback || !entry.completionLease ||
-                      !victimLeaseMatches(
-                          entry, *entry.completionLease)),
-                 "HnfSLCSF claimed victim has invalid exact lease\n");
-    }
-
-    std::unordered_set<uint64_t> installed_ids;
+    std::unordered_set<uint64_t> captured_ids;
     size_t expected_seals = 0;
-    size_t release_claims = 0;
     for (const InflightRequest& request : inflightRequests) {
         if (request.slcVictimId) {
-            const VictimEntry* entry = findDirtyVictim(
-                *request.slcVictimId);
-            panic_if(!entry ||
-                         entry->state != VictimState::InstalledSnapshot ||
-                         !request.slcVictim ||
-                         !installed_ids.insert(
-                             request.slcVictimId->value).second ||
-                         request.slcVictim->victimId.value !=
-                             entry->id.value ||
-                         request.slcVictim->lineAddress !=
-                             entry->lineAddress ||
-                         request.slcVictim->state != entry->snapshot->state ||
-                         request.slcVictim->owner != entry->snapshot->owner ||
-                         request.slcVictim->line.data !=
-                             entry->snapshot->line.data ||
-                         request.slcVictim->line.byteMask !=
-                             entry->snapshot->line.byteMask,
-                     "HnfSLCSF in-flight dirty victim is not exact id=%llu\n",
+            const bool full_snapshot = request.slcVictim &&
+                request.slcVictim->victimId.value ==
+                    request.slcVictimId->value &&
+                (request.slcVictim->state == HnfSlcState::MU ||
+                 request.slcVictim->state == HnfSlcState::MN) &&
+                request.slcVictim->line.dirty &&
+                request.slcVictim->line.data.size() == blockSizeBytes() &&
+                request.slcVictim->line.byteMask.size() == blockSizeBytes() &&
+                std::all_of(
+                    request.slcVictim->line.byteMask.begin(),
+                    request.slcVictim->line.byteMask.end(),
+                    [](uint8_t byte) { return byte == 0xff; });
+            panic_if(request.slcVictimId->value == 0 || !full_snapshot ||
+                         !captured_ids.insert(
+                             request.slcVictimId->value).second,
+                     "HnfSLCSF transient dirty-victim handoff is not exact "
+                     "id=%llu\n",
                      static_cast<unsigned long long>(
                          request.slcVictimId->value));
         } else {
@@ -1594,66 +1377,15 @@ HnfSLCSF::assertVictimAccounting() const
                      "HnfSLCSF in-flight victim fields are unpaired\n");
         }
         expected_seals += request.slcVictimSeal.has_value();
-        if (request.completionLease &&
-            request.completionLease->kind() ==
-                SlcSfCompletionKind::ReleaseDirtyVictim) {
-            const VictimEntry* entry = findDirtyVictim(SlcSfVictimId{
-                request.completionLease->objectId()});
-            const bool request_owns_claim = entry &&
-                (entry->state == VictimState::ReleaseClaimed ||
-                 entry->state ==
-                     VictimState::ReleaseCommittedAwaitAck);
-            panic_if(!request_owns_claim ||
-                         !entry->completionLease ||
-                         *entry->completionLease != *request.completionLease,
-                     "HnfSLCSF release claim lacks exact in-flight owner\n");
-            release_claims +=
-                entry->state == VictimState::ReleaseClaimed;
-        }
-    }
-    for (const VictimEntry& entry : victimBuffer) {
-        panic_if(entry.state == VictimState::InstalledSnapshot &&
-                     !installed_ids.count(entry.id.value),
-                 "HnfSLCSF installed victim lacks in-flight owner id=%llu\n",
-                 static_cast<unsigned long long>(entry.id.value));
+        panic_if(request.completionLease &&
+                     request.completionLease->kind() !=
+                         SlcSfCompletionKind::CompleteSfEvict,
+                 "HnfSLCSF has a non-SEQ durable completion lease\n");
     }
     panic_if(expected_seals != dirtyVictimSealCount(),
              "HnfSLCSF dirty-victim seal ownership mismatch (%u/%u)\n",
              static_cast<unsigned>(expected_seals),
              static_cast<unsigned>(dirtyVictimSealCount()));
-    const size_t buffer_release_claims = std::count_if(
-        victimBuffer.begin(), victimBuffer.end(), [](const VictimEntry& entry) {
-            return entry.state == VictimState::ReleaseClaimed;
-        });
-    panic_if(release_claims != buffer_release_claims,
-             "HnfSLCSF release-claim ownership mismatch (%u/%u)\n",
-             static_cast<unsigned>(release_claims),
-             static_cast<unsigned>(buffer_release_claims));
-
-    const auto completion_owner_count = [this](
-                                             const SlcSfCompletionLease& lease) {
-        const auto has = [&lease](const SlcSfResponse& response) {
-            const auto* update =
-                std::get_if<SlcSfUpdateResponse>(&response.payload());
-            return update && update->completionLease &&
-                *update->completionLease == lease;
-        };
-        return std::count_if(
-                   inflightRequests.begin(), inflightRequests.end(),
-                   [&lease](const InflightRequest& request) {
-                       return request.completionLease &&
-                           *request.completionLease == lease;
-                   }) +
-            std::count_if(respPending.begin(), respPending.end(), has) +
-            std::count_if(respVisible.begin(), respVisible.end(), has);
-    };
-    for (const VictimEntry& entry : victimBuffer) {
-        if (entry.state == VictimState::ReleaseCommittedAwaitAck) {
-            panic_if(!entry.completionLease ||
-                         completion_owner_count(*entry.completionLease) != 1,
-                     "HnfSLCSF committed victim release lacks one response\n");
-        }
-    }
 }
 
 SlcSfResponse
@@ -1770,25 +1502,6 @@ HnfSLCSF::validateMutationRequest(const SlcSfRequest& request) const
                                 (!operation.snoopData.dirty ||
                                  operation.snoopData.data.size() ==
                                      blockSizeBytes());
-                        } else if constexpr (std::is_same_v<
-                                                 Operation,
-                                                 SlcSfReleaseDirtyVictim>) {
-                            const VictimEntry* victim = findDirtyVictim(
-                                operation.victimId);
-                            return victim && victim->state ==
-                                    VictimState::WritebackIssued &&
-                                typed_request.header.pocEntryId ==
-                                    UINT32_MAX &&
-                                typed_request.header.lineAddress ==
-                                    victim->lineAddress &&
-                                typed_request.header.requester ==
-                                    victim->writebackRequester &&
-                                typed_request.header.opcode ==
-                                    victim->writebackOpcode &&
-                                typed_request.header.trace.linkSequence ==
-                                    operation.victimId.value &&
-                                typed_request.header.trace.transactionId ==
-                                    victim->writebackTxnId;
                         } else {
                             return std::is_same_v<Operation,
                                                   SlcSfRemoveSharer>;
@@ -1818,9 +1531,7 @@ HnfSLCSF::validateMutationToken(const SlcSfRequest& request) const
                 return false;
             } else if constexpr (std::is_same_v<Request, SlcSfUpdateReq>) {
                 const bool ownerless = std::holds_alternative<
-                    SlcSfCompleteSfEvict>(typed_request.operation) ||
-                    std::holds_alternative<SlcSfReleaseDirtyVictim>(
-                        typed_request.operation);
+                    SlcSfCompleteSfEvict>(typed_request.operation);
                 return ownerless || validateCommitToken(
                     typed_request.token,
                     typed_request.sourceLookupReqId,
@@ -1843,47 +1554,27 @@ HnfSLCSF::claimDurableCompletion(InflightRequest& request)
         return true;
     }
     const bool durable =
-        std::holds_alternative<SlcSfCompleteSfEvict>(update->operation) ||
-        std::holds_alternative<SlcSfReleaseDirtyVictim>(update->operation);
+        std::holds_alternative<SlcSfCompleteSfEvict>(update->operation);
     if (!durable) {
         return true;
     }
     if (request.completionLease) {
         return durableClaimMatches(request);
     }
-    if (const auto* complete =
-            std::get_if<SlcSfCompleteSfEvict>(&update->operation)) {
-        SlcSfCompletionLease lease{
-            completionProducer,
-            SlcSfCompletionKind::CompleteSfEvict,
-            allocatePersistentIdentity(
-                nextCompletionNonce, "completion lease nonce"),
-            update->header, complete->seqId.value};
-        if (!claimSeqCompletion(complete->seqId.value, lease)) {
-            return false;
-        }
-        request.completionLease = lease;
-        return true;
-    }
-
-    const auto& release =
-        std::get<SlcSfReleaseDirtyVictim>(update->operation);
-    VictimEntry* victim = findDirtyVictim(release.victimId);
-    if (!victim || victim->state != VictimState::WritebackIssued) {
+    const auto* complete =
+        std::get_if<SlcSfCompleteSfEvict>(&update->operation);
+    if (!complete) {
         return false;
     }
     SlcSfCompletionLease lease{
         completionProducer,
-        SlcSfCompletionKind::ReleaseDirtyVictim,
+        SlcSfCompletionKind::CompleteSfEvict,
         allocatePersistentIdentity(
             nextCompletionNonce, "completion lease nonce"),
-        update->header, release.victimId.value};
-    victim->completionLease = lease;
-    if (!victimLeaseMatches(*victim, lease)) {
-        victim->completionLease.reset();
+        update->header, complete->seqId.value};
+    if (!claimSeqCompletion(complete->seqId.value, lease)) {
         return false;
     }
-    victim->state = VictimState::ReleaseClaimed;
     request.completionLease = lease;
     return true;
 }
@@ -1893,20 +1584,12 @@ HnfSLCSF::durableClaimMatches(const InflightRequest& request) const
 {
     if (!request.completionLease) {
         const auto* update = std::get_if<SlcSfUpdateReq>(&request.request);
-        return !update ||
-            (!std::holds_alternative<SlcSfCompleteSfEvict>(
-                 update->operation) &&
-             !std::holds_alternative<SlcSfReleaseDirtyVictim>(
-                 update->operation));
+        return !update || !std::holds_alternative<SlcSfCompleteSfEvict>(
+            update->operation);
     }
     const SlcSfCompletionLease& lease = *request.completionLease;
-    if (lease.kind() == SlcSfCompletionKind::CompleteSfEvict) {
-        return seqClaimMatches(lease);
-    }
-    const VictimEntry* victim = findDirtyVictim(
-        SlcSfVictimId{lease.objectId()});
-    return victim && victim->state == VictimState::ReleaseClaimed &&
-        victimLeaseMatches(*victim, lease);
+    return lease.kind() == SlcSfCompletionKind::CompleteSfEvict &&
+        seqClaimMatches(lease);
 }
 
 void
@@ -1916,113 +1599,45 @@ HnfSLCSF::rollbackDurableClaim(InflightRequest& request)
         return;
     }
     const SlcSfCompletionLease lease = *request.completionLease;
-    if (lease.kind() == SlcSfCompletionKind::CompleteSfEvict) {
-        releaseSeqClaim(lease);
-    } else {
-        VictimEntry* victim = findDirtyVictim(
-            SlcSfVictimId{lease.objectId()});
-        if (victim && victim->state == VictimState::ReleaseClaimed &&
-            victimLeaseMatches(*victim, lease)) {
-            victim->state = VictimState::WritebackIssued;
-            victim->completionLease.reset();
-        }
-    }
+    panic_if(lease.kind() != SlcSfCompletionKind::CompleteSfEvict,
+             "HnfSLCSF rolls back a non-SEQ completion lease\n");
+    releaseSeqClaim(lease);
     request.completionLease.reset();
 }
 
-bool
-HnfSLCSF::reserveDirtyVictim(
+void
+HnfSLCSF::captureDirtyVictim(
     InflightRequest& request, const LookupSnapshot& target)
 {
     const uint64_t replacement_addr = requestHeader(request.request).lineAddress;
     const auto victim_addr = dirtySlcVictimAddress(replacement_addr, target);
     panic_if(!victim_addr,
-             "HnfSLCSF reserves VictimBuffer without dirty displacement\n");
+             "HnfSLCSF captures a dirty victim without displacement\n");
+    panic_if(request.slcVictimId || request.slcVictim ||
+                 request.slcVictimSeal,
+             "HnfSLCSF captures a dirty victim more than once\n");
 
-    if (auto failure = dirtyVictimReservationFailure(
-            replacement_addr, target)) {
-        request.terminalReplayReason = *failure;
-        return true;
-    }
-
-    auto entry = std::find_if(
-        victimBuffer.begin(), victimBuffer.end(), [](const VictimEntry& e) {
-            return e.state == VictimState::Free ||
-                e.state == VictimState::Released;
-        });
-    panic_if(entry == victimBuffer.end(),
-             "HnfSLCSF VictimBuffer preflight changed during acquisition\n");
-    entry->id = SlcSfVictimId{allocatePersistentIdentity(
+    const SlcSfVictimId id{allocatePersistentIdentity(
         nextVictimId, "dirty-victim")};
-    entry->state = VictimState::Reserved;
-    entry->lineAddress = *victim_addr;
-    entry->snapshot.reset();
-    entry->writebackRequester = 0;
-    entry->writebackOpcode = 0;
-    entry->writebackTxnId = 0;
-    entry->completionLease.reset();
-    request.slcVictimId = entry->id;
-
     DirtyVictimCapture capture = snapshotDirtySlcVictim(
-        entry->id, replacement_addr, target);
-    entry->snapshot = capture.victim;
-    entry->state = VictimState::InstalledSnapshot;
+        id, replacement_addr, target);
+    panic_if(capture.victim.lineAddress != *victim_addr,
+             "HnfSLCSF dirty-victim capture changed replacement address\n");
+    request.slcVictimId = id;
     request.slcVictim = std::move(capture.victim);
     request.slcVictimSeal = std::move(capture.seal);
     assertVictimAccounting();
-    return true;
-}
-
-std::optional<SlcSfReplayReason>
-HnfSLCSF::dirtyVictimReservationFailure(
-    uint64_t replacement_addr, const LookupSnapshot& target) const
-{
-    const auto victim_addr = dirtySlcVictimAddress(replacement_addr, target);
-    panic_if(!victim_addr,
-             "HnfSLCSF checks VictimBuffer without dirty displacement\n");
-    const bool same_line = std::any_of(
-        victimBuffer.begin(), victimBuffer.end(),
-        [victim_addr](const VictimEntry& entry) {
-            return entry.state != VictimState::Free &&
-                entry.state != VictimState::Released &&
-                entry.lineAddress == *victim_addr;
-        });
-    if (same_line) {
-        return SlcSfReplayReason::ResourceConflict;
-    }
-
-    const auto entry = std::find_if(
-        victimBuffer.begin(), victimBuffer.end(), [](const VictimEntry& e) {
-            return e.state == VictimState::Free ||
-                e.state == VictimState::Released;
-        });
-    if (entry == victimBuffer.end()) {
-        return SlcSfReplayReason::VictimBufferFull;
-    }
-    return std::nullopt;
 }
 
 void
-HnfSLCSF::cancelDirtyVictimReservation(InflightRequest& request)
+HnfSLCSF::discardDirtyVictimCapture(InflightRequest& request)
 {
     if (!request.slcVictimId) {
         return;
     }
-    VictimEntry* entry = findDirtyVictim(*request.slcVictimId);
-    panic_if(!entry || (entry->state != VictimState::Reserved &&
-                        entry->state != VictimState::InstalledSnapshot),
-             "HnfSLCSF cancels invalid dirty-victim reservation=%llu\n",
-             static_cast<unsigned long long>(request.slcVictimId->value));
     panic_if(!request.slcVictimSeal,
-             "HnfSLCSF dirty-victim cancellation lacks installed seal\n");
+             "HnfSLCSF discards a committed dirty-victim capture\n");
     discardDirtyVictimSeal(*request.slcVictimSeal);
-    entry->state = VictimState::Released;
-    entry->snapshot.reset();
-    entry->lineAddress = 0;
-    entry->writebackRequester = 0;
-    entry->writebackOpcode = 0;
-    entry->writebackTxnId = 0;
-    entry->completionLease.reset();
     request.slcVictim.reset();
     request.slcVictimSeal.reset();
     request.slcVictimId.reset();
@@ -2033,7 +1648,7 @@ void
 HnfSLCSF::rollbackPreparedResources(InflightRequest& request)
 {
     if (request.slcVictimId) {
-        cancelDirtyVictimReservation(request);
+        discardDirtyVictimCapture(request);
     }
     const uint32_t owner = requestHeader(request.request).pocEntryId;
     if (request.resourcesPrepared || hasSfReservation(owner)) {
@@ -2079,14 +1694,6 @@ HnfSLCSF::prepareMutationResources(InflightRequest& request)
                     header.lineAddress, header.requester, txn, &target) :
                 slcAllocationWouldDisplaceDirty(
                     header.lineAddress, &target);
-            if (displaces_dirty) {
-                if (auto failure = dirtyVictimReservationFailure(
-                        header.lineAddress, target)) {
-                    request.terminalReplayReason = *failure;
-                    rollbackPreparedResources(request);
-                    return true;
-                }
-            }
         }
         if (mayAllocateSf(txn) && sfAllocationBlockedBySeq(
                 header.lineAddress, target, header.pocEntryId)) {
@@ -2100,17 +1707,11 @@ HnfSLCSF::prepareMutationResources(InflightRequest& request)
             return false;
         }
         request.resourcesPrepared = hasSfReservation(header.pocEntryId);
-        // VictimBuffer availability was preflighted before the set/SEQ
-        // acquisition. Keep a defensive rollback in case that invariant is
-        // ever broken by a future resource implementation.
-        if (displaces_dirty && !request.slcVictimId &&
-            !reserveDirtyVictim(request, target)) {
-            rollbackPreparedResources(request);
-            return false;
-        }
-        if (request.terminalReplayReason) {
-            rollbackPreparedResources(request);
-            return true;
+        // RTL transfers a dirty replacement directly into the PoCQ.  Capture
+        // the exact bytes under the U1 exclusion boundary so U2 can overwrite
+        // the SLC array, but do not allocate persistent SLC-side storage.
+        if (displaces_dirty && !request.slcVictimId) {
+            captureDirtyVictim(request, target);
         }
         return true;
     };
@@ -2175,13 +1776,8 @@ HnfSLCSF::prepareMutationResources(InflightRequest& request)
                                     address, &target)) {
                                 return true;
                             }
-                            if (auto failure = dirtyVictimReservationFailure(
-                                    address, target)) {
-                                request.terminalReplayReason = *failure;
-                                rollbackPreparedResources(request);
-                                return true;
-                            }
-                            return reserveDirtyVictim(request, target);
+                            captureDirtyVictim(request, target);
+                            return true;
                         } else {
                             return true;
                         }
@@ -2382,13 +1978,8 @@ HnfSLCSF::executeMutation(InflightRequest& request)
                         } else if constexpr (std::is_same_v<
                                                  Operation,
                                                  SlcSfReleaseDirtyVictim>) {
-                            panic_if(
-                                !completion_lease ||
-                                    !commitDirtyVictimRelease(
-                                        operation.victimId,
-                                        *completion_lease),
-                                "HnfSLCSF dirty-victim commit lacks "
-                                "exact lease\n");
+                            panic("HnfSLCSF obsolete ReleaseDirtyVictim "
+                                  "request reached U2\n");
                         }
                     },
                     typed_request.operation);
@@ -2481,9 +2072,7 @@ HnfSLCSF::advanceMutation(InflightRequest& request)
     const auto* update = std::get_if<SlcSfUpdateReq>(&request.request);
     const bool needs_rollback_candidate =
         entered_stage == MutationStage::U0DecodeValidate && update &&
-        (std::holds_alternative<SlcSfCompleteSfEvict>(update->operation) ||
-         std::holds_alternative<SlcSfReleaseDirtyVictim>(
-             update->operation));
+        std::holds_alternative<SlcSfCompleteSfEvict>(update->operation);
     const std::optional<ProtectedStateSnapshot> rollback_candidate =
         needs_rollback_candidate ?
             std::optional<ProtectedStateSnapshot>(protectedStateSnapshot(
@@ -2769,18 +2358,28 @@ HnfSLCSF::finishInflight(
         if (reason == FinishReason::Done && request.mutationCommitted) {
             panic_if(request.slcVictimSeal,
                      "HnfSLCSF hands off dirty victim with live seal\n");
-            VictimEntry* entry = findDirtyVictim(*request.slcVictimId);
-            panic_if(!entry ||
-                         entry->state != VictimState::InstalledSnapshot ||
-                         !entry->snapshot,
-                     "HnfSLCSF hands off invalid dirty victim=%llu\n",
-                     static_cast<unsigned long long>(
-                         request.slcVictimId->value));
-            entry->state = VictimState::HandedOff;
-            request.slcVictimId.reset();
+            const SlcSfSlcVictim* handed_off = nullptr;
+            if (const auto* fill =
+                    std::get_if<SlcSfFillResponse>(&response.payload())) {
+                handed_off = fill->slcVictim ? &*fill->slcVictim : nullptr;
+            } else if (const auto* update =
+                           std::get_if<SlcSfUpdateResponse>(
+                               &response.payload())) {
+                handed_off = update->slcVictim ?
+                    &*update->slcVictim : nullptr;
+            }
+            panic_if(!handed_off ||
+                         handed_off->victimId.value !=
+                             request.slcVictimId->value,
+                     "HnfSLCSF dirty victim was not transferred in the "
+                     "terminal response\n");
+            // Moving an std::optional leaves it engaged with a moved-from
+            // value. Explicitly clear that transient capture: from this point
+            // the response/PoCQ is the sole durable owner.
             request.slcVictim.reset();
+            request.slcVictimId.reset();
         } else {
-            cancelDirtyVictimReservation(request);
+            discardDirtyVictimCapture(request);
         }
     }
     if (reason != FinishReason::Done || !request.mutationCommitted) {

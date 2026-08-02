@@ -1,0 +1,616 @@
+{
+  "schema_version": 1,
+  "classification": "public-source proxy; not SPEC CPU2006",
+  "comparison": "old persistent SLC victim-buffer model vs direct PoCQ WriteNoSnpFull model",
+  "controlled_conditions": {
+    "same_checkpoint": true,
+    "same_roi_ticks": 2000000000,
+    "same_seed": 20260730,
+    "same_workloads": true,
+    "same_topology": true
+  },
+  "old_result": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-formal-v2",
+  "direct_pocq_result": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-direct-victim-v1",
+  "rows": [
+    {
+      "policy": "lru",
+      "metric": "cpu0_ipc",
+      "old_buffer_model": 1.376739891684973,
+      "direct_pocq_model": 1.6060153990038497,
+      "delta": 0.2292755073188768,
+      "percent_change": 16.653509403164723
+    },
+    {
+      "policy": "lru",
+      "metric": "cpu1_ipc",
+      "old_buffer_model": 0.2044744111186028,
+      "direct_pocq_model": 0.4240783435195859,
+      "delta": 0.2196039324009831,
+      "percent_change": 107.3992247732185
+    },
+    {
+      "policy": "lru",
+      "metric": "aggregate_ipc",
+      "old_buffer_model": 1.5812143028035757,
+      "direct_pocq_model": 2.0300937425234356,
+      "delta": 0.4488794397198599,
+      "percent_change": 28.38827342530188
+    },
+    {
+      "policy": "lru",
+      "metric": "aggregate_instructions",
+      "old_buffer_model": 7269949.0,
+      "direct_pocq_model": 9333762.0,
+      "delta": 2063813.0,
+      "percent_change": 28.388273425301886
+    },
+    {
+      "policy": "lru",
+      "metric": "total_slc_victims",
+      "old_buffer_model": 57925.0,
+      "direct_pocq_model": 74091.0,
+      "delta": 16166.0,
+      "percent_change": 27.90850237375917
+    },
+    {
+      "policy": "lru",
+      "metric": "dirty_slc_victims",
+      "old_buffer_model": 51839.0,
+      "direct_pocq_model": 65324.0,
+      "delta": 13485.0,
+      "percent_change": 26.01323327996296
+    },
+    {
+      "policy": "lru",
+      "metric": "sf_victims",
+      "old_buffer_model": 72416.0,
+      "direct_pocq_model": 88228.0,
+      "delta": 15812.0,
+      "percent_change": 21.834953601414053
+    },
+    {
+      "policy": "lru",
+      "metric": "victims_per_ki",
+      "old_buffer_model": 7.967731272942905,
+      "direct_pocq_model": 7.937956849553267,
+      "delta": -0.02977442338963865,
+      "percent_change": -0.37368759524744083
+    },
+    {
+      "policy": "lru",
+      "metric": "stale_token_replays",
+      "old_buffer_model": 146.0,
+      "direct_pocq_model": 171.0,
+      "delta": 25.0,
+      "percent_change": 17.123287671232877
+    },
+    {
+      "policy": "lru",
+      "metric": "seq_conflict_replays",
+      "old_buffer_model": 280276.0,
+      "direct_pocq_model": 21954.0,
+      "delta": -258322.0,
+      "percent_change": -92.16700680757539
+    },
+    {
+      "policy": "lru",
+      "metric": "victim_buffer_full_replays",
+      "old_buffer_model": 52409.0,
+      "direct_pocq_model": 0.0,
+      "delta": -52409.0,
+      "percent_change": -100.0
+    },
+    {
+      "policy": "lru",
+      "metric": "total_replay_responses",
+      "old_buffer_model": 332831.0,
+      "direct_pocq_model": 22125.0,
+      "delta": -310706.0,
+      "percent_change": -93.35248219066132
+    },
+    {
+      "policy": "lru",
+      "metric": "replays_per_ki",
+      "old_buffer_model": 45.78175170142184,
+      "direct_pocq_model": 2.370426843967095,
+      "delta": -43.411324857454744,
+      "percent_change": -94.82233257603056
+    },
+    {
+      "policy": "lru",
+      "metric": "request_full_cycles",
+      "old_buffer_model": 26331.0,
+      "direct_pocq_model": 33.0,
+      "delta": -26298.0,
+      "percent_change": -99.87467243933007
+    },
+    {
+      "policy": "lru",
+      "metric": "response_full_cycles",
+      "old_buffer_model": 0.0,
+      "direct_pocq_model": 0.0,
+      "delta": 0.0,
+      "percent_change": 0.0
+    },
+    {
+      "policy": "lru",
+      "metric": "no_credit",
+      "old_buffer_model": 25713.0,
+      "direct_pocq_model": 0.0,
+      "delta": -25713.0,
+      "percent_change": -100.0
+    },
+    {
+      "policy": "lru",
+      "metric": "service_stalls",
+      "old_buffer_model": 3109349.0,
+      "direct_pocq_model": 247898.0,
+      "delta": -2861451.0,
+      "percent_change": -92.02733433911729
+    },
+    {
+      "policy": "lru",
+      "metric": "service_stalls_per_ki",
+      "old_buffer_model": 427.69887381603365,
+      "direct_pocq_model": 26.55928017020361,
+      "delta": -401.13959364583,
+      "percent_change": -93.79019169883819
+    },
+    {
+      "policy": "lru",
+      "metric": "accepted_to_visible_latency_cycles",
+      "old_buffer_model": 10.21277666150283,
+      "direct_pocq_model": 6.953469365422954,
+      "delta": -3.259307296079875,
+      "percent_change": -31.91401715819233
+    },
+    {
+      "policy": "lru",
+      "metric": "slc_hit_rate",
+      "old_buffer_model": 0.01376039348869891,
+      "direct_pocq_model": 0.016211047850840977,
+      "delta": 0.0024506543621420664,
+      "percent_change": 17.809478807090304
+    },
+    {
+      "policy": "lru",
+      "metric": "sf_hit_rate",
+      "old_buffer_model": 0.023246281766014756,
+      "direct_pocq_model": 0.01449432830631492,
+      "delta": -0.008751953459699835,
+      "percent_change": -37.64883153268357
+    },
+    {
+      "policy": "lru",
+      "metric": "noc_traffic_score",
+      "old_buffer_model": 6354046.0,
+      "direct_pocq_model": 7078185.0,
+      "delta": 724139.0,
+      "percent_change": 11.39650232308674
+    },
+    {
+      "policy": "lru",
+      "metric": "dram_reads",
+      "old_buffer_model": 73082.0,
+      "direct_pocq_model": 88176.0,
+      "delta": 15094.0,
+      "percent_change": 20.65351249281629
+    },
+    {
+      "policy": "lru",
+      "metric": "dram_writes",
+      "old_buffer_model": 51331.0,
+      "direct_pocq_model": 64825.0,
+      "delta": 13494.0,
+      "percent_change": 26.288207905554152
+    },
+    {
+      "policy": "lru",
+      "metric": "host_seconds_from_stats",
+      "old_buffer_model": 550.66,
+      "direct_pocq_model": 531.28,
+      "delta": -19.379999999999995,
+      "percent_change": -3.519413067954817
+    },
+    {
+      "policy": "random",
+      "metric": "cpu0_ipc",
+      "old_buffer_model": 1.384636448659112,
+      "direct_pocq_model": 1.5945601061400265,
+      "delta": 0.20992365748091446,
+      "percent_change": 15.16092239838157
+    },
+    {
+      "policy": "random",
+      "metric": "cpu1_ipc",
+      "old_buffer_model": 0.22380451095112774,
+      "direct_pocq_model": 0.4473747743436936,
+      "delta": 0.22357026339256586,
+      "percent_change": 99.89533385293872
+    },
+    {
+      "policy": "random",
+      "metric": "aggregate_ipc",
+      "old_buffer_model": 1.6084409596102398,
+      "direct_pocq_model": 2.04193488048372,
+      "delta": 0.43349392087348027,
+      "percent_change": 26.951186382279474
+    },
+    {
+      "policy": "random",
+      "metric": "aggregate_instructions",
+      "old_buffer_model": 7395129.0,
+      "direct_pocq_model": 9388204.0,
+      "delta": 1993075.0,
+      "percent_change": 26.951186382279467
+    },
+    {
+      "policy": "random",
+      "metric": "total_slc_victims",
+      "old_buffer_model": 59135.0,
+      "direct_pocq_model": 73041.0,
+      "delta": 13906.0,
+      "percent_change": 23.51568445083284
+    },
+    {
+      "policy": "random",
+      "metric": "dirty_slc_victims",
+      "old_buffer_model": 52684.0,
+      "direct_pocq_model": 64673.0,
+      "delta": 11989.0,
+      "percent_change": 22.75643459114722
+    },
+    {
+      "policy": "random",
+      "metric": "sf_victims",
+      "old_buffer_model": 73755.0,
+      "direct_pocq_model": 88084.0,
+      "delta": 14329.0,
+      "percent_change": 19.427835400989764
+    },
+    {
+      "policy": "random",
+      "metric": "victims_per_ki",
+      "old_buffer_model": 7.996479845043948,
+      "direct_pocq_model": 7.780082324585193,
+      "delta": -0.21639752045875493,
+      "percent_change": -2.7061597684495338
+    },
+    {
+      "policy": "random",
+      "metric": "stale_token_replays",
+      "old_buffer_model": 125.0,
+      "direct_pocq_model": 101.0,
+      "delta": -24.0,
+      "percent_change": -19.2
+    },
+    {
+      "policy": "random",
+      "metric": "seq_conflict_replays",
+      "old_buffer_model": 262097.0,
+      "direct_pocq_model": 19545.0,
+      "delta": -242552.0,
+      "percent_change": -92.54283719386333
+    },
+    {
+      "policy": "random",
+      "metric": "victim_buffer_full_replays",
+      "old_buffer_model": 46053.0,
+      "direct_pocq_model": 0.0,
+      "delta": -46053.0,
+      "percent_change": -100.0
+    },
+    {
+      "policy": "random",
+      "metric": "total_replay_responses",
+      "old_buffer_model": 308275.0,
+      "direct_pocq_model": 19646.0,
+      "delta": -288629.0,
+      "percent_change": -93.62711864406779
+    },
+    {
+      "policy": "random",
+      "metric": "replays_per_ki",
+      "old_buffer_model": 41.68622345871181,
+      "direct_pocq_model": 2.0926260230391245,
+      "delta": -39.593597435672685,
+      "percent_change": -94.98005372179668
+    },
+    {
+      "policy": "random",
+      "metric": "request_full_cycles",
+      "old_buffer_model": 22882.0,
+      "direct_pocq_model": 19.0,
+      "delta": -22863.0,
+      "percent_change": -99.916965300236
+    },
+    {
+      "policy": "random",
+      "metric": "response_full_cycles",
+      "old_buffer_model": 0.0,
+      "direct_pocq_model": 0.0,
+      "delta": 0.0,
+      "percent_change": 0.0
+    },
+    {
+      "policy": "random",
+      "metric": "no_credit",
+      "old_buffer_model": 22271.0,
+      "direct_pocq_model": 2.0,
+      "delta": -22269.0,
+      "percent_change": -99.99101971173275
+    },
+    {
+      "policy": "random",
+      "metric": "service_stalls",
+      "old_buffer_model": 2818183.0,
+      "direct_pocq_model": 247732.0,
+      "delta": -2570451.0,
+      "percent_change": -91.20951336375246
+    },
+    {
+      "policy": "random",
+      "metric": "service_stalls_per_ki",
+      "old_buffer_model": 381.0863880805866,
+      "direct_pocq_model": 26.38758169294148,
+      "delta": -354.6988063876451,
+      "percent_change": -93.07569555925429
+    },
+    {
+      "policy": "random",
+      "metric": "accepted_to_visible_latency_cycles",
+      "old_buffer_model": 9.967778487861551,
+      "direct_pocq_model": 6.985183593844747,
+      "delta": -2.9825948940168043,
+      "percent_change": -29.922363319458945
+    },
+    {
+      "policy": "random",
+      "metric": "slc_hit_rate",
+      "old_buffer_model": 0.013552319152401444,
+      "direct_pocq_model": 0.025659293684372055,
+      "delta": 0.012106974531970611,
+      "percent_change": 89.33507539058567
+    },
+    {
+      "policy": "random",
+      "metric": "sf_hit_rate",
+      "old_buffer_model": 0.0198784491552302,
+      "direct_pocq_model": 0.013240677817480326,
+      "delta": -0.006637771337749874,
+      "percent_change": -33.39179674387937
+    },
+    {
+      "policy": "random",
+      "metric": "noc_traffic_score",
+      "old_buffer_model": 6384894.0,
+      "direct_pocq_model": 7028869.0,
+      "delta": 643975.0,
+      "percent_change": 10.08591528692567
+    },
+    {
+      "policy": "random",
+      "metric": "dram_reads",
+      "old_buffer_model": 74044.0,
+      "direct_pocq_model": 87090.0,
+      "delta": 13046.0,
+      "percent_change": 17.619253416887258
+    },
+    {
+      "policy": "random",
+      "metric": "dram_writes",
+      "old_buffer_model": 52163.0,
+      "direct_pocq_model": 64159.0,
+      "delta": 11996.0,
+      "percent_change": 22.997143569196556
+    },
+    {
+      "policy": "random",
+      "metric": "host_seconds_from_stats",
+      "old_buffer_model": 587.91,
+      "direct_pocq_model": 556.29,
+      "delta": -31.620000000000005,
+      "percent_change": -5.3783742409552495
+    },
+    {
+      "policy": "srrip",
+      "metric": "cpu0_ipc",
+      "old_buffer_model": 1.3814548578637145,
+      "direct_pocq_model": 1.6096602649150662,
+      "delta": 0.22820540705135173,
+      "percent_change": 16.519208409332258
+    },
+    {
+      "policy": "srrip",
+      "metric": "cpu1_ipc",
+      "old_buffer_model": 0.20544011136002785,
+      "direct_pocq_model": 0.4252376188094047,
+      "delta": 0.21979750744937684,
+      "percent_change": 106.98860412131887
+    },
+    {
+      "policy": "srrip",
+      "metric": "aggregate_ipc",
+      "old_buffer_model": 1.5868949692237424,
+      "direct_pocq_model": 2.034897883724471,
+      "delta": 0.4480029145007285,
+      "percent_change": 28.23141563804169
+    },
+    {
+      "policy": "srrip",
+      "metric": "aggregate_instructions",
+      "old_buffer_model": 7296067.0,
+      "direct_pocq_model": 9355850.0,
+      "delta": 2059783.0,
+      "percent_change": 28.231415638041703
+    },
+    {
+      "policy": "srrip",
+      "metric": "total_slc_victims",
+      "old_buffer_model": 58192.0,
+      "direct_pocq_model": 74362.0,
+      "delta": 16170.0,
+      "percent_change": 27.78732471817432
+    },
+    {
+      "policy": "srrip",
+      "metric": "dirty_slc_victims",
+      "old_buffer_model": 52232.0,
+      "direct_pocq_model": 65493.0,
+      "delta": 13261.0,
+      "percent_change": 25.38865063562567
+    },
+    {
+      "policy": "srrip",
+      "metric": "sf_victims",
+      "old_buffer_model": 72681.0,
+      "direct_pocq_model": 88482.0,
+      "delta": 15801.0,
+      "percent_change": 21.74020720683535
+    },
+    {
+      "policy": "srrip",
+      "metric": "victims_per_ki",
+      "old_buffer_model": 7.975803950265259,
+      "direct_pocq_model": 7.948182153412036,
+      "delta": -0.0276217968532233,
+      "percent_change": -0.3463199073781729
+    },
+    {
+      "policy": "srrip",
+      "metric": "stale_token_replays",
+      "old_buffer_model": 160.0,
+      "direct_pocq_model": 151.0,
+      "delta": -9.0,
+      "percent_change": -5.625
+    },
+    {
+      "policy": "srrip",
+      "metric": "seq_conflict_replays",
+      "old_buffer_model": 279698.0,
+      "direct_pocq_model": 20574.0,
+      "delta": -259124.0,
+      "percent_change": -92.64420911125572
+    },
+    {
+      "policy": "srrip",
+      "metric": "victim_buffer_full_replays",
+      "old_buffer_model": 51793.0,
+      "direct_pocq_model": 0.0,
+      "delta": -51793.0,
+      "percent_change": -100.0
+    },
+    {
+      "policy": "srrip",
+      "metric": "total_replay_responses",
+      "old_buffer_model": 331651.0,
+      "direct_pocq_model": 20725.0,
+      "delta": -310926.0,
+      "percent_change": -93.75096110067511
+    },
+    {
+      "policy": "srrip",
+      "metric": "replays_per_ki",
+      "old_buffer_model": 45.456134106224624,
+      "direct_pocq_model": 2.21519156463603,
+      "delta": -43.240942541588595,
+      "percent_change": -95.1267488795694
+    },
+    {
+      "policy": "srrip",
+      "metric": "request_full_cycles",
+      "old_buffer_model": 27147.0,
+      "direct_pocq_model": 3.0,
+      "delta": -27144.0,
+      "percent_change": -99.98894905514422
+    },
+    {
+      "policy": "srrip",
+      "metric": "response_full_cycles",
+      "old_buffer_model": 0.0,
+      "direct_pocq_model": 0.0,
+      "delta": 0.0,
+      "percent_change": 0.0
+    },
+    {
+      "policy": "srrip",
+      "metric": "no_credit",
+      "old_buffer_model": 25143.0,
+      "direct_pocq_model": 0.0,
+      "delta": -25143.0,
+      "percent_change": -100.0
+    },
+    {
+      "policy": "srrip",
+      "metric": "service_stalls",
+      "old_buffer_model": 3109896.0,
+      "direct_pocq_model": 246441.0,
+      "delta": -2863455.0,
+      "percent_change": -92.0755870935877
+    },
+    {
+      "policy": "srrip",
+      "metric": "service_stalls_per_ki",
+      "old_buffer_model": 426.24279629011085,
+      "direct_pocq_model": 26.340845567211957,
+      "delta": -399.9019507228989,
+      "percent_change": -93.82022504627064
+    },
+    {
+      "policy": "srrip",
+      "metric": "accepted_to_visible_latency_cycles",
+      "old_buffer_model": 10.218917414223336,
+      "direct_pocq_model": 6.96616928045862,
+      "delta": -3.252748133764716,
+      "percent_change": -31.830652914733758
+    },
+    {
+      "policy": "srrip",
+      "metric": "slc_hit_rate",
+      "old_buffer_model": 0.012900107500895841,
+      "direct_pocq_model": 0.016419221551041654,
+      "delta": 0.003519114050145813,
+      "percent_change": 27.27972654415035
+    },
+    {
+      "policy": "srrip",
+      "metric": "sf_hit_rate",
+      "old_buffer_model": 0.024325202710022583,
+      "direct_pocq_model": 0.014065872094914814,
+      "delta": -0.010259330615107769,
+      "percent_change": -42.175725059346256
+    },
+    {
+      "policy": "srrip",
+      "metric": "noc_traffic_score",
+      "old_buffer_model": 6372952.0,
+      "direct_pocq_model": 7096985.0,
+      "delta": 724033.0,
+      "percent_change": 11.361030178793124
+    },
+    {
+      "policy": "srrip",
+      "metric": "dram_reads",
+      "old_buffer_model": 73296.0,
+      "direct_pocq_model": 88378.0,
+      "delta": 15082.0,
+      "percent_change": 20.576839118096483
+    },
+    {
+      "policy": "srrip",
+      "metric": "dram_writes",
+      "old_buffer_model": 51684.0,
+      "direct_pocq_model": 64993.0,
+      "delta": 13309.0,
+      "percent_change": 25.75071588886309
+    },
+    {
+      "policy": "srrip",
+      "metric": "host_seconds_from_stats",
+      "old_buffer_model": 555.42,
+      "direct_pocq_model": 529.72,
+      "delta": -25.699999999999932,
+      "percent_change": -4.6271290194807415
+    }
+  ]
+}

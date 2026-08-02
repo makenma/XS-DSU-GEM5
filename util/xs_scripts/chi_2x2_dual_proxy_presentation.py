@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+from io import BytesIO
 import json
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
@@ -24,7 +25,8 @@ from pptx.util import Inches, Pt
 
 SLIDE_W = 13.333
 SLIDE_H = 7.5
-TOTAL = 17
+BASE_TOTAL = 17
+TOTAL = BASE_TOTAL
 FONT_CN = "Noto Sans CJK SC"
 FONT_LATIN = "Aptos"
 
@@ -198,6 +200,7 @@ def load_data(root: Path):
         for name in (
             "per_core_metrics.csv", "policy_comparison.csv",
             "slc_occupancy.csv", "hnf_victims.csv",
+            "hnf_pressure_replay.csv", "model_change_comparison.csv",
             "victim_by_rnf.csv", "router_hotspots.csv")
     }
     if len(csvs["per_core_metrics.csv"]) != 6:
@@ -223,8 +226,29 @@ def create_deck(root: Path, summary, manifest, csvs) -> Presentation:
     service = {p: policies[p]["slc"]["serviceStalls"] for p in POLICIES}
     latency = {p: policies[p]["slc"]["accepted_to_visible_latency_cycles"] for p in POLICIES}
     traffic = {p: policies[p]["noc"]["total_traffic_score"] for p in POLICIES}
+    replay_ki = {p: policies[p]["slc"]["replays_per_ki"] for p in POLICIES}
+    stall_ki = {
+        p: policies[p]["slc"]["service_stalls_per_ki"] for p in POLICIES}
+    host_elapsed = {p: manifest["runs"][p]["host_elapsed_seconds"]
+                    for p in POLICIES}
     rnf = {(row["policy"], row["rnf"]): int(row["victims"])
            for row in csvs["victim_by_rnf.csv"]}
+    rnf0_share = {
+        p: rnf[(p, "RNF0/CPU0")] / victims[p] * 100 for p in POLICIES}
+    model_change = {
+        (row["policy"], row["metric"]): row
+        for row in csvs["model_change_comparison.csv"]}
+    ipc_gain = {
+        p: float(model_change[(p, "aggregate_ipc")]["percent_change"])
+        for p in POLICIES}
+    best_policy = max(POLICIES, key=lambda p: aggr[p])
+    best_label = POLICY_LABEL[best_policy]
+
+    def delta_pct(value, baseline):
+        return (value - baseline) / baseline * 100 if baseline else 0.0
+
+    def signed_percent(value):
+        return f"{value:+.4f}%"
 
     # 1 — title
     slide = deck.slides.add_slide(blank)
@@ -236,6 +260,8 @@ def create_deck(root: Path, summary, manifest, csvs) -> Presentation:
          31, WHITE, True)
     text(slide, "True LRU · Fixed-seed Random · Deterministic 2-bit SRRIP",
          0.75, 3.05, 8.9, 0.35, 15, "C9D5E6", font=FONT_LATIN)
+    text(slide, "Direct-PoCQ dirty victim · no persistent SLC victim buffer",
+         0.75, 3.52, 8.9, 0.3, 12, "5DE0CD", True, font=FONT_LATIN)
     box(slide, 9.65, 1.18, 2.8, 3.95, NAVY2, "304766")
     text(slide, "2", 10.05, 1.48, 0.8, 0.65, 39, "5DE0CD", True,
          font=FONT_LATIN)
@@ -251,7 +277,7 @@ def create_deck(root: Path, summary, manifest, csvs) -> Presentation:
     box(slide, 0.75, 5.32, 7.85, 0.67, "2A2030", "6B4354")
     text(slide, "公开源码代理负载 · 不是 SPEC CPU2006 · 所有结果均非 SPEC 分数",
          1.02, 5.51, 7.3, 0.25, 12, "FFD1D1", True)
-    text(slide, "正式 ROI：2B ticks / policy · 2026-07-30", 0.75, 6.78,
+    text(slide, "正式 ROI：2B ticks / policy · 2026-07-31", 0.75, 6.78,
          5.8, 0.2, 8, "8292AA", font=FONT_LATIN)
 
     # 2 — question and classification
@@ -264,7 +290,7 @@ def create_deck(root: Path, summary, manifest, csvs) -> Presentation:
     bullets(slide, [
         "在真实双核竞争同一 HNF/SLC 时，替换策略如何影响两核 IPC？",
         "victim 减少是否一定转化为更高系统性能？",
-        "HNF 排队与 NoC 热点能否解释策略差异？"],
+        "移除错误 SLC victim-buffer 后，Replay 与性能如何变化？"],
         0.92, 3.96, 6.85, 1.55, 13)
     box(slide, 8.42, 3.18, 4.28, 2.7, RED_L, "F3C4C4")
     text(slide, "严格分类", 8.74, 3.48, 2.0, 0.32, 16, RED, True)
@@ -406,7 +432,7 @@ def create_deck(root: Path, summary, manifest, csvs) -> Presentation:
     slide = deck.slides.add_slide(blank); set_bg(slide); header(slide, "三种替换策略的精确定义", 8)
     cards = [
         (0.62, "LRU", BLUE, BLUE_L, ["命中更新 recency", "选择最久未使用有效 line", "无效 way 优先"]),
-        (4.58, "Random", ORANGE, ORANGE_L, ["满组时均匀选择有效 way", "固定 seed = 20260730", "三次短复现逐值一致"]),
+        (4.58, "Random", ORANGE, ORANGE_L, ["满组时均匀选择有效 way", "固定 seed = 20260730", "正式 ROI 与其他策略等长"]),
         (8.54, "2-bit SRRIP", TEAL, TEAL_L, ["Hit → RRPV 0；Insert → 2", "优先 RRPV 3", "否则饱和老化直到有候选"])]
     for x,title,color,fill,items in cards:
         box(slide, x, 1.64, 3.78, 4.72, CARD, LINE)
@@ -427,19 +453,27 @@ def create_deck(root: Path, summary, manifest, csvs) -> Presentation:
     slide = deck.slides.add_slide(blank); set_bg(slide); header(slide, "满载与持续替换：三策略均满足有效性条件", 9)
     metric(slide, 0.62, 1.58, 3.78, "100%", "三策略峰值占用", "16,384 / 16,384 lines", TEAL)
     metric(slide, 4.58, 1.58, 3.78, "> 2.81M", "Full SLC cycles", "每个策略都持续满载", BLUE)
-    metric(slide, 8.54, 1.58, 4.16, "> 57.9K", "Replacement / victim", "每个策略均大于 0", ORANGE)
+    metric(slide, 8.54, 1.58, 4.16,
+           f"> {min(victims.values())/1000:.1f}K", "Replacement / victim",
+           "每个策略均大于 0", ORANGE)
     bar_chart(slide, {p: policies[p]["slc"]["fullSlcCycles"] / 1e6 for p in POLICIES},
               0.62, 3.12, 5.85, 3.25, "Full SLC cycles（百万）", "{:.3f}")
     bar_chart(slide, victims, 6.72, 3.12, 5.98, 3.25,
               "Total SLC victims", "{:,.0f}")
 
     # 10 — per-core IPC
-    slide = deck.slides.add_slide(blank); set_bg(slide); header(slide, "每核 IPC：Random 在当前窗口领先", 10)
+    slide = deck.slides.add_slide(blank); set_bg(slide); header(
+        slide, "每核 IPC：系统排名由两个 workload 共同决定", 10)
     bar_chart(slide, ipc0, 0.62, 1.58, 5.85, 4.75,
               "CPU0 / libquantum proxy IPC", "{:.4f}")
     bar_chart(slide, ipc1, 6.72, 1.58, 5.98, 4.75,
               "CPU1 / OMNeT++ proxy IPC", "{:.4f}")
-    text(slide, "相对 Random：LRU -0.57% / -8.64%；SRRIP -0.23% / -8.21%（CPU0 / CPU1）",
+    text(slide,
+         "相对 Random：LRU "
+         f"{signed_percent(delta_pct(ipc0['lru'], ipc0['random']))} / "
+         f"{signed_percent(delta_pct(ipc1['lru'], ipc1['random']))}；SRRIP "
+         f"{signed_percent(delta_pct(ipc0['srrip'], ipc0['random']))} / "
+         f"{signed_percent(delta_pct(ipc1['srrip'], ipc1['random']))}（CPU0 / CPU1）",
          1.45, 6.62, 10.5, 0.3, 11.5, RED, True, PP_ALIGN.CENTER)
 
     # 11 — aggregate IPC
@@ -449,8 +483,12 @@ def create_deck(root: Path, summary, manifest, csvs) -> Presentation:
     box(slide, 8.34, 1.58, 4.36, 4.72, CARD, LINE)
     text(slide, "相对 Random", 8.69, 1.95, 3.65, 0.34, 16, INK, True)
     rows = [
-        ("LRU", "−0.02723", "−1.6927%", BLUE, BLUE_L),
-        ("SRRIP", "−0.02155", "−1.3396%", TEAL, TEAL_L)]
+        ("LRU", f"{aggr['lru']-aggr['random']:+.5f}",
+         signed_percent(delta_pct(aggr['lru'], aggr['random'])),
+         BLUE, BLUE_L),
+        ("SRRIP", f"{aggr['srrip']-aggr['random']:+.5f}",
+         signed_percent(delta_pct(aggr['srrip'], aggr['random'])),
+         TEAL, TEAL_L)]
     for i,(name,delta,pct,color,fill) in enumerate(rows):
         y = 2.68 + i*1.35
         box(slide, 8.69, y, 3.65, 1.05, fill)
@@ -460,11 +498,15 @@ def create_deck(root: Path, summary, manifest, csvs) -> Presentation:
              PP_ALIGN.CENTER, font=FONT_LATIN)
         text(slide, pct, 11.04, y+0.22, 1.04, 0.28, 12, RED, True,
              PP_ALIGN.RIGHT, font=FONT_LATIN)
-    text(slide, "Random = 1.608441（本窗口最高）", 8.69, 5.45, 3.65, 0.32,
-         13, ORANGE, True, PP_ALIGN.CENTER)
+    text(slide,
+         f"{best_label} = {aggr[best_policy]:.6f}（本窗口最高）\n"
+         f"host elapsed = {host_elapsed[best_policy]:.1f}s（并非最快）",
+         8.69, 5.36, 3.65, 0.62,
+         11.5, ORANGE, True, PP_ALIGN.CENTER)
 
     # 12 — victim composition
-    slide = deck.slides.add_slide(blank); set_bg(slide); header(slide, "Clean / Dirty / Total victim：数量少不等于 IPC 高", 12)
+    slide = deck.slides.add_slide(blank); set_bg(slide); header(
+        slide, "Clean / Dirty / Total victim：同时查看 raw 与归一化率", 12)
     box(slide, 0.62, 1.58, 8.0, 4.85, CARD, LINE)
     text(slide, "Victim 构成", 0.92, 1.88, 2.0, 0.32, 15, INK, True)
     max_total = max(victims.values())
@@ -485,12 +527,18 @@ def create_deck(root: Path, summary, manifest, csvs) -> Presentation:
     box(slide, 8.9, 1.58, 3.8, 4.85, GRAY)
     text(slide, "相对 Random", 9.24, 1.96, 3.1, 0.32, 15, INK, True)
     text(slide, "LRU", 9.24, 2.68, 0.8, 0.25, 12, BLUE, True, font=FONT_LATIN)
-    text(slide, "−1,210 victims\n−2.0462%", 10.05, 2.58, 2.0, 0.62, 17, BLUE, True,
+    text(slide,
+         f"{victims['lru']-victims['random']:+,.0f} victims\n"
+         f"{signed_percent(delta_pct(victims['lru'], victims['random']))}",
+         10.05, 2.58, 2.0, 0.62, 17, BLUE, True,
          font=FONT_LATIN)
     text(slide, "SRRIP", 9.24, 3.85, 0.8, 0.25, 12, TEAL, True, font=FONT_LATIN)
-    text(slide, "−943 victims\n−1.5947%", 10.05, 3.75, 2.0, 0.62, 17, TEAL, True,
+    text(slide,
+         f"{victims['srrip']-victims['random']:+,.0f} victims\n"
+         f"{signed_percent(delta_pct(victims['srrip'], victims['random']))}",
+         10.05, 3.75, 2.0, 0.62, 17, TEAL, True,
          font=FONT_LATIN)
-    text(slide, "但二者 aggregate IPC 都低于 Random", 9.24, 5.22, 3.1, 0.55,
+    text(slide, "固定时间内的 raw victim 仍需按指令数归一化", 9.24, 5.22, 3.1, 0.55,
          12.5, RED, True, PP_ALIGN.CENTER)
 
     # 13 — victim by RNF
@@ -512,7 +560,8 @@ def create_deck(root: Path, summary, manifest, csvs) -> Presentation:
     text(slide, "归属含义", 9.24, 1.96, 3.1, 0.32, 15, BLUE, True)
     bullets(slide, [
         "按触发 replacement 的 requester/RNF 计数",
-        "三策略 RNF0 占约 87%–88%",
+        f"三策略 RNF0 占 {min(rnf0_share.values()):.1f}%–"
+        f"{max(rnf0_share.values()):.1f}%",
         "不是被替换 line 的原始 owner"],
         9.24, 2.54, 3.0, 1.65, 11.5)
     text(slide, "每行 RNF0 + RNF1\n严格等于 total victim", 9.34, 4.75, 2.8, 0.68,
@@ -532,17 +581,25 @@ def create_deck(root: Path, summary, manifest, csvs) -> Presentation:
              font=FONT_LATIN)
         text(slide, "16,384 / 16,384 · 100%", x+0.78, 5.96, 2.05, 0.24,
              10, TEXT, True, font=FONT_LATIN)
-    text(slide, "LRU 末态 16,382 lines 是一致性失效后的瞬时小幅下降；起点和峰值仍为精确满载。",
+    text(slide,
+         "ROI 末态有效行："
+         + " / ".join(
+             f"{POLICY_LABEL[p]} {int(policies[p]['slc']['slcValidLines']):,}"
+             for p in POLICIES)
+         + "；三策略起点和峰值均为精确满载。",
          1.75, 6.72, 9.8, 0.27, 10.5, MUTED, True, PP_ALIGN.CENTER)
 
     # 15 — HNF
-    slide = deck.slides.add_slide(blank); set_bg(slide); header(slide, "HNF 服务：Random 的排队和可见延迟更低", 15)
-    bar_chart(slide, {p: service[p]/1e6 for p in POLICIES}, 0.62, 1.58, 5.85, 4.75,
-              "HNF service stalls（百万）", "{:.3f}")
-    bar_chart(slide, latency, 6.72, 1.58, 5.98, 4.75,
-              "Accepted → visible latency（cycle）", "{:.3f}")
-    text(slide, "相对 Random：LRU / SRRIP service stalls 均约 +10.3%，延迟约 +2.5%。",
-         1.65, 6.62, 10.1, 0.3, 11.5, RED, True, PP_ALIGN.CENTER)
+    slide = deck.slides.add_slide(blank); set_bg(slide); header(
+        slide, "HNF 压力：移除不存在的 SLC victim-buffer 阻塞", 15)
+    bar_chart(slide, replay_ki, 0.62, 1.58, 5.85, 4.75,
+              "Terminal Replay / KI", "{:.3f}")
+    bar_chart(slide, stall_ki, 6.72, 1.58, 5.98, 4.75,
+              "HNF service stalls / KI", "{:.3f}")
+    text(slide,
+         "LRU / Random / SRRIP 的 victimBufferFullReplays 全部为 0；"
+         "旧模型 Replay/KI 均下降约 95%。",
+         1.35, 6.62, 10.7, 0.3, 11.5, RED, True, PP_ALIGN.CENTER)
 
     # 16 — NoC
     slide = deck.slides.add_slide(blank); set_bg(slide); header(slide, "NoC traffic 与热点：HNF Router 始终最热", 16)
@@ -562,18 +619,26 @@ def create_deck(root: Path, summary, manifest, csvs) -> Presentation:
              font=FONT_LATIN)
         text(slide, node, 10.85, y+0.14, 1.0, 0.22, 10, color, True,
              PP_ALIGN.RIGHT)
-    text(slide, "LRU / SRRIP 比 Random 少 0.483% / 0.187% traffic，\n但没有获得更高 IPC。",
+    text(slide,
+         "LRU / SRRIP 相对 Random traffic："
+         f"{signed_percent(delta_pct(traffic['lru'], traffic['random']))} / "
+         f"{signed_percent(delta_pct(traffic['srrip'], traffic['random']))}；\n"
+         "Random 的 traffic 最低。",
          7.45, 5.85, 4.55, 0.62, 11.5, RED, True, PP_ALIGN.CENTER)
 
     # 17 — conclusion
     slide = deck.slides.add_slide(blank); set_bg(slide, NAVY)
     text(slide, "CONCLUSION / REPRODUCE", 0.7, 0.45, 4.0, 0.25, 9.5, "5DE0CD", True,
          font=FONT_LATIN)
-    text(slide, "结论：本窗口中 Random 性能最好", 0.7, 0.88, 11.7, 0.55, 27, WHITE, True)
+    text(slide, f"结论：本窗口中 {best_label} aggregate IPC 最高",
+         0.7, 0.88, 11.7, 0.55, 27, WHITE, True)
     cards = [
-        (0.7, "1.608441", "Random aggregate IPC", ORANGE),
-        (4.72, "−1.6927%", "LRU vs Random", BLUE),
-        (8.74, "−1.3396%", "SRRIP vs Random", TEAL)]
+        (0.7, f"{aggr[best_policy]:.6f}", f"{best_label} aggregate IPC",
+         POLICY_COLOR[best_policy]),
+        (4.72, signed_percent(delta_pct(aggr['lru'], aggr['random'])),
+         "LRU vs Random", BLUE),
+        (8.74, signed_percent(delta_pct(aggr['srrip'], aggr['random'])),
+         "SRRIP vs Random", TEAL)]
     for x,value,label,color in cards:
         box(slide, x, 1.72, 3.6, 1.25, NAVY2, "304766")
         text(slide, value, x+0.28, 1.92, 3.04, 0.42, 23, color, True,
@@ -583,10 +648,12 @@ def create_deck(root: Path, summary, manifest, csvs) -> Presentation:
     box(slide, 0.7, 3.45, 7.45, 2.28, NAVY2, "304766")
     text(slide, "如何解释", 1.02, 3.78, 1.35, 0.3, 15, "5DE0CD", True)
     bullets(slide, [
-        "LRU / SRRIP victim 更少，但 HNF service stall 约高 10.3%",
-        "替换数、命中组合、排队与每核进展共同决定 IPC",
+        "三策略 victimBufferFullReplays 均为 0；旧模型人为瓶颈已移除",
+        f"相对旧模型 IPC 提升 {min(ipc_gain.values()):.2f}%–"
+        f"{max(ipc_gain.values()):.2f}%；Replay/KI 约下降 95%",
+        "Random 的 CPU1 进展、SLC hit、Replay 与 traffic 组合更有利",
         "结论限定于当前代理负载、拓扑、checkpoint 与 2B-tick ROI"],
-        1.02, 4.2, 6.7, 1.25, 11.5, "E0E8F3")
+        1.02, 4.2, 6.7, 1.35, 10.6, "E0E8F3")
     box(slide, 8.45, 3.45, 3.98, 2.28, "2A2030", "6B4354")
     text(slide, "不可越界", 8.78, 3.78, 1.35, 0.3, 15, "FFD1D1", True)
     text(slide, "公开源码代理 ≠ SPEC CPU2006\n一次正式运行 ≠ 置信区间\n当前排序 ≠ 普适策略排名",
@@ -597,8 +664,9 @@ def create_deck(root: Path, summary, manifest, csvs) -> Presentation:
     text(slide, "public-source proxy; not SPEC CPU2006", 4.5, 7.04, 4.4, 0.2,
          8, "6E829E", True, PP_ALIGN.CENTER, font=FONT_LATIN)
 
-    if len(deck.slides) != TOTAL:
-        raise AssertionError(f"expected {TOTAL} slides, got {len(deck.slides)}")
+    if len(deck.slides) != BASE_TOTAL:
+        raise AssertionError(
+            f"expected {BASE_TOTAL} base slides, got {len(deck.slides)}")
     return deck
 
 
@@ -657,6 +725,15 @@ def render_reopened_pptx(pptx_path: Path, preview_dir: Path) -> dict:
             if shape.shape_type == MSO_SHAPE_TYPE.LINE:
                 line_color = color_tuple(shape.line.color, (105, 122, 145))
                 draw.line((left, top, right, bottom), fill=line_color, width=2)
+            elif shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+                with Image.open(BytesIO(shape.image.blob)) as source:
+                    picture = source.convert("RGB")
+                    picture.thumbnail(
+                        (max(1, right-left), max(1, bottom-top)),
+                        Image.Resampling.LANCZOS)
+                    px = left + max(0, (right-left-picture.width)//2)
+                    py = top + max(0, (bottom-top-picture.height)//2)
+                    canvas.paste(picture, (px, py))
             elif getattr(shape, "fill", None) is not None:
                 try:
                     if shape.fill.type is not None:
@@ -701,7 +778,9 @@ def render_reopened_pptx(pptx_path: Path, preview_dir: Path) -> dict:
         im = Image.open(output).resize((400, 225))
         thumbs.append(im.copy())
         im.close()
-    montage = Image.new("RGB", (1600, 1125), (230, 235, 242))
+    montage_rows = (len(thumbs) + 3) // 4
+    montage = Image.new(
+        "RGB", (1600, montage_rows * 225), (230, 235, 242))
     draw = ImageDraw.Draw(montage)
     label_font = ImageFont.truetype(str(fallback), 18)
     for index, im in enumerate(thumbs):

@@ -1,0 +1,6 @@
+{
+  "host_elapsed_seconds": 537.7866368293762,
+  "return_code": 0,
+  "stderr": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-direct-victim-v1/runs/lru/stderr.log",
+  "stdout": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-direct-victim-v1/runs/lru/stdout.log"
+}

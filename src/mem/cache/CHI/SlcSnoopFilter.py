@@ -50,7 +50,8 @@ class SlcSnoopFilter(ClockedObject):
     slcsf_update_latency = Param.Cycles(
         Parent.slcsf_update_latency, "SLCSF update service latency")
     slcsf_victim_latency = Param.Cycles(
-        Parent.slcsf_victim_latency, "SLCSF dirty victim latency")
+        Parent.slcsf_victim_latency,
+        "Deprecated compatibility knob; dirty victims hand off to PoCQ")
     slcsf_sf_evict_latency = Param.Cycles(
         Parent.slcsf_sf_evict_latency, "SLCSF SF eviction latency")
     slcsf_replay_penalty = Param.Cycles(
@@ -60,7 +61,8 @@ class SlcSnoopFilter(ClockedObject):
     slcsf_resp_queue_entries = Param.UInt32(
         Parent.slcsf_resp_queue_entries, "SLCSF response queue entries")
     slcsf_victim_buffer_entries = Param.UInt32(
-        Parent.slcsf_victim_buffer_entries, "SLCSF VictimBuffer entries")
+        Parent.slcsf_victim_buffer_entries,
+        "Deprecated compatibility knob; no SLC VictimBuffer is modeled")
     slcsf_lookup_issue_width = Param.UInt32(
         Parent.slcsf_lookup_issue_width, "SLCSF lookup issue width")
     slcsf_fill_issue_width = Param.UInt32(

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "profile_kind": "guest_roi_shadow_call_stack",
+  "source": "O3 retired guest macro-instruction Commit probe",
+  "host_gem5_profile": false,
+  "semantic_timing_effect": false,
+  "pre_roi_ancestry_unwound": false,
+  "roi_root_is_truncated": true,
+  "sample_period_insts": 1000,
+  "start_tick": 1378457841,
+  "stop_tick": 3378457841,
+  "retired_macro_insts_observed": 7400735,
+  "samples": 7401,
+  "calls_seen": 0,
+  "returns_seen": 0,
+  "return_underflows": 0,
+  "roi_root_resets": 1,
+  "max_shadow_depth": 1,
+  "pending_call_at_stop": false
+}

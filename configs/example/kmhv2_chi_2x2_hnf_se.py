@@ -17,6 +17,7 @@ from m5.objects import (
     Chi2ClassicMemBridge,
     ChiRouterRefModel,
     DecoupledBPUWithBTB,
+    GuestCallStackProfiler,
     HomeNodeFull,
     Process,
     Root,
@@ -115,6 +116,15 @@ def _parse_args():
     parser.add_argument(
         "--common-checkpoint", default="",
         help="warmup output checkpoint or required ROI restore checkpoint")
+    parser.add_argument(
+        "--enable-rnf-transaction-latency", action="store_true",
+        help="record ID-matched RNF REQ/SNP latency only inside the ROI")
+    parser.add_argument(
+        "--enable-guest-stack-profile", action="store_true",
+        help="sample ROI guest retired-instruction shadow call stacks")
+    parser.add_argument(
+        "--guest-stack-sample-period-insts", type=int, default=1000,
+        help="retired guest macro-instructions between stack samples")
     parser.set_defaults(exit_on_slc_full=True)
     return parser.parse_args()
 
@@ -180,7 +190,13 @@ def _build_system(args, binaries, processes):
     for cpu in system.cpu:
         _configure_core(cpu, system.cpu_clk_domain)
 
-    system.chi_bridges = [Cache2ChiBridge() for _ in range(2)]
+    system.chi_bridges = [
+        Cache2ChiBridge(
+            transaction_latency_trace_file=(
+                "rnf%d_transaction_latency_raw.csv" % cpu_id
+                if args.enable_rnf_transaction_latency else ""))
+        for cpu_id in range(2)
+    ]
     system.home_node = [HomeNodeFull()]
     system.home_node[0].slc_restore_allow_policy_override = (
         args.experiment_mode == "roi")
@@ -194,6 +210,18 @@ def _build_system(args, binaries, processes):
     for cpu_id, process in enumerate(processes):
         system.cpu[cpu_id].workload = process
         system.cpu[cpu_id].createThreads()
+
+    if args.enable_guest_stack_profile:
+        system.guest_stack_profilers = [
+            GuestCallStackProfiler(
+                manager=system.cpu[cpu_id],
+                profile_file="cpu%d_guest_stack_samples_raw.csv" % cpu_id,
+                metadata_file=(
+                    "cpu%d_guest_stack_samples_metadata.json" % cpu_id),
+                sample_period_insts=args.guest_stack_sample_period_insts,
+            )
+            for cpu_id in range(2)
+        ]
 
     system.membus = MemBus()
     system.system_port = system.membus.cpu_side_ports
@@ -222,6 +250,38 @@ def _slc_occupancy(system):
         "slc_valid_lines": int(slcsf.slcValidLineCount()),
         "slc_capacity_lines": int(slcsf.slcCapacityLineCount()),
         "max_valid_ways_per_set": int(slcsf.maxValidWaysInSet()),
+    }
+
+
+def _start_roi_instrumentation(args, system, phases):
+    enabled = {
+        "rnf_transaction_latency": args.enable_rnf_transaction_latency,
+        "guest_stack_profile": args.enable_guest_stack_profile,
+        "guest_stack_sample_period_insts": (
+            args.guest_stack_sample_period_insts
+            if args.enable_guest_stack_profile else None),
+        "start_tick": int(m5.curTick()),
+    }
+    if args.enable_rnf_transaction_latency:
+        for bridge in system.chi_bridges:
+            bridge.startTransactionLatencyTrace()
+    if args.enable_guest_stack_profile:
+        for profiler in system.guest_stack_profilers:
+            profiler.start()
+    phases["instrumentation_start"] = enabled
+
+
+def _stop_roi_instrumentation(args, system, phases):
+    if args.enable_guest_stack_profile:
+        for profiler in system.guest_stack_profilers:
+            profiler.stop()
+    if args.enable_rnf_transaction_latency:
+        for bridge in system.chi_bridges:
+            bridge.stopTransactionLatencyTrace()
+    phases["instrumentation_stop"] = {
+        "tick": int(m5.curTick()),
+        "rnf_transaction_latency": args.enable_rnf_transaction_latency,
+        "guest_stack_profile": args.enable_guest_stack_profile,
     }
 
 
@@ -337,6 +397,23 @@ def _write_phase_metadata(
         "checkpoint_refill_max_ticks": args.checkpoint_refill_max_ticks,
         "roi_ticks": args.roi_ticks,
         "min_roi_insts_per_core": args.min_roi_insts_per_core,
+        "instrumentation": {
+            "rnf_transaction_latency": {
+                "enabled": args.enable_rnf_transaction_latency,
+                "identity": "exact CHI SrcID + TxnID",
+                "start": "REQ injection or TXSNP acceptance at RNF",
+                "end": "matching terminal RSP/DAT acceptance or SNP response injection",
+                "semantic_timing_effect": False,
+            },
+            "guest_stack_profile": {
+                "enabled": args.enable_guest_stack_profile,
+                "sample_period_insts": (
+                    args.guest_stack_sample_period_insts
+                    if args.enable_guest_stack_profile else None),
+                "source": "O3 retired guest macro-instruction Commit probe",
+                "semantic_timing_effect": False,
+            },
+        },
         "experiment_mode": args.experiment_mode,
         "common_checkpoint": args.common_checkpoint or None,
         "stats_sections": stats_sections,
@@ -379,6 +456,7 @@ def _run(args, system, binaries, processes):
     _drain_to_full_boundary(args, system, phases, "pre_reset")
     m5.stats.dump()
     _resume_drained_workloads(system, phases, "roi_start")
+    _start_roi_instrumentation(args, system, phases)
     m5.stats.reset()
 
     roi_event = m5.simulate(args.roi_ticks)
@@ -395,6 +473,7 @@ def _run(args, system, binaries, processes):
     phases["roi_end"]["measured_cpu_insts"] = roi_insts
     if any(insts < args.min_roi_insts_per_core for insts in roi_insts):
         fatal("insufficient ROI instructions per core: %s", roi_insts)
+    _stop_roi_instrumentation(args, system, phases)
     m5.stats.dump()
     _write_phase_metadata(
         args, binaries, processes, phases,
@@ -464,6 +543,7 @@ def _run_roi(args, system, binaries, processes):
 
     m5.stats.reset()
     phases["roi_start"] = _progress(system)
+    _start_roi_instrumentation(args, system, phases)
     roi_event = m5.simulate(args.roi_ticks)
     phases["roi_end"] = {
         **_progress(system), "exit_cause": roi_event.getCause(),
@@ -479,6 +559,7 @@ def _run_roi(args, system, binaries, processes):
     phases["roi_end"]["measured_cpu_insts"] = roi_insts
     if any(insts < args.min_roi_insts_per_core for insts in roi_insts):
         fatal("insufficient ROI instructions per core: %s", roi_insts)
+    _stop_roi_instrumentation(args, system, phases)
     # Coherence may invalidate a small number of SLC lines after the common
     # full boundary.  The experiment requires an exactly-full ROI start,
     # 100% peak occupancy, and sustained replacement/victim activity; it does
@@ -542,6 +623,8 @@ if __name__ == "__m5_main__":
            args.min_roi_insts_per_core, args.drain_probe_start_ticks,
            args.drain_probe_budget_ticks) <= 0:
         fatal("fill/settle/ROI limits and minimum instructions must be positive")
+    if args.guest_stack_sample_period_insts <= 0:
+        fatal("--guest-stack-sample-period-insts must be positive")
     binaries, processes = _build_processes(args)
     test_sys = _build_system(args, binaries, processes)
     print("CHI 2x2 dual-process SE topology (public proxies; NOT SPEC CPU2006):")

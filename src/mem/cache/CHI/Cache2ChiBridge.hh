@@ -7,6 +7,7 @@
 #include <iosfwd>
 #include <optional>
 #include <queue>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -39,6 +40,15 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     Port& getPort(const std::string& if_name, PortID idx = InvalidPortID) override;
     void wakeup() override;
     void print(std::ostream& out) const override;
+
+    /**
+     * Host-only ROI instrumentation. These methods do not schedule events or
+     * consume modeled cycles. A transaction is keyed by its CHI source and
+     * transaction IDs; stop writes completed instances plus right-censored
+     * instances that were still outstanding at the exact ROI boundary.
+     */
+    void startTransactionLatencyTrace();
+    void stopTransactionLatencyTrace();
 
     /**
      * A promoted classic Upgrade normally has to be restored to an
@@ -194,6 +204,12 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
         uint32_t readDataBytes = 0;
         bool sawReadDataLast = false;
         std::optional<uint8_t> readResp;
+        Tick latencyStartTick = 0;
+        bool latencyTracked = false;
+        bool latencyRecorded = false;
+        ChannelType lastResponseChannel = NUM_CHANNELS;
+        uint8_t lastResponseOpcode = 0xff;
+        uint32_t retryCount = 0;
     };
 
     struct SnoopSenderState : public Packet::SenderState
@@ -212,6 +228,9 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
         std::optional<RawRsp> pendingRsp;
         std::vector<RawDat> dataBeats;
         size_t nextDataBeat = 0;
+        Tick latencyStartTick = 0;
+        bool latencyTracked = false;
+        uint32_t retryCount = 0;
     };
 
     struct PendingClassicResponse
@@ -231,6 +250,23 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     {
         RawSnp snp{};
         uint32_t attempts = 0;
+        Tick latencyStartTick = 0;
+        bool latencyTracked = false;
+    };
+
+    struct TransactionLatencyRecord
+    {
+        bool completed = false;
+        ChannelType transactionChannel = NUM_CHANNELS;
+        uint8_t transactionOpcode = 0xff;
+        uint32_t sourceId = 0;
+        uint32_t targetId = 0;
+        uint32_t transactionId = 0;
+        Tick startTick = 0;
+        Tick endTick = 0;
+        ChannelType terminalChannel = NUM_CHANNELS;
+        uint8_t terminalOpcode = 0xff;
+        uint32_t retryCount = 0;
     };
 
     /** ============ Ports ============ */
@@ -291,10 +327,16 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     const uint32_t dataBeatBytes;
     const bool enableRetry;
     const bool sinkHnfTxReq;
+    const std::string transactionLatencyTraceFile;
     // Keep the allocation cursor wider than the modeled CHI field so that
     // exhaustion is distinguishable from an accidental uint32_t wrap.
     uint64_t nextTxnId = 1;
     uint32_t nextSnoopTxnId = 1;
+
+    bool transactionLatencyTraceEnabled = false;
+    Tick transactionLatencyTraceStartTick = 0;
+    Tick transactionLatencyTraceStopTick = 0;
+    std::vector<TransactionLatencyRecord> transactionLatencyRecords;
 
     /** ============ Event pump ============ */
     EventFunctionWrapper pumpEvent;
@@ -319,7 +361,9 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     static bool acceptReadDataBeat(TxnEntry& txn, const RawDat& dat,
                                    uint32_t data_beat_bytes,
                                    const char* owner_name);
-    void handleSnp(const RawSnp& snp, uint32_t attempts = 0);
+    void handleSnp(const RawSnp& snp, uint32_t attempts = 0,
+                   Tick latency_start_tick = 0,
+                   bool latency_tracked = false);
     bool sendPendingResponses();
     bool sendPendingCompAcks();
     bool sendPendingSnoopResponses();
@@ -332,10 +376,18 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     bool reissueRetriedTxn(uint32_t txnid);
     void maybeComplete(TxnEntry& txn);
     void completeClassicTxn(TxnEntry& txn);
+    void recordReqLatency(TxnEntry& txn);
+    void recordSnoopLatency(const SnoopEntry& snoop,
+                            ChannelType terminal_channel,
+                            uint8_t terminal_opcode);
+    void writeTransactionLatencyTrace();
 
     void sendSnoopRsp(SnoopEntry& snoop, RespState state);
     void sendSnoopData(SnoopEntry& snoop, PacketPtr pkt);
-    bool respondFromPendingCopyback(const RawSnp& snp);
+    bool respondFromPendingCopyback(const RawSnp& snp,
+                                    Tick latency_start_tick,
+                                    bool latency_tracked,
+                                    uint32_t retry_count);
     bool snoopPrecedesPendingTxn(const RawSnp& snp);
     MemCmd snoopCmdFor(const RawSnp& snp) const;
     bool snoopInvalidates(const RawSnp& snp) const;

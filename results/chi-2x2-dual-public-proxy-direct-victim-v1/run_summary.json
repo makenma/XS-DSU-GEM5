@@ -1,0 +1,10 @@
+{
+  "analysis": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-direct-victim-v1/analysis/summary.json",
+  "classification": "public-source proxy; not SPEC CPU2006",
+  "status": "validated",
+  "validation": [
+    "lru: full 16384/16384, victims=74091, ROI insts=[7383977, 1949785]",
+    "random: full 16384/16384, victims=73041, ROI insts=[7331309, 2056895]",
+    "srrip: full 16384/16384, victims=74362, ROI insts=[7400735, 1955115]"
+  ]
+}

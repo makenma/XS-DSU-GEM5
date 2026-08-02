@@ -118,6 +118,20 @@ def run_experiment(args) -> None:
     checkpoint = result / "warmup/common_full_cpt"
     common = common_args(dependencies, args.memory)
     runs = {}
+    checkpoint_source = None
+    if args.checkpoint_source is not None:
+        if not args.skip_warmup:
+            raise RuntimeError(
+                "--checkpoint-source requires --skip-warmup")
+        checkpoint_source = args.checkpoint_source.resolve()
+        if not checkpoint_source.is_dir():
+            raise RuntimeError(
+                f"checkpoint source is missing: {checkpoint_source}")
+        if checkpoint.exists():
+            raise RuntimeError(
+                f"checkpoint destination already exists: {checkpoint}")
+        checkpoint.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(checkpoint_source, checkpoint)
     if not args.skip_warmup:
         warmup = [
             str(GEM5), "-d", str(result / "warmup"), *common,
@@ -144,12 +158,22 @@ def run_experiment(args) -> None:
             f"--roi-ticks={args.roi_ticks}",
             f"--min-roi-insts-per-core={args.min_roi_insts_per_core}",
             f"--common-checkpoint={checkpoint}",
+            "--enable-rnf-transaction-latency",
+            "--enable-guest-stack-profile",
+            ("--guest-stack-sample-period-insts="
+             f"{args.guest_stack_sample_period_insts}"),
         ]
         runs[policy] = run_command(command, outdir)
 
     git_commit = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True,
         capture_output=True, check=True).stdout.strip()
+    git_status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=ROOT, text=True,
+        capture_output=True, check=True).stdout.splitlines()
+    git_diff = subprocess.run(
+        ["git", "diff", "--binary", "HEAD"], cwd=ROOT,
+        capture_output=True, check=True).stdout
     checkpoint_files = {
         path.name: {"size_bytes": path.stat().st_size, "sha256": sha256(path)}
         for path in sorted(checkpoint.iterdir()) if path.is_file()
@@ -159,6 +183,9 @@ def run_experiment(args) -> None:
         "classification": CLASSIFICATION,
         "warning": "These results are not SPEC CPU2006 scores.",
         "git_commit": git_commit,
+        "git_dirty": bool(git_status),
+        "git_status_porcelain": git_status,
+        "git_diff_sha256": hashlib.sha256(git_diff).hexdigest(),
         "gem5_sha256": sha256(GEM5),
         "config": str(CONFIG),
         "config_sha256": sha256(CONFIG),
@@ -175,7 +202,23 @@ def run_experiment(args) -> None:
         "checkpoint_refill_max_ticks": args.checkpoint_refill_max_ticks,
         "roi_ticks": args.roi_ticks,
         "min_roi_insts_per_core": args.min_roi_insts_per_core,
+        "instrumentation": {
+            "rnf_transaction_latency": {
+                "enabled": True,
+                "boundary": "ROI only",
+                "identity": "exact CHI SrcID + TxnID",
+                "semantic_timing_effect": False,
+            },
+            "guest_stack_profile": {
+                "enabled": True,
+                "boundary": "ROI only",
+                "sample_period_insts": args.guest_stack_sample_period_insts,
+                "semantic_timing_effect": False,
+            },
+        },
         "common_checkpoint": str(checkpoint),
+        "common_checkpoint_source": (
+            str(checkpoint_source) if checkpoint_source else None),
         "common_checkpoint_files": checkpoint_files,
         "replacement_policy_details": {
             "lru": "true LRU; hit updates recency; oldest valid line wins",
@@ -289,11 +332,20 @@ def policy_metrics(policy: str, outdir: Path) -> dict:
             "slcValidLines", "slcPeakValidLines", "slcCapacityLines",
             "slcOccupancyPercent", "maxValidWaysPerSet", "fullSlcCycles",
             "replacementAttempts", "cleanSlcVictims", "dirtySlcVictims",
-            "totalSlcVictims", "lookupOperations", "missMissLookups",
+            "totalSlcVictims", "sfVictims", "lookupOperations",
+            "missMissLookups",
             "slcHitLookups", "sfHitLookups", "slcSfHitLookups",
             "directedSnoops", "broadcastSnoops", "serviceStalls",
-            "victimBufferFullReplays", "resourceConflictReplays")
+            "staleTokenReplays", "resourceConflictReplays",
+            "seqConflictReplays", "victimBufferFullReplays",
+            "cancelledReplays", "requestFullCycles", "responseFullCycles",
+            "noCredit", "setLockConflicts")
     }
+    slc["totalReplayResponses"] = sum(
+        slc[name] for name in (
+            "staleTokenReplays", "resourceConflictReplays",
+            "seqConflictReplays", "victimBufferFullReplays",
+            "cancelledReplays"))
     completed = sum(slc[name] for name in (
         "missMissLookups", "slcHitLookups", "sfHitLookups",
         "slcSfHitLookups"))
@@ -341,6 +393,20 @@ def policy_metrics(policy: str, outdir: Path) -> dict:
         total_victims / completed if completed else 0.0)
     slc["victims_per_ki"] = (
         total_victims * 1000.0 / aggregate_insts if aggregate_insts else 0.0)
+    slc["replays_per_ki"] = (
+        slc["totalReplayResponses"] * 1000.0 / aggregate_insts
+        if aggregate_insts else 0.0)
+    slc["replays_per_1000_completed_lookups"] = (
+        slc["totalReplayResponses"] * 1000.0 / completed
+        if completed else 0.0)
+    slc["service_stalls_per_ki"] = (
+        slc["serviceStalls"] * 1000.0 / aggregate_insts
+        if aggregate_insts else 0.0)
+    slc["service_stalls_per_1000_completed_lookups"] = (
+        slc["serviceStalls"] * 1000.0 / completed
+        if completed else 0.0)
+    slc["no_credit_per_1000_completed_lookups"] = (
+        slc["noCredit"] * 1000.0 / completed if completed else 0.0)
     noc = {
         "total_traffic_score": sum(row["traffic_score"] for row in routers),
         "internal_output_stall_cycles": sum(
@@ -407,6 +473,7 @@ def validate_results(results: dict[str, dict]) -> list[str]:
         assert slc["fullSlcCycles"] > 0
         assert slc["replacementAttempts"] > 0
         assert slc["totalSlcVictims"] > 0
+        assert slc["victimBufferFullReplays"] == 0
         assert slc["replacementAttempts"] == slc["totalSlcVictims"]
         assert (slc["cleanSlcVictims"] + slc["dirtySlcVictims"] ==
                 slc["totalSlcVictims"])
@@ -498,10 +565,35 @@ def analyze(result: Path) -> None:
         "total_slc_victims": lambda d: d["slc"]["totalSlcVictims"],
         "clean_slc_victims": lambda d: d["slc"]["cleanSlcVictims"],
         "dirty_slc_victims": lambda d: d["slc"]["dirtySlcVictims"],
+        "sf_victims": lambda d: d["slc"]["sfVictims"],
+        "directed_snoops": lambda d: d["slc"]["directedSnoops"],
+        "broadcast_snoops": lambda d: d["slc"]["broadcastSnoops"],
         "victim_rate_per_completed_lookup": lambda d:
             d["slc"]["victim_rate_per_completed_lookup"],
         "victims_per_ki": lambda d: d["slc"]["victims_per_ki"],
         "hnf_service_stalls": lambda d: d["slc"]["serviceStalls"],
+        "hnf_stale_token_replays": lambda d: d["slc"]["staleTokenReplays"],
+        "hnf_resource_conflict_replays": lambda d:
+            d["slc"]["resourceConflictReplays"],
+        "hnf_seq_conflict_replays": lambda d: d["slc"]["seqConflictReplays"],
+        "hnf_victim_buffer_full_replays": lambda d:
+            d["slc"]["victimBufferFullReplays"],
+        "hnf_cancelled_replays": lambda d: d["slc"]["cancelledReplays"],
+        "hnf_total_replay_responses": lambda d:
+            d["slc"]["totalReplayResponses"],
+        "hnf_replays_per_ki": lambda d: d["slc"]["replays_per_ki"],
+        "hnf_replays_per_1000_completed_lookups": lambda d:
+            d["slc"]["replays_per_1000_completed_lookups"],
+        "hnf_request_full_cycles": lambda d: d["slc"]["requestFullCycles"],
+        "hnf_response_full_cycles": lambda d: d["slc"]["responseFullCycles"],
+        "hnf_no_credit": lambda d: d["slc"]["noCredit"],
+        "hnf_set_lock_conflicts": lambda d: d["slc"]["setLockConflicts"],
+        "hnf_service_stalls_per_ki": lambda d:
+            d["slc"]["service_stalls_per_ki"],
+        "hnf_service_stalls_per_1000_completed_lookups": lambda d:
+            d["slc"]["service_stalls_per_1000_completed_lookups"],
+        "hnf_no_credit_per_1000_completed_lookups": lambda d:
+            d["slc"]["no_credit_per_1000_completed_lookups"],
         "accepted_to_visible_latency_cycles": lambda d:
             d["slc"]["accepted_to_visible_latency_cycles"],
         "noc_total_traffic_score": lambda d: d["noc"]["total_traffic_score"],
@@ -511,6 +603,8 @@ def analyze(result: Path) -> None:
             d["noc"]["local_delivery_stall_cycles"],
         "memory_reads": lambda d: d["memory"]["read_requests"],
         "memory_writes": lambda d: d["memory"]["write_requests"],
+        "host_seconds_from_stats": lambda d: d["host"]["seconds"],
+        "host_simulated_inst_rate": lambda d: d["host"]["inst_rate"],
     }
     baseline = results["random"]
     comparison = []
@@ -537,9 +631,24 @@ def analyze(result: Path) -> None:
     victims = [{"policy": p, **{
         key: data["slc"][key] for key in (
             "replacementAttempts", "cleanSlcVictims", "dirtySlcVictims",
-            "totalSlcVictims", "accepted_to_visible_latency_cycles")}}
+            "totalSlcVictims", "sfVictims", "directedSnoops",
+            "broadcastSnoops", "accepted_to_visible_latency_cycles")}}
         for p, data in results.items()]
     write_csv(analysis / "hnf_victims.csv", list(victims[0]), victims)
+
+    pressure = [{"policy": p, **{
+        key: data["slc"][key] for key in (
+            "staleTokenReplays", "resourceConflictReplays",
+            "seqConflictReplays", "victimBufferFullReplays",
+            "cancelledReplays", "totalReplayResponses",
+            "requestFullCycles", "responseFullCycles", "noCredit",
+            "serviceStalls", "setLockConflicts", "replays_per_ki",
+            "replays_per_1000_completed_lookups", "service_stalls_per_ki",
+            "service_stalls_per_1000_completed_lookups",
+            "no_credit_per_1000_completed_lookups")}}
+        for p, data in results.items()]
+    write_csv(
+        analysis / "hnf_pressure_replay.csv", list(pressure[0]), pressure)
 
     by_rnf = []
     for policy, data in results.items():
@@ -595,7 +704,12 @@ def parse_args():
         "--checkpoint-refill-max-ticks", type=int, default=1_000_000_000)
     run.add_argument("--roi-ticks", type=int, default=2_000_000_000)
     run.add_argument("--min-roi-insts-per-core", type=int, default=100_000)
+    run.add_argument(
+        "--guest-stack-sample-period-insts", type=int, default=1000)
     run.add_argument("--skip-warmup", action="store_true")
+    run.add_argument(
+        "--checkpoint-source", type=Path,
+        help="copy an existing common_full_cpt before a --skip-warmup run")
     analyze_parser = sub.add_parser("analyze")
     analyze_parser.add_argument("result", type=Path)
     return parser.parse_args()

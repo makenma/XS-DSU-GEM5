@@ -1,0 +1,83 @@
+{
+  "status": "passed",
+  "json": {
+    "manifest.json": true,
+    "run_summary.json": true,
+    "analysis/summary.json": true,
+    "analysis/model_change_summary.json": true,
+    "validation/cpp_unit_tests.json": true,
+    "validation/validation_summary.json": true,
+    "validation/ppt_render_report.json": true
+  },
+  "csv": {
+    "analysis/hnf_pressure_replay.csv": {
+      "columns": 17,
+      "rows": 3,
+      "valid": true
+    },
+    "analysis/hnf_victims.csv": {
+      "columns": 9,
+      "rows": 3,
+      "valid": true
+    },
+    "analysis/model_change_comparison.csv": {
+      "columns": 6,
+      "rows": 75,
+      "valid": true
+    },
+    "analysis/per_core_metrics.csv": {
+      "columns": 17,
+      "rows": 6,
+      "valid": true
+    },
+    "analysis/policy_comparison.csv": {
+      "columns": 6,
+      "rows": 147,
+      "valid": true
+    },
+    "analysis/router_hotspots.csv": {
+      "columns": 13,
+      "rows": 12,
+      "valid": true
+    },
+    "analysis/slc_occupancy.csv": {
+      "columns": 7,
+      "rows": 3,
+      "valid": true
+    },
+    "analysis/victim_by_rnf.csv": {
+      "columns": 4,
+      "rows": 6,
+      "valid": true
+    },
+    "analysis/victim_by_set.csv": {
+      "columns": 3,
+      "rows": 3072,
+      "valid": true
+    }
+  },
+  "markdown_links": {
+    "README.md:EXPERIMENT_REPORT_ZH.md": true,
+    "README.md:manifest.json": true,
+    "README.md:analysis/summary.json": true,
+    "README.md:analysis/policy_comparison.csv": true,
+    "README.md:analysis/hnf_pressure_replay.csv": true,
+    "README.md:analysis/hnf_victims.csv": true,
+    "README.md:analysis/model_change_comparison.csv": true,
+    "README.md:analysis/model_change_summary.json": true,
+    "README.md:validation/cpp_unit_tests.json": true,
+    "README.md:双核2x2_CHI_公开源码代理_SLC替换策略分析.pptx": true,
+    "README.md:validation/ppt_render_report.json": true
+  },
+  "ppt": {
+    "status": "passed",
+    "slides": 17,
+    "out_of_bounds_shapes": 0,
+    "sha256": "3ad004f60e91dd6bbb904f53c4a858827b88e6be9da0c59348780a29807e8c41"
+  },
+  "presentation_script_sha256": "4395f78a3e19a1d540a2c768e3b4c0046fd1b04adf7817765dde70639a6d2064",
+  "git_diff_check": {
+    "return_code": 0,
+    "output": ""
+  }
+}

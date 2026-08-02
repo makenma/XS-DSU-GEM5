@@ -1,0 +1,267 @@
+{
+  "algorithm": "SHA-256",
+  "entries": [
+    {
+      "path": "EXPERIMENT_REPORT_ZH.md",
+      "sha256": "d4cd8815c36885a0e9782c390834f069e3713f436b29eeeaa7568e4d29bbe117",
+      "size_bytes": 15822
+    },
+    {
+      "path": "README.md",
+      "sha256": "bad472635a68ee258aedf25768389803468732c09acb59ac79c7651ebadb50c6",
+      "size_bytes": 1597
+    },
+    {
+      "path": "中文汇报_RNF延迟与Guest火焰图.pptx",
+      "sha256": "976e3e6e421946778d9e7e4c748f860faeb0e98868c62288cf1b408406b39747",
+      "size_bytes": 607886
+    },
+    {
+      "path": "analysis/summary.json",
+      "sha256": "d2a451393137c1ab200bc4cb8aa8d7cc6b8f3192b3ce221ad11293eb5ed8656c",
+      "size_bytes": 196059
+    },
+    {
+      "path": "analysis/policy_comparison.csv",
+      "sha256": "5a00d8454238257bd9bcc0f6f2c8b7848c4c7a8fdd6b21a5696ecc8f99401390",
+      "size_bytes": 16860
+    },
+    {
+      "path": "analysis/rnf_transaction_latency.csv",
+      "sha256": "404571ef1ed8fccdf7261c2108812d6bd482d8c2b56fa154745636d9087d8e7a",
+      "size_bytes": 7662
+    },
+    {
+      "path": "analysis/rnf_transaction_latency.json",
+      "sha256": "48e827ea30e1d926062dba96128361b98ce8b0b8ef4d840ae98e83647b116a40",
+      "size_bytes": 42389
+    },
+    {
+      "path": "analysis/rnf0_transaction_latency.png",
+      "sha256": "7769d9a06df4c01768f40b71d5b24b547415eb51f53bb8b87920cf7790b5a4e6",
+      "size_bytes": 186514
+    },
+    {
+      "path": "analysis/rnf0_transaction_latency.svg",
+      "sha256": "cba0d6d0ffbd0bd2c4e810e205e0147a37120746a78973f47c2c1530b1dc47ca",
+      "size_bytes": 77426
+    },
+    {
+      "path": "analysis/rnf1_transaction_latency.png",
+      "sha256": "c3852f8d46af2bc83a4a18cc342c072784573bfe76fe0e60db7cb62c5ab11540",
+      "size_bytes": 168922
+    },
+    {
+      "path": "analysis/rnf1_transaction_latency.svg",
+      "sha256": "3adc58dfaa02c24e19a51e9e3beed8b954eebb52a03e6593eb07590dab047b7b",
+      "size_bytes": 71464
+    },
+    {
+      "path": "validation/validation_summary.json",
+      "sha256": "ba094593149074a484aa9683f28742e05ccfb6698ac74e6eac0c670bfe594a59",
+      "size_bytes": 20403
+    },
+    {
+      "path": "validation/sha256_manifest.json",
+      "sha256": "3c35931b1ea87fae6bd64914871bf474a821a2bf1c35e35073255ac035b02c30",
+      "size_bytes": 12446
+    },
+    {
+      "path": "validation/ppt_render_report.json",
+      "sha256": "41642b1203c4ac4c40760331fe414c2f4e7c027cd98e45727a52bb112ec565f1",
+      "size_bytes": 850
+    },
+    {
+      "path": "analysis/flamegraphs/guest_profile_summary.json",
+      "sha256": "6c8e466fb1f69e285364a8d7972e5b8a21c78f96d71afb0504deb76d498f2b26",
+      "size_bytes": 30384
+    },
+    {
+      "path": "analysis/flamegraphs/libquantum-lru.folded",
+      "sha256": "8cf4d75629f3954333c0fb11196b786db23bfb59a67dc447583f807e16a4eaba",
+      "size_bytes": 60
+    },
+    {
+      "path": "analysis/flamegraphs/libquantum-lru.metadata.json",
+      "sha256": "31f902360b0fa43df971ba3c5f4b25ffb225a13146a9e167a7aebaad950c9a6c",
+      "size_bytes": 569
+    },
+    {
+      "path": "analysis/flamegraphs/libquantum-lru.png",
+      "sha256": "4a476d341e2a3b35912f404af3b6c6988dbbba8449620cc7e629e8d38899a1d4",
+      "size_bytes": 21109
+    },
+    {
+      "path": "analysis/flamegraphs/libquantum-lru.raw.csv",
+      "sha256": "af704173562cea3950034da7b0c65dcc44f2162082d6442ef0e27133afe17534",
+      "size_bytes": 603363
+    },
+    {
+      "path": "analysis/flamegraphs/libquantum-lru.svg",
+      "sha256": "8812c0eb27d164353e20e09bd746062f60211a2a8b8273a9e268a123afe67751",
+      "size_bytes": 1605
+    },
+    {
+      "path": "analysis/flamegraphs/libquantum-lru.symbols.csv",
+      "sha256": "e5bd29ec58d5e76af03e5edaf4cb8aab043d67ecc3cee937a21671352f2b5f2f",
+      "size_bytes": 166
+    },
+    {
+      "path": "analysis/flamegraphs/libquantum-random.folded",
+      "sha256": "77cc74abad921bd6bd107f497ad3fefb46143a7565b23e68536032f34cc59678",
+      "size_bytes": 60
+    },
+    {
+      "path": "analysis/flamegraphs/libquantum-random.metadata.json",
+      "sha256": "97fa71613da7d2719044a8c734530cbba3b84320292256cef5172972af8085a7",
+      "size_bytes": 569
+    },
+    {
+      "path": "analysis/flamegraphs/libquantum-random.png",
+      "sha256": "4d9a871e851f3ded7d44c95dec4e7f399ffec2e49ad7eadae419a407aecbdd52",
+      "size_bytes": 21196
+    },
+    {
+      "path": "analysis/flamegraphs/libquantum-random.raw.csv",
+      "sha256": "67cbba8fdb509949b79a641172b48f718d27c801b5e03cc5cf1a71bd11f87c01",
+      "size_bytes": 599099
+    },
+    {
+      "path": "analysis/flamegraphs/libquantum-random.svg",
+      "sha256": "dc9d50bf707b3affc170b50475cf0d6c24855c14fa6d7dd25689680e037f98b0",
+      "size_bytes": 1608
+    },
+    {
+      "path": "analysis/flamegraphs/libquantum-random.symbols.csv",
+      "sha256": "e5bd29ec58d5e76af03e5edaf4cb8aab043d67ecc3cee937a21671352f2b5f2f",
+      "size_bytes": 166
+    },
+    {
+      "path": "analysis/flamegraphs/libquantum-srrip.folded",
+      "sha256": "ea723247f49793813cd42cd8e9185e9a54a19a9a75f0cab4423965b8fd8a14a5",
+      "size_bytes": 60
+    },
+    {
+      "path": "analysis/flamegraphs/libquantum-srrip.metadata.json",
+      "sha256": "1b7e0921f9ab337762dec8062e78d700366c77c3c4d1c8f739c1953568aec65b",
+      "size_bytes": 569
+    },
+    {
+      "path": "analysis/flamegraphs/libquantum-srrip.png",
+      "sha256": "69f05afde70c49c97e3c519a1dc0a7318c1e5211418c64e54145e802779dde41",
+      "size_bytes": 21156
+    },
+    {
+      "path": "analysis/flamegraphs/libquantum-srrip.raw.csv",
+      "sha256": "380af3aebc51c164e63c5f5fd5590422f0d7a81f4c3b992eec0f49204d1cb7ee",
+      "size_bytes": 604757
+    },
+    {
+      "path": "analysis/flamegraphs/libquantum-srrip.svg",
+      "sha256": "c9f871d1010094a46d7dcc5d70226c099bb74e4a669e272b85388162fc93dabb",
+      "size_bytes": 1607
+    },
+    {
+      "path": "analysis/flamegraphs/libquantum-srrip.symbols.csv",
+      "sha256": "e5bd29ec58d5e76af03e5edaf4cb8aab043d67ecc3cee937a21671352f2b5f2f",
+      "size_bytes": 166
+    },
+    {
+      "path": "analysis/flamegraphs/omnetpp-lru.folded",
+      "sha256": "acf6d5e991573c2f103d4762b2f1117bad5f996081abd94053307ba29b453161",
+      "size_bytes": 50037
+    },
+    {
+      "path": "analysis/flamegraphs/omnetpp-lru.metadata.json",
+      "sha256": "39bf50c61182597b70fbcbc3cd600320c0de726a4bcd37a24893370166a9b092",
+      "size_bytes": 578
+    },
+    {
+      "path": "analysis/flamegraphs/omnetpp-lru.png",
+      "sha256": "50080b5f0018614196df01d7e21d393c491d5c737dc6faaec560ac8f56b2d740",
+      "size_bytes": 59045
+    },
+    {
+      "path": "analysis/flamegraphs/omnetpp-lru.raw.csv",
+      "sha256": "4a83502111b25c8d092b7c117da2b6cc953578cf6103d1a903f4a24c41af4984",
+      "size_bytes": 314339
+    },
+    {
+      "path": "analysis/flamegraphs/omnetpp-lru.svg",
+      "sha256": "f865b8ff9b62b90c655ed6364300c87bc640fcb9fb84eb0496e695933f235f89",
+      "size_bytes": 84719
+    },
+    {
+      "path": "analysis/flamegraphs/omnetpp-lru.symbols.csv",
+      "sha256": "70b8f8ec34b9ed60f2ebb9235bcefc07b0be9aca308c3673351bf67250378fb7",
+      "size_bytes": 27297
+    },
+    {
+      "path": "analysis/flamegraphs/omnetpp-random.folded",
+      "sha256": "6f0329fe09371da1968faf2a31c99741552ad194e101420a32b595a15f394dd5",
+      "size_bytes": 50122
+    },
+    {
+      "path": "analysis/flamegraphs/omnetpp-random.metadata.json",
+      "sha256": "8afdefcc95d9d505d205e4dc517e27ab57c6022d8db0260bff560c2133c0dd0d",
+      "size_bytes": 578
+    },
+    {
+      "path": "analysis/flamegraphs/omnetpp-random.png",
+      "sha256": "1ee426aae318bf44b46b87cfea17cc5f41c6ae800cd6dcebab8138aa630ec59d",
+      "size_bytes": 58211
+    },
+    {
+      "path": "analysis/flamegraphs/omnetpp-random.raw.csv",
+      "sha256": "dbeb1a1f2341274bdfb1aefc5848e0238d6fd98d1a5f05470fea2bcf3378b939",
+      "size_bytes": 332010
+    },
+    {
+      "path": "analysis/flamegraphs/omnetpp-random.svg",
+      "sha256": "f305c7bfa762f014193a5df1ad8ca3baf3fedfcffd22e605910b68de6955092e",
+      "size_bytes": 83623
+    },
+    {
+      "path": "analysis/flamegraphs/omnetpp-random.symbols.csv",
+      "sha256": "6ee9ee9aed22cb6970b5346c264d4c9a3eb01b67175f31be81d5262c190188fb",
+      "size_bytes": 27214
+    },
+    {
+      "path": "analysis/flamegraphs/omnetpp-srrip.folded",
+      "sha256": "44676dd295fc451b92dd142f0a746fcf97bf6ee374753b54f86c0d7909ccdf8c",
+      "size_bytes": 49491
+    },
+    {
+      "path": "analysis/flamegraphs/omnetpp-srrip.metadata.json",
+      "sha256": "eba6e4139e6b33440676597eb987526cb2ad1ca200de4cecbef301065550625c",
+      "size_bytes": 578
+    },
+    {
+      "path": "analysis/flamegraphs/omnetpp-srrip.png",
+      "sha256": "c34d683ec16bf97876122ed69faf9f731fe8aa16c6d8e3c9a2fa90b3da1b66e1",
+      "size_bytes": 59604
+    },
+    {
+      "path": "analysis/flamegraphs/omnetpp-srrip.raw.csv",
+      "sha256": "43dff04fca7dd83f3baf8ffbaa23f7a8c1001da350134133962580337f2a7166",
+      "size_bytes": 315248
+    },
+    {
+      "path": "analysis/flamegraphs/omnetpp-srrip.svg",
+      "sha256": "658263e9c9837f6d310dfe49f2975bd1cccf3d81294f8952d8e4ee5a20e7b13a",
+      "size_bytes": 83093
+    },
+    {
+      "path": "analysis/flamegraphs/omnetpp-srrip.symbols.csv",
+      "sha256": "5aac1cf09fe938e33e8312a958c48608c59ff98e35fdc5eb2487b22d938b934c",
+      "size_bytes": 27876
+    },
+    {
+      "path": "analysis/flamegraphs/top_guest_functions.csv",
+      "sha256": "f53d80b11ab6b7ea348dea2ef795a890156a6c6bae4471a5a05a55b237ff5d90",
+      "size_bytes": 8420
+    }
+  ],
+  "schema_version": 1,
+  "scope": "required reports, machine data, plots, profiles and PPT"
+}

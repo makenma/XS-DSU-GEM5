@@ -1,0 +1,68 @@
+{
+  "status": "passed",
+  "executables": 10,
+  "tests": 284,
+  "failed_executables": 0,
+  "breakdown": [
+    {
+      "binary": "hnf_slcsf.test.opt",
+      "return_code": 0,
+      "tests": 131,
+      "elapsed_seconds": 0.024419307708740234
+    },
+    {
+      "binary": "slc_snoop_filter.test.opt",
+      "return_code": 0,
+      "tests": 17,
+      "elapsed_seconds": 0.010122060775756836
+    },
+    {
+      "binary": "hnf_slcsf_backend.test.opt",
+      "return_code": 0,
+      "tests": 21,
+      "elapsed_seconds": 0.021161794662475586
+    },
+    {
+      "binary": "hnf_coherency_controller.test.opt",
+      "return_code": 0,
+      "tests": 62,
+      "elapsed_seconds": 0.01973724365234375
+    },
+    {
+      "binary": "cache2chi_bridge.test.opt",
+      "return_code": 0,
+      "tests": 17,
+      "elapsed_seconds": 0.009634017944335938
+    },
+    {
+      "binary": "chi2classic_mem_bridge.test.opt",
+      "return_code": 0,
+      "tests": 9,
+      "elapsed_seconds": 0.007617473602294922
+    },
+    {
+      "binary": "hnf_seq_pocq_state_graph.test.opt",
+      "return_code": 0,
+      "tests": 2,
+      "elapsed_seconds": 0.0076122283935546875
+    },
+    {
+      "binary": "hnf_pocq_state_graph.test.opt",
+      "return_code": 0,
+      "tests": 18,
+      "elapsed_seconds": 0.006975412368774414
+    },
+    {
+      "binary": "home_link_layer.test.opt",
+      "return_code": 0,
+      "tests": 5,
+      "elapsed_seconds": 0.00973057746887207
+    },
+    {
+      "binary": "hnf_cc_types.test.opt",
+      "return_code": 0,
+      "tests": 2,
+      "elapsed_seconds": 0.005529165267944336
+    }
+  ]
+}

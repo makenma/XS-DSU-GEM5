@@ -26,6 +26,7 @@ enum class SlcSfOperationKind : uint8_t
     FlushL3,
     WriteL3FlushSf,
     CompleteSfEvict,
+    // Legacy API value; the direct PoCQ handoff never produces this response.
     ReleaseDirtyVictim
 };
 
@@ -41,6 +42,8 @@ enum class SlcSfReplayReason : uint8_t
     StaleCommitToken,
     ResourceConflict,
     SeqConflict,
+    // Legacy statistics/checkpoint value. The RTL-aligned direct PoCQ
+    // handoff never emits this replay reason.
     VictimBufferFull,
     Cancelled
 };

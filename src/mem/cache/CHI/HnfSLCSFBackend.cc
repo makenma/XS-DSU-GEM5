@@ -344,8 +344,8 @@ HnfSLCSFBackend::allocateSlc(uint64_t block_addr,
     const bool displaces_valid = victim->valid;
     if (victim->valid) {
         panic_if(isDirty(victim->state) && !permit,
-                 "HnfSLCSF dirty SLC victim requires VictimBuffer before "
-                 "replacement set=%u tag=%llu state=%u\n",
+                 "HnfSLCSF dirty SLC victim requires an exact direct-handoff "
+                 "permit before replacement set=%u tag=%llu state=%u\n",
                  slcSet(block_addr),
                  static_cast<unsigned long long>(victim->tag),
                  static_cast<unsigned>(victim->state));

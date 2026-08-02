@@ -1,0 +1,38 @@
+build/RISCV/base/loader/image_file_data.cc:104: info: Loading file /home/makenma/project/xs-gem5/workloads/libquantum-0.2.4/shor-rv64-static
+build/RISCV/base/loader/image_file_data.cc:124: info: File size is 554600 bytes
+build/RISCV/base/loader/image_file_data.cc:130: info: First 4 bytes are 0x7f 0x45 0x4c 0x46
+build/RISCV/base/loader/image_file_data.cc:132: info: Mapped start address is ELF, 0x7f579b9da000
+build/RISCV/mem/dram_interface.cc:690: warn: DRAM device capacity (16384 Mbytes) does not match the address range assigned (1024 Mbytes)
+build/RISCV/base/statistics.hh:281: warn: One of the stats is a legacy stat. Legacy stat is a stat that does not belong to any statistics::Group. Legacy stat is deprecated.
+build/RISCV/base/statistics.hh:281: warn: One of the stats is a legacy stat. Legacy stat is a stat that does not belong to any statistics::Group. Legacy stat is deprecated.
+build/RISCV/base/stats/storage.hh:279: warn: Bucket size (20) does not divide range [1:64] into equal-sized buckets. Rounding up.
+build/RISCV/cpu/o3/issue_queue.cc:947: warn: No config for opClass: IprAccess
+build/RISCV/cpu/o3/issue_queue.cc:947: warn: No config for opClass: InstPrefetch
+build/RISCV/base/loader/image_file_data.cc:104: info: Loading file /home/makenma/project/xs-gem5/workloads/libquantum-0.2.4/shor-rv64-static
+build/RISCV/base/loader/image_file_data.cc:124: info: File size is 554600 bytes
+build/RISCV/base/loader/image_file_data.cc:130: info: First 4 bytes are 0x7f 0x45 0x4c 0x46
+build/RISCV/base/loader/image_file_data.cc:132: info: Mapped start address is ELF, 0x7f575b1da000
+build/RISCV/cpu/base.cc:243: warn: Difftest is disabled
+build/RISCV/base/stats/storage.hh:279: warn: Bucket size (20) does not divide range [1:500] into equal-sized buckets. Rounding up.
+build/RISCV/base/stats/storage.hh:279: warn: Bucket size (20) does not divide range [1:500] into equal-sized buckets. Rounding up.
+build/RISCV/cpu/o3/cpu.cc:247: warn: Setting isa ptr of cpu to 0x55acfe434b40
+build/RISCV/base/stats/storage.hh:279: warn: Bucket size (20) does not divide range [1:64] into equal-sized buckets. Rounding up.
+build/RISCV/cpu/o3/issue_queue.cc:947: warn: No config for opClass: IprAccess
+build/RISCV/cpu/o3/issue_queue.cc:947: warn: No config for opClass: InstPrefetch
+build/RISCV/base/loader/image_file_data.cc:104: info: Loading file /home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/bin/tokenring-rv64-static
+build/RISCV/base/loader/image_file_data.cc:124: info: File size is 2604784 bytes
+build/RISCV/base/loader/image_file_data.cc:130: info: First 4 bytes are 0x7f 0x45 0x4c 0x46
+build/RISCV/base/loader/image_file_data.cc:132: info: Mapped start address is ELF, 0x7f575af5e000
+build/RISCV/cpu/base.cc:243: warn: Difftest is disabled
+build/RISCV/base/stats/storage.hh:279: warn: Bucket size (20) does not divide range [1:500] into equal-sized buckets. Rounding up.
+build/RISCV/base/stats/storage.hh:279: warn: Bucket size (20) does not divide range [1:500] into equal-sized buckets. Rounding up.
+build/RISCV/cpu/o3/cpu.cc:247: warn: Setting isa ptr of cpu to 0x55ad0076fb00
+build/RISCV/base/remote_gdb.cc:381: warn: Sockets disabled, not accepting gdb connections
+build/RISCV/sim/process.cc:397: warn: Checkpoints for pipes, device drivers and sockets do not work.
+build/RISCV/sim/process.cc:397: warn: Checkpoints for pipes, device drivers and sockets do not work.
+build/RISCV/sim/simulate.cc:194: info: Entering event queue @ 1378457840.  Starting simulation...
+build/RISCV/sim/simulate.cc:194: info: Entering event queue @ 1378457841.  Starting simulation...
+build/RISCV/cpu/pred/btb/microtage.cc:824: warn: MicroTAGE: branch 0x11522 exceeds block [0, 0) (blockSize=0, instShift=1, maxPositions=32); clamping index
+build/RISCV/sim/syscall_emul.cc:85: warn: ignoring syscall rt_sigprocmask(...)
+      (further warnings will be suppressed)
+build/RISCV/cpu/o3/issue_queue.cc:333: warn: Tt's should not happen on classic cache, it may be wrong delay of load wake or missed loadcancel in lsq

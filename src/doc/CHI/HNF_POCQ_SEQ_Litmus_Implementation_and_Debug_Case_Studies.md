@@ -1038,7 +1038,7 @@ CPU reader value
 3. CPU workload 无法自然生成全部 12 类 CHI request，全覆盖依赖 CC 定向测试。
 4. 当前一次只执行一个内部 SEQ POCQ，SEQ storage 中其他 victim 排队等待。
 5. 当前 SLC/SF 是功能模型，不等价于完整 RTL pipeline timing。
-6. dirty SLC replacement 尚需要独立 VictimBuffer 流程；当前不应把 SLC 参数缩到容易触发未实现 dirty victim 的极端值。
+6. dirty SLC replacement 已按 RTL 路径实现：无需 snoop，完整 M line 直接交给 PoCQ 发 `WriteNoSnpFull`；SF victim 仍进入 SEQ 并执行 snoop。
 7. HNF 的 advanced CHI 功能，如 Atomic、DVM、Stash、DCT 和完整 CMO/Persist，不在本轮覆盖范围。
 8. 2x2 目标拓扑通过 `Chi2ClassicMemBridge` 的 timing port 访问 SN cache；另一个 direct bridge 单元/直连测试路径中的 SN sink 仍使用 functional memory access，只能视为测试辅助抽象。
 9. 高频 replay DPRINTF 会迅速放大日志；需要性能分析时应增加统计计数器，而不是长期全开 trace。

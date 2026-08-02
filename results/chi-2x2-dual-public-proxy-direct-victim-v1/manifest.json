@@ -1,0 +1,87 @@
+{
+  "checkpoint_full_retry_limit": 8,
+  "checkpoint_refill_max_ticks": 1000000000,
+  "classification": "public-source proxy; not SPEC CPU2006",
+  "common_checkpoint": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-direct-victim-v1/warmup/common_full_cpt",
+  "common_checkpoint_files": {
+    "m5.cpt": {
+      "sha256": "65004b6a911bd5b10ced72c82c96c809d6a52997a403c8189e7ee3fba85bfc0d",
+      "size_bytes": 3406091
+    },
+    "system.physmem.store0.pmem": {
+      "sha256": "4ab74a09c280b240f1aa649c99b4c2d2725cbf42eb2971278df4e55de9111738",
+      "size_bytes": 2309431
+    }
+  },
+  "common_checkpoint_source": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-formal-v2/warmup/common_full_cpt",
+  "config": "/home/makenma/project/xs-gem5/GEM5/configs/example/kmhv2_chi_2x2_hnf_se.py",
+  "config_sha256": "187b71b560cf08fcdb65dc700d912e883976d9cedfb8df740e78b9dd1a0f1b4c",
+  "dependency_manifest": "/home/makenma/project/xs-gem5/workloads/dual-core-se-dependencies.json",
+  "dependency_manifest_sha256": "a4d2ab8bc2ca0f1a174c6ac0ebf6306ad2e3f72ed7435e5ef87c83e2db7854f8",
+  "fill_max_ticks": 5000000000,
+  "gem5_sha256": "fc44f8301caeba55cc56012892941e6331dc153aa3d074df2da840af93b08e2a",
+  "git_commit": "e247a8dffd0c8e2693afe5985c40bb1d83712513",
+  "git_diff_sha256": "76552d65060e48fdbe97caecb15fb5cb7f48807094f23da77cc0e918aff97be6",
+  "git_dirty": true,
+  "git_status_porcelain": [
+    " M prd.json",
+    " M src/doc/CHI/HNF_POCQ_SEQ_Litmus_Implementation_and_Debug_Case_Studies.md",
+    " M src/doc/CHI/HNF_SLCSF_Gem5_Spec.md",
+    " M src/doc/CHI/HNF_SLCSF_Pipeline_Implementation_Plan.md",
+    " M src/mem/cache/CHI/HnfCoherencyController.cc",
+    " M src/mem/cache/CHI/HnfCoherencyController.hh",
+    " M src/mem/cache/CHI/HnfCoherencyController.test.cc",
+    " M src/mem/cache/CHI/HnfSLCSF.cc",
+    " M src/mem/cache/CHI/HnfSLCSF.hh",
+    " M src/mem/cache/CHI/HnfSLCSF.test.cc",
+    " M src/mem/cache/CHI/HnfSLCSFBackend.cc",
+    " M src/mem/cache/CHI/HnfSLCSFBackend.hh",
+    " M src/mem/cache/CHI/HnfSLCSFRequest.hh",
+    " M src/mem/cache/CHI/HnfSLCSFResponse.hh",
+    " M src/mem/cache/CHI/HomeNodeFull.py",
+    " M src/mem/cache/CHI/SlcSnoopFilter.cc",
+    " M src/mem/cache/CHI/SlcSnoopFilter.py",
+    " M tasks/prd-hnf-slcsf-pipeline.md",
+    " M util/xs_scripts/chi_2x2_dual_proxy_experiment.py",
+    "?? results/chi-2x2-dual-public-proxy-direct-victim-v1/"
+  ],
+  "memory": "1GB",
+  "min_roi_insts_per_core": 100000,
+  "policies": [
+    "lru",
+    "random",
+    "srrip"
+  ],
+  "replacement_policy_details": {
+    "lru": "true LRU; hit updates recency; oldest valid line wins",
+    "random": "fixed-seed uniform choice among valid ways in a full set",
+    "srrip": "deterministic 2-bit SRRIP; max=3, hit=0, insert=2"
+  },
+  "roi_ticks": 2000000000,
+  "runner": "/home/makenma/project/xs-gem5/GEM5/util/xs_scripts/chi_2x2_dual_proxy_experiment.py",
+  "runner_sha256": "61719ea1dbe164cbdc06dfbe318380b73c21b7448d0700dcee30e7be9612f48c",
+  "runs": {
+    "lru": {
+      "host_elapsed_seconds": 537.7866368293762,
+      "return_code": 0,
+      "stderr": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-direct-victim-v1/runs/lru/stderr.log",
+      "stdout": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-direct-victim-v1/runs/lru/stdout.log"
+    },
+    "random": {
+      "host_elapsed_seconds": 562.227481842041,
+      "return_code": 0,
+      "stderr": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-direct-victim-v1/runs/random/stderr.log",
+      "stdout": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-direct-victim-v1/runs/random/stdout.log"
+    },
+    "srrip": {
+      "host_elapsed_seconds": 535.8905220031738,
+      "return_code": 0,
+      "stderr": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-direct-victim-v1/runs/srrip/stderr.log",
+      "stdout": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-direct-victim-v1/runs/srrip/stdout.log"
+    }
+  },
+  "schema_version": 1,
+  "seed": 20260730,
+  "settle_ticks": 100000,
+  "warning": "These results are not SPEC CPU2006 scores."
+}

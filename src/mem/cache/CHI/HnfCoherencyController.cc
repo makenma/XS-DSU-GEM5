@@ -1019,14 +1019,6 @@ HnfCoherencyController::notifyTxReqSent(const HnfCcTxReq& request)
         transaction->second.requestQueued = false;
         transaction->second.requestSent = true;
         transaction->second.phase = DirtyVictimPhase::WaitDbid;
-        if (!transaction->second.writebackMarked) {
-            slcsfUnit->markDirtyVictimWritebackIssued(
-                SlcSfVictimId{*request.dirtyVictimId},
-                transaction->second.victim.owner,
-                request.req.opcode,
-                transaction->second.downstreamTxnId);
-            transaction->second.writebackMarked = true;
-        }
         return;
     }
 
@@ -1302,9 +1294,7 @@ HnfCoherencyController::popTxDat()
         transaction->second.dataQueued = false;
         transaction->second.dataSent = true;
         if (transaction->second.completionSeen) {
-            transaction->second.phase =
-                DirtyVictimPhase::CompletedAwaitRelease;
-            startDirtyVictimRelease(transaction->second);
+            retireDirtyVictimWriteback(transaction->second);
         } else {
             transaction->second.phase = DirtyVictimPhase::WaitComp;
         }
@@ -1671,12 +1661,6 @@ HnfCoherencyController::dirtyVictimPhase(SlcSfVictimId id) const
     return dirtyVictimTxns.at(id.value).phase;
 }
 
-SlcSfReqId
-HnfCoherencyController::dirtyVictimReleaseReqId(SlcSfVictimId id) const
-{
-    return dirtyVictimTxns.at(id.value).releaseReqId;
-}
-
 void
 HnfCoherencyController::startDirtyVictimWriteback(
     uint32_t entryId, const SlcSfSlcVictim& victim)
@@ -1736,7 +1720,7 @@ HnfCoherencyController::startDirtyVictimWriteback(
                 Chi2ClassicMemTxnPolicy::traceDataHash(victim.line.data)));
 
     DPRINTF(HnfCC,
-            "CC dirty victim=%llu queues WriteNoSnpFull addr=%#llx "
+            "PoCQ dirty victim=%llu queues WriteNoSnpFull addr=%#llx "
             "downstream txn=%u requester src=%u txn=%u\n",
             static_cast<unsigned long long>(victim.victimId.value),
             static_cast<unsigned long long>(victim.lineAddress), txn_id,
@@ -1820,13 +1804,13 @@ HnfCoherencyController::completeDirtyVictimWriteback(
     DirtyVictimTxn& transaction, const RawRsp& rsp)
 {
     // There is no architected path which can report this asynchronous failure
-    // back to the already-completed requester.  Releasing would lose the only
+    // back to the already-completed requester. Retiring would lose the only
     // dirty copy, while retaining an inert owner schedules the HNF forever and
     // makes drain impossible.  Fail-stop until a real retry/error contract is
     // modeled.
     panic_if(rsp.respErr != 0,
              "HnfCC dirty victim=%llu downstream txn=%u failed respErr=%u; "
-             "dirty data cannot be released safely\n",
+             "dirty data cannot be retired safely\n",
              static_cast<unsigned long long>(
                  transaction.victim.victimId.value),
              transaction.downstreamTxnId, rsp.respErr);
@@ -1845,80 +1829,34 @@ HnfCoherencyController::completeDirtyVictimWriteback(
              static_cast<unsigned long long>(
                  transaction.victim.victimId.value),
              static_cast<unsigned>(transaction.phase));
-    transaction.phase = DirtyVictimPhase::CompletedAwaitRelease;
     DPRINTF(HnfCC,
             "CC dirty victim=%llu downstream txn=%u completed\n",
             static_cast<unsigned long long>(
                 transaction.victim.victimId.value),
             transaction.downstreamTxnId);
-    startDirtyVictimRelease(transaction);
+    retireDirtyVictimWriteback(transaction);
 }
 
 void
-HnfCoherencyController::startDirtyVictimRelease(DirtyVictimTxn& transaction)
-{
-    panic_if(transaction.phase !=
-                 DirtyVictimPhase::CompletedAwaitRelease ||
-                 !transaction.requestSent || !transaction.dataSent ||
-                 !transaction.completionSeen || transaction.dbid == 0 ||
-                 transaction.pendingRelease ||
-                 transaction.releaseReqId.valid(),
-             "HnfCC dirty victim=%llu starts duplicate release\n",
-             static_cast<unsigned long long>(
-                 transaction.victim.victimId.value));
-
-    RawReq release{};
-    release.srcid = transaction.victim.owner;
-    release.txnid = transaction.downstreamTxnId;
-    release.opcode = ReqOp::WriteNoSnpFull;
-    SlcSfReqHeader header = makeSlcSfReqHeader(
-        slcSfReqIds, UINT32_MAX, transaction.victim.lineAddress, release,
-        transaction.victim.victimId.value);
-    transaction.releaseReqId = header.reqId;
-    transaction.pendingRelease = SlcSfRequest(
-        makeSlcSfReleaseDirtyVictimReq(
-            std::move(header), transaction.victim.victimId));
-    transaction.phase = DirtyVictimPhase::ReleaseIssuePending;
-    tryIssueDirtyVictimRelease(transaction);
-}
-
-void
-HnfCoherencyController::tryIssueDirtyVictimRelease(
+HnfCoherencyController::retireDirtyVictimWriteback(
     DirtyVictimTxn& transaction)
 {
-    panic_if(transaction.phase != DirtyVictimPhase::ReleaseIssuePending ||
-                 !transaction.pendingRelease,
-             "HnfCC dirty victim=%llu retries release without request\n",
+    panic_if(!transaction.requestSent || !transaction.dataSent ||
+                 !transaction.completionSeen || transaction.dbid == 0,
+             "HnfCC retires incomplete dirty-victim writeback=%llu\n",
              static_cast<unsigned long long>(
                  transaction.victim.victimId.value));
-    const SlcSfEnqueueResult result = slcsfUnit->tryEnqueue(
-        std::move(*transaction.pendingRelease));
-    if (result == SlcSfEnqueueResult::Accepted) {
-        transaction.pendingRelease.reset();
-        transaction.phase = DirtyVictimPhase::ReleaseWaiting;
-        DPRINTF(HnfCC,
-                "CC dirty victim=%llu issued release req=%llu\n",
-                static_cast<unsigned long long>(
-                    transaction.victim.victimId.value),
-                static_cast<unsigned long long>(
-                    transaction.releaseReqId.value));
-    } else {
-        const SlcSfReqId retained_id = std::visit(
-            [](const auto& request) { return request.header.reqId; },
-            *transaction.pendingRelease);
-        panic_if(retained_id != transaction.releaseReqId,
-                 "HnfCC rejected dirty-victim release changed ID\n");
-    }
-}
-
-void
-HnfCoherencyController::retryDirtyVictimReleases()
-{
-    for (auto& [id, transaction] : dirtyVictimTxns) {
-        if (transaction.phase == DirtyVictimPhase::ReleaseIssuePending) {
-            tryIssueDirtyVictimRelease(transaction);
-        }
-    }
+    const uint64_t victim_id = transaction.victim.victimId.value;
+    const uint32_t downstream_txn = transaction.downstreamTxnId;
+    DPRINTF(HnfDirtyVictimE2E,
+            "HNF_DV_DONE victim=%llu txn=%u\n",
+            static_cast<unsigned long long>(victim_id), downstream_txn);
+    panic_if(dirtyVictimTxnIds.erase(downstream_txn) != 1,
+             "HnfCC dirty victim=%llu lost downstream map at completion\n",
+             static_cast<unsigned long long>(victim_id));
+    panic_if(dirtyVictimTxns.erase(victim_id) != 1,
+             "HnfCC dirty victim=%llu lost PoCQ owner at completion\n",
+             static_cast<unsigned long long>(victim_id));
 }
 
 void
@@ -2352,64 +2290,6 @@ void
 HnfCoherencyController::consumeSlcsfResponse(SlcSfResponse response)
 {
     const uint32_t entryId = response.pocEntryId();
-    if (response.operationKind() ==
-        SlcSfOperationKind::ReleaseDirtyVictim) {
-        auto transaction = std::find_if(
-            dirtyVictimTxns.begin(), dirtyVictimTxns.end(),
-            [&response](const auto& item) {
-                return item.second.releaseReqId == response.reqId();
-            });
-        panic_if(transaction == dirtyVictimTxns.end() ||
-                     transaction->second.phase !=
-                         DirtyVictimPhase::ReleaseWaiting ||
-                     entryId != UINT32_MAX,
-                 "HnfCC unexpected dirty-victim release response req=%llu\n",
-                 static_cast<unsigned long long>(response.reqId().value));
-        panic_if(response.status() != SlcSfTerminalStatus::Done,
-                 "HnfCC dirty-victim release req=%llu failed\n",
-                 static_cast<unsigned long long>(response.reqId().value));
-        const auto* update =
-            std::get_if<SlcSfUpdateResponse>(&response.payload());
-        panic_if(!update || update->updateKind !=
-                     SlcSfUpdateKind::ReleaseDirtyVictim ||
-                     update->sfVictim ||
-                     !update->completionLease,
-                 "HnfCC dirty-victim release Done has bad payload\n");
-        const SlcSfCompletionLease& lease = *update->completionLease;
-        panic_if(
-            lease.kind() != SlcSfCompletionKind::ReleaseDirtyVictim ||
-                lease.reqId() != transaction->second.releaseReqId ||
-                lease.pocEntryId() != UINT32_MAX ||
-                lease.objectId() != transaction->first ||
-                lease.lineAddress() !=
-                    transaction->second.victim.lineAddress ||
-                lease.requester() != transaction->second.victim.owner ||
-                lease.opcode() != ReqOp::WriteNoSnpFull ||
-                lease.linkSequence() != transaction->first ||
-                lease.transactionId() !=
-                    transaction->second.downstreamTxnId,
-            "HnfCC dirty-victim release lease identity mismatch\n");
-        panic_if(
-            slcsfUnit->acknowledgeVisibleCompletion(response) !=
-                SlcSfCompletionAckResult::Acknowledged,
-            "HnfCC dirty-victim release ack was not exact/visible\n");
-        DPRINTF(HnfDirtyVictimE2E,
-                "HNF_DV_RELEASE victim=%llu txn=%u release_req=%llu\n",
-                static_cast<unsigned long long>(transaction->first),
-                transaction->second.downstreamTxnId,
-                static_cast<unsigned long long>(response.reqId().value));
-        DPRINTF(HnfCC,
-                "CC dirty victim=%llu release req=%llu completed\n",
-                static_cast<unsigned long long>(transaction->first),
-                static_cast<unsigned long long>(response.reqId().value));
-        const size_t erased = dirtyVictimTxnIds.erase(
-            transaction->second.downstreamTxnId);
-        panic_if(erased != 1,
-                 "HnfCC dirty victim=%llu release lost downstream map\n",
-                 static_cast<unsigned long long>(transaction->first));
-        dirtyVictimTxns.erase(transaction);
-        return;
-    }
     if (response.operationKind() == SlcSfOperationKind::CompleteSfEvict) {
         panic_if(!seqPocqEntry.valid ||
                      seqPocqEntry.state != SeqPocqState::CompleteWait ||
@@ -2468,9 +2348,8 @@ HnfCoherencyController::consumeSlcsfResponse(SlcSfResponse response)
             "HnfCC SEQ completion ack was not exact/visible\n");
         if (slc_victim) {
             // A dirty SEQ snoop can install data into a full SLC set.  Its
-            // displaced dirty line is independent of any live main POCQ
-            // entry, but still follows the ordinary durable SN writeback and
-            // exact SLCSF release protocol.
+            // displaced dirty SLC line does not need another snoop. Transfer
+            // it directly to a PoCQ-owned WriteNoSnpFull transaction.
             startDirtyVictimWriteback(
                 *slc_victim, seqPocqEntry.homeNodeId,
                 seqPocqEntry.owner, seqPocqEntry.snoopTxnId, false);
@@ -2583,11 +2462,8 @@ HnfCoherencyController::latchVisibleSlcResponses()
         if (!visible) {
             break;
         }
-        const bool durable =
-            visible->operationKind() ==
-                SlcSfOperationKind::CompleteSfEvict ||
-            visible->operationKind() ==
-                SlcSfOperationKind::ReleaseDirtyVictim;
+        const bool durable = visible->operationKind() ==
+            SlcSfOperationKind::CompleteSfEvict;
         if (durable) {
             consumeSlcsfResponse(*visible);
             continue;
@@ -2613,7 +2489,6 @@ HnfCoherencyController::serviceInternalWork(Tick currentTick)
     continueLatchedSlcLookups();
     retryPendingSlcUpdates();
     retryPendingSlcLookups();
-    retryDirtyVictimReleases();
     if (!seqPocqEntry.valid && slcsfUnit &&
         slcsfUnit->hasPendingSeq()) {
         startSeqPocq();
@@ -2681,7 +2556,7 @@ HnfCoherencyController::slcsfRetryNotBeforeTick(uint32_t entry) const
 bool
 HnfCoherencyController::mayGenerateSlcsfIntent() const
 {
-    return seqPocqEntry.valid || !dirtyVictimTxns.empty() ||
+    return seqPocqEntry.valid ||
         std::any_of(entries.begin(), entries.end(),
                     [this](const Entry& entry) {
                         return entryAllocated(entry);

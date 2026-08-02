@@ -1,0 +1,283 @@
+{
+  "algorithm": "SHA-256",
+  "entries": [
+    {
+      "category": "input",
+      "path": "/home/makenma/project/xs-gem5/workloads/dual-core-se-dependencies.json",
+      "sha256": "a4d2ab8bc2ca0f1a174c6ac0ebf6306ad2e3f72ed7435e5ef87c83e2db7854f8",
+      "size_bytes": 2587
+    },
+    {
+      "category": "input",
+      "path": "/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4/shor-rv64-static",
+      "sha256": "e4e313b2a2c3dcb46a0be4e4295f7ab53820fcff2cb4ea0a10659187ae5a1b34",
+      "size_bytes": 554600
+    },
+    {
+      "category": "input",
+      "path": "/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/bin/tokenring-rv64-static",
+      "sha256": "2be6af6d4b687ae7f7a05375ed2a32132c1ff5b41a8506a6ce1e2927d2adb0b7",
+      "size_bytes": 2604784
+    },
+    {
+      "category": "input",
+      "path": "/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/share/tokenring/omnetpp.ini",
+      "sha256": "70abfd7866f6c00aae898700ea7953265053a0722087d820c3977658ee0bc37c",
+      "size_bytes": 740
+    },
+    {
+      "category": "input",
+      "path": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/warmup/common_full_cpt/m5.cpt",
+      "sha256": "65004b6a911bd5b10ced72c82c96c809d6a52997a403c8189e7ee3fba85bfc0d",
+      "size_bytes": 3406091
+    },
+    {
+      "category": "input",
+      "path": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/warmup/common_full_cpt/system.physmem.store0.pmem",
+      "sha256": "4ab74a09c280b240f1aa649c99b4c2d2725cbf42eb2971278df4e55de9111738",
+      "size_bytes": 2309431
+    },
+    {
+      "category": "input",
+      "path": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-direct-victim-v1/warmup/common_full_cpt/m5.cpt",
+      "sha256": "65004b6a911bd5b10ced72c82c96c809d6a52997a403c8189e7ee3fba85bfc0d",
+      "size_bytes": 3406091
+    },
+    {
+      "category": "input",
+      "path": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-direct-victim-v1/warmup/common_full_cpt/system.physmem.store0.pmem",
+      "sha256": "4ab74a09c280b240f1aa649c99b4c2d2725cbf42eb2971278df4e55de9111738",
+      "size_bytes": 2309431
+    },
+    {
+      "category": "gem5",
+      "path": "/home/makenma/project/xs-gem5/GEM5/build/RISCV/gem5.opt",
+      "sha256": "0333019f5cda5668570f4093872b09a2329f0fcfac63c3b65028e1db714fb83a",
+      "size_bytes": 1002498472
+    },
+    {
+      "category": "config_and_runner",
+      "path": "/home/makenma/project/xs-gem5/GEM5/configs/example/kmhv2_chi_2x2_hnf_se.py",
+      "sha256": "bb918dd746bda31f31c2f25765783007fc0a272185f61b369a8f7bde5b548df0",
+      "size_bytes": 27060
+    },
+    {
+      "category": "config_and_runner",
+      "path": "/home/makenma/project/xs-gem5/GEM5/util/xs_scripts/chi_2x2_dual_proxy_experiment.py",
+      "sha256": "171680aca2279308229862ecda237376d75cdbf8838e9f6862811351098ffc19",
+      "size_bytes": 31658
+    },
+    {
+      "category": "instrumentation",
+      "path": "/home/makenma/project/xs-gem5/GEM5/src/mem/cache/CHI/Cache2ChiBridge.py",
+      "sha256": "a2b996fdcae6004d6e4df70f0f5e409b8e72b9367176cf8754ef6c5cef8cd898",
+      "size_bytes": 2619
+    },
+    {
+      "category": "instrumentation",
+      "path": "/home/makenma/project/xs-gem5/GEM5/src/mem/cache/CHI/Cache2ChiBridge.hh",
+      "sha256": "5d733fb8be73edb4928bc6786743104b212f92e28e5b512e31a2194c3095db53",
+      "size_bytes": 12593
+    },
+    {
+      "category": "instrumentation",
+      "path": "/home/makenma/project/xs-gem5/GEM5/src/mem/cache/CHI/Cache2ChiBridge.cc",
+      "sha256": "c0bea679dfdff04a3c2aa1e0e552a91bda1eee943427591a6d97b4a61e503c70",
+      "size_bytes": 55435
+    },
+    {
+      "category": "instrumentation",
+      "path": "/home/makenma/project/xs-gem5/GEM5/src/cpu/o3/probe/GuestCallStackProfiler.py",
+      "sha256": "e6334a669d7271a25f19cd2e07313a3a1275df2bd1c25c7c319347366ee5b4eb",
+      "size_bytes": 1139
+    },
+    {
+      "category": "instrumentation",
+      "path": "/home/makenma/project/xs-gem5/GEM5/src/cpu/o3/probe/guest_call_stack_profiler.hh",
+      "sha256": "a00f9354d3e13a19aec8ae0ba44e0e3a0f417ec74646e8346d9c8adb755c0cf9",
+      "size_bytes": 1891
+    },
+    {
+      "category": "instrumentation",
+      "path": "/home/makenma/project/xs-gem5/GEM5/src/cpu/o3/probe/guest_call_stack_profiler.cc",
+      "sha256": "038d63fc3ed591f1216b6eb50adca66ba7a64f6a9f7ccc6796ea93094d20ad0e",
+      "size_bytes": 5470
+    },
+    {
+      "category": "instrumentation",
+      "path": "/home/makenma/project/xs-gem5/GEM5/src/cpu/o3/probe/SConscript",
+      "sha256": "d3778d1622947bc0cc7420bea6c74e9c320fa44018db79a08093536848c1c489",
+      "size_bytes": 2583
+    },
+    {
+      "category": "direct_pocq_model_source",
+      "path": "/home/makenma/project/xs-gem5/GEM5/src/mem/cache/CHI/HnfCoherencyController.cc",
+      "sha256": "e9e5252efe058d9141bc329d41e78119d3f9d44f920e79f599c80af9b36d1ce8",
+      "size_bytes": 102776
+    },
+    {
+      "category": "direct_pocq_model_source",
+      "path": "/home/makenma/project/xs-gem5/GEM5/src/mem/cache/CHI/HnfCoherencyController.hh",
+      "sha256": "e262a347ea0bd7b3e5938c69baef2f96f52a65f70a5c54ad56309f2a288e69c0",
+      "size_bytes": 12563
+    },
+    {
+      "category": "direct_pocq_model_source",
+      "path": "/home/makenma/project/xs-gem5/GEM5/src/mem/cache/CHI/HnfSLCSF.cc",
+      "sha256": "1a8567e94d023aed46d5c04dd73b18452794b0ca7bb66893750e437bdf1ace52",
+      "size_bytes": 114038
+    },
+    {
+      "category": "direct_pocq_model_source",
+      "path": "/home/makenma/project/xs-gem5/GEM5/src/mem/cache/CHI/HnfSLCSF.hh",
+      "sha256": "d7c6758f5ccf4c52b1003bec6cc70e2a0f2840488d51309830f4d993bd58e353",
+      "size_bytes": 21010
+    },
+    {
+      "category": "direct_pocq_model_source",
+      "path": "/home/makenma/project/xs-gem5/GEM5/src/mem/cache/CHI/HnfSLCSFBackend.cc",
+      "sha256": "96a3f47932cf53cf767a4f33e580b95ceb7746873a8050e26a674320249a4607",
+      "size_bytes": 114414
+    },
+    {
+      "category": "direct_pocq_model_source",
+      "path": "/home/makenma/project/xs-gem5/GEM5/src/mem/cache/CHI/HnfSLCSFBackend.hh",
+      "sha256": "22a900bf3fa603ff0c4fc218c99be27f310a506d1f21f7b5e256326488aeffde",
+      "size_bytes": 18521
+    },
+    {
+      "category": "direct_pocq_model_source",
+      "path": "/home/makenma/project/xs-gem5/GEM5/src/mem/cache/CHI/HnfSLCSFRequest.hh",
+      "sha256": "c2d9fc822cc6a2a7390b39deec7d4738cfd5f900217bb18452635b4e098d1631",
+      "size_bytes": 15943
+    },
+    {
+      "category": "direct_pocq_model_source",
+      "path": "/home/makenma/project/xs-gem5/GEM5/src/mem/cache/CHI/HnfSLCSFResponse.hh",
+      "sha256": "3c055d46ac509bb40e1f577913878c598741ee1b31caba0de0005d33ee681592",
+      "size_bytes": 9000
+    },
+    {
+      "category": "direct_pocq_model_source",
+      "path": "/home/makenma/project/xs-gem5/GEM5/src/mem/cache/CHI/HomeNodeFull.py",
+      "sha256": "c184ff0fc4700d55c0321d4a17d074f53ed29912ba4dc2653922de395bdecf3b",
+      "size_bytes": 3410
+    },
+    {
+      "category": "direct_pocq_model_source",
+      "path": "/home/makenma/project/xs-gem5/GEM5/src/mem/cache/CHI/SlcSnoopFilter.cc",
+      "sha256": "38161a72c8b161b9276a8d135c82fc0270d90d9f3f7dda392803f175a524c3a5",
+      "size_bytes": 18633
+    },
+    {
+      "category": "direct_pocq_model_source",
+      "path": "/home/makenma/project/xs-gem5/GEM5/src/mem/cache/CHI/SlcSnoopFilter.py",
+      "sha256": "30b20795f0ba02a135a00973fe40164999b0cb6c74bb0cd9ca10e968b5195fdd",
+      "size_bytes": 3679
+    },
+    {
+      "category": "analysis_and_charts",
+      "path": "/home/makenma/project/xs-gem5/GEM5/util/xs_scripts/chi_2x2_latency_flame_analysis.py",
+      "sha256": "b0af75be2cfe33094fe560651ea99d486ee7d141d15c29efeb02878d161daac0",
+      "size_bytes": 82805
+    },
+    {
+      "category": "analysis_and_charts",
+      "path": "/home/makenma/project/xs-gem5/GEM5/util/xs_scripts/chi_2x2_instrumentation_ab.py",
+      "sha256": "aea9ce0242e8fe90a5514b3023f32af4c063ec516ea04907a8c77be9f3104398",
+      "size_bytes": 8301
+    },
+    {
+      "category": "analysis_and_charts",
+      "path": "/home/makenma/project/xs-gem5/GEM5/util/xs_scripts/chi_2x2_latency_flame_requirements.txt",
+      "sha256": "af0b14c2021699eed2302596fafdca52145f538d494b7b1a13d6dad9a3989a40",
+      "size_bytes": 69
+    },
+    {
+      "category": "analysis_and_charts",
+      "path": "/home/makenma/project/xs-gem5/GEM5/util/xs_scripts/chi_2x2_dual_proxy_presentation.py",
+      "sha256": "d5c30e7860251d98ff61282367caec3d3589e003f248c3a00395880bc8ee20b3",
+      "size_bytes": 40288
+    },
+    {
+      "category": "analysis_and_charts",
+      "path": "/home/makenma/project/xs-gem5/GEM5/util/xs_scripts/chi_2x2_latency_flame_presentation.py",
+      "sha256": "b154cc46ccfa57ab9dec5b7b4e0ebd6469f3031b39b9d1a832a854c4ca11d247",
+      "size_bytes": 12981
+    },
+    {
+      "category": "controlled_model_comparison",
+      "path": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-direct-victim-v1/analysis/model_change_comparison.csv",
+      "sha256": "84605985e106d31e8a8514957eb1bcc2ee8f15d2ed81c360df6c09960038d262",
+      "size_bytes": 5895
+    },
+    {
+      "category": "controlled_model_comparison",
+      "path": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-direct-victim-v1/analysis/model_change_summary.json",
+      "sha256": "5b7d205b88bd2ca37e6d3c46b2443e5ac8976383e2e1b79c7e743346dcb48726",
+      "size_bytes": 17285
+    },
+    {
+      "category": "execution_record",
+      "path": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/manifest.json",
+      "sha256": "0a28998c87e807c2f5433202b453c06b4aaa04bc200bbddcd5db8038b324e38a",
+      "size_bytes": 5349
+    },
+    {
+      "category": "execution_record",
+      "path": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/dual-core-se-dependencies.json",
+      "sha256": "a4d2ab8bc2ca0f1a174c6ac0ebf6306ad2e3f72ed7435e5ef87c83e2db7854f8",
+      "size_bytes": 2587
+    },
+    {
+      "category": "execution_record",
+      "path": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/runs/lru/command.json",
+      "sha256": "3cd2056851bbdab84c495d3d7681c13d1e743cb017d5fa936ebbac3c5f94559f",
+      "size_bytes": 1323
+    },
+    {
+      "category": "execution_record",
+      "path": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/runs/lru/phase_metadata.json",
+      "sha256": "8720bd062a539a0232da19c805c60eafb07aa9bd48d2db065864229bc301e3e9",
+      "size_bytes": 3504
+    },
+    {
+      "category": "execution_record",
+      "path": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/runs/random/command.json",
+      "sha256": "886c12b87eb07a828199043f77f274b73a9675e03cabdf44cb0a10485fdc616e",
+      "size_bytes": 1329
+    },
+    {
+      "category": "execution_record",
+      "path": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/runs/random/phase_metadata.json",
+      "sha256": "d882ab406d9eeb76a639adee5d34ad8b5be410111e338722fcb4aad0f0deab8c",
+      "size_bytes": 3507
+    },
+    {
+      "category": "execution_record",
+      "path": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/runs/srrip/command.json",
+      "sha256": "5cc1e27986085543d37f98c1a11d0f65977acfa5b93bfb2a193e639afab68258",
+      "size_bytes": 1327
+    },
+    {
+      "category": "execution_record",
+      "path": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/runs/srrip/phase_metadata.json",
+      "sha256": "3b32c76473968bf4f27b736b31907a4874fe2dd2d4e24182ad546c2233a734c0",
+      "size_bytes": 3506
+    },
+    {
+      "category": "symbolization_tools",
+      "path": "/usr/bin/riscv64-linux-gnu-addr2line",
+      "sha256": "563ae7ea9e25a312c6eba946fdb9161fd0912d7f3900c9f7dfed91782a0b8fa0",
+      "size_bytes": 35536
+    },
+    {
+      "category": "symbolization_tools",
+      "path": "/usr/bin/riscv64-linux-gnu-readelf",
+      "sha256": "2ee6c57f1efa53bda4a784afb82340b2d925383a8892c36df448028645af2d3f",
+      "size_bytes": 817600
+    }
+  ],
+  "schema_version": 1,
+  "scope": "all fixed inputs, guest ELFs, checkpoint files, gem5 binary, config, runner, instrumentation, analysis and chart/PPT scripts"
+}

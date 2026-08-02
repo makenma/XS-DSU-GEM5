@@ -1,0 +1,861 @@
+===== hnf_slcsf.test.opt rc=0 tests=131 =====
+Running main() from build/RISCV/ext/googletest/googletest/src/gtest_main.cc
+[==========] Running 131 tests from 15 test suites.
+[----------] Global test environment set-up.
+[----------] 3 tests from HnfSlcSfRequestTest
+[ RUN      ] HnfSlcSfRequestTest.AllocatesMonotonicIdsIndependentOfLinkSequence
+[       OK ] HnfSlcSfRequestTest.AllocatesMonotonicIdsIndependentOfLinkSequence (0 ms)
+[ RUN      ] HnfSlcSfRequestTest.MapsEverySynchronousOperationToTypedRequest
+[       OK ] HnfSlcSfRequestTest.MapsEverySynchronousOperationToTypedRequest (0 ms)
+[ RUN      ] HnfSlcSfRequestTest.PayloadsOwnLineMaskAndTypedVictimState
+[       OK ] HnfSlcSfRequestTest.PayloadsOwnLineMaskAndTypedVictimState (0 ms)
+[----------] 3 tests from HnfSlcSfRequestTest (0 ms total)
+
+[----------] 4 tests from HnfSlcSfResponseTest
+[ RUN      ] HnfSlcSfResponseTest.MapsEveryTypedRequestToConcreteOperation
+[       OK ] HnfSlcSfResponseTest.MapsEveryTypedRequestToConcreteOperation (0 ms)
+[ RUN      ] HnfSlcSfResponseTest.DerivesDoneReplayAndErrorFromTypedRequest
+[       OK ] HnfSlcSfResponseTest.DerivesDoneReplayAndErrorFromTypedRequest (0 ms)
+[ RUN      ] HnfSlcSfResponseTest.CommitTokenPreservesEverySnapshotField
+[       OK ] HnfSlcSfResponseTest.CommitTokenPreservesEverySnapshotField (0 ms)
+[ RUN      ] HnfSlcSfResponseTest.PayloadsOutliveProducingStack
+[       OK ] HnfSlcSfResponseTest.PayloadsOutliveProducingStack (0 ms)
+[----------] 4 tests from HnfSlcSfResponseTest (0 ms total)
+
+[----------] 16 tests from HnfSlcSfQueueTest
+[ RUN      ] HnfSlcSfQueueTest.RequestNotIssuedInAcceptanceCycle
+[       OK ] HnfSlcSfQueueTest.RequestNotIssuedInAcceptanceCycle (0 ms)
+[ RUN      ] HnfSlcSfQueueTest.ReqQueueFullReturnsNoCreditWithoutMutation
+[       OK ] HnfSlcSfQueueTest.ReqQueueFullReturnsNoCreditWithoutMutation (0 ms)
+[ RUN      ] HnfSlcSfQueueTest.SameWakeupBurstConsumesRegisteredCredit
+[       OK ] HnfSlcSfQueueTest.SameWakeupBurstConsumesRegisteredCredit (0 ms)
+[ RUN      ] HnfSlcSfQueueTest.LifecycleRejectionsPreserveRequestOwnership
+[       OK ] HnfSlcSfQueueTest.LifecycleRejectionsPreserveRequestOwnership (0 ms)
+[ RUN      ] HnfSlcSfQueueTest.RejectsInvalidQueueAndIssueConfiguration
+[       OK ] HnfSlcSfQueueTest.RejectsInvalidQueueAndIssueConfiguration (0 ms)
+[ RUN      ] HnfSlcSfQueueTest.StageADefaultConfigurationIsSafe
+[       OK ] HnfSlcSfQueueTest.StageADefaultConfigurationIsSafe (0 ms)
+[ RUN      ] HnfSlcSfQueueTest.HomeNodeParametersMapToPipelineConfig
+[       OK ] HnfSlcSfQueueTest.HomeNodeParametersMapToPipelineConfig (0 ms)
+[ RUN      ] HnfSlcSfQueueTest.RejectsInvalidStageAServiceConfiguration
+[       OK ] HnfSlcSfQueueTest.RejectsInvalidStageAServiceConfiguration (0 ms)
+[ RUN      ] HnfSlcSfQueueTest.CompletedResponseNotVisibleUntilNextCycle
+[       OK ] HnfSlcSfQueueTest.CompletedResponseNotVisibleUntilNextCycle (0 ms)
+[ RUN      ] HnfSlcSfQueueTest.AcceptedRequestProducesExactlyOneTerminalResponse
+[       OK ] HnfSlcSfQueueTest.AcceptedRequestProducesExactlyOneTerminalResponse (0 ms)
+[ RUN      ] HnfSlcSfQueueTest.ResponseBackpressureDoesNotDropOrDuplicate
+[       OK ] HnfSlcSfQueueTest.ResponseBackpressureDoesNotDropOrDuplicate (0 ms)
+[ RUN      ] HnfSlcSfQueueTest.RejectedRequestProducesNoResponse
+[       OK ] HnfSlcSfQueueTest.RejectedRequestProducesNoResponse (0 ms)
+[ RUN      ] HnfSlcSfQueueTest.QueuedRequestsAreNotCancellableAndStillCompleteExactlyOnce
+[       OK ] HnfSlcSfQueueTest.QueuedRequestsAreNotCancellableAndStillCompleteExactlyOnce (0 ms)
+[ RUN      ] HnfSlcSfQueueTest.TerminalPendingCannotBeCancelledOrDuplicated
+[       OK ] HnfSlcSfQueueTest.TerminalPendingCannotBeCancelledOrDuplicated (0 ms)
+[ RUN      ] HnfSlcSfQueueTest.SameTickIssueCancellationIsTooLate
+[       OK ] HnfSlcSfQueueTest.SameTickIssueCancellationIsTooLate (0 ms)
+[ RUN      ] HnfSlcSfQueueTest.MixedPipesCompleteOutOfAcceptanceOrder
+[       OK ] HnfSlcSfQueueTest.MixedPipesCompleteOutOfAcceptanceOrder (0 ms)
+[----------] 16 tests from HnfSlcSfQueueTest (2 ms total)
+
+[----------] 5 tests from HnfSlcSfSetLockTest
+[ RUN      ] HnfSlcSfSetLockTest.SameSetOperationsSerialize
+[       OK ] HnfSlcSfSetLockTest.SameSetOperationsSerialize (0 ms)
+[ RUN      ] HnfSlcSfSetLockTest.CrossedAcquisitionIsAtomicAndDeadlockFree
+[       OK ] HnfSlcSfSetLockTest.CrossedAcquisitionIsAtomicAndDeadlockFree (0 ms)
+[ RUN      ] HnfSlcSfSetLockTest.LookupAndUpdateSameSetMutuallyExclude
+[       OK ] HnfSlcSfSetLockTest.LookupAndUpdateSameSetMutuallyExclude (0 ms)
+[ RUN      ] HnfSlcSfSetLockTest.StalledLockAcquisitionLeaksNoLock
+[       OK ] HnfSlcSfSetLockTest.StalledLockAcquisitionLeaksNoLock (0 ms)
+[ RUN      ] HnfSlcSfSetLockTest.EveryTerminalPathReleasesLocksExactlyOnce
+[       OK ] HnfSlcSfSetLockTest.EveryTerminalPathReleasesLocksExactlyOnce (0 ms)
+[----------] 5 tests from HnfSlcSfSetLockTest (0 ms total)
+
+[----------] 3 tests from HnfSlcSfConcurrencyTest
+[ RUN      ] HnfSlcSfConcurrencyTest.DifferentSetsCompleteConcurrently
+[       OK ] HnfSlcSfConcurrencyTest.DifferentSetsCompleteConcurrently (0 ms)
+[ RUN      ] HnfSlcSfConcurrencyTest.MaxInflightAndIssueWidthAreEnforced
+[       OK ] HnfSlcSfConcurrencyTest.MaxInflightAndIssueWidthAreEnforced (0 ms)
+[ RUN      ] HnfSlcSfConcurrencyTest.CrossedSlcSfSetsMakeProgressWithOutOfOrderResponses
+[       OK ] HnfSlcSfConcurrencyTest.CrossedSlcSfSetsMakeProgressWithOutOfOrderResponses (0 ms)
+[----------] 3 tests from HnfSlcSfConcurrencyTest (0 ms total)
+
+[----------] 36 tests from HnfSlcSfMutationServiceTest
+[ RUN      ] HnfSlcSfMutationServiceTest.DecodeFailureHasNoMutationOrReservation
+[       OK ] HnfSlcSfMutationServiceTest.DecodeFailureHasNoMutationOrReservation (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.StaleTokenReplaysWithoutWrite
+[       OK ] HnfSlcSfMutationServiceTest.StaleTokenReplaysWithoutWrite (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.FreshTokenCommitsThroughU2
+[       OK ] HnfSlcSfMutationServiceTest.FreshTokenCommitsThroughU2 (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.FillVictimAddsLatencyAndReturnsOwnedSeqSnapshot
+[       OK ] HnfSlcSfMutationServiceTest.FillVictimAddsLatencyAndReturnsOwnedSeqSnapshot (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.UpdateVictimAddsLatencyAndReturnsOwnedSeqSnapshot
+[       OK ] HnfSlcSfMutationServiceTest.UpdateVictimAddsLatencyAndReturnsOwnedSeqSnapshot (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.SeqCapacityRaceReplaysWithoutOverwritingVictim
+[       OK ] HnfSlcSfMutationServiceTest.SeqCapacityRaceReplaysWithoutOverwritingVictim (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.SeqReservationRaceReplaysWithoutPartialReservation
+[       OK ] HnfSlcSfMutationServiceTest.SeqReservationRaceReplaysWithoutPartialReservation (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.TokenLookupIdTamperReplaysWithoutSideEffects
+[       OK ] HnfSlcSfMutationServiceTest.TokenLookupIdTamperReplaysWithoutSideEffects (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.U0ReplayAndErrorReleasePreheldReservation
+[       OK ] HnfSlcSfMutationServiceTest.U0ReplayAndErrorReleasePreheldReservation (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.DirtyVictimCapturedBeforeOverwriteAndHandedDirectlyToPocq
+[       OK ] HnfSlcSfMutationServiceTest.DirtyVictimCapturedBeforeOverwriteAndHandedDirectlyToPocq (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.DirtySfEvictCompletionPreservesAndHandsOffDirtySlcVictim
+[       OK ] HnfSlcSfMutationServiceTest.DirtySfEvictCompletionPreservesAndHandsOffDirtySlcVictim (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.CancelAfterInstalledSnapshotCleansDirtyVictimSeal
+[       OK ] HnfSlcSfMutationServiceTest.CancelAfterInstalledSnapshotCleansDirtyVictimSeal (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.DrainWithTransientCaptureConsumesSealAndPreservesHandoff
+[       OK ] HnfSlcSfMutationServiceTest.DrainWithTransientCaptureConsumesSealAndPreservesHandoff (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.ExactSfTargetUpgradesPreheldReservationWhenAnotherWayIsInvalid
+[       OK ] HnfSlcSfMutationServiceTest.ExactSfTargetUpgradesPreheldReservationWhenAnotherWayIsInvalid (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.TokenStaledBeforeU2WriteReplaysAndReleasesResources
+[       OK ] HnfSlcSfMutationServiceTest.TokenStaledBeforeU2WriteReplaysAndReleasesResources (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.LruDriftUsesSnapshottedSlcAndSfWays
+[       OK ] HnfSlcSfMutationServiceTest.LruDriftUsesSnapshottedSlcAndSfWays (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.ResourcePreparationFailureIsAtomic
+[       OK ] HnfSlcSfMutationServiceTest.ResourcePreparationFailureIsAtomic (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.MultiResourceStallLeavesNoPartialReservation
+[       OK ] HnfSlcSfMutationServiceTest.MultiResourceStallLeavesNoPartialReservation (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.ResourceLeakAuditCoversTerminalAndDrainCleanup
+[       OK ] HnfSlcSfMutationServiceTest.ResourceLeakAuditCoversTerminalAndDrainCleanup (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.CancelBeforeU0ReleasesAdoptedReservationAndReturnsTerminal
+[       OK ] HnfSlcSfMutationServiceTest.CancelBeforeU0ReleasesAdoptedReservationAndReturnsTerminal (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.ObsoleteDirtyVictimReleaseRequestIsRejected
+[       OK ] HnfSlcSfMutationServiceTest.ObsoleteDirtyVictimReleaseRequestIsRejected (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.AdoptedReservationIsHeldThroughU3AndReleasedOnce
+[       OK ] HnfSlcSfMutationServiceTest.AdoptedReservationIsHeldThroughU3AndReleasedOnce (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.RemoveSharerStallsOnConflictingSfReservation
+[       OK ] HnfSlcSfMutationServiceTest.RemoveSharerStallsOnConflictingSfReservation (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.DirtyVictimHandoffPreservesData
+[       OK ] HnfSlcSfMutationServiceTest.DirtyVictimHandoffPreservesData (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.PriorDirtyVictimHandoffDoesNotBlockNextReplacement
+[       OK ] HnfSlcSfMutationServiceTest.PriorDirtyVictimHandoffDoesNotBlockNextReplacement (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.ReusedDirtyVictimAddressDoesNotDependOnPriorHandoff
+[       OK ] HnfSlcSfMutationServiceTest.ReusedDirtyVictimAddressDoesNotDependOnPriorHandoff (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.SfVictimLatencyAppliesButSlcHandoffAddsNoLatency
+[       OK ] HnfSlcSfMutationServiceTest.SfVictimLatencyAppliesButSlcHandoffAddsNoLatency (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.StaleWritebackBypassesDirtyVictimStall
+[       OK ] HnfSlcSfMutationServiceTest.StaleWritebackBypassesDirtyVictimStall (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.FlushOperationsUseConfiguredServiceAndOneTerminalResponse
+[       OK ] HnfSlcSfMutationServiceTest.FlushOperationsUseConfiguredServiceAndOneTerminalResponse (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.StaleFlushOperationsReplayWithoutMutation
+[       OK ] HnfSlcSfMutationServiceTest.StaleFlushOperationsReplayWithoutMutation (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.FlushOperationsWaitForTerminalResponseCapacity
+[       OK ] HnfSlcSfMutationServiceTest.FlushOperationsWaitForTerminalResponseCapacity (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.FlushNoCreditPreservesRequestAndState
+[       OK ] HnfSlcSfMutationServiceTest.FlushNoCreditPreservesRequestAndState (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.VisibleResponseBackpressurePreventsEntryAndDuplicateWrite
+[       OK ] HnfSlcSfMutationServiceTest.VisibleResponseBackpressurePreventsEntryAndDuplicateWrite (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.UnknownOrStaleSeqCompletionCannotOverwriteVictim
+[       OK ] HnfSlcSfMutationServiceTest.UnknownOrStaleSeqCompletionCannotOverwriteVictim (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.SeqCompletionRemainsDurableUntilExactVisibleAck
+build/RISCV/mem/cache/CHI/HnfSLCSF.cc:781: panic: panic condition respVisible.front().status() == SlcSfTerminalStatus::Done && update && update->completionLease occurred: HnfSLCSF durable Done requires acknowledgeVisibleCompletion
+[       OK ] HnfSlcSfMutationServiceTest.SeqCompletionRemainsDurableUntilExactVisibleAck (0 ms)
+[ RUN      ] HnfSlcSfMutationServiceTest.CrossServiceCompletionResponsesReleaseNeitherSeq
+[       OK ] HnfSlcSfMutationServiceTest.CrossServiceCompletionResponsesReleaseNeitherSeq (0 ms)
+[----------] 36 tests from HnfSlcSfMutationServiceTest (1 ms total)
+
+[----------] 11 tests from HnfSlcSfLookupPipelineTest
+[ RUN      ] HnfSlcSfLookupPipelineTest.LookupHasConfiguredLatency
+[       OK ] HnfSlcSfLookupPipelineTest.LookupHasConfiguredLatency (0 ms)
+[ RUN      ] HnfSlcSfLookupPipelineTest.ShortFillLatencyStopsCatchUpOnResourceStall
+[       OK ] HnfSlcSfLookupPipelineTest.ShortFillLatencyStopsCatchUpOnResourceStall (0 ms)
+[ RUN      ] HnfSlcSfLookupPipelineTest.NoZeroCycleLoop
+[       OK ] HnfSlcSfLookupPipelineTest.NoZeroCycleLoop (0 ms)
+[ RUN      ] HnfSlcSfLookupPipelineTest.ZeroLatencyConfigurationIsRejected
+[       OK ] HnfSlcSfLookupPipelineTest.ZeroLatencyConfigurationIsRejected (0 ms)
+[ RUN      ] HnfSlcSfLookupPipelineTest.ExactLookupTimestamps
+[       OK ] HnfSlcSfLookupPipelineTest.ExactLookupTimestamps (0 ms)
+[ RUN      ] HnfSlcSfLookupPipelineTest.ReturnsSeededBackendResultAfterLatency
+[       OK ] HnfSlcSfLookupPipelineTest.ReturnsSeededBackendResultAfterLatency (0 ms)
+[ RUN      ] HnfSlcSfLookupPipelineTest.SeqConflictReturnsRegisteredReplay
+[       OK ] HnfSlcSfLookupPipelineTest.SeqConflictReturnsRegisteredReplay (0 ms)
+[ RUN      ] HnfSlcSfLookupPipelineTest.PreservesEveryLookupFactAndCommitToken
+[       OK ] HnfSlcSfLookupPipelineTest.PreservesEveryLookupFactAndCommitToken (0 ms)
+[ RUN      ] HnfSlcSfLookupPipelineTest.ReportsFourSlcSfHitMissCombinations
+[       OK ] HnfSlcSfLookupPipelineTest.ReportsFourSlcSfHitMissCombinations (0 ms)
+[ RUN      ] HnfSlcSfLookupPipelineTest.SeqHitReplayHasNoSideEffects
+[       OK ] HnfSlcSfLookupPipelineTest.SeqHitReplayHasNoSideEffects (0 ms)
+[ RUN      ] HnfSlcSfLookupPipelineTest.MatchesSynchronousReplacementOrder
+[       OK ] HnfSlcSfLookupPipelineTest.MatchesSynchronousReplacementOrder (0 ms)
+[----------] 11 tests from HnfSlcSfLookupPipelineTest (0 ms total)
+
+[----------] 6 tests from HnfSlcSfCommitTokenTest
+[ RUN      ] HnfSlcSfCommitTokenTest.LookupTouchDoesNotInvalidateToken
+[       OK ] HnfSlcSfCommitTokenTest.LookupTouchDoesNotInvalidateToken (0 ms)
+[ RUN      ] HnfSlcSfCommitTokenTest.NoOpDirectoryUpdatePreservesGeneration
+[       OK ] HnfSlcSfCommitTokenTest.NoOpDirectoryUpdatePreservesGeneration (0 ms)
+[ RUN      ] HnfSlcSfCommitTokenTest.CommittedHitMissAndGenerationChangesInvalidate
+[       OK ] HnfSlcSfCommitTokenTest.CommittedHitMissAndGenerationChangesInvalidate (0 ms)
+[ RUN      ] HnfSlcSfCommitTokenTest.TagChangeInSnapshottedWayInvalidatesToken
+[       OK ] HnfSlcSfCommitTokenTest.TagChangeInSnapshottedWayInvalidatesToken (0 ms)
+[ RUN      ] HnfSlcSfCommitTokenTest.EvictReallocateAbaInvalidatesOldToken
+[       OK ] HnfSlcSfCommitTokenTest.EvictReallocateAbaInvalidatesOldToken (0 ms)
+[ RUN      ] HnfSlcSfCommitTokenTest.LookupEpochInvalidatesOutstandingTokens
+[       OK ] HnfSlcSfCommitTokenTest.LookupEpochInvalidatesOutstandingTokens (0 ms)
+[----------] 6 tests from HnfSlcSfCommitTokenTest (0 ms total)
+
+[----------] 13 tests from HnfSlcSfTest
+[ RUN      ] HnfSlcSfTest.ReadUniqueBroadcastsToOtherVectorSharers
+[       OK ] HnfSlcSfTest.ReadUniqueBroadcastsToOtherVectorSharers (0 ms)
+[ RUN      ] HnfSlcSfTest.ReadUniqueExcludesRequesterFromBroadcast
+[       OK ] HnfSlcSfTest.ReadUniqueExcludesRequesterFromBroadcast (0 ms)
+[ RUN      ] HnfSlcSfTest.ReadUniqueIsDirectedToDifferentUniqueOwner
+[       OK ] HnfSlcSfTest.ReadUniqueIsDirectedToDifferentUniqueOwner (0 ms)
+[ RUN      ] HnfSlcSfTest.ReadSharedObtainsDirtyDataFromUniqueOwner
+[       OK ] HnfSlcSfTest.ReadSharedObtainsDirtyDataFromUniqueOwner (0 ms)
+[ RUN      ] HnfSlcSfTest.EvictRemovesTheRequestingSharerOnly
+[       OK ] HnfSlcSfTest.EvictRemovesTheRequestingSharerOnly (0 ms)
+[ RUN      ] HnfSlcSfTest.SfVictimEntersSeqAndBlocksConflictingLookups
+[       OK ] HnfSlcSfTest.SfVictimEntersSeqAndBlocksConflictingLookups (0 ms)
+[ RUN      ] HnfSlcSfTest.DirtySeqSnoopDataIsPreservedInSlc
+[       OK ] HnfSlcSfTest.DirtySeqSnoopDataIsPreservedInSlc (0 ms)
+[ RUN      ] HnfSlcSfTest.ReservationsPreventSeqSlotOvercommit
+[       OK ] HnfSlcSfTest.ReservationsPreventSeqSlotOvercommit (0 ms)
+[ RUN      ] HnfSlcSfTest.CurrentOwnerWritebackPreservesLatestData
+[       OK ] HnfSlcSfTest.CurrentOwnerWritebackPreservesLatestData (0 ms)
+[ RUN      ] HnfSlcSfTest.StaleWritebackCannotOverwriteNewOwner
+[       OK ] HnfSlcSfTest.StaleWritebackCannotOverwriteNewOwner (0 ms)
+[ RUN      ] HnfSlcSfTest.CheckpointRequiresDrainedState
+build/RISCV/mem/cache/CHI/HnfSLCSF.cc:1004: panic: panic condition !drainRequested occurred: HnfSLCSF checkpoint requires a global drain request
+build/RISCV/mem/cache/CHI/HnfSLCSF.cc:1008: panic: panic condition !reqIngress.empty() || !reqReady.empty() || !inflightRequests.empty() occurred: HnfSLCSF checkpoint requires empty request pipeline and ready ticks
+[       OK ] HnfSlcSfTest.CheckpointRequiresDrainedState (0 ms)
+[ RUN      ] HnfSlcSfTest.CheckpointContentIncludesPersistentState
+[       OK ] HnfSlcSfTest.CheckpointContentIncludesPersistentState (0 ms)
+[ RUN      ] HnfSlcSfTest.CheckpointAllowsGlobalIdleDrainWithoutSealingAdmission
+[       OK ] HnfSlcSfTest.CheckpointAllowsGlobalIdleDrainWithoutSealingAdmission (0 ms)
+[----------] 13 tests from HnfSlcSfTest (0 ms total)
+
+[----------] 7 tests from HnfSlcSfStatsTest
+[ RUN      ] HnfSlcSfStatsTest.HitAndTimingCountersHaveExactDeltas
+[       OK ] HnfSlcSfStatsTest.HitAndTimingCountersHaveExactDeltas (0 ms)
+[ RUN      ] HnfSlcSfStatsTest.NoCreditCountsOnlyTheRejectedAttempt
+[       OK ] HnfSlcSfStatsTest.NoCreditCountsOnlyTheRejectedAttempt (0 ms)
+[ RUN      ] HnfSlcSfStatsTest.StaleTokenReplayCountsOnceAtTerminal
+[       OK ] HnfSlcSfStatsTest.StaleTokenReplayCountsOnceAtTerminal (0 ms)
+[ RUN      ] HnfSlcSfStatsTest.SeqFullReplayCountsOnceWithoutHitOutcome
+[       OK ] HnfSlcSfStatsTest.SeqFullReplayCountsOnceWithoutHitOutcome (0 ms)
+[ RUN      ] HnfSlcSfStatsTest.DifferentSetConcurrencySamplesTwoInflight
+[       OK ] HnfSlcSfStatsTest.DifferentSetConcurrencySamplesTwoInflight (0 ms)
+[ RUN      ] HnfSlcSfStatsTest.CountsCleanDirtyAndSfVictimsAtSuccessfulU2
+[       OK ] HnfSlcSfStatsTest.CountsCleanDirtyAndSfVictimsAtSuccessfulU2 (0 ms)
+[ RUN      ] HnfSlcSfStatsTest.InvalidTargetTokenReplaysBeforeVictimLatencyProbe
+[       OK ] HnfSlcSfStatsTest.InvalidTargetTokenReplaysBeforeVictimLatencyProbe (0 ms)
+[----------] 7 tests from HnfSlcSfStatsTest (0 ms total)
+
+[----------] 4 tests from HnfSlcSfInvariantTest
+[ RUN      ] HnfSlcSfInvariantTest.OrdinaryWakeupsAvoidBackendFullArrayScans
+[       OK ] HnfSlcSfInvariantTest.OrdinaryWakeupsAvoidBackendFullArrayScans (0 ms)
+[ RUN      ] HnfSlcSfInvariantTest.EarlierSameLineCommitMakesLaterTokenReplay
+[       OK ] HnfSlcSfInvariantTest.EarlierSameLineCommitMakesLaterTokenReplay (0 ms)
+[ RUN      ] HnfSlcSfInvariantTest.CorrelatesLifecycleWithAbsoluteTicks
+build/RISCV/mem/cache/CHI/HnfSLCSF.cc:502: panic: panic condition !header.reqId.valid() || wasAccepted(header.reqId) occurred: HnfSLCSF duplicate accepted request ID=9201
+[       OK ] HnfSlcSfInvariantTest.CorrelatesLifecycleWithAbsoluteTicks (0 ms)
+[ RUN      ] HnfSlcSfInvariantTest.TerminalTotalsCoverDoneReplayAndError
+[       OK ] HnfSlcSfInvariantTest.TerminalTotalsCoverDoneReplayAndError (0 ms)
+[----------] 4 tests from HnfSlcSfInvariantTest (0 ms total)
+
+[----------] 1 test from HnfSlcSfReplacementPolicyTest
+[ RUN      ] HnfSlcSfReplacementPolicyTest.PseudoRandomTokenPreservesTheExactDirtyVictim
+[       OK ] HnfSlcSfReplacementPolicyTest.PseudoRandomTokenPreservesTheExactDirtyVictim (0 ms)
+[----------] 1 test from HnfSlcSfReplacementPolicyTest (0 ms total)
+
+[----------] 6 tests from HnfSlcSfCheckpointTest
+[ RUN      ] HnfSlcSfCheckpointTest.DrainedCheckpointRestoresSlcSfState
+[       OK ] HnfSlcSfCheckpointTest.DrainedCheckpointRestoresSlcSfState (0 ms)
+[ RUN      ] HnfSlcSfCheckpointTest.RestorePreservesReplacementAndNextIds
+[       OK ] HnfSlcSfCheckpointTest.RestorePreservesReplacementAndNextIds (0 ms)
+[ RUN      ] HnfSlcSfCheckpointTest.ExhaustedServiceIdentitiesRoundTrip
+[       OK ] HnfSlcSfCheckpointTest.ExhaustedServiceIdentitiesRoundTrip (0 ms)
+[ RUN      ] HnfSlcSfCheckpointTest.RestoredNearMaximumCompletionNonceNeverWraps
+build/RISCV/mem/cache/CHI/HnfSLCSF.cc:158: panic: panic condition next == 0 || next == UINT64_MAX occurred: HnfSLCSF completion lease nonce identity space exhausted next=18446744073709551615
+[       OK ] HnfSlcSfCheckpointTest.RestoredNearMaximumCompletionNonceNeverWraps (0 ms)
+[ RUN      ] HnfSlcSfCheckpointTest.RestoredNearMaximumVictimIdNeverWraps
+build/RISCV/mem/cache/CHI/HnfSLCSF.cc:158: panic: panic condition next == 0 || next == UINT64_MAX occurred: HnfSLCSF dirty-victim identity space exhausted next=18446744073709551615
+[       OK ] HnfSlcSfCheckpointTest.RestoredNearMaximumVictimIdNeverWraps (0 ms)
+[ RUN      ] HnfSlcSfCheckpointTest.RestoredFilterAcceptsNewWork
+[       OK ] HnfSlcSfCheckpointTest.RestoredFilterAcceptsNewWork (0 ms)
+[----------] 6 tests from HnfSlcSfCheckpointTest (2 ms total)
+
+[----------] 5 tests from AvailableHandlers/HnfSlcSfMutationServiceTest
+[ RUN      ] AvailableHandlers/HnfSlcSfMutationServiceTest.DispatchesThroughU0U1U2U3/0
+[       OK ] AvailableHandlers/HnfSlcSfMutationServiceTest.DispatchesThroughU0U1U2U3/0 (0 ms)
+[ RUN      ] AvailableHandlers/HnfSlcSfMutationServiceTest.DispatchesThroughU0U1U2U3/1
+[       OK ] AvailableHandlers/HnfSlcSfMutationServiceTest.DispatchesThroughU0U1U2U3/1 (0 ms)
+[ RUN      ] AvailableHandlers/HnfSlcSfMutationServiceTest.DispatchesThroughU0U1U2U3/2
+[       OK ] AvailableHandlers/HnfSlcSfMutationServiceTest.DispatchesThroughU0U1U2U3/2 (0 ms)
+[ RUN      ] AvailableHandlers/HnfSlcSfMutationServiceTest.DispatchesThroughU0U1U2U3/3
+[       OK ] AvailableHandlers/HnfSlcSfMutationServiceTest.DispatchesThroughU0U1U2U3/3 (0 ms)
+[ RUN      ] AvailableHandlers/HnfSlcSfMutationServiceTest.DispatchesThroughU0U1U2U3/4
+[       OK ] AvailableHandlers/HnfSlcSfMutationServiceTest.DispatchesThroughU0U1U2U3/4 (0 ms)
+[----------] 5 tests from AvailableHandlers/HnfSlcSfMutationServiceTest (0 ms total)
+
+[----------] 11 tests from OperationMapping/HnfSlcSfBaseServiceLatencyTest
+[ RUN      ] OperationMapping/HnfSlcSfBaseServiceLatencyTest.CompletesAtMappedServiceDeadline/0
+[       OK ] OperationMapping/HnfSlcSfBaseServiceLatencyTest.CompletesAtMappedServiceDeadline/0 (0 ms)
+[ RUN      ] OperationMapping/HnfSlcSfBaseServiceLatencyTest.CompletesAtMappedServiceDeadline/1
+[       OK ] OperationMapping/HnfSlcSfBaseServiceLatencyTest.CompletesAtMappedServiceDeadline/1 (0 ms)
+[ RUN      ] OperationMapping/HnfSlcSfBaseServiceLatencyTest.CompletesAtMappedServiceDeadline/2
+[       OK ] OperationMapping/HnfSlcSfBaseServiceLatencyTest.CompletesAtMappedServiceDeadline/2 (0 ms)
+[ RUN      ] OperationMapping/HnfSlcSfBaseServiceLatencyTest.CompletesAtMappedServiceDeadline/3
+[       OK ] OperationMapping/HnfSlcSfBaseServiceLatencyTest.CompletesAtMappedServiceDeadline/3 (0 ms)
+[ RUN      ] OperationMapping/HnfSlcSfBaseServiceLatencyTest.CompletesAtMappedServiceDeadline/4
+[       OK ] OperationMapping/HnfSlcSfBaseServiceLatencyTest.CompletesAtMappedServiceDeadline/4 (0 ms)
+[ RUN      ] OperationMapping/HnfSlcSfBaseServiceLatencyTest.CompletesAtMappedServiceDeadline/5
+[       OK ] OperationMapping/HnfSlcSfBaseServiceLatencyTest.CompletesAtMappedServiceDeadline/5 (0 ms)
+[ RUN      ] OperationMapping/HnfSlcSfBaseServiceLatencyTest.CompletesAtMappedServiceDeadline/6
+[       OK ] OperationMapping/HnfSlcSfBaseServiceLatencyTest.CompletesAtMappedServiceDeadline/6 (0 ms)
+[ RUN      ] OperationMapping/HnfSlcSfBaseServiceLatencyTest.CompletesAtMappedServiceDeadline/7
+[       OK ] OperationMapping/HnfSlcSfBaseServiceLatencyTest.CompletesAtMappedServiceDeadline/7 (0 ms)
+[ RUN      ] OperationMapping/HnfSlcSfBaseServiceLatencyTest.CompletesAtMappedServiceDeadline/8
+[       OK ] OperationMapping/HnfSlcSfBaseServiceLatencyTest.CompletesAtMappedServiceDeadline/8 (0 ms)
+[ RUN      ] OperationMapping/HnfSlcSfBaseServiceLatencyTest.CompletesAtMappedServiceDeadline/9
+[       OK ] OperationMapping/HnfSlcSfBaseServiceLatencyTest.CompletesAtMappedServiceDeadline/9 (0 ms)
+[ RUN      ] OperationMapping/HnfSlcSfBaseServiceLatencyTest.CompletesAtMappedServiceDeadline/10
+[       OK ] OperationMapping/HnfSlcSfBaseServiceLatencyTest.CompletesAtMappedServiceDeadline/10 (0 ms)
+[----------] 11 tests from OperationMapping/HnfSlcSfBaseServiceLatencyTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 131 tests from 15 test suites ran. (9 ms total)
+[  PASSED  ] 131 tests.
+
+===== slc_snoop_filter.test.opt rc=0 tests=17 =====
+Running main() from build/RISCV/ext/googletest/googletest/src/gtest_main.cc
+[==========] Running 17 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 17 tests from SlcSnoopFilterTest
+[ RUN      ] SlcSnoopFilterTest.IsStandaloneClockedNoncopyableOwner
+[       OK ] SlcSnoopFilterTest.IsStandaloneClockedNoncopyableOwner (0 ms)
+[ RUN      ] SlcSnoopFilterTest.NoCreditsBeforeInitialization
+[       OK ] SlcSnoopFilterTest.NoCreditsBeforeInitialization (0 ms)
+[ RUN      ] SlcSnoopFilterTest.InitializationCompletesAfterConfiguredLatency
+[       OK ] SlcSnoopFilterTest.InitializationCompletesAfterConfiguredLatency (0 ms)
+[ RUN      ] SlcSnoopFilterTest.IdleFilterDoesNotSelfWakeForever
+[       OK ] SlcSnoopFilterTest.IdleFilterDoesNotSelfWakeForever (0 ms)
+[ RUN      ] SlcSnoopFilterTest.NewEarlierWorkReschedulesWakeup
+[       OK ] SlcSnoopFilterTest.NewEarlierWorkReschedulesWakeup (0 ms)
+[ RUN      ] SlcSnoopFilterTest.LongOccupancyWeightsSplitWithoutTruncation
+[       OK ] SlcSnoopFilterTest.LongOccupancyWeightsSplitWithoutTruncation (0 ms)
+[ RUN      ] SlcSnoopFilterTest.EventQueueEnforcesOneTickCdcVisibility
+[       OK ] SlcSnoopFilterTest.EventQueueEnforcesOneTickCdcVisibility (0 ms)
+[ RUN      ] SlcSnoopFilterTest.OccupancySettlesBeforeMidWindowAdmission
+[       OK ] SlcSnoopFilterTest.OccupancySettlesBeforeMidWindowAdmission (0 ms)
+[ RUN      ] SlcSnoopFilterTest.MidEdgeTransitionPreservesNextChildSample
+[       OK ] SlcSnoopFilterTest.MidEdgeTransitionPreservesNextChildSample (0 ms)
+[ RUN      ] SlcSnoopFilterTest.CompletionPrecedesNewIssue
+[       OK ] SlcSnoopFilterTest.CompletionPrecedesNewIssue (0 ms)
+[ RUN      ] SlcSnoopFilterTest.ColdResetClearsPersistentAndTransientStorage
+[       OK ] SlcSnoopFilterTest.ColdResetClearsPersistentAndTransientStorage (0 ms)
+[ RUN      ] SlcSnoopFilterTest.CrossClockEdgesNotifyOnlyFutureOwnerWakeups
+[       OK ] SlcSnoopFilterTest.CrossClockEdgesNotifyOnlyFutureOwnerWakeups (0 ms)
+[ RUN      ] SlcSnoopFilterTest.CrossClockReplayUsesAbsoluteChildTick
+[       OK ] SlcSnoopFilterTest.CrossClockReplayUsesAbsoluteChildTick (0 ms)
+[ RUN      ] SlcSnoopFilterTest.DrainWaitsForAllAcceptedWork
+[       OK ] SlcSnoopFilterTest.DrainWaitsForAllAcceptedWork (0 ms)
+[ RUN      ] SlcSnoopFilterTest.DrainReadinessRequiresRequestAndGlobalIdle
+[       OK ] SlcSnoopFilterTest.DrainReadinessRequiresRequestAndGlobalIdle (0 ms)
+[ RUN      ] SlcSnoopFilterTest.InitializationDrainReadyTransitionNotifiesOwner
+[       OK ] SlcSnoopFilterTest.InitializationDrainReadyTransitionNotifiesOwner (0 ms)
+[ RUN      ] SlcSnoopFilterTest.DrainResumeRestoresAdmission
+[       OK ] SlcSnoopFilterTest.DrainResumeRestoresAdmission (0 ms)
+[----------] 17 tests from SlcSnoopFilterTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 17 tests from 1 test suite ran. (1 ms total)
+[  PASSED  ] 17 tests.
+
+===== hnf_slcsf_backend.test.opt rc=0 tests=21 =====
+Running main() from build/RISCV/ext/googletest/googletest/src/gtest_main.cc
+[==========] Running 21 tests from 5 test suites.
+[----------] Global test environment set-up.
+[----------] 5 tests from HnfSlcSfBackendPermitTest
+[ RUN      ] HnfSlcSfBackendPermitTest.PublicSynchronousApiCannotBypassDirtyVictimPreservation
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:346: panic: panic condition isDirty(victim->state) && !permit occurred: HnfSLCSF dirty SLC victim requires an exact direct-handoff permit before replacement set=0 tag=33554944 state=5
+[       OK ] HnfSlcSfBackendPermitTest.PublicSynchronousApiCannotBypassDirtyVictimPreservation (0 ms)
+[ RUN      ] HnfSlcSfBackendPermitTest.IncompleteLineInstallIsRejectedBeforeStateMutation
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:1069: panic: panic condition data.size() != blockSize occurred: HnfSLCSF refuses incomplete SLC line install addr=0x80008000 bytes=63/64
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:1069: panic: panic condition data.size() != blockSize occurred: HnfSLCSF refuses incomplete SLC line install addr=0x80008000 bytes=4/64
+[       OK ] HnfSlcSfBackendPermitTest.IncompleteLineInstallIsRejectedBeforeStateMutation (0 ms)
+[ RUN      ] HnfSlcSfBackendPermitTest.InstalledSnapshotCapabilityCommitsCompleteOwnedVictim
+[       OK ] HnfSlcSfBackendPermitTest.InstalledSnapshotCapabilityCommitsCompleteOwnedVictim (0 ms)
+[ RUN      ] HnfSlcSfBackendPermitTest.InstalledSnapshotSealRejectsReplacementStampChangeBeforeU2
+[       OK ] HnfSlcSfBackendPermitTest.InstalledSnapshotSealRejectsReplacementStampChangeBeforeU2 (0 ms)
+[ RUN      ] HnfSlcSfBackendPermitTest.InstalledSnapshotSealRejectsReplacedVictimIdAndCleansResources
+[       OK ] HnfSlcSfBackendPermitTest.InstalledSnapshotSealRejectsReplacedVictimIdAndCleansResources (0 ms)
+[----------] 5 tests from HnfSlcSfBackendPermitTest (0 ms total)
+
+[----------] 1 test from HnfSlcSfBackendInvariantTest
+[ RUN      ] HnfSlcSfBackendInvariantTest.RemovingVectorOwnerSelectsRemainingSharer
+[       OK ] HnfSlcSfBackendInvariantTest.RemovingVectorOwnerSelectsRemainingSharer (0 ms)
+[----------] 1 test from HnfSlcSfBackendInvariantTest (0 ms total)
+
+[----------] 3 tests from HnfSlcSfBackendReplacementPolicyTest
+[ RUN      ] HnfSlcSfBackendReplacementPolicyTest.InvalidWaysPrecedeGoldenPseudoRandomVictims
+[       OK ] HnfSlcSfBackendReplacementPolicyTest.InvalidWaysPrecedeGoldenPseudoRandomVictims (0 ms)
+[ RUN      ] HnfSlcSfBackendReplacementPolicyTest.LsuAliasesLruAndSfRemainsLru
+[       OK ] HnfSlcSfBackendReplacementPolicyTest.LsuAliasesLruAndSfRemainsLru (0 ms)
+[ RUN      ] HnfSlcSfBackendReplacementPolicyTest.SrripPromotesHitsAgesFullSetsAndChoosesDeterministically
+[       OK ] HnfSlcSfBackendReplacementPolicyTest.SrripPromotesHitsAgesFullSetsAndChoosesDeterministically (0 ms)
+[----------] 3 tests from HnfSlcSfBackendReplacementPolicyTest (0 ms total)
+
+[----------] 11 tests from HnfSlcSfBackendCheckpointTest
+[ RUN      ] HnfSlcSfBackendCheckpointTest.RestoreRejectsNonBooleanPersistentFields
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2662: fatal: fatal condition slc_valid[i] > 1 || restored_rrpv > 3 || slc_state[i] > static_cast<uint32_t>(HnfSlcState::MN) || data_offset > slc_data.size() || slc_data_size[i] > slc_data.size() - data_offset occurred: HnfSLCSF checkpoint has invalid SLC line
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2737: fatal: fatal condition sf_valid[i] > 1 || sf_state[i] > static_cast<uint32_t>(HnfSfState::SN) occurred: HnfSLCSF checkpoint has invalid SF state
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2827: fatal: fatal condition seq_valid[i] > 1 || seq_dirty[i] > 1 || seq_phase[i] > static_cast<uint32_t>(SeqPhase::CommittedAwaitAck) || seq_state[i] > static_cast<uint32_t>(HnfSfState::SN) || data_offset > seq_data.size() || seq_data_size[i] > seq_data.size() - data_offset occurred: HnfSLCSF checkpoint has invalid SEQ entry
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2827: fatal: fatal condition seq_valid[i] > 1 || seq_dirty[i] > 1 || seq_phase[i] > static_cast<uint32_t>(SeqPhase::CommittedAwaitAck) || seq_state[i] > static_cast<uint32_t>(HnfSfState::SN) || data_offset > seq_data.size() || seq_data_size[i] > seq_data.size() - data_offset occurred: HnfSLCSF checkpoint has invalid SEQ entry
+[       OK ] HnfSlcSfBackendCheckpointTest.RestoreRejectsNonBooleanPersistentFields (1 ms)
+[ RUN      ] HnfSlcSfBackendCheckpointTest.RestoreRejectsSlcValidStateAndDataInconsistency
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2670: fatal: fatal condition valid != (state != HnfSlcState::I) || slc_data_size[i] != (valid ? blockSize : 0) occurred: HnfSLCSF checkpoint SLC valid/state/data mismatch set=0 way=0
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2670: fatal: fatal condition valid != (state != HnfSlcState::I) || slc_data_size[i] != (valid ? blockSize : 0) occurred: HnfSLCSF checkpoint SLC valid/state/data mismatch set=0 way=0
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2670: fatal: fatal condition valid != (state != HnfSlcState::I) || slc_data_size[i] != (valid ? blockSize : 0) occurred: HnfSLCSF checkpoint SLC valid/state/data mismatch set=0 way=0
+[       OK ] HnfSlcSfBackendCheckpointTest.RestoreRejectsSlcValidStateAndDataInconsistency (1 ms)
+[ RUN      ] HnfSlcSfBackendCheckpointTest.RestoreRejectsDuplicateSlcAndSfTags
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2677: fatal: fatal condition slc_tag[i] > (std::numeric_limits<uint64_t>::max() / blockSize - set) / slcSets || !restored_slc_tags[set].emplace(slc_tag[i]).second occurred: HnfSLCSF checkpoint has duplicate/overflowing SLC tag set=0 way=1
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2752: fatal: fatal condition sf_tag[i] > (std::numeric_limits<uint64_t>::max() / blockSize - set) / sfSets || !restored_sf_tags[set].emplace(sf_tag[i]).second occurred: HnfSLCSF checkpoint has duplicate/overflowing SF tag set=0 way=1
+[       OK ] HnfSlcSfBackendCheckpointTest.RestoreRejectsDuplicateSlcAndSfTags (0 ms)
+[ RUN      ] HnfSlcSfBackendCheckpointTest.RestoreRejectsSfSharerOwnerAndExclusiveStateViolations
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2742: fatal: fatal condition valid != (state != HnfSfState::I) || (!valid && sf_sharers[i] != 0) || (valid && (sf_sharers[i] == 0 || sf_owner[i] >= 64 || (sf_sharers[i] & (1ULL << sf_owner[i])) == 0)) || (state == HnfSfState::EU && !hasSingleBit(sf_sharers[i])) occurred: HnfSLCSF checkpoint SF valid/state/owner mismatch set=0 way=0
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2742: fatal: fatal condition valid != (state != HnfSfState::I) || (!valid && sf_sharers[i] != 0) || (valid && (sf_sharers[i] == 0 || sf_owner[i] >= 64 || (sf_sharers[i] & (1ULL << sf_owner[i])) == 0)) || (state == HnfSfState::EU && !hasSingleBit(sf_sharers[i])) occurred: HnfSLCSF checkpoint SF valid/state/owner mismatch set=0 way=0
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2742: fatal: fatal condition valid != (state != HnfSfState::I) || (!valid && sf_sharers[i] != 0) || (valid && (sf_sharers[i] == 0 || sf_owner[i] >= 64 || (sf_sharers[i] & (1ULL << sf_owner[i])) == 0)) || (state == HnfSfState::EU && !hasSingleBit(sf_sharers[i])) occurred: HnfSLCSF checkpoint SF valid/state/owner mismatch set=0 way=0
+[       OK ] HnfSlcSfBackendCheckpointTest.RestoreRejectsSfSharerOwnerAndExclusiveStateViolations (0 ms)
+[ RUN      ] HnfSlcSfBackendCheckpointTest.RestoreRejectsNonCanonicalDrainedSeqState
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2834: fatal: fatal condition seq_valid[i] != 0 || seq_phase[i] != static_cast<uint32_t>(SeqPhase::Pending) || seq_id[i] != 0 || seq_address[i] != 0 || seq_home_node[i] != 0 || seq_state[i] != static_cast<uint32_t>(HnfSfState::I) || seq_owner[i] != 0 || seq_sharers[i] != 0 || seq_opcode[i] != 0 || seq_transaction[i] != 0 || seq_dirty[i] != 0 || seq_data_size[i] != 0 occurred: HnfSLCSF checkpoint contains non-canonical drained SEQ slot=0
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2834: fatal: fatal condition seq_valid[i] != 0 || seq_phase[i] != static_cast<uint32_t>(SeqPhase::Pending) || seq_id[i] != 0 || seq_address[i] != 0 || seq_home_node[i] != 0 || seq_state[i] != static_cast<uint32_t>(HnfSfState::I) || seq_owner[i] != 0 || seq_sharers[i] != 0 || seq_opcode[i] != 0 || seq_transaction[i] != 0 || seq_dirty[i] != 0 || seq_data_size[i] != 0 occurred: HnfSLCSF checkpoint contains non-canonical drained SEQ slot=0
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2834: fatal: fatal condition seq_valid[i] != 0 || seq_phase[i] != static_cast<uint32_t>(SeqPhase::Pending) || seq_id[i] != 0 || seq_address[i] != 0 || seq_home_node[i] != 0 || seq_state[i] != static_cast<uint32_t>(HnfSfState::I) || seq_owner[i] != 0 || seq_sharers[i] != 0 || seq_opcode[i] != 0 || seq_transaction[i] != 0 || seq_dirty[i] != 0 || seq_data_size[i] != 0 occurred: HnfSLCSF checkpoint contains non-canonical drained SEQ slot=0
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2834: fatal: fatal condition seq_valid[i] != 0 || seq_phase[i] != static_cast<uint32_t>(SeqPhase::Pending) || seq_id[i] != 0 || seq_address[i] != 0 || seq_home_node[i] != 0 || seq_state[i] != static_cast<uint32_t>(HnfSfState::I) || seq_owner[i] != 0 || seq_sharers[i] != 0 || seq_opcode[i] != 0 || seq_transaction[i] != 0 || seq_dirty[i] != 0 || seq_data_size[i] != 0 occurred: HnfSLCSF checkpoint contains non-canonical drained SEQ slot=0
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2834: fatal: fatal condition seq_valid[i] != 0 || seq_phase[i] != static_cast<uint32_t>(SeqPhase::Pending) || seq_id[i] != 0 || seq_address[i] != 0 || seq_home_node[i] != 0 || seq_state[i] != static_cast<uint32_t>(HnfSfState::I) || seq_owner[i] != 0 || seq_sharers[i] != 0 || seq_opcode[i] != 0 || seq_transaction[i] != 0 || seq_dirty[i] != 0 || seq_data_size[i] != 0 occurred: HnfSLCSF checkpoint contains non-canonical drained SEQ slot=0
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2834: fatal: fatal condition seq_valid[i] != 0 || seq_phase[i] != static_cast<uint32_t>(SeqPhase::Pending) || seq_id[i] != 0 || seq_address[i] != 0 || seq_home_node[i] != 0 || seq_state[i] != static_cast<uint32_t>(HnfSfState::I) || seq_owner[i] != 0 || seq_sharers[i] != 0 || seq_opcode[i] != 0 || seq_transaction[i] != 0 || seq_dirty[i] != 0 || seq_data_size[i] != 0 occurred: HnfSLCSF checkpoint contains non-canonical drained SEQ slot=0
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2834: fatal: fatal condition seq_valid[i] != 0 || seq_phase[i] != static_cast<uint32_t>(SeqPhase::Pending) || seq_id[i] != 0 || seq_address[i] != 0 || seq_home_node[i] != 0 || seq_state[i] != static_cast<uint32_t>(HnfSfState::I) || seq_owner[i] != 0 || seq_sharers[i] != 0 || seq_opcode[i] != 0 || seq_transaction[i] != 0 || seq_dirty[i] != 0 || seq_data_size[i] != 0 occurred: HnfSLCSF checkpoint contains non-canonical drained SEQ slot=0
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2834: fatal: fatal condition seq_valid[i] != 0 || seq_phase[i] != static_cast<uint32_t>(SeqPhase::Pending) || seq_id[i] != 0 || seq_address[i] != 0 || seq_home_node[i] != 0 || seq_state[i] != static_cast<uint32_t>(HnfSfState::I) || seq_owner[i] != 0 || seq_sharers[i] != 0 || seq_opcode[i] != 0 || seq_transaction[i] != 0 || seq_dirty[i] != 0 || seq_data_size[i] != 0 occurred: HnfSLCSF checkpoint contains non-canonical drained SEQ slot=0
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2834: fatal: fatal condition seq_valid[i] != 0 || seq_phase[i] != static_cast<uint32_t>(SeqPhase::Pending) || seq_id[i] != 0 || seq_address[i] != 0 || seq_home_node[i] != 0 || seq_state[i] != static_cast<uint32_t>(HnfSfState::I) || seq_owner[i] != 0 || seq_sharers[i] != 0 || seq_opcode[i] != 0 || seq_transaction[i] != 0 || seq_dirty[i] != 0 || seq_data_size[i] != 0 occurred: HnfSLCSF checkpoint contains non-canonical drained SEQ slot=0
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2834: fatal: fatal condition seq_valid[i] != 0 || seq_phase[i] != static_cast<uint32_t>(SeqPhase::Pending) || seq_id[i] != 0 || seq_address[i] != 0 || seq_home_node[i] != 0 || seq_state[i] != static_cast<uint32_t>(HnfSfState::I) || seq_owner[i] != 0 || seq_sharers[i] != 0 || seq_opcode[i] != 0 || seq_transaction[i] != 0 || seq_dirty[i] != 0 || seq_data_size[i] != 0 occurred: HnfSLCSF checkpoint contains non-canonical drained SEQ slot=0
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2827: fatal: fatal condition seq_valid[i] > 1 || seq_dirty[i] > 1 || seq_phase[i] > static_cast<uint32_t>(SeqPhase::CommittedAwaitAck) || seq_state[i] > static_cast<uint32_t>(HnfSfState::SN) || data_offset > seq_data.size() || seq_data_size[i] > seq_data.size() - data_offset occurred: HnfSLCSF checkpoint has invalid SEQ entry
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2823: fatal: fatal condition !pending.empty() occurred: HnfSLCSF restore requires an empty drained SEQ queue
+[       OK ] HnfSlcSfBackendCheckpointTest.RestoreRejectsNonCanonicalDrainedSeqState (3 ms)
+[ RUN      ] HnfSlcSfBackendCheckpointTest.RestoreRefusesLiveBackendOwnership
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2560: fatal: fatal condition isBusy() occurred: HnfSLCSF refuses to restore over live backend ownership
+[       OK ] HnfSlcSfBackendCheckpointTest.RestoreRefusesLiveBackendOwnership (0 ms)
+[ RUN      ] HnfSlcSfBackendCheckpointTest.RestoredNearMaximumLookupCountersNeverWrap
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:42: panic: panic condition value == std::numeric_limits<uint64_t>::max() occurred: HnfSLCSF access counter space exhausted
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:42: panic: panic condition value == std::numeric_limits<uint64_t>::max() occurred: HnfSLCSF lookup access counter space exhausted
+[       OK ] HnfSlcSfBackendCheckpointTest.RestoredNearMaximumLookupCountersNeverWrap (0 ms)
+[ RUN      ] HnfSlcSfBackendCheckpointTest.RestoredNearMaximumSeqIdentityNeverWraps
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:42: panic: panic condition value == std::numeric_limits<uint64_t>::max() occurred: HnfSLCSF SEQ identity space exhausted
+[       OK ] HnfSlcSfBackendCheckpointTest.RestoredNearMaximumSeqIdentityNeverWraps (0 ms)
+[ RUN      ] HnfSlcSfBackendCheckpointTest.ExhaustedPersistentCountersRoundTripAndNeverWrap
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:42: panic: panic condition value == std::numeric_limits<uint64_t>::max() occurred: HnfSLCSF access counter space exhausted
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:42: panic: panic condition value == std::numeric_limits<uint64_t>::max() occurred: HnfSLCSF lookup epoch space exhausted
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:42: panic: panic condition value == std::numeric_limits<uint64_t>::max() occurred: HnfSLCSF lookup access counter space exhausted
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:42: panic: panic condition value == std::numeric_limits<uint64_t>::max() occurred: HnfSLCSF SEQ identity space exhausted
+[       OK ] HnfSlcSfBackendCheckpointTest.ExhaustedPersistentCountersRoundTripAndNeverWrap (1 ms)
+[ RUN      ] HnfSlcSfBackendCheckpointTest.PseudoRandomStreamResumesExactlyAfterRestore
+build/RISCV/mem/cache/CHI/HnfSLCSFBackend.cc:2596: fatal: fatal condition saved_policy > static_cast<uint32_t>(max_saved_policy) || (policy_mismatch && !allowReplacementPolicyOverride) occurred: HnfSLCSF checkpoint SLC replacement policy mismatch
+[       OK ] HnfSlcSfBackendCheckpointTest.PseudoRandomStreamResumesExactlyAfterRestore (0 ms)
+[ RUN      ] HnfSlcSfBackendCheckpointTest.DrainedPersistentStateRoundTripsExactly
+[       OK ] HnfSlcSfBackendCheckpointTest.DrainedPersistentStateRoundTripsExactly (0 ms)
+[----------] 11 tests from HnfSlcSfBackendCheckpointTest (10 ms total)
+
+[----------] 1 test from HnfSlcSfBackendSnapshotTest
+[ RUN      ] HnfSlcSfBackendSnapshotTest.AllocatorSnapshotIsOptionalAndDetectsCounterOnlyProgress
+[       OK ] HnfSlcSfBackendSnapshotTest.AllocatorSnapshotIsOptionalAndDetectsCounterOnlyProgress (0 ms)
+[----------] 1 test from HnfSlcSfBackendSnapshotTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 21 tests from 5 test suites ran. (12 ms total)
+[  PASSED  ] 21 tests.
+
+===== hnf_coherency_controller.test.opt rc=0 tests=62 =====
+Running main() from build/RISCV/ext/googletest/googletest/src/gtest_main.cc
+[==========] Running 62 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 57 tests from HnfCoherencyControllerTest
+[ RUN      ] HnfCoherencyControllerTest.DirtyVictimDataSurvivesWriteback
+[       OK ] HnfCoherencyControllerTest.DirtyVictimDataSurvivesWriteback (1 ms)
+[ RUN      ] HnfCoherencyControllerTest.DirtyVictimDownstreamTxnIdDiffersFromRequesterOnAllocatorCollision
+[       OK ] HnfCoherencyControllerTest.DirtyVictimDownstreamTxnIdDiffersFromRequesterOnAllocatorCollision (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.DirtyVictimTxBackpressureMakesProgress
+[       OK ] HnfCoherencyControllerTest.DirtyVictimTxBackpressureMakesProgress (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.DirtyVictimRetryWaitsForExactPcrdGrantAndReissuesSameTxn
+[       OK ] HnfCoherencyControllerTest.DirtyVictimRetryWaitsForExactPcrdGrantAndReissuesSameTxn (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.DirtyVictimCompDbidWaitsForAcceptedDataAndQueuesItOnce
+[       OK ] HnfCoherencyControllerTest.DirtyVictimCompDbidWaitsForAcceptedDataAndQueuesItOnce (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.DirtyVictimDownstreamErrorFailsStopBeforePocqRetire
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1811: panic: panic condition rsp.respErr != 0 occurred: HnfCC dirty victim=1 downstream txn=1073741824 failed respErr=1; dirty data cannot be retired safely
+[       OK ] HnfCoherencyControllerTest.DirtyVictimDownstreamErrorFailsStopBeforePocqRetire (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.DirtyVictimCompletionMatchesVictimId
+[       OK ] HnfCoherencyControllerTest.DirtyVictimCompletionMatchesVictimId (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.DirtyVictimCompletionDoesNotConsumeSlcsfRequestCredit
+[       OK ] HnfCoherencyControllerTest.DirtyVictimCompletionDoesNotConsumeSlcsfRequestCredit (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.ForcedSmallSlcDirtyEvictionCompletesPocqWriteback
+[       OK ] HnfCoherencyControllerTest.ForcedSmallSlcDirtyEvictionCompletesPocqWriteback (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.DirtyVictimRequesterMayRetireBeforePocqWriteback
+[       OK ] HnfCoherencyControllerTest.DirtyVictimRequesterMayRetireBeforePocqWriteback (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.RetireWakesOneSameAddressSleeper
+[       OK ] HnfCoherencyControllerTest.RetireWakesOneSameAddressSleeper (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.CompAckRejectsIdentityAndReservedFieldMismatches
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1469: panic: panic condition rsp.tgtid != entry.req.tgtid || rsp.qos != entry.req.qos || rsp.dbid != 0 || rsp.respErr != 0 || rsp.pcrdtype != 0 || (rsp.resp != 0 && rsp.resp != 0xff) occurred: HnfCC CompAck identity/state mismatch entry=0 src=0 tgt=145 txn=19 qos=5 dbid=0 resp=255 respErr=0 pcrdtype=0
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1469: panic: panic condition rsp.tgtid != entry.req.tgtid || rsp.qos != entry.req.qos || rsp.dbid != 0 || rsp.respErr != 0 || rsp.pcrdtype != 0 || (rsp.resp != 0 && rsp.resp != 0xff) occurred: HnfCC CompAck identity/state mismatch entry=0 src=0 tgt=144 txn=19 qos=4 dbid=0 resp=255 respErr=0 pcrdtype=0
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1469: panic: panic condition rsp.tgtid != entry.req.tgtid || rsp.qos != entry.req.qos || rsp.dbid != 0 || rsp.respErr != 0 || rsp.pcrdtype != 0 || (rsp.resp != 0 && rsp.resp != 0xff) occurred: HnfCC CompAck identity/state mismatch entry=0 src=0 tgt=144 txn=19 qos=5 dbid=1 resp=255 respErr=0 pcrdtype=0
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1469: panic: panic condition rsp.tgtid != entry.req.tgtid || rsp.qos != entry.req.qos || rsp.dbid != 0 || rsp.respErr != 0 || rsp.pcrdtype != 0 || (rsp.resp != 0 && rsp.resp != 0xff) occurred: HnfCC CompAck identity/state mismatch entry=0 src=0 tgt=144 txn=19 qos=5 dbid=0 resp=255 respErr=1 pcrdtype=0
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1469: panic: panic condition rsp.tgtid != entry.req.tgtid || rsp.qos != entry.req.qos || rsp.dbid != 0 || rsp.respErr != 0 || rsp.pcrdtype != 0 || (rsp.resp != 0 && rsp.resp != 0xff) occurred: HnfCC CompAck identity/state mismatch entry=0 src=0 tgt=144 txn=19 qos=5 dbid=0 resp=255 respErr=0 pcrdtype=1
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1469: panic: panic condition rsp.tgtid != entry.req.tgtid || rsp.qos != entry.req.qos || rsp.dbid != 0 || rsp.respErr != 0 || rsp.pcrdtype != 0 || (rsp.resp != 0 && rsp.resp != 0xff) occurred: HnfCC CompAck identity/state mismatch entry=0 src=0 tgt=144 txn=19 qos=5 dbid=0 resp=1 respErr=0 pcrdtype=0
+[       OK ] HnfCoherencyControllerTest.CompAckRejectsIdentityAndReservedFieldMismatches (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.ReadUniqueSnoopsAllOtherSharers
+[       OK ] HnfCoherencyControllerTest.ReadUniqueSnoopsAllOtherSharers (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.SnpRespRejectsIdentityStateAndForwardedResponses
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1437: panic: panic condition entry.state != HnfCcEntryState::WaitSnoop || entry.snoopTxnId != rsp.txnid || rsp.srcid >= 64 || (entry.snoopPendingTargets & (1ULL << rsp.srcid)) == 0 || rsp.tgtid != entry.req.tgtid || rsp.qos != entry.req.qos || rsp.dbid != 0 || rsp.respErr != 0 || rsp.pcrdtype != 0 || rsp.resp > RespUC occurred: HnfCC SnpResp identity/state mismatch entry=0 src=0 tgt=145 txn=2147483648 qos=6 dbid=0 resp=1 respErr=0 pcrdtype=0 pending=0x1
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1437: panic: panic condition entry.state != HnfCcEntryState::WaitSnoop || entry.snoopTxnId != rsp.txnid || rsp.srcid >= 64 || (entry.snoopPendingTargets & (1ULL << rsp.srcid)) == 0 || rsp.tgtid != entry.req.tgtid || rsp.qos != entry.req.qos || rsp.dbid != 0 || rsp.respErr != 0 || rsp.pcrdtype != 0 || rsp.resp > RespUC occurred: HnfCC SnpResp identity/state mismatch entry=0 src=0 tgt=144 txn=2147483648 qos=5 dbid=0 resp=1 respErr=0 pcrdtype=0 pending=0x1
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1437: panic: panic condition entry.state != HnfCcEntryState::WaitSnoop || entry.snoopTxnId != rsp.txnid || rsp.srcid >= 64 || (entry.snoopPendingTargets & (1ULL << rsp.srcid)) == 0 || rsp.tgtid != entry.req.tgtid || rsp.qos != entry.req.qos || rsp.dbid != 0 || rsp.respErr != 0 || rsp.pcrdtype != 0 || rsp.resp > RespUC occurred: HnfCC SnpResp identity/state mismatch entry=0 src=0 tgt=144 txn=2147483648 qos=6 dbid=1 resp=1 respErr=0 pcrdtype=0 pending=0x1
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1437: panic: panic condition entry.state != HnfCcEntryState::WaitSnoop || entry.snoopTxnId != rsp.txnid || rsp.srcid >= 64 || (entry.snoopPendingTargets & (1ULL << rsp.srcid)) == 0 || rsp.tgtid != entry.req.tgtid || rsp.qos != entry.req.qos || rsp.dbid != 0 || rsp.respErr != 0 || rsp.pcrdtype != 0 || rsp.resp > RespUC occurred: HnfCC SnpResp identity/state mismatch entry=0 src=0 tgt=144 txn=2147483648 qos=6 dbid=0 resp=1 respErr=1 pcrdtype=0 pending=0x1
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1437: panic: panic condition entry.state != HnfCcEntryState::WaitSnoop || entry.snoopTxnId != rsp.txnid || rsp.srcid >= 64 || (entry.snoopPendingTargets & (1ULL << rsp.srcid)) == 0 || rsp.tgtid != entry.req.tgtid || rsp.qos != entry.req.qos || rsp.dbid != 0 || rsp.respErr != 0 || rsp.pcrdtype != 0 || rsp.resp > RespUC occurred: HnfCC SnpResp identity/state mismatch entry=0 src=0 tgt=144 txn=2147483648 qos=6 dbid=0 resp=1 respErr=0 pcrdtype=1 pending=0x1
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1437: panic: panic condition entry.state != HnfCcEntryState::WaitSnoop || entry.snoopTxnId != rsp.txnid || rsp.srcid >= 64 || (entry.snoopPendingTargets & (1ULL << rsp.srcid)) == 0 || rsp.tgtid != entry.req.tgtid || rsp.qos != entry.req.qos || rsp.dbid != 0 || rsp.respErr != 0 || rsp.pcrdtype != 0 || rsp.resp > RespUC occurred: HnfCC SnpResp identity/state mismatch entry=0 src=0 tgt=144 txn=2147483648 qos=6 dbid=0 resp=3 respErr=0 pcrdtype=0 pending=0x1
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1402: panic: panic condition decoded.minor == RspMinor::SnpRespFwded occurred: HnfCC does not support forwarded SnpResp opcode=0x9 src=0 txn=2147483648
+[       OK ] HnfCoherencyControllerTest.SnpRespRejectsIdentityStateAndForwardedResponses (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.MainSnoopRejectedBeatDoesNotPolluteLaterData
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1126: panic: panic condition entry.state != HnfCcEntryState::WaitSnoop || dat.srcid >= 64 || (entry.snoopPendingTargets & (1ULL << dat.srcid)) == 0 || (entry.snoopDataAssembly.source && *entry.snoopDataAssembly.source != dat.srcid) || entry.snoopDataReceived || dat.tgtid != entry.req.tgtid || dat.HomeNID != entry.req.tgtid || dat.dbid != 0 || dat.qos != entry.req.qos occurred: HnfCC snoop RXDAT identity mismatch entry=0 src=1 tgt=144 home=144 txn=2147483648 dbid=0 pending=0x1
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:340: panic: panic condition dat.beatOffset != expected_offset || dat.beatOffset > blockSize || dat.data.size() != expected_beat_bytes || dat.data.size() > blockSize - dat.beatOffset occurred: HnfCC snoop entry=0 DAT range offset=16 bytes=32 expectedOffset=32 expectedBeat=32 block=64
+[       OK ] HnfCoherencyControllerTest.MainSnoopRejectedBeatDoesNotPolluteLaterData (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.SeqDoesNotRetireBeforeCompleteSfEvictResponse
+[       OK ] HnfCoherencyControllerTest.SeqDoesNotRetireBeforeCompleteSfEvictResponse (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.SeqSnpRespRejectsIdentityAndStateMismatches
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1409: panic: panic condition seqPocqEntry.state != SeqPocqState::WaitSnoop || rsp.srcid >= 64 || (seqPocqEntry.pendingTargets & (1ULL << rsp.srcid)) == 0 || rsp.tgtid != seqPocqEntry.homeNodeId || rsp.qos != 0 || rsp.dbid != 0 || rsp.respErr != 0 || rsp.pcrdtype != 0 || rsp.resp > RespUC occurred: HnfCC SEQ SnpResp identity/state mismatch id=1 src=0 tgt=145 txn=2147483648 qos=0 dbid=0 resp=1 respErr=0 pcrdtype=0 pending=0x1
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1409: panic: panic condition seqPocqEntry.state != SeqPocqState::WaitSnoop || rsp.srcid >= 64 || (seqPocqEntry.pendingTargets & (1ULL << rsp.srcid)) == 0 || rsp.tgtid != seqPocqEntry.homeNodeId || rsp.qos != 0 || rsp.dbid != 0 || rsp.respErr != 0 || rsp.pcrdtype != 0 || rsp.resp > RespUC occurred: HnfCC SEQ SnpResp identity/state mismatch id=1 src=0 tgt=144 txn=2147483648 qos=1 dbid=0 resp=1 respErr=0 pcrdtype=0 pending=0x1
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1409: panic: panic condition seqPocqEntry.state != SeqPocqState::WaitSnoop || rsp.srcid >= 64 || (seqPocqEntry.pendingTargets & (1ULL << rsp.srcid)) == 0 || rsp.tgtid != seqPocqEntry.homeNodeId || rsp.qos != 0 || rsp.dbid != 0 || rsp.respErr != 0 || rsp.pcrdtype != 0 || rsp.resp > RespUC occurred: HnfCC SEQ SnpResp identity/state mismatch id=1 src=0 tgt=144 txn=2147483648 qos=0 dbid=1 resp=1 respErr=0 pcrdtype=0 pending=0x1
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1409: panic: panic condition seqPocqEntry.state != SeqPocqState::WaitSnoop || rsp.srcid >= 64 || (seqPocqEntry.pendingTargets & (1ULL << rsp.srcid)) == 0 || rsp.tgtid != seqPocqEntry.homeNodeId || rsp.qos != 0 || rsp.dbid != 0 || rsp.respErr != 0 || rsp.pcrdtype != 0 || rsp.resp > RespUC occurred: HnfCC SEQ SnpResp identity/state mismatch id=1 src=0 tgt=144 txn=2147483648 qos=0 dbid=0 resp=1 respErr=1 pcrdtype=0 pending=0x1
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1409: panic: panic condition seqPocqEntry.state != SeqPocqState::WaitSnoop || rsp.srcid >= 64 || (seqPocqEntry.pendingTargets & (1ULL << rsp.srcid)) == 0 || rsp.tgtid != seqPocqEntry.homeNodeId || rsp.qos != 0 || rsp.dbid != 0 || rsp.respErr != 0 || rsp.pcrdtype != 0 || rsp.resp > RespUC occurred: HnfCC SEQ SnpResp identity/state mismatch id=1 src=0 tgt=144 txn=2147483648 qos=0 dbid=0 resp=1 respErr=0 pcrdtype=1 pending=0x1
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1409: panic: panic condition seqPocqEntry.state != SeqPocqState::WaitSnoop || rsp.srcid >= 64 || (seqPocqEntry.pendingTargets & (1ULL << rsp.srcid)) == 0 || rsp.tgtid != seqPocqEntry.homeNodeId || rsp.qos != 0 || rsp.dbid != 0 || rsp.respErr != 0 || rsp.pcrdtype != 0 || rsp.resp > RespUC occurred: HnfCC SEQ SnpResp identity/state mismatch id=1 src=0 tgt=144 txn=2147483648 qos=0 dbid=0 resp=3 respErr=0 pcrdtype=0 pending=0x1
+[       OK ] HnfCoherencyControllerTest.SeqSnpRespRejectsIdentityAndStateMismatches (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.SeqPocqPreservesDirtySnoopData
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1085: panic: panic condition seqPocqEntry.state != SeqPocqState::WaitSnoop || dat.srcid >= 64 || (seqPocqEntry.pendingTargets & (1ULL << dat.srcid)) == 0 || (seqPocqEntry.dataAssembly.source && *seqPocqEntry.dataAssembly.source != dat.srcid) || seqPocqEntry.dataReceived || dat.tgtid != seqPocqEntry.homeNodeId || dat.HomeNID != seqPocqEntry.homeNodeId || dat.dbid != 0 || dat.qos != 0 occurred: HnfCC SEQ RXDAT identity mismatch id=1 src=1 tgt=144 home=144 txn=2147483648 dbid=0 pending=0x1
+[       OK ] HnfCoherencyControllerTest.SeqPocqPreservesDirtySnoopData (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.SeqCompletionHandsDirtySlcVictimDirectlyToPocq
+[       OK ] HnfCoherencyControllerTest.SeqCompletionHandsDirtySlcVictimDirectlyToPocq (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.ReadNoSnpReturnsWithoutAllocatingSlcSf
+[       OK ] HnfCoherencyControllerTest.ReadNoSnpReturnsWithoutAllocatingSlcSf (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.PartialWriteUniqueIsRejectedBeforeEntryAllocation
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:472: panic: panic condition in.req.opcode == ReqOp::WriteUniquePtl occurred: HnfCC WriteUniquePtl is disabled until a coherent masked read-modify-write/no-allocate path is available src=0 txn=32 addr=0x80004048 bytes=4
+[       OK ] HnfCoherencyControllerTest.PartialWriteUniqueIsRejectedBeforeEntryAllocation (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.WriteDataAssemblyAcceptsTerminalBeatFirst
+[       OK ] HnfCoherencyControllerTest.WriteDataAssemblyAcceptsTerminalBeatFirst (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.WriteDataRejectsInvalidBeatWithoutMutatingAssembly
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:378: panic: panic condition static_cast<bool>(dat.last) != terminal_beat occurred: HnfCC write entry=0 DAT last=1 disagrees with DataID=0, terminal=1
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:356: panic: panic condition std::any_of(dat.byteEnable.begin(), dat.byteEnable.end(), [](uint8_t byte) { return byte != 1; }) || std::any_of(dat.chunkValid.begin(), dat.chunkValid.end(), [](uint8_t chunk) { return chunk != 1; }) occurred: HnfCC write entry=0 DAT has disabled required bytes/chunks
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:356: panic: panic condition std::any_of(dat.byteEnable.begin(), dat.byteEnable.end(), [](uint8_t byte) { return byte != 1; }) || std::any_of(dat.chunkValid.begin(), dat.chunkValid.end(), [](uint8_t chunk) { return chunk != 1; }) occurred: HnfCC write entry=0 DAT has disabled required bytes/chunks
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:328: panic: panic condition beat_count == 0 || beat_count > UINT8_MAX + 1 || dat.dataid >= beat_count || assembly.seenDataIds[dat.dataid] occurred: HnfCC write entry=0 DAT DataID=0 beats=2 duplicate=1
+[       OK ] HnfCoherencyControllerTest.WriteDataRejectsInvalidBeatWithoutMutatingAssembly (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.McDataAssemblyRejectsMissingLastWithoutMutation
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:378: panic: panic condition static_cast<bool>(dat.last) != terminal_beat occurred: HnfCC MC entry=0 DAT last=0 disagrees with DataID=1, terminal=1
+[       OK ] HnfCoherencyControllerTest.McDataAssemblyRejectsMissingLastWithoutMutation (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.McTransactionIdentityRejectsLateBeatAfterEntryReuse
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1211: panic: panic condition mc_txn == mcTxnToEntry.end() occurred: HnfCC real-SN RXDAT for unknown/stale txnid=1 src=128
+[       OK ] HnfCoherencyControllerTest.McTransactionIdentityRejectsLateBeatAfterEntryReuse (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.SeqPocqSleepsForMainAddressHazard
+[       OK ] HnfCoherencyControllerTest.SeqPocqSleepsForMainAddressHazard (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.SeqPocqIgnoresYoungerSleepingWaiters
+[       OK ] HnfCoherencyControllerTest.SeqPocqIgnoresYoungerSleepingWaiters (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.SeqReservationReplayMakesProgress
+[       OK ] HnfCoherencyControllerTest.SeqReservationReplayMakesProgress (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.SeqCompletionNoCreditEventuallyProgresses
+[       OK ] HnfCoherencyControllerTest.SeqCompletionNoCreditEventuallyProgresses (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.EverySupportedTransactionCompletes
+[       OK ] HnfCoherencyControllerTest.EverySupportedTransactionCompletes (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.WriteDoesNotRetireBeforeUpdateResponse
+[       OK ] HnfCoherencyControllerTest.WriteDoesNotRetireBeforeUpdateResponse (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.DeferredWriteRetiresTokenExactlyOnce
+[       OK ] HnfCoherencyControllerTest.DeferredWriteRetiresTokenExactlyOnce (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.WriteHitCommitsRxPayloadForEveryWriteOpcode
+[       OK ] HnfCoherencyControllerTest.WriteHitCommitsRxPayloadForEveryWriteOpcode (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.WriteReplayPreservesPayloadAndUsesFreshAttemptIdentity
+[       OK ] HnfCoherencyControllerTest.WriteReplayPreservesPayloadAndUsesFreshAttemptIdentity (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.UpdateResponseMustMatchExactPendingOperation
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:2364: panic: panic condition entry.slcUpdatePhase != SlcUpdatePhase::Waiting || entry.latchedSlcUpdateResponse || entry.slcUpdateReqId != response.reqId() || !entry.expectedSlcUpdateOperation || *entry.expectedSlcUpdateOperation != response.operationKind() occurred: HnfCC unexpected update response entry=0 req=2
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:2364: panic: panic condition entry.slcUpdatePhase != SlcUpdatePhase::Waiting || entry.latchedSlcUpdateResponse || entry.slcUpdateReqId != response.reqId() || !entry.expectedSlcUpdateOperation || *entry.expectedSlcUpdateOperation != response.operationKind() occurred: HnfCC unexpected update response entry=0 req=2
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:2364: panic: panic condition entry.slcUpdatePhase != SlcUpdatePhase::Waiting || entry.latchedSlcUpdateResponse || entry.slcUpdateReqId != response.reqId() || !entry.expectedSlcUpdateOperation || *entry.expectedSlcUpdateOperation != response.operationKind() occurred: HnfCC unexpected update response entry=0 req=2
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:2364: panic: panic condition entry.slcUpdatePhase != SlcUpdatePhase::Waiting || entry.latchedSlcUpdateResponse || entry.slcUpdateReqId != response.reqId() || !entry.expectedSlcUpdateOperation || *entry.expectedSlcUpdateOperation != response.operationKind() occurred: HnfCC unexpected update response entry=0 req=2
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:2364: panic: panic condition entry.slcUpdatePhase != SlcUpdatePhase::Waiting || entry.latchedSlcUpdateResponse || entry.slcUpdateReqId != response.reqId() || !entry.expectedSlcUpdateOperation || *entry.expectedSlcUpdateOperation != response.operationKind() occurred: HnfCC unexpected update response entry=0 req=2
+[       OK ] HnfCoherencyControllerTest.UpdateResponseMustMatchExactPendingOperation (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.EvictWaitsForRemoveSharerResponse
+[       OK ] HnfCoherencyControllerTest.EvictWaitsForRemoveSharerResponse (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.UpdateNoCreditEventuallyProgresses
+[       OK ] HnfCoherencyControllerTest.UpdateNoCreditEventuallyProgresses (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.EvictReplayRestartsFromFreshLookup
+[       OK ] HnfCoherencyControllerTest.EvictReplayRestartsFromFreshLookup (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.LookupNoCreditEventuallyProgresses
+[       OK ] HnfCoherencyControllerTest.LookupNoCreditEventuallyProgresses (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.DrainDoesNotLoseIssuePendingIntent
+[       OK ] HnfCoherencyControllerTest.DrainDoesNotLoseIssuePendingIntent (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.DrainKeepsProtocolCompletionsEnabled
+[       OK ] HnfCoherencyControllerTest.DrainKeepsProtocolCompletionsEnabled (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.WaitingLookupIsNotIssuedTwice
+[       OK ] HnfCoherencyControllerTest.WaitingLookupIsNotIssuedTwice (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.LookupResponseIsConsumedInLaterCcCycle
+[       OK ] HnfCoherencyControllerTest.LookupResponseIsConsumedInLaterCcCycle (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.ResponseConsumeWidthLimitsEachCcCycle
+[       OK ] HnfCoherencyControllerTest.ResponseConsumeWidthLimitsEachCcCycle (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.ResponseConsumeWidthUsesConfiguredBudget
+[       OK ] HnfCoherencyControllerTest.ResponseConsumeWidthUsesConfiguredBudget (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.MaintenanceResponseWaitsForSlcSfCommit
+[       OK ] HnfCoherencyControllerTest.MaintenanceResponseWaitsForSlcSfCommit (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.MaintenanceNoCreditRetriesWithoutDuplicateRequest
+[       OK ] HnfCoherencyControllerTest.MaintenanceNoCreditRetriesWithoutDuplicateRequest (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.MaintenanceReplayRestartsFromFreshLookup
+[       OK ] HnfCoherencyControllerTest.MaintenanceReplayRestartsFromFreshLookup (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.ReadResponseWaitsForSlcSfCommit
+[       OK ] HnfCoherencyControllerTest.ReadResponseWaitsForSlcSfCommit (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.ReadUpdateNoCreditRetriesWithoutDuplicate
+[       OK ] HnfCoherencyControllerTest.ReadUpdateNoCreditRetriesWithoutDuplicate (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.NoSetReservationSpansExternalOrResponseWait
+[       OK ] HnfCoherencyControllerTest.NoSetReservationSpansExternalOrResponseWait (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.FreshLookupAfterStaleReplayCommits
+[       OK ] HnfCoherencyControllerTest.FreshLookupAfterStaleReplayCommits (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.PenaltyOneReplayRetriesOnVisibleDeadlineEdge
+[       OK ] HnfCoherencyControllerTest.PenaltyOneReplayRetriesOnVisibleDeadlineEdge (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.LookupReplayUsesSleepGraphAndDeadline
+[       OK ] HnfCoherencyControllerTest.LookupReplayUsesSleepGraphAndDeadline (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.SameAddressRetireCannotBypassReplayDeadline
+[       OK ] HnfCoherencyControllerTest.SameAddressRetireCannotBypassReplayDeadline (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.MismatchedLookupResponseIsRejected
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:2423: panic: panic condition entry.slcLookupPhase != SlcLookupPhase::Waiting || entry.latchedSlcResponse || entry.slcLookupReqId != response.reqId() occurred: HnfCC unexpected lookup response entry=0 req=2
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:2423: panic: panic condition entry.slcLookupPhase != SlcLookupPhase::Waiting || entry.latchedSlcResponse || entry.slcLookupReqId != response.reqId() occurred: HnfCC unexpected lookup response entry=0 req=1
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:2423: panic: panic condition entry.slcLookupPhase != SlcLookupPhase::Waiting || entry.latchedSlcResponse || entry.slcLookupReqId != response.reqId() occurred: HnfCC unexpected lookup response entry=0 req=1
+[       OK ] HnfCoherencyControllerTest.MismatchedLookupResponseIsRejected (0 ms)
+[ RUN      ] HnfCoherencyControllerTest.CheckpointContentIncludesControllerRequestIdentity
+[       OK ] HnfCoherencyControllerTest.CheckpointContentIncludesControllerRequestIdentity (0 ms)
+[----------] 57 tests from HnfCoherencyControllerTest (6 ms total)
+
+[----------] 5 tests from HnfCcCheckpointTest
+[ RUN      ] HnfCcCheckpointTest.RestorePreservesControllerRequestIdentity
+[       OK ] HnfCcCheckpointTest.RestorePreservesControllerRequestIdentity (0 ms)
+[ RUN      ] HnfCcCheckpointTest.ExhaustedControllerIdentitiesRoundTrip
+[       OK ] HnfCcCheckpointTest.ExhaustedControllerIdentitiesRoundTrip (0 ms)
+[ RUN      ] HnfCcCheckpointTest.RestoredExhaustedControllerAllocatorsFailBeforeReuse
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1595: panic: panic condition nextMcTxnId == 0 || nextMcTxnId >= McTxnIdLimit occurred: HnfCC MC transaction identity space exhausted next=1073741824
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1612: panic: panic condition nextSnoopTxnId < SnoopTxnIdBase || nextSnoopTxnId == UINT32_MAX occurred: HnfCC snoop transaction identity space exhausted next=4294967295
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:1631: panic: panic condition nextDirtyVictimTxnId < DirtyVictimTxnIdBase || nextDirtyVictimTxnId >= DirtyVictimTxnIdLimit occurred: HnfCC dirty-victim transaction identity space exhausted next=2147483648
+[       OK ] HnfCcCheckpointTest.RestoredExhaustedControllerAllocatorsFailBeforeReuse (1 ms)
+[ RUN      ] HnfCcCheckpointTest.RestoreRejectsInvalidControllerIdentityBounds
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:2593: panic: panic condition next_request_id == 0 || next_mc_txn_id == 0 || next_mc_txn_id > McTxnIdLimit || next_dirty_victim_txn_id < DirtyVictimTxnIdBase || next_dirty_victim_txn_id > DirtyVictimTxnIdLimit || next_snoop_txn_id < SnoopTxnIdBase || next_request_id < slcSfReqIds.nextValue() || next_mc_txn_id < nextMcTxnId || next_dirty_victim_txn_id < nextDirtyVictimTxnId || next_snoop_txn_id < nextSnoopTxnId occurred: HNF CC restore has invalid/non-monotonic identity state req=0 mc=1 snoop=2147483648 dirtyVictim=1073741824
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:2593: panic: panic condition next_request_id == 0 || next_mc_txn_id == 0 || next_mc_txn_id > McTxnIdLimit || next_dirty_victim_txn_id < DirtyVictimTxnIdBase || next_dirty_victim_txn_id > DirtyVictimTxnIdLimit || next_snoop_txn_id < SnoopTxnIdBase || next_request_id < slcSfReqIds.nextValue() || next_mc_txn_id < nextMcTxnId || next_dirty_victim_txn_id < nextDirtyVictimTxnId || next_snoop_txn_id < nextSnoopTxnId occurred: HNF CC restore has invalid/non-monotonic identity state req=1 mc=0 snoop=2147483648 dirtyVictim=1073741824
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:2593: panic: panic condition next_request_id == 0 || next_mc_txn_id == 0 || next_mc_txn_id > McTxnIdLimit || next_dirty_victim_txn_id < DirtyVictimTxnIdBase || next_dirty_victim_txn_id > DirtyVictimTxnIdLimit || next_snoop_txn_id < SnoopTxnIdBase || next_request_id < slcSfReqIds.nextValue() || next_mc_txn_id < nextMcTxnId || next_dirty_victim_txn_id < nextDirtyVictimTxnId || next_snoop_txn_id < nextSnoopTxnId occurred: HNF CC restore has invalid/non-monotonic identity state req=1 mc=4294967295 snoop=2147483648 dirtyVictim=1073741824
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:2593: panic: panic condition next_request_id == 0 || next_mc_txn_id == 0 || next_mc_txn_id > McTxnIdLimit || next_dirty_victim_txn_id < DirtyVictimTxnIdBase || next_dirty_victim_txn_id > DirtyVictimTxnIdLimit || next_snoop_txn_id < SnoopTxnIdBase || next_request_id < slcSfReqIds.nextValue() || next_mc_txn_id < nextMcTxnId || next_dirty_victim_txn_id < nextDirtyVictimTxnId || next_snoop_txn_id < nextSnoopTxnId occurred: HNF CC restore has invalid/non-monotonic identity state req=1 mc=1 snoop=0 dirtyVictim=1073741824
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:2593: panic: panic condition next_request_id == 0 || next_mc_txn_id == 0 || next_mc_txn_id > McTxnIdLimit || next_dirty_victim_txn_id < DirtyVictimTxnIdBase || next_dirty_victim_txn_id > DirtyVictimTxnIdLimit || next_snoop_txn_id < SnoopTxnIdBase || next_request_id < slcSfReqIds.nextValue() || next_mc_txn_id < nextMcTxnId || next_dirty_victim_txn_id < nextDirtyVictimTxnId || next_snoop_txn_id < nextSnoopTxnId occurred: HNF CC restore has invalid/non-monotonic identity state req=1 mc=1 snoop=2147483647 dirtyVictim=1073741824
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:2593: panic: panic condition next_request_id == 0 || next_mc_txn_id == 0 || next_mc_txn_id > McTxnIdLimit || next_dirty_victim_txn_id < DirtyVictimTxnIdBase || next_dirty_victim_txn_id > DirtyVictimTxnIdLimit || next_snoop_txn_id < SnoopTxnIdBase || next_request_id < slcSfReqIds.nextValue() || next_mc_txn_id < nextMcTxnId || next_dirty_victim_txn_id < nextDirtyVictimTxnId || next_snoop_txn_id < nextSnoopTxnId occurred: HNF CC restore has invalid/non-monotonic identity state req=1 mc=1 snoop=2147483648 dirtyVictim=0
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:2593: panic: panic condition next_request_id == 0 || next_mc_txn_id == 0 || next_mc_txn_id > McTxnIdLimit || next_dirty_victim_txn_id < DirtyVictimTxnIdBase || next_dirty_victim_txn_id > DirtyVictimTxnIdLimit || next_snoop_txn_id < SnoopTxnIdBase || next_request_id < slcSfReqIds.nextValue() || next_mc_txn_id < nextMcTxnId || next_dirty_victim_txn_id < nextDirtyVictimTxnId || next_snoop_txn_id < nextSnoopTxnId occurred: HNF CC restore has invalid/non-monotonic identity state req=1 mc=1 snoop=2147483648 dirtyVictim=1073741823
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:2593: panic: panic condition next_request_id == 0 || next_mc_txn_id == 0 || next_mc_txn_id > McTxnIdLimit || next_dirty_victim_txn_id < DirtyVictimTxnIdBase || next_dirty_victim_txn_id > DirtyVictimTxnIdLimit || next_snoop_txn_id < SnoopTxnIdBase || next_request_id < slcSfReqIds.nextValue() || next_mc_txn_id < nextMcTxnId || next_dirty_victim_txn_id < nextDirtyVictimTxnId || next_snoop_txn_id < nextSnoopTxnId occurred: HNF CC restore has invalid/non-monotonic identity state req=1 mc=1 snoop=2147483648 dirtyVictim=4294967295
+[       OK ] HnfCcCheckpointTest.RestoreRejectsInvalidControllerIdentityBounds (1 ms)
+[ RUN      ] HnfCcCheckpointTest.RestoreRejectsIdentityRewindOverUsedController
+build/RISCV/mem/cache/CHI/HnfCoherencyController.cc:2593: panic: panic condition next_request_id == 0 || next_mc_txn_id == 0 || next_mc_txn_id > McTxnIdLimit || next_dirty_victim_txn_id < DirtyVictimTxnIdBase || next_dirty_victim_txn_id > DirtyVictimTxnIdLimit || next_snoop_txn_id < SnoopTxnIdBase || next_request_id < slcSfReqIds.nextValue() || next_mc_txn_id < nextMcTxnId || next_dirty_victim_txn_id < nextDirtyVictimTxnId || next_snoop_txn_id < nextSnoopTxnId occurred: HNF CC restore has invalid/non-monotonic identity state req=1 mc=1 snoop=2147483648 dirtyVictim=1073741824
+[       OK ] HnfCcCheckpointTest.RestoreRejectsIdentityRewindOverUsedController (0 ms)
+[----------] 5 tests from HnfCcCheckpointTest (3 ms total)
+
+[----------] Global test environment tear-down
+[==========] 62 tests from 2 test suites ran. (10 ms total)
+[  PASSED  ] 62 tests.
+
+===== cache2chi_bridge.test.opt rc=0 tests=17 =====
+Running main() from build/RISCV/ext/googletest/googletest/src/gtest_main.cc
+[==========] Running 17 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 17 tests from Cache2ChiBridgeProtocolTest
+[ RUN      ] Cache2ChiBridgeProtocolTest.Case13NormalPromotedUpgradeKeepsUpgradeResponse
+[       OK ] Cache2ChiBridgeProtocolTest.Case13NormalPromotedUpgradeKeepsUpgradeResponse (0 ms)
+[ RUN      ] Cache2ChiBridgeProtocolTest.PrecedingInvalidationRequiresDataBearingResponse
+[       OK ] Cache2ChiBridgeProtocolTest.PrecedingInvalidationRequiresDataBearingResponse (0 ms)
+[ RUN      ] Cache2ChiBridgeProtocolTest.SharedSnoopKeepsUpgradeResponse
+[       OK ] Cache2ChiBridgeProtocolTest.SharedSnoopKeepsUpgradeResponse (0 ms)
+[ RUN      ] Cache2ChiBridgeProtocolTest.LateInvalidationKeepsUpgradeResponse
+[       OK ] Cache2ChiBridgeProtocolTest.LateInvalidationKeepsUpgradeResponse (0 ms)
+[ RUN      ] Cache2ChiBridgeProtocolTest.OrdinaryReadNeverBecomesUpgradeResponse
+[       OK ] Cache2ChiBridgeProtocolTest.OrdinaryReadNeverBecomesUpgradeResponse (0 ms)
+[ RUN      ] Cache2ChiBridgeProtocolTest.Cmn16HnfHashMatchesManualBitLanes
+[       OK ] Cache2ChiBridgeProtocolTest.Cmn16HnfHashMatchesManualBitLanes (0 ms)
+[ RUN      ] Cache2ChiBridgeProtocolTest.Cmn16HnfHashBalancesConsecutiveLines
+[       OK ] Cache2ChiBridgeProtocolTest.Cmn16HnfHashBalancesConsecutiveLines (0 ms)
+[ RUN      ] Cache2ChiBridgeProtocolTest.CmnHashRejectsUnsupportedGeometry
+build/RISCV/mem/cache/CHI/Cache2ChiBridgeData.cc:36: panic: panic condition hnf_count == 0 || hnf_count > 64 || !isPowerOf2(hnf_count) occurred: CMN HNF count=0 must be a power of two in [1, 64]
+build/RISCV/mem/cache/CHI/Cache2ChiBridgeData.cc:36: panic: panic condition hnf_count == 0 || hnf_count > 64 || !isPowerOf2(hnf_count) occurred: CMN HNF count=3 must be a power of two in [1, 64]
+build/RISCV/mem/cache/CHI/Cache2ChiBridgeData.cc:36: panic: panic condition hnf_count == 0 || hnf_count > 64 || !isPowerOf2(hnf_count) occurred: CMN HNF count=128 must be a power of two in [1, 64]
+build/RISCV/mem/cache/CHI/Cache2ChiBridgeData.cc:40: panic: panic condition pa_bits < 6 || pa_bits > 64 occurred: CMN HNF hash PA width=5 must be in [6, 64]
+build/RISCV/mem/cache/CHI/Cache2ChiBridgeData.cc:40: panic: panic condition pa_bits < 6 || pa_bits > 64 occurred: CMN HNF hash PA width=65 must be in [6, 64]
+[       OK ] Cache2ChiBridgeProtocolTest.CmnHashRejectsUnsupportedGeometry (0 ms)
+[ RUN      ] Cache2ChiBridgeProtocolTest.QueuedCompAckCannotAliasNextReqWithOneOutstandingSlot
+[       OK ] Cache2ChiBridgeProtocolTest.QueuedCompAckCannotAliasNextReqWithOneOutstandingSlot (0 ms)
+[ RUN      ] Cache2ChiBridgeProtocolTest.OutstandingLimitDoesNotDefineTxnIdRecyclingWindow
+[       OK ] Cache2ChiBridgeProtocolTest.OutstandingLimitDoesNotDefineTxnIdRecyclingWindow (0 ms)
+[ RUN      ] Cache2ChiBridgeProtocolTest.NonZeroBaseInterleavedNamespacesNeverCross
+[       OK ] Cache2ChiBridgeProtocolTest.NonZeroBaseInterleavedNamespacesNeverCross (0 ms)
+[ RUN      ] Cache2ChiBridgeProtocolTest.TxnIdExhaustionDoesNotWrap
+[       OK ] Cache2ChiBridgeProtocolTest.TxnIdExhaustionDoesNotWrap (0 ms)
+[ RUN      ] Cache2ChiBridgeProtocolTest.TxnIdNamespaceGeometryIsValidated
+build/RISCV/mem/cache/CHI/Cache2ChiBridgeData.cc:78: panic: panic condition namespace_count == 0 || namespace_id >= namespace_count occurred: invalid Cache2ChiBridge TxnID namespace 0/0
+build/RISCV/mem/cache/CHI/Cache2ChiBridgeData.cc:78: panic: panic condition namespace_count == 0 || namespace_id >= namespace_count occurred: invalid Cache2ChiBridge TxnID namespace 4/4
+[       OK ] Cache2ChiBridgeProtocolTest.TxnIdNamespaceGeometryIsValidated (0 ms)
+[ RUN      ] Cache2ChiBridgeProtocolTest.ReadDataAcceptsTerminalBeatFirst
+[       OK ] Cache2ChiBridgeProtocolTest.ReadDataAcceptsTerminalBeatFirst (0 ms)
+[ RUN      ] Cache2ChiBridgeProtocolTest.RejectedReadDataBeatsDoNotPolluteAssembly
+build/RISCV/mem/cache/CHI/Cache2ChiBridgeData.cc:138: panic: panic condition dat.srcid != txn.req.tgtid || dat.tgtid != txn.req.srcid || dat.HomeNID != txn.req.tgtid || dat.dbid != 0 || dat.qos != txn.req.qos occurred: Cache2ChiBridgeProtocolTest: DAT identity mismatch txnid=11 src=145/144 tgt=32/32 home=144 dbid=0 qos=3/3
+build/RISCV/mem/cache/CHI/Cache2ChiBridgeData.cc:202: panic: panic condition static_cast<bool>(dat.last) != terminal_beat occurred: Cache2ChiBridgeProtocolTest: DAT last=1 disagrees with dataid=0, terminal=1 txnid=11
+build/RISCV/mem/cache/CHI/Cache2ChiBridgeData.cc:177: panic: panic condition dat.byteEnable.size() != dat.data.size() || dat.chunkValid.size() != (dat.data.size() + 7) / 8 || std::any_of(dat.byteEnable.begin(), dat.byteEnable.end(), [](uint8_t byte) { return byte != 1; }) || std::any_of(dat.chunkValid.begin(), dat.chunkValid.end(), [](uint8_t chunk) { return chunk != 1; }) occurred: Cache2ChiBridgeProtocolTest: DAT mask mismatch txnid=11 bytes=32 be=32 chunks=4
+build/RISCV/mem/cache/CHI/Cache2ChiBridgeData.cc:177: panic: panic condition dat.byteEnable.size() != dat.data.size() || dat.chunkValid.size() != (dat.data.size() + 7) / 8 || std::any_of(dat.byteEnable.begin(), dat.byteEnable.end(), [](uint8_t byte) { return byte != 1; }) || std::any_of(dat.chunkValid.begin(), dat.chunkValid.end(), [](uint8_t chunk) { return chunk != 1; }) occurred: Cache2ChiBridgeProtocolTest: DAT mask mismatch txnid=11 bytes=32 be=32 chunks=4
+build/RISCV/mem/cache/CHI/Cache2ChiBridgeData.cc:160: panic: panic condition txn.gotData || dat.data.empty() || beat_count == 0 || beat_count > UINT8_MAX + 1 || dat.dataid >= beat_count || txn.seenReadDataIds[dat.dataid] occurred: Cache2ChiBridgeProtocolTest: DAT DataID mismatch txnid=11 dataid=0 beats=2 duplicate=1 complete=0
+build/RISCV/mem/cache/CHI/Cache2ChiBridgeData.cc:202: panic: panic condition static_cast<bool>(dat.last) != terminal_beat occurred: Cache2ChiBridgeProtocolTest: DAT last=0 disagrees with dataid=1, terminal=1 txnid=11
+build/RISCV/mem/cache/CHI/Cache2ChiBridgeData.cc:170: panic: panic condition dat.beatOffset != expected_offset || dat.data.size() != expected_beat_bytes occurred: Cache2ChiBridgeProtocolTest: DAT geometry mismatch txnid=11 dataid=1 offset=16/32 bytes=32/32
+[       OK ] Cache2ChiBridgeProtocolTest.RejectedReadDataBeatsDoNotPolluteAssembly (0 ms)
+[ RUN      ] Cache2ChiBridgeProtocolTest.SnoopDataBackpressureRetriesWithoutDuplicateBeats
+[       OK ] Cache2ChiBridgeProtocolTest.SnoopDataBackpressureRetriesWithoutDuplicateBeats (0 ms)
+[ RUN      ] Cache2ChiBridgeProtocolTest.SnoopRspBackpressureRetriesExactlyOnce
+[       OK ] Cache2ChiBridgeProtocolTest.SnoopRspBackpressureRetriesExactlyOnce (0 ms)
+[----------] 17 tests from Cache2ChiBridgeProtocolTest (1 ms total)
+
+[----------] Global test environment tear-down
+[==========] 17 tests from 1 test suite ran. (1 ms total)
+[  PASSED  ] 17 tests.
+
+===== chi2classic_mem_bridge.test.opt rc=0 tests=9 =====
+Running main() from build/RISCV/ext/googletest/googletest/src/gtest_main.cc
+[==========] Running 9 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 7 tests from Chi2ClassicMemBridgePolicyTest
+[ RUN      ] Chi2ClassicMemBridgePolicyTest.WriteRequestAndDbidResponseMetadataAreExact
+[       OK ] Chi2ClassicMemBridgePolicyTest.WriteRequestAndDbidResponseMetadataAreExact (0 ms)
+[ RUN      ] Chi2ClassicMemBridgePolicyTest.WriteDataRequiresExactIdentityAndFullLineMetadata
+[       OK ] Chi2ClassicMemBridgePolicyTest.WriteDataRequiresExactIdentityAndFullLineMetadata (0 ms)
+[ RUN      ] Chi2ClassicMemBridgePolicyTest.DirtyVictimTraceHashIsStableAndPayloadSensitive
+[       OK ] Chi2ClassicMemBridgePolicyTest.DirtyVictimTraceHashIsStableAndPayloadSensitive (0 ms)
+[ RUN      ] Chi2ClassicMemBridgePolicyTest.DirtyVictimTraceRequiresExplicitProducerProvenance
+[       OK ] Chi2ClassicMemBridgePolicyTest.DirtyVictimTraceRequiresExplicitProducerProvenance (0 ms)
+[ RUN      ] Chi2ClassicMemBridgePolicyTest.ClassicRequestBackpressureRetainsPacketPhase
+[       OK ] Chi2ClassicMemBridgePolicyTest.ClassicRequestBackpressureRetainsPacketPhase (0 ms)
+[ RUN      ] Chi2ClassicMemBridgePolicyTest.CompRequiresClassicResponseAndChiBackpressureRetainsIt
+[       OK ] Chi2ClassicMemBridgePolicyTest.CompRequiresClassicResponseAndChiBackpressureRetainsIt (0 ms)
+[ RUN      ] Chi2ClassicMemBridgePolicyTest.ReadNoSnpRegressionUsesOrderedClassicLifecycle
+[       OK ] Chi2ClassicMemBridgePolicyTest.ReadNoSnpRegressionUsesOrderedClassicLifecycle (0 ms)
+[----------] 7 tests from Chi2ClassicMemBridgePolicyTest (0 ms total)
+
+[----------] 2 tests from Chi2ClassicMemBridgeIdentityTest
+[ RUN      ] Chi2ClassicMemBridgeIdentityTest.SameTxnIdFromDifferentHnfsRemainIndependent
+[       OK ] Chi2ClassicMemBridgeIdentityTest.SameTxnIdFromDifferentHnfsRemainIndependent (0 ms)
+[ RUN      ] Chi2ClassicMemBridgeIdentityTest.DuplicateMeansSameSourceAndTxnId
+[       OK ] Chi2ClassicMemBridgeIdentityTest.DuplicateMeansSameSourceAndTxnId (0 ms)
+[----------] 2 tests from Chi2ClassicMemBridgeIdentityTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 9 tests from 2 test suites ran. (0 ms total)
+[  PASSED  ] 9 tests.
+
+===== hnf_seq_pocq_state_graph.test.opt rc=0 tests=2 =====
+Running main() from build/RISCV/ext/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from HnfSeqPocqStateGraphTest
+[ RUN      ] HnfSeqPocqStateGraphTest.NoHazardSnoopsThenCompletes
+[       OK ] HnfSeqPocqStateGraphTest.NoHazardSnoopsThenCompletes (0 ms)
+[ RUN      ] HnfSeqPocqStateGraphTest.AddressHazardSleepsUntilClear
+[       OK ] HnfSeqPocqStateGraphTest.AddressHazardSleepsUntilClear (0 ms)
+[----------] 2 tests from HnfSeqPocqStateGraphTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 2 tests.
+
+===== hnf_pocq_state_graph.test.opt rc=0 tests=18 =====
+Running main() from build/RISCV/ext/googletest/googletest/src/gtest_main.cc
+[==========] Running 18 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 18 tests from HnfPocqStateGraphTest
+[ RUN      ] HnfPocqStateGraphTest.SlcHitPath
+[       OK ] HnfPocqStateGraphTest.SlcHitPath (0 ms)
+[ RUN      ] HnfPocqStateGraphTest.SlcMissIssuesMemoryRead
+[       OK ] HnfPocqStateGraphTest.SlcMissIssuesMemoryRead (0 ms)
+[ RUN      ] HnfPocqStateGraphTest.ReadNoSnpSkipsSlcUpdate
+[       OK ] HnfPocqStateGraphTest.ReadNoSnpSkipsSlcUpdate (0 ms)
+[ RUN      ] HnfPocqStateGraphTest.ReplaySleeps
+[       OK ] HnfPocqStateGraphTest.ReplaySleeps (0 ms)
+[ RUN      ] HnfPocqStateGraphTest.MaintenanceWaitsForSlcUpdateBeforeComp
+[       OK ] HnfPocqStateGraphTest.MaintenanceWaitsForSlcUpdateBeforeComp (0 ms)
+[ RUN      ] HnfPocqStateGraphTest.MaintenanceSnoopAlsoWaitsForSlcUpdate
+[       OK ] HnfPocqStateGraphTest.MaintenanceSnoopAlsoWaitsForSlcUpdate (0 ms)
+[ RUN      ] HnfPocqStateGraphTest.EvictWaitsForRemoveSharerUpdate
+[       OK ] HnfPocqStateGraphTest.EvictWaitsForRemoveSharerUpdate (0 ms)
+[ RUN      ] HnfPocqStateGraphTest.ReadUniqueWaitsForSnoopBeforeData
+[       OK ] HnfPocqStateGraphTest.ReadUniqueWaitsForSnoopBeforeData (0 ms)
+[ RUN      ] HnfPocqStateGraphTest.UpdateReplaySleepsFromWaitState
+[       OK ] HnfPocqStateGraphTest.UpdateReplaySleepsFromWaitState (0 ms)
+[ RUN      ] HnfPocqStateGraphTest.UpdateCannotCompleteBeforeAcceptance
+[       OK ] HnfPocqStateGraphTest.UpdateCannotCompleteBeforeAcceptance (0 ms)
+[ RUN      ] HnfPocqStateGraphTest.SnoopWithoutDataFallsBackToMemory
+[       OK ] HnfPocqStateGraphTest.SnoopWithoutDataFallsBackToMemory (0 ms)
+[ RUN      ] HnfPocqStateGraphTest.WriteWaitsForDataAndSlcUpdateThenRetires
+[       OK ] HnfPocqStateGraphTest.WriteWaitsForDataAndSlcUpdateThenRetires (0 ms)
+[ RUN      ] HnfPocqStateGraphTest.EverySupportedTransactionHasAnAdmitPath
+[       OK ] HnfPocqStateGraphTest.EverySupportedTransactionHasAnAdmitPath (0 ms)
+[ RUN      ] HnfPocqStateGraphTest.NoMatchingEdgeLeavesStateUnchanged
+[       OK ] HnfPocqStateGraphTest.NoMatchingEdgeLeavesStateUnchanged (0 ms)
+[ RUN      ] HnfPocqStateGraphTest.MarkPublicNodes
+[       OK ] HnfPocqStateGraphTest.MarkPublicNodes (0 ms)
+[ RUN      ] HnfPocqStateGraphTest.CompositeNodeEnterAndStepSubGraph
+[       OK ] HnfPocqStateGraphTest.CompositeNodeEnterAndStepSubGraph (0 ms)
+[ RUN      ] HnfPocqStateGraphTest.SubGraphInProgressWaitsForNextEvent
+[       OK ] HnfPocqStateGraphTest.SubGraphInProgressWaitsForNextEvent (0 ms)
+[ RUN      ] HnfPocqStateGraphTest.PrintStateShowsRecursiveHierarchy
+[       OK ] HnfPocqStateGraphTest.PrintStateShowsRecursiveHierarchy (0 ms)
+[----------] 18 tests from HnfPocqStateGraphTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 18 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 18 tests.
+
+===== home_link_layer.test.opt rc=0 tests=5 =====
+Running main() from build/RISCV/ext/googletest/googletest/src/gtest_main.cc
+[==========] Running 5 tests from 2 test suites.
+[----------] Global test environment set-up.
+[----------] 3 tests from HomeLinkLayerDrainTest
+[ RUN      ] HomeLinkLayerDrainTest.QuiesceAllowsMatchingStaticEntitlement
+[       OK ] HomeLinkLayerDrainTest.QuiesceAllowsMatchingStaticEntitlement (0 ms)
+[ RUN      ] HomeLinkLayerDrainTest.PendingRetryBlocksDrainWithoutBusyPolling
+[       OK ] HomeLinkLayerDrainTest.PendingRetryBlocksDrainWithoutBusyPolling (0 ms)
+[ RUN      ] HomeLinkLayerDrainTest.QuiesceDoesNotHideAcceptedRequestPipeline
+[       OK ] HomeLinkLayerDrainTest.QuiesceDoesNotHideAcceptedRequestPipeline (0 ms)
+[----------] 3 tests from HomeLinkLayerDrainTest (0 ms total)
+
+[----------] 2 tests from ChiCommonPortTest
+[ RUN      ] ChiCommonPortTest.PublicChannelApisRejectOutOfRangeChannel
+build/RISCV/mem/cache/CHI/base/ChiCommonPort.hh:140: panic: panic condition idx >= NUM_CH occurred: ChiCommonPort invalid channel=4
+build/RISCV/mem/cache/CHI/base/ChiCommonPort.hh:140: panic: panic condition idx >= NUM_CH occurred: ChiCommonPort invalid channel=4
+build/RISCV/mem/cache/CHI/base/ChiCommonPort.hh:140: panic: panic condition idx >= NUM_CH occurred: ChiCommonPort invalid channel=4
+build/RISCV/mem/cache/CHI/base/ChiCommonPort.hh:140: panic: panic condition idx >= NUM_CH occurred: ChiCommonPort invalid channel=4
+build/RISCV/mem/cache/CHI/base/ChiCommonPort.hh:140: panic: panic condition idx >= NUM_CH occurred: ChiCommonPort invalid channel=4
+build/RISCV/mem/cache/CHI/base/ChiCommonPort.hh:140: panic: panic condition idx >= NUM_CH occurred: ChiCommonPort invalid channel=4
+build/RISCV/mem/cache/CHI/base/ChiCommonPort.hh:140: panic: panic condition idx >= NUM_CH occurred: ChiCommonPort invalid channel=4
+build/RISCV/mem/cache/CHI/base/ChiCommonPort.hh:140: panic: panic condition idx >= NUM_CH occurred: ChiCommonPort invalid channel=4
+build/RISCV/mem/cache/CHI/base/ChiCommonPort.hh:140: panic: panic condition idx >= NUM_CH occurred: ChiCommonPort invalid channel=4
+build/RISCV/mem/cache/CHI/base/ChiCommonPort.hh:140: panic: panic condition idx >= NUM_CH occurred: ChiCommonPort invalid channel=4
+build/RISCV/mem/cache/CHI/base/ChiCommonPort.hh:140: panic: panic condition idx >= NUM_CH occurred: ChiCommonPort invalid channel=4
+build/RISCV/mem/cache/CHI/base/ChiCommonPort.hh:140: panic: panic condition idx >= NUM_CH occurred: ChiCommonPort invalid channel=4
+build/RISCV/mem/cache/CHI/base/ChiCommonPort.hh:140: panic: panic condition idx >= NUM_CH occurred: ChiCommonPort invalid channel=4
+build/RISCV/mem/cache/CHI/base/ChiCommonPort.hh:140: panic: panic condition idx >= NUM_CH occurred: ChiCommonPort invalid channel=4
+build/RISCV/mem/cache/CHI/base/ChiCommonPort.hh:140: panic: panic condition idx >= NUM_CH occurred: ChiCommonPort invalid channel=4
+[       OK ] ChiCommonPortTest.PublicChannelApisRejectOutOfRangeChannel (1 ms)
+[ RUN      ] ChiCommonPortTest.RejectedRxAdmissionDoesNotConsumeCredit
+[       OK ] ChiCommonPortTest.RejectedRxAdmissionDoesNotConsumeCredit (0 ms)
+[----------] 2 tests from ChiCommonPortTest (1 ms total)
+
+[----------] Global test environment tear-down
+[==========] 5 tests from 2 test suites ran. (2 ms total)
+[  PASSED  ] 5 tests.
+
+===== hnf_cc_types.test.opt rc=0 tests=2 =====
+Running main() from build/RISCV/ext/googletest/googletest/src/gtest_main.cc
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from HnfCcAllocationIdentityTest
+[ RUN      ] HnfCcAllocationIdentityTest.RejectsLateGenerationBeforeTokenReuse
+[       OK ] HnfCcAllocationIdentityTest.RejectsLateGenerationBeforeTokenReuse (0 ms)
+[ RUN      ] HnfCcAllocationIdentityTest.RequiresExactOwnerWithinGeneration
+[       OK ] HnfCcAllocationIdentityTest.RequiresExactOwnerWithinGeneration (0 ms)
+[----------] 2 tests from HnfCcAllocationIdentityTest (0 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (0 ms total)
+[  PASSED  ] 2 tests.

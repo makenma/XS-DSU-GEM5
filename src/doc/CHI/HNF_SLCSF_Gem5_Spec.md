@@ -4,7 +4,7 @@
 
 **`SlcSnoopFilter` 在逻辑上是 `HomeNodeFull` 的内部子模块，在 gem5 实现上建议做成独立的 child `ClockedObject`。**
 
-内部的 `SlcArray`、`SfDirectory`、`VictimBuffer`、`SeqBuffer`、`SlcSfService` 都做成普通 C++ object，由 `SlcSnoopFilter` 统一持有、调度、统计和序列化。
+内部的 `SlcArray`、`SfDirectory`、`SeqBuffer`、`SlcSfService` 都做成普通 C++ object，由 `SlcSnoopFilter` 统一持有、调度、统计和序列化。RTL 对齐模型中没有 SLC-side VictimBuffer。
 
 ```text
 HomeNodeFull
@@ -17,7 +17,6 @@ HomeNodeFull
 └── SlcSnoopFilter                 // child ClockedObject
     ├── SlcArray                   // ordinary C++ object
     ├── SfDirectory                // ordinary C++ object
-    ├── VictimBuffer               // ordinary C++ object
     ├── SeqBuffer                  // ordinary C++ object
     ├── SlcSfService               // ordinary C++ object
     ├── SlcSfReqQueue
@@ -65,7 +64,7 @@ HomeNodeFull
 * SLC/SF storage 的唯一所有权。
 * hit/miss、state、directory target 查询。
 * replacement、dirty victim、SF victim。
-* same-set/way、VictimBuffer、SEQ 冲突。
+* same-set/way、SEQ 冲突。
 * lookup snapshot 和 commit token。
 * 参数化服务延迟。
 * replay、busy 和 backpressure。
@@ -329,8 +328,8 @@ HomeNode 时钟域，也可显式配置不同 child `clk_domain`。
 | 类别 | 默认值 |
 | --- | --- |
 | geometry | block size 继承 `cache_line_size`；SLC `1024 x 16`；SF `1024 x 16`；SEQ `8` |
-| latency | init `16`；lookup `4`；fill `4`；update `3`；dirty victim `3`；SF evict `2`；replay `2` child cycles |
-| capacity | request queue `8`；response queue `8`；VictimBuffer `2`；max in-flight `1` |
+| latency | init `16`；lookup `4`；fill `4`；update `3`；SF evict `2`；replay `2` child cycles；旧 `dirty victim=3` 参数保留但不参与时序 |
+| capacity | request queue `8`；response queue `8`；max in-flight `1`；旧 `VictimBuffer=2` 参数保留但不限制容量 |
 | width | lookup/fill/update issue width 均为 `1`；CC response-consume width `1` |
 | concurrency | set lock 默认关闭；`max_inflight > 1` 时必须显式开启 |
 
@@ -345,7 +344,7 @@ child 中解析后的最终值，不实现第二套优先级。
 当前 checkpoint 支持边界仍是 **drained checkpoint only**。HomeNode 必须先
 停止新 RXREQ，等所有已分配事务不再产生 child intent，再 seal child
 admission；只有 parent protocol/deferred-retire 和 child queue/response/in-flight/
-lock/VictimBuffer/SEQ 均空闲时才能序列化。恢复会保持 SLC/SF/
+lock/SEQ 均空闲时才能序列化。恢复会保持 SLC/SF/
 SEQ 持久状态、replacement/generation 和所有 monotonic next IDs，不会再执行
 cold `initState()`。活动队列、半完成响应、deferred retire 或未释放 owner
 的 checkpoint 会 fail fast，目前不支持。
@@ -407,7 +406,7 @@ src/mem/chi/hnf/
 | `slc_array.*`        | SLC tag/data storage、probe、fill、update、invalidate、victim policy  |
 | `sf_directory.*`     | SF storage、rnfid/rnfvec、directory update、snoop target、SF victim  |
 | `slcsf_policy.*`     | 纯函数形式的 transaction/state transition 规则                           |
-| `slcsf_buffers.*`    | `VictimBuffer` 和 `SeqBuffer`                                     |
+| `slcsf_buffers.*`    | `SeqBuffer`；SLC dirty victim 直接交给 PoCQ，不建独立 buffer         |
 | `slcsf_queue.hh`     | bounded queue、current/next queue、response slot reservation       |
 | `slcsf_service.*`    | issue、inflight、latency、reservation、complete、replay               |
 | `slc_snoop_filter.*` | `ClockedObject` 外壳、wakeup、external API、drain、checkpoint          |
@@ -457,7 +456,7 @@ SConscript
 
 此时：
 
-* `VictimBuffer` 和 `SeqBuffer` 暂时放在 `slcsf_service.hh/.cc`。
+* `SeqBuffer` 暂时放在 `slcsf_service.hh/.cc`。
 * `SlcSfPolicy` 暂时放在 `sf_directory.cc` 或独立 `slcsf_policy.cc`。
 * queue 使用 header-only 模板。
 * stats 暂时作为 `SlcSnoopFilter::Stats` 内部类。
@@ -475,7 +474,6 @@ SlcSnoopFilter
 ├── SlcSfRespQueue
 ├── SlcArray
 ├── SfDirectory
-├── VictimBuffer
 ├── SeqBuffer
 ├── SlcSfPolicy
 ├── SlcSfService
@@ -497,7 +495,6 @@ class SlcSnoopFilter : public ClockedObject
     SlcArray slc;
     SfDirectory sf;
 
-    VictimBuffer victimBuffer;
     SeqBuffer seqBuffer;
 
     SlcSfPolicy policy;
@@ -515,7 +512,6 @@ class SlcSfService
   private:
     SlcArray &slc;
     SfDirectory &sf;
-    VictimBuffer &victimBuffer;
     SeqBuffer &seqBuffer;
     const SlcSfPolicy &policy;
 };
@@ -640,20 +636,21 @@ enum class UpdateKind : uint8_t
     RemoveSharer,
     MakeRequesterUnique,
 
-    ReleaseDirtyVictim,
     CompleteSfEvict
 };
 ```
 
-这样 dirty victim 和 FVB 都有明确结束握手：
+SLC dirty victim 不需要回到 SLCSF 做结束握手；terminal response 把完整
+line snapshot 移交给 PoCQ 后，PoCQ 直接发 `WriteNoSnpFull`，收到下游完成且
+data 已被接受后即可退休。只有 SF victim/FVB 需要完成握手：
 
 ```text
-dirty victim SN writeback done
-    → Update{ReleaseDirtyVictim, victimId}
-
 FVB snoop/data handling done
     → Update{CompleteSfEvict, seqId}
 ```
+
+源码为旧调用方保留了 `ReleaseDirtyVictim` 的 enum/request 编码，但新模型会
+把该请求作为 `InvalidRequest` 拒绝，运行时不得生成它。
 
 ```cpp
 struct EvictReq
@@ -906,7 +903,6 @@ class SlcSfService
         Cycles lookupLatency;
         Cycles fillLatency;
         Cycles updateLatency;
-        Cycles victimLatency;
         Cycles sfEvictLatency;
         Cycles replayPenalty;
 
@@ -919,7 +915,6 @@ class SlcSfService
     SlcSfService(
         SlcArray &slc,
         SfDirectory &sf,
-        VictimBuffer &victimBuffer,
         SeqBuffer &seqBuffer,
         const SlcSfPolicy &policy,
         const Params &params);
@@ -1166,52 +1161,33 @@ struct LookupPlan
 
 ---
 
-# 8. VictimBuffer 与 SeqBuffer
+# 8. SLC victim 直交与 SeqBuffer
 
-## 8.1 `VictimBuffer`
+## 8.1 SLC dirty victim 直接交给 PoCQ
 
-```cpp
-class VictimBuffer
-{
-  public:
-    bool full() const;
-    bool contains(const LineKey &line) const;
+SLC victim 与 SF victim 是两条不同路径。SLC line 的目录语义已经由 HNF
+掌握，不需要为被替换 line 再发 snoop。clean victim 直接丢弃；`MU/MN`
+dirty victim 在 U1 排他窗口内抓取完整 tag/state/data，然后随 terminal
+response 一次性移交给 PoCQ。PoCQ 成为唯一持有者，并向 DDR/SN 发
+`WriteNoSnpFull`。
 
-    std::optional<ReservationId> reserve(
-        SlcSfReqId owner);
-
-    VictimId install(
-        ReservationId reservation,
-        const SlcVictimSnapshot &victim);
-
-    const VictimEntry &get(VictimId id) const;
-
-    void markHandedToPoc(VictimId id);
-    void markWritebackIssued(VictimId id);
-    void release(VictimId id);
-
-    void serialize(CheckpointOut &cp) const;
-    void unserialize(CheckpointIn &cp);
-};
-```
-
-dirty victim fill 的原子顺序：
+原子顺序如下：
 
 ```text
-1. validate commit token
-2. reserve VictimBuffer
-3. snapshot old tag/data
-4. install snapshot into VictimBuffer
-5. install new SLC line
-6. generate FillComplete + SlcSfVictim
+1. validate commit token and selected way
+2. capture the exact dirty line and seal the physical slot
+3. install the new SLC line at U2, consuming the seal
+4. return Fill/UpdateComplete + SlcSfVictim
+5. PoCQ owns the snapshot and issues WriteNoSnpFull
+6. retire after downstream completion and accepted TXDAT
 ```
 
-不能：
+第 2 步只是同一条 SLCSF in-flight request 内的瞬时抓取，不是可排队的
+VictimBuffer entry。它没有独立容量、服务延迟或 release 生命周期，因此不会
+产生 `VictimBufferFull` replay，也不会因为 DDR writeback 尚未完成而阻塞后续
+SLC 替换。slot seal 只用于防止抓取和 U2 覆盖之间发生 way/generation 漂移。
 
-```text
-先覆盖 old line
-再尝试 reserve VictimBuffer
-```
+仍然禁止先覆盖旧 line 再抓取数据；这由 exact snapshot/seal 断言保证。
 
 ## 8.2 `SeqBuffer`
 
@@ -1388,8 +1364,6 @@ request 已经 accepted，但继续处理会违反 snapshot/resource correctness
 
 ```text
 same set/way mutation conflict
-VictimBuffer line conflict
-VictimBuffer full race
 SEQ full race
 stale commit token
 generation changed
@@ -1696,7 +1670,6 @@ reqReady empty
 respPending empty
 respVisible empty
 service inflight empty
-VictimBuffer 不存在未完成 owner
 SeqBuffer 不存在未完成 FVB
 ```
 
@@ -1726,7 +1699,6 @@ SLC replacement state
 SF tags/generation
 SF replacement state
 
-VictimBuffer entries
 SeqBuffer entries
 
 next ReqId / VictimId / ReservationId
@@ -1800,7 +1772,7 @@ struct SlcSfStats : public statistics::Group
 | 4  | `SlcSnoopFilter : ClockedObject`          | request/response 双缓冲、无 0-cycle      |
 | 5  | PoCQ Lookup 对接                            | 四种 SLC/SF hit/miss                  |
 | 6  | Fill/Update + generation token            | stale token replay                  |
-| 7  | dirty VictimBuffer                        | victim data 与 SN writeback 生命周期     |
+| 7  | dirty SLC victim 直交 PoCQ                 | exact snapshot/seal 与异步 SN writeback |
 | 8  | SF victim + SeqBuffer/FVB                 | SEQ full/race replay                |
 | 9  | 多 inflight、set/way reservation            | 不同 set 并行、同 set 冲突                  |
 | 10 | drain/checkpoint/stats                    | 长测试和恢复测试                            |
@@ -1843,8 +1815,8 @@ isDirty(entry.state) -> entry.dataValid;
 ```
 
 ```cpp
-// Dirty victim 覆盖前必须进入 VictimBuffer。
-dirtyVictim -> victimBufferReservation.valid();
+// Dirty SLC victim 覆盖前必须完成 exact capture，并在 response 中移交 PoCQ。
+dirtySlcVictim -> exactCapture.valid() && terminalResponse.hasSlcVictim();
 ```
 
 ```cpp

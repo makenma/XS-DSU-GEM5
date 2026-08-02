@@ -46,13 +46,14 @@ class HomeNodeFull(BasicChiComponent):
     slcsf_lookup_latency = Param.Cycles(4, "SLCSF lookup service latency")
     slcsf_fill_latency = Param.Cycles(4, "SLCSF fill service latency")
     slcsf_update_latency = Param.Cycles(3, "SLCSF update service latency")
-    slcsf_victim_latency = Param.Cycles(3, "SLCSF dirty victim latency")
+    slcsf_victim_latency = Param.Cycles(
+        3, "Deprecated compatibility knob; dirty victims hand off to PoCQ")
     slcsf_sf_evict_latency = Param.Cycles(2, "SLCSF SF eviction latency")
     slcsf_replay_penalty = Param.Cycles(2, "SLCSF replay delay")
     slcsf_req_queue_entries = Param.UInt32(8, "SLCSF request queue entries")
     slcsf_resp_queue_entries = Param.UInt32(8, "SLCSF response queue entries")
     slcsf_victim_buffer_entries = Param.UInt32(
-        2, "SLCSF VictimBuffer entries")
+        2, "Deprecated compatibility knob; no SLC VictimBuffer is modeled")
     slcsf_lookup_issue_width = Param.UInt32(1, "SLCSF lookup issue width")
     slcsf_fill_issue_width = Param.UInt32(1, "SLCSF fill issue width")
     slcsf_update_issue_width = Param.UInt32(1, "SLCSF update issue width")

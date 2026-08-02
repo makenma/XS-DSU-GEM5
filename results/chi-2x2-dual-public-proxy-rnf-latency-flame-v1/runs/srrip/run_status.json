@@ -1,0 +1,6 @@
+{
+  "host_elapsed_seconds": 525.7534079551697,
+  "return_code": 0,
+  "stderr": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/runs/srrip/stderr.log",
+  "stdout": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/runs/srrip/stdout.log"
+}

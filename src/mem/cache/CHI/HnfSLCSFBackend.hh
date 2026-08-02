@@ -234,9 +234,9 @@ class HnfSLCSFBackend
      * Non-forgeable proof that a dirty displacement was copied before U2.
      *
      * Only the backend can construct this type, and only the timing adapter
-     * may present an installed VictimBuffer snapshot for authorization.  The
-     * proof binds the stable VictimId, both addresses, and every lookup-token
-     * version/replacement field used to select the displaced way.
+     * may present the transient snapshot captured for the direct PoCQ handoff.
+     * The proof binds the stable VictimId, both addresses, and every
+     * lookup-token version/replacement field used to select the displaced way.
      */
     class DirtyVictimWritePermit
     {
@@ -336,8 +336,8 @@ class HnfSLCSFBackend
     // on CommitToken validation instead of holding a set across waits.
     std::vector<int64_t> issuedSfSetOwners;
     std::unordered_map<uint32_t, SfReservation> sfReservations;
-    // One bounded seal per physical SLC slot. A seal is produced while the
-    // VictimBuffer entry is installed and consumed exactly once at U2.
+    // One transient seal per physical SLC slot. A seal is produced while the
+    // dirty line is captured for direct PoCQ handoff and consumed once at U2.
     std::unordered_map<uint64_t, DirtyVictimSeal> dirtyVictimSeals;
     size_t reservedSeqSlots = 0;
     uint64_t accessCounter = 0;
@@ -429,9 +429,9 @@ class HnfSLCSFBackend
     bool exactSnapshotMatches(
         uint64_t block_addr, const LookupSnapshot& snapshot) const;
 
-    // Trusted timing-adapter entry points.  They are deliberately private so
-    // synchronous backend callers cannot bypass the bounded VictimBuffer by
-    // supplying an arbitrary preservation pointer.
+    // Trusted timing-adapter entry points. They are deliberately private so
+    // synchronous backend callers cannot bypass the exact snapshot/seal check
+    // by supplying an arbitrary preservation pointer.
     void commitRead(uint64_t block_addr, uint32_t requester,
                     PocqTxnKind txn, const std::vector<uint8_t>& data,
                     bool data_dirty, uint32_t home_node_id,

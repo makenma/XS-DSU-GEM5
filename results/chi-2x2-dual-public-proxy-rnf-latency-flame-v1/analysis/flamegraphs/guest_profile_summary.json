@@ -1,0 +1,928 @@
+{
+  "method": {
+    "boundary": "start/stop at exact measured ROI ticks",
+    "host_gem5_profile": false,
+    "kind": "guest_roi_shadow_call_stack",
+    "limitation": "The shared checkpoint predates profiler attachment. The shadow stack therefore learns calls/returns inside the ROI and labels its initial ancestry as unavailable; it is not a full DWARF unwind of pre-ROI frames.",
+    "pc_only_rule": "If no call is observed and shadow depth never exceeds one, the output is explicitly labeled a function/PC profile in flame layout, not a call-stack flame graph.",
+    "sampling": "deterministic instruction-count sampling",
+    "source": "O3 retired guest macro-instruction Commit probe",
+    "symbol_scope": "The supplied static ELFs contain .symtab and .eh_frame but no .debug_info/.debug_line. Function names are reliable; source-line fields may be ??:0. No workload rebuild was needed and no host symbols are used.",
+    "symbolization": "CPU-specific guest ELF via addr2line"
+  },
+  "profiles": [
+    {
+      "calls_seen": 0,
+      "commit_probe_coverage_fraction": 1.0,
+      "cpu": 0,
+      "elf": "/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4/shor-rv64-static",
+      "elf_sha256": "e4e313b2a2c3dcb46a0be4e4295f7ab53820fcff2cb4ea0a10659187ae5a1b34",
+      "elf_symbol_metadata": {
+        "build_id": "83ed4f573fd17e9503e10add85d33b6c83968342",
+        "frame_pointer_or_dwarf_unwind_used": false,
+        "has_debug_info": false,
+        "has_debug_line": false,
+        "has_eh_frame": true,
+        "has_symtab": true,
+        "rebuilt_for_profile": false,
+        "symbol_level": "function names from .symtab; source lines unavailable"
+      },
+      "flame_png": "analysis/flamegraphs/libquantum-lru.png",
+      "flame_svg": "analysis/flamegraphs/libquantum-lru.svg",
+      "folded_stacks": "analysis/flamegraphs/libquantum-lru.folded",
+      "frame_instances": 14768,
+      "guest_profile": true,
+      "host_gem5_profile": false,
+      "is_call_stack_flame_graph": false,
+      "max_shadow_depth": 1,
+      "median_sample_interval_ticks": 225330,
+      "pc_profile_only": true,
+      "policy": "lru",
+      "pre_roi_ancestry_unwound": false,
+      "profile_kind": "guest_roi_shadow_call_stack",
+      "raw_metadata": "analysis/flamegraphs/libquantum-lru.metadata.json",
+      "raw_samples": "analysis/flamegraphs/libquantum-lru.raw.csv",
+      "rendering_kind": "guest_roi_function_pc_profile_flame_layout",
+      "retired_macro_insts_observed": 7383977,
+      "return_underflows": 0,
+      "returns_seen": 0,
+      "roi_committed_insts": 7383977,
+      "roi_only": true,
+      "roi_root_is_truncated": true,
+      "sample_period_retired_macro_insts": 1000,
+      "samples": 7384,
+      "semantic_timing_effect": false,
+      "symbol_map": "analysis/flamegraphs/libquantum-lru.symbols.csv",
+      "symbolizer": "riscv64-linux-gnu-addr2line -f -C -e <CPU-specific ELF>",
+      "top_inclusive_functions": [
+        {
+          "function": "quantum_gate1",
+          "rank": 1,
+          "sample_fraction": 1.0,
+          "samples": 7384
+        }
+      ],
+      "top_leaf_functions": [
+        {
+          "function": "quantum_gate1",
+          "rank": 1,
+          "sample_fraction": 1.0,
+          "samples": 7384
+        }
+      ],
+      "unique_addresses": 4,
+      "unique_unresolved_addresses": 0,
+      "unique_unresolved_ratio": 0.0,
+      "unresolved_frame_instances": 0,
+      "unresolved_frame_ratio": 0.0,
+      "unresolved_leaf_ratio": 0.0,
+      "unresolved_leaf_samples": 0,
+      "workload": "libquantum 0.2.4 Shor"
+    },
+    {
+      "calls_seen": 0,
+      "commit_probe_coverage_fraction": 1.0,
+      "cpu": 0,
+      "elf": "/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4/shor-rv64-static",
+      "elf_sha256": "e4e313b2a2c3dcb46a0be4e4295f7ab53820fcff2cb4ea0a10659187ae5a1b34",
+      "elf_symbol_metadata": {
+        "build_id": "83ed4f573fd17e9503e10add85d33b6c83968342",
+        "frame_pointer_or_dwarf_unwind_used": false,
+        "has_debug_info": false,
+        "has_debug_line": false,
+        "has_eh_frame": true,
+        "has_symtab": true,
+        "rebuilt_for_profile": false,
+        "symbol_level": "function names from .symtab; source lines unavailable"
+      },
+      "flame_png": "analysis/flamegraphs/libquantum-random.png",
+      "flame_svg": "analysis/flamegraphs/libquantum-random.svg",
+      "folded_stacks": "analysis/flamegraphs/libquantum-random.folded",
+      "frame_instances": 14664,
+      "guest_profile": true,
+      "host_gem5_profile": false,
+      "is_call_stack_flame_graph": false,
+      "max_shadow_depth": 1,
+      "median_sample_interval_ticks": 226200,
+      "pc_profile_only": true,
+      "policy": "random",
+      "pre_roi_ancestry_unwound": false,
+      "profile_kind": "guest_roi_shadow_call_stack",
+      "raw_metadata": "analysis/flamegraphs/libquantum-random.metadata.json",
+      "raw_samples": "analysis/flamegraphs/libquantum-random.raw.csv",
+      "rendering_kind": "guest_roi_function_pc_profile_flame_layout",
+      "retired_macro_insts_observed": 7331309,
+      "return_underflows": 0,
+      "returns_seen": 0,
+      "roi_committed_insts": 7331309,
+      "roi_only": true,
+      "roi_root_is_truncated": true,
+      "sample_period_retired_macro_insts": 1000,
+      "samples": 7332,
+      "semantic_timing_effect": false,
+      "symbol_map": "analysis/flamegraphs/libquantum-random.symbols.csv",
+      "symbolizer": "riscv64-linux-gnu-addr2line -f -C -e <CPU-specific ELF>",
+      "top_inclusive_functions": [
+        {
+          "function": "quantum_gate1",
+          "rank": 1,
+          "sample_fraction": 1.0,
+          "samples": 7332
+        }
+      ],
+      "top_leaf_functions": [
+        {
+          "function": "quantum_gate1",
+          "rank": 1,
+          "sample_fraction": 1.0,
+          "samples": 7332
+        }
+      ],
+      "unique_addresses": 4,
+      "unique_unresolved_addresses": 0,
+      "unique_unresolved_ratio": 0.0,
+      "unresolved_frame_instances": 0,
+      "unresolved_frame_ratio": 0.0,
+      "unresolved_leaf_ratio": 0.0,
+      "unresolved_leaf_samples": 0,
+      "workload": "libquantum 0.2.4 Shor"
+    },
+    {
+      "calls_seen": 0,
+      "commit_probe_coverage_fraction": 1.0,
+      "cpu": 0,
+      "elf": "/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4/shor-rv64-static",
+      "elf_sha256": "e4e313b2a2c3dcb46a0be4e4295f7ab53820fcff2cb4ea0a10659187ae5a1b34",
+      "elf_symbol_metadata": {
+        "build_id": "83ed4f573fd17e9503e10add85d33b6c83968342",
+        "frame_pointer_or_dwarf_unwind_used": false,
+        "has_debug_info": false,
+        "has_debug_line": false,
+        "has_eh_frame": true,
+        "has_symtab": true,
+        "rebuilt_for_profile": false,
+        "symbol_level": "function names from .symtab; source lines unavailable"
+      },
+      "flame_png": "analysis/flamegraphs/libquantum-srrip.png",
+      "flame_svg": "analysis/flamegraphs/libquantum-srrip.svg",
+      "folded_stacks": "analysis/flamegraphs/libquantum-srrip.folded",
+      "frame_instances": 14802,
+      "guest_profile": true,
+      "host_gem5_profile": false,
+      "is_call_stack_flame_graph": false,
+      "max_shadow_depth": 1,
+      "median_sample_interval_ticks": 225330.0,
+      "pc_profile_only": true,
+      "policy": "srrip",
+      "pre_roi_ancestry_unwound": false,
+      "profile_kind": "guest_roi_shadow_call_stack",
+      "raw_metadata": "analysis/flamegraphs/libquantum-srrip.metadata.json",
+      "raw_samples": "analysis/flamegraphs/libquantum-srrip.raw.csv",
+      "rendering_kind": "guest_roi_function_pc_profile_flame_layout",
+      "retired_macro_insts_observed": 7400735,
+      "return_underflows": 0,
+      "returns_seen": 0,
+      "roi_committed_insts": 7400735,
+      "roi_only": true,
+      "roi_root_is_truncated": true,
+      "sample_period_retired_macro_insts": 1000,
+      "samples": 7401,
+      "semantic_timing_effect": false,
+      "symbol_map": "analysis/flamegraphs/libquantum-srrip.symbols.csv",
+      "symbolizer": "riscv64-linux-gnu-addr2line -f -C -e <CPU-specific ELF>",
+      "top_inclusive_functions": [
+        {
+          "function": "quantum_gate1",
+          "rank": 1,
+          "sample_fraction": 1.0,
+          "samples": 7401
+        }
+      ],
+      "top_leaf_functions": [
+        {
+          "function": "quantum_gate1",
+          "rank": 1,
+          "sample_fraction": 1.0,
+          "samples": 7401
+        }
+      ],
+      "unique_addresses": 4,
+      "unique_unresolved_addresses": 0,
+      "unique_unresolved_ratio": 0.0,
+      "unresolved_frame_instances": 0,
+      "unresolved_frame_ratio": 0.0,
+      "unresolved_leaf_ratio": 0.0,
+      "unresolved_leaf_samples": 0,
+      "workload": "libquantum 0.2.4 Shor"
+    },
+    {
+      "calls_seen": 37807,
+      "commit_probe_coverage_fraction": 0.9865010757596351,
+      "cpu": 1,
+      "elf": "/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/bin/tokenring-rv64-static",
+      "elf_sha256": "2be6af6d4b687ae7f7a05375ed2a32132c1ff5b41a8506a6ce1e2927d2adb0b7",
+      "elf_symbol_metadata": {
+        "build_id": "28163213a05c2514482d4db996621681d13e6a01",
+        "frame_pointer_or_dwarf_unwind_used": false,
+        "has_debug_info": false,
+        "has_debug_line": false,
+        "has_eh_frame": true,
+        "has_symtab": true,
+        "rebuilt_for_profile": false,
+        "symbol_level": "function names from .symtab; source lines unavailable"
+      },
+      "flame_png": "analysis/flamegraphs/omnetpp-lru.png",
+      "flame_svg": "analysis/flamegraphs/omnetpp-lru.svg",
+      "folded_stacks": "analysis/flamegraphs/omnetpp-lru.folded",
+      "frame_instances": 23456,
+      "guest_profile": true,
+      "host_gem5_profile": false,
+      "is_call_stack_flame_graph": true,
+      "max_shadow_depth": 15,
+      "median_sample_interval_ticks": 963090,
+      "pc_profile_only": false,
+      "policy": "lru",
+      "pre_roi_ancestry_unwound": false,
+      "profile_kind": "guest_roi_shadow_call_stack",
+      "raw_metadata": "analysis/flamegraphs/omnetpp-lru.metadata.json",
+      "raw_samples": "analysis/flamegraphs/omnetpp-lru.raw.csv",
+      "rendering_kind": "guest_roi_shadow_call_stack_flame_graph",
+      "retired_macro_insts_observed": 1923465,
+      "return_underflows": 8,
+      "returns_seen": 37804,
+      "roi_committed_insts": 1949785,
+      "roi_only": true,
+      "roi_root_is_truncated": true,
+      "sample_period_retired_macro_insts": 1000,
+      "samples": 1924,
+      "semantic_timing_effect": false,
+      "symbol_map": "analysis/flamegraphs/omnetpp-lru.symbols.csv",
+      "symbolizer": "riscv64-linux-gnu-addr2line -f -C -e <CPU-specific ELF>",
+      "top_inclusive_functions": [
+        {
+          "function": "____strtoll_l_internal",
+          "rank": 1,
+          "sample_fraction": 1.0,
+          "samples": 1924
+        },
+        {
+          "function": "cModule::buildInside()",
+          "rank": 2,
+          "sample_fraction": 0.9636174636174636,
+          "samples": 1854
+        },
+        {
+          "function": "Computer::doBuildInside()",
+          "rank": 3,
+          "sample_fraction": 0.9604989604989606,
+          "samples": 1848
+        },
+        {
+          "function": "cGate::connectTo(cGate*, cChannel*)",
+          "rank": 4,
+          "sample_fraction": 0.91008316008316,
+          "samples": 1751
+        },
+        {
+          "function": "__cxa_throw",
+          "rank": 5,
+          "sample_fraction": 0.9033264033264033,
+          "samples": 1738
+        },
+        {
+          "function": "_Unwind_RaiseException",
+          "rank": 6,
+          "sample_fraction": 0.9033264033264033,
+          "samples": 1738
+        },
+        {
+          "function": "uw_init_context_1",
+          "rank": 7,
+          "sample_fraction": 0.9033264033264033,
+          "samples": 1738
+        },
+        {
+          "function": "uw_frame_state_for",
+          "rank": 8,
+          "sample_fraction": 0.9033264033264033,
+          "samples": 1738
+        },
+        {
+          "function": "_Unwind_Find_FDE",
+          "rank": 9,
+          "sample_fraction": 0.9028066528066528,
+          "samples": 1737
+        },
+        {
+          "function": "search_object",
+          "rank": 10,
+          "sample_fraction": 0.9028066528066528,
+          "samples": 1737
+        },
+        {
+          "function": "read_encoded_value_with_base",
+          "rank": 11,
+          "sample_fraction": 0.44646569646569645,
+          "samples": 859
+        },
+        {
+          "function": "fde_single_encoding_compare",
+          "rank": 12,
+          "sample_fraction": 0.39553014553014554,
+          "samples": 761
+        },
+        {
+          "function": "classify_object_over_fdes",
+          "rank": 13,
+          "sample_fraction": 0.25727650727650725,
+          "samples": 495
+        },
+        {
+          "function": "add_fdes",
+          "rank": 14,
+          "sample_fraction": 0.20270270270270271,
+          "samples": 390
+        },
+        {
+          "function": "get_cie_encoding",
+          "rank": 15,
+          "sample_fraction": 0.062370062370062374,
+          "samples": 120
+        }
+      ],
+      "top_leaf_functions": [
+        {
+          "function": "read_encoded_value_with_base",
+          "rank": 1,
+          "sample_fraction": 0.44646569646569645,
+          "samples": 859
+        },
+        {
+          "function": "fde_single_encoding_compare",
+          "rank": 2,
+          "sample_fraction": 0.15072765072765074,
+          "samples": 290
+        },
+        {
+          "function": "add_fdes",
+          "rank": 3,
+          "sample_fraction": 0.10966735966735967,
+          "samples": 211
+        },
+        {
+          "function": "classify_object_over_fdes",
+          "rank": 4,
+          "sample_fraction": 0.09875259875259876,
+          "samples": 190
+        },
+        {
+          "function": "search_object",
+          "rank": 5,
+          "sample_fraction": 0.0472972972972973,
+          "samples": 91
+        },
+        {
+          "function": "get_cie_encoding",
+          "rank": 6,
+          "sample_fraction": 0.034823284823284825,
+          "samples": 67
+        },
+        {
+          "function": "strlen",
+          "rank": 7,
+          "sample_fraction": 0.02442827442827443,
+          "samples": 47
+        },
+        {
+          "function": "memset",
+          "rank": 8,
+          "sample_fraction": 0.009875259875259876,
+          "samples": 19
+        },
+        {
+          "function": "_int_malloc",
+          "rank": 9,
+          "sample_fraction": 0.008316008316008316,
+          "samples": 16
+        },
+        {
+          "function": "memcpy",
+          "rank": 10,
+          "sample_fraction": 0.008316008316008316,
+          "samples": 16
+        },
+        {
+          "function": "malloc",
+          "rank": 11,
+          "sample_fraction": 0.0036382536382536385,
+          "samples": 7
+        },
+        {
+          "function": "cIniFile::_findEntry(char const*, char const*)",
+          "rank": 12,
+          "sample_fraction": 0.0036382536382536385,
+          "samples": 7
+        },
+        {
+          "function": "__vfscanf_internal",
+          "rank": 13,
+          "sample_fraction": 0.0031185031185031187,
+          "samples": 6
+        },
+        {
+          "function": "strcmp",
+          "rank": 14,
+          "sample_fraction": 0.0031185031185031187,
+          "samples": 6
+        },
+        {
+          "function": "_int_free",
+          "rank": 15,
+          "sample_fraction": 0.0031185031185031187,
+          "samples": 6
+        }
+      ],
+      "unique_addresses": 513,
+      "unique_unresolved_addresses": 0,
+      "unique_unresolved_ratio": 0.0,
+      "unresolved_frame_instances": 0,
+      "unresolved_frame_ratio": 0.0,
+      "unresolved_leaf_ratio": 0.0,
+      "unresolved_leaf_samples": 0,
+      "workload": "OMNeT++ 3.3.2 Token Ring"
+    },
+    {
+      "calls_seen": 40339,
+      "commit_probe_coverage_fraction": 0.9865972740465605,
+      "cpu": 1,
+      "elf": "/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/bin/tokenring-rv64-static",
+      "elf_sha256": "2be6af6d4b687ae7f7a05375ed2a32132c1ff5b41a8506a6ce1e2927d2adb0b7",
+      "elf_symbol_metadata": {
+        "build_id": "28163213a05c2514482d4db996621681d13e6a01",
+        "frame_pointer_or_dwarf_unwind_used": false,
+        "has_debug_info": false,
+        "has_debug_line": false,
+        "has_eh_frame": true,
+        "has_symtab": true,
+        "rebuilt_for_profile": false,
+        "symbol_level": "function names from .symtab; source lines unavailable"
+      },
+      "flame_png": "analysis/flamegraphs/omnetpp-random.png",
+      "flame_svg": "analysis/flamegraphs/omnetpp-random.svg",
+      "folded_stacks": "analysis/flamegraphs/omnetpp-random.folded",
+      "frame_instances": 24777,
+      "guest_profile": true,
+      "host_gem5_profile": false,
+      "is_call_stack_flame_graph": true,
+      "max_shadow_depth": 15,
+      "median_sample_interval_ticks": 939165,
+      "pc_profile_only": false,
+      "policy": "random",
+      "pre_roi_ancestry_unwound": false,
+      "profile_kind": "guest_roi_shadow_call_stack",
+      "raw_metadata": "analysis/flamegraphs/omnetpp-random.metadata.json",
+      "raw_samples": "analysis/flamegraphs/omnetpp-random.raw.csv",
+      "rendering_kind": "guest_roi_shadow_call_stack_flame_graph",
+      "retired_macro_insts_observed": 2029327,
+      "return_underflows": 8,
+      "returns_seen": 40336,
+      "roi_committed_insts": 2056895,
+      "roi_only": true,
+      "roi_root_is_truncated": true,
+      "sample_period_retired_macro_insts": 1000,
+      "samples": 2030,
+      "semantic_timing_effect": false,
+      "symbol_map": "analysis/flamegraphs/omnetpp-random.symbols.csv",
+      "symbolizer": "riscv64-linux-gnu-addr2line -f -C -e <CPU-specific ELF>",
+      "top_inclusive_functions": [
+        {
+          "function": "____strtoll_l_internal",
+          "rank": 1,
+          "sample_fraction": 1.0,
+          "samples": 2030
+        },
+        {
+          "function": "cModule::buildInside()",
+          "rank": 2,
+          "sample_fraction": 0.9655172413793104,
+          "samples": 1960
+        },
+        {
+          "function": "Computer::doBuildInside()",
+          "rank": 3,
+          "sample_fraction": 0.9625615763546798,
+          "samples": 1954
+        },
+        {
+          "function": "cGate::connectTo(cGate*, cChannel*)",
+          "rank": 4,
+          "sample_fraction": 0.9147783251231527,
+          "samples": 1857
+        },
+        {
+          "function": "__cxa_throw",
+          "rank": 5,
+          "sample_fraction": 0.9083743842364532,
+          "samples": 1844
+        },
+        {
+          "function": "_Unwind_RaiseException",
+          "rank": 6,
+          "sample_fraction": 0.9083743842364532,
+          "samples": 1844
+        },
+        {
+          "function": "uw_init_context_1",
+          "rank": 7,
+          "sample_fraction": 0.9083743842364532,
+          "samples": 1844
+        },
+        {
+          "function": "uw_frame_state_for",
+          "rank": 8,
+          "sample_fraction": 0.9083743842364532,
+          "samples": 1844
+        },
+        {
+          "function": "_Unwind_Find_FDE",
+          "rank": 9,
+          "sample_fraction": 0.9078817733990148,
+          "samples": 1843
+        },
+        {
+          "function": "search_object",
+          "rank": 10,
+          "sample_fraction": 0.9078817733990148,
+          "samples": 1843
+        },
+        {
+          "function": "read_encoded_value_with_base",
+          "rank": 11,
+          "sample_fraction": 0.45320197044334976,
+          "samples": 920
+        },
+        {
+          "function": "fde_single_encoding_compare",
+          "rank": 12,
+          "sample_fraction": 0.4246305418719212,
+          "samples": 862
+        },
+        {
+          "function": "classify_object_over_fdes",
+          "rank": 13,
+          "sample_fraction": 0.2438423645320197,
+          "samples": 495
+        },
+        {
+          "function": "add_fdes",
+          "rank": 14,
+          "sample_fraction": 0.1921182266009852,
+          "samples": 390
+        },
+        {
+          "function": "get_cie_encoding",
+          "rank": 15,
+          "sample_fraction": 0.05960591133004926,
+          "samples": 121
+        }
+      ],
+      "top_leaf_functions": [
+        {
+          "function": "read_encoded_value_with_base",
+          "rank": 1,
+          "sample_fraction": 0.45320197044334976,
+          "samples": 920
+        },
+        {
+          "function": "fde_single_encoding_compare",
+          "rank": 2,
+          "sample_fraction": 0.16403940886699508,
+          "samples": 333
+        },
+        {
+          "function": "add_fdes",
+          "rank": 3,
+          "sample_fraction": 0.10492610837438424,
+          "samples": 213
+        },
+        {
+          "function": "classify_object_over_fdes",
+          "rank": 4,
+          "sample_fraction": 0.09261083743842365,
+          "samples": 188
+        },
+        {
+          "function": "search_object",
+          "rank": 5,
+          "sample_fraction": 0.04729064039408867,
+          "samples": 96
+        },
+        {
+          "function": "get_cie_encoding",
+          "rank": 6,
+          "sample_fraction": 0.03251231527093596,
+          "samples": 66
+        },
+        {
+          "function": "strlen",
+          "rank": 7,
+          "sample_fraction": 0.021182266009852218,
+          "samples": 43
+        },
+        {
+          "function": "memset",
+          "rank": 8,
+          "sample_fraction": 0.00935960591133005,
+          "samples": 19
+        },
+        {
+          "function": "_int_malloc",
+          "rank": 9,
+          "sample_fraction": 0.007881773399014778,
+          "samples": 16
+        },
+        {
+          "function": "memcpy",
+          "rank": 10,
+          "sample_fraction": 0.007881773399014778,
+          "samples": 16
+        },
+        {
+          "function": "malloc",
+          "rank": 11,
+          "sample_fraction": 0.0034482758620689655,
+          "samples": 7
+        },
+        {
+          "function": "cIniFile::_findEntry(char const*, char const*)",
+          "rank": 12,
+          "sample_fraction": 0.0034482758620689655,
+          "samples": 7
+        },
+        {
+          "function": "__vfscanf_internal",
+          "rank": 13,
+          "sample_fraction": 0.002955665024630542,
+          "samples": 6
+        },
+        {
+          "function": "strcmp",
+          "rank": 14,
+          "sample_fraction": 0.002955665024630542,
+          "samples": 6
+        },
+        {
+          "function": "_int_free",
+          "rank": 15,
+          "sample_fraction": 0.002955665024630542,
+          "samples": 6
+        }
+      ],
+      "unique_addresses": 502,
+      "unique_unresolved_addresses": 0,
+      "unique_unresolved_ratio": 0.0,
+      "unresolved_frame_instances": 0,
+      "unresolved_frame_ratio": 0.0,
+      "unresolved_leaf_ratio": 0.0,
+      "unresolved_leaf_samples": 0,
+      "workload": "OMNeT++ 3.3.2 Token Ring"
+    },
+    {
+      "calls_seen": 37930,
+      "commit_probe_coverage_fraction": 0.9865256007958612,
+      "cpu": 1,
+      "elf": "/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/bin/tokenring-rv64-static",
+      "elf_sha256": "2be6af6d4b687ae7f7a05375ed2a32132c1ff5b41a8506a6ce1e2927d2adb0b7",
+      "elf_symbol_metadata": {
+        "build_id": "28163213a05c2514482d4db996621681d13e6a01",
+        "frame_pointer_or_dwarf_unwind_used": false,
+        "has_debug_info": false,
+        "has_debug_line": false,
+        "has_eh_frame": true,
+        "has_symtab": true,
+        "rebuilt_for_profile": false,
+        "symbol_level": "function names from .symtab; source lines unavailable"
+      },
+      "flame_png": "analysis/flamegraphs/omnetpp-srrip.png",
+      "flame_svg": "analysis/flamegraphs/omnetpp-srrip.svg",
+      "folded_stacks": "analysis/flamegraphs/omnetpp-srrip.folded",
+      "frame_instances": 23528,
+      "guest_profile": true,
+      "host_gem5_profile": false,
+      "is_call_stack_flame_graph": true,
+      "max_shadow_depth": 15,
+      "median_sample_interval_ticks": 972007.5,
+      "pc_profile_only": false,
+      "policy": "srrip",
+      "pre_roi_ancestry_unwound": false,
+      "profile_kind": "guest_roi_shadow_call_stack",
+      "raw_metadata": "analysis/flamegraphs/omnetpp-srrip.metadata.json",
+      "raw_samples": "analysis/flamegraphs/omnetpp-srrip.raw.csv",
+      "rendering_kind": "guest_roi_shadow_call_stack_flame_graph",
+      "retired_macro_insts_observed": 1928771,
+      "return_underflows": 8,
+      "returns_seen": 37927,
+      "roi_committed_insts": 1955115,
+      "roi_only": true,
+      "roi_root_is_truncated": true,
+      "sample_period_retired_macro_insts": 1000,
+      "samples": 1929,
+      "semantic_timing_effect": false,
+      "symbol_map": "analysis/flamegraphs/omnetpp-srrip.symbols.csv",
+      "symbolizer": "riscv64-linux-gnu-addr2line -f -C -e <CPU-specific ELF>",
+      "top_inclusive_functions": [
+        {
+          "function": "____strtoll_l_internal",
+          "rank": 1,
+          "sample_fraction": 1.0,
+          "samples": 1929
+        },
+        {
+          "function": "cModule::buildInside()",
+          "rank": 2,
+          "sample_fraction": 0.9637117677553136,
+          "samples": 1859
+        },
+        {
+          "function": "Computer::doBuildInside()",
+          "rank": 3,
+          "sample_fraction": 0.9606013478486263,
+          "samples": 1853
+        },
+        {
+          "function": "cGate::connectTo(cGate*, cChannel*)",
+          "rank": 4,
+          "sample_fraction": 0.9103162260238465,
+          "samples": 1756
+        },
+        {
+          "function": "__cxa_throw",
+          "rank": 5,
+          "sample_fraction": 0.9035769828926905,
+          "samples": 1743
+        },
+        {
+          "function": "_Unwind_RaiseException",
+          "rank": 6,
+          "sample_fraction": 0.9035769828926905,
+          "samples": 1743
+        },
+        {
+          "function": "uw_init_context_1",
+          "rank": 7,
+          "sample_fraction": 0.9035769828926905,
+          "samples": 1743
+        },
+        {
+          "function": "uw_frame_state_for",
+          "rank": 8,
+          "sample_fraction": 0.9035769828926905,
+          "samples": 1743
+        },
+        {
+          "function": "_Unwind_Find_FDE",
+          "rank": 9,
+          "sample_fraction": 0.9030585795749093,
+          "samples": 1742
+        },
+        {
+          "function": "search_object",
+          "rank": 10,
+          "sample_fraction": 0.9030585795749093,
+          "samples": 1742
+        },
+        {
+          "function": "read_encoded_value_with_base",
+          "rank": 11,
+          "sample_fraction": 0.4582685329186107,
+          "samples": 884
+        },
+        {
+          "function": "fde_single_encoding_compare",
+          "rank": 12,
+          "sample_fraction": 0.3908761016070503,
+          "samples": 754
+        },
+        {
+          "function": "classify_object_over_fdes",
+          "rank": 13,
+          "sample_fraction": 0.25660964230171074,
+          "samples": 495
+        },
+        {
+          "function": "add_fdes",
+          "rank": 14,
+          "sample_fraction": 0.20217729393468117,
+          "samples": 390
+        },
+        {
+          "function": "get_cie_encoding",
+          "rank": 15,
+          "sample_fraction": 0.06168999481596682,
+          "samples": 119
+        }
+      ],
+      "top_leaf_functions": [
+        {
+          "function": "read_encoded_value_with_base",
+          "rank": 1,
+          "sample_fraction": 0.4582685329186107,
+          "samples": 884
+        },
+        {
+          "function": "fde_single_encoding_compare",
+          "rank": 2,
+          "sample_fraction": 0.1394504924831519,
+          "samples": 269
+        },
+        {
+          "function": "add_fdes",
+          "rank": 3,
+          "sample_fraction": 0.104199066874028,
+          "samples": 201
+        },
+        {
+          "function": "classify_object_over_fdes",
+          "rank": 4,
+          "sample_fraction": 0.09953343701399689,
+          "samples": 192
+        },
+        {
+          "function": "search_object",
+          "rank": 5,
+          "sample_fraction": 0.05339554173146708,
+          "samples": 103
+        },
+        {
+          "function": "strlen",
+          "rank": 6,
+          "sample_fraction": 0.029030585795749093,
+          "samples": 56
+        },
+        {
+          "function": "get_cie_encoding",
+          "rank": 7,
+          "sample_fraction": 0.02851218247796786,
+          "samples": 55
+        },
+        {
+          "function": "memset",
+          "rank": 8,
+          "sample_fraction": 0.008812856402280975,
+          "samples": 17
+        },
+        {
+          "function": "_int_malloc",
+          "rank": 9,
+          "sample_fraction": 0.00829445308449974,
+          "samples": 16
+        },
+        {
+          "function": "memcpy",
+          "rank": 10,
+          "sample_fraction": 0.00829445308449974,
+          "samples": 16
+        },
+        {
+          "function": "malloc",
+          "rank": 11,
+          "sample_fraction": 0.0036288232244686366,
+          "samples": 7
+        },
+        {
+          "function": "cIniFile::_findEntry(char const*, char const*)",
+          "rank": 12,
+          "sample_fraction": 0.003110419906687403,
+          "samples": 6
+        },
+        {
+          "function": "__vfscanf_internal",
+          "rank": 13,
+          "sample_fraction": 0.002592016588906169,
+          "samples": 5
+        },
+        {
+          "function": "__cxxabiv1::__si_class_type_info::__do_dyncast(long, __cxxabiv1::__class_type_info::__sub_kind, __cxxabiv1::__class_type_info const*, void const*, __cxxabiv1::__class_type_info const*, void const*, __cxxabiv1::__class_type_info::__dyncast_result&) const",
+          "rank": 14,
+          "sample_fraction": 0.002592016588906169,
+          "samples": 5
+        },
+        {
+          "function": "__dynamic_cast",
+          "rank": 15,
+          "sample_fraction": 0.002592016588906169,
+          "samples": 5
+        }
+      ],
+      "unique_addresses": 529,
+      "unique_unresolved_addresses": 0,
+      "unique_unresolved_ratio": 0.0,
+      "unresolved_frame_instances": 0,
+      "unresolved_frame_ratio": 0.0,
+      "unresolved_leaf_ratio": 0.0,
+      "unresolved_leaf_samples": 0,
+      "workload": "OMNeT++ 3.3.2 Token Ring"
+    }
+  ],
+  "schema_version": 1
+}

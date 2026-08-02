@@ -1,0 +1,120 @@
+{
+  "checkpoint": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/warmup/common_full_cpt",
+  "combined_host_overhead_percent": -1.7452006980802848,
+  "comparisons_vs_off": {
+    "both": {
+      "differences": [],
+      "host_elapsed_overhead_percent": -1.8605791874141797,
+      "host_overhead_percent_from_stats": -1.7452006980802848,
+      "non_host_numeric_stat_differences": 0
+    },
+    "latency_only": {
+      "differences": [],
+      "host_elapsed_overhead_percent": -0.26106047274151445,
+      "host_overhead_percent_from_stats": 2.2687609075043635,
+      "non_host_numeric_stat_differences": 0
+    },
+    "profile_only": {
+      "differences": [],
+      "host_elapsed_overhead_percent": 1.9972635553948015,
+      "host_overhead_percent_from_stats": 4.363001745200701,
+      "non_host_numeric_stat_differences": 0
+    }
+  },
+  "formal_2b_comparison_to_uninstrumented_prior_direct_pocq": {
+    "lru": {
+      "combined_instrumentation_host_overhead_percent": 5.11971088691463,
+      "instrumented_host_seconds": 558.48,
+      "non_host_numeric_stat_differences": 0,
+      "prior_host_seconds": 531.28
+    },
+    "random": {
+      "combined_instrumentation_host_overhead_percent": -0.4242391558359926,
+      "instrumented_host_seconds": 553.93,
+      "non_host_numeric_stat_differences": 0,
+      "prior_host_seconds": 556.29
+    },
+    "srrip": {
+      "combined_instrumentation_host_overhead_percent": -1.4630370761911982,
+      "instrumented_host_seconds": 521.97,
+      "non_host_numeric_stat_differences": 0,
+      "prior_host_seconds": 529.72
+    }
+  },
+  "formal_non_host_numeric_stat_differences": 0,
+  "host_overhead_warning": "Host wall-clock overhead is machine/load dependent. Short A/B modes isolate recorder costs; the formal comparison captures scaling at the full 2B-tick ROI. Neither is guest simulated latency.",
+  "latency_only_host_overhead_percent": 2.2687609075043635,
+  "non_host_numeric_stat_differences": 0,
+  "profile_only_host_overhead_percent": 4.363001745200701,
+  "purpose": "host-overhead estimate and proof that instrumentation does not change simulated numeric statistics",
+  "records": {
+    "both": {
+      "active_at_end": [
+        1,
+        1
+      ],
+      "host_elapsed_seconds": 11.541095733642578,
+      "host_seconds_from_stats": 5.63,
+      "latency_enabled": true,
+      "profile_enabled": true,
+      "roi_insts": [
+        74591,
+        2760
+      ],
+      "sim_insts": 77351,
+      "sim_ticks": 20000000
+    },
+    "latency_only": {
+      "active_at_end": [
+        1,
+        1
+      ],
+      "host_elapsed_seconds": 11.72919750213623,
+      "host_seconds_from_stats": 5.86,
+      "latency_enabled": true,
+      "profile_enabled": false,
+      "roi_insts": [
+        74591,
+        2760
+      ],
+      "sim_insts": 77351,
+      "sim_ticks": 20000000
+    },
+    "off": {
+      "active_at_end": [
+        1,
+        1
+      ],
+      "host_elapsed_seconds": 11.759897947311401,
+      "host_seconds_from_stats": 5.73,
+      "latency_enabled": false,
+      "profile_enabled": false,
+      "roi_insts": [
+        74591,
+        2760
+      ],
+      "sim_insts": 77351,
+      "sim_ticks": 20000000
+    },
+    "profile_only": {
+      "active_at_end": [
+        1,
+        1
+      ],
+      "host_elapsed_seconds": 11.994774103164673,
+      "host_seconds_from_stats": 5.98,
+      "latency_enabled": false,
+      "profile_enabled": true,
+      "roi_insts": [
+        74591,
+        2760
+      ],
+      "sim_insts": 77351,
+      "sim_ticks": 20000000
+    }
+  },
+  "sample_period_retired_macro_insts": 1000,
+  "schema_version": 1,
+  "semantic_timing_effect": false,
+  "short_roi_ticks": 20000000
+}

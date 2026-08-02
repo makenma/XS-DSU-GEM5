@@ -201,6 +201,9 @@ struct HnfSLCSFPipelineConfig
     size_t lookupLatency = 4;
     size_t fillLatency = 4;
     size_t updateLatency = 3;
+    // Legacy configuration fields kept so existing configs/checkpoints remain
+    // loadable.  Dirty SLC victims are transferred directly to the PoCQ and
+    // neither value participates in service timing or capacity checks.
     size_t victimLatency = 3;
     size_t sfEvictLatency = 2;
     size_t replayPenalty = 2;
@@ -263,18 +266,6 @@ class HnfSLCSF : public HnfSLCSFBackend
         U3CheckLatch
     };
 
-    enum class VictimState : uint8_t
-    {
-        Free,
-        Reserved,
-        InstalledSnapshot,
-        HandedOff,
-        WritebackIssued,
-        ReleaseClaimed,
-        ReleaseCommittedAwaitAck,
-        Released
-    };
-
     HnfSLCSF(uint32_t block_size, uint32_t slc_num_sets,
              uint32_t slc_num_ways, uint32_t sf_num_sets,
              uint32_t sf_num_ways, uint32_t seq_entries = 8,
@@ -326,13 +317,11 @@ class HnfSLCSF : public HnfSLCSFBackend
     size_t reqCapacity() const { return config.reqQueueEntries; }
     uint64_t currentCycle() const { return wakeupCycle; }
     size_t mutationStageCount(MutationStage stage) const;
-    size_t victimBufferCapacity() const { return victimBuffer.size(); }
-    size_t victimBufferOccupancy() const;
+    /** There is no SLC-side victim buffer in the RTL-aligned model. */
+    size_t victimBufferCapacity() const { return 0; }
+    size_t victimBufferOccupancy() const { return 0; }
+    /** Transient U1/U2 captures, not retained writeback-buffer entries. */
     size_t victimReservationCount() const;
-    std::optional<VictimState> dirtyVictimState(SlcSfVictimId id) const;
-    void markDirtyVictimWritebackIssued(
-        SlcSfVictimId id, uint32_t requester, uint8_t opcode,
-        uint32_t downstream_txn_id);
 
     size_t respReservedCount() const { return inflightRequests.size(); }
     size_t respPendingCount() const { return respPending.size(); }
@@ -385,7 +374,7 @@ class HnfSLCSF : public HnfSLCSFBackend
     bool isBusy() const
     {
         return hasWork() || HnfSLCSFBackend::isBusy() ||
-            victimBufferOccupancy() != 0 || setLockCount() != 0;
+            setLockCount() != 0;
     }
     /** No accepted, durable, or transient owner remains at a drain boundary. */
     bool isCompletelyIdle() const { return initialized && !isBusy(); }
@@ -458,24 +447,11 @@ class HnfSLCSF : public HnfSLCSFBackend
         std::optional<ProtectedStateSnapshot> rollbackSnapshot;
     };
 
-    struct VictimEntry
-    {
-        SlcSfVictimId id{};
-        VictimState state = VictimState::Free;
-        uint64_t lineAddress = 0;
-        std::optional<SlcSfSlcVictim> snapshot;
-        uint32_t writebackRequester = 0;
-        uint8_t writebackOpcode = 0;
-        uint32_t writebackTxnId = 0;
-        std::optional<SlcSfCompletionLease> completionLease;
-    };
-
     static void validateConfig(const HnfSLCSFPipelineConfig& config);
     bool wasAccepted(SlcSfReqId req_id) const;
     void rememberAccepted(SlcSfReqId req_id);
     uint64_t baseServiceLatency(const SlcSfRequest& request) const;
     uint64_t serviceLatency(const SlcSfRequest& request) const;
-    bool mutationProducesDirtySlcVictim(const SlcSfRequest& request) const;
     bool mutationProducesSfVictim(const SlcSfRequest& request) const;
     Tick replayDeadline() const;
     bool lookupReplaysAtL0(const SlcSfRequest& request) const;
@@ -491,24 +467,13 @@ class HnfSLCSF : public HnfSLCSFBackend
         const SlcSfRequest& request) const;
     bool validateMutationToken(const SlcSfRequest& request) const;
     bool prepareMutationResources(InflightRequest& request);
-    bool reserveDirtyVictim(InflightRequest& request,
+    void captureDirtyVictim(InflightRequest& request,
                             const LookupSnapshot& target);
-    std::optional<SlcSfReplayReason> dirtyVictimReservationFailure(
-        uint64_t replacement_addr, const LookupSnapshot& target) const;
-    void cancelDirtyVictimReservation(InflightRequest& request);
+    void discardDirtyVictimCapture(InflightRequest& request);
     bool claimDurableCompletion(InflightRequest& request);
     bool durableClaimMatches(const InflightRequest& request) const;
     void rollbackDurableClaim(InflightRequest& request);
-    bool victimLeaseMatches(
-        const VictimEntry& entry,
-        const SlcSfCompletionLease& lease) const;
-    bool commitDirtyVictimRelease(
-        SlcSfVictimId id, const SlcSfCompletionLease& lease);
-    bool acknowledgeDirtyVictimRelease(
-        const SlcSfCompletionLease& lease);
     void rollbackPreparedResources(InflightRequest& request);
-    VictimEntry* findDirtyVictim(SlcSfVictimId id);
-    const VictimEntry* findDirtyVictim(SlcSfVictimId id) const;
     void assertVictimAccounting() const;
     void executeMutation(InflightRequest& request);
     void advanceMutation(InflightRequest& request);
@@ -543,7 +508,6 @@ class HnfSLCSF : public HnfSLCSFBackend
     std::deque<SlcSfResponse> respPending;
     std::deque<SlcSfResponse> respVisible;
     std::deque<Tick> respVisibleTicks;
-    std::vector<VictimEntry> victimBuffer;
     HnfSLCSFSetLockManager setLocks;
     /** Opaque identity shared only with leases minted by this service. */
     std::shared_ptr<const uint8_t> completionProducer;

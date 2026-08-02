@@ -266,8 +266,9 @@ TEST(HnfCoherencyControllerTest, DirtyVictimDataSurvivesWriteback)
     ASSERT_TRUE(mapped_victim.has_value());
     EXPECT_EQ(mapped_victim->value, victim_id.value);
     EXPECT_EQ(cc.dirtyVictimTransactionCount(), 1);
-    EXPECT_EQ(slcsf.dirtyVictimState(victim_id),
-              HnfSLCSF::VictimState::HandedOff);
+    EXPECT_EQ(slcsf.victimBufferOccupancy(), 0);
+    // An SLC victim does not use the SF/SEQ snoop path.
+    EXPECT_FALSE(cc.hasTxSnp());
     EXPECT_FALSE(cc.hasTxDat());
 
     cc.popTxReq();
@@ -293,8 +294,7 @@ TEST(HnfCoherencyControllerTest, DirtyVictimDataSurvivesWriteback)
     EXPECT_EQ(data.dat.data.size(), BlockSize);
     EXPECT_EQ(data.dat.data, victim_data);
     cc.popTxDat();
-    EXPECT_EQ(slcsf.dirtyVictimState(victim_id),
-              HnfSLCSF::VictimState::WritebackIssued);
+    EXPECT_EQ(slcsf.victimBufferOccupancy(), 0);
 
     // The requester continues from the latched Fill response on its own token.
     cc.serviceInternalWork(tick);
@@ -309,8 +309,7 @@ TEST(HnfCoherencyControllerTest, DirtyVictimDataSurvivesWriteback)
     ASSERT_TRUE(retired.has_value());
     EXPECT_EQ(retired->tokenId, 0);
     EXPECT_EQ(cc.dirtyVictimTransactionCount(), 1);
-    EXPECT_EQ(slcsf.dirtyVictimState(victim_id),
-              HnfSLCSF::VictimState::WritebackIssued);
+    EXPECT_EQ(slcsf.victimBufferOccupancy(), 0);
 }
 
 TEST(HnfCoherencyControllerTest,
@@ -386,8 +385,7 @@ TEST(HnfCoherencyControllerTest, DirtyVictimTxBackpressureMakesProgress)
     if (cc.hasTxDat()) {
         EXPECT_FALSE(cc.frontTxDat().dirtyVictimId.has_value());
     }
-    EXPECT_EQ(slcsf.dirtyVictimState(SlcSfVictimId{victim_id}),
-              HnfSLCSF::VictimState::WritebackIssued);
+    EXPECT_EQ(slcsf.victimBufferOccupancy(), 0);
 }
 
 TEST(HnfCoherencyControllerTest,
@@ -469,8 +467,9 @@ TEST(HnfCoherencyControllerTest,
 
     EXPECT_FALSE(cc.acceptRxRsp(
         makeDirtyVictimRsp(retried, 0x04, 21, 7)));
-    EXPECT_EQ(cc.dirtyVictimTransactionCount(), 1);
-    EXPECT_TRUE(cc.dirtyVictimForTxn(initial.req.txnid).has_value());
+    EXPECT_EQ(cc.dirtyVictimTransactionCount(), 0);
+    EXPECT_FALSE(cc.dirtyVictimForTxn(initial.req.txnid).has_value());
+    EXPECT_EQ(slcsf.victimBufferOccupancy(), 0);
 }
 
 TEST(HnfCoherencyControllerTest,
@@ -512,19 +511,18 @@ TEST(HnfCoherencyControllerTest,
     ASSERT_TRUE(cc.hasTxDat());
     EXPECT_EQ(cc.frontTxDat().dat.dbid, 22);
     cc.popTxDat();
-    EXPECT_EQ(cc.dirtyVictimPhase(victim_id),
-              HnfCoherencyController::DirtyVictimPhase::ReleaseWaiting);
-    const SlcSfReqId release_id = cc.dirtyVictimReleaseReqId(victim_id);
-    ASSERT_TRUE(release_id.valid());
+    EXPECT_EQ(cc.dirtyVictimTransactionCount(), 0);
+    EXPECT_FALSE(cc.dirtyVictimForTxn(writeback.req.txnid).has_value());
+    EXPECT_EQ(slcsf.victimBufferOccupancy(), 0);
 
+    // A duplicate completion after PoCQ retirement is simply unmatched.
     EXPECT_FALSE(cc.acceptRxRsp(
         makeDirtyVictimRsp(writeback, 0x04, 22)));
-    EXPECT_EQ(cc.dirtyVictimReleaseReqId(victim_id), release_id);
-    EXPECT_EQ(cc.dirtyVictimTransactionCount(), 1);
+    EXPECT_EQ(cc.dirtyVictimTransactionCount(), 0);
 }
 
 TEST(HnfCoherencyControllerTest,
-     DirtyVictimDownstreamErrorFailsStopBeforeRelease)
+     DirtyVictimDownstreamErrorFailsStopBeforePocqRetire)
 {
     HnfSLCSF slcsf(BlockSize, 1, 1, 1, 1);
     HnfCoherencyController cc(
@@ -537,7 +535,6 @@ TEST(HnfCoherencyControllerTest,
     Tick tick = 1190;
     reachDirtyVictimWriteback(cc, slcsf, tick, lineData(0xcd));
     const HnfCcTxReq writeback = cc.frontTxReq();
-    const SlcSfVictimId victim_id{*writeback.dirtyVictimId};
     cc.popTxReq();
     cc.notifyTxReqSent(writeback);
     acceptDirtyVictimDbid(cc, writeback, 24);
@@ -548,9 +545,7 @@ TEST(HnfCoherencyControllerTest,
         makeDirtyVictimRsp(writeback, 0x04, 24, 0, 1)));
     EXPECT_EQ(cc.dirtyVictimTransactionCount(), 1);
     EXPECT_TRUE(cc.dirtyVictimForTxn(writeback.req.txnid).has_value());
-    EXPECT_FALSE(cc.dirtyVictimReleaseReqId(victim_id).valid());
-    EXPECT_EQ(slcsf.dirtyVictimState(victim_id),
-              HnfSLCSF::VictimState::WritebackIssued);
+    EXPECT_EQ(slcsf.victimBufferOccupancy(), 0);
 }
 
 TEST(HnfCoherencyControllerTest, DirtyVictimCompletionMatchesVictimId)
@@ -592,28 +587,17 @@ TEST(HnfCoherencyControllerTest, DirtyVictimCompletionMatchesVictimId)
     EXPECT_EQ(cc.dirtyVictimTransactionCount(), 1);
     EXPECT_EQ(cc.dirtyVictimPhase(victim_id),
               HnfCoherencyController::DirtyVictimPhase::WaitComp);
-    EXPECT_EQ(slcsf.dirtyVictimState(victim_id),
-              HnfSLCSF::VictimState::WritebackIssued);
+    EXPECT_EQ(slcsf.victimBufferOccupancy(), 0);
 
     EXPECT_FALSE(cc.acceptRxRsp(
         makeDirtyVictimRsp(writeback, 0x04, 11)));
-    EXPECT_EQ(cc.dirtyVictimTransactionCount(), 1);
-    EXPECT_TRUE(cc.dirtyVictimForTxn(downstream_txn).has_value());
-    EXPECT_EQ(slcsf.dirtyVictimState(victim_id),
-              HnfSLCSF::VictimState::WritebackIssued);
-    EXPECT_EQ(cc.dirtyVictimPhase(victim_id),
-              HnfCoherencyController::DirtyVictimPhase::ReleaseWaiting);
-
-    for (size_t i = 0;
-         i < 16 && cc.dirtyVictimTransactionCount() != 0; ++i) {
-        pumpOnce(cc, slcsf, tick);
-    }
     EXPECT_EQ(cc.dirtyVictimTransactionCount(), 0);
-    EXPECT_EQ(slcsf.dirtyVictimState(victim_id),
-              HnfSLCSF::VictimState::Released);
+    EXPECT_FALSE(cc.dirtyVictimForTxn(downstream_txn).has_value());
+    EXPECT_EQ(slcsf.victimBufferOccupancy(), 0);
 }
 
-TEST(HnfCoherencyControllerTest, ReleaseDirtyVictimFreesExactlyOneEntry)
+TEST(HnfCoherencyControllerTest,
+     DirtyVictimCompletionDoesNotConsumeSlcsfRequestCredit)
 {
     HnfSLCSFPipelineConfig config{};
     config.reqQueueEntries = 1;
@@ -628,54 +612,29 @@ TEST(HnfCoherencyControllerTest, ReleaseDirtyVictimFreesExactlyOneEntry)
     Tick tick = 1300;
     reachDirtyVictimWriteback(cc, slcsf, tick, lineData(0xe3));
     const HnfCcTxReq writeback = cc.frontTxReq();
-    const SlcSfVictimId victim_id{*writeback.dirtyVictimId};
     cc.popTxReq();
     cc.notifyTxReqSent(writeback);
     acceptDirtyVictimDbid(cc, writeback, 12);
     ASSERT_TRUE(cc.hasTxDat());
     cc.popTxDat();
 
-    // Occupy the one-entry request queue with a real CC lookup so the first
-    // release attempt must retain ownership and retry with the same ID.
+    // Occupy the one-entry SLCSF request queue with a real lookup. Completing
+    // the PoCQ writeback must not enqueue any release request back to SLC.
     ASSERT_TRUE(cc.acceptLinkReq(makeRead(
         1, 8002, 5, 122, 0x01, TestAddr + 2 * BlockSize), tick).accepted);
     ASSERT_EQ(cc.slcLookupPhase(1),
               HnfCoherencyController::SlcLookupPhase::Waiting);
     EXPECT_FALSE(cc.acceptRxRsp(
         makeDirtyVictimRsp(writeback, 0x04, 12)));
-    ASSERT_EQ(cc.dirtyVictimPhase(victim_id),
-              HnfCoherencyController::DirtyVictimPhase::ReleaseIssuePending);
-    const SlcSfReqId release_id = cc.dirtyVictimReleaseReqId(victim_id);
-    ASSERT_TRUE(release_id.valid());
-    EXPECT_EQ(slcsf.victimBufferOccupancy(), 1);
-
-    bool saw_committed_await_ack = false;
-    for (size_t i = 0;
-         i < 32 && cc.dirtyVictimTransactionCount() != 0; ++i) {
-        pumpOnce(cc, slcsf, tick);
-        if (cc.dirtyVictimTransactionCount() != 0) {
-            EXPECT_EQ(cc.dirtyVictimReleaseReqId(victim_id), release_id);
-            if (slcsf.dirtyVictimState(victim_id) ==
-                HnfSLCSF::VictimState::ReleaseCommittedAwaitAck) {
-                // U2 retains ownership until the CC acknowledges the exact
-                // durable terminal response.
-                EXPECT_GT(slcsf.respOccupied(), 0);
-                EXPECT_EQ(slcsf.victimBufferOccupancy(), 1);
-                saw_committed_await_ack = true;
-            } else {
-                EXPECT_EQ(slcsf.victimBufferOccupancy(), 1);
-            }
-        }
-    }
-    EXPECT_TRUE(saw_committed_await_ack);
     EXPECT_EQ(cc.dirtyVictimTransactionCount(), 0);
-    EXPECT_EQ(slcsf.dirtyVictimState(victim_id),
-              HnfSLCSF::VictimState::Released);
     EXPECT_EQ(slcsf.victimBufferOccupancy(), 0);
+    EXPECT_EQ(cc.slcLookupPhase(1),
+              HnfCoherencyController::SlcLookupPhase::Waiting);
+    pumpLookup(cc, slcsf, 1, tick);
 }
 
 TEST(HnfCoherencyControllerTest,
-     ForcedSmallSlcDirtyEvictionCompletesAndReleases)
+     ForcedSmallSlcDirtyEvictionCompletesPocqWriteback)
 {
     HnfSLCSF slcsf(BlockSize, 1, 1, 1, 1);
     HnfCoherencyController cc(
@@ -691,7 +650,6 @@ TEST(HnfCoherencyControllerTest,
     reachDirtyVictimWriteback(cc, slcsf, tick, fill_data);
     EXPECT_EQ(cc.pendingDirtyVictimRequesterCount(), 1);
     const HnfCcTxReq writeback = cc.frontTxReq();
-    const SlcSfVictimId victim_id{*writeback.dirtyVictimId};
     EXPECT_EQ(writeback.req.opcode, 0x5c);
     EXPECT_EQ(writeback.req.addr, TestAddr);
     cc.popTxReq();
@@ -709,8 +667,7 @@ TEST(HnfCoherencyControllerTest,
         pumpOnce(cc, slcsf, tick);
     }
     EXPECT_EQ(cc.dirtyVictimTransactionCount(), 0);
-    EXPECT_EQ(slcsf.dirtyVictimState(victim_id),
-              HnfSLCSF::VictimState::Released);
+    EXPECT_EQ(slcsf.victimBufferOccupancy(), 0);
     EXPECT_EQ(cc.pendingDirtyVictimRequesterCount(), 1);
 
     // The requester independently reaches normal completion.
@@ -729,7 +686,7 @@ TEST(HnfCoherencyControllerTest,
 }
 
 TEST(HnfCoherencyControllerTest,
-     DirtyVictimRequesterMayRetireBeforeVictimRelease)
+     DirtyVictimRequesterMayRetireBeforePocqWriteback)
 {
     HnfSLCSF slcsf(BlockSize, 1, 1, 1, 1);
     HnfCoherencyController cc(
@@ -743,7 +700,6 @@ TEST(HnfCoherencyControllerTest,
     reachDirtyVictimWriteback(
         cc, slcsf, tick, lineData(0xf5), TestAddr + BlockSize, 125);
     const HnfCcTxReq writeback = cc.frontTxReq();
-    const SlcSfVictimId victim_id{*writeback.dirtyVictimId};
     EXPECT_EQ(cc.pendingDirtyVictimRequesterCount(), 1);
 
     // Requester completion is independent of the downstream writeback.  It
@@ -775,8 +731,7 @@ TEST(HnfCoherencyControllerTest,
         pumpOnce(cc, slcsf, tick);
     }
     EXPECT_EQ(cc.dirtyVictimTransactionCount(), 0);
-    EXPECT_EQ(slcsf.dirtyVictimState(victim_id),
-              HnfSLCSF::VictimState::Released);
+    EXPECT_EQ(slcsf.victimBufferOccupancy(), 0);
     EXPECT_EQ(cc.pendingDirtyVictimRequesterCount(), 0);
 }
 
@@ -1179,7 +1134,7 @@ TEST(HnfCoherencyControllerTest, SeqPocqPreservesDirtySnoopData)
 }
 
 TEST(HnfCoherencyControllerTest,
-     SeqCompletionReplaysUntilVictimBufferIsReleased)
+     SeqCompletionHandsDirtySlcVictimDirectlyToPocq)
 {
     HnfSLCSFPipelineConfig config{};
     config.victimBufferEntries = 1;
@@ -1203,11 +1158,11 @@ TEST(HnfCoherencyControllerTest,
     ASSERT_TRUE(cc.hasTxReq());
     const HnfCcTxReq first_writeback = cc.frontTxReq();
     ASSERT_TRUE(first_writeback.dirtyVictimId.has_value());
-    EXPECT_EQ(slcsf.victimBufferOccupancy(), 1);
+    EXPECT_EQ(slcsf.victimBufferOccupancy(), 0);
 
-    // Leave the first victim handed off so the sole VictimBuffer entry stays
-    // occupied.  Build an independent SF victim whose dirty snoop completion
-    // must replace this second dirty SLC resident.
+    // Leave the first PoCQ writeback outstanding. Build an independent SF
+    // victim: the SF line must be snooped through SEQ, while the dirty SLC
+    // line displaced by that completion must not wait for the first victim.
     slcsf.writeLine(
         resident_addr, 4, lineData(0xb2),
         PocqTxnKind::WriteUnique, HnfNode);
@@ -1224,43 +1179,14 @@ TEST(HnfCoherencyControllerTest,
     const HnfCcTxSnp snoop = cc.frontTxSnp();
     ASSERT_EQ(snoop.snp.addr, seq_addr);
     cc.popTxSnp();
+    EXPECT_FALSE(cc.hasTxSnp());
     const auto seq_data = lineData(0xb5);
     EXPECT_FALSE(cc.acceptRxDat(makeSnoopData(
         0, snoop.snp.txnid, 0, false, seq_data)));
     EXPECT_FALSE(cc.acceptRxDat(makeSnoopData(
         0, snoop.snp.txnid, BeatSize, true, seq_data)));
-    const SlcSfReqId first_completion = cc.seqCompleteReqId();
-    ASSERT_TRUE(first_completion.valid());
-
-    for (size_t i = 0; i < 32 && cc.seqCompleteReqId().valid(); ++i) {
-        pumpOnce(cc, slcsf, tick);
-    }
-    ASSERT_TRUE(cc.hasActiveSeqPocq());
-    EXPECT_FALSE(cc.seqCompleteReqId().valid());
-    EXPECT_GT(cc.seqRetryNotBeforeTick(), tick);
-    EXPECT_EQ(slcsf.victimBufferOccupancy(), 1);
-    EXPECT_TRUE(slcsf.seqContains(seq_addr));
-
-    // Complete the first writeback and its durable release.  The SEQ retry
-    // then acquires the freed slot, hands off the resident dirty line, and
-    // retires without re-snooping or losing its dirty data.
-    cc.popTxReq();
-    cc.notifyTxReqSent(first_writeback);
-    acceptDirtyVictimDbid(cc, first_writeback, 31);
-    while (cc.hasTxDat() &&
-           !cc.frontTxDat().dirtyVictimId.has_value()) {
-        cc.popTxDat();
-    }
-    ASSERT_TRUE(cc.hasTxDat());
-    ASSERT_EQ(cc.frontTxDat().dirtyVictimId,
-              first_writeback.dirtyVictimId);
-    cc.popTxDat();
-    EXPECT_FALSE(cc.acceptRxRsp(
-        makeDirtyVictimRsp(first_writeback, 0x04, 31)));
-
-    for (size_t i = 0; i < 128 && cc.hasActiveSeqPocq(); ++i) {
-        pumpOnce(cc, slcsf, tick);
-    }
+    ASSERT_TRUE(cc.seqCompleteReqId().valid());
+    pumpSeqCompletion(cc, slcsf, tick);
     EXPECT_FALSE(cc.hasActiveSeqPocq());
     EXPECT_FALSE(slcsf.seqContains(seq_addr));
     const HnfSlcLookupResult installed = [&]() {
@@ -1273,8 +1199,23 @@ TEST(HnfCoherencyControllerTest,
     EXPECT_TRUE(installed.slcHit);
     EXPECT_TRUE(installed.dataDirty);
     EXPECT_EQ(installed.data, seq_data);
-    EXPECT_EQ(cc.dirtyVictimTransactionCount(), 1);
-    EXPECT_EQ(slcsf.victimBufferOccupancy(), 1);
+    EXPECT_EQ(cc.dirtyVictimTransactionCount(), 2);
+    EXPECT_EQ(slcsf.victimBufferOccupancy(), 0);
+
+    // The first and second M victims are independent PoCQ WriteNoSnpFull
+    // requests; neither generated an additional snoop.
+    ASSERT_EQ(cc.frontTxReq().dirtyVictimId,
+              first_writeback.dirtyVictimId);
+    cc.popTxReq();
+    cc.notifyTxReqSent(first_writeback);
+    ASSERT_TRUE(cc.hasTxReq());
+    const HnfCcTxReq second_writeback = cc.frontTxReq();
+    ASSERT_TRUE(second_writeback.dirtyVictimId.has_value());
+    EXPECT_NE(second_writeback.dirtyVictimId,
+              first_writeback.dirtyVictimId);
+    EXPECT_EQ(second_writeback.req.addr, resident_addr);
+    EXPECT_EQ(second_writeback.req.opcode, 0x5c);
+    EXPECT_FALSE(cc.hasTxSnp());
 }
 
 TEST(HnfCoherencyControllerTest, ReadNoSnpReturnsWithoutAllocatingSlcSf)

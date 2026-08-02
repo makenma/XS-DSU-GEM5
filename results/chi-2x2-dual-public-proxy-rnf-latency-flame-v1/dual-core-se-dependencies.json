@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "execution_mode": "gem5-syscall-emulation",
+  "isa": "riscv64-linux-gnu",
+  "workload_classification": "public-source proxy; not SPEC CPU2006",
+  "checkpoint": null,
+  "restorer": null,
+  "gem5_binary": "/home/makenma/project/xs-gem5/GEM5/build/RISCV/gem5.opt",
+  "se_reference_config": "/home/makenma/project/xs-gem5/GEM5/configs/example/se.py",
+  "processes": [
+    {
+      "cpu_id": 0,
+      "name": "libquantum-0.2.4-shor-public-proxy",
+      "elf": "/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4/shor-rv64-static",
+      "working_directory": "/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4",
+      "argv": [
+        "/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4/shor-rv64-static",
+        "1397",
+        "8"
+      ],
+      "elf_sha256": "e4e313b2a2c3dcb46a0be4e4295f7ab53820fcff2cb4ea0a10659187ae5a1b34",
+      "build_script": "/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4/build-rv64-static.sh",
+      "source_url": "https://archive.debian.org/debian/pool/main/libq/libquantum/libquantum_0.2.4.orig.tar.gz",
+      "source_sha256": "28a444fc472818229602730c28708b46f25446fb22278ce04b7faf5635189936",
+      "license": "GPL-2.0-or-later"
+    },
+    {
+      "cpu_id": 1,
+      "name": "omnetpp-3.3.2-tokenring-public-proxy",
+      "elf": "/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/bin/tokenring-rv64-static",
+      "working_directory": "/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/share/tokenring",
+      "argv": [
+        "/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/bin/tokenring-rv64-static",
+        "-f",
+        "/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/share/tokenring/omnetpp.ini"
+      ],
+      "elf_sha256": "2be6af6d4b687ae7f7a05375ed2a32132c1ff5b41a8506a6ce1e2927d2adb0b7",
+      "input_sha256": "70abfd7866f6c00aae898700ea7953265053a0722087d820c3977658ee0bc37c",
+      "build_script": "/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/build-rv64-static.sh",
+      "source_url": "https://github.com/omnetpp/omnetpp.git",
+      "source_commit": "2199a8f838156406c03144bf244eb710f44dcf9f",
+      "license": "OMNeT++ Academic Public License; verify intended use against doc/License"
+    }
+  ],
+  "se_semicolon_mapping": {
+    "num_cpus": 2,
+    "cmd": "/home/makenma/project/xs-gem5/workloads/libquantum-0.2.4/shor-rv64-static;/home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/bin/tokenring-rv64-static",
+    "options": "1397 8;-f /home/makenma/project/xs-gem5/workloads/omnetpp-3.3.2/rv64/share/tokenring/omnetpp.ini"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "addr2line": "/usr/bin/riscv64-linux-gnu-addr2line",
+  "packages": {
+    "CairoSVG": "2.9.0",
+    "Pillow": "12.3.0",
+    "matplotlib": "3.10.9",
+    "python-pptx": "1.0.2"
+  },
+  "python": "3.10.12 (main, Jun 22 2026, 18:55:27) [GCC 11.4.0]",
+  "readelf": "/usr/bin/riscv64-linux-gnu-readelf",
+  "requirements": "util/xs_scripts/chi_2x2_latency_flame_requirements.txt"
+}

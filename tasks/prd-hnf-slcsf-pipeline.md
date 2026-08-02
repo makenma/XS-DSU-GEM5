@@ -11,10 +11,10 @@
 1. 先将现有存储语义抽成可独立验证的同步后端。
 2. 在当前 `HomeNodeFull` 事件源下加入请求/响应双缓冲和可配置的 lookup/update 流水线。
 3. 将所有会产生 cache/directory 语义结果或修改持久状态的 CC/POCQ 操作改成异步请求/响应。
-4. 加入 generation-based commit token、replay、VictimBuffer、SEQ/FVB 生命周期和逐 set 并行控制。
+4. 加入 generation-based commit token、replay、SLC victim 直交 PoCQ、SEQ/FVB 生命周期和逐 set 并行控制。
 5. 最终将顶层服务迁移成 `SlcSnoopFilter : ClockedObject` child SimObject，拥有独立时钟事件、初始化、drain、checkpoint 和统计能力。
 
-最终职责边界为：POCQ/CC 拥有 CHI transaction lifetime 和外部消息流程；SLCSF 独占 SLC/SF、victim、SEQ、服务时序和资源冲突状态。SLCSF 不直接生成 CHI flit，也不在完成回调中直接推进 POCQ。
+最终职责边界为：POCQ/CC 拥有 CHI transaction lifetime、SLC dirty-victim writeback 和外部消息流程；SLCSF 独占 SLC/SF、SEQ、服务时序和资源冲突状态。SLCSF 不直接生成 CHI flit，也不在完成回调中直接推进 POCQ。
 
 ### 1.1 输入文档
 
@@ -26,7 +26,7 @@
 ### 1.2 已确认的产品决策
 
 - 范围覆盖实现方案阶段 1–7，包括最终独立 `ClockedObject` 迁移。
-- 本文的“阶段 1–7”始终指流水线实现方案 §9 的阶段编号；它不等同于目标架构 Spec §15 的同名阶段编号。dirty SLC VictimBuffer 已作为本 PRD 的独立 US-012～US-013 明确纳入，而不是隐含在“阶段 7 外壳迁移”中。
+- 本文的“阶段 1–7”始终指流水线实现方案 §9 的阶段编号；它不等同于目标架构 Spec §15 的同名阶段编号。dirty SLC victim 已按 RTL 设计修订为 U1 exact capture 后直接交给 PoCQ；只有 SF victim 使用 SEQ 并 snoop。
 - 保持默认配置、所有既有单元测试和两套四核 POCQ/SEQ litmus 的功能兼容；周期数允许因流水线化而变化。
 - 对实现方案未定案处采用目标 Spec 的推荐做法；仍依赖具体代码或 gem5 分支能力的事项保留在 Open Questions。
 - 最终接口采用 common header + typed payload 的 request/response 模型，避免先引入大而稀疏的请求结构、阶段 7 再二次重构。
@@ -105,7 +105,7 @@
 
 - [ ] 定义 SLCSF 自增且每个 operation 唯一的 `SlcSfReqId`；不得复用仅用于 LinkLayer 调试的 `Entry.seq` 作为异步操作 ID。
 - [ ] request common header 至少携带 `reqId`、`pocEntryId`、line/address key、requester、CHI opcode、QoS 和 trace 信息。
-- [ ] public typed payload 至少覆盖 `Lookup`、`Fill`、`Update` 和 `Evict`；`UpdateKind` 能表达现有所有 mutation，以及 `CompleteSfEvict` 和 `ReleaseDirtyVictim`。初始化由 child lifecycle 驱动，不伪装成无 POCQ owner 的 public request。
+- [ ] public typed payload 至少覆盖 `Lookup`、`Fill`、`Update` 和 `Evict`；`UpdateKind` 能表达现有 runtime mutation 和 `CompleteSfEvict`。`ReleaseDirtyVictim` 只保留为被拒绝的兼容编码。初始化由 child lifecycle 驱动，不伪装成无 POCQ owner 的 public request。
 - [ ] response 至少携带 `reqId`、`pocEntryId`、operation kind、terminal status 和 operation-specific payload。
 - [ ] terminal status 能区分 `Done`、`Replay` 和不可恢复 `Error`；Replay payload 包含 reason、绝对 `retryNotBeforeTick` 和 `redoLookup`。
 - [ ] `CommitToken` 至少包含 lookup request ID、line、lookup epoch，以及 SLC/SF 各自的 hit、set、way、generation snapshot。
@@ -156,8 +156,8 @@
 
 **Acceptance Criteria:**
 
-- [ ] `HomeNodeFull.py` 增加 lookup/fill/update/victim/SF-evict/replay latency、request/response queue entries、VictimBuffer entries、issue width、`max_inflight` 和 set-lock 控制参数。
-- [ ] 阶段 A 的安全默认值为 lookup=4、fill=4、update=3、victim=3、SF-evict=2、replay=2 cycles，request/response queue=8，VictimBuffer entries=2，所有 issue width=1，`max_inflight=1`。
+- [ ] `HomeNodeFull.py` 增加 lookup/fill/update/SF-evict/replay latency、request/response queue entries、issue width、`max_inflight` 和 set-lock 控制参数；旧 victim latency/capacity 参数为兼容 no-op。
+- [ ] 阶段 A 的安全默认值为 lookup=4、fill=4、update=3、SF-evict=2、replay=2 cycles，request/response queue=8，所有 issue width=1，`max_inflight=1`；旧 victim=3/VictimBuffer=2 不参与时序或容量。
 - [ ] `HomeNodeFull::wakeup()` 在 `linklayer.wakeup()` 之前推进一次内嵌 SLCSF；同一 HomeNode wakeup 不得推进两次。
 - [ ] `hasLinkWork()`/等价调度条件覆盖 ingress、ready、in-flight、pending/visible response 和 CC issue-pending entry，确保没有外部 flit 时仍能完成已接收操作。
 - [ ] 内部工作耗尽后不继续无意义自调度。
@@ -191,7 +191,7 @@
 - [ ] Fill/Update/Evict 在任何持久修改前重新 probe line，并校验 token 的 line、hit/miss、set、way、generation 和 epoch。
 - [ ] line 被替换后又分配回同一 way 的 ABA 场景必须使旧 token 失效。
 - [ ] token validation 分别覆盖 tag/line 改变、way 被复用、hit↔miss 改变、generation 改变和 lookup epoch 失效。
-- [ ] token 不匹配返回明确的 stale-token Replay，且 tag、data、state、owner、sharer、generation、SEQ、VictimBuffer 和 replacement state 均保持请求前值。
+- [ ] token 不匹配返回明确的 stale-token Replay，且 tag、data、state、owner、sharer、generation、SEQ、dirty-victim capture/seal 和 replacement state 均保持请求前值。
 - [ ] CC 收到要求 `redoLookup` 的 replay 后清除旧 token、旧 lookup result 和本轮派生决策，等待 `replay_penalty` 后从 Lookup 重新开始。
 - [ ] fresh re-lookup 取得的新 token 可以成功 commit，证明 replay 具备 liveness。
 - [ ] generation 校验在最终配置中始终开启，不提供会破坏 correctness 的关闭模式。
@@ -262,32 +262,32 @@
 - [ ] 既有 SEQ back-invalidate、dirty-data preservation、reservation replay、main-address hazard 和 younger-Sleep-waiter 回归全部通过。
 - [ ] 新增并通过 `SeqDoesNotRetireBeforeCompleteSfEvictResponse` 和 `SeqCompletionNoCreditEventuallyProgresses`。
 
-### US-012: 实现 dirty SLC VictimBuffer 生命周期
+### US-012: dirty SLC victim 直接交给 PoCQ
 
-**Description:** As an HNF transaction, I want dirty SLC victims preserved before replacement so that their latest data can be written back without corruption or panic.
-
-**Acceptance Criteria:**
-
-- [ ] 提供有界 `VictimBuffer`，支持 reserve、install snapshot、handoff、writeback-issued 和 release 生命周期，并使用稳定 `VictimId`。
-- [ ] `victim_buffer_entries` 默认 2 且必须大于 0；occupancy、reservation 和 handed-off owner 的总数不得超过该容量。
-- [ ] dirty replacement 的原子顺序固定为 token validate → reserve buffer → snapshot old tag/data/state → install victim → install new line → produce response。
-- [ ] VictimBuffer 无可用 entry 或同 line 冲突时，原 line 和 replacement metadata 保持不变并返回 Replay。
-- [ ] terminal response 将 dirty victim 的 ID、address、完整 data 和 dirty/state facts 交给 CC；不得暴露 storage 指针。
-- [ ] victim 被 CC 接管后，在显式 release 前不能被复用；重复或未知 `VictimId` completion 触发断言。
-- [ ] 启用该路径后，合法 dirty SLC replacement 不再触发当前“dirty victim unsupported” panic。
-- [ ] 新增并通过 `DirtyVictimReservedBeforeOverwrite`、`VictimBufferFullReplaysWithoutMutation` 和 `DirtyVictimHandoffPreservesData`。
-
-### US-013: 完成 dirty victim 的 SN writeback 与 release
-
-**Description:** As the HNF controller, I want each handed-off dirty victim written to the system node by an independent internal transaction so that requester completion and victim lifetime remain decoupled and lossless.
+**Description:** As an HNF transaction, I want an M-state SLC victim transferred directly to PoCQ so that its latest data is preserved without an SLC-side VictimBuffer.
 
 **Acceptance Criteria:**
 
-- [ ] Fill terminal response 携带 victim 后，CC 创建独立的内部 dirty-victim transaction，使用 `VictimId` 和独立 downstream TxnID 关联；它不复用或阻塞原 requester 的 POCQ token。
-- [ ] dirty-victim transaction 向 `snNodeId` 发出 `WriteNoSnpFull` TXREQ 和完整 cache-line TXDAT，并在 downstream terminal completion 前保持 allocated；TX backpressure 不丢失 request/data。
-- [ ] downstream write 成功后，CC 发送 `ReleaseDirtyVictim{victimId}` update；只有该 update terminal `Done` 后才能复用 VictimBuffer entry。downstream error/retry 不释放 victim，并遵循现有 LinkLayer retry/error policy。
-- [ ] 新增并通过 `DirtyVictimDataSurvivesWriteback`、`DirtyVictimTxBackpressureMakesProgress`、`DirtyVictimCompletionMatchesVictimId` 和 `ReleaseDirtyVictimFreesExactlyOneEntry`。
-- [ ] 新增强制小 SLC 的端到端测试，实际触发 dirty eviction，并验证 `WriteNoSnpFull` address/data、唯一 downstream completion、VictimBuffer release 和原 requester 正常完成。
+- [ ] clean SLC victim 直接丢弃；`MU/MN` victim 不走 snoop，在 U1 排他窗口内抓取完整 tag/state/data/mask 并 seal 所选物理 slot。
+- [ ] U2 用 exact capture/seal 校验后才覆盖旧 line；terminal response 携带稳定 `VictimId`、address、完整 data 和 dirty/state facts，不暴露 storage 指针。
+- [ ] response 被 CC 消费后由 PoCQ 唯一持有 line，并直接生成 `WriteNoSnpFull`；SLCSF 不保留 victim entry。
+- [ ] 不存在 VictimBuffer 容量、同 line owner 或 victim latency 引起的 stall/Replay；旧 `victim_buffer_entries` 和 `victim_latency` 参数允许为 0 且不参与建模。
+- [ ] 尚未完成的前一个 PoCQ writeback 和相同 victim address 的再次替换均不阻塞后续 SLC 流水。
+- [ ] SF victim 仍原子 reserve SEQ、保留 directory snapshot，并通过 snoop/`CompleteSfEvict` 完成。
+- [ ] 新增并通过 `DirtyVictimCapturedBeforeOverwriteAndHandedDirectlyToPocq`、`PriorDirtyVictimHandoffDoesNotBlockNextReplacement` 和 `DirtyVictimHandoffPreservesData`。
+
+### US-013: 完成 PoCQ dirty victim 的 SN writeback 与退休
+
+**Description:** As the HNF controller, I want each directly handed-off dirty victim written to the system node by an independent PoCQ transaction so that requester completion and victim lifetime remain decoupled and lossless.
+
+**Acceptance Criteria:**
+
+- [ ] Fill/Update terminal response 携带 victim 后，CC 创建独立 PoCQ dirty-victim transaction，使用 `VictimId` 和独立 downstream TxnID 关联；它不复用或阻塞原 requester 的 POCQ token。
+- [ ] dirty-victim transaction 向 `snNodeId` 发出 `WriteNoSnpFull` TXREQ 和完整 cache-line TXDAT，并在 TXDAT 被接受且 downstream terminal completion 到达前保持 allocated；TX backpressure 不丢失 request/data。
+- [ ] 两个完成条件同时满足后直接从 PoCQ 退休，不向 SLCSF 发送 release；旧 `ReleaseDirtyVictim` request 返回 `InvalidRequest`。
+- [ ] downstream retry 保留 PoCQ owner 和完整 line；不可恢复 error fail-stop，不能静默丢失唯一 dirty copy。
+- [ ] 新增并通过 `DirtyVictimDataSurvivesWriteback`、`DirtyVictimTxBackpressureMakesProgress`、`DirtyVictimCompletionMatchesVictimId`、`DirtyVictimCompletionDoesNotConsumeSlcsfRequestCredit` 和 `ObsoleteDirtyVictimReleaseRequestIsRejected`。
+- [ ] 新增强制小 SLC 的端到端测试，实际触发 dirty eviction，并验证 `WriteNoSnpFull` address/data、唯一 downstream completion、SLC victim occupancy 始终为 0 和原 requester 正常完成。
 
 ### US-014: 统一 admission、stall、reservation 与 replay 生命周期
 
@@ -298,7 +298,7 @@
 - [ ] 明确区分 admission rejection、accepted service stall 和 correctness Replay；三者分别使用 retry issue、留在 ready queue、terminal Replay response。
 - [ ] 现有跨 lookup→snoop/MC→commit 的 `sfReservationOwners` 长期 set 独占被移除或收敛为仅针对有界资源的 reservation；不得与阶段 6 set lock 叠加。
 - [ ] lookup 返回后不持有 SLC/SF set/way lock；外部等待期间的正确性由 CommitToken 保证。
-- [ ] 短期 reservation 只覆盖已 issue、尚未 complete 的内部操作，或显式的 response slot、VictimBuffer、SEQ capacity。
+- [ ] 短期 reservation 只覆盖已 issue、尚未 complete 的内部操作、显式 response slot、SEQ capacity，或 dirty SLC victim 在 U1→U2 之间的瞬时 slot seal。
 - [ ] 获取多个资源采用 all-or-nothing；失败路径不泄漏部分 lock/reservation。
 - [ ] 成功、Replay、Error、drain 和断言前可恢复路径都有唯一、可测试的资源释放点。
 - [ ] NoCredit 不改变 graph ownership、不生成 response；service stall 不生成 Replay；Replay 不修改持久状态。
@@ -319,7 +319,7 @@
 - [ ] 兼容默认仍为 `max_inflight=1`、各 issue width=1；并行通过显式配置开启。
 - [ ] 新增并通过 `DifferentSetsCompleteConcurrently`、`SameSetOperationsSerialize`、`LookupAndUpdateSameSetMutuallyExclude`、`StalledLockAcquisitionLeaksNoLock` 和 `MaxInflightAndIssueWidthAreEnforced`。
 - [ ] 新增交叉 SLC/SF set 获取与乱序完成测试，证明无 lock-order deadlock，且 response 投递到正确 reqId/entry。
-- [ ] 并发测试结束后所有 queue、lock、reservation、VictimBuffer 和 SEQ occupancy 均回到预期值。
+- [ ] 并发测试结束后所有 queue、lock、reservation、dirty-victim capture/seal 和 SEQ occupancy 均回到预期值。
 
 ### US-016: 迁移为独立 SlcSnoopFilter ClockedObject
 
@@ -329,16 +329,16 @@
 
 - [ ] 新增 `SlcSnoopFilter : ClockedObject` C++ 类及 `SlcSnoopFilter.py`，并在 `GEM5/src/mem/cache/CHI/SConscript` 注册 SimObject、source、tests 和 debug flags。
 - [ ] Python 配置创建 `HomeNodeFull` 的 child SLCSF；C++ `HomeNodeFull`/CC 保存配置生成的 child 指针，不再按值拥有计时顶层对象。
-- [ ] child 按值持有普通 C++ storage、policy、VictimBuffer、SeqBuffer、queue、service 和 stats 组件；内部组件不各自变成 SimObject。
+- [ ] child 按值持有普通 C++ storage、policy、SeqBuffer、queue、service 和 stats 组件；SLC victim 只存在于当前 request/response 的瞬时 capture；内部组件不各自变成 SimObject。
 - [ ] child 默认继承 `HomeNodeFull` 的 `clk_domain`，但接口允许以后配置独立 clock domain。
 - [ ] child 使用自身 event 推进；移除阶段 A 的 `HomeNodeFull::wakeup()` 直接 `tick()`，防止双推进。
 - [ ] response 变为 visible 或 registered credit 从 0 变为非 0 后，只通过未来周期 wakeup notification 唤醒 CC/HomeNode；不得从 child callback 直接消费 response 或推进 POCQ。
 - [ ] 正常 transaction 数据路径保持 POCQ/CC ↔ SLCSF；LinkLayer 不获得 SLCSF transaction API。
 - [ ] 原 `HomeNodeFull()` 配置无需修改可启动。
-- [ ] child `slcsf.*` 是唯一 runtime 参数真源；旧 `HomeNodeFull` geometry、SEQ、latency、queue、VictimBuffer、issue-width 和 max-inflight 参数仅作为 child 默认值的 Parent proxy/兼容入口，不在 C++ 中形成第二份配置状态。
+- [ ] child `slcsf.*` 是唯一 runtime 参数真源；旧 `HomeNodeFull` geometry、SEQ、latency、queue、issue-width 和 max-inflight 参数仅作为 child 默认值的 Parent proxy/兼容入口；旧 victim latency/capacity 参数为 no-op，不在 C++ 中形成第二份有效配置状态。
 - [ ] 只设置旧 parent 路径时，值必须传到 child；同时显式设置 parent 与 child 同一参数时，显式 child 值优先。该优先级写入参数说明和配置测试。
 - [ ] `clk_domain` 的 canonical source 是 child；默认代理 `Parent.clk_domain`，显式 child clock domain 可覆盖默认值。
-- [ ] standalone child 构建、instantiate 和独立调度 smoke tests 通过；`config.ini` 验证 geometry、SEQ、latency、queue、VictimBuffer、issue width、max-inflight 和 clock-domain 的最终值。
+- [ ] standalone child 构建、instantiate 和独立调度 smoke tests 通过；`config.ini` 验证 geometry、SEQ、latency、queue、legacy victim no-op、issue width、max-inflight 和 clock-domain 的最终值。
 - [ ] 至少一项测试使用非 1:1 的 CC/SLCSF clock period，证明 request/response 双缓冲和 future wakeup 不依赖同 tick event 执行顺序。
 
 ### US-017: 实现初始化与事件驱动调度
@@ -347,7 +347,7 @@
 
 **Acceptance Criteria:**
 
-- [ ] cold `initState()` 清空 SLC、SF、VictimBuffer 和 SeqBuffer，并将 initialized 置为 false；checkpoint restore 不执行破坏性重置。
+- [ ] cold `initState()` 清空 SLC、SF、SeqBuffer 和所有瞬时 dirty-victim capture/seal，并将 initialized 置为 false；checkpoint restore 不执行破坏性重置。
 - [ ] `startup()` 启动至少 1 cycle、默认 16 cycles 的 abstract initialization；初始化完成前 registered credits=0，`tryEnqueue()` 返回 `Initializing`。
 - [ ] init 完成通过已寄存的 `initialized()` 状态和 future wakeup notification 暴露；不向普通 response queue 注入没有 POCQ owner 的 `InitDone`，也不产生 same-cycle transaction result。
 - [ ] child wakeup 固定顺序为 promote responses → promote requests → complete ready operations → issue ready operations → update registered credits → lifecycle check → schedule next wakeup。
@@ -366,7 +366,7 @@
 - [ ] 阶段 D1 `QuiesceUpstream` 只停止新的 RXREQ admission；RXDAT、RXRSP、credit/retry、TX arbitration、CC internal work、deferred retire 和既有 allocated entry 的 SLCSF enqueue 全部继续。child 收到 drain request 后只记录 `drainRequested`，此阶段仍接受这些既有 intent。
 - [ ] 当 HomeNode/CC 证明没有新的 transaction admission，且所有已 allocated main/SEQ/victim entry 均不再可能产生新的 SLCSF request 时，显式通知 child 进入阶段 D2 `SealAndDrainChild`；此后 `tryEnqueue()` 才返回 `Draining`。
 - [ ] D2 继续推进 child 已 accepted work，并允许 CC 消费 response、发送完成所需 TX、处理 RX completion 和 retire，直到 parent 与 child 同时 completely idle。
-- [ ] 存在 ingress、ready、in-flight、pending/visible response、deferred retire、VictimBuffer owner 或未完成 SEQ/FVB 时不得报告 `Drained`。
+- [ ] 存在 ingress、ready、in-flight、pending/visible response、deferred retire、dirty-victim capture/seal、PoCQ writeback 或未完成 SEQ/FVB 时不得报告 `Drained`。
 - [ ] drain 期间每个 accepted request 仍产生恰好一个 terminal response；不得因 `Draining` 返回造成已拥有 transaction 永久卡在 issue 状态。
 - [ ] drain tests 分别从 ingress、ready、in-flight、respPending 和 respVisible 非空状态启动，并证明 CC 会继续消费 terminal response 直到完成。
 - [ ] 完全 idle 后调用 `signalDrainDone()`；`drainResume()` 恢复 admission、重算 registered credits 并按需唤醒。
@@ -378,7 +378,7 @@
 
 **Acceptance Criteria:**
 
-- [ ] drained checkpoint 至少保存 init 状态、SLC tag/data/state/generation/replacement state、SF tag/owner/sharer/state/generation/replacement state、`accessCounter`/generation allocator、request/SEQ/victim/reservation next-ID、epoch counters 以及恢复后仍有意义的 VictimBuffer/SEQ metadata。
+- [ ] drained checkpoint 至少保存 init 状态、SLC tag/data/state/generation/replacement state、SF tag/owner/sharer/state/generation/replacement state、`accessCounter`/generation allocator、request/SEQ/victim-identity/reservation next-ID、epoch counters 和 SEQ metadata；历史 VictimBuffer 数组仅作为 canonical-empty 格式兼容字段。
 - [ ] drained-only 模式不序列化 active queue、in-flight ready tick 或半完成 response reservation；serialize 前用断言验证这些 transient state 为空。
 - [ ] restore 后不得重新 cold initialize、重复发送 init completion 或使 ID/generation 回退；对 checkpoint 前已有 line 的 lookup 结果、data、dirty、owner/sharer、replacement 次序和 generation 与 checkpoint 前一致。
 - [ ] restore 后可以接收和完成新 transaction，且 ID 不与已序列化历史状态碰撞。
@@ -436,13 +436,13 @@
 
 ### 5.2 Storage 与提交正确性
 
-- FR-11: SLCSF 是 SLC/SF、VictimBuffer、SeqBuffer 和相关 replacement/generation state 的唯一所有者。
+- FR-11: SLCSF 是 SLC/SF、SeqBuffer 和相关 replacement/generation state 的唯一所有者；PoCQ 是已移交 dirty SLC victim 的唯一持有者。
 - FR-12: storage probe 为只读语义；replacement access metadata 必须通过显式 commit/record-access 操作更新。
 - FR-13: 每次 accepted request 使用独立 reqId；response 通过 reqId 与 POCQ entry 双重关联。
 - FR-14: CommitToken 必须描述 lookup 时的 line、SLC/SF hit、set、way、generation、request ID 和 epoch，不得保存 entry 指针。
 - FR-15: 每个持久 Fill/Update/Evict 在 commit 前验证 token；不匹配返回 redo-lookup Replay。
 - FR-16: Replay 不得写 tag/data/state/sharer，不得覆盖 victim，不得递增 generation。
-- FR-17: dirty SLC victim 覆盖前必须完整进入已 reserve 的 VictimBuffer，并由独立 CC internal transaction 以 `WriteNoSnpFull` 写回 SN、成功后显式 release；SF victim 覆盖前必须完整进入已 reserve 的 SEQ。
+- FR-17: dirty SLC victim 覆盖前必须在 U1 完成 exact capture/seal，并随 terminal response 直接交给独立 PoCQ transaction 以 `WriteNoSnpFull` 写回 SN；不得 snoop 或回 SLCSF release。SF victim 覆盖前必须完整进入已 reserve 的 SEQ 并 snoop。
 - FR-18: 同一 set/line 最多存在一个 committed valid SLC entry 和一个 committed valid SF entry。
 - FR-19: dirty state 必须伴随完整 cache-line data。
 - FR-20: `ReadNoSnp` 继续不分配或更新 SLC/SF。
@@ -457,7 +457,7 @@
 - FR-26: 多资源获取必须 all-or-nothing；任何 stall/replay/error 都不得泄漏 lock 或 reservation。
 - FR-27: `max_inflight` 和各类 issue width 必须受参数约束；不同 set 可并行，同 set 冲突操作必须串行。
 - FR-28: `max_inflight > 1` 时不得关闭 set conflict protection。
-- FR-29: VictimBuffer、SEQ 和 response reservation 的 occupancy 均不得超过配置容量。
+- FR-29: SEQ 和 response reservation 的 occupancy 均不得超过配置容量；dirty-victim capture/seal 数必须与当前 in-flight U1/U2 owner 精确对应。
 
 ### 5.4 CC / POCQ / LinkLayer 集成
 
@@ -487,7 +487,7 @@
 - 不修复低 `num_txns` 下既有的 TxnID 跨 channel 快速复用限制。
 - 不改变 Cache2ChiBridge transient snoop/copyback 协议或建立新的 L1/L2 ownership-transfer handshake。
 - 不将 POCQ transaction graph、CHI flit 生成或 Memory Controller 访问职责移入 SLCSF。
-- 不把 `SlcArray`、`SfDirectory`、VictimBuffer、SeqBuffer 或 service 分别实现成 SimObject。
+- 不把 `SlcArray`、`SfDirectory`、SeqBuffer 或 service 分别实现成 SimObject。
 - 不提供 active/non-drained pipeline checkpoint；本 PRD 只要求 drained checkpoint。
 - 不要求与 RTL 微架构逐拍一致；只保证本文定义的粗粒度 service latency 和队列时序。
 - 不要求历史整机 exit tick 不变，也不以固定 wall-clock speedup 作为 correctness 门禁。
@@ -510,7 +510,6 @@ HomeNodeFull
     ├── SlcSfService
     ├── SLC storage
     ├── SF directory
-    ├── VictimBuffer
     ├── SeqBuffer
     ├── policy
     └── stats
@@ -578,7 +577,7 @@ acceptedTotal  = terminalProducedTotal + reqOutstanding
 | `Fill`，产生 dirty SLC victim | `fill_latency + victim_latency` |
 | `Fill`/`Update`，产生 SF victim | 对应 base latency `+ sf_evict_latency` |
 | 同时产生 dirty SLC 与 SF victim | base latency `+ victim_latency + sf_evict_latency` |
-| 普通 `Update`、`Evict`、`CompleteSfEvict`、`ReleaseDirtyVictim` | `update_latency` |
+| 普通 `Update`、`Evict`、`CompleteSfEvict` | `update_latency` |
 | L0/U0 提前判定的 Replay | 1 child cycle 后 internal completion |
 | cold initialization | `init_latency` |
 

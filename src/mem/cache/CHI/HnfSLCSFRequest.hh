@@ -141,6 +141,8 @@ enum class SlcSfUpdateKind : uint8_t
     FlushL3,
     WriteL3FlushSf,
     CompleteSfEvict,
+    // Legacy wire/API value. Dirty victims now transfer to PoCQ in the
+    // replacement response and never require an SLCSF release request.
     ReleaseDirtyVictim
 };
 
@@ -152,7 +154,7 @@ struct SlcSfCacheLine
     bool dirty = false;
 };
 
-/** Stable identities for the two independently managed victim stores. */
+/** Stable identities for persistent SEQ entries and transient SLC handoffs. */
 struct SlcSfSeqId
 {
     uint64_t value = 0;
@@ -166,12 +168,13 @@ struct SlcSfVictimId
 /**
  * Opaque proof that one ownerless mutation reached durable U2 state.
  *
- * Only the SLCSF service can mint a lease.  Consumers may copy and inspect it
- * but cannot manufacture a nonce for another SEQ or VictimBuffer owner.
+ * Only the SLCSF service can mint a lease. Consumers may copy and inspect it,
+ * but cannot manufacture a nonce for another SEQ completion owner.
  */
 enum class SlcSfCompletionKind : uint8_t
 {
     CompleteSfEvict,
+    // Retained for checkpoint/API compatibility; no new lease uses it.
     ReleaseDirtyVictim
 };
 
@@ -360,6 +363,7 @@ struct SlcSfCompleteSfEvict
 
 struct SlcSfReleaseDirtyVictim
 {
+    // Deprecated compatibility request. The staged service rejects it.
     static constexpr SlcSfUpdateKind Kind =
         SlcSfUpdateKind::ReleaseDirtyVictim;
 

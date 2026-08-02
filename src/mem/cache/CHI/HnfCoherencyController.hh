@@ -47,10 +47,7 @@ class HnfCoherencyController
         DataQueued,
         WaitComp,
         RetryPending,
-        DownstreamErrorHeld,
-        CompletedAwaitRelease,
-        ReleaseIssuePending,
-        ReleaseWaiting
+        DownstreamErrorHeld
     };
 
     HnfCoherencyController(uint32_t block_size, uint32_t data_beat_bytes,
@@ -123,7 +120,6 @@ class HnfCoherencyController
     std::optional<SlcSfVictimId> dirtyVictimForTxn(
         uint32_t downstream_txn_id) const;
     DirtyVictimPhase dirtyVictimPhase(SlcSfVictimId id) const;
-    SlcSfReqId dirtyVictimReleaseReqId(SlcSfVictimId id) const;
 
     const HnfCcTxRsp& frontTxRsp() const;
     void popTxRsp();
@@ -216,6 +212,7 @@ class HnfCoherencyController
         Tick retryNotBeforeTick = 0;
     };
 
+    /** PoCQ-owned asynchronous WriteNoSnpFull transaction and line storage. */
     struct DirtyVictimTxn
     {
         SlcSfSlcVictim victim;
@@ -227,13 +224,10 @@ class HnfCoherencyController
         bool activeAllowRetry = false;
         bool requestQueued = false;
         bool requestSent = false;
-        bool writebackMarked = false;
         bool dataQueued = false;
         bool dataSent = false;
         bool completionSeen = false;
         DirtyVictimPhase phase = DirtyVictimPhase::ReqQueued;
-        SlcSfReqId releaseReqId{};
-        std::optional<SlcSfRequest> pendingRelease;
     };
 
     HnfSLCSF* slcsfUnit = nullptr;
@@ -316,9 +310,7 @@ class HnfCoherencyController
                                     const RawRsp& rsp) const;
     void completeDirtyVictimWriteback(DirtyVictimTxn& transaction,
                                       const RawRsp& rsp);
-    void startDirtyVictimRelease(DirtyVictimTxn& transaction);
-    void tryIssueDirtyVictimRelease(DirtyVictimTxn& transaction);
-    void retryDirtyVictimReleases();
+    void retireDirtyVictimWriteback(DirtyVictimTxn& transaction);
     void startSeqPocq();
     void stepSeqPocq(const SeqPocqEvent& event);
     void queueSeqSnoops();

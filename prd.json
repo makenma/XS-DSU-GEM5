@@ -27,7 +27,7 @@
       "acceptanceCriteria": [
         "Define a monotonically allocated SlcSfReqId that is unique per operation and does not reuse LinkLayer Entry.seq.",
         "Define a common request header containing reqId, pocEntryId, line or address key, requester, CHI opcode, QoS, and trace context.",
-        "Define owned Lookup, Fill, Update, and Evict payloads; UpdateKind covers all existing mutations plus CompleteSfEvict and ReleaseDirtyVictim.",
+        "Define owned Lookup, Fill, Update, and Evict payloads; UpdateKind covers all runtime mutations plus CompleteSfEvict. ReleaseDirtyVictim remains only as a rejected legacy API value.",
         "Do not expose initialization as a public ownerless request.",
         "Messages own cache-line, mask, victim, and snoop data and store no raw pointer or reference to SLC, SF, POCQ, or transient caller storage.",
         "Add mapping tests proving every existing synchronous operation has one typed request representation.",
@@ -36,7 +36,7 @@
       ],
       "priority": 2,
       "passes": true,
-      "notes": "Acceptance audit repaired: operation-specific variants prevent kind/payload mismatches; CompleteSfEvict and ReleaseDirtyVictim carry strong SeqId/VictimId types; SLC and SF victim snapshots are distinct; fillCleanShared and every synchronous operation have parameter-preserving construction tests; repeated LinkLayer sequences allocate distinct monotonic request IDs."
+      "notes": "Acceptance audit repaired: operation-specific variants prevent kind/payload mismatches; CompleteSfEvict carries a strong SeqId and the legacy ReleaseDirtyVictim encoding remains type-safe but is rejected; SLC and SF victim snapshots are distinct; fillCleanShared and every synchronous operation have parameter-preserving construction tests; repeated LinkLayer sequences allocate distinct monotonic request IDs."
     },
     {
       "id": "US-003",
@@ -138,8 +138,8 @@
       "title": "Add stage-A parameters and HomeNode scheduling",
       "description": "As an HNF configuration author, I want the embedded pipeline driven by the existing HomeNode clock before the standalone SimObject migration.",
       "acceptanceCriteria": [
-        "HomeNodeFull.py exposes lookup, fill, update, victim, SF-evict, replay, queue, VictimBuffer, issue-width, max-inflight, response-consume-width, and set-lock parameters.",
-        "Stage-A defaults are lookup=4, fill=4, update=3, victim=3, SF-evict=2, replay=2 cycles, request and response queues=8, VictimBuffer=2, all widths=1, and max_inflight=1.",
+        "HomeNodeFull.py exposes lookup, fill, update, SF-evict, replay, queue, issue-width, max-inflight, response-consume-width, and set-lock parameters; old victim latency/capacity knobs are deprecated no-ops.",
+        "Stage-A defaults are lookup=4, fill=4, update=3, SF-evict=2, replay=2 cycles, request and response queues=8, all widths=1, and max_inflight=1; legacy victim=3 and VictimBuffer=2 values do not affect timing or capacity.",
         "HomeNodeFull wakeup advances embedded SLCSF exactly once before linklayer.wakeup.",
         "HomeNode work detection includes ingress, ready, in-flight, pending or visible responses, and CC issue-pending entries.",
         "An idle pipeline does not cause permanent useless self-scheduling.",
@@ -233,7 +233,7 @@
       "description": "As a coherence transaction, I want the mutation service to reject stale snapshots before U1 so that intervening writes cannot be corrupted.",
       "acceptanceCriteria": [
         "Fill, Update, and Evict invoke the US-011 validator in U0 before any resource reservation or persistent mutation.",
-        "A token mismatch returns Replay with the stale-token reason and makes no change to tags, data, state, owner, sharers, generation, SEQ, VictimBuffer, or replacement state.",
+        "A token mismatch returns Replay with the stale-token reason and makes no change to tags, data, state, owner, sharers, generation, SEQ, transient victim capture/seal, or replacement state.",
         "The Replay payload sets redoLookup and returns an absolute retryNotBeforeTick derived from replay_penalty.",
         "A fresh token for the same request semantics can pass U0 and commit through U2.",
         "StaleTokenReplaysWithoutWrite and a direct-service fresh-token commit test pass.",
@@ -392,17 +392,16 @@
     },
     {
       "id": "US-022",
-      "title": "Implement the dirty SLC VictimBuffer",
-      "description": "As an HNF transaction, I want dirty victims preserved before replacement so that their newest cache-line data cannot be lost.",
+      "title": "Hand dirty SLC victims directly to PoCQ",
+      "description": "As an HNF transaction, I want an M-state SLC victim transferred directly to PoCQ so that its newest line data is preserved without an SLC-side victim buffer.",
       "acceptanceCriteria": [
-        "Implement a bounded VictimBuffer with stable VictimId and reserve, installed-snapshot, handed-off, writeback-issued, and release states.",
-        "victim_buffer_entries defaults to 2, must be positive, and bounds occupancy plus reservations and handed-off owners.",
-        "Dirty replacement order is token validation, buffer reservation, old-line snapshot, victim install, new-line install, then terminal response production.",
-        "A Fill producing a dirty SLC victim adds victim_latency to its base service latency; if it also produces an SF victim, both latency additions apply.",
-        "A full buffer or same-line conflict returns Replay with the old line and replacement metadata unchanged.",
-        "The response owns victim ID, address, complete data, dirty facts, and state without exposing storage pointers.",
-        "A handed-off entry cannot be reused before explicit release; duplicate or unknown VictimId completion asserts.",
-        "DirtyVictimReservedBeforeOverwrite, VictimBufferFullReplaysWithoutMutation, and DirtyVictimHandoffPreservesData pass.",
+        "Do not model a persistent or bounded SLC-side VictimBuffer; clean SLC victims are discarded and MU/MN victims take the direct PoCQ path without snooping.",
+        "Under the U1 exclusion boundary, capture the exact old tag, state, complete data, and mask and seal the selected physical slot before U2 overwrites it.",
+        "The terminal response owns the stable VictimId, address, complete data, dirty facts, and state without exposing storage pointers; after response consumption PoCQ is the sole owner.",
+        "Legacy victim_buffer_entries and victim_latency parameters may be zero and do not affect capacity, Replay, or service latency.",
+        "An outstanding prior PoCQ writeback or reuse of the same victim address does not stall or Replay a later SLC replacement.",
+        "SF victims remain a separate path: they reserve SEQ and require snooping before CompleteSfEvict.",
+        "DirtyVictimCapturedBeforeOverwriteAndHandedDirectlyToPocq, PriorDirtyVictimHandoffDoesNotBlockNextReplacement, and DirtyVictimHandoffPreservesData pass.",
         "Tests pass",
         "Typecheck passes"
       ],
@@ -419,7 +418,7 @@
         "The victim transaction neither reuses nor blocks the original requester POCQ token.",
         "It sends WriteNoSnpFull TXREQ and one complete cache-line TXDAT to snNodeId.",
         "TX backpressure preserves request and data and the transaction remains allocated until downstream terminal completion.",
-        "Downstream completion is matched to the correct VictimId; an error or retry keeps the VictimBuffer entry owned and follows existing LinkLayer policy.",
+        "Downstream completion is matched to the correct VictimId; retry keeps the PoCQ transaction and full line owned, while an unrecoverable downstream error fails stop rather than losing dirty data.",
         "DirtyVictimDataSurvivesWriteback, DirtyVictimTxBackpressureMakesProgress, and DirtyVictimCompletionMatchesVictimId pass.",
         "Tests pass",
         "Typecheck passes"
@@ -430,15 +429,14 @@
     },
     {
       "id": "US-024",
-      "title": "Release dirty victims after downstream completion",
-      "description": "As the HNF controller, I want VictimBuffer reuse gated by an acknowledged SLCSF release so that downstream writeback and storage lifetime cannot race.",
+      "title": "Retire PoCQ dirty victims after downstream completion",
+      "description": "As the HNF controller, I want a direct-handoff victim retired entirely within PoCQ so that DDR completion never sends a release request back into SLCSF.",
       "acceptanceCriteria": [
-        "After successful downstream write completion, CC sends ReleaseDirtyVictim carrying the exact VictimId.",
-        "ReleaseDirtyVictim is dispatched by the mutation service with update_latency.",
-        "The VictimBuffer entry becomes reusable only after the release update returns terminal Done.",
-        "NoCredit retries release without losing ownership or sending a duplicate successful release.",
-        "ReleaseDirtyVictimFreesExactlyOneEntry passes.",
-        "A forced-small-SLC end-to-end test triggers dirty eviction and verifies WriteNoSnpFull address and data, one downstream completion, VictimBuffer release, and normal completion of the original requester.",
+        "After both TXDAT acceptance and successful downstream completion, CC retires the exact PoCQ dirty-victim transaction and its full-line storage.",
+        "CC never emits ReleaseDirtyVictim and consumes no SLCSF request credit to complete a writeback; the legacy request is rejected as InvalidRequest.",
+        "Completion-before-data and data-before-completion orders both retain ownership until both conditions are satisfied, without duplicate TXDAT or retirement.",
+        "DirtyVictimCompletionDoesNotConsumeSlcsfRequestCredit and ObsoleteDirtyVictimReleaseRequestIsRejected pass.",
+        "A forced-small-SLC end-to-end test triggers dirty eviction and verifies WriteNoSnpFull address/data, one downstream completion, zero SLC victim-buffer occupancy, and normal completion of the original requester.",
         "Tests pass",
         "Typecheck passes"
       ],
@@ -453,7 +451,7 @@
       "acceptanceCriteria": [
         "Admission rejection, accepted service stall, and correctness Replay use distinct states, retry behavior, and counters.",
         "Remove or narrow sfReservationOwners so no SLC or SF set lock spans external snoop, memory-controller, or requester waits.",
-        "CommitToken protects correctness while a transaction is outside SLCSF; short reservations cover only issued service work or explicit response, VictimBuffer, and SEQ capacity.",
+        "CommitToken protects correctness while a transaction is outside SLCSF; short reservations cover only issued service work, response slots, SEQ capacity, and the transient dirty-victim slot seal between U1 and U2.",
         "Multi-resource acquisition is all-or-nothing and leaves no partial lock or reservation on failure.",
         "Done, Replay, Error, drain, and recoverable cancellation each have one testable cleanup point.",
         "NoCredit generates no response, service stall generates no Replay, and Replay changes no persistent state.",
@@ -496,7 +494,7 @@
         "Different pipes may complete out of order, but pocEntryId and reqId deliver each response to the correct entry with one outstanding operation per entry.",
         "DifferentSetsCompleteConcurrently and MaxInflightAndIssueWidthAreEnforced cover overlap, every configured limit, and eventual progress.",
         "A crossed SLC/SF-set test proves no lock-order deadlock and correct out-of-order response delivery under max_inflight greater than one.",
-        "Every concurrency test ends with expected-empty queues, locks, reservations, VictimBuffer owners, and SEQ occupancy.",
+        "Every concurrency test ends with expected-empty queues, locks, reservations, transient victim captures/seals, and SEQ occupancy.",
         "All four CHI GTest binaries and both default and forced-SF/SEQ litmus configurations pass at the parallel-stage exit.",
         "Tests pass",
         "Typecheck passes"
@@ -512,7 +510,7 @@
       "acceptanceCriteria": [
         "Add SlcSnoopFilter C++ ClockedObject and SlcSnoopFilter.py under src/mem/cache/CHI in namespace gem5::Chi, and register the SimObject, source, tests, and debug flags in SConscript.",
         "HomeNodeFull creates or references the configured child and CC holds a non-owning pointer instead of HomeNode owning the timed top-level object by value.",
-        "The child owns ordinary C++ storage, policy, VictimBuffer, SeqBuffer, queues, service, and stats components by value.",
+        "The child owns ordinary C++ storage, policy, SeqBuffer, queues, service, and stats components by value; SLC victims use only per-request transient capture state.",
         "Normal transaction traffic remains POCQ or CC to SLCSF; LinkLayer receives no direct SLCSF transaction API, and SLCSF generates no TXSNP, TXREQ, TXDAT, or TXRSP flit.",
         "A default HomeNodeFull still instantiates without configuration-script changes.",
         "Standalone child build and instantiate smoke tests pass.",
@@ -529,12 +527,12 @@
       "description": "As a configuration author, I want old parameter paths to remain compatible while C++ consumes one resolved child configuration.",
       "acceptanceCriteria": [
         "slcsf child parameters are the only values read by runtime C++ storage and service code.",
-        "Existing HomeNode geometry, SEQ, latency, queue, VictimBuffer, width, and max-inflight parameters act only as Parent-proxy defaults or compatibility aliases.",
+        "Existing HomeNode geometry, SEQ, latency, queue, width, and max-inflight parameters act only as Parent-proxy defaults or compatibility aliases; legacy victim latency/capacity values are no-ops.",
         "Setting only an old parent path propagates its value to the child.",
         "When parent and child explicitly set the same parameter, the explicit child value wins.",
         "Existing sf_num_sets, sf_num_ways, and seq_entries forced-litmus command paths continue to work.",
         "Default geometry remains slc_num_sets=1024, slc_num_ways=16, sf_num_sets=1024, sf_num_ways=16, and seq_entries=8, with the existing LRU and victim-selection results unchanged.",
-        "config.ini tests verify final geometry, SEQ, latency, queue, VictimBuffer, width, max-inflight, and clock-domain values and the documented override priority.",
+        "config.ini tests verify final geometry, SEQ, latency, queue, legacy victim no-op values, width, max-inflight, and clock-domain values and the documented override priority.",
         "Tests pass",
         "Typecheck passes"
       ],
@@ -565,7 +563,7 @@
       "title": "Model cold initialization explicitly",
       "description": "As a simulator user, I want initialization to gate credits and complete after modeled latency without polluting transaction responses.",
       "acceptanceCriteria": [
-        "Cold initState clears SLC, SF, VictimBuffer, and SeqBuffer and sets initialized false; checkpoint restore does not perform this reset.",
+        "Cold initState clears SLC, SF, SeqBuffer, and all transient victim captures/seals and sets initialized false; checkpoint restore does not perform this reset.",
         "startup schedules at least one child cycle of initialization with a default init_latency of 16 cycles.",
         "Before initialization completes, registered request credit is zero and tryEnqueue returns Initializing.",
         "Completion is exposed through registered initialized state and a future wakeup notification, not an ownerless InitDone in the normal response queue.",
@@ -621,7 +619,7 @@
         "HomeNode explicitly enters D2 SealAndDrainChild only after D1 proves no future SLCSF intent can be created.",
         "tryEnqueue returns Draining only in D2 while accepted child work continues to advance.",
         "CC continues consuming responses, sending required TX, receiving completions, processing deferred retire, and retiring entries throughout D2.",
-        "Drained is forbidden while ingress, ready, in-flight, pending or visible response, deferred retire, VictimBuffer owner, or SEQ/FVB work remains.",
+        "Drained is forbidden while ingress, ready, in-flight, pending or visible response, deferred retire, transient victim capture/seal, PoCQ writeback, or SEQ/FVB work remains.",
         "Every request accepted before sealing still produces exactly one terminal response.",
         "signalDrainDone occurs only when parent and child are both idle; drainResume restores admission, recalculates registered credit, and wakes work as needed.",
         "DrainWaitsForAllAcceptedWork and DrainResumeRestoresAdmission cover ingress, ready, in-flight, respPending, and respVisible starting states.",
@@ -639,7 +637,7 @@
       "acceptanceCriteria": [
         "serialize asserts that request and response queues, in-flight work, ready ticks, transient response reservations, deferred retire, and active owners are empty.",
         "Checkpoint data includes initialized state; SLC tag, data, state, generation, and replacement metadata; SF tag, owner, sharers, state, generation, and replacement metadata.",
-        "Checkpoint data includes accessCounter or generation allocator, request, SEQ, victim, and reservation next IDs, epoch counters, and durable VictimBuffer or SEQ metadata.",
+        "Checkpoint data includes accessCounter or generation allocator, request, SEQ, victim-identity and reservation next IDs, epoch counters, and durable SEQ metadata; historical VictimBuffer arrays remain canonical-empty format padding only.",
         "Active non-drained pipeline checkpoint remains explicitly unsupported.",
         "CheckpointRequiresDrainedState and a checkpoint-content inspection test pass.",
         "Tests pass",
@@ -692,7 +690,7 @@
         "Assert acceptedTotal = terminalProducedTotal + requests without a terminal response and assert terminal Done, Replay, and Error totals are consistent.",
         "Assert visibleTick is greater than acceptedTick without inferring time from request sequence numbers.",
         "Assert Replay makes no persistent mutation; dirty lines have complete data; dirty and SF victims hold their required reservations; and token validation precedes commit.",
-        "Assert no duplicate committed valid tag per set or line, no duplicate request or response ID, and no queue, lock, reservation, VictimBuffer, or SEQ over-capacity state.",
+        "Assert no duplicate committed valid tag per set or line, no duplicate request or response ID, no orphan transient victim capture/seal, and no queue, lock, reservation, or SEQ over-capacity state.",
         "Invariant tests intentionally exercise each recoverable boundary without changing behavior when debug flags are disabled.",
         "All four CHI GTest binaries and both litmus configurations pass at the standalone-ClockedObject stage exit.",
         "Tests pass",

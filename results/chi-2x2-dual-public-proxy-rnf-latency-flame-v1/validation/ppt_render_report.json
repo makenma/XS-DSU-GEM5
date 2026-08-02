@@ -1,0 +1,13 @@
+{
+  "status": "passed",
+  "method": "reopen serialized PPTX with python-pptx; render native shapes/text with Pillow",
+  "slides": 22,
+  "out_of_bounds_shapes": 0,
+  "preview_directory": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/validation/ppt_render",
+  "montage": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/validation/ppt_render/montage.png",
+  "font_for_preview": "/mnt/d/software/android_studio/plugins/design-tools/resources/layoutlib/data/fonts/NotoSansCJK-Regular.ttc",
+  "classification": "public-source proxy; not SPEC CPU2006",
+  "pptx": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/中文汇报_RNF延迟与Guest火焰图.pptx",
+  "embedded_latency_plots": 2,
+  "embedded_guest_flame_graphs": 6
+}

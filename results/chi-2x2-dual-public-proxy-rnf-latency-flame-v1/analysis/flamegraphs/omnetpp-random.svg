@@ -1,0 +1,821 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="484" viewBox="0 0 1800 484">
+<rect width="100%" height="100%" fill="#fffaf3"/>
+<style>text{font-family:DejaVu Sans,Arial,sans-serif}.frame:hover{stroke:#111827;stroke-width:1.5}</style>
+<text x="15" y="30" font-size="22" font-weight="700" fill="#111827">OMNeT++ 3.3.2 Token Ring — Random</text>
+<text x="15" y="55" font-size="13" fill="#475569">Guest ROI-local shadow-call-stack flame graph; 1 sample / 1000 retired macro-instructions; pre-ROI ancestry is intentionally marked unavailable</text>
+<g class="frame"><title>[all guest ROI samples] — 2030 samples (100.00%)</title><rect x="15.00" y="418.00" width="1769.30" height="23" rx="2" fill="#e4a42e" stroke="#fff7ed" stroke-width="0.5"/>
+<text x="19.00" y="434.00" font-size="12" fill="#111827">[all guest ROI samples]</text>
+</g>
+<g class="frame"><title>[ROI root: pre-ROI ancestry unavailable] — 2030 samples (100.00%)</title><rect x="15.00" y="394.00" width="1769.30" height="23" rx="2" fill="#475569" stroke="#fff7ed" stroke-width="0.5"/>
+<text x="19.00" y="410.00" font-size="12" fill="#111827">[ROI root: pre-ROI ancestry unavailable]</text>
+</g>
+<g class="frame"><title>____strtoll_l_internal — 2030 samples (100.00%)</title><rect x="15.00" y="370.00" width="1769.30" height="23" rx="2" fill="#e8814e" stroke="#fff7ed" stroke-width="0.5"/>
+<text x="19.00" y="386.00" font-size="12" fill="#111827">____strtoll_l_internal</text>
+</g>
+<g class="frame"><title>cModule::buildInside() — 1960 samples (96.55%)</title><rect x="15.00" y="346.00" width="1708.27" height="23" rx="2" fill="#e7743d" stroke="#fff7ed" stroke-width="0.5"/>
+<text x="19.00" y="362.00" font-size="12" fill="#111827">cModule::buildInside()</text>
+</g>
+<g class="frame"><title>Computer::doBuildInside() — 1954 samples (96.26%)</title><rect x="15.00" y="322.00" width="1703.03" height="23" rx="2" fill="#e7a32e" stroke="#fff7ed" stroke-width="0.5"/>
+<text x="19.00" y="338.00" font-size="12" fill="#111827">Computer::doBuildInside()</text>
+</g>
+<g class="frame"><title>cGate::connectTo(cGate*, cChannel*) — 1857 samples (91.48%)</title><rect x="15.00" y="298.00" width="1618.46" height="23" rx="2" fill="#ee742d" stroke="#fff7ed" stroke-width="0.5"/>
+<text x="19.00" y="314.00" font-size="12" fill="#111827">cGate::connectTo(cGate*, cChannel*)</text>
+</g>
+<g class="frame"><title>__cxa_throw — 1844 samples (90.84%)</title><rect x="15.00" y="274.00" width="1607.12" height="23" rx="2" fill="#e84e26" stroke="#fff7ed" stroke-width="0.5"/>
+<text x="19.00" y="290.00" font-size="12" fill="#111827">__cxa_throw</text>
+</g>
+<g class="frame"><title>_Unwind_RaiseException — 1844 samples (90.84%)</title><rect x="15.00" y="250.00" width="1607.12" height="23" rx="2" fill="#e17c2b" stroke="#fff7ed" stroke-width="0.5"/>
+<text x="19.00" y="266.00" font-size="12" fill="#111827">_Unwind_RaiseException</text>
+</g>
+<g class="frame"><title>uw_init_context_1 — 1844 samples (90.84%)</title><rect x="15.00" y="226.00" width="1607.12" height="23" rx="2" fill="#e47538" stroke="#fff7ed" stroke-width="0.5"/>
+<text x="19.00" y="242.00" font-size="12" fill="#111827">uw_init_context_1</text>
+</g>
+<g class="frame"><title>uw_frame_state_for — 1844 samples (90.84%)</title><rect x="15.00" y="202.00" width="1607.12" height="23" rx="2" fill="#ec8c3d" stroke="#fff7ed" stroke-width="0.5"/>
+<text x="19.00" y="218.00" font-size="12" fill="#111827">uw_frame_state_for</text>
+</g>
+<g class="frame"><title>_Unwind_Find_FDE — 1843 samples (90.79%)</title><rect x="15.00" y="178.00" width="1606.25" height="23" rx="2" fill="#e4642c" stroke="#fff7ed" stroke-width="0.5"/>
+<text x="19.00" y="194.00" font-size="12" fill="#111827">_Unwind_Find_FDE</text>
+</g>
+<g class="frame"><title>search_object — 1843 samples (90.79%)</title><rect x="15.00" y="154.00" width="1606.25" height="23" rx="2" fill="#e7903e" stroke="#fff7ed" stroke-width="0.5"/>
+<text x="19.00" y="170.00" font-size="12" fill="#111827">search_object</text>
+</g>
+<g class="frame"><title>fde_single_encoding_compare — 862 samples (42.46%)</title><rect x="15.00" y="130.00" width="750.90" height="23" rx="2" fill="#e55b45" stroke="#fff7ed" stroke-width="0.5"/>
+<text x="19.00" y="146.00" font-size="12" fill="#111827">fde_single_encoding_compare</text>
+</g>
+<g class="frame"><title>read_encoded_value_with_base — 529 samples (26.06%)</title><rect x="15.00" y="106.00" width="460.55" height="23" rx="2" fill="#ec9d4e" stroke="#fff7ed" stroke-width="0.5"/>
+<text x="19.00" y="122.00" font-size="12" fill="#111827">read_encoded_value_with_base</text>
+</g>
+<g class="frame"><title>classify_object_over_fdes — 495 samples (24.38%)</title><rect x="766.60" y="130.00" width="430.90" height="23" rx="2" fill="#ec804a" stroke="#fff7ed" stroke-width="0.5"/>
+<text x="770.60" y="146.00" font-size="12" fill="#111827">classify_object_over_fdes</text>
+</g>
+<g class="frame"><title>read_encoded_value_with_base — 186 samples (9.16%)</title><rect x="766.60" y="106.00" width="161.48" height="23" rx="2" fill="#ec9d4e" stroke="#fff7ed" stroke-width="0.5"/>
+<text x="770.60" y="122.00" font-size="12" fill="#111827">read_encoded_value_w…</text>
+</g>
+<g class="frame"><title>get_cie_encoding — 121 samples (5.96%)</title><rect x="928.77" y="106.00" width="104.80" height="23" rx="2" fill="#f69443" stroke="#fff7ed" stroke-width="0.5"/>
+<text x="932.77" y="122.00" font-size="12" fill="#111827">get_cie_enco…</text>
+</g>
+<g class="frame"><title>read_encoded_value_with_base — 28 samples (1.38%)</title><rect x="928.77" y="82.00" width="23.71" height="23" rx="2" fill="#ec9d4e" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strlen — 27 samples (1.33%)</title><rect x="953.19" y="82.00" width="22.84" height="23" rx="2" fill="#e19b4f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>add_fdes — 390 samples (19.21%)</title><rect x="1198.20" y="130.00" width="339.35" height="23" rx="2" fill="#f0a024" stroke="#fff7ed" stroke-width="0.5"/>
+<text x="1202.20" y="146.00" font-size="12" fill="#111827">add_fdes</text>
+</g>
+<g class="frame"><title>read_encoded_value_with_base — 177 samples (8.72%)</title><rect x="1198.20" y="106.00" width="153.63" height="23" rx="2" fill="#ec9d4e" stroke="#fff7ed" stroke-width="0.5"/>
+<text x="1202.20" y="122.00" font-size="12" fill="#111827">read_encoded_value_…</text>
+</g>
+<g class="frame"><title>cRuntimeError::cRuntimeError(cObject const*, char const*, ...) — 13 samples (0.64%)</title><rect x="1622.82" y="274.00" width="10.63" height="23" rx="2" fill="#fa863c" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cException::init(cObject const*, int, char const*, void*) — 10 samples (0.49%)</title><rect x="1622.82" y="250.00" width="8.02" height="23" rx="2" fill="#f29b27" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cGate::fullPath[abi:cxx11]() const — 6 samples (0.30%)</title><rect x="1622.82" y="226.00" width="4.53" height="23" rx="2" fill="#e78248" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cGate::fullPath(char*, int) const [clone .part.0] — 5 samples (0.25%)</title><rect x="1622.82" y="202.00" width="3.66" height="23" rx="2" fill="#ef5846" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cObject::fullPath(char*, int) const — 4 samples (0.20%)</title><rect x="1622.82" y="178.00" width="2.79" height="23" rx="2" fill="#e69f30" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::fullPath(char*, int) const — 4 samples (0.20%)</title><rect x="1622.82" y="154.00" width="2.79" height="23" rx="2" fill="#fa8130" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strprettytrunc(char*, char const*, unsigned int) — 2 samples (0.10%)</title><rect x="1622.82" y="130.00" width="1.04" height="23" rx="2" fill="#f55739" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strncpy — 2 samples (0.10%)</title><rect x="1622.82" y="106.00" width="1.04" height="23" rx="2" fill="#ec9847" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memcpy — 1 samples (0.05%)</title><rect x="1622.82" y="82.00" width="0.17" height="23" rx="2" fill="#e57a33" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memset — 1 samples (0.05%)</title><rect x="1623.69" y="82.00" width="0.17" height="23" rx="2" fill="#ebb637" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__dynamic_cast — 1 samples (0.05%)</title><rect x="1624.57" y="130.00" width="0.17" height="23" rx="2" fill="#f08a46" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__cxxabiv1::__si_class_type_info::__do_dyncast(long, __cxxabiv1::__class_type_info::__sub_kind, __cxxabiv1::__class_type_info const*, void const*, __cxxabiv1::__class_type_info const*, void const*, __cxxabiv1::__class_type_info::__dyncast_result&amp;) const — 1 samples (0.05%)</title><rect x="1624.57" y="106.00" width="0.17" height="23" rx="2" fill="#ef7828" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::fullPath(char*, int) const [clone .part.0] — 1 samples (0.05%)</title><rect x="1625.44" y="130.00" width="0.17" height="23" rx="2" fill="#fa6a48" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__dynamic_cast — 1 samples (0.05%)</title><rect x="1625.44" y="106.00" width="0.17" height="23" rx="2" fill="#f08a46" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strprettytrunc(char*, char const*, unsigned int) — 1 samples (0.05%)</title><rect x="1626.31" y="178.00" width="0.17" height="23" rx="2" fill="#f55739" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strncpy — 1 samples (0.05%)</title><rect x="1626.31" y="154.00" width="0.17" height="23" rx="2" fill="#ec9847" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memcpy — 1 samples (0.05%)</title><rect x="1626.31" y="130.00" width="0.17" height="23" rx="2" fill="#e57a33" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strlen — 1 samples (0.05%)</title><rect x="1627.18" y="202.00" width="0.17" height="23" rx="2" fill="#e19b4f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__sprintf_chk — 2 samples (0.10%)</title><rect x="1628.05" y="226.00" width="1.04" height="23" rx="2" fill="#e96d31" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__vsprintf_internal — 2 samples (0.10%)</title><rect x="1628.05" y="202.00" width="1.04" height="23" rx="2" fill="#f5534c" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__vfprintf_internal — 2 samples (0.10%)</title><rect x="1628.05" y="178.00" width="1.04" height="23" rx="2" fill="#f45248" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__vsprintf_chk — 1 samples (0.05%)</title><rect x="1629.80" y="226.00" width="0.17" height="23" rx="2" fill="#e78b29" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__vfprintf_internal — 1 samples (0.05%)</title><rect x="1629.80" y="202.00" width="0.17" height="23" rx="2" fill="#f45248" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_IO_default_xsputn — 1 samples (0.05%)</title><rect x="1629.80" y="178.00" width="0.17" height="23" rx="2" fill="#f2a12d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memcpy — 1 samples (0.05%)</title><rect x="1629.80" y="154.00" width="0.17" height="23" rx="2" fill="#e57a33" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_wordcopy_fwd_dest_aligned — 1 samples (0.05%)</title><rect x="1629.80" y="130.00" width="0.17" height="23" rx="2" fill="#fa7b2c" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strdup(char const*) — 1 samples (0.05%)</title><rect x="1630.67" y="226.00" width="0.17" height="23" rx="2" fill="#f7a623" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strcpy — 1 samples (0.05%)</title><rect x="1630.67" y="202.00" width="0.17" height="23" rx="2" fill="#f97d39" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strlen — 1 samples (0.05%)</title><rect x="1630.67" y="178.00" width="0.17" height="23" rx="2" fill="#e19b4f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cException::cException() — 3 samples (0.15%)</title><rect x="1631.54" y="250.00" width="1.92" height="23" rx="2" fill="#e6b43d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cException::storeCtx() — 3 samples (0.15%)</title><rect x="1631.54" y="226.00" width="1.92" height="23" rx="2" fill="#f59c27" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::fullPath[abi:cxx11]() const — 2 samples (0.10%)</title><rect x="1631.54" y="202.00" width="1.04" height="23" rx="2" fill="#ecab34" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::fullPath(char*, int) const [clone .part.0] — 1 samples (0.05%)</title><rect x="1631.54" y="178.00" width="0.17" height="23" rx="2" fill="#fa6a48" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strprettytrunc(char*, char const*, unsigned int) — 1 samples (0.05%)</title><rect x="1631.54" y="154.00" width="0.17" height="23" rx="2" fill="#f55739" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strncpy — 1 samples (0.05%)</title><rect x="1631.54" y="130.00" width="0.17" height="23" rx="2" fill="#ec9847" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memset — 1 samples (0.05%)</title><rect x="1631.54" y="106.00" width="0.17" height="23" rx="2" fill="#ebb637" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memcpy — 1 samples (0.05%)</title><rect x="1632.41" y="178.00" width="0.17" height="23" rx="2" fill="#e57a33" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strdup(char const*) — 1 samples (0.05%)</title><rect x="1633.29" y="202.00" width="0.17" height="23" rx="2" fill="#f7a623" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator new[](unsigned long) — 1 samples (0.05%)</title><rect x="1633.29" y="178.00" width="0.17" height="23" rx="2" fill="#fa7243" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>malloc — 1 samples (0.05%)</title><rect x="1633.29" y="154.00" width="0.17" height="23" rx="2" fill="#f47326" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_int_malloc — 1 samples (0.05%)</title><rect x="1633.29" y="130.00" width="0.17" height="23" rx="2" fill="#e4673d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModuleType::create(char const*, cModule*) — 46 samples (2.27%)</title><rect x="1634.16" y="298.00" width="39.41" height="23" rx="2" fill="#f0a22d" stroke="#fff7ed" stroke-width="0.5"/>
+<text x="1638.16" y="314.00" font-size="12" fill="#111827">cMo…</text>
+</g>
+<g class="frame"><title>cEnvir::getRNGMappingFor(cModule*) — 16 samples (0.79%)</title><rect x="1634.16" y="274.00" width="13.25" height="23" rx="2" fill="#e65533" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::fullPath[abi:cxx11]() const — 8 samples (0.39%)</title><rect x="1634.16" y="250.00" width="6.28" height="23" rx="2" fill="#ecab34" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::fullPath(char*, int) const [clone .part.0] — 7 samples (0.34%)</title><rect x="1634.16" y="226.00" width="5.40" height="23" rx="2" fill="#fa6a48" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strprettytrunc(char*, char const*, unsigned int) — 5 samples (0.25%)</title><rect x="1634.16" y="202.00" width="3.66" height="23" rx="2" fill="#f55739" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strncpy — 5 samples (0.25%)</title><rect x="1634.16" y="178.00" width="3.66" height="23" rx="2" fill="#ec9847" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memset — 5 samples (0.25%)</title><rect x="1634.16" y="154.00" width="3.66" height="23" rx="2" fill="#ebb637" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__dynamic_cast — 2 samples (0.10%)</title><rect x="1638.52" y="202.00" width="1.04" height="23" rx="2" fill="#f08a46" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__cxxabiv1::__si_class_type_info::__do_dyncast(long, __cxxabiv1::__class_type_info::__sub_kind, __cxxabiv1::__class_type_info const*, void const*, __cxxabiv1::__class_type_info const*, void const*, __cxxabiv1::__class_type_info::__dyncast_result&amp;) const — 1 samples (0.05%)</title><rect x="1638.52" y="178.00" width="0.17" height="23" rx="2" fill="#ef7828" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cIniFile::getEntriesWithPrefix(char const*, char const*, char const*) — 6 samples (0.30%)</title><rect x="1641.13" y="250.00" width="4.53" height="23" rx="2" fill="#ea8e28" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cPatternMatcher::patternPrefixMatches(char const*, int) — 2 samples (0.10%)</title><rect x="1641.13" y="226.00" width="1.04" height="23" rx="2" fill="#f75e38" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strstr — 1 samples (0.05%)</title><rect x="1641.13" y="202.00" width="0.17" height="23" rx="2" fill="#ef882e" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator delete(void*, unsigned long) — 1 samples (0.05%)</title><rect x="1642.88" y="226.00" width="0.17" height="23" rx="2" fill="#eea646" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_int_free — 1 samples (0.05%)</title><rect x="1642.88" y="202.00" width="0.17" height="23" rx="2" fill="#ed8a2d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;::_M_create(unsigned long&amp;, unsigned long) — 1 samples (0.05%)</title><rect x="1643.75" y="226.00" width="0.17" height="23" rx="2" fill="#e1a824" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>malloc — 1 samples (0.05%)</title><rect x="1643.75" y="202.00" width="0.17" height="23" rx="2" fill="#f47326" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_int_malloc — 1 samples (0.05%)</title><rect x="1643.75" y="178.00" width="0.17" height="23" rx="2" fill="#e4673d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strlen — 1 samples (0.05%)</title><rect x="1644.62" y="226.00" width="0.17" height="23" rx="2" fill="#e19b4f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>TOmnetApp::getRNGMappingFor(cModule*) — 1 samples (0.05%)</title><rect x="1646.36" y="250.00" width="0.17" height="23" rx="2" fill="#f2762e" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator delete(void*, unsigned long) — 1 samples (0.05%)</title><rect x="1647.24" y="250.00" width="0.17" height="23" rx="2" fill="#eea646" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_int_free — 1 samples (0.05%)</title><rect x="1647.24" y="226.00" width="0.17" height="23" rx="2" fill="#ed8a2d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModuleInterface::addParametersGatesTo(cModule*) — 12 samples (0.59%)</title><rect x="1648.11" y="274.00" width="9.76" height="23" rx="2" fill="#e9724a" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::addPar(char const*) — 7 samples (0.34%)</title><rect x="1648.11" y="250.00" width="5.40" height="23" rx="2" fill="#e7b52b" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator new(unsigned long) — 5 samples (0.25%)</title><rect x="1648.11" y="226.00" width="3.66" height="23" rx="2" fill="#ed5a3a" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>malloc — 5 samples (0.25%)</title><rect x="1648.11" y="202.00" width="3.66" height="23" rx="2" fill="#f47326" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_int_malloc — 3 samples (0.15%)</title><rect x="1648.11" y="178.00" width="1.92" height="23" rx="2" fill="#e4673d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cArray::add(cObject*) — 2 samples (0.10%)</title><rect x="1652.47" y="226.00" width="1.04" height="23" rx="2" fill="#ea6632" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memset — 2 samples (0.10%)</title><rect x="1652.47" y="202.00" width="1.04" height="23" rx="2" fill="#ebb637" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::addGate(char const*, char, bool) — 5 samples (0.25%)</title><rect x="1654.21" y="250.00" width="3.66" height="23" rx="2" fill="#ec5a42" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator new(unsigned long) — 3 samples (0.15%)</title><rect x="1654.21" y="226.00" width="1.92" height="23" rx="2" fill="#ed5a3a" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>malloc — 3 samples (0.15%)</title><rect x="1654.21" y="202.00" width="1.92" height="23" rx="2" fill="#f47326" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_int_malloc — 3 samples (0.15%)</title><rect x="1654.21" y="178.00" width="1.92" height="23" rx="2" fill="#e4673d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cArray::add(cObject*) — 2 samples (0.10%)</title><rect x="1656.83" y="226.00" width="1.04" height="23" rx="2" fill="#ea6632" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cObject::take(cObject*) — 1 samples (0.05%)</title><rect x="1656.83" y="202.00" width="0.17" height="23" rx="2" fill="#f4b526" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator delete[](void*) — 1 samples (0.05%)</title><rect x="1657.70" y="202.00" width="0.17" height="23" rx="2" fill="#e59b27" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_int_free — 1 samples (0.05%)</title><rect x="1657.70" y="178.00" width="0.17" height="23" rx="2" fill="#ed8a2d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cEnvir::moduleCreated(cModule*) — 6 samples (0.30%)</title><rect x="1658.57" y="274.00" width="4.53" height="23" rx="2" fill="#ef912b" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cIniFile::getAsBool(char const*, char const*, bool) — 3 samples (0.15%)</title><rect x="1658.57" y="250.00" width="1.92" height="23" rx="2" fill="#f46a4a" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cIniFile::_findEntry(char const*, char const*) — 3 samples (0.15%)</title><rect x="1658.57" y="226.00" width="1.92" height="23" rx="2" fill="#e35f4f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cPatternMatcher::matches(char const*) — 2 samples (0.10%)</title><rect x="1658.57" y="202.00" width="1.04" height="23" rx="2" fill="#ea6e2f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strlen — 1 samples (0.05%)</title><rect x="1658.57" y="178.00" width="0.17" height="23" rx="2" fill="#e19b4f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;::_M_append(char const*, unsigned long) — 2 samples (0.10%)</title><rect x="1661.19" y="250.00" width="1.04" height="23" rx="2" fill="#ef863c" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;::_M_mutate(unsigned long, unsigned long, char const*, unsigned long) — 2 samples (0.10%)</title><rect x="1661.19" y="226.00" width="1.04" height="23" rx="2" fill="#ed9634" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memcpy — 1 samples (0.05%)</title><rect x="1661.19" y="202.00" width="0.17" height="23" rx="2" fill="#e57a33" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_wordcopy_fwd_aligned — 1 samples (0.05%)</title><rect x="1661.19" y="178.00" width="0.17" height="23" rx="2" fill="#ef8b35" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;::_M_create(unsigned long&amp;, unsigned long) — 1 samples (0.05%)</title><rect x="1662.06" y="202.00" width="0.17" height="23" rx="2" fill="#e1a824" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>malloc — 1 samples (0.05%)</title><rect x="1662.06" y="178.00" width="0.17" height="23" rx="2" fill="#f47326" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_int_malloc — 1 samples (0.05%)</title><rect x="1662.06" y="154.00" width="0.17" height="23" rx="2" fill="#e4673d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::fullPath[abi:cxx11]() const — 1 samples (0.05%)</title><rect x="1662.93" y="250.00" width="0.17" height="23" rx="2" fill="#ecab34" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;::_M_create(unsigned long&amp;, unsigned long) — 1 samples (0.05%)</title><rect x="1662.93" y="226.00" width="0.17" height="23" rx="2" fill="#e1a824" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>TokenRingMAC__create() — 4 samples (0.20%)</title><rect x="1663.80" y="274.00" width="2.79" height="23" rx="2" fill="#ecae2d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>TokenRingMAC::TokenRingMAC() — 4 samples (0.20%)</title><rect x="1663.80" y="250.00" width="2.79" height="23" rx="2" fill="#f97e30" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cSimpleModule::cSimpleModule(unsigned int) — 3 samples (0.15%)</title><rect x="1663.80" y="226.00" width="1.92" height="23" rx="2" fill="#e87b2f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::cModule() — 2 samples (0.10%)</title><rect x="1663.80" y="202.00" width="1.04" height="23" rx="2" fill="#e29b41" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cArray::cArray(char const*, int, int) — 1 samples (0.05%)</title><rect x="1663.80" y="178.00" width="0.17" height="23" rx="2" fill="#ed6829" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cObject::cObject(char const*) — 1 samples (0.05%)</title><rect x="1663.80" y="154.00" width="0.17" height="23" rx="2" fill="#ec6f23" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cDefaultList::doInsert(cObject*) — 1 samples (0.05%)</title><rect x="1663.80" y="130.00" width="0.17" height="23" rx="2" fill="#f96247" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memcpy — 1 samples (0.05%)</title><rect x="1663.80" y="106.00" width="0.17" height="23" rx="2" fill="#e57a33" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cDefaultList::cDefaultList(char const*) — 1 samples (0.05%)</title><rect x="1664.67" y="178.00" width="0.17" height="23" rx="2" fill="#ed9d46" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator new[](unsigned long) — 1 samples (0.05%)</title><rect x="1664.67" y="154.00" width="0.17" height="23" rx="2" fill="#fa7243" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>malloc — 1 samples (0.05%)</title><rect x="1664.67" y="130.00" width="0.17" height="23" rx="2" fill="#f47326" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_int_malloc — 1 samples (0.05%)</title><rect x="1664.67" y="106.00" width="0.17" height="23" rx="2" fill="#e4673d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cCoroutine::setup(void (*)(void*), void*, unsigned int) — 1 samples (0.05%)</title><rect x="1665.55" y="202.00" width="0.17" height="23" rx="2" fill="#f9ac2c" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cOutVector::cOutVector(char const*, int) — 1 samples (0.05%)</title><rect x="1666.42" y="226.00" width="0.17" height="23" rx="2" fill="#f2a94b" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cObject::cObject(char const*) — 1 samples (0.05%)</title><rect x="1666.42" y="202.00" width="0.17" height="23" rx="2" fill="#ec6f23" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cDefaultList::doInsert(cObject*) — 1 samples (0.05%)</title><rect x="1666.42" y="178.00" width="0.17" height="23" rx="2" fill="#f96247" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memcpy — 1 samples (0.05%)</title><rect x="1666.42" y="154.00" width="0.17" height="23" rx="2" fill="#e57a33" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_wordcopy_fwd_aligned — 1 samples (0.05%)</title><rect x="1666.42" y="130.00" width="0.17" height="23" rx="2" fill="#ef8b35" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>Sink__create() — 3 samples (0.15%)</title><rect x="1667.29" y="274.00" width="1.92" height="23" rx="2" fill="#efaf4b" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cPSquare::cPSquare(char const*, int) — 1 samples (0.05%)</title><rect x="1667.29" y="250.00" width="0.17" height="23" rx="2" fill="#e6674c" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cDensityEstBase::cDensityEstBase(char const*) — 1 samples (0.05%)</title><rect x="1667.29" y="226.00" width="0.17" height="23" rx="2" fill="#f68b28" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cStdDev::cStdDev(char const*) — 1 samples (0.05%)</title><rect x="1667.29" y="202.00" width="0.17" height="23" rx="2" fill="#e3a733" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cObject::cObject(char const*) — 1 samples (0.05%)</title><rect x="1667.29" y="178.00" width="0.17" height="23" rx="2" fill="#ec6f23" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cSimpleModule::cSimpleModule(unsigned int) — 1 samples (0.05%)</title><rect x="1668.16" y="250.00" width="0.17" height="23" rx="2" fill="#e87b2f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::cModule() — 1 samples (0.05%)</title><rect x="1668.16" y="226.00" width="0.17" height="23" rx="2" fill="#e29b41" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cArray::cArray(char const*, int, int) — 1 samples (0.05%)</title><rect x="1668.16" y="202.00" width="0.17" height="23" rx="2" fill="#ed6829" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cObject::cObject(char const*) — 1 samples (0.05%)</title><rect x="1668.16" y="178.00" width="0.17" height="23" rx="2" fill="#ec6f23" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memset — 1 samples (0.05%)</title><rect x="1669.03" y="250.00" width="0.17" height="23" rx="2" fill="#ebb637" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cDefaultList::takeAllObjectsFrom(cDefaultList&amp;) — 3 samples (0.15%)</title><rect x="1669.91" y="274.00" width="1.92" height="23" rx="2" fill="#fa5130" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cDefaultList::doInsert(cObject*) — 3 samples (0.15%)</title><rect x="1669.91" y="250.00" width="1.92" height="23" rx="2" fill="#f96247" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator new[](unsigned long) — 2 samples (0.10%)</title><rect x="1669.91" y="226.00" width="1.04" height="23" rx="2" fill="#fa7243" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>malloc — 1 samples (0.05%)</title><rect x="1669.91" y="202.00" width="0.17" height="23" rx="2" fill="#f47326" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_int_malloc — 1 samples (0.05%)</title><rect x="1669.91" y="178.00" width="0.17" height="23" rx="2" fill="#e4673d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator new(unsigned long) — 1 samples (0.05%)</title><rect x="1670.78" y="202.00" width="0.17" height="23" rx="2" fill="#ed5a3a" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>Generator__create() — 2 samples (0.10%)</title><rect x="1672.52" y="274.00" width="1.04" height="23" rx="2" fill="#ef692c" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cSimpleModule::cSimpleModule(unsigned int) — 2 samples (0.10%)</title><rect x="1672.52" y="250.00" width="1.04" height="23" rx="2" fill="#e87b2f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::cModule() — 1 samples (0.05%)</title><rect x="1672.52" y="226.00" width="0.17" height="23" rx="2" fill="#e29b41" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cArray::cArray(char const*, int, int) — 1 samples (0.05%)</title><rect x="1672.52" y="202.00" width="0.17" height="23" rx="2" fill="#ed6829" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cObject::cObject(char const*) — 1 samples (0.05%)</title><rect x="1672.52" y="178.00" width="0.17" height="23" rx="2" fill="#ec6f23" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cObject::setName(char const*) — 1 samples (0.05%)</title><rect x="1672.52" y="154.00" width="0.17" height="23" rx="2" fill="#eb7b28" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__memcpy_chk — 1 samples (0.05%)</title><rect x="1672.52" y="130.00" width="0.17" height="23" rx="2" fill="#f69f3d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memcpy — 1 samples (0.05%)</title><rect x="1672.52" y="106.00" width="0.17" height="23" rx="2" fill="#e57a33" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator new(unsigned long) — 1 samples (0.05%)</title><rect x="1673.39" y="226.00" width="0.17" height="23" rx="2" fill="#ed5a3a" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>malloc — 1 samples (0.05%)</title><rect x="1673.39" y="202.00" width="0.17" height="23" rx="2" fill="#f47326" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_int_malloc — 1 samples (0.05%)</title><rect x="1673.39" y="178.00" width="0.17" height="23" rx="2" fill="#e4673d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_readModuleParameters(cModule*) — 40 samples (1.97%)</title><rect x="1674.27" y="298.00" width="34.18" height="23" rx="2" fill="#e9732a" stroke="#fff7ed" stroke-width="0.5"/>
+<text x="1678.27" y="314.00" font-size="12" fill="#111827">_r…</text>
+</g>
+<g class="frame"><title>cPar::read() — 39 samples (1.92%)</title><rect x="1674.27" y="274.00" width="33.30" height="23" rx="2" fill="#f7a12a" stroke="#fff7ed" stroke-width="0.5"/>
+<text x="1678.27" y="290.00" font-size="12" fill="#111827">cP…</text>
+</g>
+<g class="frame"><title>cPar::setFromText(char const*, char) — 18 samples (0.89%)</title><rect x="1674.27" y="250.00" width="14.99" height="23" rx="2" fill="#f8833f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cPar::setfunction(char*) — 10 samples (0.49%)</title><rect x="1674.27" y="226.00" width="8.02" height="23" rx="2" fill="#f06137" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strToSimtime0(char const*&amp;) — 6 samples (0.30%)</title><rect x="1674.27" y="202.00" width="4.53" height="23" rx="2" fill="#ea864d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__isoc99_sscanf — 6 samples (0.30%)</title><rect x="1674.27" y="178.00" width="4.53" height="23" rx="2" fill="#eeb535" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__vfscanf_internal — 5 samples (0.25%)</title><rect x="1674.27" y="154.00" width="3.66" height="23" rx="2" fill="#ee5239" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__strtod_internal — 3 samples (0.15%)</title><rect x="1674.27" y="130.00" width="1.92" height="23" rx="2" fill="#f0ad24" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>____strtod_l_internal — 1 samples (0.05%)</title><rect x="1674.27" y="106.00" width="0.17" height="23" rx="2" fill="#f46445" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>round_and_return — 1 samples (0.05%)</title><rect x="1675.14" y="106.00" width="0.17" height="23" rx="2" fill="#fa7e4f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_IO_no_init — 1 samples (0.05%)</title><rect x="1678.63" y="154.00" width="0.17" height="23" rx="2" fill="#f95e43" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>findFunction(char const*, int) — 2 samples (0.10%)</title><rect x="1679.50" y="202.00" width="1.04" height="23" rx="2" fill="#f68e46" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strcmp(char const*, char const*) — 1 samples (0.05%)</title><rect x="1679.50" y="178.00" width="0.17" height="23" rx="2" fill="#ee4f23" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strcmp — 1 samples (0.05%)</title><rect x="1679.50" y="154.00" width="0.17" height="23" rx="2" fill="#ed8b49" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cPar::setDoubleValue(double (*)(double, double), double, double) — 1 samples (0.05%)</title><rect x="1681.24" y="202.00" width="0.17" height="23" rx="2" fill="#e7ae25" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cPar::deleteold() — 1 samples (0.05%)</title><rect x="1681.24" y="178.00" width="0.17" height="23" rx="2" fill="#f79948" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>isspace — 1 samples (0.05%)</title><rect x="1682.11" y="202.00" width="0.17" height="23" rx="2" fill="#ee5133" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__isoc99_sscanf — 2 samples (0.10%)</title><rect x="1682.99" y="226.00" width="1.04" height="23" rx="2" fill="#eeb535" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_IO_str_init_static_internal — 1 samples (0.05%)</title><rect x="1682.99" y="202.00" width="0.17" height="23" rx="2" fill="#f35538" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_IO_setb — 1 samples (0.05%)</title><rect x="1682.99" y="178.00" width="0.17" height="23" rx="2" fill="#e85c32" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__vfscanf_internal — 1 samples (0.05%)</title><rect x="1683.86" y="202.00" width="0.17" height="23" rx="2" fill="#ee5239" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator delete[](void*) — 1 samples (0.05%)</title><rect x="1684.73" y="226.00" width="0.17" height="23" rx="2" fill="#e59b27" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_int_free — 1 samples (0.05%)</title><rect x="1684.73" y="202.00" width="0.17" height="23" rx="2" fill="#ed8a2d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strdup(char const*) — 1 samples (0.05%)</title><rect x="1685.60" y="226.00" width="0.17" height="23" rx="2" fill="#f7a623" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strcpy — 1 samples (0.05%)</title><rect x="1685.60" y="202.00" width="0.17" height="23" rx="2" fill="#f97d39" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memcpy — 1 samples (0.05%)</title><rect x="1685.60" y="178.00" width="0.17" height="23" rx="2" fill="#e57a33" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strToSimtime(char const*) — 1 samples (0.05%)</title><rect x="1686.47" y="226.00" width="0.17" height="23" rx="2" fill="#f38037" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strToSimtime0(char const*&amp;) — 1 samples (0.05%)</title><rect x="1686.47" y="202.00" width="0.17" height="23" rx="2" fill="#ea864d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strcmp — 1 samples (0.05%)</title><rect x="1687.34" y="226.00" width="0.17" height="23" rx="2" fill="#ed8b49" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strspn — 1 samples (0.05%)</title><rect x="1688.22" y="226.00" width="0.17" height="23" rx="2" fill="#f2544e" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModulePar::fullPath[abi:cxx11]() const — 12 samples (0.59%)</title><rect x="1689.96" y="250.00" width="9.76" height="23" rx="2" fill="#ef5143" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModulePar::fullPath(char*, int) const [clone .part.0] — 11 samples (0.54%)</title><rect x="1689.96" y="226.00" width="8.89" height="23" rx="2" fill="#eb4f23" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::fullPath(char*, int) const — 9 samples (0.44%)</title><rect x="1689.96" y="202.00" width="7.15" height="23" rx="2" fill="#fa8130" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::fullPath(char*, int) const [clone .part.0] — 6 samples (0.30%)</title><rect x="1689.96" y="178.00" width="4.53" height="23" rx="2" fill="#fa6a48" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strprettytrunc(char*, char const*, unsigned int) — 4 samples (0.20%)</title><rect x="1689.96" y="154.00" width="2.79" height="23" rx="2" fill="#f55739" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strncpy — 4 samples (0.20%)</title><rect x="1689.96" y="130.00" width="2.79" height="23" rx="2" fill="#ec9847" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memset — 3 samples (0.15%)</title><rect x="1689.96" y="106.00" width="1.92" height="23" rx="2" fill="#ebb637" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memcpy — 1 samples (0.05%)</title><rect x="1692.58" y="106.00" width="0.17" height="23" rx="2" fill="#e57a33" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__dynamic_cast — 2 samples (0.10%)</title><rect x="1693.45" y="154.00" width="1.04" height="23" rx="2" fill="#f08a46" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__cxxabiv1::__si_class_type_info::__do_dyncast(long, __cxxabiv1::__class_type_info::__sub_kind, __cxxabiv1::__class_type_info const*, void const*, __cxxabiv1::__class_type_info const*, void const*, __cxxabiv1::__class_type_info::__dyncast_result&amp;) const — 1 samples (0.05%)</title><rect x="1693.45" y="130.00" width="0.17" height="23" rx="2" fill="#ef7828" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strprettytrunc(char*, char const*, unsigned int) — 2 samples (0.10%)</title><rect x="1695.19" y="178.00" width="1.04" height="23" rx="2" fill="#f55739" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strncpy — 2 samples (0.10%)</title><rect x="1695.19" y="154.00" width="1.04" height="23" rx="2" fill="#ec9847" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memcpy — 1 samples (0.05%)</title><rect x="1695.19" y="130.00" width="0.17" height="23" rx="2" fill="#e57a33" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memset — 1 samples (0.05%)</title><rect x="1696.06" y="130.00" width="0.17" height="23" rx="2" fill="#ebb637" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__dynamic_cast — 1 samples (0.05%)</title><rect x="1696.94" y="178.00" width="0.17" height="23" rx="2" fill="#f08a46" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__cxxabiv1::__si_class_type_info::__do_dyncast(long, __cxxabiv1::__class_type_info::__sub_kind, __cxxabiv1::__class_type_info const*, void const*, __cxxabiv1::__class_type_info const*, void const*, __cxxabiv1::__class_type_info::__dyncast_result&amp;) const — 1 samples (0.05%)</title><rect x="1696.94" y="154.00" width="0.17" height="23" rx="2" fill="#ef7828" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strcmp — 1 samples (0.05%)</title><rect x="1696.94" y="130.00" width="0.17" height="23" rx="2" fill="#ed8b49" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strprettytrunc(char*, char const*, unsigned int) — 2 samples (0.10%)</title><rect x="1697.81" y="202.00" width="1.04" height="23" rx="2" fill="#f55739" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strncpy — 2 samples (0.10%)</title><rect x="1697.81" y="178.00" width="1.04" height="23" rx="2" fill="#ec9847" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memcpy — 1 samples (0.05%)</title><rect x="1697.81" y="154.00" width="0.17" height="23" rx="2" fill="#e57a33" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memset — 1 samples (0.05%)</title><rect x="1698.68" y="154.00" width="0.17" height="23" rx="2" fill="#ebb637" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memcpy — 1 samples (0.05%)</title><rect x="1699.55" y="226.00" width="0.17" height="23" rx="2" fill="#e57a33" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cEnvir::getParameter[abi:cxx11](int, char const*) — 9 samples (0.44%)</title><rect x="1700.42" y="250.00" width="7.15" height="23" rx="2" fill="#e37b4c" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>TOmnetApp::getParameter[abi:cxx11](int, char const*) — 9 samples (0.44%)</title><rect x="1700.42" y="226.00" width="7.15" height="23" rx="2" fill="#f7ac34" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cIniFile::getAsCustom2(char const*, char const*, char const*, char const*) — 9 samples (0.44%)</title><rect x="1700.42" y="202.00" width="7.15" height="23" rx="2" fill="#e28938" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cIniFile::getAsCustom(char const*, char const*, char const*) — 9 samples (0.44%)</title><rect x="1700.42" y="178.00" width="7.15" height="23" rx="2" fill="#e49e3e" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cIniFile::_findEntry(char const*, char const*) — 9 samples (0.44%)</title><rect x="1700.42" y="154.00" width="7.15" height="23" rx="2" fill="#e35f4f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cPatternMatcher::matches(char const*) — 6 samples (0.30%)</title><rect x="1700.42" y="130.00" width="4.53" height="23" rx="2" fill="#ea6e2f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strlen — 3 samples (0.15%)</title><rect x="1700.42" y="106.00" width="1.92" height="23" rx="2" fill="#e19b4f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cPatternMatcher::doMatch(char const*, int, int) — 2 samples (0.10%)</title><rect x="1703.04" y="106.00" width="1.04" height="23" rx="2" fill="#f8b438" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::par(int) — 1 samples (0.05%)</title><rect x="1708.27" y="274.00" width="0.17" height="23" rx="2" fill="#ef7345" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::setDisplayString(char const*, bool) — 4 samples (0.20%)</title><rect x="1709.14" y="298.00" width="2.79" height="23" rx="2" fill="#f36f30" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cDisplayString::parse() — 3 samples (0.15%)</title><rect x="1709.14" y="274.00" width="1.92" height="23" rx="2" fill="#e88f4d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strlen(char const*) — 1 samples (0.05%)</title><rect x="1709.14" y="250.00" width="0.17" height="23" rx="2" fill="#f9984f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strlen — 1 samples (0.05%)</title><rect x="1709.14" y="226.00" width="0.17" height="23" rx="2" fill="#e19b4f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strdup(char const*) — 1 samples (0.05%)</title><rect x="1711.76" y="274.00" width="0.17" height="23" rx="2" fill="#f7a623" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strcpy — 1 samples (0.05%)</title><rect x="1711.76" y="250.00" width="0.17" height="23" rx="2" fill="#f97d39" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strlen — 1 samples (0.05%)</title><rect x="1711.76" y="226.00" width="0.17" height="23" rx="2" fill="#e19b4f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_getModuleType(char const*) — 3 samples (0.15%)</title><rect x="1712.63" y="298.00" width="1.92" height="23" rx="2" fill="#e36438" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>findModuleType(char const*) — 3 samples (0.15%)</title><rect x="1712.63" y="274.00" width="1.92" height="23" rx="2" fill="#f97b2d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cArray::find(char const*) const — 3 samples (0.15%)</title><rect x="1712.63" y="250.00" width="1.92" height="23" rx="2" fill="#e16a28" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strcmp(char const*, char const*) — 1 samples (0.05%)</title><rect x="1712.63" y="226.00" width="0.17" height="23" rx="2" fill="#ee4f23" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strcmp — 1 samples (0.05%)</title><rect x="1712.63" y="202.00" width="0.17" height="23" rx="2" fill="#ed8b49" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cPar::operator=(cPar const&amp;) — 3 samples (0.15%)</title><rect x="1715.25" y="298.00" width="1.92" height="23" rx="2" fill="#ed902e" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cPar::deleteold() — 1 samples (0.05%)</title><rect x="1715.25" y="274.00" width="0.17" height="23" rx="2" fill="#f79948" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strdup(char const*) — 1 samples (0.05%)</title><rect x="1716.12" y="274.00" width="0.17" height="23" rx="2" fill="#f7a623" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strlen — 1 samples (0.05%)</title><rect x="1716.12" y="250.00" width="0.17" height="23" rx="2" fill="#e19b4f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::par(char const*) — 1 samples (0.05%)</title><rect x="1717.86" y="298.00" width="0.17" height="23" rx="2" fill="#f26437" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cArray::get(char const*) — 1 samples (0.05%)</title><rect x="1717.86" y="274.00" width="0.17" height="23" rx="2" fill="#f99c2d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cArray::find(char const*) const — 1 samples (0.05%)</title><rect x="1717.86" y="250.00" width="0.17" height="23" rx="2" fill="#e16a28" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strcmp(char const*, char const*) — 1 samples (0.05%)</title><rect x="1717.86" y="226.00" width="0.17" height="23" rx="2" fill="#ee4f23" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strcmp — 1 samples (0.05%)</title><rect x="1717.86" y="202.00" width="0.17" height="23" rx="2" fill="#ed8b49" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModuleInterface::checkParametersOf(cModule*) — 6 samples (0.30%)</title><rect x="1718.73" y="322.00" width="4.53" height="23" rx="2" fill="#f69136" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::par(char const*) — 3 samples (0.15%)</title><rect x="1718.73" y="298.00" width="1.92" height="23" rx="2" fill="#f26437" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cArray::get(char const*) — 2 samples (0.10%)</title><rect x="1718.73" y="274.00" width="1.04" height="23" rx="2" fill="#f99c2d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cArray::find(char const*) const — 1 samples (0.05%)</title><rect x="1718.73" y="250.00" width="0.17" height="23" rx="2" fill="#e16a28" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>index — 2 samples (0.10%)</title><rect x="1721.35" y="298.00" width="1.04" height="23" rx="2" fill="#e9a04f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_readModuleParameters(cModule*) — 33 samples (1.63%)</title><rect x="1723.97" y="346.00" width="28.07" height="23" rx="2" fill="#e9732a" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cPar::read() — 32 samples (1.58%)</title><rect x="1723.97" y="322.00" width="27.20" height="23" rx="2" fill="#f7a12a" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cPar::setFromText(char const*, char) — 15 samples (0.74%)</title><rect x="1723.97" y="298.00" width="12.38" height="23" rx="2" fill="#f8833f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cPar::setfunction(char*) — 10 samples (0.49%)</title><rect x="1723.97" y="274.00" width="8.02" height="23" rx="2" fill="#f06137" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strToSimtime0(char const*&amp;) — 6 samples (0.30%)</title><rect x="1723.97" y="250.00" width="4.53" height="23" rx="2" fill="#ea864d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__isoc99_sscanf — 5 samples (0.25%)</title><rect x="1723.97" y="226.00" width="3.66" height="23" rx="2" fill="#eeb535" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__vfscanf_internal — 4 samples (0.20%)</title><rect x="1723.97" y="202.00" width="2.79" height="23" rx="2" fill="#ee5239" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__strtod_internal — 2 samples (0.10%)</title><rect x="1723.97" y="178.00" width="1.04" height="23" rx="2" fill="#f0ad24" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>____strtod_l_internal — 1 samples (0.05%)</title><rect x="1723.97" y="154.00" width="0.17" height="23" rx="2" fill="#f46445" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>round_and_return — 1 samples (0.05%)</title><rect x="1724.84" y="154.00" width="0.17" height="23" rx="2" fill="#fa7e4f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_IO_sputbackc — 1 samples (0.05%)</title><rect x="1725.71" y="178.00" width="0.17" height="23" rx="2" fill="#ea9547" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_IO_str_init_static_internal — 1 samples (0.05%)</title><rect x="1727.45" y="202.00" width="0.17" height="23" rx="2" fill="#f35538" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>findFunction(char const*, int) — 3 samples (0.15%)</title><rect x="1729.20" y="250.00" width="1.92" height="23" rx="2" fill="#f68e46" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cArray::get(int) — 1 samples (0.05%)</title><rect x="1729.20" y="226.00" width="0.17" height="23" rx="2" fill="#e87d4e" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strcmp(char const*, char const*) — 1 samples (0.05%)</title><rect x="1730.07" y="226.00" width="0.17" height="23" rx="2" fill="#ee4f23" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strcmp — 1 samples (0.05%)</title><rect x="1730.07" y="202.00" width="0.17" height="23" rx="2" fill="#ed8b49" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strspn — 2 samples (0.10%)</title><rect x="1732.68" y="274.00" width="1.04" height="23" rx="2" fill="#f2544e" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__isoc99_sscanf — 1 samples (0.05%)</title><rect x="1734.43" y="274.00" width="0.17" height="23" rx="2" fill="#eeb535" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__vfscanf_internal — 1 samples (0.05%)</title><rect x="1734.43" y="250.00" width="0.17" height="23" rx="2" fill="#ee5239" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strdup(char const*) — 1 samples (0.05%)</title><rect x="1735.30" y="274.00" width="0.17" height="23" rx="2" fill="#f7a623" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strcpy — 1 samples (0.05%)</title><rect x="1735.30" y="250.00" width="0.17" height="23" rx="2" fill="#f97d39" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strToSimtime(char const*) — 1 samples (0.05%)</title><rect x="1736.17" y="274.00" width="0.17" height="23" rx="2" fill="#f38037" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strToSimtime0(char const*&amp;) — 1 samples (0.05%)</title><rect x="1736.17" y="250.00" width="0.17" height="23" rx="2" fill="#ea864d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__isoc99_sscanf — 1 samples (0.05%)</title><rect x="1736.17" y="226.00" width="0.17" height="23" rx="2" fill="#eeb535" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__vfscanf_internal — 1 samples (0.05%)</title><rect x="1736.17" y="202.00" width="0.17" height="23" rx="2" fill="#ee5239" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cEnvir::getParameter[abi:cxx11](int, char const*) — 8 samples (0.39%)</title><rect x="1737.04" y="298.00" width="6.28" height="23" rx="2" fill="#e37b4c" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>TOmnetApp::getParameter[abi:cxx11](int, char const*) — 7 samples (0.34%)</title><rect x="1737.04" y="274.00" width="5.40" height="23" rx="2" fill="#f7ac34" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cIniFile::getAsCustom2(char const*, char const*, char const*, char const*) — 6 samples (0.30%)</title><rect x="1737.04" y="250.00" width="4.53" height="23" rx="2" fill="#e28938" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cIniFile::getAsCustom(char const*, char const*, char const*) — 6 samples (0.30%)</title><rect x="1737.04" y="226.00" width="4.53" height="23" rx="2" fill="#e49e3e" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cIniFile::_findEntry(char const*, char const*) — 6 samples (0.30%)</title><rect x="1737.04" y="202.00" width="4.53" height="23" rx="2" fill="#e35f4f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cPatternMatcher::matches(char const*) — 4 samples (0.20%)</title><rect x="1737.04" y="178.00" width="2.79" height="23" rx="2" fill="#ea6e2f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cPatternMatcher::doMatch(char const*, int, int) — 2 samples (0.10%)</title><rect x="1737.04" y="154.00" width="1.04" height="23" rx="2" fill="#f8b438" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strncmp — 1 samples (0.05%)</title><rect x="1737.04" y="130.00" width="0.17" height="23" rx="2" fill="#e5a44e" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strlen — 2 samples (0.10%)</title><rect x="1738.79" y="154.00" width="1.04" height="23" rx="2" fill="#e19b4f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>void std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;::_M_construct&lt;char const*&gt;(char const*, char const*, std::forward_iterator_tag) — 1 samples (0.05%)</title><rect x="1742.28" y="250.00" width="0.17" height="23" rx="2" fill="#f78647" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memcpy — 1 samples (0.05%)</title><rect x="1742.28" y="226.00" width="0.17" height="23" rx="2" fill="#e57a33" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModulePar::fullPath[abi:cxx11]() const — 8 samples (0.39%)</title><rect x="1744.02" y="298.00" width="6.28" height="23" rx="2" fill="#ef5143" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModulePar::fullPath(char*, int) const [clone .part.0] — 8 samples (0.39%)</title><rect x="1744.02" y="274.00" width="6.28" height="23" rx="2" fill="#eb4f23" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::fullPath(char*, int) const — 6 samples (0.30%)</title><rect x="1744.02" y="250.00" width="4.53" height="23" rx="2" fill="#fa8130" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::fullPath(char*, int) const [clone .part.0] — 4 samples (0.20%)</title><rect x="1744.02" y="226.00" width="2.79" height="23" rx="2" fill="#fa6a48" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strprettytrunc(char*, char const*, unsigned int) — 2 samples (0.10%)</title><rect x="1744.02" y="202.00" width="1.04" height="23" rx="2" fill="#f55739" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strncpy — 2 samples (0.10%)</title><rect x="1744.02" y="178.00" width="1.04" height="23" rx="2" fill="#ec9847" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memset — 2 samples (0.10%)</title><rect x="1744.02" y="154.00" width="1.04" height="23" rx="2" fill="#ebb637" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__dynamic_cast — 1 samples (0.05%)</title><rect x="1745.76" y="202.00" width="0.17" height="23" rx="2" fill="#f08a46" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__cxxabiv1::__si_class_type_info::__do_dyncast(long, __cxxabiv1::__class_type_info::__sub_kind, __cxxabiv1::__class_type_info const*, void const*, __cxxabiv1::__class_type_info const*, void const*, __cxxabiv1::__class_type_info::__dyncast_result&amp;) const — 1 samples (0.05%)</title><rect x="1745.76" y="178.00" width="0.17" height="23" rx="2" fill="#ef7828" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__dynamic_cast — 1 samples (0.05%)</title><rect x="1747.51" y="226.00" width="0.17" height="23" rx="2" fill="#f08a46" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__cxxabiv1::__si_class_type_info::__do_dyncast(long, __cxxabiv1::__class_type_info::__sub_kind, __cxxabiv1::__class_type_info const*, void const*, __cxxabiv1::__class_type_info const*, void const*, __cxxabiv1::__class_type_info::__dyncast_result&amp;) const — 1 samples (0.05%)</title><rect x="1747.51" y="202.00" width="0.17" height="23" rx="2" fill="#ef7828" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strprettytrunc(char*, char const*, unsigned int) — 1 samples (0.05%)</title><rect x="1748.38" y="226.00" width="0.17" height="23" rx="2" fill="#f55739" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strncpy — 1 samples (0.05%)</title><rect x="1748.38" y="202.00" width="0.17" height="23" rx="2" fill="#ec9847" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memset — 1 samples (0.05%)</title><rect x="1748.38" y="178.00" width="0.17" height="23" rx="2" fill="#ebb637" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strprettytrunc(char*, char const*, unsigned int) — 2 samples (0.10%)</title><rect x="1749.25" y="250.00" width="1.04" height="23" rx="2" fill="#f55739" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strncpy — 2 samples (0.10%)</title><rect x="1749.25" y="226.00" width="1.04" height="23" rx="2" fill="#ec9847" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memset — 1 samples (0.05%)</title><rect x="1749.25" y="202.00" width="0.17" height="23" rx="2" fill="#ebb637" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strnlen — 1 samples (0.05%)</title><rect x="1750.12" y="202.00" width="0.17" height="23" rx="2" fill="#fa9425" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::par(int) — 1 samples (0.05%)</title><rect x="1751.87" y="322.00" width="0.17" height="23" rx="2" fill="#ef7345" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModuleType::create(char const*, cModule*) — 29 samples (1.43%)</title><rect x="1752.74" y="346.00" width="24.59" height="23" rx="2" fill="#f0a22d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cEnvir::getRNGMappingFor(cModule*) — 10 samples (0.49%)</title><rect x="1752.74" y="322.00" width="8.02" height="23" rx="2" fill="#e65533" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::fullPath[abi:cxx11]() const — 6 samples (0.30%)</title><rect x="1752.74" y="298.00" width="4.53" height="23" rx="2" fill="#ecab34" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::fullPath(char*, int) const [clone .part.0] — 4 samples (0.20%)</title><rect x="1752.74" y="274.00" width="2.79" height="23" rx="2" fill="#fa6a48" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strprettytrunc(char*, char const*, unsigned int) — 2 samples (0.10%)</title><rect x="1752.74" y="250.00" width="1.04" height="23" rx="2" fill="#f55739" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strncpy — 2 samples (0.10%)</title><rect x="1752.74" y="226.00" width="1.04" height="23" rx="2" fill="#ec9847" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memcpy — 1 samples (0.05%)</title><rect x="1752.74" y="202.00" width="0.17" height="23" rx="2" fill="#e57a33" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strnlen — 1 samples (0.05%)</title><rect x="1753.61" y="202.00" width="0.17" height="23" rx="2" fill="#fa9425" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__dynamic_cast — 1 samples (0.05%)</title><rect x="1754.48" y="250.00" width="0.17" height="23" rx="2" fill="#f08a46" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memcpy — 1 samples (0.05%)</title><rect x="1756.23" y="274.00" width="0.17" height="23" rx="2" fill="#e57a33" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;::_M_replace(unsigned long, unsigned long, char const*, unsigned long) — 1 samples (0.05%)</title><rect x="1757.10" y="274.00" width="0.17" height="23" rx="2" fill="#f37c32" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cIniFile::getEntriesWithPrefix(char const*, char const*, char const*) — 4 samples (0.20%)</title><rect x="1757.97" y="298.00" width="2.79" height="23" rx="2" fill="#ea8e28" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;::_M_append(char const*, unsigned long) — 2 samples (0.10%)</title><rect x="1757.97" y="274.00" width="1.04" height="23" rx="2" fill="#ef863c" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;::_M_mutate(unsigned long, unsigned long, char const*, unsigned long) — 2 samples (0.10%)</title><rect x="1757.97" y="250.00" width="1.04" height="23" rx="2" fill="#ed9634" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memcpy — 1 samples (0.05%)</title><rect x="1757.97" y="226.00" width="0.17" height="23" rx="2" fill="#e57a33" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator delete(void*) — 1 samples (0.05%)</title><rect x="1758.84" y="226.00" width="0.17" height="23" rx="2" fill="#ea562c" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_int_free — 1 samples (0.05%)</title><rect x="1758.84" y="202.00" width="0.17" height="23" rx="2" fill="#ed8a2d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cPatternMatcher::patternPrefixMatches(char const*, int) — 1 samples (0.05%)</title><rect x="1759.71" y="274.00" width="0.17" height="23" rx="2" fill="#f75e38" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strstr — 1 samples (0.05%)</title><rect x="1759.71" y="250.00" width="0.17" height="23" rx="2" fill="#ef882e" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModuleInterface::addParametersGatesTo(cModule*) — 7 samples (0.34%)</title><rect x="1761.46" y="322.00" width="5.40" height="23" rx="2" fill="#e9724a" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::addPar(char const*) — 4 samples (0.20%)</title><rect x="1761.46" y="298.00" width="2.79" height="23" rx="2" fill="#e7b52b" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModulePar::cModulePar(char const*) — 3 samples (0.15%)</title><rect x="1761.46" y="274.00" width="1.92" height="23" rx="2" fill="#fa532a" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cObject::cObject(char const*) — 3 samples (0.15%)</title><rect x="1761.46" y="250.00" width="1.92" height="23" rx="2" fill="#ec6f23" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cObject::setName(char const*) — 3 samples (0.15%)</title><rect x="1761.46" y="226.00" width="1.92" height="23" rx="2" fill="#eb7b28" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strdup(char const*) — 2 samples (0.10%)</title><rect x="1761.46" y="202.00" width="1.04" height="23" rx="2" fill="#f7a623" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator new[](unsigned long) — 1 samples (0.05%)</title><rect x="1761.46" y="178.00" width="0.17" height="23" rx="2" fill="#fa7243" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator new(unsigned long) — 1 samples (0.05%)</title><rect x="1761.46" y="154.00" width="0.17" height="23" rx="2" fill="#ed5a3a" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strcpy — 1 samples (0.05%)</title><rect x="1762.33" y="178.00" width="0.17" height="23" rx="2" fill="#f97d39" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strlen — 1 samples (0.05%)</title><rect x="1762.33" y="154.00" width="0.17" height="23" rx="2" fill="#e19b4f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__memcpy_chk — 1 samples (0.05%)</title><rect x="1763.20" y="202.00" width="0.17" height="23" rx="2" fill="#f69f3d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memcpy — 1 samples (0.05%)</title><rect x="1763.20" y="178.00" width="0.17" height="23" rx="2" fill="#e57a33" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator new(unsigned long) — 1 samples (0.05%)</title><rect x="1764.07" y="274.00" width="0.17" height="23" rx="2" fill="#ed5a3a" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>malloc — 1 samples (0.05%)</title><rect x="1764.07" y="250.00" width="0.17" height="23" rx="2" fill="#f47326" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_int_malloc — 1 samples (0.05%)</title><rect x="1764.07" y="226.00" width="0.17" height="23" rx="2" fill="#e4673d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::addGate(char const*, char, bool) — 2 samples (0.10%)</title><rect x="1764.95" y="298.00" width="1.04" height="23" rx="2" fill="#ec5a42" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cGate::cGate(char const*, char) — 1 samples (0.05%)</title><rect x="1764.95" y="274.00" width="0.17" height="23" rx="2" fill="#ea774f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cObject::cObject(char const*) — 1 samples (0.05%)</title><rect x="1764.95" y="250.00" width="0.17" height="23" rx="2" fill="#ec6f23" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cObject::setName(char const*) — 1 samples (0.05%)</title><rect x="1764.95" y="226.00" width="0.17" height="23" rx="2" fill="#eb7b28" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>__memcpy_chk — 1 samples (0.05%)</title><rect x="1764.95" y="202.00" width="0.17" height="23" rx="2" fill="#f69f3d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memcpy — 1 samples (0.05%)</title><rect x="1764.95" y="178.00" width="0.17" height="23" rx="2" fill="#e57a33" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator new(unsigned long) — 1 samples (0.05%)</title><rect x="1765.82" y="274.00" width="0.17" height="23" rx="2" fill="#ed5a3a" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>malloc — 1 samples (0.05%)</title><rect x="1765.82" y="250.00" width="0.17" height="23" rx="2" fill="#f47326" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_int_malloc — 1 samples (0.05%)</title><rect x="1765.82" y="226.00" width="0.17" height="23" rx="2" fill="#e4673d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cEnvir::moduleCreated(cModule*) — 4 samples (0.20%)</title><rect x="1767.56" y="322.00" width="2.79" height="23" rx="2" fill="#ef912b" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;::_M_append(char const*, unsigned long) — 2 samples (0.10%)</title><rect x="1767.56" y="298.00" width="1.04" height="23" rx="2" fill="#ef863c" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>std::__cxx11::basic_string&lt;char, std::char_traits&lt;char&gt;, std::allocator&lt;char&gt; &gt;::_M_mutate(unsigned long, unsigned long, char const*, unsigned long) — 2 samples (0.10%)</title><rect x="1767.56" y="274.00" width="1.04" height="23" rx="2" fill="#ed9634" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>memcpy — 1 samples (0.05%)</title><rect x="1767.56" y="250.00" width="0.17" height="23" rx="2" fill="#e57a33" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_wordcopy_fwd_aligned — 1 samples (0.05%)</title><rect x="1767.56" y="226.00" width="0.17" height="23" rx="2" fill="#ef8b35" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator delete(void*) — 1 samples (0.05%)</title><rect x="1768.43" y="250.00" width="0.17" height="23" rx="2" fill="#ea562c" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_int_free — 1 samples (0.05%)</title><rect x="1768.43" y="226.00" width="0.17" height="23" rx="2" fill="#ed8a2d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cIniFile::getAsBool(char const*, char const*, bool) — 1 samples (0.05%)</title><rect x="1769.31" y="298.00" width="0.17" height="23" rx="2" fill="#f46a4a" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cIniFile::_findEntry(char const*, char const*) — 1 samples (0.05%)</title><rect x="1769.31" y="274.00" width="0.17" height="23" rx="2" fill="#e35f4f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator delete(void*, unsigned long) — 1 samples (0.05%)</title><rect x="1770.18" y="298.00" width="0.17" height="23" rx="2" fill="#eea646" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>free — 1 samples (0.05%)</title><rect x="1770.18" y="274.00" width="0.17" height="23" rx="2" fill="#f39725" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>Sink__create() — 3 samples (0.15%)</title><rect x="1771.05" y="322.00" width="1.92" height="23" rx="2" fill="#efaf4b" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cSimpleModule::cSimpleModule(unsigned int) — 2 samples (0.10%)</title><rect x="1771.05" y="298.00" width="1.04" height="23" rx="2" fill="#e87b2f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::cModule() — 2 samples (0.10%)</title><rect x="1771.05" y="274.00" width="1.04" height="23" rx="2" fill="#e29b41" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cArray::cArray(char const*, int, int) — 1 samples (0.05%)</title><rect x="1771.05" y="250.00" width="0.17" height="23" rx="2" fill="#ed6829" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator new[](unsigned long) — 1 samples (0.05%)</title><rect x="1771.05" y="226.00" width="0.17" height="23" rx="2" fill="#fa7243" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>malloc — 1 samples (0.05%)</title><rect x="1771.05" y="202.00" width="0.17" height="23" rx="2" fill="#f47326" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cDefaultList::cDefaultList(char const*) — 1 samples (0.05%)</title><rect x="1771.92" y="250.00" width="0.17" height="23" rx="2" fill="#ed9d46" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator new[](unsigned long) — 1 samples (0.05%)</title><rect x="1771.92" y="226.00" width="0.17" height="23" rx="2" fill="#fa7243" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>malloc — 1 samples (0.05%)</title><rect x="1771.92" y="202.00" width="0.17" height="23" rx="2" fill="#f47326" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cPSquare::cPSquare(char const*, int) — 1 samples (0.05%)</title><rect x="1772.79" y="298.00" width="0.17" height="23" rx="2" fill="#e6674c" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator new[](unsigned long) — 1 samples (0.05%)</title><rect x="1772.79" y="274.00" width="0.17" height="23" rx="2" fill="#fa7243" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>malloc — 1 samples (0.05%)</title><rect x="1772.79" y="250.00" width="0.17" height="23" rx="2" fill="#f47326" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>Generator__create() — 2 samples (0.10%)</title><rect x="1773.67" y="322.00" width="1.04" height="23" rx="2" fill="#ef692c" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cSimpleModule::cSimpleModule(unsigned int) — 1 samples (0.05%)</title><rect x="1773.67" y="298.00" width="0.17" height="23" rx="2" fill="#e87b2f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::cModule() — 1 samples (0.05%)</title><rect x="1773.67" y="274.00" width="0.17" height="23" rx="2" fill="#e29b41" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cArray::cArray(char const*, int, int) — 1 samples (0.05%)</title><rect x="1773.67" y="250.00" width="0.17" height="23" rx="2" fill="#ed6829" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cObject::cObject(char const*) — 1 samples (0.05%)</title><rect x="1773.67" y="226.00" width="0.17" height="23" rx="2" fill="#ec6f23" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cDefaultList::doInsert(cObject*) — 1 samples (0.05%)</title><rect x="1773.67" y="202.00" width="0.17" height="23" rx="2" fill="#f96247" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator new[](unsigned long) — 1 samples (0.05%)</title><rect x="1773.67" y="178.00" width="0.17" height="23" rx="2" fill="#fa7243" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>malloc — 1 samples (0.05%)</title><rect x="1773.67" y="154.00" width="0.17" height="23" rx="2" fill="#f47326" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator new(unsigned long) — 1 samples (0.05%)</title><rect x="1774.54" y="298.00" width="0.17" height="23" rx="2" fill="#ed5a3a" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>malloc — 1 samples (0.05%)</title><rect x="1774.54" y="274.00" width="0.17" height="23" rx="2" fill="#f47326" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_int_malloc — 1 samples (0.05%)</title><rect x="1774.54" y="250.00" width="0.17" height="23" rx="2" fill="#e4673d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cDefaultList::cDefaultList(char const*) — 1 samples (0.05%)</title><rect x="1775.41" y="322.00" width="0.17" height="23" rx="2" fill="#ed9d46" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator new[](unsigned long) — 1 samples (0.05%)</title><rect x="1775.41" y="298.00" width="0.17" height="23" rx="2" fill="#fa7243" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>malloc — 1 samples (0.05%)</title><rect x="1775.41" y="274.00" width="0.17" height="23" rx="2" fill="#f47326" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cDefaultList::takeAllObjectsFrom(cDefaultList&amp;) — 1 samples (0.05%)</title><rect x="1776.28" y="322.00" width="0.17" height="23" rx="2" fill="#fa5130" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::setName(char const*) — 1 samples (0.05%)</title><rect x="1777.15" y="322.00" width="0.17" height="23" rx="2" fill="#ed554f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cObject::setName(char const*) — 1 samples (0.05%)</title><rect x="1777.15" y="298.00" width="0.17" height="23" rx="2" fill="#eb7b28" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::setDisplayString(char const*, bool) — 4 samples (0.20%)</title><rect x="1778.02" y="346.00" width="2.79" height="23" rx="2" fill="#f36f30" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cDisplayString::parse() — 4 samples (0.20%)</title><rect x="1778.02" y="322.00" width="2.79" height="23" rx="2" fill="#e88f4d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strlen(char const*) — 2 samples (0.10%)</title><rect x="1778.02" y="298.00" width="1.04" height="23" rx="2" fill="#f9984f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strlen — 2 samples (0.10%)</title><rect x="1778.02" y="274.00" width="1.04" height="23" rx="2" fill="#e19b4f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>operator new[](unsigned long) — 1 samples (0.05%)</title><rect x="1779.77" y="298.00" width="0.17" height="23" rx="2" fill="#fa7243" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>malloc — 1 samples (0.05%)</title><rect x="1779.77" y="274.00" width="0.17" height="23" rx="2" fill="#f47326" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_int_malloc — 1 samples (0.05%)</title><rect x="1779.77" y="250.00" width="0.17" height="23" rx="2" fill="#e4673d" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>_checkGate(cModule*, char const*) — 2 samples (0.10%)</title><rect x="1781.51" y="346.00" width="1.04" height="23" rx="2" fill="#f09848" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::gate(char const*, int) — 2 samples (0.10%)</title><rect x="1781.51" y="322.00" width="1.04" height="23" rx="2" fill="#f96536" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cModule::findGate(char const*, int) const — 2 samples (0.10%)</title><rect x="1781.51" y="298.00" width="1.04" height="23" rx="2" fill="#f66942" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cArray::get(int) const — 1 samples (0.05%)</title><rect x="1781.51" y="274.00" width="0.17" height="23" rx="2" fill="#e89a30" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>cPar::operator=(cPar const&amp;) — 1 samples (0.05%)</title><rect x="1783.26" y="346.00" width="0.17" height="23" rx="2" fill="#ed902e" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>opp_strdup(char const*) — 1 samples (0.05%)</title><rect x="1783.26" y="322.00" width="0.17" height="23" rx="2" fill="#f7a623" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<g class="frame"><title>strlen — 1 samples (0.05%)</title><rect x="1783.26" y="298.00" width="0.17" height="23" rx="2" fill="#e19b4f" stroke="#fff7ed" stroke-width="0.5"/>
+</g>
+<text x="15" y="468" font-size="12" fill="#64748b">Width is proportional to sampled retired guest instructions. This is not host gem5 profiling.</text>
+</svg>

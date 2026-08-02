@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "classification": "public-source proxy; not SPEC CPU2006",
+  "formal_runs": {
+    "policies": [
+      "lru",
+      "random",
+      "srrip"
+    ],
+    "ticks_each": 2000000000,
+    "same_checkpoint": true,
+    "policy_checks": {
+      "lru": {
+        "return_code_zero": true,
+        "roi_ticks_exact": true,
+        "cycles_per_core": [
+          4597700,
+          4597700
+        ],
+        "both_cpus_active": true,
+        "full_slc_peak": true,
+        "victim_conservation": true,
+        "legacy_victim_buffer_replays_zero": true
+      },
+      "random": {
+        "return_code_zero": true,
+        "roi_ticks_exact": true,
+        "cycles_per_core": [
+          4597700,
+          4597700
+        ],
+        "both_cpus_active": true,
+        "full_slc_peak": true,
+        "victim_conservation": true,
+        "legacy_victim_buffer_replays_zero": true
+      },
+      "srrip": {
+        "return_code_zero": true,
+        "roi_ticks_exact": true,
+        "cycles_per_core": [
+          4597700,
+          4597700
+        ],
+        "both_cpus_active": true,
+        "full_slc_peak": true,
+        "victim_conservation": true,
+        "legacy_victim_buffer_replays_zero": true
+      }
+    }
+  },
+  "source_semantics": {
+    "slc_dirty_victim": "direct PoCQ WriteNoSnpFull; no persistent SLC victim buffer",
+    "sf_victim": "SEQ plus snoop remains enabled"
+  },
+  "hash_checks": {
+    "gem5": true,
+    "config": true,
+    "runner": true,
+    "dependency_manifest": true,
+    "checkpoint/m5.cpt": true,
+    "checkpoint/system.physmem.store0.pmem": true
+  },
+  "cpp_unit_tests": {
+    "status": "passed",
+    "executables": 10,
+    "tests": 284,
+    "failed_executables": 0,
+    "breakdown": [
+      {
+        "binary": "hnf_slcsf.test.opt",
+        "return_code": 0,
+        "tests": 131,
+        "elapsed_seconds": 0.024419307708740234
+      },
+      {
+        "binary": "slc_snoop_filter.test.opt",
+        "return_code": 0,
+        "tests": 17,
+        "elapsed_seconds": 0.010122060775756836
+      },
+      {
+        "binary": "hnf_slcsf_backend.test.opt",
+        "return_code": 0,
+        "tests": 21,
+        "elapsed_seconds": 0.021161794662475586
+      },
+      {
+        "binary": "hnf_coherency_controller.test.opt",
+        "return_code": 0,
+        "tests": 62,
+        "elapsed_seconds": 0.01973724365234375
+      },
+      {
+        "binary": "cache2chi_bridge.test.opt",
+        "return_code": 0,
+        "tests": 17,
+        "elapsed_seconds": 0.009634017944335938
+      },
+      {
+        "binary": "chi2classic_mem_bridge.test.opt",
+        "return_code": 0,
+        "tests": 9,
+        "elapsed_seconds": 0.007617473602294922
+      },
+      {
+        "binary": "hnf_seq_pocq_state_graph.test.opt",
+        "return_code": 0,
+        "tests": 2,
+        "elapsed_seconds": 0.0076122283935546875
+      },
+      {
+        "binary": "hnf_pocq_state_graph.test.opt",
+        "return_code": 0,
+        "tests": 18,
+        "elapsed_seconds": 0.006975412368774414
+      },
+      {
+        "binary": "home_link_layer.test.opt",
+        "return_code": 0,
+        "tests": 5,
+        "elapsed_seconds": 0.00973057746887207
+      },
+      {
+        "binary": "hnf_cc_types.test.opt",
+        "return_code": 0,
+        "tests": 2,
+        "elapsed_seconds": 0.005529165267944336
+      }
+    ]
+  },
+  "artifacts": {
+    "report": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-direct-victim-v1/EXPERIMENT_REPORT_ZH.md",
+    "summary": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-direct-victim-v1/analysis/summary.json",
+    "policy_comparison": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-direct-victim-v1/analysis/policy_comparison.csv",
+    "pressure_replay": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-direct-victim-v1/analysis/hnf_pressure_replay.csv",
+    "model_change": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-direct-victim-v1/analysis/model_change_comparison.csv"
+  },
+  "warning": "The workloads are public-source proxies. No value is a SPEC CPU2006 score.",
+  "presentation": {
+    "status": "passed",
+    "slides": 17,
+    "out_of_bounds_shapes": 0,
+    "pptx": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-direct-victim-v1/双核2x2_CHI_公开源码代理_SLC替换策略分析.pptx",
+    "pptx_sha256": "3ad004f60e91dd6bbb904f53c4a858827b88e6be9da0c59348780a29807e8c41"
+  },
+  "final_audit": "final_audit.json"
+}

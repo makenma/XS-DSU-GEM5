@@ -1,5 +1,5 @@
 from m5.params import *
-from m5.SimObject import SimObject
+from m5.SimObject import *
 from m5.proxy import *
 from m5.objects.ClockedObject import ClockedObject
 
@@ -7,6 +7,10 @@ class Cache2ChiBridge(ClockedObject):
     type = "Cache2ChiBridge"
     cxx_header = "mem/cache/CHI/Cache2ChiBridge.hh"
     cxx_class = "gem5::Chi::Cache2ChiBridge"
+    cxx_exports = [
+        PyBindMethod("startTransactionLatencyTrace"),
+        PyBindMethod("stopTransactionLatencyTrace"),
+    ]
 
     cache_side = ResponsePort("Cache side (acts like memory for cache)")
     chi_side   = MasterPort("CHI side (sends CHI requests)")
@@ -51,3 +55,8 @@ class Cache2ChiBridge(ClockedObject):
     sink_hnf_txreq = Param.Bool(
         True,
         "Drain HNF downstream TXREQ flits in direct bridge-HNF test topology")
+    transaction_latency_trace_file = Param.String(
+        "",
+        "ROI-only raw RNF transaction latency CSV written in the gem5 "
+        "output directory; empty disables the recorder",
+    )

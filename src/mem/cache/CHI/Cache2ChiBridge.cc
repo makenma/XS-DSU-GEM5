@@ -12,6 +12,7 @@
 
 #include "base/intmath.hh"
 #include "base/logging.hh"
+#include "base/output.hh"
 #include "base/trace.hh"
 #include "debug/Cache2ChiBridge.hh"
 #include "mem/cache/CHI/base/DatOpcode.hh"
@@ -88,6 +89,7 @@ Cache2ChiBridge::Cache2ChiBridge(const Cache2ChiBridgeParams& p)
       dataBeatBytes(p.data_beat_bytes),
       enableRetry(p.enable_retry),
       sinkHnfTxReq(p.sink_hnf_txreq),
+      transactionLatencyTraceFile(p.transaction_latency_trace_file),
       pumpEvent([this]{ pump(); }, name() + ".pumpEvent")
 {
     fatal_if(blockSize == 0 || !isPowerOf2(blockSize),
@@ -127,6 +129,238 @@ Cache2ChiBridge::Cache2ChiBridge(const Cache2ChiBridgeParams& p)
              "num_txns=%u simultaneous transactions\n",
              name(), txnIdNamespace, txnIdNamespaceCount, txnIdBase,
              maxTxns);
+}
+
+namespace
+{
+
+const char*
+reqOpcodeName(uint8_t opcode)
+{
+    switch (opcode) {
+      case ReqOp::ReadShared: return "ReadShared";
+      case ReqOp::ReadUnique: return "ReadUnique";
+      case ReqOp::CleanInvalid: return "CleanInvalid";
+      case ReqOp::MakeInvalid: return "MakeInvalid";
+      case ReqOp::MakeUnique: return "MakeUnique";
+      case ReqOp::Evict: return "Evict";
+      case ReqOp::WriteEvictFull: return "WriteEvictFull";
+      case ReqOp::WriteCleanFull: return "WriteCleanFull";
+      case ReqOp::WriteUniquePtl: return "WriteUniquePtl";
+      case ReqOp::WriteUniqueFull: return "WriteUniqueFull";
+      case ReqOp::WriteBackFull: return "WriteBackFull";
+      default: return "ReservedOrUnsupportedReqOp";
+    }
+}
+
+const char*
+snpOpcodeName(uint8_t opcode)
+{
+    switch (decodeSnp(opcode).minor) {
+      case SnpMinor::SnpLCrdReturn: return "SnpLCrdReturn";
+      case SnpMinor::SnpShared: return "SnpShared";
+      case SnpMinor::SnpClean: return "SnpClean";
+      case SnpMinor::SnpOnce: return "SnpOnce";
+      case SnpMinor::SnpNotSharedDirty: return "SnpNotSharedDirty";
+      case SnpMinor::SnpUnique: return "SnpUnique";
+      case SnpMinor::SnpCleanShared: return "SnpCleanShared";
+      case SnpMinor::SnpCleanInvalid: return "SnpCleanInvalid";
+      case SnpMinor::SnpMakeInvalid: return "SnpMakeInvalid";
+      case SnpMinor::SnpPreferUnique: return "SnpPreferUnique";
+      case SnpMinor::SnpUniqueStash: return "SnpUniqueStash";
+      case SnpMinor::SnpMakeInvalidStash: return "SnpMakeInvalidStash";
+      case SnpMinor::SnpStashUnique: return "SnpStashUnique";
+      case SnpMinor::SnpStashShared: return "SnpStashShared";
+      case SnpMinor::SnpDVMOp: return "SnpDVMOp";
+      case SnpMinor::SnpQuery: return "SnpQuery";
+      case SnpMinor::SnpSharedFwd: return "SnpSharedFwd";
+      case SnpMinor::SnpCleanFwd: return "SnpCleanFwd";
+      case SnpMinor::SnpOnceFwd: return "SnpOnceFwd";
+      case SnpMinor::SnpNotSharedDirtyFwd: return "SnpNotSharedDirtyFwd";
+      case SnpMinor::SnpPreferUniqueFwd: return "SnpPreferUniqueFwd";
+      case SnpMinor::SnpUniqueFwd: return "SnpUniqueFwd";
+      default: return "ReservedOrUnsupportedSnpOp";
+    }
+}
+
+const char*
+rspOpcodeName(uint8_t opcode)
+{
+    switch (decodeRsp(opcode).minor) {
+      case RspMinor::RespLCrdReturn: return "RespLCrdReturn";
+      case RspMinor::SnpResp: return "SnpResp";
+      case RspMinor::CompAck: return "CompAck";
+      case RspMinor::RetryAck: return "RetryAck";
+      case RspMinor::Comp: return "Comp";
+      case RspMinor::CompDBIDResp: return "CompDBIDResp";
+      case RspMinor::DBIDResp: return "DBIDResp";
+      case RspMinor::PCrdGrant: return "PCrdGrant";
+      case RspMinor::ReadReceipt: return "ReadReceipt";
+      case RspMinor::SnpRespFwded: return "SnpRespFwded";
+      case RspMinor::TagMatch: return "TagMatch";
+      case RspMinor::RespSepData: return "RespSepData";
+      case RspMinor::Persist: return "Persist";
+      case RspMinor::CompPersist: return "CompPersist";
+      case RspMinor::DBIDRespOrd: return "DBIDRespOrd";
+      case RspMinor::StashDone: return "StashDone";
+      case RspMinor::CompStashDone: return "CompStashDone";
+      case RspMinor::CompCMO: return "CompCMO";
+      default: return "ReservedOrUnsupportedRspOp";
+    }
+}
+
+const char*
+datOpcodeName(uint8_t opcode)
+{
+    switch (decodeDat(opcode).minor) {
+      case DatMinor::DataLCrdReturn: return "DataLCrdReturn";
+      case DatMinor::SnpRespData: return "SnpRespData";
+      case DatMinor::SnpRespDataPtl: return "SnpRespDataPtl";
+      case DatMinor::SnpRespDataFwded: return "SnpRespDataFwded";
+      case DatMinor::CopyBackWriteData: return "CopyBackWriteData";
+      case DatMinor::NonCopyBackWriteData: return "NonCopyBackWriteData";
+      case DatMinor::CompData: return "CompData";
+      case DatMinor::DataSepResp: return "DataSepResp";
+      case DatMinor::NCBWrDataCompAck: return "NCBWrDataCompAck";
+      case DatMinor::WriteDataCancel: return "WriteDataCancel";
+      default: return "ReservedOrUnsupportedDatOp";
+    }
+}
+
+const char*
+channelName(ChannelType channel)
+{
+    switch (channel) {
+      case REQ: return "REQ";
+      case RSP: return "RSP";
+      case DAT: return "DAT";
+      case SNP: return "SNP";
+      default: return "NONE";
+    }
+}
+
+const char*
+opcodeName(ChannelType channel, uint8_t opcode)
+{
+    switch (channel) {
+      case REQ: return reqOpcodeName(opcode);
+      case RSP: return rspOpcodeName(opcode);
+      case DAT: return datOpcodeName(opcode);
+      case SNP: return snpOpcodeName(opcode);
+      default: return "CensoredAtRoiEnd";
+    }
+}
+
+} // anonymous namespace
+
+void
+Cache2ChiBridge::startTransactionLatencyTrace()
+{
+    fatal_if(transactionLatencyTraceFile.empty(),
+             "%s cannot start RNF latency trace without an output file\n",
+             name());
+    fatal_if(transactionLatencyTraceEnabled,
+             "%s RNF latency trace was started twice\n", name());
+    transactionLatencyRecords.clear();
+    transactionLatencyTraceStartTick = curTick();
+    transactionLatencyTraceStopTick = 0;
+    transactionLatencyTraceEnabled = true;
+}
+
+void
+Cache2ChiBridge::stopTransactionLatencyTrace()
+{
+    fatal_if(!transactionLatencyTraceEnabled,
+             "%s RNF latency trace was stopped while inactive\n", name());
+    transactionLatencyTraceStopTick = curTick();
+    transactionLatencyTraceEnabled = false;
+
+    for (auto& [id, txn] : txns) {
+        if (txn.latencyTracked && !txn.latencyRecorded) {
+            transactionLatencyRecords.push_back({
+                false, REQ, txn.req.opcode, txn.req.srcid, txn.req.tgtid,
+                txn.txnid, txn.latencyStartTick,
+                transactionLatencyTraceStopTick, NUM_CHANNELS, 0xff,
+                txn.retryCount});
+            txn.latencyRecorded = true;
+        }
+    }
+    for (const auto& [id, snoop] : snoops) {
+        if (snoop.latencyTracked) {
+            transactionLatencyRecords.push_back({
+                false, SNP, snoop.snp.opcode, snoop.snp.srcid,
+                snoop.snp.tgtid, snoop.snp.txnid, snoop.latencyStartTick,
+                transactionLatencyTraceStopTick, NUM_CHANNELS, 0xff,
+                snoop.retryCount});
+        }
+    }
+    for (const auto& snoop : pendingSnoopResponses) {
+        if (snoop.latencyTracked) {
+            transactionLatencyRecords.push_back({
+                false, SNP, snoop.snp.opcode, snoop.snp.srcid,
+                snoop.snp.tgtid, snoop.snp.txnid, snoop.latencyStartTick,
+                transactionLatencyTraceStopTick, NUM_CHANNELS, 0xff,
+                snoop.retryCount});
+        }
+    }
+    std::queue<PendingSnoopRetry> retries = pendingSnoopRetries;
+    while (!retries.empty()) {
+        const PendingSnoopRetry& retry = retries.front();
+        if (retry.latencyTracked) {
+            transactionLatencyRecords.push_back({
+                false, SNP, retry.snp.opcode, retry.snp.srcid,
+                retry.snp.tgtid, retry.snp.txnid, retry.latencyStartTick,
+                transactionLatencyTraceStopTick, NUM_CHANNELS, 0xff,
+                retry.attempts});
+        }
+        retries.pop();
+    }
+    writeTransactionLatencyTrace();
+}
+
+void
+Cache2ChiBridge::writeTransactionLatencyTrace()
+{
+    OutputStream* output = simout.create(
+        transactionLatencyTraceFile, false, true);
+    fatal_if(!output, "%s could not create RNF latency trace %s\n",
+             name(), transactionLatencyTraceFile);
+    std::ostream& stream = *output->stream();
+    stream << "schema_version,rnf_name,rnf_node_id,status,"
+              "transaction_channel,transaction_type,opcode_hex,source_id,"
+              "target_id,transaction_id,start_tick,end_tick,latency_ticks,"
+              "chi_clock_period_ticks,terminal_channel,terminal_type,"
+              "terminal_opcode_hex,retry_count,trace_start_tick,"
+              "trace_stop_tick\n";
+    for (const TransactionLatencyRecord& record : transactionLatencyRecords) {
+        const Tick latency = record.endTick - record.startTick;
+        stream << "1," << name() << ',' << nodeId << ','
+               << (record.completed ? "completed" : "censored_roi_end")
+               << ',' << channelName(record.transactionChannel) << ','
+               << opcodeName(record.transactionChannel,
+                             record.transactionOpcode)
+               << ",0x" << std::hex
+               << static_cast<unsigned>(record.transactionOpcode)
+               << std::dec << ',' << record.sourceId << ',' << record.targetId
+               << ',' << record.transactionId << ',' << record.startTick << ','
+               << record.endTick << ',';
+        if (record.completed) {
+            stream << latency;
+        }
+        stream << ',' << clockPeriod() << ','
+               << channelName(record.terminalChannel) << ','
+               << opcodeName(record.terminalChannel, record.terminalOpcode)
+               << ',';
+        if (record.completed) {
+            stream << "0x" << std::hex
+                   << static_cast<unsigned>(record.terminalOpcode)
+                   << std::dec;
+        }
+        stream << ',' << record.retryCount << ','
+               << transactionLatencyTraceStartTick << ','
+               << transactionLatencyTraceStopTick << '\n';
+    }
+    simout.close(output);
 }
 
 uint32_t
@@ -556,7 +790,8 @@ Cache2ChiBridge::pump()
     if (!pendingSnoopRetries.empty()) {
         PendingSnoopRetry retry = pendingSnoopRetries.front();
         pendingSnoopRetries.pop();
-        handleSnp(retry.snp, retry.attempts);
+        handleSnp(retry.snp, retry.attempts, retry.latencyStartTick,
+                  retry.latencyTracked);
     }
 
     drainChiTx();
@@ -616,6 +851,11 @@ Cache2ChiBridge::pump()
 
         if (!chiPort.enqueueRx(REQ, txn.req)) {
             break;
+        }
+
+        if (transactionLatencyTraceEnabled) {
+            txn.latencyStartTick = curTick();
+            txn.latencyTracked = true;
         }
 
         promotedUpgradePkts.erase(pkt);
@@ -762,6 +1002,7 @@ Cache2ChiBridge::handleRsp(const RawRsp& rsp)
     switch (decoded.minor) {
       case RspMinor::RetryAck:
         txn.retryBlocked = true;
+        ++txn.retryCount;
         break;
       case RspMinor::PCrdGrant:
         if (txn.retryBlocked) {
@@ -780,6 +1021,8 @@ Cache2ChiBridge::handleRsp(const RawRsp& rsp)
         txn.hasDbid = true;
         txn.dbid = rsp.dbid;
         txn.gotComp = true;
+        txn.lastResponseChannel = RSP;
+        txn.lastResponseOpcode = rsp.opcode;
         sendTxnData(txn);
         maybeComplete(txn);
         break;
@@ -792,6 +1035,8 @@ Cache2ChiBridge::handleRsp(const RawRsp& rsp)
                   "response state %u\n", name(), rsp.resp);
         }
         txn.gotComp = true;
+        txn.lastResponseChannel = RSP;
+        txn.lastResponseOpcode = rsp.opcode;
         maybeComplete(txn);
         break;
       case RspMinor::ReadReceipt:
@@ -812,6 +1057,8 @@ Cache2ChiBridge::handleDat(const RawDat& dat)
     TxnEntry& txn = it->second;
 
     acceptReadDataBeat(txn, dat, dataBeatBytes, name().c_str());
+    txn.lastResponseChannel = DAT;
+    txn.lastResponseOpcode = dat.opcode;
     if (dat.resp == static_cast<uint8_t>(RespState::SC) ||
         dat.resp == static_cast<uint8_t>(RespState::SD_PD)) {
         txn.pkt->setHasSharers();
@@ -829,9 +1076,15 @@ Cache2ChiBridge::handleDat(const RawDat& dat)
 }
 
 void
-Cache2ChiBridge::handleSnp(const RawSnp& snp, uint32_t attempts)
+Cache2ChiBridge::handleSnp(const RawSnp& snp, uint32_t attempts,
+                           Tick latency_start_tick, bool latency_tracked)
 {
-    if (respondFromPendingCopyback(snp)) {
+    if (attempts == 0 && transactionLatencyTraceEnabled) {
+        latency_start_tick = curTick();
+        latency_tracked = true;
+    }
+    if (respondFromPendingCopyback(
+            snp, latency_start_tick, latency_tracked, attempts)) {
         return;
     }
 
@@ -855,6 +1108,9 @@ Cache2ChiBridge::handleSnp(const RawSnp& snp, uint32_t attempts)
     snoop.snp = snp;
     snoop.snoopPkt = pkt;
     snoop.invalidating = snoopInvalidates(snp);
+    snoop.latencyStartTick = latency_start_tick;
+    snoop.latencyTracked = latency_tracked;
+    snoop.retryCount = attempts;
     snoops.emplace(snoopTxn, snoop);
 
     cachePort.sendTimingSnoopReq(pkt);
@@ -875,7 +1131,8 @@ Cache2ChiBridge::handleSnp(const RawSnp& snp, uint32_t attempts)
                 "retry transient snoop txnid=%u addr=%#llx attempt=%u\n",
                 snp.txnid, static_cast<unsigned long long>(snp.addr),
                 attempts + 1);
-        pendingSnoopRetries.push({snp, attempts + 1});
+        pendingSnoopRetries.push(
+            {snp, attempts + 1, latency_start_tick, latency_tracked});
 
         Packet::SenderState* popped = pkt->popSenderState();
         delete popped;
@@ -902,16 +1159,21 @@ Cache2ChiBridge::handleSnp(const RawSnp& snp, uint32_t attempts)
 }
 
 bool
-Cache2ChiBridge::respondFromPendingCopyback(const RawSnp& snp)
+Cache2ChiBridge::respondFromPendingCopyback(
+    const RawSnp& snp, Tick latency_start_tick, bool latency_tracked,
+    uint32_t retry_count)
 {
     const Addr snoopAddr =
         snp.addr & ~(static_cast<Addr>(blockSize) - 1);
-    auto respond = [this, &snp, snoopAddr](PacketPtr pkt,
-                                           const char* source,
-                                           uint32_t txnid) {
+    auto respond = [this, &snp, snoopAddr, latency_start_tick,
+                    latency_tracked, retry_count](
+                       PacketPtr pkt, const char* source, uint32_t txnid) {
         SnoopEntry buffered{};
         buffered.snp = snp;
         buffered.invalidating = snoopInvalidates(snp);
+        buffered.latencyStartTick = latency_start_tick;
+        buffered.latencyTracked = latency_tracked;
+        buffered.retryCount = retry_count;
         sendSnoopData(buffered, pkt);
         DPRINTF(Cache2ChiBridge,
                 "%s copyback txnid=%u supplies snoop txnid=%u "
@@ -1147,6 +1409,7 @@ Cache2ChiBridge::maybeComplete(TxnEntry& txn)
 void
 Cache2ChiBridge::completeClassicTxn(TxnEntry& txn)
 {
+    recordReqLatency(txn);
     txn.completed = true;
     PacketPtr pkt = txn.pkt;
     const uint32_t txnid = txn.txnid;
@@ -1187,6 +1450,36 @@ Cache2ChiBridge::completeClassicTxn(TxnEntry& txn)
         delete pkt;
         freeTxn(txnid);
     }
+}
+
+void
+Cache2ChiBridge::recordReqLatency(TxnEntry& txn)
+{
+    if (!txn.latencyTracked || txn.latencyRecorded) {
+        return;
+    }
+    panic_if(txn.lastResponseChannel == NUM_CHANNELS,
+             "%s completes traced REQ txnid=%u without a terminal CHI flit\n",
+             name(), txn.txnid);
+    transactionLatencyRecords.push_back({
+        true, REQ, txn.req.opcode, txn.req.srcid, txn.req.tgtid, txn.txnid,
+        txn.latencyStartTick, curTick(), txn.lastResponseChannel,
+        txn.lastResponseOpcode, txn.retryCount});
+    txn.latencyRecorded = true;
+}
+
+void
+Cache2ChiBridge::recordSnoopLatency(
+    const SnoopEntry& snoop, ChannelType terminal_channel,
+    uint8_t terminal_opcode)
+{
+    if (!snoop.latencyTracked) {
+        return;
+    }
+    transactionLatencyRecords.push_back({
+        true, SNP, snoop.snp.opcode, snoop.snp.srcid, snoop.snp.tgtid,
+        snoop.snp.txnid, snoop.latencyStartTick, curTick(), terminal_channel,
+        terminal_opcode, snoop.retryCount});
 }
 
 void
@@ -1268,6 +1561,10 @@ Cache2ChiBridge::sendPendingSnoopResponses()
         SnoopEntry snoop = std::move(pendingSnoopResponses.front());
         pendingSnoopResponses.pop_front();
         const size_t first_unsent = snoop.nextDataBeat;
+        const ChannelType terminal_channel =
+            snoop.pendingRsp ? RSP : DAT;
+        const uint8_t terminal_opcode = snoop.pendingRsp ?
+            snoop.pendingRsp->opcode : snoop.dataBeats.back().opcode;
         const bool sent = advancePendingSnoopResponse(
             snoop, [this](ChannelType channel, const FlitVariant& flit) {
                 return chiPort.enqueueRx(channel, flit);
@@ -1282,6 +1579,7 @@ Cache2ChiBridge::sendPendingSnoopResponses()
             all_sent = false;
             continue;
         }
+        recordSnoopLatency(snoop, terminal_channel, terminal_opcode);
         DPRINTF(Cache2ChiBridge,
                 "snoop txnid=%u response sent DAT beats=%u..%u\n",
                 snoop.snp.txnid, static_cast<unsigned>(first_unsent),

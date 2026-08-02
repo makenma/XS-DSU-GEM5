@@ -1,0 +1,115 @@
+{
+  "checkpoint_full_retry_limit": 8,
+  "checkpoint_refill_max_ticks": 1000000000,
+  "classification": "public-source proxy; not SPEC CPU2006",
+  "common_checkpoint": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/warmup/common_full_cpt",
+  "common_checkpoint_files": {
+    "m5.cpt": {
+      "sha256": "65004b6a911bd5b10ced72c82c96c809d6a52997a403c8189e7ee3fba85bfc0d",
+      "size_bytes": 3406091
+    },
+    "system.physmem.store0.pmem": {
+      "sha256": "4ab74a09c280b240f1aa649c99b4c2d2725cbf42eb2971278df4e55de9111738",
+      "size_bytes": 2309431
+    }
+  },
+  "common_checkpoint_source": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-direct-victim-v1/warmup/common_full_cpt",
+  "config": "/home/makenma/project/xs-gem5/GEM5/configs/example/kmhv2_chi_2x2_hnf_se.py",
+  "config_sha256": "bb918dd746bda31f31c2f25765783007fc0a272185f61b369a8f7bde5b548df0",
+  "dependency_manifest": "/home/makenma/project/xs-gem5/workloads/dual-core-se-dependencies.json",
+  "dependency_manifest_sha256": "a4d2ab8bc2ca0f1a174c6ac0ebf6306ad2e3f72ed7435e5ef87c83e2db7854f8",
+  "fill_max_ticks": 5000000000,
+  "gem5_sha256": "0333019f5cda5668570f4093872b09a2329f0fcfac63c3b65028e1db714fb83a",
+  "git_commit": "e247a8dffd0c8e2693afe5985c40bb1d83712513",
+  "git_diff_sha256": "33d092008afc076719899b8e68e8506262477e23967e3922e711a70afceb9d0a",
+  "git_dirty": true,
+  "git_status_porcelain": [
+    " M configs/example/kmhv2_chi_2x2_hnf_se.py",
+    " M prd.json",
+    " M src/cpu/o3/probe/SConscript",
+    " M src/doc/CHI/HNF_POCQ_SEQ_Litmus_Implementation_and_Debug_Case_Studies.md",
+    " M src/doc/CHI/HNF_SLCSF_Gem5_Spec.md",
+    " M src/doc/CHI/HNF_SLCSF_Pipeline_Implementation_Plan.md",
+    " M src/mem/cache/CHI/Cache2ChiBridge.cc",
+    " M src/mem/cache/CHI/Cache2ChiBridge.hh",
+    " M src/mem/cache/CHI/Cache2ChiBridge.py",
+    " M src/mem/cache/CHI/HnfCoherencyController.cc",
+    " M src/mem/cache/CHI/HnfCoherencyController.hh",
+    " M src/mem/cache/CHI/HnfCoherencyController.test.cc",
+    " M src/mem/cache/CHI/HnfSLCSF.cc",
+    " M src/mem/cache/CHI/HnfSLCSF.hh",
+    " M src/mem/cache/CHI/HnfSLCSF.test.cc",
+    " M src/mem/cache/CHI/HnfSLCSFBackend.cc",
+    " M src/mem/cache/CHI/HnfSLCSFBackend.hh",
+    " M src/mem/cache/CHI/HnfSLCSFRequest.hh",
+    " M src/mem/cache/CHI/HnfSLCSFResponse.hh",
+    " M src/mem/cache/CHI/HomeNodeFull.py",
+    " M src/mem/cache/CHI/SlcSnoopFilter.cc",
+    " M src/mem/cache/CHI/SlcSnoopFilter.py",
+    " M tasks/prd-hnf-slcsf-pipeline.md",
+    " M util/xs_scripts/chi_2x2_dual_proxy_experiment.py",
+    " M util/xs_scripts/chi_2x2_dual_proxy_presentation.py",
+    "?? results/chi-2x2-dual-public-proxy-direct-victim-v1/",
+    "?? results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/",
+    "?? src/cpu/o3/probe/GuestCallStackProfiler.py",
+    "?? src/cpu/o3/probe/guest_call_stack_profiler.cc",
+    "?? src/cpu/o3/probe/guest_call_stack_profiler.hh",
+    "?? util/xs_scripts/chi_2x2_instrumentation_ab.py",
+    "?? util/xs_scripts/chi_2x2_latency_flame_analysis.py",
+    "?? util/xs_scripts/chi_2x2_latency_flame_presentation.py",
+    "?? util/xs_scripts/chi_2x2_latency_flame_requirements.txt"
+  ],
+  "instrumentation": {
+    "guest_stack_profile": {
+      "boundary": "ROI only",
+      "enabled": true,
+      "sample_period_insts": 1000,
+      "semantic_timing_effect": false
+    },
+    "rnf_transaction_latency": {
+      "boundary": "ROI only",
+      "enabled": true,
+      "identity": "exact CHI SrcID + TxnID",
+      "semantic_timing_effect": false
+    }
+  },
+  "memory": "1GB",
+  "min_roi_insts_per_core": 100000,
+  "policies": [
+    "lru",
+    "random",
+    "srrip"
+  ],
+  "replacement_policy_details": {
+    "lru": "true LRU; hit updates recency; oldest valid line wins",
+    "random": "fixed-seed uniform choice among valid ways in a full set",
+    "srrip": "deterministic 2-bit SRRIP; max=3, hit=0, insert=2"
+  },
+  "roi_ticks": 2000000000,
+  "runner": "/home/makenma/project/xs-gem5/GEM5/util/xs_scripts/chi_2x2_dual_proxy_experiment.py",
+  "runner_sha256": "171680aca2279308229862ecda237376d75cdbf8838e9f6862811351098ffc19",
+  "runs": {
+    "lru": {
+      "host_elapsed_seconds": 575.2434945106506,
+      "return_code": 0,
+      "stderr": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/runs/lru/stderr.log",
+      "stdout": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/runs/lru/stdout.log"
+    },
+    "random": {
+      "host_elapsed_seconds": 640.1541674137115,
+      "return_code": 0,
+      "stderr": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/runs/random/stderr.log",
+      "stdout": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/runs/random/stdout.log"
+    },
+    "srrip": {
+      "host_elapsed_seconds": 525.7534079551697,
+      "return_code": 0,
+      "stderr": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/runs/srrip/stderr.log",
+      "stdout": "/home/makenma/project/xs-gem5/GEM5/results/chi-2x2-dual-public-proxy-rnf-latency-flame-v1/runs/srrip/stdout.log"
+    }
+  },
+  "schema_version": 1,
+  "seed": 20260730,
+  "settle_ticks": 100000,
+  "warning": "These results are not SPEC CPU2006 scores."
+}

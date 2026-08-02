@@ -68,7 +68,7 @@ SlcSnoopFilter::SlcSnoopFilterStats::SlcSnoopFilterStats(
       ADD_STAT(seqConflictReplays, statistics::units::Count::get(),
                "Replays caused by SEQ conflicts"),
       ADD_STAT(victimBufferFullReplays, statistics::units::Count::get(),
-               "Replays caused by a full VictimBuffer"),
+               "Legacy counter; direct PoCQ handoff makes this always zero"),
       ADD_STAT(cancelledReplays, statistics::units::Count::get(),
                "Terminal Replay responses produced by cancellation"),
       ADD_STAT(requestFullCycles, statistics::units::Cycle::get(),
@@ -115,15 +115,11 @@ SlcSnoopFilter::SlcSnoopFilterStats::SlcSnoopFilterStats(
     const size_t max_service_latency = std::max({
         static_cast<size_t>(p.slcsf_lookup_latency),
         checked_add(
-            checked_add(
-                static_cast<size_t>(p.slcsf_fill_latency),
-                static_cast<size_t>(p.slcsf_victim_latency)),
+            static_cast<size_t>(p.slcsf_fill_latency),
             static_cast<size_t>(p.slcsf_sf_evict_latency)),
         checked_add(
             static_cast<size_t>(p.slcsf_update_latency),
-            std::max(
-                static_cast<size_t>(p.slcsf_victim_latency),
-                static_cast<size_t>(p.slcsf_sf_evict_latency)))});
+            static_cast<size_t>(p.slcsf_sf_evict_latency))});
     configuredServiceLatency.init(0, std::max<size_t>(1, max_service_latency),
                                   1);
     acceptedToVisibleLatency.init(0);

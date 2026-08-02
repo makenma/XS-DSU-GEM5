@@ -309,20 +309,6 @@ dirtyVictimReleaseHeader(
     return header;
 }
 
-SlcSfResponse
-completeDirtyVictimRelease(
-    HnfSLCSF& model, SlcSfVictimId victim_id, uint64_t line_address,
-    uint32_t requester, uint32_t transaction_id, uint64_t req_id)
-{
-    model.markDirtyVictimWritebackIssued(
-        victim_id, requester, WriteNoSnpFullOpcode, transaction_id);
-    return completeMutation(
-        model, makeSlcSfReleaseDirtyVictimReq(
-            dirtyVictimReleaseHeader(
-                req_id, victim_id, line_address, requester, transaction_id),
-            victim_id));
-}
-
 void
 expectLookupResultsEqual(const HnfSlcLookupResult& actual,
                          const HnfSlcLookupResult& expected)
@@ -980,9 +966,6 @@ TEST(HnfSlcSfQueueTest, RejectsInvalidStageAServiceConfiguration)
     config.updateLatency = 0;
     expectInvalid(config);
     config = {};
-    config.victimLatency = 0;
-    expectInvalid(config);
-    config = {};
     config.sfEvictLatency = 0;
     expectInvalid(config);
     config = {};
@@ -992,14 +975,16 @@ TEST(HnfSlcSfQueueTest, RejectsInvalidStageAServiceConfiguration)
     config.childClockPeriod = 0;
     expectInvalid(config);
     config = {};
-    config.victimBufferEntries = 0;
-    expectInvalid(config);
-    config = {};
     config.responseConsumeWidth = 0;
     expectInvalid(config);
     config = {};
     config.maxInflight = 2;
     expectInvalid(config);
+
+    config = {};
+    config.victimLatency = 0;
+    config.victimBufferEntries = 0;
+    EXPECT_NO_THROW(HnfSLCSF(64, 4, 2, 4, 2, 8, config));
 }
 
 TEST(HnfSlcSfSetLockTest, SameSetOperationsSerialize)
@@ -2208,7 +2193,7 @@ TEST(HnfSlcSfMutationServiceTest,
 }
 
 TEST(HnfSlcSfMutationServiceTest,
-     DirtyVictimReservedBeforeOverwrite)
+     DirtyVictimCapturedBeforeOverwriteAndHandedDirectlyToPocq)
 {
     HnfSLCSF model(64, 1, 2, 1, 2);
     const uint64_t dirty_addr = TestAddr;
@@ -2236,7 +2221,7 @@ TEST(HnfSlcSfMutationServiceTest,
     EXPECT_EQ(model.mutationStageCount(
                   HnfSLCSF::MutationStage::U2ArrayWrite), 1);
     EXPECT_EQ(model.victimReservationCount(), 1);
-    EXPECT_EQ(model.victimBufferOccupancy(), 1);
+    EXPECT_EQ(model.victimBufferOccupancy(), 0);
     EXPECT_TRUE(model.hasSfReservation(1351));
     EXPECT_TRUE(model.probe(HnfSlcLookupReq{
         0, RawReq{}, PocqTxnKind::Unknown, dirty_addr}).result.dataDirty);
@@ -2254,14 +2239,13 @@ TEST(HnfSlcSfMutationServiceTest,
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(response->status(), SlcSfTerminalStatus::Done);
     EXPECT_EQ(model.currentCycle(),
-              issue_cycle + model.pipelineConfig().fillLatency +
-                  model.pipelineConfig().victimLatency + 1);
+              issue_cycle + model.pipelineConfig().fillLatency + 1);
     const auto& fill = std::get<SlcSfFillResponse>(response->payload());
     ASSERT_TRUE(fill.slcVictim.has_value());
     EXPECT_EQ(fill.slcVictim->lineAddress, dirty_addr);
     EXPECT_EQ(fill.slcVictim->line.data, lineData(0x6b));
-    EXPECT_EQ(model.dirtyVictimState(fill.slcVictim->victimId),
-              HnfSLCSF::VictimState::HandedOff);
+    EXPECT_EQ(model.victimReservationCount(), 0);
+    EXPECT_EQ(model.victimBufferOccupancy(), 0);
     EXPECT_TRUE(model.probe(HnfSlcLookupReq{
         0, RawReq{}, PocqTxnKind::Unknown,
         replacement_addr}).result.slcHit);
@@ -2269,17 +2253,13 @@ TEST(HnfSlcSfMutationServiceTest,
     EXPECT_EQ(model.seqReservationCount(), 0);
     EXPECT_EQ(model.reqOutstanding(), 0);
     EXPECT_EQ(model.respOccupied(), 0);
-    const SlcSfResponse release = completeDirtyVictimRelease(
-        model, fill.slcVictim->victimId, dirty_addr, 1, 3352, 1352);
-    EXPECT_EQ(release.status(), SlcSfTerminalStatus::Done);
-    EXPECT_EQ(model.victimBufferOccupancy(), 0);
 }
 
 TEST(HnfSlcSfMutationServiceTest,
      DirtySfEvictCompletionPreservesAndHandsOffDirtySlcVictim)
 {
     HnfSLCSFPipelineConfig config{};
-    config.victimLatency = 5;
+    config.victimLatency = 5; // Deprecated and intentionally ignored.
     HnfSLCSF model(64, 1, 1, 1, 1, 4, config);
     const uint64_t dirty_addr = TestAddr;
     const uint64_t seq_addr = TestAddr + 64;
@@ -2311,8 +2291,8 @@ TEST(HnfSlcSfMutationServiceTest,
     EXPECT_EQ(update.slcVictim->owner, 1);
     EXPECT_TRUE(update.slcVictim->line.dirty);
     EXPECT_EQ(update.slcVictim->line.data, dirty_data);
-    EXPECT_EQ(model.dirtyVictimState(update.slcVictim->victimId),
-              HnfSLCSF::VictimState::HandedOff);
+    EXPECT_EQ(model.victimReservationCount(), 0);
+    EXPECT_EQ(model.victimBufferOccupancy(), 0);
     EXPECT_FALSE(probeLookup(model, dirty_addr, 1).result.slcHit);
     const auto installed = probeLookup(model, seq_addr, 3);
     EXPECT_TRUE(installed.result.slcHit);
@@ -2320,12 +2300,7 @@ TEST(HnfSlcSfMutationServiceTest,
     EXPECT_EQ(installed.result.data, seq_data);
     EXPECT_GE(
         model.currentCycle(),
-        issue_cycle + config.updateLatency + config.victimLatency);
-
-    const SlcSfResponse release = completeDirtyVictimRelease(
-        model, update.slcVictim->victimId, dirty_addr, 1, 3354, 1354);
-    EXPECT_EQ(release.status(), SlcSfTerminalStatus::Done);
-    EXPECT_EQ(model.victimBufferOccupancy(), 0);
+        issue_cycle + config.updateLatency);
     EXPECT_EQ(model.dirtyVictimSealCount(), 0);
 }
 
@@ -2352,7 +2327,7 @@ TEST(HnfSlcSfMutationServiceTest,
     ASSERT_EQ(model.mutationStageCount(
                   HnfSLCSF::MutationStage::U2ArrayWrite), 1);
     ASSERT_EQ(model.victimReservationCount(), 1);
-    ASSERT_EQ(model.victimBufferOccupancy(), 1);
+    ASSERT_EQ(model.victimBufferOccupancy(), 0);
     ASSERT_EQ(model.dirtyVictimSealCount(), 1);
     ASSERT_TRUE(model.hasSfReservation(1451));
 
@@ -2401,7 +2376,7 @@ TEST(HnfSlcSfMutationServiceTest,
 }
 
 TEST(HnfSlcSfMutationServiceTest,
-     DrainWithInstalledSnapshotConsumesSealAndPreservesHandoff)
+     DrainWithTransientCaptureConsumesSealAndPreservesHandoff)
 {
     HnfSLCSF model(64, 1, 1, 1, 1);
     const std::vector<uint8_t> victim_data = lineData(0xc1);
@@ -2443,26 +2418,18 @@ TEST(HnfSlcSfMutationServiceTest,
     EXPECT_EQ(victim.line.data, victim_data);
     EXPECT_EQ(model.dirtyVictimSealCount(), 0);
     EXPECT_EQ(model.victimReservationCount(), 0);
-    EXPECT_EQ(model.victimBufferOccupancy(), 1);
-    EXPECT_EQ(model.dirtyVictimState(victim.victimId),
-              HnfSLCSF::VictimState::HandedOff);
+    EXPECT_EQ(model.victimBufferOccupancy(), 0);
     EXPECT_EQ(model.sfReservationCount(), 0);
     EXPECT_EQ(model.seqReservationCount(), 0);
     EXPECT_EQ(model.reqOutstanding(), 0);
     EXPECT_EQ(model.respOccupied(), 0);
-    EXPECT_TRUE(model.isBusy());
+    EXPECT_FALSE(model.isBusy());
     EXPECT_EQ(model.drainingRejectCount(), 1);
 
-    // Drain gates new admission; the explicit downstream owner is retained.
-    // Resume admission before delivering its durable release completion.
+    // Drain gates new admission, but the response recipient now owns the
+    // victim bytes. SLC has no downstream writeback lifetime to drain.
     model.resumeFromDrain();
     model.wakeup();
-    const SlcSfResponse release = completeDirtyVictimRelease(
-        model, victim.victimId, victim.lineAddress, victim.owner,
-        9454, 1455);
-    EXPECT_EQ(release.status(), SlcSfTerminalStatus::Done);
-    EXPECT_EQ(model.dirtyVictimState(victim.victimId),
-              HnfSLCSF::VictimState::Released);
     EXPECT_EQ(model.victimBufferOccupancy(), 0);
     EXPECT_EQ(model.dirtyVictimSealCount(), 0);
     EXPECT_FALSE(model.isBusy());
@@ -2723,9 +2690,6 @@ TEST(HnfSlcSfMutationServiceTest,
     EXPECT_EQ(fill.slcVictim->lineAddress, dirty_addr);
     EXPECT_EQ(model.sfReservationCount(), 0);
     EXPECT_EQ(model.seqReservationCount(), 0);
-    const SlcSfResponse release = completeDirtyVictimRelease(
-        model, fill.slcVictim->victimId, dirty_addr, 7, 3592, 1592);
-    EXPECT_EQ(release.status(), SlcSfTerminalStatus::Done);
     EXPECT_EQ(model.victimBufferOccupancy(), 0);
 }
 
@@ -2898,46 +2862,18 @@ TEST(HnfSlcSfMutationServiceTest,
 }
 
 TEST(HnfSlcSfMutationServiceTest,
-     OwnerlessReleaseCannotBeCancelledAndStillCompletes)
+     ObsoleteDirtyVictimReleaseRequestIsRejected)
 {
     HnfSLCSF model(64, 1, 1, 1, 1);
-    model.writeLine(
-        TestAddr, 0, lineData(0x79), PocqTxnKind::WriteUnique);
-    const uint64_t replacement_addr = TestAddr + 64;
-    const auto token = completeLookupToken(model, 1620, replacement_addr);
-    SlcSfResponse fill = completeMutation(
-        model, makeSlcSfFillCleanSharedReq(
-            mutationHeader(1621, replacement_addr), lineData(0x7a), {},
-            token, token.lookupReqId));
-    const auto& fill_payload = std::get<SlcSfFillResponse>(fill.payload());
-    ASSERT_TRUE(fill_payload.slcVictim.has_value());
-    const SlcSfVictimId victim_id = fill_payload.slcVictim->victimId;
-    constexpr uint32_t WritebackTxn = 4622;
-    model.markDirtyVictimWritebackIssued(
-        victim_id, 0, WriteNoSnpFullOpcode, WritebackTxn);
-
-    SlcSfRequest release = makeSlcSfReleaseDirtyVictimReq(
-        dirtyVictimReleaseHeader(
-            1622, victim_id, TestAddr, 0, WritebackTxn),
-        victim_id);
-    ASSERT_EQ(model.tryEnqueue(std::move(release)),
-              SlcSfEnqueueResult::Accepted);
-    model.wakeup(7000);
-    ASSERT_EQ(model.reqInflightCount(), 1);
-    EXPECT_EQ(model.cancelRequest(UINT32_MAX, SlcSfReqId{1622}, 7000),
-              SlcSfCancelResult::NotCancellable);
-
-    std::optional<SlcSfResponse> response;
-    for (Tick tick = 7010; tick < 7200 && !response; tick += 10) {
-        model.wakeup(tick);
-        response = consumeVisibleResponse(model);
-    }
-    ASSERT_TRUE(response.has_value());
-    EXPECT_EQ(response->reqId(), SlcSfReqId{1622});
-    EXPECT_EQ(response->status(), SlcSfTerminalStatus::Done);
-    EXPECT_EQ(model.dirtyVictimState(victim_id),
-              HnfSLCSF::VictimState::Released);
-    EXPECT_EQ(model.cancelledRequestCount(), 0);
+    const SlcSfVictimId victim_id{1};
+    const SlcSfResponse response = completeMutation(
+        model, makeSlcSfReleaseDirtyVictimReq(
+            dirtyVictimReleaseHeader(
+                1622, victim_id, TestAddr, 0, 4622),
+            victim_id));
+    EXPECT_EQ(response.operationKind(),
+              SlcSfOperationKind::ReleaseDirtyVictim);
+    EXPECT_EQ(response.status(), SlcSfTerminalStatus::Error);
     EXPECT_EQ(model.victimBufferOccupancy(), 0);
     EXPECT_EQ(model.reqOutstanding(), 0);
     EXPECT_EQ(model.respOccupied(), 0);
@@ -3057,38 +2993,9 @@ TEST(HnfSlcSfMutationServiceTest,
     EXPECT_TRUE(owned.line.dirty);
     EXPECT_EQ(owned.line.data, victim_data);
     EXPECT_EQ(owned.line.byteMask, std::vector<uint8_t>(64, 0xff));
-    EXPECT_EQ(model.dirtyVictimState(owned.victimId),
-              HnfSLCSF::VictimState::HandedOff);
-    constexpr uint32_t WritebackTxn = 4222;
-    model.markDirtyVictimWritebackIssued(
-        owned.victimId, owned.owner, WriteNoSnpFullOpcode, WritebackTxn);
-    EXPECT_EQ(model.dirtyVictimState(owned.victimId),
-              HnfSLCSF::VictimState::WritebackIssued);
-    SlcSfResponse release = completeMutation(
-        model, makeSlcSfReleaseDirtyVictimReq(
-            dirtyVictimReleaseHeader(
-                1221, owned.victimId, owned.lineAddress, owned.owner,
-                WritebackTxn),
-            owned.victimId));
-    EXPECT_EQ(release.status(), SlcSfTerminalStatus::Done);
-    EXPECT_EQ(model.dirtyVictimState(owned.victimId),
-              HnfSLCSF::VictimState::Released);
     EXPECT_EQ(model.victimBufferOccupancy(), 0);
+    EXPECT_EQ(model.victimReservationCount(), 0);
     EXPECT_EQ(owned.line.data, victim_data);
-    release = completeMutation(
-        model, makeSlcSfReleaseDirtyVictimReq(
-            dirtyVictimReleaseHeader(
-                1222, owned.victimId, owned.lineAddress, owned.owner,
-                WritebackTxn),
-            owned.victimId));
-    EXPECT_EQ(release.status(), SlcSfTerminalStatus::Error);
-    release = completeMutation(
-        model, makeSlcSfReleaseDirtyVictimReq(
-            dirtyVictimReleaseHeader(
-                1223, SlcSfVictimId{9999}, owned.lineAddress, owned.owner,
-                WritebackTxn),
-            SlcSfVictimId{9999}));
-    EXPECT_EQ(release.status(), SlcSfTerminalStatus::Error);
     EXPECT_FALSE(model.hasSfReservation(122));
     EXPECT_EQ(model.reqOutstanding(), 0);
     EXPECT_EQ(model.respOccupied(), 0);
@@ -3097,9 +3004,10 @@ TEST(HnfSlcSfMutationServiceTest,
 }
 
 TEST(HnfSlcSfMutationServiceTest,
-     VictimBufferFullReplaysWithoutMutation)
+     PriorDirtyVictimHandoffDoesNotBlockNextReplacement)
 {
     HnfSLCSFPipelineConfig config{};
+    // Legacy knob must not impose capacity on the direct PoCQ handoff.
     config.victimBufferEntries = 1;
     HnfSLCSF model(64, 1, 1, 1, 1, 8, config);
     model.writeLine(
@@ -3113,53 +3021,32 @@ TEST(HnfSlcSfMutationServiceTest,
     ASSERT_EQ(first.status(), SlcSfTerminalStatus::Done);
     const auto& first_fill = std::get<SlcSfFillResponse>(first.payload());
     ASSERT_TRUE(first_fill.slcVictim.has_value());
-    EXPECT_EQ(model.victimBufferOccupancy(), 1);
+    EXPECT_EQ(first_fill.slcVictim->lineAddress, TestAddr);
+    EXPECT_EQ(first_fill.slcVictim->line.data, lineData(0x81));
+    EXPECT_EQ(model.victimBufferOccupancy(), 0);
 
     model.writeLine(
         second_addr, 1, lineData(0x83), PocqTxnKind::WriteUnique);
     const uint64_t third_addr = TestAddr + 128;
     token = completeLookupToken(model, 1402, third_addr);
-    const auto before = model.probe(HnfSlcLookupReq{
-        0, RawReq{}, PocqTxnKind::Unknown, second_addr});
-    SlcSfRequest second = makeSlcSfFillCleanSharedReq(
-        mutationHeader(1403, third_addr), lineData(0x84), {}, token,
-        token.lookupReqId);
-    ASSERT_EQ(model.tryEnqueue(std::move(second)),
-              SlcSfEnqueueResult::Accepted);
-    model.wakeup();
-    model.wakeup();
-    model.wakeup();
-    EXPECT_EQ(model.mutationStageCount(
-                  HnfSLCSF::MutationStage::U3CheckLatch), 1);
-    EXPECT_FALSE(model.hasSfReservation(1403));
-    EXPECT_EQ(model.seqReservationCount(), 0);
-    EXPECT_EQ(model.victimBufferOccupancy(), 1);
-    std::optional<SlcSfResponse> replay_response;
-    for (size_t cycle = 0; cycle < 16 && !replay_response; ++cycle) {
-        model.wakeup();
-        replay_response = model.popVisibleResponse();
-    }
-    ASSERT_TRUE(replay_response.has_value());
-    SlcSfResponse replay = std::move(*replay_response);
-    ASSERT_EQ(replay.status(), SlcSfTerminalStatus::Replay);
-    EXPECT_EQ(std::get<SlcSfReplay>(replay.payload()).reason,
-              SlcSfReplayReason::VictimBufferFull);
-    const auto after = model.probe(HnfSlcLookupReq{
-        0, RawReq{}, PocqTxnKind::Unknown, second_addr});
-    expectLookupResultsEqual(after.result, before.result);
-    expectArraySnapshotsEqual(after.snapshot.slc, before.snapshot.slc);
-    expectArraySnapshotsEqual(after.snapshot.sf, before.snapshot.sf);
-    EXPECT_FALSE(model.probe(HnfSlcLookupReq{
+    const SlcSfResponse second = completeMutation(
+        model, makeSlcSfFillCleanSharedReq(
+            mutationHeader(1403, third_addr), lineData(0x84), {}, token,
+            token.lookupReqId));
+    ASSERT_EQ(second.status(), SlcSfTerminalStatus::Done);
+    const auto& second_fill =
+        std::get<SlcSfFillResponse>(second.payload());
+    ASSERT_TRUE(second_fill.slcVictim.has_value());
+    EXPECT_EQ(second_fill.slcVictim->lineAddress, second_addr);
+    EXPECT_EQ(second_fill.slcVictim->line.data, lineData(0x83));
+    EXPECT_TRUE(model.probe(HnfSlcLookupReq{
         0, RawReq{}, PocqTxnKind::Unknown, third_addr}).result.slcHit);
-    EXPECT_EQ(model.victimBufferOccupancy(), 1);
-    const SlcSfResponse release = completeDirtyVictimRelease(
-        model, first_fill.slcVictim->victimId, TestAddr, 0, 5404, 1404);
-    EXPECT_EQ(release.status(), SlcSfTerminalStatus::Done);
     EXPECT_EQ(model.victimBufferOccupancy(), 0);
+    EXPECT_EQ(model.correctnessReplayCount(), 0);
 }
 
 TEST(HnfSlcSfMutationServiceTest,
-     SameLineDirtyVictimConflictReplaysWithoutMutation)
+     ReusedDirtyVictimAddressDoesNotDependOnPriorHandoff)
 {
     HnfSLCSF model(64, 1, 1, 1, 1);
     const uint64_t held_addr = TestAddr;
@@ -3178,27 +3065,21 @@ TEST(HnfSlcSfMutationServiceTest,
         held_addr, 0, lineData(0x87), PocqTxnKind::WriteUnique);
     const uint64_t replacement_addr = TestAddr + 128;
     token = completeLookupToken(model, 1412, replacement_addr);
-    const auto before = model.probe(HnfSlcLookupReq{
-        0, RawReq{}, PocqTxnKind::Unknown, held_addr});
-    SlcSfResponse replay = completeMutation(
+    SlcSfResponse second = completeMutation(
         model, makeSlcSfFillCleanSharedReq(
             mutationHeader(1413, replacement_addr), lineData(0x88), {},
             token, token.lookupReqId));
-    ASSERT_EQ(replay.status(), SlcSfTerminalStatus::Replay);
-    EXPECT_EQ(std::get<SlcSfReplay>(replay.payload()).reason,
-              SlcSfReplayReason::ResourceConflict);
-    const auto after = model.probe(HnfSlcLookupReq{
-        0, RawReq{}, PocqTxnKind::Unknown, held_addr});
-    expectLookupResultsEqual(after.result, before.result);
-    expectArraySnapshotsEqual(after.snapshot.slc, before.snapshot.slc);
-    EXPECT_EQ(model.victimBufferOccupancy(), 1);
-    const SlcSfResponse release = completeDirtyVictimRelease(
-        model, first_fill.slcVictim->victimId, held_addr, 0, 5414, 1414);
-    EXPECT_EQ(release.status(), SlcSfTerminalStatus::Done);
+    ASSERT_EQ(second.status(), SlcSfTerminalStatus::Done);
+    const auto& second_fill =
+        std::get<SlcSfFillResponse>(second.payload());
+    ASSERT_TRUE(second_fill.slcVictim.has_value());
+    EXPECT_EQ(second_fill.slcVictim->lineAddress, held_addr);
+    EXPECT_EQ(second_fill.slcVictim->line.data, lineData(0x87));
+    EXPECT_EQ(model.victimBufferOccupancy(), 0);
 }
 
 TEST(HnfSlcSfMutationServiceTest,
-     SlcAndSfVictimLatenciesBothApply)
+     SfVictimLatencyAppliesButSlcHandoffAddsNoLatency)
 {
     HnfSLCSFPipelineConfig config{};
     config.fillLatency = 4;
@@ -3224,13 +3105,11 @@ TEST(HnfSlcSfMutationServiceTest,
     }
     ASSERT_TRUE(response.has_value());
     EXPECT_EQ(model.currentCycle(), accepted_cycle + config.fillLatency +
-              config.victimLatency + config.sfEvictLatency + 2);
+              config.sfEvictLatency + 2);
     const auto& fill = std::get<SlcSfFillResponse>(response->payload());
     ASSERT_TRUE(fill.slcVictim.has_value());
     ASSERT_TRUE(fill.sfVictim.has_value());
-    const SlcSfResponse release = completeDirtyVictimRelease(
-        model, fill.slcVictim->victimId, TestAddr, 0, 5422, 1422);
-    EXPECT_EQ(release.status(), SlcSfTerminalStatus::Done);
+    EXPECT_EQ(model.victimBufferOccupancy(), 0);
 }
 
 TEST(HnfSlcSfMutationServiceTest,
@@ -3708,173 +3587,6 @@ TEST(HnfSlcSfMutationServiceTest,
     EXPECT_EQ(second.seqOccupancy(), 0);
 }
 
-TEST(HnfSlcSfMutationServiceTest,
-     CrossServiceReleaseResponsesFreeNeitherDirtyVictim)
-{
-    HnfSLCSFPipelineConfig config{};
-    config.victimBufferEntries = 1;
-    HnfSLCSF first(64, 1, 1, 1, 1, 8, config);
-    HnfSLCSF second(64, 1, 1, 1, 1, 8, config);
-    const auto prepare_victim = [](HnfSLCSF& model) {
-        model.writeLine(
-            TestAddr, 5, lineData(0xdc), PocqTxnKind::WriteUnique);
-        const uint64_t replacement_addr = TestAddr + 64;
-        const auto token =
-            completeLookupToken(model, 1750, replacement_addr);
-        const SlcSfResponse fill = completeMutation(
-            model, makeSlcSfFillCleanSharedReq(
-                mutationHeader(1751, replacement_addr), lineData(0xdd), {},
-                token, token.lookupReqId));
-        const auto& payload =
-            std::get<SlcSfFillResponse>(fill.payload());
-        EXPECT_TRUE(payload.slcVictim.has_value());
-        return *payload.slcVictim;
-    };
-    const SlcSfSlcVictim first_victim = prepare_victim(first);
-    const SlcSfSlcVictim second_victim = prepare_victim(second);
-    ASSERT_EQ(first_victim.victimId.value, second_victim.victimId.value);
-    ASSERT_EQ(first_victim.lineAddress, second_victim.lineAddress);
-    ASSERT_EQ(first_victim.owner, second_victim.owner);
-    constexpr uint32_t WritebackTxn = 6752;
-    first.markDirtyVictimWritebackIssued(
-        first_victim.victimId, first_victim.owner,
-        WriteNoSnpFullOpcode, WritebackTxn);
-    second.markDirtyVictimWritebackIssued(
-        second_victim.victimId, second_victim.owner,
-        WriteNoSnpFullOpcode, WritebackTxn);
-    const SlcSfResponse first_response = awaitVisibleResponse(
-        first, makeSlcSfReleaseDirtyVictimReq(
-            dirtyVictimReleaseHeader(
-                1752, first_victim.victimId, first_victim.lineAddress,
-                first_victim.owner, WritebackTxn),
-            first_victim.victimId));
-    const SlcSfResponse second_response = awaitVisibleResponse(
-        second, makeSlcSfReleaseDirtyVictimReq(
-            dirtyVictimReleaseHeader(
-                1752, second_victim.victimId, second_victim.lineAddress,
-                second_victim.owner, WritebackTxn),
-            second_victim.victimId));
-
-    EXPECT_EQ(first.acknowledgeVisibleCompletion(second_response),
-              SlcSfCompletionAckResult::IdentityMismatch);
-    EXPECT_EQ(second.acknowledgeVisibleCompletion(first_response),
-              SlcSfCompletionAckResult::IdentityMismatch);
-    EXPECT_EQ(first.dirtyVictimState(first_victim.victimId),
-              HnfSLCSF::VictimState::ReleaseCommittedAwaitAck);
-    EXPECT_EQ(second.dirtyVictimState(second_victim.victimId),
-              HnfSLCSF::VictimState::ReleaseCommittedAwaitAck);
-    EXPECT_EQ(first.victimBufferOccupancy(), 1);
-    EXPECT_EQ(second.victimBufferOccupancy(), 1);
-
-    EXPECT_EQ(first.acknowledgeVisibleCompletion(first_response),
-              SlcSfCompletionAckResult::Acknowledged);
-    EXPECT_EQ(second.acknowledgeVisibleCompletion(second_response),
-              SlcSfCompletionAckResult::Acknowledged);
-    EXPECT_EQ(first.victimBufferOccupancy(), 0);
-    EXPECT_EQ(second.victimBufferOccupancy(), 0);
-}
-
-TEST(HnfSlcSfMutationServiceTest,
-     DirtyVictimCapacityIsHeldUntilExactReleaseAck)
-{
-    HnfSLCSFPipelineConfig config{};
-    config.victimBufferEntries = 1;
-    HnfSLCSF model(64, 1, 1, 1, 1, 8, config);
-    const uint64_t victim_addr = TestAddr;
-    const uint64_t replacement_addr = TestAddr + 64;
-    const uint64_t third_addr = TestAddr + 128;
-    model.writeLine(
-        victim_addr, 2, lineData(0xdc), PocqTxnKind::WriteUnique);
-    const auto replacement_token =
-        completeLookupToken(model, 1800, replacement_addr);
-    const SlcSfResponse fill = completeMutation(
-        model, makeSlcSfFillCleanSharedReq(
-            mutationHeader(1801, replacement_addr), lineData(0xdd), {},
-            replacement_token, replacement_token.lookupReqId));
-    const auto& fill_payload =
-        std::get<SlcSfFillResponse>(fill.payload());
-    ASSERT_TRUE(fill_payload.slcVictim.has_value());
-    const SlcSfSlcVictim victim = *fill_payload.slcVictim;
-    model.writeLine(
-        replacement_addr, 3, lineData(0xde),
-        PocqTxnKind::WriteUnique);
-    const auto third_token =
-        completeLookupToken(model, 1802, third_addr);
-
-    constexpr uint32_t WritebackTxn = 6803;
-    model.markDirtyVictimWritebackIssued(
-        victim.victimId, victim.owner, WriteNoSnpFullOpcode,
-        WritebackTxn);
-    SlcSfReqHeader forged_header = dirtyVictimReleaseHeader(
-        1899, victim.victimId, victim.lineAddress, victim.owner,
-        WritebackTxn);
-    forged_header.trace.transactionId += 1;
-    const SlcSfResponse forged_release = completeMutation(
-        model, makeSlcSfReleaseDirtyVictimReq(
-            std::move(forged_header), victim.victimId));
-    EXPECT_EQ(forged_release.status(), SlcSfTerminalStatus::Error);
-    EXPECT_EQ(model.dirtyVictimState(victim.victimId),
-              HnfSLCSF::VictimState::WritebackIssued);
-    EXPECT_EQ(model.victimBufferOccupancy(), 1);
-
-    SlcSfRequest release_request = makeSlcSfReleaseDirtyVictimReq(
-        dirtyVictimReleaseHeader(
-            1803, victim.victimId, victim.lineAddress, victim.owner,
-            WritebackTxn),
-        victim.victimId);
-    const SlcSfUpdateReq typed_release =
-        std::get<SlcSfUpdateReq>(release_request);
-    ASSERT_EQ(model.tryEnqueue(std::move(release_request)),
-              SlcSfEnqueueResult::Accepted);
-    for (size_t cycle = 0;
-         cycle < 32 && model.respPendingCount() == 0; ++cycle) {
-        model.wakeup();
-    }
-    ASSERT_EQ(model.respPendingCount(), 1);
-    EXPECT_EQ(model.dirtyVictimState(victim.victimId),
-              HnfSLCSF::VictimState::ReleaseCommittedAwaitAck);
-    EXPECT_EQ(model.victimBufferOccupancy(), 1);
-
-    model.wakeup();
-    ASSERT_NE(model.frontVisibleResponse(), nullptr);
-    const SlcSfResponse visible_release =
-        *model.frontVisibleResponse();
-    EXPECT_EQ(model.acknowledgeVisibleCompletion(
-                  makeSlcSfDoneResponse(typed_release)),
-              SlcSfCompletionAckResult::IdentityMismatch);
-    EXPECT_EQ(model.victimBufferOccupancy(), 1);
-    EXPECT_EQ(model.dirtyVictimState(victim.victimId),
-              HnfSLCSF::VictimState::ReleaseCommittedAwaitAck);
-
-    SlcSfRequest blocked_fill = makeSlcSfFillCleanSharedReq(
-        mutationHeader(1804, third_addr), lineData(0xdf), {},
-        third_token, third_token.lookupReqId);
-    ASSERT_EQ(model.tryEnqueue(std::move(blocked_fill)),
-              SlcSfEnqueueResult::Accepted);
-    for (size_t cycle = 0;
-         cycle < 32 && model.respPendingCount() == 0; ++cycle) {
-        model.wakeup();
-    }
-    ASSERT_EQ(model.respPendingCount(), 1);
-    EXPECT_EQ(model.victimBufferOccupancy(), 1);
-    EXPECT_EQ(model.dirtyVictimState(victim.victimId),
-              HnfSLCSF::VictimState::ReleaseCommittedAwaitAck);
-    EXPECT_FALSE(model.probe(HnfSlcLookupReq{
-        0, RawReq{}, PocqTxnKind::Unknown, third_addr}).result.slcHit);
-
-    EXPECT_EQ(model.acknowledgeVisibleCompletion(visible_release),
-              SlcSfCompletionAckResult::Acknowledged);
-    EXPECT_EQ(model.victimBufferOccupancy(), 0);
-    EXPECT_EQ(model.dirtyVictimState(victim.victimId),
-              HnfSLCSF::VictimState::Released);
-    model.wakeup();
-    auto blocked_response = model.popVisibleResponse();
-    ASSERT_TRUE(blocked_response.has_value());
-    ASSERT_EQ(blocked_response->status(), SlcSfTerminalStatus::Replay);
-    EXPECT_EQ(std::get<SlcSfReplay>(blocked_response->payload()).reason,
-              SlcSfReplayReason::VictimBufferFull);
-}
-
 TEST(HnfSlcSfLookupPipelineTest, LookupHasConfiguredLatency)
 {
     const HnfSLCSFPipelineConfig config{2, 2, 1, 1, 1, 1, 3};
@@ -3908,7 +3620,6 @@ enum class BaseServiceLatencyCase
     UpdateMapped,
     UpdateOne,
     UpdateTwo,
-    ReleaseDirtyVictim,
     OrdinaryEvictRemoveSharer,
     FlushL3,
     EarlyLookupReplay,
@@ -3963,38 +3674,6 @@ TEST_P(HnfSlcSfBaseServiceLatencyTest, CompletesAtMappedServiceDeadline)
         request = makeSlcSfCompleteMaintenanceReq(
             mutationHeader(1404), PocqTxnKind::MakeInvalid, 0x90, token,
             token.lookupReqId);
-        expected_latency = config.updateLatency;
-        break;
-      }
-      case BaseServiceLatencyCase::ReleaseDirtyVictim: {
-        model.writeLine(
-            TestAddr, 0, lineData(0x98), PocqTxnKind::WriteUnique);
-        const uint64_t replacement_addr = TestAddr + 64;
-        const auto token = completeLookupToken(
-            model, 1414, replacement_addr);
-        SlcSfRequest fill = makeSlcSfFillCleanSharedReq(
-            mutationHeader(1415, replacement_addr), lineData(0x99), {},
-            token, token.lookupReqId);
-        ASSERT_EQ(model.tryEnqueue(std::move(fill)),
-                  SlcSfEnqueueResult::Accepted);
-        std::optional<SlcSfResponse> fill_response;
-        for (size_t cycle = 0; cycle < 16 && !fill_response; ++cycle) {
-            model.wakeup(900 + cycle);
-            fill_response = model.popVisibleResponse();
-        }
-        ASSERT_TRUE(fill_response.has_value());
-        const auto& fill_payload =
-            std::get<SlcSfFillResponse>(fill_response->payload());
-        ASSERT_TRUE(fill_payload.slcVictim.has_value());
-        const SlcSfVictimId victim_id =
-            fill_payload.slcVictim->victimId;
-        constexpr uint32_t WritebackTxn = 4416;
-        model.markDirtyVictimWritebackIssued(
-            victim_id, 0, WriteNoSnpFullOpcode, WritebackTxn);
-        request = makeSlcSfReleaseDirtyVictimReq(
-            dirtyVictimReleaseHeader(
-                1416, victim_id, TestAddr, 0, WritebackTxn),
-            victim_id);
         expected_latency = config.updateLatency;
         break;
       }
@@ -4091,11 +3770,6 @@ TEST_P(HnfSlcSfBaseServiceLatencyTest, CompletesAtMappedServiceDeadline)
                GetParam() == BaseServiceLatencyCase::EarlyMutationReplay) ?
                   SlcSfTerminalStatus::Replay :
                   SlcSfTerminalStatus::Done);
-    if (GetParam() == BaseServiceLatencyCase::ReleaseDirtyVictim) {
-        EXPECT_EQ(response->operationKind(),
-                  SlcSfOperationKind::ReleaseDirtyVictim);
-        EXPECT_EQ(model.victimBufferOccupancy(), 0);
-    }
     if (GetParam() == BaseServiceLatencyCase::OrdinaryEvictRemoveSharer) {
         EXPECT_EQ(response->operationKind(),
                   SlcSfOperationKind::RemoveSharer);
@@ -5408,10 +5082,6 @@ TEST(HnfSlcSfReplacementPolicyTest,
     EXPECT_TRUE(probeLookup(model, replacement, 7).result.slcHit);
     EXPECT_FALSE(probeLookup(model, expected_victim, 3).result.slcHit);
 
-    const SlcSfResponse release = completeDirtyVictimRelease(
-        model, fill.slcVictim->victimId, expected_victim,
-        fill.slcVictim->owner, 7300, 9303);
-    EXPECT_EQ(release.status(), SlcSfTerminalStatus::Done);
     expectConcurrentServiceEmpty(model);
 }
 
@@ -5727,10 +5397,6 @@ TEST_F(HnfSlcSfCheckpointTest, RestoredNearMaximumVictimIdNeverWraps)
     ASSERT_EQ(first_fill.slcVictim->victimId.value, NearMaximum);
     EXPECT_EQ(restored.nextVictimIdentity(),
               std::numeric_limits<uint64_t>::max());
-    const SlcSfResponse release = completeDirtyVictimRelease(
-        restored, first_fill.slcVictim->victimId, first_victim_addr, 1,
-        7200, 9912);
-    ASSERT_EQ(release.status(), SlcSfTerminalStatus::Done);
     ASSERT_EQ(restored.victimBufferOccupancy(), 0);
 
     restored.writeLine(

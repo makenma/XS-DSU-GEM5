@@ -85,7 +85,7 @@ dirty SLC victim 和 SF victim 分别在该请求的基础 service latency 上�
 `tests/gem5/chi/slcsf_child_params.py`。
 
 只允许在 HomeNode 完成 D1 upstream quiesce 和 D2 child admission seal，且
-parent/CC/deferred-retire 与 child request/response/in-flight/set-lock/VictimBuffer/SEQ
+parent/CC/deferred-retire 与 child request/response/in-flight/set-lock/SEQ
 全部空闲时创建 checkpoint。checkpoint 分属两个序列化边界：
 
 - child 保存 initialized/logical-cycle，SLC tag/data/state/generation/replacement，
@@ -248,7 +248,7 @@ case PocqActionKind::DoSlcLookup: {
 | 段 | 工作 | 读 | 写 |
 | --- | --- | --- | --- |
 | U0 Decode | 解析 commit kind（commitRead/completeMaintenance/writeLine/flush*/removeSharer），校验 commit token（generation） | — | 入流水寄存器 |
-| U1 Victim | 若需替换：`selectSfVictim` → `installSeqVictim`（SF victim）或 dirty SLC victim 快照 | SLC/SF set | SEQ、VictimBuffer |
+| U1 Victim | 若需替换：`selectSfVictim` → `installSeqVictim`（SF victim），或 exact capture/seal 后将 dirty SLC victim 直交 PoCQ | SLC/SF set | SEQ；SLC victim 仅保存在当前 in-flight response |
 | U2 Write | `installSlc` / `allocateSf` / `invalidateSlc` / `invalidateSf` / `removeSharer` 主体 | SLC/SF set | SLC、SF |
 | U3 Check+Latch | `checkLineInvariant()`，写 `respPending` | — | respPending |
 
@@ -776,7 +776,7 @@ TEST(HnfSlcSfPipelineTest, ReqQueueFullReturnsNoCredit) {
 | §4.3 CommitToken | §2.4 generation 校验 | 一致 |
 | §6 SlcSfService | §2.2 流水段 + §3.2 `tick()` | 拆为独立 `SlcSfService` 类 |
 | §5 SlcSnoopFilter 顶层 | 阶段 A 内嵌于 `HnfSLCSF` | 阶段 7 拆 `ClockedObject` |
-| §8 VictimBuffer/SeqBuffer | 复用现有 SEQ；VictimBuffer 当前内嵌于 SLC 替换 | 阶段 7 拆独立类 |
+| §8 SLC victim 直交/SeqBuffer | SF victim 复用 SEQ；dirty SLC victim 直交 PoCQ | 与 RTL 路径一致，无独立 VictimBuffer |
 | §11 PoCQ graph 对接 | §4 Issue/Wait 节点已存在于现有图 | 一致 |
 | §16 不变量 | §7.2 断言 | 一致 |
 

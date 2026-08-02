@@ -1,0 +1,4 @@
+schema_version,profiler_name,sample_index,tick,retired_macro_insts,pc,stack_depth,stack_addresses
+1,system.guest_stack_profilers1,0,1378506735,1,0xd90ce,2,0xd90ce;0xd90ce
+1,system.guest_stack_profilers1,1,1390718055,1000,0xf3a1a,6,0xd90ce;0x2c024;0x4368a;0x3bfc4;0xf39e4;0xf3a1a
+1,system.guest_stack_profilers1,2,1394055810,2000,0x4384a,4,0xd90ce;0x2c024;0x4368a;0x4384a
