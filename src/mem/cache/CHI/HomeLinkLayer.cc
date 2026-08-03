@@ -4,8 +4,6 @@
 
 #include "mem/cache/CHI/HomeLinkLayer.hh"
 
-#include <optional>
-
 #include "mem/cache/CHI/HomeNodeFull.hh"
 #include "mem/cache/CHI/base/ChiChannel.hh"
 
@@ -47,6 +45,80 @@ HomeLinkLayer::HomeLinkLayer( HomeNodeFull* hnf,
         &HomeLinkLayer::doStageH3_Dat
     };
 }
+
+bool
+HomeLinkLayer::PendingRetry::enqueue(RawReq req)
+{
+    // operator[] 自动建条目: counts 全 0, arbPointer = HighHigh。
+    pendingPool[req.srcid].counts[WhichPriority(req.qos)]++;
+    return true;
+}
+
+HomeLinkLayer::PendingRetry::PoolPriority
+HomeLinkLayer::PendingRetry::arbQos(SrcId srcid)
+{
+    auto it = pendingPool.find(srcid);
+    if (it == pendingPool.end())
+        return PoolPriorityNum;
+
+    Entry& e = it->second;
+    for (int idx = 0; idx < PoolPriorityNum; ++idx) {
+        int pri = (static_cast<int>(e.arbPointer) + idx) % PoolPriorityNum;
+        if (e.counts[pri] > 0) {
+            e.counts[pri]--;
+            // 指针推进到赢家之后: 被服务的优先级排到队尾, 保证公平轮询。
+            e.arbPointer = nextPriority(static_cast<PoolPriority>(pri));
+            return static_cast<PoolPriority>(pri);
+        }
+    }
+    return PoolPriorityNum;
+}
+
+HomeLinkLayer::PendingRetry::SrcId
+HomeLinkLayer::PendingRetry::arbSrcId()
+{
+    // 从 arbSrcPointer 起绕一圈: [pointer, end) 再回绕 [begin, pointer)。
+    auto stop = pendingPool.lower_bound(arbSrcPointer);
+
+    for (auto it = stop; it != pendingPool.end(); ++it) {
+        SrcId win = tryPick(it);
+        if (win != -1)
+            return win;
+    }
+    for (auto it = pendingPool.begin(); it != stop; ++it) {
+        SrcId win = tryPick(it);
+        if (win != -1)
+            return win;
+    }
+    return -1;
+}
+
+HomeLinkLayer::PendingRetry::SrcId
+HomeLinkLayer::PendingRetry::tryPick(std::map<SrcId, Entry>::iterator it)
+{
+    for (int count : it->second.counts) {
+        if (count > 0) {
+            arbSrcPointer = it->first + 1;   // 推进到赢家之后, 保证公平
+            return it->first;
+        }
+    }
+    return -1;
+}
+
+HomeLinkLayer::PendingElement
+HomeLinkLayer::PendingRetry::arbPend()
+{
+    SrcId srcid = arbSrcId();
+    if (srcid == -1)
+        return PendingElement{-1, -1};       // 无待重试
+
+    PoolPriority pri = arbQos(srcid);
+    if (pri == PoolPriorityNum)
+        panic("arbPend: srcid %d went empty between arbSrcId and arbQos",
+              srcid);
+    return PendingElement{srcid, pri};
+}
+
 
 void
 HomeLinkLayer::wakeup()

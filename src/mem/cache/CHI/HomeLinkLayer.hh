@@ -3,9 +3,8 @@
 
 #include <array>
 #include <deque>
+#include <map>
 #include <type_traits>
-#include <unordered_map>
-#include <vector>
 
 #include "base/logging.hh"
 #include "base/trace.hh"
@@ -52,7 +51,7 @@ class HomeLinkLayer :  public ruby::Consumer
             std::array<std::array<int, PoolDimNum>, PoolPriorityNum> pool = {};
 
 
-            PoolPriority WhichPriority(int qos){
+            PoolPriority WhichPriority(int qos) const {
                 switch (qos) {
                     case 15:          return HighHigh;
                     case 12 ... 14:   return High;
@@ -62,7 +61,10 @@ class HomeLinkLayer :  public ruby::Consumer
                 }
             }
 
-            bool is_CanPush(int qos, PoolPriority Pri)
+            // Try to push into the target priority pool, falling back to
+            // lower-priority pools if the target one is full. Mutates pool
+            // on success.
+            bool tryPush(PoolPriority Pri)
             {
                 for (int p = Pri; p < PoolPriorityNum; ++p) {
                     if (pool[p][QosCount] + 1 <= pool[p][QosThreshold]) {
@@ -73,10 +75,8 @@ class HomeLinkLayer :  public ruby::Consumer
                 return false;
             }
 
-            bool enqueue(int qos){
-                PoolPriority Pri;
-                Pri  = WhichPriority(qos);
-                return is_CanPush(qos, Pri);
+            bool enqueue(int qos) {
+                return tryPush(WhichPriority(qos));
             }
 
             QosPool() = default;
@@ -91,31 +91,64 @@ class HomeLinkLayer :  public ruby::Consumer
         struct PendingElement
         {
             int srcid;
-            int txnid;
+            int qos;
         };
 
-        struct PendingRetry:QosPool
+        // 待重试队列: 每个 srcid 一条记录, 内含 4 个优先级的计数和该
+        // srcid 的优先级轮询指针。计数与指针同条目存储, 结构性消除了
+        // "两张 map 忘记同步"的隐患 (旧版 PendingPool/ArbPointer 靠
+        // enqueue 手工维护不变量)。
+        struct PendingRetry : QosPool
         {
-            std::array<std::vector<PendingElement>, PoolPriorityNum> PendingPool;
+            using SrcId = int;
 
-            bool enqueue(RawReq req){
-                PoolPriority Pri = WhichPriority(req.qos);
-                if (PendingPool[Pri].size() == 256){
-                    panic("Retry overflow!!");
-                }
-                PendingElement ans;
-                ans.txnid = req.txnid;
-                ans.srcid = req.srcid;
-                PendingPool[Pri].push_back(ans);
-                return true;
+            struct Entry
+            {
+                std::array<int, PoolPriorityNum> counts = {};
+                PoolPriority arbPointer = HighHigh;
+            };
 
-            }
+            std::map<SrcId, Entry> pendingPool;
+            SrcId arbSrcPointer = 0;
 
+            bool enqueue(RawReq req);
 
+            // 轮询 srcid 的 counts (从 arbPointer 起绕一圈), 命中则消费
+            // 该优先级并把指针推进到赢家之后, 返回赢家优先级;
+            // srcid 无记录或全空时返回 PoolPriorityNum。
+            PoolPriority arbQos(SrcId srcid);
+
+            // 从 arbSrcPointer 起绕一圈, 返回第一个有积压的 srcid;
+            // 全空返回 -1。
+            SrcId arbSrcId();
+
+            // 主入口: 返回仲裁赢家的 {srcid, 优先级} (qos 字段承载优先级),
+            // 全空返回 {-1, -1}。
+            PendingElement arbPend();
 
             PendingRetry() = default;
 
+          private:
+            // 轮询指针 +1 回绕 (HighHigh → High → Medium → Low → HighHigh)。
+            static PoolPriority nextPriority(PoolPriority p)
+            {
+                int next = static_cast<int>(p) + 1;
+                return next == PoolPriorityNum
+                    ? HighHigh
+                    : static_cast<PoolPriority>(next);
+            }
 
+            // 该 srcid 是否有积压; 有则推进 arbSrcPointer 并返回 srcid,
+            // 无则返回 -1。
+            SrcId tryPick(std::map<SrcId, Entry>::iterator it);
+
+            int pendingNum(int qos, SrcId srcid) const
+            {
+                auto it = pendingPool.find(srcid);
+                return it == pendingPool.end()
+                    ? -1
+                    : it->second.counts[WhichPriority(qos)];
+            }
         };
 
         const int RnfNum;
