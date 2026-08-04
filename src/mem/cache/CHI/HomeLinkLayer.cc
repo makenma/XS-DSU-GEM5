@@ -14,11 +14,12 @@ namespace gem5::Chi {
 
 HomeLinkLayer::HomeLinkLayer( HomeNodeFull* hnf,
                           const std::array<int, 4>& thresholds,
-                            const int RnfNum)
+                            const int RnfNum, const int retryfifo_num)
   : Consumer(hnf),
     m_homenode(hnf),
     RnfNum(RnfNum),
-    m_qosPool(thresholds)
+    m_qosPool(thresholds),
+    m_RetryFifo(retryfifo_num)
 {
     reqFuncs = {
         &HomeLinkLayer::doStageH0_Req,
@@ -126,22 +127,34 @@ HomeLinkLayer::wakeup()
     DPRINTF(HomeLinkLayer, "HomeLinklayer wakeup!!!\n");
     DPRINTF(HomeLinkLayer, "home wakeup: rxport=%p\n", rxport);
 
-    for (auto& flit : flits) {
-        std::visit([this](auto& f) {
-            LoopChannelPipline(typeid(f));
-        }, flit);
-    }
-}
+    for (int i = 0; i < 4; ++i) {
+        std::visit([this, i](auto& f) {
+            using FlitType = std::decay_t<decltype(f)>;
+            auto& q = in_flight[i];
 
-void
-HomeLinkLayer::LoopChannelPipline(const std::type_index& flitType)
-{
-    auto getFlit = rxport->getRxFlit(flitType);
-    if (!getFlit) {
-        return;
-    }
+            // ① 推进: 每个在途 flit 每周期走一级 (H0→H1→H2→H3)
+            for (auto& fv : q)
+                advancePipeline(fv);
 
-    advancePipeline(*getFlit);
+            // ② 出流水: 走完 H3 的 (stage>=4) 发到 TX; TX 无 credit 则
+            //    留在队头等下周期再发 (背压, 不丢 flit)
+            while (!q.empty() &&
+                   std::visit([](auto& x) { return x.stage >= 4; },
+                              q.front())) {
+                FlitVariant done = std::move(q.front());
+                q.pop_front();
+                if (!rxport->enqueueTx(channelOf<FlitType>(), done)) {
+                    q.push_front(done);
+                    break;
+                }
+            }
+
+            // ③ 准入: rx 有新 flit 则入流水 (rx 深度受 credit 限制)
+            auto getFlit = rxport->getRxFlit(typeid(f));
+            if (getFlit)
+                q.push_back(*getFlit);
+        }, flits[i]);
+    }
 }
 
 void
@@ -183,6 +196,14 @@ void HomeLinkLayer::doStageH1_Req(RawReq* Req) {
 
     }
     else{
+        //fast path
+        if (m_RetryFifo.full()){
+            //TODO:stall req credit
+        }
+        else {
+            m_RetryFifo.push({static_cast<int>(Req->srcid), Req->qos});
+            //TODO:return req credit
+        }
     }
     Req->next_stage();
     m_homenode->scheduleEvent(gem5::Cycles(1));

@@ -26,7 +26,8 @@ class HomeLinkLayer :  public ruby::Consumer
 
         HomeLinkLayer(HomeNodeFull *HNF,
             const std::array<int, 4>& thresholds,
-            const int RnfNum
+            const int RnfNum,
+            const int retryfifo_num
         );
         void wakeup();
         void print(std::ostream& out) const {};
@@ -34,8 +35,12 @@ class HomeLinkLayer :  public ruby::Consumer
     private:
 
         HomeNodeFull *m_homenode;
-        std::deque<FlitVariant> pipline_queue;
         ChiCommonPort *rxport;
+
+        // 每类型一条在途流水队列: 同类型多个 flit 可同时处于不同阶段
+        // (flit0 在 H3、flit1 在 H1 并行)。索引与 flits 一一对应。
+        // 入流水深度受 rx credit 限制; 出流水受 TX credit 背压。
+        std::array<std::deque<FlitVariant>, 4> in_flight;
         std::array<FlitVariant, 4> flits = {
             RawReq{},
             RawRsp{},
@@ -151,9 +156,56 @@ class HomeLinkLayer :  public ruby::Consumer
             }
         };
 
+        struct RetryFifo
+        {
+            struct Item
+            {
+                int srcid;
+                int qos;
+            };
+
+            explicit RetryFifo(int capacity)
+              : buf(capacity), capacity(capacity)
+            {
+            }
+
+            bool push(const Item& item)          // 满 → false, 策略交给调用方
+            {
+                if (count == capacity)
+                    return false;
+                buf[tail] = item;
+                tail = (tail + 1) % capacity;
+                count++;
+                return true;
+            }
+
+            bool pop(Item& out)                  // 空 → false
+            {
+                if (count == 0)
+                    return false;
+                out = buf[head];
+                head = (head + 1) % capacity;
+                count--;
+                return true;
+            }
+
+            bool full()  const { return count == capacity; }
+            bool empty() const { return count == 0; }
+            int  size()  const { return count; }
+
+          private:
+            std::vector<Item> buf;
+            int head = 0;
+            int tail = 0;
+            int count = 0;
+            int capacity;
+        };
+
+
         const int RnfNum;
         QosPool m_qosPool;
         PendingRetry m_PendingRetry;
+        RetryFifo m_RetryFifo;
         std::array<MemFn<RawReq>, 4> reqFuncs;
         std::array<MemFn<RawRsp>, 4> rspFuncs;
         std::array<MemFn<RawSnp>, 4> snpFuncs;
@@ -165,7 +217,22 @@ class HomeLinkLayer :  public ruby::Consumer
 
         void advancePipeline(FlitVariant& fv);
 
-        void LoopChannelPipline(const std::type_index& flitType);
+        // flit 类型 → 通道映射 (与 ChannelType 枚举顺序一致)。
+        template <typename FlitType>
+        static ChannelType channelOf()
+        {
+            if constexpr (std::is_same_v<FlitType, RawReq>) {
+                return ChannelType::REQ;
+            } else if constexpr (std::is_same_v<FlitType, RawRsp>) {
+                return ChannelType::RSP;
+            } else if constexpr (std::is_same_v<FlitType, RawSnp>) {
+                return ChannelType::SNP;
+            } else {
+                static_assert(std::is_same_v<FlitType, RawDat>,
+                              "Unsupported CHI flit type");
+                return ChannelType::DAT;
+            }
+        }
 
         //pipline function
         void doStageH0_Req(RawReq* Req);
