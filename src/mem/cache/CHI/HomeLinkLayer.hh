@@ -80,6 +80,7 @@ class HomeLinkLayer :  public ruby::Consumer
                 return false;
             }
 
+
             bool enqueue(int qos) {
                 return tryPush(WhichPriority(qos));
             }
@@ -130,6 +131,9 @@ class HomeLinkLayer :  public ruby::Consumer
             // 主入口: 返回仲裁赢家的 {srcid, 优先级} (qos 字段承载优先级),
             // 全空返回 {-1, -1}。
             PendingElement arbPend();
+
+            // map 里没有任何 srcid 的记录时返回 true。
+            bool empty() const { return pendingPool.empty(); }
 
             PendingRetry() = default;
 
@@ -234,6 +238,12 @@ class HomeLinkLayer :  public ruby::Consumer
             }
         }
 
+        void ArbPcrdCredit();
+
+        // 流水非空 或 retry 池/队列有待发数据时返回 true。
+        // wakeup 据此决定是否调度下一拍 (按需唤醒, 省仿真时间)。
+        bool hasPendingWork() const;
+
         //pipline function
         void doStageH0_Req(RawReq* Req);
         void doStageH0_Rsp(RawRsp* Rsp);
@@ -244,17 +254,6 @@ class HomeLinkLayer :  public ruby::Consumer
         void doStageH1_Rsp(RawRsp* Rsp);
         void doStageH1_Snp(RawSnp* Snp);
         void doStageH1_Dat(RawDat* Dat);
-
-        void doStageH2_Req(RawReq* Req);
-        void doStageH2_Rsp(RawRsp* Rsp);
-        void doStageH2_Snp(RawSnp* Snp);
-        void doStageH2_Dat(RawDat* Dat);
-
-        void doStageH3_Req(RawReq* Req);
-        void doStageH3_Rsp(RawRsp* Rsp);
-        void doStageH3_Snp(RawSnp* Snp);
-        void doStageH3_Dat(RawDat* Dat);
-
 
 
 

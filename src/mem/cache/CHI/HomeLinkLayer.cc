@@ -23,27 +23,19 @@ HomeLinkLayer::HomeLinkLayer( HomeNodeFull* hnf,
 {
     reqFuncs = {
         &HomeLinkLayer::doStageH0_Req,
-        &HomeLinkLayer::doStageH1_Req,
-        &HomeLinkLayer::doStageH2_Req,
-        &HomeLinkLayer::doStageH3_Req
+        &HomeLinkLayer::doStageH1_Req
         };
      rspFuncs = {
         &HomeLinkLayer::doStageH0_Rsp,
-        &HomeLinkLayer::doStageH1_Rsp,
-        &HomeLinkLayer::doStageH2_Rsp,
-        &HomeLinkLayer::doStageH3_Rsp
+        &HomeLinkLayer::doStageH1_Rsp
     };
     snpFuncs = {
         &HomeLinkLayer::doStageH0_Snp,
-        &HomeLinkLayer::doStageH1_Snp,
-        &HomeLinkLayer::doStageH2_Snp,
-        &HomeLinkLayer::doStageH3_Snp
+        &HomeLinkLayer::doStageH1_Snp
     };
     datFuncs = {
         &HomeLinkLayer::doStageH0_Dat,
-        &HomeLinkLayer::doStageH1_Dat,
-        &HomeLinkLayer::doStageH2_Dat,
-        &HomeLinkLayer::doStageH3_Dat
+        &HomeLinkLayer::doStageH1_Dat
     };
 }
 
@@ -127,19 +119,26 @@ HomeLinkLayer::wakeup()
     DPRINTF(HomeLinkLayer, "HomeLinklayer wakeup!!!\n");
     DPRINTF(HomeLinkLayer, "home wakeup: rxport=%p\n", rxport);
 
+    // ① retry 仲裁: 与流水【同一拍并行】的独立数据通路, 不是串行步骤。
+    //    放在最前 = retry 优先占用 REQ credit (硬件防死锁惯例);
+    //    想给流水优先就挪到循环后面。每拍无条件执行, 不依赖 REQ 到达。
+    ArbPcrdCredit();
+
     for (int i = 0; i < 4; ++i) {
         std::visit([this, i](auto& f) {
             using FlitType = std::decay_t<decltype(f)>;
             auto& q = in_flight[i];
 
-            // ① 推进: 每个在途 flit 每周期走一级 (H0→H1→H2→H3)
+            // ① 推进: 每个在途 flit 每周期走一级 (H0 → H1)
             for (auto& fv : q)
                 advancePipeline(fv);
 
-            // ② 出流水: 走完 H3 的 (stage>=4) 发到 TX; TX 无 credit 则
-            //    留在队头等下周期再发 (背压, 不丢 flit)
+            // ② 出流水: 走完 H1 的 (stage>=2) 发到 TX。
+            //    正常是固定的 (入流水后第 2 拍), 但 TX 无 credit 时会
+            //    留在队头等待, 所以实际出流水的拍数不固定 ——
+            //    这是背压, 不是 bug。
             while (!q.empty() &&
-                   std::visit([](auto& x) { return x.stage >= 4; },
+                   std::visit([](auto& x) { return x.stage >= 2; },
                               q.front())) {
                 FlitVariant done = std::move(q.front());
                 q.pop_front();
@@ -155,6 +154,23 @@ HomeLinkLayer::wakeup()
                 q.push_back(*getFlit);
         }, flits[i]);
     }
+
+    // 按需调度: 有活才排下一拍, 没活就睡 (省仿真时间)。
+    // 唤醒源: ①新 flit 到达 (端口 wakeup) ②credit 返还 (increaseTxCredit
+    // 里 wakeup) ③这里自调度。三者缺一就会卡死。
+    if (hasPendingWork())
+        scheduleEvent(gem5::Cycles(1));
+}
+
+bool
+HomeLinkLayer::hasPendingWork() const
+{
+    // 流水里还有 flit, 或 retry 池/队列有待发数据
+    for (const auto& q : in_flight) {
+        if (!q.empty())
+            return true;
+    }
+    return !m_RetryFifo.empty() || !m_PendingRetry.empty();
 }
 
 void
@@ -180,6 +196,18 @@ HomeLinkLayer::advancePipeline(FlitVariant& fv)
 }
 
 
+void HomeLinkLayer::ArbPcrdCredit(){
+    // 先查 credit 再出队: 不满足就下拍再试, 不空转不丢序
+    if (m_PendingRetry.empty())
+        return;
+    if (!rxport->hasTxCredit(ChannelType::RSP))
+        return;
+
+    PendingElement pcrd_grant = m_PendingRetry.arbPend();
+    //TODO: 用 pcrd_grant (srcid/优先级) 构造 retry flit 并 enqueueTx 发送
+}
+
+
 
 
 // RawReq
@@ -187,7 +215,6 @@ void HomeLinkLayer::doStageH0_Req(RawReq* Req) {
     IS_THIS_STAGE(Req, 0)
     Req->next_stage();
     DPRINTF(HomeLinkLayer, "HomeLinklayer get req!!!\n");
-    m_homenode->scheduleEvent(gem5::Cycles(1));
 }
 void HomeLinkLayer::doStageH1_Req(RawReq* Req) {
     IS_THIS_STAGE(Req, 1)
@@ -206,69 +233,30 @@ void HomeLinkLayer::doStageH1_Req(RawReq* Req) {
         }
     }
     Req->next_stage();
-    m_homenode->scheduleEvent(gem5::Cycles(1));
-}
-void HomeLinkLayer::doStageH2_Req(RawReq* Req) {
-    IS_THIS_STAGE(Req, 2) Req->next_stage();
-    m_homenode->scheduleEvent(gem5::Cycles(1));
-}
-void HomeLinkLayer::doStageH3_Req(RawReq* Req) {
-    IS_THIS_STAGE(Req, 3) Req->next_stage();
-    m_homenode->scheduleEvent(gem5::Cycles(1));
 }
 
 // RawRsp
 void HomeLinkLayer::doStageH0_Rsp(RawRsp* Rsp) {
     IS_THIS_STAGE(Rsp, 0) Rsp->next_stage();
-    m_homenode->scheduleEvent(gem5::Cycles(1));
 }
 void HomeLinkLayer::doStageH1_Rsp(RawRsp* Rsp) {
     IS_THIS_STAGE(Rsp, 1) Rsp->next_stage();
-    m_homenode->scheduleEvent(gem5::Cycles(1));
-}
-void HomeLinkLayer::doStageH2_Rsp(RawRsp* Rsp) {
-    IS_THIS_STAGE(Rsp, 2) Rsp->next_stage();
-    m_homenode->scheduleEvent(gem5::Cycles(1));
-}
-void HomeLinkLayer::doStageH3_Rsp(RawRsp* Rsp) {
-    IS_THIS_STAGE(Rsp, 3) Rsp->next_stage();
-    m_homenode->scheduleEvent(gem5::Cycles(1));
 }
 
 // RawSnp
 void HomeLinkLayer::doStageH0_Snp(RawSnp* Snp) {
     IS_THIS_STAGE(Snp, 0) Snp->next_stage();
-    m_homenode->scheduleEvent(gem5::Cycles(1));
 }
 void HomeLinkLayer::doStageH1_Snp(RawSnp* Snp) {
     IS_THIS_STAGE(Snp, 1) Snp->next_stage();
-    m_homenode->scheduleEvent(gem5::Cycles(1));
-}
-void HomeLinkLayer::doStageH2_Snp(RawSnp* Snp) {
-    IS_THIS_STAGE(Snp, 2) Snp->next_stage();
-    m_homenode->scheduleEvent(gem5::Cycles(1));
-}
-void HomeLinkLayer::doStageH3_Snp(RawSnp* Snp) {
-    IS_THIS_STAGE(Snp, 3) Snp->next_stage();
-    m_homenode->scheduleEvent(gem5::Cycles(1));
 }
 
 // RawDat
 void HomeLinkLayer::doStageH0_Dat(RawDat* Dat) {
     IS_THIS_STAGE(Dat, 0) Dat->next_stage();
-    m_homenode->scheduleEvent(gem5::Cycles(1));
 }
 void HomeLinkLayer::doStageH1_Dat(RawDat* Dat) {
     IS_THIS_STAGE(Dat, 1) Dat->next_stage();
-    m_homenode->scheduleEvent(gem5::Cycles(1));
-}
-void HomeLinkLayer::doStageH2_Dat(RawDat* Dat) {
-    IS_THIS_STAGE(Dat, 2) Dat->next_stage();
-    m_homenode->scheduleEvent(gem5::Cycles(1));
-}
-void HomeLinkLayer::doStageH3_Dat(RawDat* Dat) {
-    IS_THIS_STAGE(Dat, 3) Dat->next_stage();
-    m_homenode->scheduleEvent(gem5::Cycles(1));
 }
 
 

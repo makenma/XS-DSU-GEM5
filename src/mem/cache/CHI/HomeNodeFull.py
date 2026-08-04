@@ -19,3 +19,9 @@ class HomeNodeFull(BasicChiComponent):
     qos_thresholds = VectorParam.Int(
         [100, 80, 60, 40],
         "QoS threshold per priority [HH, H, M, L]")
+
+    # Retry FIFO depth: 至少覆盖 credit 往返期间可能堆积的重试量 (BDP)。
+    retry_fifo_size = Param.Int(16, "Retry FIFO depth")
+
+    # Number of RN-F nodes (used by HomeLinkLayer).
+    rnf_num = Param.Int(1, "Number of RN-F nodes")

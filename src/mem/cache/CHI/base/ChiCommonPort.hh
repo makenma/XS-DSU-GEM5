@@ -47,12 +47,18 @@ public:
         auto idx = static_cast<size_t>(ch);
         rxCredit[idx] += val;
         checkRxCredit(ch);
+        // 收到 credit 返还 → 唤醒本端 consumer (可能有 flit 等着发)
+        if (m_consumer)
+            m_consumer->wakeup();
     }
 
     void increaseTxCredit(ChannelType ch, uint8_t val = 1) {
         auto idx = static_cast<size_t>(ch);
         txCredit[idx] += val;
         checkTxCredit(ch);
+        // 收到 credit 返还 → 唤醒本端 consumer (可能有 retry 等着发)
+        if (m_consumer)
+            m_consumer->wakeup();
     }
 
     void checkRxCredit(ChannelType ch) const {
@@ -73,6 +79,13 @@ public:
     // TX enqueue
     bool enqueueTx(ChannelType ch, const FlitVariant& f) {
         return enqueueFlit(QueueKind::Tx, ch, f);
+    }
+
+    // 查询 TX 通道是否还有 credit (与 enqueueTx 的判断一致)。
+    // 供仲裁器先查 credit 再出队, 避免弹出后发不出去。
+    bool hasTxCredit(ChannelType ch) {
+        auto idx = static_cast<size_t>(ch);
+        return targetPort().txCredit[idx] > 0;
     }
 
     // RX dequeue
