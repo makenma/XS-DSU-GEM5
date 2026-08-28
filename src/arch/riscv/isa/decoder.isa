@@ -2207,8 +2207,25 @@ decode QUADRANT {
                                             "wfi in user mode or TW enabled",
                                             machInst);
                             }
-                            // don't do anything for now
-                        }}, No_OpClass);
+                            /*
+                             * WFI may resume when a locally enabled
+                             * interrupt becomes pending, irrespective of the
+                             * global xSTATUS.xIE bit.  Do not quiesce if that
+                             * condition already exists; otherwise suspend
+                             * this context until BaseCPU::postInterrupt()
+                             * wakes it.
+                             */
+                            ThreadContext *tc = xc->tcBase();
+                            RegVal pending = xc->readMiscReg(MISCREG_IP);
+                            RegVal enabled = xc->readMiscReg(MISCREG_IE);
+                            if (pending & enabled) {
+                                tc->quiesceTick(
+                                    tc->getCpuPtr()->nextCycle() + 1);
+                            } else {
+                                tc->quiesce();
+                            }
+                        }}, IsNonSpeculative, IsQuiesce, IsSerializeAfter,
+                            No_OpClass, IsSquashAfter);
                     }
                     0x9: sfence_vma({{
                         STATUS status = xc->readMiscReg(MISCREG_STATUS);

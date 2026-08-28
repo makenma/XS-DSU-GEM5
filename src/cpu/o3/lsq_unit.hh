@@ -671,6 +671,9 @@ class LSQUnit
     /** Should loads be checked for dependency issues */
     bool checkLoads;
 
+    /** Whether loads may wake consumers before cache data is available. */
+    bool enableLoadSpecWakeup;
+
     /** The number of store instructions in the SQ waiting to writeback. */
     int storesToWB;
 

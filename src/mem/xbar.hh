@@ -361,7 +361,8 @@ class BaseXBar : public ClockedObject
      * @param addr_range Address range to find port for.
      * @return id of port that the packet should be sent out of.
      */
-    PortID findPort(AddrRange addr_range);
+    PortID findPort(AddrRange addr_range, const PacketPtr pkt = nullptr,
+                    const Port *src_port = nullptr);
 
     /**
      * Return the address ranges the crossbar is responsible for.

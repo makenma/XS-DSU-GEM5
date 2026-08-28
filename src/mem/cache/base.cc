@@ -81,6 +81,7 @@
 #include "sim/core.hh"
 #include "sim/cur_tick.hh"
 #include "sim/eventq.hh"
+#include "sim/system.hh"
 
 namespace gem5
 {
@@ -2369,7 +2370,55 @@ BaseCache::writecleanBlk(CacheBlk *blk, Request::Flags dest, PacketId id)
 void
 BaseCache::memWriteback()
 {
-    tags->forEachBlk([this](CacheBlk &blk) { writebackVisitor(blk); });
+    // Preserve a safe standalone behavior for callers outside
+    // m5.simulate.memWriteback(). The checkpoint path invokes each owner
+    // phase globally across every classic cache instead of completing all
+    // phases cache-by-cache.
+    for (unsigned phase = 0;
+         phase < CacheBlk::CheckpointWritebackPhaseCount; ++phase) {
+        memWritebackPhase(phase);
+    }
+}
+
+void
+BaseCache::memWritebackPhase(unsigned phase)
+{
+    panic_if(phase >= CacheBlk::CheckpointWritebackPhaseCount,
+             "%s invalid checkpoint writeback phase %u\n", name(), phase);
+
+    uint64_t selected_lines = 0;
+    uint64_t sticky_lines = 0;
+    uint64_t writable_lines = 0;
+    uint64_t dirty_lines = 0;
+    uint64_t direct_memory_lines = 0;
+    tags->forEachBlk([this, phase, &selected_lines, &sticky_lines,
+                      &writable_lines, &dirty_lines,
+                      &direct_memory_lines](CacheBlk &blk) {
+        if (!blk.isValid() || blk.checkpointWritebackPhase() != phase) {
+            return;
+        }
+        ++selected_lines;
+        sticky_lines += blk.isCheckpointDirty();
+        writable_lines += blk.isSet(CacheBlk::WritableBit);
+        dirty_lines += blk.isSet(CacheBlk::DirtyBit);
+        direct_memory_lines += writebackVisitor(blk);
+    });
+    if (selected_lines != 0) {
+        static constexpr const char* phase_names[] = {
+            "shared-or-former-owner", "clean-writable-owner", "dirty-owner"
+        };
+        inform("%s checkpoint phase %u (%s) wrote back %llu valid cache "
+               "lines (%llu sticky, %llu writable, %llu dirty, "
+               "%llu direct-pmem, %llu routed-nonmem)\n",
+               name(), phase, phase_names[phase],
+               static_cast<unsigned long long>(selected_lines),
+               static_cast<unsigned long long>(sticky_lines),
+               static_cast<unsigned long long>(writable_lines),
+               static_cast<unsigned long long>(dirty_lines),
+               static_cast<unsigned long long>(direct_memory_lines),
+               static_cast<unsigned long long>(selected_lines -
+                                               direct_memory_lines));
+    }
 }
 
 void
@@ -2391,14 +2440,14 @@ BaseCache::coalesce() const
     return writeAllocator && writeAllocator->coalesce();
 }
 
-void
+bool
 BaseCache::writebackVisitor(CacheBlk &blk)
 {
-    if (blk.isSet(CacheBlk::DirtyBit)) {
-        assert(blk.isValid());
+    if (blk.isValid()) {
 
+        const Addr block_addr = regenerateBlkAddr(&blk);
         RequestPtr request = std::make_shared<Request>(
-            regenerateBlkAddr(&blk), blkSize, 0, Request::funcRequestorId);
+            block_addr, blkSize, 0, Request::funcRequestorId);
 
         request->taskId(blk.getTaskId());
         request->setXsMetadata(blk.getXsMetadata());
@@ -2409,10 +2458,25 @@ BaseCache::writebackVisitor(CacheBlk &blk)
         Packet packet(request, MemCmd::WriteReq);
         packet.dataStatic(blk.data);
 
-        memSidePort.sendFunctional(&packet);
+        // A normal functional write sent through a CoherentXBar is snooped
+        // by peer caches.  A checkpoint overlay must not do that: a stale
+        // shared copy would update (and therefore corrupt) the current dirty
+        // owner before the owner's higher-precedence phase is visited.  For
+        // ordinary physical-memory lines, commit the immutable cache snapshot
+        // directly to backing memory.  Retain routed functional behavior only
+        // for the unusual case of a valid cached non-memory/MMIO line.
+        const bool direct_to_memory = system->isMemAddr(block_addr);
+        if (direct_to_memory) {
+            system->getPhysMem().functionalAccess(&packet);
+        } else {
+            memSidePort.sendFunctional(&packet);
+        }
 
         blk.clearCoherenceBits(CacheBlk::DirtyBit);
+        blk.clearCheckpointDirty();
+        return direct_to_memory;
     }
+    return false;
 }
 
 void

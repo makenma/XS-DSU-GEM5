@@ -298,6 +298,19 @@ class SimObject : public EventManager, public Serializable, public Drainable,
     virtual void memWriteback() {};
 
     /**
+     * Return the number of ordered checkpoint-writeback phases implemented
+     * by this object. Zero keeps the legacy single-call memWriteback()
+     * behavior. A phased object is called once per phase, globally across all
+     * peers at the same checkpoint priority, so a lower-precedence copy
+     * cannot overwrite a later authoritative owner because of traversal
+     * order.
+     */
+    virtual unsigned memWritebackPhaseCount() const { return 0; };
+
+    /** Execute one ordered checkpoint-writeback phase. */
+    virtual void memWritebackPhase(unsigned phase) {};
+
+    /**
      * Invalidate the contents of memory buffers.
      *
      * When the switching to hardware virtualized CPU models, we need

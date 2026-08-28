@@ -198,6 +198,7 @@ class Commit
 
     uint64_t lastCommitCycle = 0;
 
+    const uint64_t stuckCheckCycles;
     EventFunctionWrapper stuckCheckEvent;
 
     /** Mark the thread as processing a trap. */

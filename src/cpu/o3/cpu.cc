@@ -767,7 +767,8 @@ CPU::suspendContext(ThreadID tid)
         _status = Idle;
     }
 
-    DPRINTF(Quiesce, "Suspending Context\n");
+    DPRINTF(Quiesce, "Suspending Context tid=%u pc=%s\n",
+            tid, threadContexts[tid]->pcState());
 
     BaseCPU::suspendContext(tid);
 }
@@ -1613,7 +1614,8 @@ CPU::wakeup(ThreadID tid)
 
     wakeCPU();
 
-    DPRINTF(Quiesce, "Suspended Processor woken\n");
+    DPRINTF(Quiesce, "Suspended Processor woken tid=%u pc=%s\n",
+            tid, threadContexts[tid]->pcState());
     threadContexts[tid]->activate();
 }
 

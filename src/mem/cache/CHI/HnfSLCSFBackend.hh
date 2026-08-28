@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -218,10 +219,39 @@ class HnfSLCSFBackend
             !sfReservations.empty() || !dirtyVictimSeals.empty();
     }
 
-    /** Serialize durable array and identity state at an idle boundary. */
-    void serializePersistentState(CheckpointOut& cp) const;
-    /** Restore durable array and identity state into an idle backend. */
-    void unserializePersistentState(CheckpointIn& cp);
+    /** Visit every valid SLC line in deterministic set/way order. */
+    void forEachValidSlcLine(
+        const std::function<void(
+            uint64_t, const std::vector<uint8_t>&)>& visitor) const;
+
+    /** Visit every dirty SLC line in deterministic set/way order. */
+    void forEachDirtySlcLine(
+        const std::function<void(
+            uint64_t, const std::vector<uint8_t>&)>& visitor) const;
+
+    /**
+     * Serialize durable array and identity state at an idle boundary.
+     *
+     * A full-system classic-cache checkpoint writes private dirty data back
+     * but does not serialize private cache tags.  Such a checkpoint must use
+     * preserve_sf=false so the restored directory cannot name private copies
+     * which no longer exist.  Backend-only checkpoints keep the historical
+     * exact-round-trip default.
+     */
+    void serializePersistentState(
+        CheckpointOut& cp, bool preserve_sf = true,
+        bool preserve_slc = true) const;
+    /**
+     * Restore durable array and identity state into an idle backend.  Passing
+     * restore_sf=false validates but discards the saved private-cache
+     * directory while retaining SLC data and replacement metadata.
+     */
+    void unserializePersistentState(
+        CheckpointIn& cp, bool restore_sf = true,
+        bool restore_slc = true);
+
+    uint32_t sharerIndex(uint32_t srcid) const;
+    uint32_t srcIdForIndex(uint32_t idx) const;
 
   protected:
     /** Clear all persistent storage for a simulator cold start. */
@@ -229,6 +259,13 @@ class HnfSLCSFBackend
 
   private:
     friend class HnfSLCSF;
+
+    // Compact RNF SrcID <-> sharer-index map so the 64-bit directory/sharer
+    // bitmask can track more than 64 distinct SrcIDs (the figure-23.2 D0
+    // 16-core Node IDs range up to 0x230). Indices are assigned lazily as
+    // the SLC first observes each requester SrcID.
+    mutable std::unordered_map<uint32_t, uint32_t> srcIdToSharerIdx;
+    mutable std::vector<uint32_t> sharerIdxToSrcId;
 
     /**
      * Non-forgeable proof that a dirty displacement was copied before U2.

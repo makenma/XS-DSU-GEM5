@@ -5,19 +5,26 @@ bridge and a classic-memory SN adapter are boundary plumbing needed to run
 real workloads; they are not treated as additional figure-23.2 model nodes.
 """
 
+import os
+
 from m5.objects import Root
 from m5.util import addToPath
 
 addToPath("../")
 
 from common import Simulation
-from common.xiangshan import build_xiangshan_system, xiangshan_system_init
+from common.xiangshan import (
+    build_xiangshan_system,
+    configure_xiangshan_linux_workload,
+    xiangshan_system_init,
+)
 from example.noc_config.chi_6x4_hnf import (
     CMN_16_HNF_XOR_MASKS,
     HNF_ATTACHMENTS,
     HNF_NODE_IDS,
     MESH_COLUMNS,
     MESH_ROWS,
+    format_topology_summary,
 )
 
 
@@ -44,26 +51,29 @@ if __name__ == "__m5_main__":
         raise RuntimeError("CHI 6x4 HNF mode is a classic-cache configuration")
     if args.classic_l2:
         raise RuntimeError("CHI 6x4 HNF mode requires the aligned L2 wrapper")
-    if not 1 <= args.num_cpus <= 4:
-        raise RuntimeError("CHI 6x4 HNF mode supports one to four CPUs")
+    if not 1 <= args.num_cpus <= 16:
+        raise RuntimeError("CHI 6x4 HNF mode supports 1 to 16 CPUs")
 
     FutureClass = None
 
     test_sys = build_xiangshan_system(args)
+    # This model uses classic caches behind the CHI adapters.  Do not issue
+    # load consumers before the cache response is known to be available:
+    # the O3 selective load-cancel path cannot recover an already-issued
+    # consumer on a miss, which can expose stale operands to firmware/Linux.
+    for cpu in test_sys.cpu:
+        cpu.EnableLoadSpecWakeup = False
+    # Match kmhv3.py for raw linux.bin images which accept an external DTB.
+    # Firmware payloads with an embedded FW_FDT keep using their own DTB.
+    if (args.raw_cpt and args.generic_rv_cpt and
+            os.path.basename(args.generic_rv_cpt) == "linux.bin"):
+        configure_xiangshan_linux_workload(test_sys, args)
 
-    print("CHI figure-23.2 6x4 topology:")
-    print("  Routers:    %d (%dx%d mesh)" %
-          (MESH_COLUMNS * MESH_ROWS, MESH_COLUMNS, MESH_ROWS))
-    print("  HN-Fs:      %d, each on its router P1/D0" % len(HNF_ATTACHMENTS))
-    print("  HNF IDs:    " + ", ".join("%#x" % node for node in HNF_NODE_IDS))
-    print("  CMN masks:  " +
-          ", ".join("%#014x" % mask for mask in CMN_16_HNF_XOR_MASKS))
+    print(format_topology_summary())
     print("  SLC policy: %s (seed=%d)" %
           (args.slc_replacement_policy, args.slc_replacement_seed))
-    print("  Clocks: CPU %s, Router/HN-F %s" %
+    print("  Runtime clocks: CPU %s, Router/HN-F %s" %
           (args.cpu_clock, args.sys_clock))
-    print("  RN boundary: CPU n at west-edge router(0,n) P0/D0")
-    print("  Memory boundary: shared SN adapter at router(5,0) P0/D0 -> DDR")
 
     root = Root(full_system=True, system=test_sys)
     Simulation.run_vanilla(args, root, test_sys, FutureClass)

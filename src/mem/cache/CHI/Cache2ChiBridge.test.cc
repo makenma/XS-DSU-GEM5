@@ -159,6 +159,54 @@ class Cache2ChiBridgeProtocolTestPeer
         return snoop.nextDataBeat;
     }
 
+    static Cache2ChiBridge::TxnEntry
+    makePendingWriteData()
+    {
+        Cache2ChiBridge::TxnEntry txn{};
+        txn.txnid = TestTxn;
+        txn.hasDbid = true;
+        txn.dbid = 5;
+        for (uint32_t offset = 0; offset < TestBlockSize;
+             offset += TestBeatSize) {
+            RawDat dat{};
+            dat.txnid = TestTxn;
+            dat.dataid = static_cast<uint8_t>(offset / TestBeatSize);
+            dat.beatOffset = offset;
+            dat.last = offset + TestBeatSize == TestBlockSize;
+            dat.data.assign(TestBeatSize, static_cast<uint8_t>(offset));
+            txn.dataBeats.push_back(std::move(dat));
+        }
+        return txn;
+    }
+
+    static bool
+    advanceWriteData(
+        Cache2ChiBridge::TxnEntry& txn,
+        const std::function<bool(ChannelType, const FlitVariant&)>& enqueue)
+    {
+        return Cache2ChiBridge::advanceTxnData(txn, enqueue);
+    }
+
+    static size_t
+    nextWriteDataBeat(const Cache2ChiBridge::TxnEntry& txn)
+    {
+        return txn.nextDataBeat;
+    }
+
+    static bool
+    writeDataPending(const Cache2ChiBridge::TxnEntry& txn)
+    {
+        return Cache2ChiBridge::txnDataPending(txn);
+    }
+
+    static bool
+    advanceUncacheableBypass(
+        bool& blocked, const std::function<bool(PacketPtr)>& send)
+    {
+        return Cache2ChiBridge::advanceUncacheableBypass(
+            nullptr, blocked, send);
+    }
+
     static std::optional<uint32_t>
     allocateTxnId(uint64_t& next_id, size_t outstanding,
                   uint32_t max_outstanding, uint32_t namespace_count = 1)
@@ -174,7 +222,89 @@ class Cache2ChiBridgeProtocolTestPeer
         return Cache2ChiBridge::firstTxnIdInNamespace(
             base, namespace_id, namespace_count);
     }
+
+    static std::array<bool, 7>
+    failedScRefillIntentProperties(bool needs_response)
+    {
+        const auto intent =
+            Cache2ChiBridge::failedScRefillIntent(needs_response);
+        return {
+            intent.kind == Cache2ChiBridge::IntentKind::ReadUnique,
+            intent.txnClass == Cache2ChiBridge::TxnClass::Read,
+            intent.needsResponse,
+            intent.expectsData,
+            intent.expectsComp,
+            intent.requiresCompAck,
+            intent.respondAsUpgrade,
+        };
+    }
+
+    static std::array<bool, 7>
+    cacheRespondingCoordinationIntentProperties()
+    {
+        const auto intent =
+            Cache2ChiBridge::cacheRespondingCoordinationIntent();
+        return {
+            intent.kind == Cache2ChiBridge::IntentKind::MakeUnique,
+            intent.txnClass == Cache2ChiBridge::TxnClass::Maintenance,
+            intent.needsResponse,
+            intent.expectsData,
+            intent.expectsComp,
+            intent.requiresCompAck,
+            intent.respondAsUpgrade,
+        };
+    }
+
+    static bool
+    shouldPromoteUpgrade(MemCmd cmd, bool cache_responding)
+    {
+        return Cache2ChiBridge::shouldPromoteUpgrade(
+            cmd, cache_responding);
+    }
 };
+
+TEST(Cache2ChiBridgeProtocolTest,
+     FailedScUpgradeRefillsUniqueDataWithoutSuccessPromotion)
+{
+    const auto properties = Cache2ChiBridgeProtocolTestPeer::
+        failedScRefillIntentProperties(true);
+
+    EXPECT_TRUE(properties[0]);
+    EXPECT_TRUE(properties[1]);
+    EXPECT_TRUE(properties[2]);
+    EXPECT_TRUE(properties[3]);
+    EXPECT_TRUE(properties[4]);
+    EXPECT_TRUE(properties[5]);
+    EXPECT_FALSE(properties[6]);
+}
+
+TEST(Cache2ChiBridgeProtocolTest,
+     CacheResponderUsesOwnershipOnlyMakeUnique)
+{
+    const auto properties = Cache2ChiBridgeProtocolTestPeer::
+        cacheRespondingCoordinationIntentProperties();
+
+    EXPECT_TRUE(properties[0]);
+    EXPECT_TRUE(properties[1]);
+    EXPECT_FALSE(properties[2]);
+    EXPECT_FALSE(properties[3]);
+    EXPECT_TRUE(properties[4]);
+    EXPECT_FALSE(properties[5]);
+    EXPECT_FALSE(properties[6]);
+}
+
+TEST(Cache2ChiBridgeProtocolTest,
+     CacheRespondingUpgradeIsNotPromotedToReadUnique)
+{
+    EXPECT_TRUE(Cache2ChiBridgeProtocolTestPeer::shouldPromoteUpgrade(
+        MemCmd::UpgradeReq, false));
+    EXPECT_TRUE(Cache2ChiBridgeProtocolTestPeer::shouldPromoteUpgrade(
+        MemCmd::SCUpgradeReq, false));
+    EXPECT_FALSE(Cache2ChiBridgeProtocolTestPeer::shouldPromoteUpgrade(
+        MemCmd::UpgradeReq, true));
+    EXPECT_FALSE(Cache2ChiBridgeProtocolTestPeer::shouldPromoteUpgrade(
+        MemCmd::SCUpgradeReq, true));
+}
 
 TEST(Cache2ChiBridgeProtocolTest,
      Case13NormalPromotedUpgradeKeepsUpgradeResponse)
@@ -420,6 +550,72 @@ TEST(Cache2ChiBridgeProtocolTest,
     ASSERT_TRUE(std::holds_alternative<RawDat>(accepted[1]));
     EXPECT_EQ(std::get<RawDat>(accepted[1]).dataid, 1);
     EXPECT_TRUE(std::get<RawDat>(accepted[1]).last);
+}
+
+TEST(Cache2ChiBridgeProtocolTest,
+     WriteDataBackpressureRetriesWithoutDroppingSecondBeat)
+{
+    auto txn = Cache2ChiBridgeProtocolTestPeer::makePendingWriteData();
+    size_t credits = 1;
+    std::vector<FlitVariant> accepted;
+    const auto enqueue = [&credits, &accepted](
+                             ChannelType, const FlitVariant& flit) {
+        if (credits == 0) {
+            return false;
+        }
+        --credits;
+        accepted.push_back(flit);
+        return true;
+    };
+
+    EXPECT_FALSE(Cache2ChiBridgeProtocolTestPeer::advanceWriteData(
+        txn, enqueue));
+    EXPECT_EQ(Cache2ChiBridgeProtocolTestPeer::nextWriteDataBeat(txn), 1);
+    EXPECT_TRUE(Cache2ChiBridgeProtocolTestPeer::writeDataPending(txn));
+    ASSERT_EQ(accepted.size(), 1);
+    EXPECT_EQ(std::get<RawDat>(accepted[0]).dataid, 0);
+    EXPECT_EQ(std::get<RawDat>(accepted[0]).dbid, 5);
+
+    credits = 1;
+    EXPECT_TRUE(Cache2ChiBridgeProtocolTestPeer::advanceWriteData(
+        txn, enqueue));
+    EXPECT_EQ(Cache2ChiBridgeProtocolTestPeer::nextWriteDataBeat(txn), 2);
+    EXPECT_FALSE(Cache2ChiBridgeProtocolTestPeer::writeDataPending(txn));
+    ASSERT_EQ(accepted.size(), 2);
+    EXPECT_EQ(std::get<RawDat>(accepted[1]).dataid, 1);
+    EXPECT_EQ(std::get<RawDat>(accepted[1]).dbid, 5);
+    EXPECT_TRUE(std::get<RawDat>(accepted[1]).last);
+}
+
+TEST(Cache2ChiBridgeProtocolTest,
+     UncacheableBypassWaitsForRequestRetryBeforeResending)
+{
+    bool blocked = false;
+    unsigned sendAttempts = 0;
+    bool peerAccepts = false;
+    const auto send = [&sendAttempts, &peerAccepts](PacketPtr) {
+        ++sendAttempts;
+        return peerAccepts;
+    };
+
+    EXPECT_FALSE(Cache2ChiBridgeProtocolTestPeer::advanceUncacheableBypass(
+        blocked, send));
+    EXPECT_TRUE(blocked);
+    EXPECT_EQ(sendAttempts, 1);
+
+    // Unrelated pump activity must not retry the blocked RequestPort.
+    EXPECT_FALSE(Cache2ChiBridgeProtocolTestPeer::advanceUncacheableBypass(
+        blocked, send));
+    EXPECT_TRUE(blocked);
+    EXPECT_EQ(sendAttempts, 1);
+
+    // Model recvReqRetry(), after which exactly one new attempt is legal.
+    blocked = false;
+    peerAccepts = true;
+    EXPECT_TRUE(Cache2ChiBridgeProtocolTestPeer::advanceUncacheableBypass(
+        blocked, send));
+    EXPECT_FALSE(blocked);
+    EXPECT_EQ(sendAttempts, 2);
 }
 
 TEST(Cache2ChiBridgeProtocolTest,

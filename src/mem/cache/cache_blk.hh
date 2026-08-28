@@ -185,6 +185,7 @@ class CacheBlk : public TaggedEntry
             setPendingInvalidate();
         }
         setCoherenceBits(other.coherence);
+        checkpointDirty = other.checkpointDirty;
         setTaskId(other.getTaskId());
         setXsMetadata(other.getXsMetadata());
         setWhenReady(curTick());
@@ -209,6 +210,7 @@ class CacheBlk : public TaggedEntry
         clearAllPrefetched();
         clearPendingInvalidate();
         clearCoherenceBits(AllBits);
+        checkpointDirty = false;
 
         setTaskId(context_switch_task_id::Unknown);
         this->_xsMeta.invalidate();
@@ -229,6 +231,13 @@ class CacheBlk : public TaggedEntry
     {
         assert(isValid());
         coherence |= bits;
+        // Dirty ownership can legitimately move between levels and clear the
+        // protocol DirtyBit before a checkpoint.  Keep an independent,
+        // monotonic record that this resident copy has held modified data so
+        // a cache-less restore cannot lose it.
+        if (bits & DirtyBit) {
+            checkpointDirty = true;
+        }
     }
 
     /**
@@ -237,6 +246,37 @@ class CacheBlk : public TaggedEntry
      * @param bits The coherence bits to be cleared.
      */
     void clearCoherenceBits(unsigned bits) { coherence &= ~bits; }
+
+    /** Whether this resident line has held modified data since writeback. */
+    bool isCheckpointDirty() const
+    {
+        return isValid() && checkpointDirty;
+    }
+
+    /** Mark all data represented by this line durable in backing memory. */
+    void clearCheckpointDirty() { checkpointDirty = false; }
+
+    /**
+     * Checkpoint-only data-precedence phase for this resident block.
+     *
+     * Clean/shared and former-owner copies go first, a clean writable owner
+     * goes second, and a dirty owner goes last. checkpointDirty is
+     * deliberately not part of this ordering: it records that a copy was
+     * modified in the past, not that it is still the current coherence owner.
+     */
+    unsigned
+    checkpointWritebackPhase() const
+    {
+        if (isSet(DirtyBit)) {
+            return 2;
+        }
+        if (isSet(WritableBit)) {
+            return 1;
+        }
+        return 0;
+    }
+
+    static constexpr unsigned CheckpointWritebackPhaseCount = 3;
 
     /**
      * Checks the given coherence bits are set.
@@ -507,6 +547,18 @@ class CacheBlk : public TaggedEntry
   protected:
     /** The current coherence status of this block. @sa CoherenceBits */
     unsigned coherence = 0;
+
+    /**
+     * Sticky checkpoint writeback state, deliberately separate from MOESI.
+     *
+     * Classic-cache checkpoints omit tag/data arrays.  The ordinary
+     * DirtyBit describes the current coherence owner and may be cleared when
+     * dirty responsibility moves along an inclusive hierarchy. This bit is
+     * cleared only after a functional checkpoint writeback or invalidation.
+     * A former owner's sticky copy is durable, but it must be written before
+     * the current Writable/Dirty owner during checkpoint consolidation.
+     */
+    bool checkpointDirty = false;
 
     // The following setters have been marked as protected because their
     // respective variables should only be modified at 2 moments:

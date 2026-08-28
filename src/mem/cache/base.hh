@@ -970,6 +970,15 @@ class BaseCache : public ClockedObject, public CacheAccessor
      */
     virtual void memWriteback() override;
 
+    /** Classic caches participate in hierarchy-wide owner phases. */
+    unsigned memWritebackPhaseCount() const override
+    {
+        return CacheBlk::CheckpointWritebackPhaseCount;
+    }
+
+    /** Write blocks belonging to one checkpoint data-precedence phase. */
+    void memWritebackPhase(unsigned phase) override;
+
     /**
      * Invalidates all blocks in the cache.
      *
@@ -1568,7 +1577,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
      * Cache block visitor that writes back dirty cache blocks using
      * functional writes.
      */
-    void writebackVisitor(CacheBlk &blk);
+    bool writebackVisitor(CacheBlk &blk);
 
     /**
      * Cache block visitor that invalidates all blocks in the cache.

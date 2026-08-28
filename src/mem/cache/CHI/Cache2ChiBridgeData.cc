@@ -88,6 +88,42 @@ Cache2ChiBridge::firstTxnIdInNamespace(
     return first + epochs * namespace_count;
 }
 
+Cache2ChiBridge::MemoryIntent
+Cache2ChiBridge::failedScRefillIntent(bool needs_response)
+{
+    // A classic cache changes a raced SCUpgradeReq into
+    // SCUpgradeFailReq.  The store-conditional has already failed, but the
+    // cache still needs an exclusive data refill so it can satisfy later
+    // snoops.  Preserve the original packet command: makeTimingResponse()
+    // will then produce the required data-bearing UpgradeFailResp.
+    MemoryIntent intent{};
+    intent.kind = IntentKind::ReadUnique;
+    intent.txnClass = TxnClass::Read;
+    intent.needsResponse = needs_response;
+    intent.expectsData = true;
+    intent.expectsComp = true;
+    intent.requiresCompAck = true;
+    return intent;
+}
+
+Cache2ChiBridge::MemoryIntent
+Cache2ChiBridge::cacheRespondingCoordinationIntent()
+{
+    MemoryIntent intent{};
+    intent.kind = IntentKind::MakeUnique;
+    intent.txnClass = TxnClass::Maintenance;
+    intent.needsResponse = false;
+    intent.expectsComp = true;
+    return intent;
+}
+
+bool
+Cache2ChiBridge::shouldPromoteUpgrade(MemCmd cmd, bool cache_responding)
+{
+    return !cache_responding &&
+        (cmd == MemCmd::UpgradeReq || cmd == MemCmd::SCUpgradeReq);
+}
+
 bool
 Cache2ChiBridge::advancePendingSnoopResponse(
     SnoopEntry& snoop,
@@ -119,6 +155,51 @@ Cache2ChiBridge::advancePendingSnoopResponse(
             return false;
         }
         ++snoop.nextDataBeat;
+    }
+    return true;
+}
+
+bool
+Cache2ChiBridge::advanceTxnData(
+    TxnEntry& txn,
+    const std::function<bool(ChannelType, const FlitVariant&)>& enqueue)
+{
+    if (!txn.dataBeats.empty() && !txn.hasDbid) {
+        return false;
+    }
+
+    while (txn.nextDataBeat < txn.dataBeats.size()) {
+        RawDat dat = txn.dataBeats[txn.nextDataBeat];
+        dat.dbid = txn.dbid;
+        if (!enqueue(DAT, FlitVariant{dat})) {
+            return false;
+        }
+        ++txn.nextDataBeat;
+    }
+
+    return true;
+}
+
+bool
+Cache2ChiBridge::txnDataPending(const TxnEntry& txn)
+{
+    return txn.hasDbid && txn.nextDataBeat < txn.dataBeats.size();
+}
+
+bool
+Cache2ChiBridge::advanceUncacheableBypass(
+    PacketPtr pkt, bool& blocked,
+    const std::function<bool(PacketPtr)>& send)
+{
+    // A timing RequestPort must not send again after rejection until its
+    // peer calls recvReqRetry().  The pump can still run for unrelated CHI
+    // work, so enforce the gate at the actual send site as well.
+    if (blocked) {
+        return false;
+    }
+    if (!send(pkt)) {
+        blocked = true;
+        return false;
     }
     return true;
 }

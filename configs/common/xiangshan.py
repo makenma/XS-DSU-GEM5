@@ -24,6 +24,8 @@ from common.FUScheduler import *
 from m5.objects import PerfRecord
 
 from example.noc_config.chi_6x4_hnf import (
+    DDR_CHANNEL_COUNT as CHI_6X4_DDR_CHANNEL_COUNT,
+    DDR_NODE_IDS as CHI_6X4_DDR_NODE_IDS,
     HNF_NODE_IDS as CHI_6X4_HNF_NODE_IDS,
     MESH_COLUMNS as CHI_6X4_MESH_COLUMNS,
     MESH_ROWS as CHI_6X4_MESH_ROWS,
@@ -470,12 +472,13 @@ def _finish_xiangshan_system(args, test_sys, TestCPUClass, ruby):
                 for y in range(CHI_6X4_MESH_ROWS)
                 for x in range(CHI_6X4_MESH_COLUMNS)
             ]
-            # This single classic-memory adapter is boundary plumbing, not an
-            # additional modeled NoC node from figure 23.2.
-            test_sys.snf_bridge = Chi2ClassicMemBridge()
-            test_sys._chi_router_6x4_snf_node_id = _chi_6x4_node_id(
-                5, 0, 0, 0
-            )
+            # Four DDR SN bridges at R_0_0..R_0_3 P2/D0 replace the legacy
+            # single shared SN adapter at router (5,0).  Each is a distinct
+            # CHI SN endpoint; the HN-F routes by 64-byte cache-line
+            # interleave (see chi_6x4_hnf.connect_ddr_bridges).
+            test_sys.snf_bridges = [Chi2ClassicMemBridge()
+                                    for _ in range(CHI_6X4_DDR_CHANNEL_COUNT)]
+            test_sys._chi_6x4_ddr_node_ids = list(CHI_6X4_DDR_NODE_IDS)
 
     test_sys.xiangshan_system = True
     test_sys.enable_difftest = args.enable_difftest
@@ -908,6 +911,22 @@ def xiangshan_system_init():
     Options.addCommonOptions(parser, configure_xiangshan=True)
     Options.addXiangshanFSOptions(parser)
     Options.addXiangshanTraceOptions(parser)
+    # addCommonOptions skips these checkpoint controls for XiangShan.  The
+    # guest m5 pseudo-op uses max/checkpoint-dir, and -r selects the saved
+    # post-Linux checkpoint on the restore run.
+    parser.add_argument("--max-checkpoints", action="store", type=int,
+                        default=1, help="max checkpoints to drop")
+    parser.add_argument("--checkpoint-dir", action="store", type=str,
+                        default=None, help="checkpoint directory")
+    parser.add_argument("-r", "--checkpoint-restore", action="store",
+                        type=int, default=None,
+                        help="restore from checkpoint <N>")
+    parser.add_argument(
+        "--restore-terminal-wait", type=float, default=0.0,
+        metavar="SECONDS",
+        help="after restoring, keep guest time frozen for SECONDS while "
+             "servicing host terminal connections and input",
+    )
     parser.add_argument(
         "--btb-tage-upper-bound",
         action="store_true",

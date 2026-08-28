@@ -5,7 +5,9 @@
 
 #include "base/trace.hh"
 #include "debug/SlcSnoopFilter.hh"
+#include "mem/packet.hh"
 #include "sim/sim_exit.hh"
+#include "sim/system.hh"
 
 namespace gem5::Chi
 {
@@ -256,6 +258,7 @@ SlcSnoopFilter::SlcSnoopFilter(const SlcSnoopFilterParams& p)
       slcsf(p.block_size, p.slc_num_sets, p.slc_num_ways, p.sf_num_sets,
             p.sf_num_ways, p.seq_entries,
             makeEmbeddedSlcsfConfig(p, clockPeriod()), &stats),
+      system(p.system),
       exitOnSlcFull(p.exit_on_slc_full)
 {
     slcsf.setWorkAvailableCallback([this] { ensureWakeup(); });
@@ -377,13 +380,45 @@ SlcSnoopFilter::rearmSlcFullExit()
 }
 
 void
+SlcSnoopFilter::memWriteback()
+{
+    panic_if(!slcSnoopFilterDrainReady(slcsf),
+             "%s SLC checkpoint writeback requires drained state\n", name());
+    uint64_t valid_lines = 0;
+    slcsf.forEachValidSlcLine(
+        [this, &valid_lines](uint64_t address,
+                            const std::vector<uint8_t>& data) {
+            panic_if(!system->isMemAddr(address),
+                     "%s valid SLC checkpoint line is outside physical "
+                     "memory addr=%#llx\n", name(),
+                     static_cast<unsigned long long>(address));
+            RequestPtr request = std::make_shared<Request>(
+                address, data.size(), 0, Request::funcRequestorId);
+            Packet packet(request, MemCmd::WriteReq);
+            packet.dataStaticConst(data.data());
+            system->getPhysMem().functionalAccess(&packet);
+            ++valid_lines;
+        });
+    if (valid_lines != 0) {
+        inform("%s checkpoint wrote back %llu valid SLC lines to physical "
+               "memory\n", name(),
+               static_cast<unsigned long long>(valid_lines));
+    }
+}
+
+void
 SlcSnoopFilter::serialize(CheckpointOut& cp) const
 {
     panic_if(serviceEvent.scheduled(),
              "%s cannot checkpoint with a scheduled service event\n", name());
     ClockedObject::serialize(cp);
     Serializable::ScopedCheckpointSection section(cp, "slcsf");
-    slcsf.serializePersistentState(cp);
+    // The negative checkpoint writeback priority commits dirty SLC data
+    // first; the global ordered walker then lets private owners overwrite
+    // stale lower copies through the classic functional path.
+    // Both SLC and SF must therefore restore empty alongside the omitted
+    // private cache tags/data.
+    slcsf.serializePersistentState(cp, false, false);
 }
 
 void
@@ -393,7 +428,9 @@ SlcSnoopFilter::unserialize(CheckpointIn& cp)
              "%s cannot restore over a scheduled service event\n", name());
     ClockedObject::unserialize(cp);
     Serializable::ScopedCheckpointSection section(cp, "slcsf");
-    slcsf.unserializePersistentState(cp);
+    // Also discard SLC/SF entries from older checkpoints.  Only the
+    // consolidated physical-memory image is authoritative across restore.
+    slcsf.unserializePersistentState(cp, false, false);
     scheduledServiceCycle = slcsf.currentCycle();
     lastServiceTick.reset();
 }

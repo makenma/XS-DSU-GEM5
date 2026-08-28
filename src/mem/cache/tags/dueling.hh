@@ -31,6 +31,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <set>
 
 #include "base/sat_counter.hh"
 
@@ -53,18 +54,17 @@ class Dueler
 {
   private:
     /**
-     * Whether this entry is a sample or a follower. Each bit corresponds
-     * to a different ueling monitor instance. If more than 64 instances
-     * are needed this needs to be changed to an array containing the ids
-     * being sampled.
+     * The set of dueling-monitor instance ids (indices) for which this
+     * entry is a sample. Using a set instead of a single-bit-per-instance
+     * bitmask supports more than 64 concurrent dueling instances.
      */
-    uint64_t _isSample;
+    std::set<uint32_t> _isSample;
 
     /**
-     * If entry is a sample, it belongs to one of two possible teams. Each
-     * bit corresponds to a different dueling monitor instance.
+     * If entry is a sample, it belongs to one of two possible teams. This
+     * set holds the instance ids whose sample belongs to the "True" team.
      */
-    uint64_t _team;
+    std::set<uint32_t> _team;
 
   public:
     /** By default initializes entries as followers. */
@@ -77,7 +77,7 @@ class Dueler
      * @param id The ID of the Dueling instance that called this function.
      * @param team Team to which this sampling entry belongs (only 2 possible).
      */
-    void setSample(uint64_t id, bool team);
+    void setSample(uint32_t id, bool team);
 
     /**
      * Check if entry is a sample for the given instance. If so, provide
@@ -87,7 +87,7 @@ class Dueler
      * @param team Team to which this sampling entry belongs (only 2 possible).
      * @return Whether this is a sampling entry.
      */
-    bool isSample(uint64_t id, bool& team) const;
+    bool isSample(uint32_t id, bool& team) const;
 };
 
 /**
@@ -112,13 +112,15 @@ class DuelingMonitor
     const int NUM_DUELERS = 2;
 
     /**
-     * Unique identifier of this instance. It is a one bit mask used to
-     * identify which Dueler refers to this duel. This is done so that
-     * an entry can be dueled by many different policies simultaneously,
-     * which may even be of different domains (e.g., an entry can duel for
-     * 2 replacement policies, and 2 compression methods at the same time).
+     * Unique identifier of this instance. It is the instance index
+     * (0, 1, 2, ...) used to identify which Dueler refers to this duel.
+     * This is done so that an entry can be dueled by many different
+     * policies simultaneously, which may even be of different domains
+     * (e.g., an entry can duel for 2 replacement policies, and 2
+     * compression methods at the same time). Using an index instead of a
+     * single-bit mask supports more than 64 concurrent instances.
      */
-    const uint64_t id;
+    const uint32_t id;
 
     /**
      * Given a table containing X entries, a constituency is a region of
@@ -203,7 +205,7 @@ class DuelingMonitor
      */
     void initEntry(Dueler* dueler);
 
-    uint64_t getID() const { return id; }
+    uint32_t getID() const { return id; }
 };
 
 } // namespace gem5

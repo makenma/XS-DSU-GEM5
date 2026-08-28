@@ -108,7 +108,10 @@ Clint::ClintRegisters::init()
     // Initialize registers
     for (int i = 0; i < clint->nThread; i++) {
         msip.emplace_back(std::string("msip") + std::to_string(i), 0);
-        mtimecmp.emplace_back(std::string("mtimecmp") + std::to_string(i), 0);
+        // Avoid asserting MTIP on every hart as soon as the RTC starts.  SBI
+        // software programs an earlier compare value when it needs a timer.
+        mtimecmp.emplace_back(std::string("mtimecmp") + std::to_string(i),
+                              ~uint64_t{0});
     }
 
     // Add registers to bank

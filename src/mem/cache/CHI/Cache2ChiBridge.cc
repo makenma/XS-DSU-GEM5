@@ -9,6 +9,7 @@
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "base/intmath.hh"
 #include "base/logging.hh"
@@ -22,6 +23,7 @@
 #include "mem/packet.hh"
 #include "mem/request.hh"
 #include "sim/eventq.hh"
+#include "sim/serialize.hh"
 #include "sim/sim_object.hh"
 
 namespace gem5
@@ -426,11 +428,53 @@ Cache2ChiBridge::schedulePump()
 bool
 Cache2ChiBridge::hasPumpWork() const
 {
-    return !pendingReqPkts.empty() ||
+    const bool has_pending_data = std::any_of(
+        txns.begin(), txns.end(), [](const auto& entry) {
+            return txnDataPending(entry.second);
+        });
+    return (!memReqBlocked && !pendingReqPkts.empty()) ||
            (!cacheRespBlocked && !pendingRespPkts.empty()) ||
            !retryTxnIds.empty() || !pendingCompAcks.empty() ||
            !pendingSnoopRetries.empty() ||
-           !pendingSnoopResponses.empty();
+           !pendingSnoopResponses.empty() || has_pending_data ||
+           chiPort.hasTxFlit(REQ) || chiPort.hasTxFlit(RSP) ||
+           chiPort.hasTxFlit(DAT) || chiPort.hasTxFlit(SNP);
+}
+
+bool
+Cache2ChiBridge::completelyIdle() const
+{
+    // A bridge transaction owns a PacketPtr after the classic cache has
+    // accepted the request.  Neither that packet nor an accepted CHI flit has
+    // a stable checkpoint representation, so both the bookkeeping and the
+    // port queues must reach the global drain fixed point before serialization.
+    return pendingReqPkts.empty() && pendingRespPkts.empty() &&
+           retryTxnIds.empty() && pendingCompAcks.empty() &&
+           pendingSnoopRetries.empty() && pendingSnoopResponses.empty() &&
+           txns.empty() && snoops.empty() && promotedUpgradePkts.empty() &&
+           !chiPort.hasTxFlit(REQ) && !chiPort.hasTxFlit(RSP) &&
+           !chiPort.hasTxFlit(DAT) && !chiPort.hasTxFlit(SNP);
+}
+
+void
+Cache2ChiBridge::testDrainComplete()
+{
+    if (drainState() == DrainState::Draining && completelyIdle()) {
+        signalDrainDone();
+    }
+}
+
+DrainState
+Cache2ChiBridge::drain()
+{
+    // Keep accepting traffic while every producer drains.  gem5 repeats the
+    // global drain pass, so a bridge which was perturbed after reporting
+    // Drained will be observed on the next pass.
+    if (completelyIdle()) {
+        return DrainState::Drained;
+    }
+    schedulePump();
+    return DrainState::Draining;
 }
 
 std::optional<uint32_t>
@@ -469,12 +513,26 @@ Cache2ChiBridge::MemoryIntent
 Cache2ChiBridge::classify(PacketPtr pkt) const
 {
     const MemCmd cmd = pkt->cmd;
+
+    // A classic crossbar keeps forwarding a writable request after an
+    // upper cache has promised the data.  The forwarded packet is an
+    // express snoop used only to invalidate copies below that responder;
+    // the crossbar deliberately does not install a route for a downstream
+    // response.  At the CHI boundary this is therefore an ownership-only
+    // MakeUnique transaction, not another data request.
+    if (pkt->cacheResponding()) {
+        panic_if(!pkt->isExpressSnoop() || !pkt->needsWritable() ||
+                     pkt->responderHadWritable(),
+                 "%s: invalid cache-responding coordination packet %s\n",
+                 name(), pkt->print());
+        return cacheRespondingCoordinationIntent();
+    }
+
     MemoryIntent intent{};
     intent.needsResponse = pkt->needsResponse();
 
     if (cmd == MemCmd::SCUpgradeFailReq) {
-        panic("%s: SCUpgradeFailReq is a classic internal failure path and "
-              "must not be translated into CHI\n", name());
+        return failedScRefillIntent(intent.needsResponse);
     }
     if (cmd == MemCmd::LockedRMWReadReq ||
         cmd == MemCmd::LockedRMWWriteReq) {
@@ -698,8 +756,7 @@ Cache2ChiBridge::cacheRecvTimingReq(PacketPtr pkt)
         pkt->cmdString().c_str(),
         static_cast<unsigned long>(pkt->getAddr()),
         pkt->getSize());
-    if (pkt->cmd == MemCmd::UpgradeReq ||
-        pkt->cmd == MemCmd::SCUpgradeReq) {
+    if (shouldPromoteUpgrade(pkt->cmd, pkt->cacheResponding())) {
         DPRINTF(Cache2ChiBridge,
                 "promote %s to ReadExReq so a retried/invalidation-raced "
                 "upgrade can refill data\n",
@@ -707,6 +764,12 @@ Cache2ChiBridge::cacheRecvTimingReq(PacketPtr pkt)
         pkt->cmd = MemCmd::ReadExReq;
         pkt->allocate();
         promotedUpgradePkts.insert(pkt);
+    } else if (pkt->cacheResponding()) {
+        DPRINTF(Cache2ChiBridge,
+                "cache responder already supplies cmd=%s addr=%#lx; "
+                "forward as ownership-only CHI coordination\n",
+                pkt->cmdString().c_str(),
+                static_cast<unsigned long>(pkt->getAddr()));
     }
     pendingReqPkts.push(pkt);
     schedulePump();
@@ -799,6 +862,24 @@ Cache2ChiBridge::pump()
     sendPendingResponses();
     sendPendingCompAcks();
 
+    // A DBID response can arrive when the DAT channel has space for only a
+    // prefix of a multi-beat write.  Retry every such transaction from its
+    // saved nextDataBeat; merely rescheduling the pump is not sufficient
+    // because handleRsp() will not run again for the same DBID response.
+    std::vector<uint32_t> pending_data_txns;
+    for (const auto& [txnid, txn] : txns) {
+        if (txn.hasDbid && txn.nextDataBeat < txn.dataBeats.size()) {
+            pending_data_txns.push_back(txnid);
+        }
+    }
+    for (const uint32_t txnid : pending_data_txns) {
+        auto it = txns.find(txnid);
+        if (it == txns.end() || !sendTxnData(it->second)) {
+            continue;
+        }
+        maybeComplete(it->second);
+    }
+
     while (!retryTxnIds.empty()) {
         const uint32_t txnid = retryTxnIds.front();
         if (!reissueRetriedTxn(txnid)) {
@@ -810,7 +891,11 @@ Cache2ChiBridge::pump()
     while (!pendingReqPkts.empty()) {
         PacketPtr pkt = pendingReqPkts.front();
         if (pkt->req->isUncacheable()) {
-            if (!memPort.sendTimingReq(pkt)) {
+            if (!advanceUncacheableBypass(
+                    pkt, memReqBlocked,
+                    [this](PacketPtr pending) {
+                        return memPort.sendTimingReq(pending);
+                    })) {
                 DPRINTF(Cache2ChiBridge,
                         "uncacheable classic bypass blocked cmd=%s "
                         "addr=%#llx bytes=%u\n",
@@ -871,6 +956,7 @@ Cache2ChiBridge::pump()
     if (hasPumpWork()) {
         schedulePump();
     }
+    testDrainComplete();
 }
 
 void
@@ -1339,25 +1425,19 @@ Cache2ChiBridge::makeCompAck(const TxnEntry& txn) const
 bool
 Cache2ChiBridge::sendTxnData(TxnEntry& txn)
 {
-    if (!txn.dataBeats.empty() && !txn.hasDbid) {
-        return false;
-    }
-
-    while (txn.nextDataBeat < txn.dataBeats.size()) {
-        RawDat dat = txn.dataBeats[txn.nextDataBeat];
-        dat.dbid = txn.dbid;
-        if (!chiPort.enqueueRx(DAT, dat)) {
-            return false;
-        }
-        DPRINTF(Cache2ChiBridge,
-                "send write DAT txnid=%u dbid=%u dataid=%u bytes=%u "
-                "last=%u\n",
-                txn.txnid, dat.dbid, dat.dataid,
-                static_cast<unsigned>(dat.data.size()), dat.last);
-        ++txn.nextDataBeat;
-    }
-
-    return true;
+    return advanceTxnData(
+        txn, [this, &txn](ChannelType channel, const FlitVariant& flit) {
+            const RawDat& dat = std::get<RawDat>(flit);
+            const bool sent = chiPort.enqueueRx(channel, flit);
+            if (sent) {
+                DPRINTF(Cache2ChiBridge,
+                        "send write DAT txnid=%u dbid=%u dataid=%u "
+                        "bytes=%u last=%u\n",
+                        txn.txnid, dat.dbid, dat.dataid,
+                        static_cast<unsigned>(dat.data.size()), dat.last);
+            }
+            return sent;
+        });
 }
 
 bool
@@ -1634,6 +1714,10 @@ void
 Cache2ChiBridge::memSidePortRecvReqRetry()
 {
     DPRINTF(Cache2ChiBridge, "Got req retry from memory side\n");
+    panic_if(!memReqBlocked,
+             "%s: got classic request retry while not blocked\n", name());
+    memReqBlocked = false;
+    schedulePump();
 }
 
 void
@@ -1665,6 +1749,108 @@ Cache2ChiBridge::memSidePortRecvAtomicSnoop(PacketPtr pkt)
     DPRINTF(Cache2ChiBridge, "Got atomic snoop from memory side for addr: %#x\n",
             pkt->getAddr());
     return cachePort.sendAtomicSnoop(pkt);
+}
+
+void
+Cache2ChiBridge::serialize(CheckpointOut &cp) const
+{
+    panic_if(!completelyIdle(),
+             "%s checkpoint attempted before the CHI RN reached its drain "
+             "fixed point\n",
+             name());
+    ClockedObject::serialize(cp);
+    Serializable::ScopedCheckpointSection section(cp, "cache2chi");
+
+    // TxnID allocation cursors and TxnID-keyed outstanding transactions.
+    paramOut(cp, "nextTxnId", nextTxnId);
+    paramOut(cp, "nextSnoopTxnId", nextSnoopTxnId);
+    paramOut(cp, "txnsSize", txns.size());
+    std::vector<uint32_t> txn_ids;
+    txn_ids.reserve(txns.size());
+    for (const auto &kv : txns) txn_ids.push_back(kv.first);
+    arrayParamOut(cp, "txnIds", txn_ids);
+
+    paramOut(cp, "snoopsSize", snoops.size());
+    std::vector<uint32_t> snoop_ids;
+    snoop_ids.reserve(snoops.size());
+    for (const auto &kv : snoops) snoop_ids.push_back(kv.first);
+    arrayParamOut(cp, "snoopIds", snoop_ids);
+
+    // Retry TxnID queue (queue + TxnID).
+    std::vector<uint32_t> retry_ids;
+    {
+        std::queue<uint32_t> tmp = retryTxnIds;
+        while (!tmp.empty()) {
+            retry_ids.push_back(tmp.front());
+            tmp.pop();
+        }
+    }
+    paramOut(cp, "retryTxnIdsSize", retry_ids.size());
+    arrayParamOut(cp, "retryTxnIds", retry_ids);
+
+    // Queue occupancy is serialized as a drain invariant. Packet/flit-bearing
+    // entries have no stable representation, so a valid global checkpoint
+    // must have emptied every queue before serialization.
+    paramOut(cp, "pendingCompAcksSize", pendingCompAcks.size());
+    paramOut(cp, "pendingSnoopResponsesSize", pendingSnoopResponses.size());
+    paramOut(cp, "pendingSnoopRetriesSize", pendingSnoopRetries.size());
+    paramOut(cp, "pendingRespPktsSize", pendingRespPkts.size());
+    paramOut(cp, "pendingReqPktsSize", pendingReqPkts.size());
+}
+
+void
+Cache2ChiBridge::unserialize(CheckpointIn &cp)
+{
+    ClockedObject::unserialize(cp);
+    Serializable::ScopedCheckpointSection section(cp, "cache2chi");
+
+    paramIn(cp, "nextTxnId", nextTxnId);
+    paramIn(cp, "nextSnoopTxnId", nextSnoopTxnId);
+
+    // TxnID-keyed maps hold PacketPtrs that cannot be checkpoint-preserved.
+    // A valid global checkpoint therefore requires both maps to be empty.
+    uint32_t txn_size = 0;
+    paramIn(cp, "txnsSize", txn_size);
+    txns.clear();
+    (void)txn_size;
+    uint32_t snoop_size = 0;
+    paramIn(cp, "snoopsSize", snoop_size);
+    snoops.clear();
+    (void)snoop_size;
+
+    uint32_t retry_size = 0;
+    paramIn(cp, "retryTxnIdsSize", retry_size);
+    std::vector<uint32_t> retry_ids;
+    arrayParamIn(cp, "retryTxnIds", retry_ids);
+    while (!retryTxnIds.empty()) retryTxnIds.pop();
+    for (uint32_t i = 0; i < retry_size && i < retry_ids.size(); ++i) {
+        retryTxnIds.push(retry_ids[i]);
+    }
+
+    uint64_t compacks_sz = 0, snoopresp_sz = 0, snoopretry_sz = 0;
+    uint64_t resppkts_sz = 0, reqpkts_sz = 0;
+    paramIn(cp, "pendingCompAcksSize", compacks_sz);
+    paramIn(cp, "pendingSnoopResponsesSize", snoopresp_sz);
+    paramIn(cp, "pendingSnoopRetriesSize", snoopretry_sz);
+    paramIn(cp, "pendingRespPktsSize", resppkts_sz);
+    paramIn(cp, "pendingReqPktsSize", reqpkts_sz);
+    // PacketPtr/flit-bearing state cannot be reconstructed from stable
+    // identities alone.  A valid full-system checkpoint must reach the
+    // global drain fixed point, where every one of these fields is empty.
+    // Reject an invalid checkpoint instead of silently dropping a request
+    // and allowing the restored guest to hang later.
+    fatal_if(txn_size != 0 || snoop_size != 0 || retry_size != 0 ||
+                 compacks_sz != 0 || snoopresp_sz != 0 ||
+                 snoopretry_sz != 0 || resppkts_sz != 0 || reqpkts_sz != 0,
+             "%s cannot restore non-drained CHI RN state: "
+             "txns=%u snoops=%u retries=%u compacks=%llu "
+             "snoopRsp=%llu snoopRetry=%llu respPkts=%llu reqPkts=%llu\n",
+             name(), txn_size, snoop_size, retry_size,
+             static_cast<unsigned long long>(compacks_sz),
+             static_cast<unsigned long long>(snoopresp_sz),
+             static_cast<unsigned long long>(snoopretry_sz),
+             static_cast<unsigned long long>(resppkts_sz),
+             static_cast<unsigned long long>(reqpkts_sz));
 }
 
 } // namespace Chi

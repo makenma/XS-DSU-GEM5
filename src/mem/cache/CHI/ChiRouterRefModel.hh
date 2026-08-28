@@ -29,6 +29,8 @@ class ChiRouterRefModel : public BasicChiComponent, public ruby::Consumer
     void print(std::ostream &out) const override;
     Port &getPort(const std::string &if_name,
                   PortID idx = InvalidPortID) override;
+    void serialize(CheckpointOut &cp) const override;
+    void unserialize(CheckpointIn &cp) override;
 
   private:
     static constexpr int RefChannels = static_cast<int>(ChannelType::NUM_CHANNELS);

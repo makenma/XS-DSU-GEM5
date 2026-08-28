@@ -39,12 +39,15 @@ struct BackendGeometry
 class HnfSlcSfBackendCheckpointTest : public SerializationFixture
 {
   protected:
-    static std::string serializeBackend(const HnfSLCSFBackend& backend)
+    static std::string serializeBackend(
+        const HnfSLCSFBackend& backend, bool preserve_sf = true,
+        bool preserve_slc = true)
     {
         std::ostringstream checkpoint;
         {
             Serializable::ScopedCheckpointSection section(checkpoint, "backend");
-            backend.serializePersistentState(checkpoint);
+            backend.serializePersistentState(
+                checkpoint, preserve_sf, preserve_slc);
         }
         return checkpoint.str();
     }
@@ -484,7 +487,8 @@ TEST(HnfSlcSfBackendInvariantTest,
 
     const auto observation = probeLine(backend, ReplacementAddr, 63);
     EXPECT_EQ(observation.result.sfState, HnfSfState::EN);
-    EXPECT_EQ(observation.result.rnfvec, (1ULL << 4) | (1ULL << 8));
+    // SrcIDs 0, 4, and 8 occupy compact directory indices 0, 1, and 2.
+    EXPECT_EQ(observation.result.rnfvec, (1ULL << 1) | (1ULL << 2));
     EXPECT_EQ(observation.result.rnfid, 4);
     backend.checkGlobalInvariants();
 }
@@ -622,6 +626,142 @@ TEST_F(HnfSlcSfBackendCheckpointTest, RestoreRejectsNonBooleanPersistentFields)
         replaceCheckpointValue(corrupted, field, value);
         expectRestoreRejected(corrupted, geometry);
     }
+}
+
+TEST_F(HnfSlcSfBackendCheckpointTest,
+       ClassicCheckpointSerializesCanonicalEmptySf)
+{
+    const BackendGeometry geometry{};
+    HnfSLCSFBackend original(
+        64, geometry.slcSets, geometry.slcWays, geometry.sfSets,
+        geometry.sfWays, geometry.seqEntries);
+    const auto data = lineData(0x29);
+    original.commitRead(
+        VictimAddr, 3, PocqTxnKind::ReadShared, data, false, 17);
+    ASSERT_TRUE(probeLine(original, VictimAddr, 3).result.sfHit);
+
+    const std::string checkpoint = serializeBackend(original, false);
+    EXPECT_NE(checkpoint.find("slcValid=1\n"), std::string::npos);
+    EXPECT_NE(checkpoint.find("sfValid=0\n"), std::string::npos);
+    EXPECT_NE(checkpoint.find("sfTag=0\n"), std::string::npos);
+    EXPECT_NE(checkpoint.find("sfState=0\n"), std::string::npos);
+    EXPECT_NE(checkpoint.find("sfHomeNodeId=0\n"), std::string::npos);
+    EXPECT_NE(checkpoint.find("sfOwner=0\n"), std::string::npos);
+    EXPECT_NE(checkpoint.find("sfSharers=0\n"), std::string::npos);
+    EXPECT_NE(checkpoint.find("sfGeneration=0\n"), std::string::npos);
+    EXPECT_NE(checkpoint.find("sfReplacementStamp=0\n"),
+              std::string::npos);
+
+    simulateSerialization(checkpoint);
+    HnfSLCSFBackend restored(
+        64, geometry.slcSets, geometry.slcWays, geometry.sfSets,
+        geometry.sfWays, geometry.seqEntries);
+    CheckpointIn input(getDirName());
+    {
+        Serializable::ScopedCheckpointSection section(input, "backend");
+        ASSERT_NO_THROW(restored.unserializePersistentState(input, false));
+    }
+    const auto observation = probeLine(restored, VictimAddr, 3);
+    EXPECT_TRUE(observation.result.slcHit);
+    EXPECT_FALSE(observation.result.sfHit);
+    EXPECT_EQ(observation.result.data, data);
+    restored.checkGlobalInvariants();
+}
+
+TEST_F(HnfSlcSfBackendCheckpointTest,
+       ClassicRestoreDiscardsSfFromOlderCheckpoint)
+{
+    const BackendGeometry geometry{};
+    HnfSLCSFBackend original(
+        64, geometry.slcSets, geometry.slcWays, geometry.sfSets,
+        geometry.sfWays, geometry.seqEntries);
+    const auto data = lineData(0x39);
+    original.commitRead(
+        VictimAddr, 3, PocqTxnKind::ReadShared, data, false, 17);
+    const std::string checkpoint = serializeBackend(original);
+    ASSERT_NE(checkpoint.find("sfValid=1\n"), std::string::npos);
+    simulateSerialization(checkpoint);
+
+    HnfSLCSFBackend restored(
+        64, geometry.slcSets, geometry.slcWays, geometry.sfSets,
+        geometry.sfWays, geometry.seqEntries);
+    CheckpointIn input(getDirName());
+    {
+        Serializable::ScopedCheckpointSection section(input, "backend");
+        ASSERT_NO_THROW(restored.unserializePersistentState(input, false));
+    }
+    const auto observation = probeLine(restored, VictimAddr, 3);
+    EXPECT_TRUE(observation.result.slcHit);
+    EXPECT_FALSE(observation.result.sfHit);
+    EXPECT_EQ(observation.result.data, data);
+    restored.checkGlobalInvariants();
+}
+
+TEST_F(HnfSlcSfBackendCheckpointTest,
+       FullSystemCheckpointWritesValidSlcAndSerializesEmptyArrays)
+{
+    BackendGeometry geometry{};
+    geometry.slcWays = 2;
+    geometry.sfWays = 2;
+    HnfSLCSFBackend original(
+        64, geometry.slcSets, geometry.slcWays, geometry.sfSets,
+        geometry.sfWays, geometry.seqEntries);
+    const auto dirty_data = lineData(0x49);
+    const auto clean_data = lineData(0x69);
+    original.writeLine(
+        VictimAddr, 3, dirty_data, PocqTxnKind::WriteUnique);
+    original.commitRead(
+        ReplacementAddr, 5, PocqTxnKind::ReadShared, clean_data, false, 19);
+
+    std::vector<std::pair<uint64_t, std::vector<uint8_t>>> dirty;
+    original.forEachDirtySlcLine(
+        [&dirty](uint64_t address, const std::vector<uint8_t>& bytes) {
+            dirty.emplace_back(address, bytes);
+        });
+    ASSERT_EQ(dirty.size(), 1);
+    EXPECT_EQ(dirty[0].first, VictimAddr);
+    EXPECT_EQ(dirty[0].second, dirty_data);
+
+    std::vector<std::pair<uint64_t, std::vector<uint8_t>>> valid;
+    original.forEachValidSlcLine(
+        [&valid](uint64_t address, const std::vector<uint8_t>& bytes) {
+            valid.emplace_back(address, bytes);
+        });
+    ASSERT_EQ(valid.size(), 2);
+    const auto dirty_line = std::find_if(
+        valid.begin(), valid.end(), [](const auto& line) {
+            return line.first == VictimAddr;
+        });
+    const auto clean_line = std::find_if(
+        valid.begin(), valid.end(), [](const auto& line) {
+            return line.first == ReplacementAddr;
+        });
+    ASSERT_NE(dirty_line, valid.end());
+    ASSERT_NE(clean_line, valid.end());
+    EXPECT_EQ(dirty_line->second, dirty_data);
+    EXPECT_EQ(clean_line->second, clean_data);
+
+    const std::string checkpoint = serializeBackend(original, false, false);
+    EXPECT_NE(checkpoint.find("slcValid=0 0\n"), std::string::npos);
+    EXPECT_NE(checkpoint.find("slcTag=0 0\n"), std::string::npos);
+    EXPECT_NE(checkpoint.find("slcState=0 0\n"), std::string::npos);
+    EXPECT_NE(checkpoint.find("slcDataSize=0 0\n"), std::string::npos);
+    EXPECT_NE(checkpoint.find("slcData=\n"), std::string::npos);
+
+    simulateSerialization(checkpoint);
+    HnfSLCSFBackend restored(
+        64, geometry.slcSets, geometry.slcWays, geometry.sfSets,
+        geometry.sfWays, geometry.seqEntries);
+    CheckpointIn input(getDirName());
+    {
+        Serializable::ScopedCheckpointSection section(input, "backend");
+        ASSERT_NO_THROW(
+            restored.unserializePersistentState(input, false, false));
+    }
+    const auto observation = probeLine(restored, VictimAddr, 3);
+    EXPECT_FALSE(observation.result.slcHit);
+    EXPECT_FALSE(observation.result.sfHit);
+    restored.checkGlobalInvariants();
 }
 
 TEST_F(HnfSlcSfBackendCheckpointTest, RestoreRejectsSlcValidStateAndDataInconsistency)

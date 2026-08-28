@@ -10,6 +10,11 @@
 #include "params/SlcSnoopFilter.hh"
 #include "sim/clocked_object.hh"
 
+namespace gem5
+{
+class System;
+}
+
 namespace gem5::Chi
 {
 
@@ -162,6 +167,7 @@ class SlcSnoopFilter : public ClockedObject
     void resetStats() override;
     DrainState drain() override;
     void drainResume() override;
+    void memWriteback() override;
     void serialize(CheckpointOut& cp) const override;
     void unserialize(CheckpointIn& cp) override;
 
@@ -245,6 +251,7 @@ class SlcSnoopFilter : public ClockedObject
     uint64_t scheduledServiceCycle = 0;
     std::optional<Tick> lastServiceTick;
     std::function<void(Tick)> futureWakeupCallback;
+    System* const system;
     const bool exitOnSlcFull;
     bool fullExitSignaled = false;
 };

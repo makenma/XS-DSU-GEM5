@@ -5,6 +5,7 @@
 #include <memory>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "base/intmath.hh"
 #include "base/logging.hh"
@@ -13,6 +14,7 @@
 #include "debug/HnfDirtyVictimE2E.hh"
 #include "mem/cache/CHI/base/ReqOpcode.hh"
 #include "mem/packet.hh"
+#include "sim/serialize.hh"
 #include "mem/request.hh"
 #include "sim/system.hh"
 
@@ -631,6 +633,121 @@ Chi2ClassicMemBridge::pump()
     if (hasPumpWork()) {
         schedulePump();
     }
+}
+
+void
+Chi2ClassicMemBridge::serialize(CheckpointOut &cp) const
+{
+    ClockedObject::serialize(cp);
+    Serializable::ScopedCheckpointSection section(cp, "chi2classicmem");
+
+    // TxnID-keyed outstanding SN transactions (TxnID namespace).
+    paramOut(cp, "nextDbid", static_cast<uint32_t>(nextDbid));
+    paramOut(cp, "memReqBlocked", static_cast<uint32_t>(memReqBlocked));
+    paramOut(cp, "txnsSize", txns.size());
+    std::vector<uint32_t> txn_src, txn_id, txn_kind, txn_phase, txn_exp,
+        txn_dbid;
+    for (const auto &kv : txns) {
+        txn_src.push_back(kv.first.srcId);
+        txn_id.push_back(kv.first.txnId);
+        txn_kind.push_back(static_cast<uint32_t>(kv.second.kind));
+        txn_phase.push_back(static_cast<uint32_t>(kv.second.phase));
+        txn_exp.push_back(kv.second.expectedBytes);
+        txn_dbid.push_back(static_cast<uint32_t>(kv.second.dbid));
+    }
+    arrayParamOut(cp, "txnSrcId", txn_src);
+    arrayParamOut(cp, "txnTxnId", txn_id);
+    arrayParamOut(cp, "txnKind", txn_kind);
+    arrayParamOut(cp, "txnPhase", txn_phase);
+    arrayParamOut(cp, "txnExpectedBytes", txn_exp);
+    arrayParamOut(cp, "txnDbid", txn_dbid);
+
+    // Classic-memory request queue (queue + TxnID keys).
+    paramOut(cp, "memReqQSize", memReqQ.size());
+    std::vector<uint32_t> mrq_src, mrq_txn;
+    for (const auto &k : memReqQ) {
+        mrq_src.push_back(k.srcId);
+        mrq_txn.push_back(k.txnId);
+    }
+    arrayParamOut(cp, "memReqQSrcId", mrq_src);
+    arrayParamOut(cp, "memReqQTxnId", mrq_txn);
+
+    // Response/DAT queue occupancy is serialized as a drain invariant. Flit
+    // contents have no stable representation, so the global checkpoint must
+    // empty these queues before serialization.
+    paramOut(cp, "txDatQSize", txDatQ.size());
+    paramOut(cp, "txRspQSize", txRspQ.size());
+    paramOut(cp, "pendingReqValid",
+             static_cast<uint32_t>(pendingReq.has_value()));
+    paramOut(cp, "blockedPktValid",
+             static_cast<uint32_t>(blockedPkt != nullptr));
+}
+
+void
+Chi2ClassicMemBridge::unserialize(CheckpointIn &cp)
+{
+    ClockedObject::unserialize(cp);
+    Serializable::ScopedCheckpointSection section(cp, "chi2classicmem");
+
+    uint32_t next_dbid = 1, mem_req_blocked = 0;
+    paramIn(cp, "nextDbid", next_dbid);
+    paramIn(cp, "memReqBlocked", mem_req_blocked);
+    nextDbid = static_cast<uint8_t>(next_dbid);
+    memReqBlocked = mem_req_blocked;
+
+    txns.clear();
+    uint32_t txn_size = 0;
+    paramIn(cp, "txnsSize", txn_size);
+    std::vector<uint32_t> txn_src, txn_id, txn_kind, txn_phase, txn_exp,
+        txn_dbid;
+    arrayParamIn(cp, "txnSrcId", txn_src);
+    arrayParamIn(cp, "txnTxnId", txn_id);
+    arrayParamIn(cp, "txnKind", txn_kind);
+    arrayParamIn(cp, "txnPhase", txn_phase);
+    arrayParamIn(cp, "txnExpectedBytes", txn_exp);
+    arrayParamIn(cp, "txnDbid", txn_dbid);
+    for (uint32_t i = 0; i < txn_size && i < txn_src.size(); ++i) {
+        Chi2ClassicTxnKey key{txn_src[i], txn_id[i]};
+        TxnEntry e;
+        e.kind = static_cast<TxnEntry::Kind>(txn_kind[i]);
+        e.phase = static_cast<TxnEntry::Phase>(txn_phase[i]);
+        e.expectedBytes = txn_exp[i];
+        e.dbid = static_cast<uint8_t>(txn_dbid[i]);
+        e.pkt = nullptr;
+        txns.emplace(key, std::move(e));
+    }
+
+    memReqQ.clear();
+    uint32_t mrq_size = 0;
+    paramIn(cp, "memReqQSize", mrq_size);
+    std::vector<uint32_t> mrq_src, mrq_txn;
+    arrayParamIn(cp, "memReqQSrcId", mrq_src);
+    arrayParamIn(cp, "memReqQTxnId", mrq_txn);
+    for (uint32_t i = 0; i < mrq_size && i < mrq_src.size(); ++i) {
+        memReqQ.push_back(Chi2ClassicTxnKey{mrq_src[i], mrq_txn[i]});
+    }
+
+    uint64_t txdat_sz = 0, txrsp_sz = 0;
+    paramIn(cp, "txDatQSize", txdat_sz);
+    paramIn(cp, "txRspQSize", txrsp_sz);
+    // Flit-bearing queues must be empty in a valid drained checkpoint.
+
+    uint32_t pending_req_valid = 0, blocked_pkt_valid = 0;
+    paramIn(cp, "pendingReqValid", pending_req_valid);
+    paramIn(cp, "blockedPktValid", blocked_pkt_valid);
+    if (!pending_req_valid) pendingReq.reset();
+    blockedPkt = nullptr;
+
+    fatal_if(txn_size != 0 || mrq_size != 0 || txdat_sz != 0 ||
+                 txrsp_sz != 0 || pending_req_valid != 0 ||
+                 blocked_pkt_valid != 0 || mem_req_blocked != 0,
+             "%s cannot restore non-drained CHI SN state: "
+             "txns=%u memReqQ=%u txDat=%llu txRsp=%llu pendingReq=%u "
+             "blockedPkt=%u memReqBlocked=%u\n",
+             name(), txn_size, mrq_size,
+             static_cast<unsigned long long>(txdat_sz),
+             static_cast<unsigned long long>(txrsp_sz), pending_req_valid,
+             blocked_pkt_valid, mem_req_blocked);
 }
 
 } // namespace Chi

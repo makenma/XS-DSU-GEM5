@@ -205,7 +205,7 @@ Dueling::instantiateEntry()
     bool match_b = (set_index >> set_shift) == ((~set_index) & set_mask);
     auto dueler =static_cast<Dueler*>(replacement_data);
 
-    uint64_t id = duelingMonitor.getID();
+    uint32_t id = duelingMonitor.getID();
     if (match_a) {
         dueler->setSample(id, true);
     } else if (match_b) {

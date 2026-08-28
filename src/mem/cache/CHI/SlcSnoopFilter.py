@@ -17,6 +17,14 @@ class SlcSnoopFilter(ClockedObject):
         PyBindMethod("rearmSlcFullExit"),
     ]
 
+    system = Param.System(Parent.any, "System containing the HN-F SLC")
+    # Cache2ChiBridge sends functional writes directly to classic memory, so
+    # the SLC must commit its potentially stale lower copy before private
+    # caches overwrite memory with the newest owner data.
+    checkpoint_writeback_priority = Param.Int(
+        -1, "Checkpoint writeback priority; lower values run first")
+    cache_level = Param.Unsigned(3, "Checkpoint writeback hierarchy level")
+
     # These are the canonical runtime parameters. Parent proxies preserve the
     # old HomeNodeFull paths as defaults, while explicit child values win by
     # normal SimObject parameter resolution.

@@ -40,6 +40,9 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     Port& getPort(const std::string& if_name, PortID idx = InvalidPortID) override;
     void wakeup() override;
     void print(std::ostream& out) const override;
+    DrainState drain() override;
+    void serialize(CheckpointOut &cp) const override;
+    void unserialize(CheckpointIn &cp) override;
 
     /**
      * Host-only ROI instrumentation. These methods do not schedule events or
@@ -286,6 +289,9 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     AddrRangeList cacheGetAddrRanges() const;
 
     MemoryIntent classify(PacketPtr pkt) const;
+    static MemoryIntent failedScRefillIntent(bool needs_response);
+    static MemoryIntent cacheRespondingCoordinationIntent();
+    static bool shouldPromoteUpgrade(MemCmd cmd, bool cache_responding);
     RawReq mapToReq(const MemoryIntent& intent, PacketPtr pkt,
                     uint32_t txnid) const;
     std::vector<RawDat> packDataBeats(const MemoryIntent& intent,
@@ -314,6 +320,7 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     std::unordered_map<uint32_t, SnoopEntry> snoops;
     std::unordered_set<PacketPtr> promotedUpgradePkts;
     bool cacheRespBlocked = false;
+    bool memReqBlocked = false;
 
     const uint32_t nodeId;
     const uint32_t homeNodeId;
@@ -344,6 +351,8 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
 
     void schedulePump();
     bool hasPumpWork() const;
+    bool completelyIdle() const;
+    void testDrainComplete();
 
     std::optional<uint32_t> allocateTxnId();
     static uint64_t firstTxnIdInNamespace(
@@ -372,6 +381,13 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
         const std::function<bool(ChannelType, const FlitVariant&)>& enqueue);
     void queuePendingSnoopResponse(SnoopEntry&& snoop);
     std::optional<RawRsp> makeCompAck(const TxnEntry& txn) const;
+    static bool advanceTxnData(
+        TxnEntry& txn,
+        const std::function<bool(ChannelType, const FlitVariant&)>& enqueue);
+    static bool txnDataPending(const TxnEntry& txn);
+    static bool advanceUncacheableBypass(
+        PacketPtr pkt, bool& blocked,
+        const std::function<bool(PacketPtr)>& send);
     bool sendTxnData(TxnEntry& txn);
     bool reissueRetriedTxn(uint32_t txnid);
     void maybeComplete(TxnEntry& txn);

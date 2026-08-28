@@ -77,6 +77,239 @@ HNF_ATTACHMENTS = tuple(
 HNF_NODE_IDS = tuple(attachment.node_id for attachment in HNF_ATTACHMENTS)
 
 
+# ---------------------------------------------------------------------------
+# D0 boundary attachments from figure 23.2: 16 KMH RN-F endpoints and 4 DDR
+# SN endpoints.  Each entry fixes the logical index, the router coordinate,
+# the P/D port, and the 11-bit CHI node ID = (x<<7)|(y<<4)|(port<<2)|device.
+#
+# RN-F bridges attach to the router ``device_ports`` vector; HN-F and DDR SN
+# bridges attach to the router ``local_ports`` vector.  The two vectors are
+# independent, so one router may carry an RN-F on device_ports and an HN-F or
+# DDR endpoint on local_ports without any port conflict.  Within a single
+# vector, one (router, P, D) slot hosts at most one endpoint.
+# ---------------------------------------------------------------------------
+
+CPU_PORT = 0
+CPU_DEVICE = 0
+DDR_PORT = 2
+DDR_DEVICE = 0
+DDR_CHANNEL_COUNT = 4
+DDR_INTERLEAVE_SHIFT = 6  # 64-byte cache-line interleave: bits [7:6]
+
+
+@dataclass(frozen=True)
+class RnfAttachment:
+    """One logical Linux CPU and its router RN-F attachment."""
+
+    index: int
+    x: int
+    y: int
+    port: int = CPU_PORT
+    device: int = CPU_DEVICE
+
+    @property
+    def node_id(self):
+        return chi_node_id(self.x, self.y, self.port, self.device)
+
+    @property
+    def device_port_index(self):
+        # ChiRouterRefModel.device_ports is indexed as p * dnum + d (dnum=4).
+        return self.port * 4 + self.device
+
+
+# Figure 23.2 D0: 16 KMH cores.  CPU 15 shares router R_0_3 with CPU 10:
+# CPU 10 is on P0/D0 and CPU 15 is on P1/D0.  All other CPUs use P0/D0.
+# Node IDs match the seed table exactly (verified against
+# (x<<7)|(y<<4)|(port<<2)|device).
+CPU_COORDINATES = (
+    (0, 1), (1, 1), (2, 1), (3, 1), (4, 1),
+    (0, 2), (1, 2), (2, 2), (3, 2), (4, 2),
+    (0, 3), (1, 3), (2, 3), (3, 3), (4, 3),
+    (0, 3),
+)
+CPU_PORT_OVERRIDES = {
+    # CPU 15 sits on R_0_3 P1/D0 (shares the router with CPU 10 on P0/D0).
+    15: 1,
+}
+
+CPU_ATTACHMENTS = tuple(
+    RnfAttachment(
+        index,
+        x,
+        y,
+        port=CPU_PORT_OVERRIDES.get(index, CPU_PORT),
+        device=CPU_DEVICE,
+    )
+    for index, (x, y) in enumerate(CPU_COORDINATES)
+)
+CPU_NODE_IDS = tuple(attachment.node_id for attachment in CPU_ATTACHMENTS)
+
+
+@dataclass(frozen=True)
+class DdrAttachment:
+    """One DDR SN channel and its router attachment at P2/D0."""
+
+    index: int
+    x: int
+    y: int
+    port: int = DDR_PORT
+    device: int = DDR_DEVICE
+
+    @property
+    def node_id(self):
+        return chi_node_id(self.x, self.y, self.port, self.device)
+
+    @property
+    def local_port_index(self):
+        # ChiRouterRefModel.local_ports is indexed as p * dnum + d (dnum=4).
+        return self.port * 4 + self.device
+
+
+# Figure 23.2 D0 west edge: two DDR-controller groups drive four 32-bit
+# DDR5 PHY/DIMM channels, modelled as four cache-line-interleaved DDR SN
+# endpoints on R_0_0..R_0_3 P2/D0.  This replaces the legacy single shared SN
+# adapter that sat at router (5,0) P0/D0.
+DDR_COORDINATES = ((0, 0), (0, 1), (0, 2), (0, 3))
+DDR_ATTACHMENTS = tuple(
+    DdrAttachment(index, x, y)
+    for index, (x, y) in enumerate(DDR_COORDINATES)
+)
+DDR_NODE_IDS = tuple(attachment.node_id for attachment in DDR_ATTACHMENTS)
+
+
+def ddr_index_for_address(address):
+    """Return the DDR channel index (0..3) for a physical address.
+
+    64-byte cache-line interleave: ``ddr_index = (address >> 6) & 0x3``.
+    The HN-F SN target table and the classic-memory AddrRange interleave use
+    the same bit field so the CHI-side and classic-side selections agree, and
+    every physical address maps to exactly one DDR channel.
+    """
+
+    return (address >> DDR_INTERLEAVE_SHIFT) & (DDR_CHANNEL_COUNT - 1)
+
+
+def ddr_node_id_for_address(address):
+    """Return the DDR SN node ID selected for ``address``."""
+
+    return DDR_NODE_IDS[ddr_index_for_address(address)]
+
+
+def validate_d0_attachments():
+    """Assert every D0 endpoint Node ID is unique and no router P/D slot is
+    double-booked on the same port vector.
+
+    Returns True on success so callers can write ``assert validate_...()``.
+    """
+
+    all_ids = HNF_NODE_IDS + CPU_NODE_IDS + DDR_NODE_IDS
+    if len(set(all_ids)) != len(all_ids):
+        duplicates = sorted({nid for nid in all_ids if all_ids.count(nid) > 1})
+        raise ValueError("duplicate D0 CHI Node IDs: %s" % duplicates)
+
+    # device_ports vector: RN-F endpoints only.
+    device_slots = [
+        (a.x, a.y, a.port, a.device) for a in CPU_ATTACHMENTS
+    ]
+    if len(set(device_slots)) != len(device_slots):
+        raise ValueError("RN-F device_ports slot collision")
+
+    # local_ports vector: HN-F and DDR endpoints share this vector, so check
+    # them together.  HN-F uses P1/D0 and DDR uses P2/D0, so they never
+    # overlap, but the assertion guards against future edits.
+    local_slots = (
+        [(a.x, a.y, a.port, a.device) for a in HNF_ATTACHMENTS]
+        + [(a.x, a.y, a.port, a.device) for a in DDR_ATTACHMENTS]
+    )
+    if len(set(local_slots)) != len(local_slots):
+        raise ValueError("HN-F/DDR local_ports slot collision")
+
+    return True
+
+
+def connect_ddr_bridges(system):
+    """Attach the four DDR SN bridges at R_0_0..R_0_3 P2/D0.
+
+    ``system.snf_bridges`` must already hold four Chi2ClassicMemBridge
+    instances (created by the system builder).  Each bridge becomes a distinct
+    CHI SN endpoint with a unique Node ID on its router's local_ports P2/D0
+    slot; the HN-F selects among them by 64-byte cache-line interleave (see
+    ``ddr_index_for_address``).  The classic-memory side of every bridge
+    forwards to ``system.membus``, preserving the platform's existing
+    functional memory backing.
+
+    This replaces the legacy single shared SN adapter at router (5,0) P0/D0.
+    """
+
+    bridges = getattr(system, "snf_bridges", None)
+    if bridges is None:
+        raise ValueError(
+            "connect_ddr_bridges requires system.snf_bridges (a list of "
+            "four Chi2ClassicMemBridge instances)"
+        )
+    if len(bridges) != len(DDR_ATTACHMENTS):
+        raise ValueError(
+            "D0 requires %d DDR SN bridges, got %d"
+            % (len(DDR_ATTACHMENTS), len(bridges))
+        )
+
+    for attachment, bridge in zip(DDR_ATTACHMENTS, bridges):
+        bridge.node_id = attachment.node_id
+        bridge.hnf_node_id = 0  # respond to the requesting HN-F SrcID
+        bridge.block_size = system.cache_line_size
+        bridge.max_outstanding = 512
+        router = system.chi_routers[router_index(attachment.x, attachment.y)]
+        router.local_ports[attachment.local_port_index] = bridge.chi_side
+        bridge.mem_side = system.membus.cpu_side_ports
+
+
+def format_topology_summary():
+    """Return the human-readable D0 topology summary string.
+
+    Kept pure-Python (no gem5 objects) so it can be unit-tested and printed
+    from either the gem5 config entry or the standalone test harness.
+    """
+
+    lines = []
+    lines.append("CHI figure-23.2 D0 topology summary")
+    lines.append("  Routers:    %d (%dx%d mesh)" % (
+        MESH_COLUMNS * MESH_ROWS, MESH_COLUMNS, MESH_ROWS))
+    lines.append("  Mesh links: %d bidirectional nearest-neighbor" %
+                 sum(1 for _ in mesh_links()))
+    lines.append("  RN-F (CPU): %d endpoints on device_ports" %
+                 len(CPU_ATTACHMENTS))
+    lines.append("  HN-F (SLC): %d endpoints on local_ports P1/D0" %
+                 len(HNF_ATTACHMENTS))
+    lines.append("  DDR (SN):   %d endpoints on local_ports P2/D0" %
+                 len(DDR_ATTACHMENTS))
+    lines.append("")
+    lines.append("  Clocks: CPU 2.3GHz, Router/HN-F 1.8GHz, "
+                 "DDR controller 600MHz, DDR5-4800 PHY")
+    lines.append("  Memory: default 16GiB over 4 channels, "
+                 "64B cache-line interleave ddr_index=(pa>>6)&0x3")
+    lines.append("")
+    lines.append("  CPU -> Router/P/D -> NodeID:")
+    for att in CPU_ATTACHMENTS:
+        lines.append("    CPU %2d  R_%d_%d P%d/D%d  %#06x" % (
+            att.index, att.x, att.y, att.port, att.device, att.node_id))
+    lines.append("")
+    lines.append("  HN-F -> Router/P/D -> NodeID:")
+    for att in HNF_ATTACHMENTS:
+        lines.append("    HN-F %2d R_%d_%d P%d/D%d  %#06x" % (
+            att.index, att.x, att.y, att.port, att.device, att.node_id))
+    lines.append("")
+    lines.append("  DDR -> Router/P/D -> NodeID:")
+    for att in DDR_ATTACHMENTS:
+        lines.append("    DDR %d  R_%d_%d P%d/D%d  %#06x" % (
+            att.index, att.x, att.y, att.port, att.device, att.node_id))
+    lines.append("")
+    lines.append("  CMN SCG HN-F XOR masks: " +
+                 ", ".join("%#014x" % m for m in CMN_16_HNF_XOR_MASKS))
+    lines.append("  DDR Node IDs (SN target table): " +
+                 ", ".join("%#06x" % nid for nid in DDR_NODE_IDS))
+    return "\n".join(lines)
+
+
 def router_index(x, y):
     """Return the row-major index used by the 24-element router vector."""
 

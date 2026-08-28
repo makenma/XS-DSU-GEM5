@@ -948,6 +948,12 @@ LSQ::completeSbufferEvict(PacketPtr pkt)
     }
 
     storeBuffer.release(request->sbuffer_entry);
+    // A fence at the head of the ROB can put the pipeline to sleep while it
+    // waits for the store buffer to drain.  The response that releases the
+    // final entry is then the only event capable of making forward progress,
+    // so restart the CPU and let commit observe the empty buffer.
+    cpu->wakeCPU();
+    cpu->activityThisCycle();
     DPRINTF(StoreBuffer,
             "finish entry[%#x] evict to cache, sbuffer size: %d, "
             "unsentsize: %d\n",

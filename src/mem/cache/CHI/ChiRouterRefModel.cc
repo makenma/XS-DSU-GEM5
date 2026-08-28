@@ -1,6 +1,8 @@
 #include "mem/cache/CHI/ChiRouterRefModel.hh"
 
 #include <algorithm>
+#include <type_traits>
+#include <vector>
 
 #include "base/cprintf.hh"
 #include "base/logging.hh"
@@ -1899,6 +1901,166 @@ ChiRouterRefModel::hasWork() const
     }
 
     return false;
+}
+
+namespace {
+// Recursively flatten/unflatten nested std::array-of-int credit state to
+// a flat vector for arrayParamOut/arrayParamIn.  Handles the router's mixed
+// 2-D (mdlCredit) and 3-D (occ/outCredit/pdevCredit) credit arrays.
+template <typename T>
+void
+flattenInt(std::vector<int> &out, const T &v)
+{
+    if constexpr (std::is_arithmetic_v<T>) {
+        out.push_back(static_cast<int>(v));
+    } else {
+        for (const auto &e : v) flattenInt(out, e);
+    }
+}
+
+template <typename T>
+void
+unflattenInt(std::vector<int>::const_iterator &it, T &v)
+{
+    if constexpr (std::is_arithmetic_v<T>) {
+        v = static_cast<T>(*it++);
+    } else {
+        for (auto &e : v) unflattenInt(it, e);
+    }
+}
+} // namespace
+
+void
+ChiRouterRefModel::serialize(CheckpointOut &cp) const
+{
+    BasicChiComponent::serialize(cp);
+    Serializable::ScopedCheckpointSection section(cp, "router");
+
+    // Routing state and TxnID-keyed reverse routing (TxnID namespace).
+    paramOut(cp, "nextSeq", nextSeq);
+
+    paramOut(cp, "routeTableSize", routeTable.size());
+    std::vector<uint32_t> rt_keys, rt_vals;
+    for (const auto &kv : routeTable) {
+        rt_keys.push_back(kv.first);
+        rt_vals.push_back(kv.second);
+    }
+    arrayParamOut(cp, "routeTableKeys", rt_keys);
+    arrayParamOut(cp, "routeTableVals", rt_vals);
+
+    paramOut(cp, "reverseRouteSize", reverseRoute.size());
+    std::vector<uint32_t> rr_node, rr_txn, rr_val;
+    for (const auto &kv : reverseRoute) {
+        rr_node.push_back(kv.first.node);
+        rr_txn.push_back(kv.first.txn);
+        rr_val.push_back(kv.second);
+    }
+    arrayParamOut(cp, "reverseRouteNode", rr_node);
+    arrayParamOut(cp, "reverseRouteTxn", rr_txn);
+    arrayParamOut(cp, "reverseRouteVal", rr_val);
+
+    // Credit state (per-channel / per-router / per-port / per-device).
+    std::vector<int> occ_flat, mdl_flat, out_flat, pdev_flat;
+    flattenInt(occ_flat, occ);
+    flattenInt(mdl_flat, mdlCredit);
+    flattenInt(out_flat, outCredit);
+    flattenInt(pdev_flat, pdevCredit);
+    arrayParamOut(cp, "occ", occ_flat);
+    arrayParamOut(cp, "mdlCredit", mdl_flat);
+    arrayParamOut(cp, "outCredit", out_flat);
+    arrayParamOut(cp, "pdevCredit", pdev_flat);
+
+    // Queue / FIFO occupancy is serialized as a drain invariant. In-flight
+    // flits have no stable representation, so every occupancy must be zero
+    // at the global checkpoint fixed point.
+    uint64_t input_q_sz = 0, ptx_sz = 0, ppipe_sz = 0;
+    uint64_t out_q_sz = 0, pcand_q_sz = 0;
+    for (int ch = 0; ch < RefChannels; ++ch) {
+        for (const auto &q : inputQ[ch]) input_q_sz += q.size();
+        for (const auto &q : pTxFifo[ch]) ptx_sz += q.size();
+        for (const auto &q : pPipeQ[ch]) ppipe_sz += q.size();
+        for (const auto &r : outQ[ch])
+            for (const auto &q : r) out_q_sz += q.size();
+        for (const auto &r : pCandQ[ch])
+            for (const auto &q : r) pcand_q_sz += q.size();
+    }
+    paramOut(cp, "inputQOccupancy", input_q_sz);
+    paramOut(cp, "outQOccupancy", out_q_sz);
+    paramOut(cp, "pCandQOccupancy", pcand_q_sz);
+    paramOut(cp, "pTxFifoOccupancy", ptx_sz);
+    paramOut(cp, "pPipeQOccupancy", ppipe_sz);
+}
+
+void
+ChiRouterRefModel::unserialize(CheckpointIn &cp)
+{
+    BasicChiComponent::unserialize(cp);
+    Serializable::ScopedCheckpointSection section(cp, "router");
+
+    paramIn(cp, "nextSeq", nextSeq);
+
+    routeTable.clear();
+    uint32_t rt_size = 0;
+    paramIn(cp, "routeTableSize", rt_size);
+    std::vector<uint32_t> rt_keys, rt_vals;
+    arrayParamIn(cp, "routeTableKeys", rt_keys);
+    arrayParamIn(cp, "routeTableVals", rt_vals);
+    for (uint32_t i = 0; i < rt_size && i < rt_keys.size() &&
+                              i < rt_vals.size();
+         ++i) {
+        routeTable[rt_keys[i]] = rt_vals[i];
+    }
+
+    reverseRoute.clear();
+    uint32_t rr_size = 0;
+    paramIn(cp, "reverseRouteSize", rr_size);
+    std::vector<uint32_t> rr_node, rr_txn, rr_val;
+    arrayParamIn(cp, "reverseRouteNode", rr_node);
+    arrayParamIn(cp, "reverseRouteTxn", rr_txn);
+    arrayParamIn(cp, "reverseRouteVal", rr_val);
+    for (uint32_t i = 0; i < rr_size && i < rr_node.size(); ++i) {
+        TxnRouteKey key{rr_node[i], rr_txn[i]};
+        reverseRoute[key] = rr_val[i];
+    }
+
+    std::vector<int> occ_flat, mdl_flat, out_flat, pdev_flat;
+    arrayParamIn(cp, "occ", occ_flat);
+    arrayParamIn(cp, "mdlCredit", mdl_flat);
+    arrayParamIn(cp, "outCredit", out_flat);
+    arrayParamIn(cp, "pdevCredit", pdev_flat);
+    if (!occ_flat.empty()) {
+        auto it = occ_flat.cbegin();
+        unflattenInt(it, occ);
+    }
+    if (!mdl_flat.empty()) {
+        auto it = mdl_flat.cbegin();
+        unflattenInt(it, mdlCredit);
+    }
+    if (!out_flat.empty()) {
+        auto it = out_flat.cbegin();
+        unflattenInt(it, outCredit);
+    }
+    if (!pdev_flat.empty()) {
+        auto it = pdev_flat.cbegin();
+        unflattenInt(it, pdevCredit);
+    }
+
+    uint64_t input_q_sz = 0, ptx_sz = 0, ppipe_sz = 0;
+    uint64_t out_q_sz = 0, pcand_q_sz = 0;
+    paramIn(cp, "inputQOccupancy", input_q_sz);
+    paramIn(cp, "outQOccupancy", out_q_sz);
+    paramIn(cp, "pCandQOccupancy", pcand_q_sz);
+    paramIn(cp, "pTxFifoOccupancy", ptx_sz);
+    paramIn(cp, "pPipeQOccupancy", ppipe_sz);
+    fatal_if(input_q_sz != 0 || out_q_sz != 0 || pcand_q_sz != 0 ||
+                 ptx_sz != 0 || ppipe_sz != 0,
+             "%s cannot restore non-drained CHI router state: "
+             "inputQ=%llu outQ=%llu pCandQ=%llu pTxFifo=%llu pPipeQ=%llu\n",
+             name(), static_cast<unsigned long long>(input_q_sz),
+             static_cast<unsigned long long>(out_q_sz),
+             static_cast<unsigned long long>(pcand_q_sz),
+             static_cast<unsigned long long>(ptx_sz),
+             static_cast<unsigned long long>(ppipe_sz));
 }
 
 } // namespace gem5::Chi

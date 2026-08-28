@@ -102,9 +102,41 @@ Commit::processTrapEvent(ThreadID tid)
 
 Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUParams &params)
     : commitPolicy(params.smtCommitPolicy),
+      stuckCheckCycles(params.CommitStuckCheckCycles),
       stuckCheckEvent([this]() {
         static std::vector<DynInstPtr> debug_insts;
-        if (cpu->curCycle() - this->lastCommitCycle > 40000) {
+        if (cpu->curCycle() - this->lastCommitCycle > stuckCheckCycles) {
+            // A suspended context, for example after RISC-V WFI, is not
+            // expected to commit until an interrupt wakes it.  Depending on
+            // pipeline timing the quiesce instruction may still be at the ROB
+            // head or the ROB may already be empty, so the architectural
+            // thread status is the authoritative condition here.
+            if (cpu->tcBase(0)->status() ==
+                gem5::ThreadContext::Suspended) {
+                lastCommitCycle = cpu->curCycle();
+                cpu->schedule(
+                    this->stuckCheckEvent,
+                    cpu->clockEdge(Cycles(stuckCheckCycles + 10)));
+                return;
+            }
+
+            // A quiesce instruction can remain unexecuted at the ROB head
+            // while commit waits for older stores to leave the shared store
+            // buffer.  On a contended coherent system that writeback can
+            // legitimately take longer than the generic commit watchdog.
+            // Once WFI executes, an arbitrarily long lack of commits is also
+            // its architectural purpose.  In both cases memory responses or
+            // an interrupt, rather than the commit watchdog, provide the
+            // forward-progress event.
+            if (auto inst = rob->readHeadInst(0);
+                inst && inst->isQuiesce()) {
+                lastCommitCycle = cpu->curCycle();
+                cpu->schedule(
+                    this->stuckCheckEvent,
+                    cpu->clockEdge(Cycles(stuckCheckCycles + 10)));
+                return;
+            }
+
             // A globally draining system can spend much longer than the
             // commit watchdog interval emptying caches and memory.  Once the
             // complete O3 pipeline is empty, lack of commits is the intended
@@ -114,7 +146,7 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
                 lastCommitCycle = cpu->curCycle();
                 cpu->schedule(
                     this->stuckCheckEvent,
-                    cpu->clockEdge(Cycles(40010)));
+                    cpu->clockEdge(Cycles(stuckCheckCycles + 10)));
                 return;
             }
             if (traceMaybeExitOnPipelineDrainFromStuckCheck()) {
@@ -136,14 +168,16 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
                 warn("rob was empty, may be fetch or rename stuck\n");
             }
             panic(
-                "Commit stage is stucked for more than 40,000 cycles!\n"
+                "Commit stage is stuck for more than %llu cycles!\n"
                 "Last commit cycle: %lu, current cycle: %lu, suggested "
                 "--debug-start=%llu --debug-end=%llu\n",
+                static_cast<unsigned long long>(stuckCheckCycles),
                 lastCommitCycle, cpu->curCycle(),
                 cpu->cyclesToTicks(Cycles(lastCommitCycle - 200)),
                 cpu->cyclesToTicks(Cycles(lastCommitCycle + 200)));
         }
-        cpu->schedule(this->stuckCheckEvent, cpu->clockEdge(Cycles(40010)));
+        cpu->schedule(this->stuckCheckEvent,
+                      cpu->clockEdge(Cycles(stuckCheckCycles + 10)));
       }, "CommitStuckCheckEvent"),
       cpu(_cpu),
       bp(_bp),
@@ -476,7 +510,10 @@ Commit::startupStage()
     // otherwise leaves this watchdog event in the past at the first simulate.
     lastCommitCycle = cpu->curCycle();
     assert(!stuckCheckEvent.scheduled());
-    cpu->schedule(stuckCheckEvent, cpu->clockEdge(Cycles(40000)));
+    panic_if(stuckCheckCycles == 0,
+             "CommitStuckCheckCycles must be greater than zero\n");
+    cpu->schedule(stuckCheckEvent,
+                  cpu->clockEdge(Cycles(stuckCheckCycles)));
 
     rob->setActiveThreads(activeThreads);
     rob->resetEntries();
@@ -1206,6 +1243,14 @@ Commit::commitInsts()
 
     int commit_width = rob->countInstsOfGroups(commitWidth);
 
+    // Interrupts are taken only after the pipeline has drained, which can
+    // leave no commit groups in the ROB.  The group-based commit limit would
+    // otherwise skip the loop containing handleInterrupt() exactly in that
+    // state and deadlock with Fetch stopped on interruptPending.
+    if (interrupt != NoFault && commit_width == 0) {
+        commit_width = 1;
+    }
+
     if (commit_width >= 0) {
         cpu->activityThisCycle();
     }
@@ -1615,9 +1660,14 @@ Commit::commitHead(const DynInstPtr &head_inst, unsigned inst_num)
 
         // Memory-ordering instructions such as sfence.vma must not execute
         // until older stores are visible; otherwise page-table updates may
-        // race with the TLB invalidation.
+        // race with the TLB invalidation.  A quiesce instruction needs the
+        // same treatment: once WFI suspends the last hardware thread, the O3
+        // tick which drains its store buffer stops.  Letting WFI execute with
+        // a buffered store can therefore hide that store forever (for
+        // example, an OpenSBI spin_unlock immediately followed by WFI).
         if ((head_inst->isMemRef() || head_inst->isReturn() ||
-             head_inst->isReadBarrier() || head_inst->isWriteBarrier()) &&
+             head_inst->isReadBarrier() || head_inst->isWriteBarrier() ||
+             head_inst->isQuiesce()) &&
             (inst_num > 0 || !iewStage->flushStores(tid))) {
             DPRINTF(Commit,
                     "[tid:%i] [sn:%llu] "

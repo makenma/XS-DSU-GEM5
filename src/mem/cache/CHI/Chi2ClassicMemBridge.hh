@@ -32,6 +32,8 @@ class Chi2ClassicMemBridge : public ClockedObject, public ruby::Consumer
                   PortID idx = InvalidPortID) override;
     void wakeup() override;
     void print(std::ostream& out) const override;
+    void serialize(CheckpointOut &cp) const override;
+    void unserialize(CheckpointIn &cp) override;
 
   private:
     class MemSidePort : public RequestPort

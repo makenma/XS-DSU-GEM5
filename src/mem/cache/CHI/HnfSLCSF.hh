@@ -396,9 +396,13 @@ class HnfSLCSF : public HnfSLCSFBackend
     void resumeFromDrain();
 
     /** Serialize only after coordinated drain has sealed all admission. */
-    void serializePersistentState(CheckpointOut& cp) const;
+    void serializePersistentState(
+        CheckpointOut& cp, bool preserve_sf = true,
+        bool preserve_slc = true) const;
     /** Restore a drained image as initialized, idle, and admission-ready. */
-    void unserializePersistentState(CheckpointIn& cp);
+    void unserializePersistentState(
+        CheckpointIn& cp, bool restore_sf = true,
+        bool restore_slc = true);
 
 #ifdef UNIT_TEST
     uint64_t backendGlobalInvariantCheckCountForTest() const

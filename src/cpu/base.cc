@@ -404,15 +404,13 @@ BaseCPU::startup()
     if (powerState->get() == enums::PwrState::UNDEFINED)
         powerState->set(enums::PwrState::ON);
 
-    if (system->multiCore()) {
+    if (system->multiCore() && enableDifftest) {
         goldenMemPtr = system->getGoldenMemPtr();
         _goldenMemManager = system->getGoldenMemManager();
 
-        if (enableDifftest) {
-            panic_if(!diffAllStates->proxy,
-                     "Difftest is enabled without a reference proxy");
-            diffAllStates->proxy->initState(params().cpu_id, goldenMemPtr);
-        }
+        panic_if(!diffAllStates->proxy,
+                 "Difftest is enabled without a reference proxy");
+        diffAllStates->proxy->initState(params().cpu_id, goldenMemPtr);
     } else {
         goldenMemPtr = nullptr;
         _goldenMemManager = nullptr;

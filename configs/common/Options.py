@@ -453,6 +453,11 @@ def addCommonOptions(parser, configure_xiangshan=False):
         help="Place all checkpoints in this absolute directory")
     parser.add_argument("-r", "--checkpoint-restore", action="store", type=int,
                         help="restore from checkpoint <N>")
+    parser.add_argument(
+        "--restore-terminal-wait", type=float, default=0.0,
+        metavar="SECONDS",
+        help="after restoring, keep guest time frozen for SECONDS while "
+             "servicing host terminal connections and input")
     parser.add_argument("--checkpoint-at-end", action="store_true",
                         help="take a checkpoint at end of run")
     parser.add_argument(

@@ -1742,6 +1742,17 @@ Fetch::prepareFetchAddress(ThreadID tid, bool &status_change)
     // The current PC - directly use the actual instruction address
     PCStateBase &this_pc = *threads[tid].fetchpc;
 
+    // A completed I-cache request may leave a valid fetch buffer behind.
+    // Stop before consuming that buffer when an interrupt is pending so the
+    // in-flight instruction list can drain and Commit can take the interrupt.
+    // Checking this after AccessComplete causes an interrupt live lock for a
+    // short, cache-resident loop following WFI.
+    if (checkInterrupt(this_pc.instAddr()) && !delayedCommit[tid]) {
+        ++fetchStats.miscStallCycles;
+        DPRINTF(Fetch, "[tid:%i] Fetch is stalled by interrupt!\n", tid);
+        return false;
+    }
+
     // Handle status transitions and cache access
     if (threads[tid].cacheReq.getOverallStatus() == AccessComplete) {
         DPRINTF(Fetch, "[tid:%i] Icache miss is complete.\n", tid);
@@ -1754,11 +1765,6 @@ Fetch::prepareFetchAddress(ThreadID tid, bool &status_change)
         // I-cache request via sendNextCacheRequest().
         if (!macroop[tid] && !threads[tid].valid) {
             return true;
-        } else if (checkInterrupt(this_pc.instAddr()) && !delayedCommit[tid]) {
-            // Stall CPU if an interrupt is posted
-            ++fetchStats.miscStallCycles;
-            DPRINTF(Fetch, "[tid:%i] Fetch is stalled!\n", tid);
-            return false;
         }
         return true;
     } else {

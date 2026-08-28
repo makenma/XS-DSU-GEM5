@@ -996,7 +996,8 @@ HnfSLCSF::resumeFromDrain()
 }
 
 void
-HnfSLCSF::serializePersistentState(CheckpointOut& cp) const
+HnfSLCSF::serializePersistentState(
+    CheckpointOut& cp, bool preserve_sf, bool preserve_slc) const
 {
     // Admission intentionally remains open during gem5's concurrent drain.
     // Serialization is reached only after the global fixed-point pass has
@@ -1057,11 +1058,13 @@ HnfSLCSF::serializePersistentState(CheckpointOut& cp) const
     arrayParamOut(cp, "victimSnapshotData", victim_snapshot_data);
 
     Serializable::ScopedCheckpointSection backend_section(cp, "backend");
-    HnfSLCSFBackend::serializePersistentState(cp);
+    HnfSLCSFBackend::serializePersistentState(
+        cp, preserve_sf, preserve_slc);
 }
 
 void
-HnfSLCSF::unserializePersistentState(CheckpointIn& cp)
+HnfSLCSF::unserializePersistentState(
+    CheckpointIn& cp, bool restore_sf, bool restore_slc)
 {
     fatal_if(reqOutstanding() != 0 || respOccupied() != 0 ||
                  setLockCount() != 0 ||
@@ -1129,7 +1132,8 @@ HnfSLCSF::unserializePersistentState(CheckpointIn& cp)
 
     {
         Serializable::ScopedCheckpointSection backend_section(cp, "backend");
-        HnfSLCSFBackend::unserializePersistentState(cp);
+        HnfSLCSFBackend::unserializePersistentState(
+            cp, restore_sf, restore_slc);
     }
     runBackendGlobalInvariantCheck();
 
@@ -1448,11 +1452,10 @@ HnfSLCSF::validateMutationRequest(const SlcSfRequest& request) const
         return SlcSfError{
             SlcSfErrorCode::InvalidRequest, "invalid request ID"};
     }
-    if (header.lineAddress % blockSizeBytes() != 0 ||
-        header.requester >= 64) {
+    if (header.lineAddress % blockSizeBytes() != 0) {
         return SlcSfError{
             SlcSfErrorCode::InvalidRequest,
-            "unaligned line address or requester outside RN-F vector"};
+            "unaligned line address"};
     }
 
     return std::visit(
@@ -1829,7 +1832,8 @@ HnfSLCSF::pendingSlcVictimKind(const SlcSfRequest& request) const
                                     typed_request.header.lineAddress);
                                 if (tracked &&
                                     (tracked->sharers &
-                                     (1ULL << typed_request.header.requester))
+                                     (1ULL <<
+                                      sharerIndex(typed_request.header.requester)))
                                         == 0) {
                                     return false;
                                 }

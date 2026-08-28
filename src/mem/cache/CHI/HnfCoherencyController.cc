@@ -124,12 +124,14 @@ requesterTraceKey(uint32_t srcid, uint32_t txnid)
 
 HnfCoherencyController::HnfCoherencyController(
     uint32_t block_size, uint32_t data_beat_bytes, uint32_t num_entries,
-    uint32_t sn_node_id, bool direct_sn_fake_data, uint32_t rnf_slices,
-    bool enable_retry)
+    uint32_t sn_node_id, const std::vector<uint32_t>& sn_node_ids,
+    bool direct_sn_fake_data, uint32_t rnf_slices, bool enable_retry)
     : blockSize(block_size),
       dataBeatBytes(data_beat_bytes),
       maxEntries(num_entries),
       snNodeId(sn_node_id),
+      snNodeIds(sn_node_ids),
+      snInterleaveShift(block_size ? __builtin_ctz(block_size) : 6),
       directSnFakeData(direct_sn_fake_data),
       dirtyVictimRetryEnabled(enable_retry),
       rnfSlices(rnf_slices),
@@ -148,6 +150,9 @@ HnfCoherencyController::HnfCoherencyController(
     fatal_if(rnfSlices == 0 || rnfSlices > 4 ||
                  (rnfSlices & (rnfSlices - 1)) != 0,
              "HnfCC rnf_slices must be a power of two in [1, 4]\n");
+    fatal_if(!snNodeIds.empty() &&
+                 (snNodeIds.size() & (snNodeIds.size() - 1)) != 0,
+             "HnfCC sn_node_ids count must be a power of two\n");
 }
 
 std::optional<HnfCcRetireInfo>
@@ -529,7 +534,6 @@ HnfCoherencyController::acceptLinkReq(const HnfLinkToCcReq& in,
             in.req.srcid, in.req.txnid,
             static_cast<unsigned long long>(entry.blockAddr),
             static_cast<unsigned long long>(cycle));
-
     if (hasAddressHazard(entryId, entry.blockAddr)) {
         entry.state = HnfCcEntryState::Sleep;
         entry.pocqState = PocqState::Sleep;
@@ -613,14 +617,15 @@ HnfCoherencyController::queueSnoops(uint32_t entryId)
         if ((entry.snoopPendingTargets & (1ULL << target)) == 0) {
             continue;
         }
+        const uint32_t target_src = slcsfUnit->srcIdForIndex(target);
 
         HnfCcTxSnp out{};
         out.entry = entryId;
-        out.targetNode = target;
+        out.targetNode = target_src;
         RawSnp& snp = out.snp;
         snp.qos = entry.req.qos;
         snp.srcid = entry.req.tgtid;
-        snp.tgtid = targetRouteId(target, entry.blockAddr);
+        snp.tgtid = targetRouteId(target_src, entry.blockAddr);
         snp.txnid = snoopTxn;
         snp.opcode = entry.slcLookupResult.snoopOpcode;
         snp.addr = entry.blockAddr;
@@ -718,8 +723,8 @@ HnfCoherencyController::completeSnoopTarget(uint32_t entryId,
     panic_if(entry.state != HnfCcEntryState::WaitSnoop,
              "HnfCC snoop completion entry=%u state=%u\n", entryId,
              static_cast<unsigned>(entry.state));
-    panic_if(responder >= 64 ||
-                 (entry.snoopPendingTargets & (1ULL << responder)) == 0,
+    panic_if((entry.snoopPendingTargets &
+                  (1ULL << slcsfUnit->sharerIndex(responder))) == 0,
              "HnfCC snoop txn=%u unexpected responder=%u pending=%#llx\n",
              entry.snoopTxnId, responder,
              static_cast<unsigned long long>(entry.snoopPendingTargets));
@@ -734,7 +739,8 @@ HnfCoherencyController::completeSnoopTarget(uint32_t entryId,
         entry.snoopDataReceived = true;
         entry.responseDataDirty = data_dirty;
     }
-    entry.snoopPendingTargets &= ~(1ULL << responder);
+    entry.snoopPendingTargets &=
+        ~(1ULL << slcsfUnit->sharerIndex(responder));
 
     DPRINTF(HnfCC,
             "CC entry=%u accepts snoop response txn=%u responder=%u "
@@ -767,7 +773,7 @@ HnfCoherencyController::queueMcRead(uint32_t entryId)
     RawReq req{};
     req.qos = entry.req.qos;
     req.srcid = entry.req.tgtid;
-    req.tgtid = snNodeId;
+    req.tgtid = selectSnNode(entry.blockAddr);
     panic_if(entry.mcTxnId != 0,
              "HnfCC entry=%u allocates a second MC transaction=%u\n",
              entryId, entry.mcTxnId);
@@ -1008,7 +1014,7 @@ HnfCoherencyController::notifyTxReqSent(const HnfCcTxReq& request)
                      !transaction->second.requestQueued ||
                      transaction->second.requestSent ||
                      request.req.srcid != transaction->second.homeNodeId ||
-                     request.req.tgtid != snNodeId ||
+                     request.req.tgtid != selectSnNode(request.req.addr) ||
                      static_cast<bool>(request.req.AllowRetry) !=
                          transaction->second.activeAllowRetry ||
                      request.req.pcrdtype !=
@@ -1083,9 +1089,8 @@ HnfCoherencyController::acceptRxDat(const RawDat& dat)
         if (seqPocqEntry.valid &&
             seqPocqEntry.snoopTxnId == dat.txnid) {
             panic_if(seqPocqEntry.state != SeqPocqState::WaitSnoop ||
-                         dat.srcid >= 64 ||
                          (seqPocqEntry.pendingTargets &
-                          (1ULL << dat.srcid)) == 0 ||
+                          (1ULL << slcsfUnit->sharerIndex(dat.srcid))) == 0 ||
                          (seqPocqEntry.dataAssembly.source &&
                           *seqPocqEntry.dataAssembly.source != dat.srcid) ||
                          seqPocqEntry.dataReceived ||
@@ -1124,8 +1129,8 @@ HnfCoherencyController::acceptRxDat(const RawDat& dat)
                  dat.srcid, dat.txnid);
         Entry& entry = entries[snoopIt->second];
         panic_if(entry.state != HnfCcEntryState::WaitSnoop ||
-                     dat.srcid >= 64 ||
-                     (entry.snoopPendingTargets & (1ULL << dat.srcid)) == 0 ||
+                     (entry.snoopPendingTargets &
+                      (1ULL << slcsfUnit->sharerIndex(dat.srcid))) == 0 ||
                      (entry.snoopDataAssembly.source &&
                       *entry.snoopDataAssembly.source != dat.srcid) ||
                      entry.snoopDataReceived ||
@@ -1223,13 +1228,14 @@ HnfCoherencyController::acceptRxDat(const RawDat& dat)
     panic_if(entry.state != HnfCcEntryState::IssueMcRead,
              "HnfCC real-SN RXDAT entry=%u state=%u not waiting for SN data\n",
              entryId, static_cast<unsigned>(entry.state));
+    const uint32_t expected_sn = selectSnNode(entry.blockAddr);
     panic_if(!entry.mcReadIssued || entry.mcTxnId != dat.txnid ||
-                 dat.srcid != snNodeId || dat.tgtid != entry.req.tgtid ||
+                 dat.srcid != expected_sn || dat.tgtid != entry.req.tgtid ||
                  dat.HomeNID != entry.req.tgtid || dat.dbid != 0 ||
                  dat.qos != entry.req.qos,
              "HnfCC real-SN RXDAT identity mismatch entry=%u src=%u/%u "
              "tgt=%u/%u home=%u txn=%u/%u dbid=%u\n",
-             entryId, dat.srcid, snNodeId, dat.tgtid, entry.req.tgtid,
+             entryId, dat.srcid, expected_sn, dat.tgtid, entry.req.tgtid,
              dat.HomeNID, dat.txnid, entry.mcTxnId, dat.dbid);
 
     const bool complete = acceptDataBeat(
@@ -1407,9 +1413,8 @@ HnfCoherencyController::acceptRxRsp(const RawRsp& rsp)
         if (seqPocqEntry.valid &&
             seqPocqEntry.snoopTxnId == rsp.txnid) {
             panic_if(seqPocqEntry.state != SeqPocqState::WaitSnoop ||
-                         rsp.srcid >= 64 ||
                          (seqPocqEntry.pendingTargets &
-                          (1ULL << rsp.srcid)) == 0 ||
+                          (1ULL << slcsfUnit->sharerIndex(rsp.srcid))) == 0 ||
                          rsp.tgtid != seqPocqEntry.homeNodeId ||
                          rsp.qos != 0 || rsp.dbid != 0 ||
                          rsp.respErr != 0 || rsp.pcrdtype != 0 ||
@@ -1435,9 +1440,9 @@ HnfCoherencyController::acceptRxRsp(const RawRsp& rsp)
                  rsp.txnid, snoopIt->second);
         const Entry& entry = entries[snoopIt->second];
         panic_if(entry.state != HnfCcEntryState::WaitSnoop ||
-                     entry.snoopTxnId != rsp.txnid || rsp.srcid >= 64 ||
+                     entry.snoopTxnId != rsp.txnid ||
                      (entry.snoopPendingTargets &
-                      (1ULL << rsp.srcid)) == 0 ||
+                      (1ULL << slcsfUnit->sharerIndex(rsp.srcid))) == 0 ||
                      rsp.tgtid != entry.req.tgtid ||
                      rsp.qos != entry.req.qos || rsp.dbid != 0 ||
                      rsp.respErr != 0 || rsp.pcrdtype != 0 ||
@@ -1745,7 +1750,7 @@ HnfCoherencyController::queueDirtyVictimRequest(
     out.entry = UINT32_MAX;
     out.dirtyVictimId = transaction.victim.victimId.value;
     out.req.srcid = transaction.homeNodeId;
-    out.req.tgtid = snNodeId;
+    out.req.tgtid = selectSnNode(transaction.victim.lineAddress);
     out.req.txnid = transaction.downstreamTxnId;
     out.req.opcode = ReqOp::WriteNoSnpFull;
     out.req.AllowRetry = allowRetry ? 1 : 0;
@@ -1775,7 +1780,7 @@ HnfCoherencyController::queueDirtyVictimData(DirtyVictimTxn& transaction)
     out.entry = UINT32_MAX;
     out.dirtyVictimId = transaction.victim.victimId.value;
     out.dat.srcid = transaction.homeNodeId;
-    out.dat.tgtid = snNodeId;
+    out.dat.tgtid = selectSnNode(transaction.victim.lineAddress);
     out.dat.txnid = transaction.downstreamTxnId;
     out.dat.opcode = DatOp::NonCopyBackWriteData;
     out.dat.last = true;
@@ -1795,7 +1800,8 @@ bool
 HnfCoherencyController::dirtyVictimResponseMatches(
     const DirtyVictimTxn& transaction, const RawRsp& rsp) const
 {
-    return rsp.srcid == snNodeId && rsp.tgtid == transaction.homeNodeId &&
+    return rsp.srcid == selectSnNode(transaction.victim.lineAddress) &&
+        rsp.tgtid == transaction.homeNodeId &&
         rsp.txnid == transaction.downstreamTxnId;
 }
 
@@ -1990,11 +1996,12 @@ HnfCoherencyController::queueSeqSnoops()
         if ((seqPocqEntry.pendingTargets & (1ULL << target)) == 0) {
             continue;
         }
+        const uint32_t target_src = slcsfUnit->srcIdForIndex(target);
         HnfCcTxSnp out{};
         out.entry = UINT32_MAX;
-        out.targetNode = target;
+        out.targetNode = target_src;
         out.snp.srcid = seqPocqEntry.homeNodeId;
-        out.snp.tgtid = targetRouteId(target, seqPocqEntry.blockAddr);
+        out.snp.tgtid = targetRouteId(target_src, seqPocqEntry.blockAddr);
         out.snp.txnid = seqPocqEntry.snoopTxnId;
         out.snp.opcode = SnpOp::CleanInvalid;
         out.snp.addr = seqPocqEntry.blockAddr;
@@ -2019,8 +2026,8 @@ HnfCoherencyController::completeSeqSnoopTarget(uint32_t responder,
              seqPocqEntry.state != SeqPocqState::WaitSnoop,
              "HnfCC completes inactive SEQ snoop responder=%u\n",
              responder);
-    panic_if(responder >= 64 ||
-             (seqPocqEntry.pendingTargets & (1ULL << responder)) == 0,
+    panic_if((seqPocqEntry.pendingTargets &
+                  (1ULL << slcsfUnit->sharerIndex(responder))) == 0,
              "HnfCC SEQ id=%llu unexpected responder=%u pending=%#llx\n",
              static_cast<unsigned long long>(seqPocqEntry.seqId),
              responder,
@@ -2035,7 +2042,8 @@ HnfCoherencyController::completeSeqSnoopTarget(uint32_t responder,
 
     seqPocqEntry.dataReceived |= has_data;
     seqPocqEntry.dataDirty |= data_dirty;
-    seqPocqEntry.pendingTargets &= ~(1ULL << responder);
+    seqPocqEntry.pendingTargets &=
+        ~(1ULL << slcsfUnit->sharerIndex(responder));
     DPRINTF(HnfCC,
             "SEQ POCQ id=%llu accepts snoop response txn=%u responder=%u "
             "hasData=%u pending=%#llx\n",

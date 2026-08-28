@@ -681,13 +681,19 @@ def makeXiangshanPlatformSystem(mem_mode, mdesc=None, np=1, ruby=False):
         self.bridge.mem_side_port = self.iobus.cpu_side_ports
         self.bridge.cpu_side_port = self.membus.mem_side_ports
 
-    self.uartlite  = UartLite()
+    self.terminal = Terminal(outfile="stdoutput")
+    self.uartlite = UartLite(device=self.terminal)
     self.uartlite.pio = self.iobus.mem_side_ports
 
     self.lint = Clint()
     self.lint.pio = self.iobus.mem_side_ports
     self.lint.pio_addr = 0x38000000
     self.lint.num_threads = np
+    # The firmware DT advertises a 10 MHz timebase.  Without an RTC source the
+    # CLINT mtime register never advances, so Linux cannot schedule timers or
+    # reliably bring up secondary harts.
+    self.rtc = RiscvRTC(frequency="10MHz")
+    self.lint.int_pin = self.rtc.int_pin
 
     self.mmcs = NemuMMC()
     self.mmcs.pio = self.iobus.mem_side_ports

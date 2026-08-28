@@ -37,7 +37,9 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import os
 import sys
+import time
 from os import getcwd
 from os.path import join as joinpath
 
@@ -819,7 +821,42 @@ def run_vanilla(options, root, testsys, cpu_class):
         if options.warmup_insts_no_switch != None:
             testsys.cpu[i].warmupInstCount = options.warmup_insts_no_switch
 
+    cptdir = getattr(options, 'checkpoint_dir', None) or m5.options.outdir
+    checkpoint_output_dir = cptdir
     checkpoint_dir = None
+    if getattr(options, 'checkpoint_restore', None) is None:
+        # serializeAll() creates only the final cpt.<tick> directory.  Make
+        # the user-selected parent here so a guest checkpoint pseudo-op does
+        # not fail late with ENOENT.
+        try:
+            os.makedirs(cptdir, exist_ok=True)
+        except OSError as exc:
+            fatal("Unable to create checkpoint directory %s: %s" %
+                  (cptdir, exc))
+    else:
+        if not os.path.isdir(cptdir):
+            fatal("Checkpoint directory does not exist: %s" % cptdir)
+        cpts = [d for d in os.listdir(cptdir)
+                if d.startswith("cpt.") and d[4:].isdigit() and
+                os.path.isdir(joinpath(cptdir, d))]
+        cpts.sort(key=lambda d: int(d[4:]))
+        if not cpts:
+            fatal("No checkpoints found in %s" % cptdir)
+        idx = options.checkpoint_restore - 1
+        if idx < 0 or idx >= len(cpts):
+            fatal("Checkpoint %d not found in %s (have %d)" %
+                  (options.checkpoint_restore, cptdir, len(cpts)))
+        checkpoint_dir = joinpath(cptdir, cpts[idx])
+        print("Restoring from checkpoint: %s" % checkpoint_dir)
+        # Never mix a checkpoint produced by the restored guest into the
+        # immutable input set used for -r selection.  This also makes the
+        # final acceptance artifact self-contained under its run outdir.
+        checkpoint_output_dir = joinpath(m5.options.outdir, "checkpoints")
+        try:
+            os.makedirs(checkpoint_output_dir, exist_ok=True)
+        except OSError as exc:
+            fatal("Unable to create checkpoint output directory %s: %s" %
+                  (checkpoint_output_dir, exc))
     root.apply_config(options.param)
     m5.instantiate(checkpoint_dir)
 
@@ -843,11 +880,38 @@ def run_vanilla(options, root, testsys, cpu_class):
              " Using least")
     maxtick = min([maxtick_from_abs, maxtick_from_rel, maxtick_from_maxtime])
 
+    terminal_wait = getattr(options, 'restore_terminal_wait', 0.0)
+    if terminal_wait < 0:
+        fatal("--restore-terminal-wait must be non-negative")
+    if terminal_wait and checkpoint_dir is None:
+        fatal("--restore-terminal-wait requires --checkpoint-restore")
+    if terminal_wait:
+        # The SBI HVC driver polls for input on a guest timer.  A detailed
+        # restored system can reach its first timer event before a human has
+        # time to connect, making the next poll unnecessarily expensive in
+        # host time.  Repeated zero-tick simulations service the asynchronous
+        # terminal PollQueue without advancing architectural time, allowing
+        # input to be ready for the first restored guest timer interrupt.
+        print("Waiting %.1f host seconds for restored terminal input at "
+              "guest tick %d" % (terminal_wait, m5.curTick()))
+        deadline = time.monotonic() + terminal_wait
+        while True:
+            m5.simulate(0)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(1.0, remaining))
+        print("Restored terminal wait complete at guest tick %d" %
+              m5.curTick())
+
     print("**** REAL SIMULATION ****")
 
-    # If checkpoints are being taken, then the checkpoint instruction
-    # will occur in the benchmark code it self.
-    exit_event = benchCheckpoints(testsys, options, maxtick, cptdir=None)
+    # The checkpoint pseudo-op executes in guest context, so at least one CPU
+    # has a resumable architectural continuation.  Taking a host checkpoint
+    # at an arbitrary absolute tick can instead catch a Linux task between
+    # becoming runnable and delivery of its transient reschedule IPI.
+    exit_event = benchCheckpoints(
+        testsys, options, maxtick, cptdir=checkpoint_output_dir)
 
     print('Exiting @ tick %i because %s' %
           (m5.curTick(), exit_event.getCause()))

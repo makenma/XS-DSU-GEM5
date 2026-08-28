@@ -37,40 +37,38 @@ namespace gem5
 unsigned DuelingMonitor::numInstances = 0;
 
 Dueler::Dueler()
-  : _isSample(false), _team(0)
+  : _isSample(), _team()
 {
 }
 
 void
-Dueler::setSample(uint64_t id, bool team)
+Dueler::setSample(uint32_t id, bool team)
 {
-    panic_if(popCount(id) != 1, "The id must have a single bit set.");
-    panic_if(_isSample & id,
-        "This dueler is already a sample for id %llu", id);
-    _isSample |= id;
+    panic_if(_isSample.count(id),
+        "This dueler is already a sample for id %u", id);
+    _isSample.insert(id);
     if (team) {
-        _team |= id;
+        _team.insert(id);
     }
 }
 
 bool
-Dueler::isSample(uint64_t id, bool& team) const
+Dueler::isSample(uint32_t id, bool& team) const
 {
-    team = _team & id;
-    return _isSample & id;
+    team = _team.count(id) > 0;
+    return _isSample.count(id) > 0;
 }
 
 DuelingMonitor::DuelingMonitor(std::size_t constituency_size,
     std::size_t team_size, unsigned num_bits, double low_threshold,
     double high_threshold)
-  : id(1 << numInstances), constituencySize(constituency_size),
+  : id(numInstances), constituencySize(constituency_size),
     teamSize(team_size), lowThreshold(low_threshold),
     highThreshold(high_threshold), selector(num_bits), regionCounter(0),
     winner(true)
 {
     fatal_if(constituencySize < (NUM_DUELERS * teamSize),
         "There must be at least team size entries per team in a constituency");
-    fatal_if(numInstances > 63, "Too many Dueling instances");
     fatal_if((lowThreshold <= 0.0) || (highThreshold >= 1.0),
         "The low threshold must be within the range ]0.0, 1.0[");
     fatal_if((highThreshold <= 0.0) || (highThreshold >= 1.0),

@@ -358,7 +358,8 @@ BaseXBar::Layer<SrcType, DstType>::recvRetry()
 }
 
 PortID
-BaseXBar::findPort(AddrRange addr_range)
+BaseXBar::findPort(AddrRange addr_range, const PacketPtr pkt,
+                   const Port *src_port)
 {
     // we should never see any address lookups before we've got the
     // ranges of all connected CPU-side-port modules
@@ -385,8 +386,17 @@ BaseXBar::findPort(AddrRange addr_range)
 
     // we should use the range for the default port and it did not
     // match, or the default port is not set
-    fatal("Unable to find destination for %s on %s\n", addr_range.to_string(),
-          name());
+    if (pkt) {
+        fatal("Unable to find destination for %s on %s at tick %llu: "
+              "src=%s requestor=%u packet=%s vaddr=%#x pc=%#x\n",
+              addr_range.to_string(), name(), curTick(),
+              src_port ? src_port->name() : "<unknown>",
+              pkt->requestorId(), pkt->print(),
+              pkt->req->hasVaddr() ? pkt->req->getVaddr() : MaxAddr,
+              pkt->req->hasPC() ? pkt->req->getPC() : MaxAddr);
+    }
+    fatal("Unable to find destination for %s on %s\n",
+          addr_range.to_string(), name());
 }
 
 /** Function called by the port when the crossbar is receiving a range change.*/

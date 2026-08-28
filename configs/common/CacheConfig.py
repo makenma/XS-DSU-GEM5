@@ -52,9 +52,12 @@ from common.PrefetcherConfig import *
 # gem5 objects.  This file supplies only the runnable-system boundary adapters
 # (one RN-F bridge per CPU and one shared classic-memory SN bridge).
 from example.noc_config.chi_6x4_hnf import (
+    CPU_ATTACHMENTS as CHI_6X4_CPU_ATTACHMENTS,
+    DDR_NODE_IDS as CHI_6X4_DDR_NODE_IDS,
     HNF_NODE_IDS as CHI_6X4_HNF_NODE_IDS,
     PHYSICAL_ADDRESS_BITS as CHI_6X4_PA_BITS,
     chi_node_id as _chi_6x4_node_id,
+    connect_ddr_bridges as _connect_ddr_bridges_6x4,
     connect_router_hnf_mesh as _connect_router_hnf_mesh_6x4,
     router_index as _chi_router_6x4_index,
 )
@@ -198,10 +201,33 @@ def _connect_chi_router_6x4_mesh_once(options, system):
     replacement_policy = getattr(options, "slc_replacement_policy", "lru")
     replacement_seed = getattr(options, "slc_replacement_seed", 1)
 
+    # FS 16-core path: four DDR SN bridges (system.snf_bridges) at
+    # R_0_0..R_0_3 P2/D0, with a 4-entry HN-F SN target table routed by
+    # 64-byte cache-line interleave.  Legacy SE/smoke path keeps the single
+    # shared SN adapter (system.snf_bridge) at router (5,0) P0/D0.
+    ddr_mode = hasattr(system, "snf_bridges")
+    ddr_node_ids = list(CHI_6X4_DDR_NODE_IDS)
+
+    # The system memory bus has a BadAddr default responder, but requests in
+    # this hierarchy first pass through a private L2 wrapper crossbar.  Its
+    # only normal destination advertises the implemented memory ranges, so an
+    # out-of-range CPU request would otherwise make BaseXBar fatal before an
+    # architectural access-error response can be returned.  Give every L2
+    # crossbar its own default responder; this also lets wrong-path O3 loads
+    # be squashed normally instead of terminating the simulator.
+    system.chi_l2_badaddr_responders = [
+        BadAddr(warn_access="CHI L2 out-of-range access")
+        for _ in range(options.num_cpus)
+    ]
+
     # Figure 23.2 labels every HN-F with 2 MiB SLC and 2 MiB SF.  At a
     # 64-byte line and 16 ways this corresponds to 2048 modeled sets.
     for hnf in system.home_node:
-        hnf.sn_node_id = system._chi_router_6x4_snf_node_id
+        if ddr_mode:
+            hnf.sn_node_ids = ddr_node_ids
+            hnf.sn_node_id = ddr_node_ids[0]
+        else:
+            hnf.sn_node_id = system._chi_router_6x4_snf_node_id
         hnf.direct_sn_fake_data = False
         hnf.rnf_slices = 1
         hnf.slc_num_sets = 2048
@@ -221,38 +247,44 @@ def _connect_chi_router_6x4_mesh_once(options, system):
         hnf.slcsf.slc_replacement_policy = replacement_policy
         hnf.slcsf.slc_replacement_seed = replacement_seed
 
-    # A real downstream memory path is required for data-bearing SPEC runs.
-    # The adapter is deliberately outside the router/HN-F topology model: it
-    # is placed at the unused P0/D0 endpoint of router (5,0), and all HN-Fs
-    # target it.  hnf_node_id=0 makes responses use the requesting HN-F SrcID.
-    snf = system.snf_bridge
-    snf.node_id = system._chi_router_6x4_snf_node_id
-    snf.hnf_node_id = 0
-    snf.block_size = system.cache_line_size
-    snf.max_outstanding = 512
-    _chi_router_6x4(system, 5, 0).local_ports[0] = snf.chi_side
-    snf.mem_side = system.membus.cpu_side_ports
+    if ddr_mode:
+        # Four DDR SN endpoints at R_0_0..R_0_3 P2/D0 (see chi_6x4_hnf.
+        # connect_ddr_bridges).  Each HN-F routes to them by 64-byte
+        # cache-line interleave via the 4-entry sn_node_ids table above.
+        _connect_ddr_bridges_6x4(system)
+    else:
+        # Legacy single shared SN adapter at the unused P0/D0 endpoint of
+        # router (5,0); all HN-Fs target it.  Kept for the SE/smoke path.
+        snf = system.snf_bridge
+        snf.node_id = system._chi_router_6x4_snf_node_id
+        snf.hnf_node_id = 0
+        snf.block_size = system.cache_line_size
+        snf.max_outstanding = 512
+        _chi_router_6x4(system, 5, 0).local_ports[0] = snf.chi_side
+        snf.mem_side = system.membus.cpu_side_ports
 
     system._chi_router_6x4_mesh_connected = True
 
 
 def _connect_chi_router_6x4_bridge(options, system, cpu_idx, xbar):
-    """Attach one post-L2 RN-F bridge and enable the CMN HN-F hash."""
+    """Attach one post-L2 RN-F bridge and enable the CMN HN-F hash.
 
-    if options.num_cpus > 4:
+    CPU -> router/P/D/NodeID placement follows the figure-23.2 D0 table in
+    chi_6x4_hnf.CPU_ATTACHMENTS (16 cores).  CPU 10 and CPU 15 share router
+    R_0_3 on P0/D0 and P1/D0 respectively.
+    """
+
+    if not 1 <= options.num_cpus <= len(CHI_6X4_CPU_ATTACHMENTS):
         raise RuntimeError(
-            "CHI 6x4 HNF mode currently supports at most four CPUs"
+            "CHI 6x4 HNF mode supports 1 to %d CPUs"
+            % len(CHI_6X4_CPU_ATTACHMENTS)
         )
 
     _connect_chi_router_6x4_mesh_once(options, system)
 
-    # Keep requester IDs in [0, 63] for the HN-F snoop-filter sharer vector,
-    # and keep D[1:0] clear.  HnfCC uses those low bits for slices within one
-    # RN-F; assigning CPUs to D0 on the four west-edge routers therefore
-    # preserves each CPU's logical SrcID when targetRouteId() is formed.
-    rnf_node_id = _chi_6x4_node_id(0, cpu_idx, 0, 0)
+    attachment = CHI_6X4_CPU_ATTACHMENTS[cpu_idx]
     bridge = system.chi_bridges[cpu_idx]
-    bridge.node_id = rnf_node_id
+    bridge.node_id = attachment.node_id
     bridge.home_node_id = CHI_6X4_HNF_NODE_IDS[0]
     bridge.home_node_ids = list(CHI_6X4_HNF_NODE_IDS)
     bridge.hnf_hash_pa_bits = CHI_6X4_PA_BITS
@@ -261,9 +293,11 @@ def _connect_chi_router_6x4_bridge(options, system, cpu_idx, xbar):
     bridge.wakeup_target = system.home_node[0]
 
     xbar.mem_side_ports = bridge.cache_side
+    xbar.default = system.chi_l2_badaddr_responders[cpu_idx].pio
     bridge.mem_side = system.membus.cpu_side_ports
     bridge.chi_side = _chi_router_6x4(
-        system, 0, cpu_idx).device_ports[0]
+        system, attachment.x, attachment.y).device_ports[
+            attachment.device_port_index]
 
 def config_classic_l2(options, system, l2_cache_class):
     # When using classic L2 cache, The prefetcher is inside the l2cache, instead of l2Wrapper
@@ -338,6 +372,14 @@ def config_aligned_l2(options, system, l2_cache_class):
         xbar = l2_wrapper.xbar
         if not options.no_pf:
             l2_wrapper.prefetcher = create_prefetcher(system.cpu[i], 'l2_wrapper', options)
+        else:
+            # L2CacheWrapper has a non-null composite prefetcher as its class
+            # default.  Merely skipping create_prefetcher() therefore leaves
+            # hardware prefetching enabled for --no-pf, and the default
+            # virtual-address prefetcher is not registered with this CPU's
+            # TLB.  Override the SimObject default explicitly so --no-pf
+            # disables the wrapper prefetcher as advertised.
+            l2_wrapper.prefetcher = NULL
         for j in range(num_l2_slices):
             # Apply original per-L2-cache configurations to each slice's inner cache
             cache_slice = l2_wrapper.slices[j]

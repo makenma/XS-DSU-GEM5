@@ -22,6 +22,13 @@ class HomeNodeFull(BasicChiComponent):
     num_poc_entries = Param.UInt32(32, "Minimal HNF transaction entries")
     enable_retry = Param.Bool(True, "Enable RetryAck/PCrdGrant flow")
     sn_node_id = Param.UInt32(0, "Default SN node id used for HNF TXREQ")
+    sn_node_ids = VectorParam.UInt32(
+        [],
+        "SN target table for DDR address-interleaved HNF TXREQ. A "
+        "power-of-two number of entries enables 64-byte cache-line "
+        "interleave ddr_index=(addr>>log2(block_size))&(count-1); an "
+        "empty list falls back to the scalar sn_node_id",
+    )
     direct_sn_fake_data = Param.Bool(
         True,
         "Generate zero CompData after direct ReadNoSnp when no real SN exists")

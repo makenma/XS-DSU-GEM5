@@ -53,6 +53,7 @@
 #endif
 #include "dev/serial/terminal.hh"
 
+#include <fcntl.h>
 #include <poll.h>
 #include <unistd.h>
 
@@ -200,6 +201,19 @@ Terminal::accept()
     }
 
     data_fd = fd;
+
+    // Terminal::data() drains the socket until read() reports EAGAIN.  The
+    // boolean passed to ListenSocket::accept() only enables TCP_NODELAY; it
+    // does not make the accepted descriptor non-blocking.  Without this,
+    // data() consumes the currently available bytes and then blocks forever
+    // on its second read, with the simulation event queue lock held.
+    const int flags = ::fcntl(data_fd, F_GETFL, 0);
+    panic_if(flags < 0, "%s: failed to get terminal socket flags (errno %d)",
+             name(), errno);
+    panic_if(::fcntl(data_fd, F_SETFL, flags | O_NONBLOCK) < 0,
+             "%s: failed to make terminal socket non-blocking (errno %d)",
+             name(), errno);
+
     dataEvent = new DataEvent(this, data_fd, POLLIN);
     pollQueue.schedule(dataEvent);
 
@@ -240,13 +254,19 @@ void
 Terminal::data()
 {
     uint8_t buf[1024];
-    int len;
+    bool received = false;
 
-    len = read(buf, sizeof(buf));
-    if (len) {
+    // A single asynchronous I/O notification can cover more data than fits
+    // in buf.  Drain the non-blocking socket here: waiting for another
+    // SIGIO while the descriptor remains readable can strand the bytes
+    // beyond the first chunk indefinitely.
+    while (const size_t len = read(buf, sizeof(buf))) {
         rxbuf.write((char *)buf, len);
-        notifyInterface();
+        received = true;
     }
+
+    if (received)
+        notifyInterface();
 }
 
 size_t
@@ -260,6 +280,9 @@ Terminal::read(uint8_t *buf, size_t len)
       ret = ::read(data_fd, buf, len);
     } while (ret == -1 && errno == EINTR);
 
+
+    if (ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+        return 0;
 
     if (ret < 0)
         DPRINTFN("Read failed.\n");

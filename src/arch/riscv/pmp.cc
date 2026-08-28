@@ -39,7 +39,9 @@
 #include "math.h"
 #include "mem/request.hh"
 #include "params/PMP.hh"
+#include "sim/full_system.hh"
 #include "sim/sim_object.hh"
+#include "sim/system.hh"
 
 namespace gem5
 {
@@ -57,6 +59,38 @@ PMP::pmpCheck(const RequestPtr &req, BaseMMU::Mode mode,
               RiscvISA::PrivilegeMode pmode, ThreadContext *tc,
               Addr vaddr)
 {
+    /*
+     * PMA has already classified device accesses before every pmpCheck()
+     * call.  Anything which remains cacheable must be backed by physical
+     * memory.  In particular, do not let an O3 wrong-path load turn an
+     * otherwise valid virtual translation to an unimplemented physical
+     * address into a cache-line request.  Such requests can allocate cache
+     * and interconnect state even though the instruction will later be
+     * squashed.
+     *
+     * Keep PMA-classified uncacheable accesses out of this test: those are
+     * legitimate MMIO accesses and are not represented by System::physmem.
+     */
+    assert(tc != nullptr);
+    if (FullSystem && !req->isUncacheable()) {
+        const Addr paddr = req->getPaddr();
+        const Addr size = req->getSize();
+        const Addr last = size == 0 ? paddr : paddr + size - 1;
+        const bool wraps = size == 0 || last < paddr;
+        System *system = tc->getSystemPtr();
+
+        if (wraps || !system->isMemAddr(paddr) ||
+            !system->isMemAddr(last)) {
+            const Addr fault_addr = req->hasVaddr() ?
+                req->getVaddr() : vaddr;
+            DPRINTF(PMP,
+                    "Rejecting cacheable request outside physical memory: "
+                    "va=%#x pa=%#x size=%u mode=%d\n",
+                    fault_addr, paddr, req->getSize(), mode);
+            return createAddrfault(fault_addr, mode);
+        }
+    }
+
     // First determine if pmp table should be consulted
     if (!shouldCheckPMP(pmode, mode, tc))
         return NoFault;

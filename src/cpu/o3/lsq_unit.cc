@@ -466,6 +466,7 @@ LSQUnit::init(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params,
 
     depCheckShift = params.LSQDepCheckShift;
     checkLoads = params.LSQCheckLoads;
+    enableLoadSpecWakeup = params.EnableLoadSpecWakeup;
     needsTSO = params.needsTSO;
 
     // Clear RAR/RAW queues
@@ -1315,7 +1316,16 @@ LSQUnit::executeLoadPipeSx()
                         fault = loadDoTranslate(inst);
                         break;
                     case 1:
-                        iewStage->getScheduler()->specWakeUpFromLoadPipe(inst);
+                        // The speculative wakeup assumes that every issued
+                        // consumer can be canceled if the load misses.  The
+                        // classic-cache timing path cannot currently make
+                        // that guarantee for consumers which have already
+                        // left the issue queue.  Configurations using that
+                        // path can therefore wait for the normal writeback
+                        // wakeup instead.
+                        if (enableLoadSpecWakeup) {
+                            iewStage->getScheduler()->specWakeUpFromLoadPipe(inst);
+                        }
                         // Loads will mark themselves as executed, and their writeback
                         // event adds the instruction to the queue to commit
                         fault = loadDoSendRequest(inst);

@@ -626,6 +626,14 @@ PhysicalMemory::unserializeStoreFrom(std::string filepath,
 
     overrideGCptRestorer(store_id);
 
+    if (!enableDedup) {
+        for (const auto& m : memories) {
+            DPRINTF(AddrRanges, "Mapping memory %s to restored backing %#lx\n",
+                    m->name(), (uint64_t)backingStore[store_id].pmem);
+            m->setBackingStore(backingStore[store_id].pmem);
+        }
+    }
+
     if (enableDedup) {
         // After restore and overriding, map pmem to one of a branch memory, whose update is not visable to other
         // branches (PRIVATE)
@@ -651,9 +659,21 @@ PhysicalMemory::unserializeFromGz(std::string filepath, unsigned store_id, long 
     if (compressed_mem == nullptr)
         fatal("Can't open checkpoint file '%s'", filepath.c_str());
 
-    // we've already got the actual backing store mapped
     uint8_t* pmem = backingStore[store_id].pmem;
     AddrRange range = backingStore[store_id].range;
+    if (pmem == nullptr) {
+        // The --raw-cpt / gcpt flow defers backing-store allocation to
+        // System::initState (tryRestoreFromXSCpt), which runs AFTER loadState
+        // during a checkpoint restore. Allocate the backing here so the
+        // checkpoint memory can be restored.
+        pmem = (uint8_t*)mmap(NULL, range.size(),
+                              PROT_READ | PROT_WRITE,
+                              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        fatal_if(pmem == MAP_FAILED,
+                 "Could not mmap %llu bytes for checkpoint restore\n",
+                 static_cast<unsigned long long>(range.size()));
+        backingStore[store_id].pmem = pmem;
+    }
     assert(pmem);
 
     if (range_size != 0) {

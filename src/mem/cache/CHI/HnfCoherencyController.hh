@@ -50,10 +50,21 @@ class HnfCoherencyController
         DownstreamErrorHeld
     };
 
+    /** Legacy/single-SN construction keeps routing through sn_node_id. */
     HnfCoherencyController(uint32_t block_size, uint32_t data_beat_bytes,
                            uint32_t num_entries, uint32_t sn_node_id,
-                           bool direct_sn_fake_data,
-                           uint32_t rnf_slices,
+                           bool direct_sn_fake_data, uint32_t rnf_slices,
+                           bool enable_retry = true)
+        : HnfCoherencyController(
+              block_size, data_beat_bytes, num_entries, sn_node_id, {},
+              direct_sn_fake_data, rnf_slices, enable_retry)
+    {}
+
+    /** Multi-SN construction selects a target by cache-line interleave. */
+    HnfCoherencyController(uint32_t block_size, uint32_t data_beat_bytes,
+                           uint32_t num_entries, uint32_t sn_node_id,
+                           const std::vector<uint32_t>& sn_node_ids,
+                           bool direct_sn_fake_data, uint32_t rnf_slices,
                            bool enable_retry = true);
 
     void setSlcsf(HnfSLCSF* slcsf) { slcsfUnit = slcsf; }
@@ -237,6 +248,11 @@ class HnfCoherencyController
     uint32_t dataBeatBytes = 32;
     uint32_t maxEntries = 32;
     uint32_t snNodeId = 0;
+    // 4-entry (or power-of-two) DDR SN target table.  When non-empty the
+    // HNF selects the SN TgtID by 64-byte cache-line interleave; when empty
+    // it falls back to the scalar snNodeId (legacy single-SN path).
+    std::vector<uint32_t> snNodeIds;
+    uint32_t snInterleaveShift = 6;
     bool directSnFakeData = true;
     bool dirtyVictimRetryEnabled = true;
     uint32_t rnfSlices = 1;
@@ -260,6 +276,19 @@ class HnfCoherencyController
     std::unordered_set<uint64_t> dirtyVictimRequesters;
 
     uint64_t blockAddr(const RawReq& req) const;
+
+    /** Select the DDR SN Node ID for a physical address.
+     *
+     *  When snNodeIds is populated (power-of-two count), the SN target is
+     *  chosen by 64-byte cache-line interleave:
+     *  ddr_index = (addr >> log2(block_size)) & (count-1).  This matches
+     *  the Python chi_6x4_hnf.ddr_index_for_address and the classic-memory
+     *  AddrRange interleave.  An empty table falls back to snNodeId.
+     */
+    uint32_t selectSnNode(uint64_t addr) const {
+        if (snNodeIds.empty()) return snNodeId;
+        return snNodeIds[(addr >> snInterleaveShift) & (snNodeIds.size() - 1)];
+    }
     uint32_t expectedDataBytes(const RawReq& req) const;
     void resetDataAssembly(DataAssembly& assembly, uint32_t start_offset,
                            uint32_t expected_bytes);

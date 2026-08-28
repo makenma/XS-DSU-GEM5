@@ -225,8 +225,86 @@ def drain():
     assert _drain_manager.isDrained(), "Drain state inconsistent"
 
 def memWriteback(root):
-    for obj in root.descendants():
-        obj.memWriteback()
+    # Consolidate every non-serialized cache into physical memory in explicit
+    # data-precedence order.  Classic cache snapshots are written directly to
+    # PhysicalMemory so checkpoint consolidation cannot mutate peer caches via
+    # functional snoops.  Across each owner phase, lower/far classic levels
+    # precede upper/near levels as a deterministic fallback for equivalent
+    # copies.
+    #
+    # A CHI SLC is special: Cache2ChiBridge forwards functional writes directly
+    # to the classic memory path, bypassing the modeled SLC.  Its potentially
+    # stale lower copy must therefore be written first, before private owners
+    # overwrite it with newer data.
+    #
+    # Objects may override their checkpoint ordering independently of their
+    # architectural cache level.  Objects without a positive cache level
+    # retain the historical stable traversal order at priority zero.  Positive
+    # classic levels occupy a separate high priority range in descending level
+    # order (L3, L2, L1), leaving ordinary explicit priorities available below
+    # that range.
+    descendants = list(root.descendants())
+
+    def writeback_priority(obj):
+        try:
+            priority = int(getattr(obj, "checkpoint_writeback_priority"))
+        except AttributeError:
+            try:
+                cache_level = int(getattr(obj, "cache_level", 0))
+            except (TypeError, ValueError):
+                cache_level = 0
+            priority = (1_000_000 - cache_level
+                        if cache_level > 0 else 0)
+        except (TypeError, ValueError):
+            priority = 0
+
+        # At the same level, write read-only copies before writable caches.
+        # This matters for self-modifying code: a possibly stale I-cache copy
+        # must not overwrite a newer D-cache copy in the final memory image.
+        read_only_first = 0 if bool(
+            getattr(obj, "is_read_only", False)) else 1
+        return (priority, read_only_first)
+
+    descendants.sort(key=writeback_priority)
+
+    # A hierarchy can contain several resident copies of one block.
+    # checkpointDirty says that a copy was modified sometime in the past; it
+    # does not say that the copy is still the current owner.  Owner precedence
+    # must therefore apply across the entire classic hierarchy, not merely
+    # among peers at one cache level: write every shared/former-owner copy in
+    # every level before any clean Writable owner, and every Writable owner
+    # before any Dirty owner.  BaseCache commits these snapshots directly to
+    # PhysicalMemory, so an early stale overlay cannot mutate a later owner.
+    entries = [
+        (obj, int(obj.memWritebackPhaseCount())) for obj in descendants
+    ]
+    phased = [(obj, count) for obj, count in entries if count]
+    legacy = [obj for obj, count in entries if not count]
+
+    if not phased:
+        for obj in legacy:
+            obj.memWriteback()
+        return
+
+    # Meaningful non-phased lower stores, notably the CHI SLC with explicit
+    # priority -1, must overlay memory before classic-cache owner phases.
+    # Non-phased objects at or above the first phased priority retain a call,
+    # but run afterwards; the default SimObject implementation is a no-op.
+    first_phased_priority = min(
+        writeback_priority(obj)[0] for obj, _ in phased)
+    for obj in legacy:
+        if writeback_priority(obj)[0] < first_phased_priority:
+            obj.memWriteback()
+
+    max_phases = max(count for _, count in phased)
+    for phase in range(max_phases):
+        for obj, phase_count in phased:
+            if phase < phase_count:
+                obj.memWritebackPhase(phase)
+
+    for obj in legacy:
+        if writeback_priority(obj)[0] >= first_phased_priority:
+            obj.memWriteback()
 
 def memInvalidate(root):
     for obj in root.descendants():

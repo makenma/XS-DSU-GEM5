@@ -190,8 +190,14 @@ CoherentXBar::recvTimingReq(PacketPtr pkt, PortID cpu_side_port_id)
     // and the cache responding flag should always be the same
     assert(is_express_snoop == cache_responding);
 
+    DPRINTF(CoherentXBar,
+            "%s: routing src %s requestor %s packet %s\n",
+            __func__, src_port->name(),
+            system->getRequestorName(pkt->requestorId()), pkt->print());
+
     // determine the destination based on the destination address range
-    PortID mem_side_port_id = findPort(pkt->getAddrRange());
+    PortID mem_side_port_id =
+        findPort(pkt->getAddrRange(), pkt, src_port);
 
     // test if the crossbar should be considered occupied for the current
     // port, and exclude express snoops from the check
@@ -503,7 +509,12 @@ CoherentXBar::recvTimingResp(PacketPtr pkt, PortID mem_side_port_id)
 
     // determine the destination
     const auto route_lookup = routeTo.find(pkt->req);
-    assert(route_lookup != routeTo.end());
+    panic_if(route_lookup == routeTo.end(),
+             "%s: response from %s has no route: request=%p packet=%s "
+             "routing_entries=%llu\n",
+             name(), src_port->name(),
+             static_cast<const void *>(pkt->req.get()), pkt->print(),
+             static_cast<unsigned long long>(routeTo.size()));
     const PortID cpu_side_port_id = route_lookup->second;
     assert(cpu_side_port_id != InvalidPortID);
     assert(cpu_side_port_id < respLayers.size());

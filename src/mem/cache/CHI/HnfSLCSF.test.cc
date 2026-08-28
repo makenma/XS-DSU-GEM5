@@ -1953,7 +1953,7 @@ TEST(HnfSlcSfMutationServiceTest,
     EXPECT_EQ(victim.homeNodeId, 0x90);
     EXPECT_EQ(victim.state, HnfSfState::EU);
     EXPECT_EQ(victim.owner, 3);
-    EXPECT_EQ(victim.sharers, 1ULL << 3);
+    EXPECT_EQ(victim.sharers, 1ULL << 0);
 }
 
 TEST(HnfSlcSfMutationServiceTest,
@@ -2002,7 +2002,7 @@ TEST(HnfSlcSfMutationServiceTest,
     EXPECT_EQ(update.sfVictim->homeNodeId, 0x91);
     EXPECT_EQ(update.sfVictim->state, HnfSfState::EN);
     EXPECT_EQ(update.sfVictim->owner, 5);
-    EXPECT_EQ(update.sfVictim->sharers, 1ULL << 5);
+    EXPECT_EQ(update.sfVictim->sharers, 1ULL << 0);
 }
 
 TEST(HnfSlcSfMutationServiceTest,
@@ -4000,7 +4000,7 @@ TEST(HnfSlcSfLookupPipelineTest, ReturnsSeededBackendResultAfterLatency)
     EXPECT_TRUE(payload.result.sfHit);
     EXPECT_TRUE(payload.result.dataDirty);
     EXPECT_EQ(payload.result.data, data);
-    EXPECT_EQ(payload.result.rnfvec, 1ULL << 4);
+    EXPECT_EQ(payload.result.rnfvec, 1ULL << 0);
     EXPECT_EQ(payload.token.lookupReqId, SlcSfReqId{74});
     EXPECT_EQ(payload.token.lineAddress, TestAddr);
 }
@@ -4079,9 +4079,9 @@ TEST(HnfSlcSfLookupPipelineTest, PreservesEveryLookupFactAndCommitToken)
     EXPECT_TRUE(result.snoopBroadcast);
     EXPECT_FALSE(result.snoopDirected);
     EXPECT_EQ(result.snoopOpcode, 0x07);
-    EXPECT_EQ(result.snoopTargets, (1ULL << 0) | (1ULL << 4));
+    EXPECT_EQ(result.snoopTargets, (1ULL << 0) | (1ULL << 1));
     EXPECT_EQ(result.rnfid, 0);
-    EXPECT_EQ(result.rnfvec, (1ULL << 0) | (1ULL << 4));
+    EXPECT_EQ(result.rnfvec, (1ULL << 0) | (1ULL << 1));
 
     const auto& token = payload.token;
     EXPECT_EQ(token.lookupReqId, SlcSfReqId{81});
@@ -4484,7 +4484,7 @@ TEST(HnfSlcSfTest, ReadUniqueBroadcastsToOtherVectorSharers)
     EXPECT_TRUE(result.snoopBroadcast);
     EXPECT_FALSE(result.snoopDirected);
     EXPECT_EQ(result.snoopOpcode, 0x07);
-    EXPECT_EQ(result.snoopTargets, (1ULL << 0) | (1ULL << 4));
+    EXPECT_EQ(result.snoopTargets, (1ULL << 0) | (1ULL << 1));
 }
 
 TEST(HnfSlcSfTest, ReadUniqueExcludesRequesterFromBroadcast)
@@ -4519,7 +4519,7 @@ TEST(HnfSlcSfTest, ReadUniqueIsDirectedToDifferentUniqueOwner)
     EXPECT_FALSE(result.slcHit);
     EXPECT_EQ(result.sfState, HnfSfState::EU);
     EXPECT_EQ(result.rnfid, 4);
-    EXPECT_EQ(result.rnfvec, 1ULL << 4);
+    EXPECT_EQ(result.rnfvec, 1ULL << 1);
     EXPECT_EQ(result.snoopTargets, 0);
 }
 
@@ -4539,7 +4539,7 @@ TEST(HnfSlcSfTest, ReadSharedObtainsDirtyDataFromUniqueOwner)
     EXPECT_TRUE(result.slcHit);
     EXPECT_TRUE(result.dataDirty);
     EXPECT_EQ(result.sfState, HnfSfState::SN);
-    EXPECT_EQ(result.rnfvec, (1ULL << 0) | (1ULL << 4));
+    EXPECT_EQ(result.rnfvec, (1ULL << 0) | (1ULL << 1));
     EXPECT_EQ(result.snoopTargets, 0);
 }
 
@@ -4555,8 +4555,8 @@ TEST(HnfSlcSfTest, EvictRemovesTheRequestingSharerOnly)
     const auto result = lookup(model, TestAddr, 8, PocqTxnKind::ReadUnique);
     EXPECT_TRUE(result.slcHit);
     EXPECT_TRUE(result.sfHit);
-    EXPECT_EQ(result.rnfvec, 1ULL << 4);
-    EXPECT_EQ(result.snoopTargets, 1ULL << 4);
+    EXPECT_EQ(result.rnfvec, 1ULL << 1);
+    EXPECT_EQ(result.snoopTargets, 1ULL << 1);
 }
 
 TEST(HnfSlcSfTest, SfVictimEntersSeqAndBlocksConflictingLookups)
@@ -4692,7 +4692,7 @@ TEST(HnfSlcSfTest, StaleWritebackCannotOverwriteNewOwner)
     EXPECT_FALSE(result.slcHit);
     ASSERT_TRUE(result.sfHit);
     EXPECT_EQ(result.rnfid, 4);
-    EXPECT_EQ(result.snoopTargets, 1ULL << 4);
+    EXPECT_EQ(result.snoopTargets, 1ULL << 0);
 }
 
 TEST(HnfSlcSfStatsTest, HitAndTimingCountersHaveExactDeltas)
@@ -5188,7 +5188,7 @@ TEST_F(HnfSlcSfCheckpointTest, DrainedCheckpointRestoresSlcSfState)
     EXPECT_TRUE(after.result.dataDirty);
     EXPECT_EQ(after.result.data, data);
     EXPECT_EQ(after.result.rnfid, 5);
-    EXPECT_EQ(after.result.rnfvec, (1ULL << 5) | (1ULL << 9));
+    EXPECT_EQ(after.result.rnfvec, (1ULL << 0) | (1ULL << 1));
     EXPECT_TRUE(restored.isInitialized());
     EXPECT_FALSE(restored.isDrainRequested());
     EXPECT_FALSE(restored.isAdmissionSealed());
