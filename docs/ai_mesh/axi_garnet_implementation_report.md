@@ -119,3 +119,85 @@ CHI factory.  No other existing no-image CHI runtime entry point was found.
 Per section 15.1, the runtime command is therefore not made mandatory; the
 successful `RISCV_CHI` compile remains mandatory.  CHI sources and behavior
 were not changed to manufacture a runtime smoke.
+
+## Commit 1 gate: isolated AXI_MESH scaffold
+
+### Build and construction boundary
+
+`build_opts/AXI_MESH` selects `TARGET_ISA='null'` and
+`PROTOCOL='AXI_MESH'`.  The protocol has separate initiator and target SLICC
+machines, the five directional network queues, finite non-network
+local-delivery queues, C++ endpoint shells, a CPU-less configuration script,
+and an `AxiMeshDie` topology with explicit controller-to-router mapping.
+
+This fork defines `MachineType` as a closed enum in the common SLICC exports,
+so the two machine types (`AxiInitiator` and `AxiTarget`) must be declared
+there.  All message/controller generation remains protocol-selected: the
+generated `AxiMeshMsg.hh` exists under `build/AXI_MESH` and is absent from the
+`Garnet_standalone` and `RISCV_CHI` generated protocol directories.  The C++
+endpoint SConscript also returns before declaring any AXI source unless the
+selected protocol is exactly `AXI_MESH`.
+
+The protocol factory returns no CPU sequencer and no directory controller.
+The common Ruby construction path was therefore made to call
+`setup_memory_controllers()` only when its protocol factory returned at least
+one real directory.  This prevents AXI_MESH from creating a fake directory or
+DRAM controller, while existing protocols retain their previous path.
+
+### Independent raw queue-ownership probe
+
+The Commit 1 probe deliberately sends exactly two independent messages, not
+an AXI write transaction:
+
+- the initiator adapter constructs one AW-like message for the target;
+- the target adapter independently constructs one B-like message for the
+  initiator; it does not derive that message from, or use it to acknowledge,
+  the AW-like message.
+
+Both corresponding local-delivery buffers were configured with depth one.
+With `AxiGarnetProbe` tracing enabled, both C++ enqueue operations occurred at
+tick 333, both remote adapters first observed their local-delivery message at
+tick 3996, both held the full local queue until tick 6660, and both then
+drained exactly once.  The simulation exited at tick 6993 with:
+
+```text
+AXI_MESH raw shim ownership probe passed: independent messages=2
+(AW-like=1, B-like=1), single-consumer local delivery preserved
+AXI_MESH_RAW_SHIM_PROBE_PASS
+```
+
+The target's AW drain is reported to the initiator through a Commit 1-only
+observer pointer solely to join the two probe completion conditions.  It does
+not construct, mutate, or order the independent B-like network message.  No
+AXI checker or legal AW/W/B state machine is exercised at this gate.
+
+The final debug probe command was:
+
+```text
+timeout 120s build/AXI_MESH/gem5.debug --debug-flags=AxiGarnetProbe \
+  -d m5out/axi-commit1-raw-probe-trace \
+  configs/example/axi_garnet_test.py \
+  --axi-raw-shim-probe \
+  --axi-scenario=configs/example/axi_garnet_scenarios/smoke.json \
+  --axi-local-delivery-depths=1,4,1,4,4 \
+  --axi-message-buffer-depths=4,4,4,4,4 \
+  --axi-max-sim-ticks=100000
+```
+
+The same probe without the debug flag also passed with
+`build/AXI_MESH/gem5.opt`.
+
+### Commit 1 mandatory results
+
+| Command | Result |
+|---|---|
+| `scons build/AXI_MESH/gem5.debug -j4` | PASS, exit 0 |
+| `scons build/AXI_MESH/gem5.opt -j4` | PASS, exit 0 |
+| debug independent AW-like/B-like probe | PASS, exit 0, tick 6993 |
+| opt independent AW-like/B-like probe | PASS, exit 0, tick 6993 |
+| `scons build/Garnet_standalone/gem5.opt -j4` | PASS, exit 0 |
+| `scons build/RISCV_CHI/gem5.opt -j4` | PASS, exit 0 |
+| specification section 15.5 Garnet AXI-leak scan | PASS, no output |
+
+The only build warnings were the existing optional PNG/HDF5/backtrace
+availability warnings and existing generated-SLICC ignored-return warnings.

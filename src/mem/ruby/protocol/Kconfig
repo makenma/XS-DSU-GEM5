@@ -60,3 +60,4 @@ cont_choice "Ruby protocol"
 endchoice
 
 rsource "chi/Kconfig"
+rsource "axi_mesh/Kconfig"

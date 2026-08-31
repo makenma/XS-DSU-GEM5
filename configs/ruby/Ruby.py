@@ -287,7 +287,10 @@ def create_system(
     # Connect the system port for loading of binaries etc
     system.system_port = system.sys_port_proxy.in_ports
 
-    setup_memory_controllers(system, ruby, dir_cntrls, options)
+    # Traffic-only protocols, such as AXI_MESH, can legitimately have no
+    # Ruby directory controllers and therefore no Ruby-owned memory ports.
+    if dir_cntrls:
+        setup_memory_controllers(system, ruby, dir_cntrls, options)
 
     # Connect the cpu sequencers and the piobus
     if piobus != None:

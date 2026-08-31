@@ -1,0 +1,5 @@
+protocol "AXI_MESH";
+include "RubySlicc_interfaces.slicc";
+include "AXI_MESH-msg.sm";
+include "AXI_MESH-initiator.sm";
+include "AXI_MESH-target.sm";

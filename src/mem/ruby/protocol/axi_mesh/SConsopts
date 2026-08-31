@@ -1,0 +1,7 @@
+# -*- mode:python -*-
+
+Import('*')
+
+# Register this directory as the sole home of AXI_MESH.slicc.  Other Ruby
+# protocols never see or generate the AXI message/controller headers.
+main.Append(PROTOCOL_DIRS=[Dir('.')])

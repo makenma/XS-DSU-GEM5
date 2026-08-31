@@ -281,6 +281,8 @@ enumeration(MachineType, desc="...", default="MachineType_NULL") {
     Cache,       desc="Generic coherent cache controller";
     Memory,      desc="Memory controller interface";
     MiscNode,    desc="CHI protocol Misc Node";
+    AxiInitiator, desc="AXI Mesh initiator network shim";
+    AxiTarget,    desc="AXI Mesh target network shim";
     NULL,        desc="null mach type";
 }
 

@@ -1,0 +1,62 @@
+/*
+ * Protocol envelope for transaction/beat-level AXI transport over Garnet.
+ * The endpoint adapters own all AXI semantics.  SLICC only routes and copies
+ * this immutable envelope between network and local-delivery queues.
+ */
+
+enumeration(AxiChannel, desc="AXI transport channel") {
+  AW;
+  W;
+  B;
+  AR;
+  R;
+}
+
+enumeration(AxiBurst, desc="AXI burst encoding") {
+  Fixed;
+  Incr;
+  Wrap;
+}
+
+enumeration(AxiResp, desc="AXI response encoding") {
+  Okay;
+  ExOkay;
+  SlvErr;
+  DecErr;
+}
+
+structure(AxiMeshMsg, desc="AXI beat transport envelope", interface="Message") {
+  AxiChannel Channel;
+  MachineID Source;
+  NetDest Destination;
+  uint32_t SrcNode;
+  int SrcPort;
+  uint32_t DstNode;
+  uint64_t TxnUid;
+  uint32_t AxiId;
+  uint64_t TargetSeq;
+  uint64_t ResponseSeq;
+  uint64_t WriteOrdinal;
+  Addr Address;
+  int BeatIndex;
+  int BeatCount;
+  int Size;
+  AxiBurst Burst;
+  int Lock;
+  int Cache;
+  int Prot;
+  int Region;
+  uint64_t ByteStrobe;
+  bool Last;
+  AxiResp Resp;
+  int Qos;
+  int SemanticBytes;
+  int WireSizeBytes, default="0";
+  uint64_t PayloadDigest;
+  DataBlock DataBlk;
+  MessageSizeType MessageSize, default="MessageSizeType_Control";
+
+  bool functionalRead(Packet *pkt) { return false; }
+  bool functionalRead(Packet *pkt, WriteMask &mask) { return false; }
+  bool functionalWrite(Packet *pkt) { return false; }
+}

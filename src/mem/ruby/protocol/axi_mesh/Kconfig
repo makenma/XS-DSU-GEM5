@@ -1,0 +1,9 @@
+# AXI transaction/beat transport protocol shim for Garnet.
+
+config PROTOCOL
+    default "AXI_MESH" if RUBY_PROTOCOL_AXI_MESH
+
+cont_choice "Ruby protocol"
+    config RUBY_PROTOCOL_AXI_MESH
+        bool "AXI Mesh"
+endchoice

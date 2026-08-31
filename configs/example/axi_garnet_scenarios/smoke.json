@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "name": "commit1_raw_shim_smoke",
+  "endpoint_to_router": {
+    "initiators": [
+      {
+        "src_node": 0,
+        "src_port": 0,
+        "router_id": 0,
+        "default_target": 1
+      }
+    ],
+    "targets": [
+      {
+        "dst_node": 1,
+        "router_id": 3
+      }
+    ]
+  },
+  "default_error_target": 1,
+  "quotas": [
+    {
+      "src_node": 0,
+      "src_port": 0,
+      "dst_node": 1,
+      "write_contexts": 2,
+      "write_beats": 2,
+      "read_contexts": 1,
+      "read_beats": 1
+    }
+  ],
+  "transactions": []
+}

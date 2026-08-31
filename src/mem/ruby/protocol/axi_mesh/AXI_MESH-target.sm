@@ -1,0 +1,119 @@
+/* Thin target-side network shim. */
+
+machine(MachineType:AxiTarget, "AXI Mesh target shim")
+  : int router_id;
+
+    MessageBuffer * awFromNetwork, network="From", virtual_network="0",
+          ordered="false", vnet_type="request";
+    MessageBuffer * wFromNetwork, network="From", virtual_network="1",
+          ordered="false", vnet_type="response";
+    MessageBuffer * arFromNetwork, network="From", virtual_network="3",
+          ordered="false", vnet_type="request";
+
+    MessageBuffer * bToNetwork, network="To", virtual_network="2",
+          ordered="false", vnet_type="request";
+    MessageBuffer * rToNetwork, network="To", virtual_network="4",
+          ordered="false", vnet_type="response";
+
+    MessageBuffer * awLocal;
+    MessageBuffer * wLocal;
+    MessageBuffer * arLocal;
+{
+  state_declaration(State, desc="Shim state",
+                    default="AxiTarget_State_Ready") {
+    Ready, AccessPermission:Invalid;
+  }
+
+  enumeration(Event, desc="Incoming channel") {
+    ReceiveAW;
+    ReceiveW;
+    ReceiveAR;
+  }
+
+  Tick clockEdge();
+
+  State getState(Addr addr) { return State:Ready; }
+  void setState(Addr addr, State state) { }
+  AccessPermission getAccessPermission(Addr addr) {
+    return AccessPermission:NotPresent;
+  }
+  void setAccessPermission(Addr addr, State state) { }
+  void functionalRead(Addr addr, Packet *pkt) {
+    error("AXI_MESH shim does not implement functional access");
+  }
+  int functionalWrite(Addr addr, Packet *pkt) {
+    error("AXI_MESH shim does not implement functional access");
+  }
+
+  out_port(awLocal_out, AxiMeshMsg, awLocal);
+  out_port(wLocal_out, AxiMeshMsg, wLocal);
+  out_port(arLocal_out, AxiMeshMsg, arLocal);
+
+  in_port(awNetwork_in, AxiMeshMsg, awFromNetwork) {
+    if (awNetwork_in.isReady(clockEdge())) {
+      if (awLocal.areNSlotsAvailable(1, clockEdge())) {
+        peek(awNetwork_in, AxiMeshMsg) {
+          trigger(Event:ReceiveAW, in_msg.Address);
+        }
+      }
+    }
+  }
+
+  in_port(wNetwork_in, AxiMeshMsg, wFromNetwork) {
+    if (wNetwork_in.isReady(clockEdge())) {
+      if (wLocal.areNSlotsAvailable(1, clockEdge())) {
+        peek(wNetwork_in, AxiMeshMsg) {
+          trigger(Event:ReceiveW, in_msg.Address);
+        }
+      }
+    }
+  }
+
+  in_port(arNetwork_in, AxiMeshMsg, arFromNetwork) {
+    if (arNetwork_in.isReady(clockEdge())) {
+      if (arLocal.areNSlotsAvailable(1, clockEdge())) {
+        peek(arNetwork_in, AxiMeshMsg) {
+          trigger(Event:ReceiveAR, in_msg.Address);
+        }
+      }
+    }
+  }
+
+  action(forwardAW, desc="Copy AW to its finite local-delivery queue") {
+    peek(awNetwork_in, AxiMeshMsg) {
+      enqueue(awLocal_out, AxiMeshMsg, 1) { out_msg := in_msg; }
+    }
+  }
+  action(popAW, desc="Release AW network input only after local enqueue") {
+    awNetwork_in.dequeue(clockEdge());
+  }
+  action(forwardW, desc="Copy W to its finite local-delivery queue") {
+    peek(wNetwork_in, AxiMeshMsg) {
+      enqueue(wLocal_out, AxiMeshMsg, 1) { out_msg := in_msg; }
+    }
+  }
+  action(popW, desc="Release W network input only after local enqueue") {
+    wNetwork_in.dequeue(clockEdge());
+  }
+  action(forwardAR, desc="Copy AR to its finite local-delivery queue") {
+    peek(arNetwork_in, AxiMeshMsg) {
+      enqueue(arLocal_out, AxiMeshMsg, 1) { out_msg := in_msg; }
+    }
+  }
+  action(popAR, desc="Release AR network input only after local enqueue") {
+    arNetwork_in.dequeue(clockEdge());
+  }
+
+  transition(Ready, ReceiveAW) {
+    forwardAW;
+    popAW;
+  }
+  transition(Ready, ReceiveW) {
+    forwardW;
+    popW;
+  }
+  transition(Ready, ReceiveAR) {
+    forwardAR;
+    popAR;
+  }
+}

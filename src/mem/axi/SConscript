@@ -1,0 +1,17 @@
+# -*- mode:python -*-
+
+Import('*')
+
+# Every source in this directory currently includes generated AXI_MESH
+# protocol headers.  Keep those dependencies completely out of all legacy
+# Ruby and ISA builds.
+if env['CONF']['PROTOCOL'] != 'AXI_MESH':
+    Return()
+
+SimObject('AxiGarnetEndpoint.py', sim_objects=[
+    'AxiInitiatorAdapter',
+    'AxiTargetAdapter',
+])
+
+Source('axi_garnet_endpoint.cc')
+DebugFlag('AxiGarnetProbe')
