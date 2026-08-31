@@ -19,6 +19,10 @@ class AxiInitiatorAdapter(ClockedObject):
     src_node = Param.UInt32(0, "Logical source node")
     src_port = Param.UInt16(0, "Logical source port")
     dst_node = Param.UInt32(1, "Logical target node")
+    wire_header_bytes = VectorParam.UInt32(
+        [24, 16, 8, 24, 16], "AW,W,B,AR,R wire header bytes"
+    )
+    data_bus_bytes = Param.UInt32(64, "AXI data bus width in bytes")
     raw_probe = Param.Bool(False, "Run Commit 1 raw shim probe")
     raw_probe_hold_cycles = Param.Cycles(
         8, "Cycles to hold the independent B-like local delivery"
@@ -45,6 +49,10 @@ class AxiTargetAdapter(ClockedObject):
     src_node = Param.UInt32(0, "Raw-probe logical source node")
     src_port = Param.UInt16(0, "Raw-probe logical source port")
     dst_node = Param.UInt32(1, "Raw-probe logical target node")
+    wire_header_bytes = VectorParam.UInt32(
+        [24, 16, 8, 24, 16], "AW,W,B,AR,R wire header bytes"
+    )
+    data_bus_bytes = Param.UInt32(64, "AXI data bus width in bytes")
     raw_probe = Param.Bool(False, "Run Commit 1 raw shim probe")
     raw_probe_hold_cycles = Param.Cycles(
         8, "Cycles to hold the first AW in a depth-one local queue"

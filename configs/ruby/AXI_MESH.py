@@ -205,8 +205,17 @@ def create_system(
                   "axi_target_service_depths")
     _positive_csv(options.axi_target_response_ready_depths, 2,
                   "axi_target_response_ready_depths")
-    _positive_csv(options.axi_wire_header_bytes, 5,
-                  "axi_wire_header_bytes")
+    wire_headers = _positive_csv(
+        options.axi_wire_header_bytes, 5, "axi_wire_header_bytes"
+    )
+    data_bus_bytes = options.axi_data_width_bits // 8
+    for channel, header_bytes in enumerate(wire_headers):
+        wire_bytes = header_bytes
+        if channel in (1, 4):
+            wire_bytes += data_bus_bytes
+        if wire_bytes > 0x7FFFFFFF:
+            fatal("AXI wire bytes for channel index %d must fit positive int",
+                  channel)
 
     initiator_specs, target_specs = _load_endpoint_map(options)
     _validate_options(options, initiator_specs, target_specs)
@@ -269,6 +278,8 @@ def create_system(
             src_node=int(endpoint["src_node"]),
             src_port=int(endpoint["src_port"]),
             dst_node=int(endpoint["default_target"]),
+            wire_header_bytes=wire_headers,
+            data_bus_bytes=data_bus_bytes,
             raw_probe=options.axi_raw_shim_probe,
             raw_probe_hold_cycles=options.axi_raw_probe_hold_cycles,
         )
@@ -285,6 +296,8 @@ def create_system(
             aw_local=controller.awLocal,
             w_local=controller.wLocal,
             ar_local=controller.arLocal,
+            wire_header_bytes=wire_headers,
+            data_bus_bytes=data_bus_bytes,
             raw_probe=options.axi_raw_shim_probe,
             raw_probe_hold_cycles=options.axi_raw_probe_hold_cycles,
         )

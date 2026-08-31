@@ -2,6 +2,8 @@
 #define __MEM_AXI_AXI_GARNET_ENDPOINT_HH__
 
 #include <cstdint>
+
+#include "mem/axi/axi_packetization.hh"
 #include "mem/ruby/common/Consumer.hh"
 #include "sim/clocked_object.hh"
 
@@ -61,6 +63,7 @@ class AxiInitiatorAdapter : public ClockedObject, public ruby::Consumer
     const uint32_t srcNode;
     const uint16_t srcPort;
     const uint32_t dstNode;
+    const AxiWireBytes channelWireBytes;
     const bool rawProbe;
     const Cycles rawProbeHoldCycles;
 
@@ -101,6 +104,7 @@ class AxiTargetAdapter : public ClockedObject, public ruby::Consumer
     const uint32_t srcNode;
     const uint16_t srcPort;
     const uint32_t dstNode;
+    const AxiWireBytes channelWireBytes;
     const bool rawProbe;
     const Cycles rawProbeHoldCycles;
 

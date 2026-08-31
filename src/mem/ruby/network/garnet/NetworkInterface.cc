@@ -33,13 +33,14 @@
 #include "mem/ruby/network/garnet/NetworkInterface.hh"
 
 #include <cassert>
-#include <cmath>
 #include <limits>
 
 #include "base/cast.hh"
+#include "base/logging.hh"
 #include "debug/RubyNetwork.hh"
 #include "mem/ruby/network/MessageBuffer.hh"
 #include "mem/ruby/network/garnet/Credit.hh"
+#include "mem/ruby/network/garnet/Packetization.hh"
 #include "mem/ruby/network/garnet/flitBuffer.hh"
 #include "mem/ruby/slicc_interface/Message.hh"
 
@@ -385,12 +386,23 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
     // This is expressed in terms of bytes/cycle or the flit size
     OutputPort *oPort = getOutportForVnet(vnet);
     assert(oPort);
-    int num_flits = (int)divCeil((float) m_net_ptr->MessageSizeType_to_int(
-        net_msg_ptr->getMessageSize()), (float)oPort->bitWidth());
+
+    const int requested_wire_bytes = net_msg_ptr->getWireSizeBytes();
+    uint32_t legacy_wire_bytes = 0;
+    if (requested_wire_bytes == 0) {
+        legacy_wire_bytes = m_net_ptr->MessageSizeType_to_int(
+            net_msg_ptr->getMessageSize());
+    }
+    MessagePacketization packetization;
+    const std::string packetization_error = resolveMessagePacketization(
+        requested_wire_bytes, legacy_wire_bytes, oPort->bitWidth(),
+        packetization);
+    panic_if(!packetization_error.empty(),
+             "%s: vnet=%d packetization failed: %s", name(), vnet,
+             packetization_error);
 
     DPRINTF(RubyNetwork, "Message Size:%d vnet:%d bitWidth:%d\n",
-        m_net_ptr->MessageSizeType_to_int(net_msg_ptr->getMessageSize()),
-        vnet, oPort->bitWidth());
+        packetization.wireBytes, vnet, oPort->bitWidth());
 
     // loop to convert all multicast messages into unicast messages
     for (int ctr = 0; ctr < dest_nodes.size(); ctr++) {
@@ -444,12 +456,11 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
         m_net_ptr->increment_injected_packets(vnet);
         m_net_ptr->update_traffic_distribution(route);
         int packet_id = m_net_ptr->getNextPacketID();
-        for (int i = 0; i < num_flits; i++) {
+        for (int i = 0; i < packetization.numFlits; i++) {
             m_net_ptr->increment_injected_flits(vnet);
             flit *fl = new flit(packet_id,
-                i, vc, vnet, route, num_flits, new_msg_ptr,
-                m_net_ptr->MessageSizeType_to_int(
-                net_msg_ptr->getMessageSize()),
+                i, vc, vnet, route, packetization.numFlits, new_msg_ptr,
+                packetization.wireBytes,
                 oPort->bitWidth(), curTick());
 
             fl->set_src_delay(curTick() - msg_ptr->getTime());

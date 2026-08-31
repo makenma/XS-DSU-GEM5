@@ -31,11 +31,23 @@ using ruby::AxiMeshMsg;
 constexpr uint64_t RawAwUid = 0xa001;
 constexpr uint64_t RawBUid = 0xb001;
 
+AxiWireBytes
+checkedWireBytes(const std::string &owner,
+                 const std::vector<uint32_t> &header_bytes,
+                 uint32_t data_bus_bytes)
+{
+    AxiWireBytes wire_bytes;
+    const std::string error = normalizeAxiWireBytes(
+        header_bytes, data_bus_bytes, wire_bytes);
+    fatal_if(!error.empty(), "%s: %s", owner, error);
+    return wire_bytes;
+}
+
 std::shared_ptr<AxiMeshMsg>
 rawMessage(Tick now, ruby::AxiChannel channel,
            const ruby::MachineID &source, const ruby::MachineID &destination,
            uint32_t src_node, uint16_t src_port, uint32_t dst_node,
-           uint64_t uid)
+           uint64_t uid, int wire_size_bytes)
 {
     auto msg = std::make_shared<AxiMeshMsg>(now);
     ruby::NetDest destinations;
@@ -66,9 +78,7 @@ rawMessage(Tick now, ruby::AxiChannel channel,
     msg->setResp(ruby::AxiResp_Okay);
     msg->setQos(0);
     msg->setSemanticBytes(24);
-    // Commit 3 activates the protocol-neutral dynamic wire-size hook.  Zero
-    // intentionally exercises the legacy MessageSize fallback in Commit 1.
-    msg->setWireSizeBytes(0);
+    msg->setWireSizeBytes(wire_size_bytes);
     msg->setPayloadDigest(0);
     ruby::DataBlock data;
     data.clear();
@@ -92,6 +102,8 @@ AxiInitiatorAdapter::AxiInitiatorAdapter(const Params &p)
       shim(p.shim), peer(p.peer), awOut(p.aw_out), wOut(p.w_out),
       arOut(p.ar_out), bLocal(p.b_local), rLocal(p.r_local),
       srcNode(p.src_node), srcPort(p.src_port), dstNode(p.dst_node),
+      channelWireBytes(checkedWireBytes(
+          p.name, p.wire_header_bytes, p.data_bus_bytes)),
       rawProbe(p.raw_probe), rawProbeHoldCycles(p.raw_probe_hold_cycles)
 {
     fatal_if(rawProbe && rawProbeHoldCycles < Cycles(2),
@@ -135,7 +147,8 @@ AxiInitiatorAdapter::injectRawAw()
 
     auto msg = rawMessage(curTick(), ruby::AxiChannel_AW,
                           shim->getMachineID(), peer->getMachineID(),
-                          srcNode, srcPort, dstNode, RawAwUid);
+                          srcNode, srcPort, dstNode, RawAwUid,
+                          wireBytesFor(channelWireBytes, AxiWireSlot::Aw));
     awOut->enqueue(msg, curTick(), clockPeriod());
     rawAwSent = true;
     DPRINTF(AxiGarnetProbe, "independent raw AW-like enqueued\n");
@@ -224,6 +237,8 @@ AxiTargetAdapter::AxiTargetAdapter(const Params &p)
       bOut(p.b_out), rOut(p.r_out),
       awLocal(p.aw_local), wLocal(p.w_local), arLocal(p.ar_local),
       srcNode(p.src_node), srcPort(p.src_port), dstNode(p.dst_node),
+      channelWireBytes(checkedWireBytes(
+          p.name, p.wire_header_bytes, p.data_bus_bytes)),
       rawProbe(p.raw_probe),
       rawProbeHoldCycles(p.raw_probe_hold_cycles)
 {
@@ -273,7 +288,8 @@ AxiTargetAdapter::injectRawB()
     // It is not derived from, and does not acknowledge, the raw AW-like one.
     auto msg = rawMessage(curTick(), ruby::AxiChannel_B,
                           shim->getMachineID(), peer->getMachineID(),
-                          srcNode, srcPort, dstNode, RawBUid);
+                          srcNode, srcPort, dstNode, RawBUid,
+                          wireBytesFor(channelWireBytes, AxiWireSlot::B));
     msg->setSemanticBytes(8);
     bOut->enqueue(msg, curTick(), clockPeriod());
     rawBSent = true;

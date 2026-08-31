@@ -81,6 +81,17 @@ class Message
     { panic("MessageSizeType() called on wrong message!"); }
 
     /**
+     * Optional protocol-neutral wire size used by Garnet packetization.
+     * Zero preserves the legacy MessageSizeType mapping.
+     */
+    virtual const int&
+    getWireSizeBytes() const
+    {
+        static const int unspecified = 0;
+        return unspecified;
+    }
+
+    /**
      * The two functions below are used for reading / writing the message
      * functionally. The methods return true if the address in the packet
      * matches the address / address range in the message. Each message

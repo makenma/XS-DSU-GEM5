@@ -278,3 +278,77 @@ demonstrating the runtime legacy fallback.
 | `scons build/RISCV_CHI/gem5.opt -j4` | PASS, exit 0 |
 | specification section 15.5 Garnet AXI-leak scan | PASS, no output |
 | `git diff --check` | PASS, no output |
+
+## Commit 3 gate: protocol-neutral dynamic wire bytes
+
+### Packetization contract
+
+The common Ruby `Message` interface now exposes a protocol-neutral
+`getWireSizeBytes()` hook.  Its default value is zero, which means that
+Garnet must retain the legacy `MessageSizeType_to_int()` sizing path.  AXI
+messages override the hook through the generated `AxiMeshMsg` field and
+provide an explicit, nonzero on-wire byte count.
+
+`NetworkInterface` resolves the message size once and uses that same result
+for both the ceiling flit-count calculation and each flit's `msgSize`.  This
+keeps packet injection, NI serialization/deserialization, and link
+utilization accounting on one byte count.  The shared packetization helper
+rejects negative or zero resolved sizes, zero flit width, and results that do
+not fit the simulator's integer representation.  It performs integer ceiling
+division without a floating-point conversion.
+
+AXI_MESH exposes five configurable header sizes, ordered AW/W/B/AR/R, and a
+data-bus width.  Its defaults are `24,16,8,24,16` header bytes and a 64-byte
+data beat.  W and R wire sizes include one complete data beat; AW, B, and AR
+use only their configured header size.  Semantic payload size is deliberately
+not part of this calculation.
+
+### Unit tests and runtime proof
+
+The exact U8 binary and required test names all passed:
+
+```text
+build/AXI_MESH/mem/axi/axi_packetization.test.opt
+  AxiDynamicWireBytesTest.CountsDefaultFiveChannels
+  AxiDynamicWireBytesTest.FallsBackForLegacyMessage
+  AxiDynamicWireBytesTest.IgnoresSemanticBytesForFlits
+  AxiDynamicWireBytesTest.RejectsInvalidWireSize
+[  PASSED  ] 4 tests
+```
+
+With 16-byte flits, the default AW/W/B/AR/R wire sizes are respectively
+24/80/8/24/80 bytes and therefore consume 2/5/1/2/5 flits.  The legacy unit
+case exercises a message whose dynamic hook returns zero, while the three
+real Garnet standalone smoke tests below prove the same fallback in the
+unchanged protocol path.
+
+The independent raw-message debug probe exited 0 at tick 7326.  Its trace
+shows the AW-like message carrying `WireSizeBytes=24`, Garnet reporting
+`Message Size:24`, and packet flits 0 and 1 as head and tail.  The independent
+B-like message carries `WireSizeBytes=8`, reports `Message Size:8`, and forms
+one head-tail flit.  The B local queue was visible from tick 3996 through
+6660; the two-flit AW local queue was visible from tick 4329 through 6993.
+Each was drained exactly once.  `config.ini` records the five default header
+sizes and the 64-byte data-bus width.
+
+### Legacy and build regression
+
+The three section 15.4 legacy commands were again run character-for-character
+and exited 0 at tick 5000328.  Their results still match the checked-in golden
+exactly: vnet 0 and vnet 1 each carried 100 one-flit packets with latency
+2997; vnet 2 carried 100 five-flit packets with packet latency 6040.62 and
+flit latency 4681.314; average hops remained 2.  The exact per-vnet
+distributions also matched.
+
+| Command | Result |
+|---|---|
+| `scons build/AXI_MESH/mem/axi/axi_packetization.test.opt -j4` | PASS, 4/4 U8 tests |
+| `scons build/AXI_MESH/gem5.debug -j4` | PASS, exit 0 |
+| `scons build/AXI_MESH/gem5.opt -j4` | PASS, exit 0 |
+| debug dynamic-size raw probe | PASS, exit 0, tick 7326 |
+| opt dynamic-size raw probe | PASS, exit 0, tick 7326 |
+| `scons build/Garnet_standalone/gem5.opt -j4` | PASS, exit 0 |
+| `scons build/RISCV_CHI/gem5.opt -j4` | PASS, exit 0 |
+| U8/test-helper absence from both non-AXI builds | PASS |
+| specification section 15.5 Garnet AXI-leak scan | PASS; only the protocol-neutral hook is present |
+| `git diff --check` | PASS, no output |

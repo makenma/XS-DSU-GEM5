@@ -2,9 +2,8 @@
 
 Import('*')
 
-# Every source in this directory currently includes generated AXI_MESH
-# protocol headers.  Keep those dependencies completely out of all legacy
-# Ruby and ISA builds.
+# Keep the AXI endpoint, helpers, and tests completely out of all legacy Ruby
+# and ISA builds.
 if env['CONF']['PROTOCOL'] != 'AXI_MESH':
     Return()
 
@@ -14,4 +13,8 @@ SimObject('AxiGarnetEndpoint.py', sim_objects=[
 ])
 
 Source('axi_garnet_endpoint.cc')
+Source('axi_packetization.cc')
 DebugFlag('AxiGarnetProbe')
+
+GTest('axi_packetization.test',
+      'axi_packetization.test.cc', 'axi_packetization.cc')
