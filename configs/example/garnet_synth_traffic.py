@@ -86,6 +86,11 @@ parser.add_argument("--inj-vnet", type=int, default=-1,
 #
 Ruby.define_options(parser)
 
+# The Xiangshan-wide default is DRAMsim3, which is optional and is not part of
+# a normal Garnet_standalone build. Keep this self-contained network tester on
+# an always-built memory model unless the command line selects another one.
+parser.set_defaults(mem_type="DDR3_1600_8x8")
+
 args = parser.parse_args()
 
 cpus = [ GarnetSyntheticTraffic(

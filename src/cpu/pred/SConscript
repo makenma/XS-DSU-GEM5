@@ -28,6 +28,11 @@
 
 Import('*')
 
+# The generic architecture database is also used by cache prefetchers. Keep
+# its implementation available to null-ISA builds even though the branch
+# predictors below are CPU-only.
+Source('general_arch_db.cc')
+
 if env['CONF']['TARGET_ISA'] == 'null':
     Return()
 
@@ -111,7 +116,6 @@ Source('btb/ras.cc')
 Source('btb/btb_ubtb.cc')
 Source('btb/ftq.cc')
 # Source('btb/uras.cc')
-Source('general_arch_db.cc')
 DebugFlag('FreeList')
 DebugFlag('Branch')
 DebugFlag('LTage')

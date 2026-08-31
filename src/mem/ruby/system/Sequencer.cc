@@ -45,7 +45,10 @@
 #include "base/compiler.hh"
 #include "base/logging.hh"
 #include "base/str.hh"
+#include "config/the_isa.hh"
+#if !IS_NULL_ISA
 #include "cpu/base.hh"
+#endif
 #include "cpu/testers/rubytest/RubyTester.hh"
 #include "debug/LLSC.hh"
 #include "debug/MemoryAccess.hh"
@@ -676,9 +679,10 @@ Sequencer::checkL1DRefill(Addr address, const DataBlock& data, WriteMask mask) {
     assert(address == makeLineAddress(address));
     DPRINTF(RubySequencer, "Checking dut refill with golden for addr %#x\n", address);
 
-    size_t block_size = RubySystem::getBlockSizeBytes();
-
+#if !IS_NULL_ISA
+    const size_t block_size = RubySystem::getBlockSizeBytes();
     cpu->checkL1DRefill(address, data.getData(getOffset(address), block_size), block_size);
+#endif
 }
 
 void

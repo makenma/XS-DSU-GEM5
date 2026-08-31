@@ -73,7 +73,6 @@ if env['CONF']['TARGET_ISA'] != 'null':
     DebugFlag('LSQ')
     DebugFlag('LSQUnit')
     DebugFlag('Hint')
-    DebugFlag('TagReadFail')
     DebugFlag('StoreBuffer')
     DebugFlag('MemDepUnit')
     DebugFlag('O3CPU')

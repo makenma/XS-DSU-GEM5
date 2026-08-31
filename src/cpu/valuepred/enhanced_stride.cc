@@ -20,7 +20,7 @@
 
 #include "base/output.hh"
 #include "base/random.hh"
-#include "cpu/o3/dyn_inst.hh"
+#include "base/trace.hh"
 #include "cpu/valuepred/es_metadata.hh"
 #include "debug/EStride.hh"
 

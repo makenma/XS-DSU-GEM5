@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "provenance": {
+    "spec_base_sha": "7478835ac25d406941490578874d5022e3a46ec5",
+    "user_approved_baseline_sha": "65f3241a6cd486dffddaca251536f5c691af9a1f",
+    "branch": "feature/ai-mesh-axi-garnet",
+    "build_target": "build/Garnet_standalone/gem5.opt",
+    "protocol": "Garnet_standalone",
+    "target_isa": "null",
+    "note": "Captured after the user-approved null-ISA prerequisite repairs; no Garnet data-path source had been modified."
+  },
+  "command": [
+    "timeout",
+    "120s",
+    "build/Garnet_standalone/gem5.opt",
+    "-d",
+    "m5out/garnet-legacy-vnet${vnet}",
+    "configs/example/garnet_synth_traffic.py",
+    "--network=garnet",
+    "--topology=Mesh_XY",
+    "--routing-algorithm=1",
+    "--num-cpus=4",
+    "--num-dirs=4",
+    "--mesh-rows=2",
+    "--single-sender-id=0",
+    "--single-dest-id=3",
+    "--inj-vnet=${vnet}",
+    "--num-packets-max=100",
+    "--sim-cycles=5000000",
+    "--injectionrate=0.1"
+  ],
+  "network_config": {
+    "topology": "Mesh_XY",
+    "routers": 4,
+    "mesh_rows": 2,
+    "number_of_virtual_networks": 3,
+    "routing_algorithm": 1,
+    "ni_flit_size_bytes": 16,
+    "vcs_per_vnet": 4,
+    "buffers_per_ctrl_vc": 1,
+    "buffers_per_data_vc": 4,
+    "link_latency_cycles": 1,
+    "link_width_bytes": 16,
+    "memory_type": "DDR3_1600_8x8"
+  },
+  "comparison": {
+    "integer_and_count_fields": "exact",
+    "floating_abs_tolerance": 1e-12,
+    "grant_trace": null
+  },
+  "cases": {
+    "legacy_vnet0": {
+      "inj_vnet": 0,
+      "sim_ticks": 5000328,
+      "packets_injected": [100, 0, 0],
+      "packets_received": [100, 0, 0],
+      "flits_injected": [100, 0, 0],
+      "flits_received": [100, 0, 0],
+      "packets_injected_total": 100,
+      "packets_received_total": 100,
+      "flits_injected_total": 100,
+      "flits_received_total": 100,
+      "average_packet_latency": 2997.0,
+      "average_flit_latency": 2997.0,
+      "average_hops": 2.0
+    },
+    "legacy_vnet1": {
+      "inj_vnet": 1,
+      "sim_ticks": 5000328,
+      "packets_injected": [0, 100, 0],
+      "packets_received": [0, 100, 0],
+      "flits_injected": [0, 100, 0],
+      "flits_received": [0, 100, 0],
+      "packets_injected_total": 100,
+      "packets_received_total": 100,
+      "flits_injected_total": 100,
+      "flits_received_total": 100,
+      "average_packet_latency": 2997.0,
+      "average_flit_latency": 2997.0,
+      "average_hops": 2.0
+    },
+    "legacy_vnet2": {
+      "inj_vnet": 2,
+      "sim_ticks": 5000328,
+      "packets_injected": [0, 0, 100],
+      "packets_received": [0, 0, 100],
+      "flits_injected": [0, 0, 500],
+      "flits_received": [0, 0, 500],
+      "packets_injected_total": 100,
+      "packets_received_total": 100,
+      "flits_injected_total": 500,
+      "flits_received_total": 500,
+      "average_packet_latency": 6040.62,
+      "average_flit_latency": 4681.314,
+      "average_hops": 2.0
+    }
+  }
+}

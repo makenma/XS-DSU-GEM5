@@ -56,8 +56,11 @@
 #include "base/stats/group.hh"
 #include "base/trace.hh"
 #include "base/types.hh"
+#include "config/the_isa.hh"
 #include "cpu/inst_seq.hh"
+#if !IS_NULL_ISA
 #include "cpu/o3/lsq.hh"
+#endif
 #include "debug/ArchDB.hh"
 #include "debug/Cache.hh"
 #include "debug/CacheComp.hh"
@@ -923,7 +926,9 @@ BaseCache::recvTimingResp(PacketPtr pkt)
         const bool allocate = (writeAllocator && mshr->wasWholeLineWrite) ?
             writeAllocator->allocate() : mshr->allocOnFill();
         // Optionally indicate that the Dcache received a refill request
-        // to drive LSQ-side modelling.
+        // to drive LSQ-side modelling. Null-ISA builds do not include the
+        // O3 CPU and therefore must not depend on its generated enums/types.
+#if !IS_NULL_ISA
         if (simulateDcacheRefill && cacheLevel == 1 && pkt->getLSQPtr()) {
             const Addr refill_addr =
                 pkt->req && pkt->req->hasVaddr() ? pkt->req->getVaddr() :
@@ -931,6 +936,7 @@ BaseCache::recvTimingResp(PacketPtr pkt)
             pkt->getLSQPtr()->notifyDcacheRefill(refill_addr);
             stats.DcacheRefillTimes++;
         }
+#endif
         blk = handleFill(pkt, blk, writebacks, allocate);
         assert(blk != nullptr);
         ppFill->notify(pkt);

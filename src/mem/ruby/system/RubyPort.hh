@@ -45,7 +45,6 @@
 #include <cassert>
 #include <string>
 
-#include "cpu/base.hh"
 #include "mem/ruby/common/MachineID.hh"
 #include "mem/ruby/network/MessageBuffer.hh"
 #include "mem/ruby/protocol/RequestStatus.hh"
@@ -56,6 +55,8 @@
 
 namespace gem5
 {
+
+class BaseCPU;
 
 namespace ruby
 {
