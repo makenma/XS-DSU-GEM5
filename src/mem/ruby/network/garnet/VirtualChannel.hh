@@ -49,7 +49,7 @@ namespace garnet
 class VirtualChannel
 {
   public:
-    VirtualChannel();
+    explicit VirtualChannel(uint32_t capacity);
     ~VirtualChannel() = default;
 
     bool need_stage(flit_stage stage, Tick time);
@@ -70,11 +70,11 @@ class VirtualChannel
         return inputBuffer.isReady(curTime);
     }
 
-    inline void
-    insertFlit(flit *t_flit)
-    {
-        inputBuffer.insert(t_flit);
-    }
+    void insertFlit(flit *t_flit);
+
+    uint32_t getCapacity() const { return m_capacity; }
+    uint32_t getOccupancy() const { return inputBuffer.getSize(); }
+    bool isFull() const { return getOccupancy() >= m_capacity; }
 
     inline void
     set_state(VC_state_type m_state, Tick curTime)
@@ -104,6 +104,7 @@ class VirtualChannel
     int m_output_port;
     Tick m_enqueue_time;
     int m_output_vc;
+    const uint32_t m_capacity;
 };
 
 } // namespace garnet

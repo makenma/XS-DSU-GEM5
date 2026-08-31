@@ -77,21 +77,19 @@ class GarnetNetwork : public Network
 
     // for network
     uint32_t getNiFlitSize() const { return m_ni_flit_size; }
-    uint32_t getBuffersPerDataVC() { return m_buffers_per_data_vc; }
-    uint32_t getBuffersPerCtrlVC() { return m_buffers_per_ctrl_vc; }
+    uint32_t getBuffersPerDataVC() const { return m_buffers_per_data_vc; }
+    uint32_t getBuffersPerCtrlVC() const { return m_buffers_per_ctrl_vc; }
+    uint32_t getBuffersPerVnet(unsigned vnet) const;
+    VNET_type getVnetType(unsigned vnet) const;
     int getRoutingAlgorithm() const { return m_routing_algorithm; }
 
     bool isFaultModelEnabled() const { return m_enable_fault_model; }
-    FaultModel* fault_model;
+    FaultModel* fault_model = nullptr;
 
 
     // Internal configuration
     bool isVNetOrdered(int vnet) const { return m_ordered[vnet]; }
-    VNET_type
-    get_vnet_type(int vnet)
-    {
-        return m_vnet_type[vnet];
-    }
+    VNET_type get_vnet_type(int vnet) const { return getVnetType(vnet); }
     int getNumRouters();
     int get_router_id(int ni, int vnet);
 
@@ -162,9 +160,11 @@ class GarnetNetwork : public Network
     int m_num_rows;
     int m_num_cols;
     uint32_t m_ni_flit_size;
+    uint32_t m_vcs_per_vnet;
     uint32_t m_max_vcs_per_vnet;
     uint32_t m_buffers_per_ctrl_vc;
     uint32_t m_buffers_per_data_vc;
+    std::vector<uint32_t> m_buffers_per_vnet;
     int m_routing_algorithm;
     bool m_enable_fault_model;
 

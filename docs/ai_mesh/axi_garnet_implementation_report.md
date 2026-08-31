@@ -201,3 +201,80 @@ The same probe without the debug flag also passed with
 
 The only build warnings were the existing optional PNG/HDF5/backtrace
 availability warnings and existing generated-SLICC ignored-return warnings.
+
+## Commit 2 gate: per-vnet class and VC depth
+
+### Normalization and compatibility
+
+`GarnetNetwork` now accepts optional `vnet_classes` and
+`buffers_per_vnet` vectors and normalizes both to arrays with one entry per
+virtual network.  Empty vectors retain the stock classification rule
+(`response` is data; every other type is control) and the stock 4/1
+data/control depths.  Non-empty vectors override those legacy inputs.  The
+AXI_MESH configuration defaults to classes
+`ctrl,data,ctrl,ctrl,data` and depths `4,8,4,4,8`.
+
+Input VC storage and all NI/router output-credit state now obtain their depth
+from the same `getBuffersPerVnet()` result.  Input consumption checks capacity
+before removing a link flit, and credit overflow/underflow and buffer overflow
+use contextual panic diagnostics.  Router total-VC validation occurs in the
+member initializer so `SwitchAllocator` observes the validated value during
+its own construction.  The stock FaultModel compatibility getters are kept;
+non-uniform depths within one class are rejected only when that FaultModel is
+enabled.
+
+The production normalization helper also rejects zero vnets, zero VCs, zero
+flit width, vector length mismatches, zero/oversized depth, invalid class,
+VC-count overflow, and FaultModel-inexpressible class depths.  NI setup keeps
+its existing uniform-`consumerVcs` rule but now diagnoses zero or inconsistent
+values with `fatal` rather than relying on an assertion.
+
+### Unit and negative tests
+
+The two protocol-neutral binaries ran with the exact required suites and test
+names:
+
+| Binary | Result |
+|---|---|
+| `build/AXI_MESH/mem/ruby/network/garnet/garnet_vnet_config.test.opt` | PASS, 6/6 (U9) |
+| `build/AXI_MESH/mem/ruby/network/garnet/garnet_vc_isolation.test.opt` | PASS, 2/2 (U11) |
+
+Runtime negative probes also exited 1 during construction and contained the
+required stable fragments for a four-entry depth vector, class `payload`, and
+zero depth at index 2, respectively:
+
+```text
+buffers_per_vnet length 4 must equal number_of_virtual_networks 5
+vnet_classes[2]='payload' is invalid; expected 'ctrl' or 'data'
+buffers_per_vnet[2] must be >= 1
+```
+
+### Raw-message depth/credit probe
+
+The Commit 1 independent-message probe was repeated with one VC per vnet,
+classes `ctrl,data,ctrl,ctrl,data`, and non-uniform depths `1,2,1,3,2`.
+`config.ini` records those vectors exactly.  RubyNetwork tracing showed every
+selected vnet-0/vnet-2 output credit decrement from 1 to 0 and subsequent
+return to 1 along the two-router paths.  Both depth-one local queues remained
+full until tick 6660, each message drained exactly once, and the probe passed
+at tick 6993.  This remains a protocol-neutral ownership/capacity probe, not a
+claim of legal AXI behavior.
+
+### Legacy and build regression
+
+The three section 15.4 commands were rerun character-for-character.  All
+exited 0 at tick 5000328, and every versioned count and floating statistic
+matched `garnet_xs_dev_7478835a.json` exactly: vnet 0/1 each transported 100
+one-flit packets at latency 2997; vnet 2 transported 100 five-flit packets at
+packet latency 6040.62 and flit latency 4681.314; average hops remained 2.
+Their generated configs show empty new vectors and the stock 1/4 depths,
+demonstrating the runtime legacy fallback.
+
+| Command | Result |
+|---|---|
+| `scons build/AXI_MESH/gem5.debug -j4` | PASS, exit 0 |
+| `scons build/AXI_MESH/gem5.opt -j4` | PASS, exit 0 |
+| `scons build/Garnet_standalone/gem5.opt -j4` | PASS, exit 0 |
+| `scons build/RISCV_CHI/gem5.opt -j4` | PASS, exit 0 |
+| specification section 15.5 Garnet AXI-leak scan | PASS, no output |
+| `git diff --check` | PASS, no output |

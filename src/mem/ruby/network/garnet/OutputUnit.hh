@@ -72,7 +72,7 @@ class OutputUnit : public Consumer
 
     inline PortDirection get_direction() { return m_direction; }
 
-    int
+    uint32_t
     get_credit_count(int vc)
     {
         return outVcState[vc].get_credit_count();

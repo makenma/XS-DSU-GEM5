@@ -19,6 +19,8 @@ parser.set_defaults(
     routing_algorithm=1,
     mesh_rows=2,
     mem_type="DDR3_1600_8x8",
+    garnet_vnet_classes="ctrl,data,ctrl,ctrl,data",
+    garnet_buffers_per_vnet="4,8,4,4,8",
 )
 args = parser.parse_args()
 

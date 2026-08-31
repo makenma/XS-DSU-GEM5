@@ -31,6 +31,9 @@
 
 #include "mem/ruby/network/garnet/OutputUnit.hh"
 
+#include <limits>
+
+#include "base/logging.hh"
 #include "debug/RubyNetwork.hh"
 #include "mem/ruby/network/garnet/Credit.hh"
 #include "mem/ruby/network/garnet/CreditLink.hh"
@@ -51,17 +54,27 @@ OutputUnit::OutputUnit(int id, PortDirection direction, Router *router,
   : Consumer(router), m_router(router), m_id(id), m_direction(direction),
     m_vc_per_vnet(consumerVcs)
 {
+    fatal_if(consumerVcs == 0,
+             "Router %d output port %d consumerVcs must be >= 1",
+             m_router->get_id(), m_id);
+    fatal_if(m_router->get_num_vnets() >
+             std::numeric_limits<int>::max() / consumerVcs,
+             "Router %d output VC count overflows int",
+             m_router->get_id());
     const int m_num_vcs = consumerVcs * m_router->get_num_vnets();
     outVcState.reserve(m_num_vcs);
     for (int i = 0; i < m_num_vcs; i++) {
-        outVcState.emplace_back(i, m_router->get_net_ptr(), consumerVcs);
+        const unsigned vnet = i / consumerVcs;
+        const uint32_t depth =
+            m_router->get_net_ptr()->getBuffersPerVnet(vnet);
+        outVcState.emplace_back(i, vnet, depth);
     }
 }
 
 void
 OutputUnit::decrement_credit(int out_vc)
 {
-    DPRINTF(RubyNetwork, "Router %d OutputUnit %s decrementing credit:%d for "
+    DPRINTF(RubyNetwork, "Router %d OutputUnit %s decrementing credit:%u for "
             "outvc %d at time: %lld for %s\n", m_router->get_id(),
             m_router->getPortDirectionName(get_direction()),
             outVcState[out_vc].get_credit_count(),
@@ -73,7 +86,7 @@ OutputUnit::decrement_credit(int out_vc)
 void
 OutputUnit::increment_credit(int out_vc)
 {
-    DPRINTF(RubyNetwork, "Router %d OutputUnit %s incrementing credit:%d for "
+    DPRINTF(RubyNetwork, "Router %d OutputUnit %s incrementing credit:%u for "
             "outvc %d at time: %lld from:%s\n", m_router->get_id(),
             m_router->getPortDirectionName(get_direction()),
             outVcState[out_vc].get_credit_count(),

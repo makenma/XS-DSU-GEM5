@@ -65,6 +65,12 @@ def define_options(parser):
         help="""number of virtual channels per virtual network
             inside garnet network.""")
     parser.add_argument(
+        "--garnet-vnet-classes", default="",
+        help="optional comma-separated per-vnet classes: ctrl or data")
+    parser.add_argument(
+        "--garnet-buffers-per-vnet", default="",
+        help="optional comma-separated input VC depths in flits")
+    parser.add_argument(
         "--routing-algorithm", action="store", type=int,
         default=0,
         help="""routing algorithm in network.
@@ -120,9 +126,26 @@ def create_network(options, ruby):
 def init_network(options, network, InterfaceClass):
 
     if options.network == "garnet":
+        class_fields = options.garnet_vnet_classes.split(",") \
+            if options.garnet_vnet_classes else []
+        depth_fields = options.garnet_buffers_per_vnet.split(",") \
+            if options.garnet_buffers_per_vnet else []
+        if any(field == "" for field in class_fields):
+            fatal("garnet_vnet_classes contains an empty element")
+        if any(field == "" for field in depth_fields):
+            fatal("garnet_buffers_per_vnet contains an empty element")
+        try:
+            depths = [int(field, 10) for field in depth_fields]
+        except ValueError:
+            fatal("garnet_buffers_per_vnet contains a non-integer element")
+        if options.link_width_bits <= 0 or options.link_width_bits % 8:
+            fatal("link_width_bits must be a positive multiple of 8")
+
         network.num_rows = options.mesh_rows
         network.vcs_per_vnet = options.vcs_per_vnet
-        network.ni_flit_size = options.link_width_bits / 8
+        network.vnet_classes = class_fields
+        network.buffers_per_vnet = depths
+        network.ni_flit_size = options.link_width_bits // 8
         network.routing_algorithm = options.routing_algorithm
         network.garnet_deadlock_threshold = options.garnet_deadlock_threshold
 

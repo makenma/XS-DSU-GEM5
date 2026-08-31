@@ -131,6 +131,9 @@ class InputUnit : public Consumer
         return virtualChannels[invc].isReady(curTime);
     }
 
+    uint32_t get_vc_capacity(int vc) const;
+    uint32_t get_vc_occupancy(int vc) const;
+
     flitBuffer* getCreditQueue() { return &creditQueue; }
 
     inline void

@@ -34,6 +34,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <limits>
 
 #include "base/cast.hh"
 #include "debug/RubyNetwork.hh"
@@ -88,13 +89,17 @@ NetworkInterface::addOutPort(NetworkLink *out_link,
     OutputPort *newOutPort = new OutputPort(out_link, credit_link, router_id);
     outPorts.push_back(newOutPort);
 
-    assert(consumerVcs > 0);
+    fatal_if(consumerVcs == 0,
+             "%s: consumerVcs must be >= 1", name());
     // We are not allowing different physical links to have different vcs
     // If it is required that the Network Interface support different VCs
     // for every physical link connected to it. Then they need to change
     // the logic within outport and inport.
     if (niOutVcs.size() == 0) {
         m_vc_per_vnet = consumerVcs;
+        fatal_if(m_virtual_networks >
+                 std::numeric_limits<int>::max() / m_vc_per_vnet,
+                 "%s: virtual network * VC count overflows int", name());
         int m_num_vcs = consumerVcs * m_virtual_networks;
         niOutVcs.resize(m_num_vcs);
         outVcState.reserve(m_num_vcs);
@@ -102,7 +107,9 @@ NetworkInterface::addOutPort(NetworkLink *out_link,
         // instantiating the NI flit buffers
         for (int i = 0; i < m_num_vcs; i++) {
             m_ni_out_vcs_enqueue_time[i] = Tick(INFINITE_);
-            outVcState.emplace_back(i, m_net_ptr, consumerVcs);
+            const unsigned vnet = i / consumerVcs;
+            const uint32_t depth = m_net_ptr->getBuffersPerVnet(vnet);
+            outVcState.emplace_back(i, vnet, depth);
         }
 
         // Reset VC Per VNET for input links already instantiated

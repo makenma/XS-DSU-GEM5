@@ -31,6 +31,8 @@
 
 #include "mem/ruby/network/garnet/VirtualChannel.hh"
 
+#include "base/logging.hh"
+
 namespace gem5
 {
 
@@ -40,10 +42,20 @@ namespace ruby
 namespace garnet
 {
 
-VirtualChannel::VirtualChannel()
-  : inputBuffer(), m_vc_state(IDLE_, Tick(0)), m_output_port(-1),
-    m_enqueue_time(INFINITE_), m_output_vc(-1)
+VirtualChannel::VirtualChannel(uint32_t capacity)
+  : inputBuffer(capacity), m_vc_state(IDLE_, Tick(0)), m_output_port(-1),
+    m_enqueue_time(INFINITE_), m_output_vc(-1), m_capacity(capacity)
 {
+    fatal_if(capacity == 0, "VirtualChannel capacity must be >= 1");
+}
+
+void
+VirtualChannel::insertFlit(flit *t_flit)
+{
+    panic_if(isFull(),
+             "Garnet VirtualChannel overflow: occupancy=%u capacity=%u",
+             getOccupancy(), m_capacity);
+    inputBuffer.insert(t_flit);
 }
 
 void

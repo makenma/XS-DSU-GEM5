@@ -32,9 +32,11 @@
 #include "mem/ruby/network/garnet/GarnetNetwork.hh"
 
 #include <cassert>
+#include <utility>
 
 #include "base/cast.hh"
 #include "base/compiler.hh"
+#include "base/logging.hh"
 #include "debug/RubyNetwork.hh"
 #include "mem/ruby/common/NetDest.hh"
 #include "mem/ruby/network/MessageBuffer.hh"
@@ -44,6 +46,7 @@
 #include "mem/ruby/network/garnet/NetworkInterface.hh"
 #include "mem/ruby/network/garnet/NetworkLink.hh"
 #include "mem/ruby/network/garnet/Router.hh"
+#include "mem/ruby/network/garnet/VnetConfig.hh"
 #include "mem/ruby/system/RubySystem.hh"
 
 namespace gem5
@@ -66,6 +69,7 @@ GarnetNetwork::GarnetNetwork(const Params &p)
 {
     m_num_rows = p.num_rows;
     m_ni_flit_size = p.ni_flit_size;
+    m_vcs_per_vnet = p.vcs_per_vnet;
     m_max_vcs_per_vnet = 0;
     m_buffers_per_data_vc = p.buffers_per_data_vc;
     m_buffers_per_ctrl_vc = p.buffers_per_ctrl_vc;
@@ -76,14 +80,24 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     if (m_enable_fault_model)
         fault_model = p.fault_model;
 
-    m_vnet_type.resize(m_virtual_networks);
+    VnetConfigInput config;
+    config.virtualNetworks = m_virtual_networks;
+    config.vcsPerVnet = m_vcs_per_vnet;
+    config.niFlitSize = m_ni_flit_size;
+    config.legacyCtrlDepth = m_buffers_per_ctrl_vc;
+    config.legacyDataDepth = m_buffers_per_data_vc;
+    config.legacyTypeNames = m_vnet_type_names;
+    config.configuredClasses = p.vnet_classes;
+    config.configuredDepths = p.buffers_per_vnet;
+    config.faultModelEnabled = m_enable_fault_model;
 
-    for (int i = 0 ; i < m_virtual_networks ; i++) {
-        if (m_vnet_type_names[i] == "response")
-            m_vnet_type[i] = DATA_VNET_; // carries data (and ctrl) packets
-        else
-            m_vnet_type[i] = CTRL_VNET_; // carries only ctrl packets
-    }
+    NormalizedVnetConfig normalized;
+    const std::string config_error = normalizeVnetConfig(config, normalized);
+    fatal_if(!config_error.empty(), "%s: %s", name(), config_error);
+    m_vnet_type = std::move(normalized.types);
+    m_buffers_per_vnet = std::move(normalized.depths);
+    m_buffers_per_ctrl_vc = normalized.legacyCtrlDepth;
+    m_buffers_per_data_vc = normalized.legacyDataDepth;
 
     // record the routers
     for (std::vector<BasicRouter*>::const_iterator i =  p.routers.begin();
@@ -105,6 +119,24 @@ GarnetNetwork::GarnetNetwork(const Params &p)
 
     // Print Garnet version
     inform("Garnet version %s\n", garnetVersion);
+}
+
+uint32_t
+GarnetNetwork::getBuffersPerVnet(unsigned vnet) const
+{
+    panic_if(vnet >= m_buffers_per_vnet.size(),
+             "%s: vnet %u is outside configured range [0,%zu)",
+             name(), vnet, m_buffers_per_vnet.size());
+    return m_buffers_per_vnet[vnet];
+}
+
+VNET_type
+GarnetNetwork::getVnetType(unsigned vnet) const
+{
+    panic_if(vnet >= m_vnet_type.size(),
+             "%s: vnet %u is outside configured range [0,%zu)",
+             name(), vnet, m_vnet_type.size());
+    return m_vnet_type[vnet];
 }
 
 void

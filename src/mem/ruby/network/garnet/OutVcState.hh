@@ -32,7 +32,6 @@
 #define __MEM_RUBY_NETWORK_GARNET_0_OUTVCSTATE_HH__
 
 #include "mem/ruby/network/garnet/CommonTypes.hh"
-#include "mem/ruby/network/garnet/GarnetNetwork.hh"
 
 namespace gem5
 {
@@ -46,10 +45,12 @@ namespace garnet
 class OutVcState
 {
   public:
-    OutVcState(int id, GarnetNetwork *network_ptr, uint32_t consumerVcs);
+    OutVcState(int id, unsigned vnet, uint32_t depth);
 
-    int get_credit_count()          { return m_credit_count; }
-    inline bool has_credit()       { return (m_credit_count > 0); }
+    uint32_t get_credit_count() const { return m_credit_count; }
+    uint32_t get_max_credit_count() const { return m_max_credit_count; }
+    unsigned get_vnet() const { return m_vnet; }
+    inline bool has_credit() const { return m_credit_count > 0; }
     void increment_credit();
     void decrement_credit();
 
@@ -67,10 +68,11 @@ class OutVcState
 
   private:
     int m_id ;
+    unsigned m_vnet;
     Tick m_time;
     VC_state_type m_vc_state;
-    int m_credit_count;
-    int m_max_credit_count;
+    uint32_t m_credit_count;
+    uint32_t m_max_credit_count;
 };
 
 } // namespace garnet

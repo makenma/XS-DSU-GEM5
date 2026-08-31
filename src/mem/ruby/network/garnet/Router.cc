@@ -32,6 +32,9 @@
 
 #include "mem/ruby/network/garnet/Router.hh"
 
+#include <limits>
+
+#include "base/logging.hh"
 #include "debug/RubyNetwork.hh"
 #include "mem/ruby/network/garnet/CreditLink.hh"
 #include "mem/ruby/network/garnet/GarnetNetwork.hh"
@@ -48,10 +51,32 @@ namespace ruby
 namespace garnet
 {
 
+namespace
+{
+
+uint32_t
+checkedNumVcs(uint32_t virtual_networks, uint32_t vcs_per_vnet,
+              int router_id)
+{
+    fatal_if(virtual_networks == 0,
+             "Router %d virtual network count must be >= 1", router_id);
+    fatal_if(vcs_per_vnet == 0,
+             "Router %d vcs_per_vnet must be >= 1", router_id);
+    fatal_if(virtual_networks >
+             std::numeric_limits<int>::max() / vcs_per_vnet,
+             "Router %d virtual network * VC count overflows int",
+             router_id);
+
+    return virtual_networks * vcs_per_vnet;
+}
+
+} // anonymous namespace
+
 Router::Router(const Params &p)
   : BasicRouter(p), Consumer(this), m_latency(p.latency),
     m_virtual_networks(p.virt_nets), m_vc_per_vnet(p.vcs_per_vnet),
-    m_num_vcs(m_virtual_networks * m_vc_per_vnet), m_bit_width(p.width),
+    m_num_vcs(checkedNumVcs(p.virt_nets, p.vcs_per_vnet, p.router_id)),
+    m_bit_width(p.width),
     m_network_ptr(nullptr), routingUnit(this), switchAllocator(this),
     crossbarSwitch(this)
 {

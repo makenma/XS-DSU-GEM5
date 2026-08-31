@@ -31,6 +31,7 @@
 
 #include "mem/ruby/network/garnet/InputUnit.hh"
 
+#include "base/logging.hh"
 #include "debug/RubyNetwork.hh"
 #include "mem/ruby/network/garnet/Credit.hh"
 #include "mem/ruby/network/garnet/Router.hh"
@@ -49,6 +50,9 @@ InputUnit::InputUnit(int id, PortDirection direction, Router *router)
     m_vc_per_vnet(m_router->get_vc_per_vnet())
 {
     const int m_num_vcs = m_router->get_num_vcs();
+    fatal_if(m_vc_per_vnet == 0,
+             "Router %d input port %d has zero VCs per vnet",
+             m_router->get_id(), m_id);
     m_num_buffer_reads.resize(m_num_vcs/m_vc_per_vnet);
     m_num_buffer_writes.resize(m_num_vcs/m_vc_per_vnet);
     for (int i = 0; i < m_num_buffer_reads.size(); i++) {
@@ -59,8 +63,29 @@ InputUnit::InputUnit(int id, PortDirection direction, Router *router)
     // Instantiating the virtual channels
     virtualChannels.reserve(m_num_vcs);
     for (int i=0; i < m_num_vcs; i++) {
-        virtualChannels.emplace_back();
+        const unsigned vnet = i / m_vc_per_vnet;
+        const uint32_t capacity =
+            m_router->get_net_ptr()->getBuffersPerVnet(vnet);
+        virtualChannels.emplace_back(capacity);
     }
+}
+
+uint32_t
+InputUnit::get_vc_capacity(int vc) const
+{
+    panic_if(vc < 0 || vc >= virtualChannels.size(),
+             "Router %d input port %d VC index %d is out of range",
+             m_router->get_id(), m_id, vc);
+    return virtualChannels[vc].getCapacity();
+}
+
+uint32_t
+InputUnit::get_vc_occupancy(int vc) const
+{
+    panic_if(vc < 0 || vc >= virtualChannels.size(),
+             "Router %d input port %d VC index %d is out of range",
+             m_router->get_id(), m_id, vc);
+    return virtualChannels[vc].getOccupancy();
 }
 
 /*
@@ -78,13 +103,25 @@ InputUnit::wakeup()
 {
     flit *t_flit;
     if (m_in_link->isReady(curTick())) {
+        t_flit = m_in_link->peekLink();
+        const int vc = t_flit->get_vc();
+        panic_if(vc < 0 || vc >= virtualChannels.size(),
+                 "Garnet invalid input VC: router=%d inport=%d vc=%d "
+                 "num_vcs=%zu", m_router->get_id(), m_id, vc,
+                 virtualChannels.size());
+        const int vnet = vc / m_vc_per_vnet;
+        panic_if(virtualChannels[vc].isFull(),
+                 "Garnet input VC capacity exceeded: router=%d inport=%d "
+                 "vc=%d vnet=%d occupancy=%u capacity=%u",
+                 m_router->get_id(), m_id, vc, vnet,
+                 virtualChannels[vc].getOccupancy(),
+                 virtualChannels[vc].getCapacity());
 
         t_flit = m_in_link->consumeLink();
         DPRINTF(RubyNetwork, "Router[%d] Consuming:%s Width: %d Flit:%s\n",
         m_router->get_id(), m_in_link->name(),
         m_router->getBitWidth(), *t_flit);
         assert(t_flit->m_width == m_router->getBitWidth());
-        int vc = t_flit->get_vc();
         t_flit->increment_hops(); // for stats
 
         if ((t_flit->get_type() == HEAD_) ||
@@ -110,7 +147,6 @@ InputUnit::wakeup()
         // Buffer the flit
         virtualChannels[vc].insertFlit(t_flit);
 
-        int vnet = vc/m_vc_per_vnet;
         // number of writes same as reads
         // any flit that is written will be read only once
         m_num_buffer_writes[vnet]++;
