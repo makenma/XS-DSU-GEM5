@@ -1,8 +1,10 @@
 #ifndef __MEM_AXI_AXI_TRACE_TESTER_HH__
 #define __MEM_AXI_AXI_TRACE_TESTER_HH__
 
+#include <array>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -43,17 +45,51 @@ class AxiTraceTester : public ClockedObject, public ruby::Consumer
         uint8_t dataSeed = 0;
         StrobeMode strobeMode = StrobeMode::Full;
         uint64_t expectedUid = 0;
+        uint64_t expectedTargetSeq = 0;
+        uint64_t expectedResponseSeq = 0;
+        std::optional<uint64_t> expectedWriteOrdinal;
         uint64_t arrivalCycle = 0;
         AxiResp expectedResponse = AxiResp::Okay;
         size_t planIndex = 0;
 
         bool addressAccepted = false;
+        AxiCommonMeta actualMeta;
+        std::optional<uint64_t> actualWriteOrdinal;
+        Tick addressAcceptedTick = 0;
         uint16_t nextW = 0;
         uint16_t responses = 0;
         std::vector<AxiWBeat> writeBeats;
         Tick lastWAcceptedTick = 0;
         Tick completionTick = 0;
         bool completed = false;
+    };
+
+    struct TraceObservation
+    {
+        Tick tick = 0;
+        uint64_t phase = 0;
+        uint64_t event = 0;
+        uint64_t observationOrder = 0;
+        std::optional<AxiChannel> channel;
+        std::optional<size_t> transactionIndex;
+        std::optional<uint16_t> beatIndex;
+        std::optional<uint64_t> payloadDigest;
+        uint64_t occupancy = 0;
+    };
+
+    struct MeasurementCounters
+    {
+        std::array<uint64_t, 5> packetsInjected{};
+        std::array<uint64_t, 5> flitsInjected{};
+        std::array<uint64_t, 5> wireBytesInjected{};
+        std::array<uint64_t, 5> inputVcOccupancyFlitCycles{};
+        std::array<uint64_t, 5> inputVcFullVcCycles{};
+        std::array<uint64_t, 5> inputVcFullEvents{};
+        std::array<uint64_t, 5> inputVcMaxOccupancy{};
+        std::array<uint64_t, 5> routerCreditStalls{};
+        std::array<uint64_t, 5> vcAllocStalls{};
+        std::array<uint64_t, 5> niCreditStalls{};
+        std::array<uint64_t, 5> niVcBusyCycles{};
     };
 
     Transaction parseTransaction(const std::string &spec) const;
@@ -76,8 +112,24 @@ class AxiTraceTester : public ClockedObject, public ruby::Consumer
     bool allAdaptersIdle() const;
     void updateHighWaterAndProgress();
     void checkProgressWatchdog();
+    bool measurementEnabled() const;
+    MeasurementCounters readMeasurementCounters() const;
+    void updateMeasurementWindow();
     void checkCaseRequirements() const;
     void writeResult() const;
+    void writeCreditLedger() const;
+    void writeEventTrace() const;
+    void driveRuntimeFault();
+    void writeResidualState(const AxiInitiatorResidual &residual) const;
+    void captureAcceptedAddress(Transaction &txn,
+                                const AxiAddressPacket &packet);
+    void observe(uint64_t phase, uint64_t event,
+                 std::optional<AxiChannel> channel,
+                 std::optional<size_t> transaction_index,
+                 std::optional<uint16_t> beat_index,
+                 std::optional<uint64_t> payload_digest,
+                 uint64_t occupancy);
+    uint64_t sourceOccupancy(size_t source_index) const;
 
     std::vector<AxiInitiatorAdapter *> initiators;
     std::vector<AxiTargetAdapter *> targets;
@@ -91,6 +143,12 @@ class AxiTraceTester : public ClockedObject, public ruby::Consumer
     std::vector<size_t> nextArBySource;
     const std::string caseName;
     const std::string resultJson;
+    const std::string eventTraceJsonl;
+    const std::string creditLedgerJson;
+    const std::string residualStateJson;
+    const std::string runtimeFault;
+    const uint64_t seed;
+    const std::vector<uint32_t> wireHeaderBytes;
     const uint32_t dataBusBytes;
     const uint32_t drainCycles;
     const bool concurrent;
@@ -102,6 +160,8 @@ class AxiTraceTester : public ClockedObject, public ruby::Consumer
     const uint64_t issueStopCycle;
     const std::vector<uint32_t> livenessBoundComponents;
     const std::vector<uint32_t> localDeliveryDepths;
+    const std::vector<uint64_t> measurementWindowCycles;
+    const int32_t measurementVnet;
 
     std::map<uint64_t, uint8_t> shadowMemory;
     size_t currentTransaction = 0;
@@ -123,6 +183,19 @@ class AxiTraceTester : public ClockedObject, public ruby::Consumer
     uint32_t maxEligibleNoProgressCycles = 0;
     bool observedEligibleWork = false;
     bool exitRequested = false;
+    uint64_t addressAdmissionAttempts = 0;
+    uint64_t addressAdmissionsAccepted = 0;
+    uint64_t retryCycles = 0;
+    std::optional<Cycles> lastRetryCycle;
+    uint64_t localFifoFullStalls = 0;
+    uint64_t nextObservationOrder = 0;
+    std::vector<TraceObservation> traceObservations;
+    bool measurementStarted = false;
+    bool measurementCompleted = false;
+    Tick measurementStartTick = 0;
+    Tick measurementEndTick = 0;
+    MeasurementCounters measurementStart;
+    MeasurementCounters measurementDelta;
 };
 
 } // namespace axi

@@ -1,6 +1,7 @@
 #ifndef __MEM_AXI_AXI_TARGET_ADAPTER_HH__
 #define __MEM_AXI_AXI_TARGET_ADAPTER_HH__
 
+#include <array>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -75,8 +76,10 @@ struct AxiTargetProgress
     uint64_t serviceReady = 0;
     uint64_t architecturalCommits = 0;
     uint64_t sameIdReadyBlocked = 0;
+    uint64_t orphanOrQuotaStallCycles = 0;
     uint64_t writesCommitted = 0;
     uint64_t readsCommitted = 0;
+    std::array<uint64_t, 16> qosTransactions{};
 };
 
 class AxiTargetState

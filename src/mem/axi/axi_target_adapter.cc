@@ -161,6 +161,8 @@ AxiTargetState::validateAddressPacket(const AxiAddressPacket &packet,
     requireValidAxiBurst(validation);
     panic_if(packet.request.axiId != packet.meta.axiId,
              "AXI_PROTOCOL: address packet AXI ID conflict");
+    panic_if(packet.request.qos != packet.meta.qos || packet.meta.qos > 15,
+             "AXI_PROTOCOL: address packet AxQOS conflict or out of range");
     panic_if(packet.request.beatCount == 0 ||
              packet.request.beatCount > 256,
              "AXI_PROTOCOL: address packet beatCount invalid");
@@ -183,6 +185,8 @@ AxiTargetState::validateDataPacket(const AxiDataPacket &packet) const
 {
     panic_if(packet.meta.dstNode != _config.dstNode,
              "AXI_PROTOCOL: W packet reached wrong target");
+    panic_if(packet.meta.qos > 15,
+             "AXI_PROTOCOL: W packet AxQOS is out of range");
     panic_if(packet.beatCount == 0 || packet.beatCount > 256 ||
              packet.beatIndex >= packet.beatCount,
              "AXI_PROTOCOL: W packet beat index/count invalid");
@@ -345,6 +349,7 @@ AxiTargetState::acceptAw(const AxiAddressPacket &packet, uint64_t now)
                  context.meta.srcPort != packet.meta.srcPort ||
                  context.meta.dstNode != packet.meta.dstNode ||
                  context.meta.axiId != packet.meta.axiId ||
+                 context.meta.qos != packet.meta.qos ||
                  context.meta.targetSeq != packet.meta.targetSeq ||
                  context.meta.responseSeq != packet.meta.responseSeq ||
                  context.beatCount != packet.request.beatCount,
@@ -359,6 +364,7 @@ AxiTargetState::acceptAw(const AxiAddressPacket &packet, uint64_t now)
             context.wasOrphan = false;
         }
     }
+    ++_progress.qosTransactions[packet.meta.qos];
     advance(now);
 }
 
@@ -388,6 +394,7 @@ AxiTargetState::acceptW(const AxiDataPacket &packet, uint64_t now)
              context.meta.srcPort != packet.meta.srcPort ||
              context.meta.dstNode != packet.meta.dstNode ||
              context.meta.axiId != packet.meta.axiId ||
+             context.meta.qos != packet.meta.qos ||
              context.meta.targetSeq != packet.meta.targetSeq ||
              context.meta.responseSeq != packet.meta.responseSeq,
              "AXI_PROTOCOL: W fields conflict with write context");
@@ -410,6 +417,7 @@ AxiTargetState::acceptAr(const AxiAddressPacket &packet, uint64_t now)
     context.ar = packet;
     reserveRead(context);
     _reads.emplace(packet.meta.txnUid, std::move(context));
+    ++_progress.qosTransactions[packet.meta.qos];
     advance(now);
 }
 

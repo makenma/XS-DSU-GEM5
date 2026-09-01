@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "channel": {"aw": 0, "w": 1, "b": 2, "ar": 3, "r": 4},
+  "stage": {
+    "workload": 1,
+    "memory_latency": 2,
+    "channel_skew": 3,
+    "response_stall": 4,
+    "fault_injection": 5
+  },
+  "draw_kind": {
+    "transaction_kind": 1,
+    "source": 2,
+    "target": 3,
+    "axi_id": 4,
+    "beat_count": 5,
+    "transfer_size": 6,
+    "strobe": 7,
+    "arrival": 8,
+    "latency": 9,
+    "fault": 10,
+    "channel_delay": 11,
+    "data_seed": 12,
+    "qos": 13
+  },
+  "trace_phase": {"drive": 10, "response": 20, "final": 30},
+  "trace_event": {
+    "address_accepted": 10,
+    "write_beat_accepted": 11,
+    "write_response_retired": 20,
+    "read_beat_retired": 21,
+    "quiescent": 30
+  },
+  "buffer_profiles": {
+    "11111": [1, 1, 1, 1, 1],
+    "24224": [2, 4, 2, 2, 4],
+    "48448": [4, 8, 4, 4, 8],
+    "8168816": [8, 16, 8, 8, 16]
+  },
+  "buffer_matrix_window_cycles": {"start": 500, "end": 2500}
+}

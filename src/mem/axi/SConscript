@@ -14,6 +14,7 @@ SimObject('AxiGarnetEndpoint.py', sim_objects=[
 SimObject('AxiTraceTester.py', sim_objects=['AxiTraceTester'])
 
 Source('axi_garnet_endpoint.cc')
+Source('axi_determinism.cc')
 Source('axi_packetization.cc')
 Source('axi_validation.cc')
 Source('axi_protocol_checker.cc')
@@ -42,4 +43,5 @@ GTest('axi_error_response.test',
       'axi_error_response.test.cc',
       'axi_target_adapter.cc', 'axi_validation.cc')
 GTest('axi_protocol_checker.test',
-      'axi_protocol_checker.test.cc', 'axi_protocol_checker.cc')
+      'axi_protocol_checker.test.cc', 'axi_protocol_checker.cc',
+      'axi_determinism.cc')

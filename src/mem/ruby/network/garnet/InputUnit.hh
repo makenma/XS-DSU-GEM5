@@ -113,11 +113,7 @@ class InputUnit : public Consumer
         return virtualChannels[vc].peekTopFlit();
     }
 
-    inline flit*
-    getTopFlit(int vc)
-    {
-        return virtualChannels[vc].getTopFlit();
-    }
+    flit* getTopFlit(int vc);
 
     inline bool
     need_stage(int vc, flit_stage stage, Tick time)
@@ -136,6 +132,9 @@ class InputUnit : public Consumer
     uint64_t bufferedFlits() const;
     uint64_t nonIdleVcs() const;
     uint64_t pendingCredits() const { return creditQueue.getSize(); }
+    void collateStats();
+    void resetInputVcHighWater();
+    void appendInputVcHighWater(GarnetInputVcHighWater &entries) const;
 
     flitBuffer* getCreditQueue() { return &creditQueue; }
 
@@ -178,6 +177,10 @@ class InputUnit : public Consumer
     // Statistical variables
     std::vector<double> m_num_buffer_writes;
     std::vector<double> m_num_buffer_reads;
+    std::vector<Cycles> m_vc_last_accounted_cycle;
+    std::vector<uint64_t> m_vc_high_water;
+
+    void accountVc(int vc);
 };
 
 } // namespace garnet

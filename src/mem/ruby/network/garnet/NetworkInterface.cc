@@ -32,6 +32,7 @@
 
 #include "mem/ruby/network/garnet/NetworkInterface.hh"
 
+#include <algorithm>
 #include <cassert>
 #include <limits>
 
@@ -105,6 +106,7 @@ NetworkInterface::addOutPort(NetworkLink *out_link,
         niOutVcs.resize(m_num_vcs);
         outVcState.reserve(m_num_vcs);
         m_ni_out_vcs_enqueue_time.resize(m_num_vcs);
+        m_ni_vc_last_accounted_cycle.assign(m_num_vcs, curCycle());
         // instantiating the NI flit buffers
         for (int i = 0; i < m_num_vcs; i++) {
             m_ni_out_vcs_enqueue_time[i] = Tick(INFINITE_);
@@ -177,6 +179,8 @@ NetworkInterface::incrementStats(flit *t_flit)
 
     if (t_flit->get_type() == TAIL_ || t_flit->get_type() == HEAD_TAIL_) {
         m_net_ptr->increment_received_packets(vnet);
+        m_net_ptr->increment_received_wire_bytes(
+            vnet, t_flit->get_msg_size());
         m_net_ptr->increment_packet_network_latency(network_delay, vnet);
         m_net_ptr->increment_packet_queueing_latency(queueing_delay, vnet);
     }
@@ -296,6 +300,7 @@ NetworkInterface::wakeup()
             Credit *t_credit = (Credit*) inCreditLink->consumeLink();
             outVcState[t_credit->get_vc()].increment_credit();
             if (t_credit->is_free_signal()) {
+                accountNiVc(t_credit->get_vc());
                 outVcState[t_credit->get_vc()].setState(IDLE_,
                     curTick());
             }
@@ -470,6 +475,8 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
         route.hops_traversed = -1;
 
         m_net_ptr->increment_injected_packets(vnet);
+        m_net_ptr->increment_injected_wire_bytes(
+            vnet, packetization.wireBytes);
         m_net_ptr->update_traffic_distribution(route);
         int packet_id = m_net_ptr->getNextPacketID();
         for (int i = 0; i < packetization.numFlits; i++) {
@@ -484,9 +491,37 @@ NetworkInterface::flitisizeMessage(MsgPtr msg_ptr, int vnet)
         }
 
         m_ni_out_vcs_enqueue_time[vc] = curTick();
+        accountNiVc(vc);
         outVcState[vc].setState(ACTIVE_, curTick());
     }
     return true ;
+}
+
+void
+NetworkInterface::accountNiVc(int vc)
+{
+    panic_if(vc < 0 || vc >= outVcState.size(),
+             "%s: NI VC index %d is out of range", name(), vc);
+    const Cycles now = curCycle();
+    const uint64_t elapsed = now - m_ni_vc_last_accounted_cycle[vc];
+    if (outVcState[vc].getState() != IDLE_)
+        m_net_ptr->addNiVcBusyCycles(outVcState[vc].get_vnet(), elapsed);
+    m_ni_vc_last_accounted_cycle[vc] = now;
+}
+
+void
+NetworkInterface::collateStats()
+{
+    for (int vc = 0; vc < outVcState.size(); ++vc)
+        accountNiVc(vc);
+}
+
+void
+NetworkInterface::resetStats()
+{
+    const Cycles now = curCycle();
+    std::fill(m_ni_vc_last_accounted_cycle.begin(),
+              m_ni_vc_last_accounted_cycle.end(), now);
 }
 
 // Looking for a free output vc
@@ -734,6 +769,34 @@ NetworkInterface::quiescenceSnapshot() const
             vc.get_max_credit_count() - vc.get_credit_count();
     }
     return snapshot;
+}
+
+void
+NetworkInterface::appendCreditLedger(GarnetCreditLedger &ledger) const
+{
+    for (unsigned vc = 0; vc < outVcState.size(); ++vc) {
+        const auto &state = outVcState[vc];
+        const OutputPort *selected = nullptr;
+        int port_id = -1;
+        for (unsigned port = 0; port < outPorts.size(); ++port) {
+            if (outPorts[port]->isVnetSupported(state.get_vnet())) {
+                panic_if(selected,
+                         "%s: vnet %u maps to multiple output links",
+                         name(), state.get_vnet());
+                selected = outPorts[port];
+                port_id = port;
+            }
+        }
+        panic_if(!selected, "%s: vnet %u has no output link",
+                 name(), state.get_vnet());
+        ledger.push_back({
+            0, static_cast<int32_t>(m_id), port_id,
+            selected->outNetLink()->get_id(), vc,
+            state.get_vnet(), state.get_max_credit_count(),
+            state.get_sent_count(), state.get_returned_count(),
+            state.get_credit_count(), state.get_max_credit_count(),
+            selected->outNetLink()});
+    }
 }
 
 bool

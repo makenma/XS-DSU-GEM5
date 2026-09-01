@@ -140,6 +140,20 @@ Router::quiescenceSnapshot() const
 }
 
 void
+Router::appendCreditLedger(GarnetCreditLedger &ledger) const
+{
+    for (const auto &output : m_output_unit)
+        output->appendCreditLedger(ledger);
+}
+
+void
+Router::appendInputVcHighWater(GarnetInputVcHighWater &entries) const
+{
+    for (const auto &input : m_input_unit)
+        input->appendInputVcHighWater(entries);
+}
+
+void
 Router::addInPort(PortDirection inport_dirn,
                   NetworkLink *in_link, CreditLink *credit_link)
 {
@@ -264,6 +278,8 @@ Router::regStats()
 void
 Router::collateStats()
 {
+    for (const auto &input : m_input_unit)
+        input->collateStats();
     for (int j = 0; j < m_virtual_networks; j++) {
         for (int i = 0; i < m_input_unit.size(); i++) {
             m_buffer_reads += m_input_unit[i]->get_buf_read_activity(j);
@@ -275,6 +291,20 @@ Router::collateStats()
     m_sw_output_arbiter_activity =
         switchAllocator.get_output_arbiter_activity();
     m_crossbar_activity = crossbarSwitch.get_crossbar_activity();
+}
+
+void
+Router::flushEventIntegratedStats()
+{
+    for (const auto &input : m_input_unit)
+        input->collateStats();
+}
+
+void
+Router::resetInputVcHighWater()
+{
+    for (const auto &input : m_input_unit)
+        input->resetInputVcHighWater();
 }
 
 void

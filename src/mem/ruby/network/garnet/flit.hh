@@ -58,6 +58,7 @@ class flit
 
     int get_outport() {return m_outport; }
     int get_size() { return m_size; }
+    int get_msg_size() const { return msgSize; }
     Tick get_enqueue_time() { return m_enqueue_time; }
     Tick get_dequeue_time() { return m_dequeue_time; }
     int getPacketID() { return m_packet_id; }

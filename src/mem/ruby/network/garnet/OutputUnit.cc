@@ -116,6 +116,23 @@ OutputUnit::creditDeficit() const
     return total;
 }
 
+void
+OutputUnit::appendCreditLedger(GarnetCreditLedger &ledger) const
+{
+    panic_if(!m_out_link,
+             "Router %d output port %d has no data link for credit ledger",
+             m_router->get_id(), m_id);
+    for (unsigned vc = 0; vc < outVcState.size(); ++vc) {
+        const auto &state = outVcState[vc];
+        ledger.push_back({
+            1, m_router->get_id(), m_id, m_out_link->get_id(), vc,
+            state.get_vnet(), state.get_max_credit_count(),
+            state.get_sent_count(), state.get_returned_count(),
+            state.get_credit_count(), state.get_max_credit_count(),
+            m_out_link});
+    }
+}
+
 // Check if the output VC (i.e., input VC at next router)
 // has free credits (i..e, buffer slots).
 // This is tracked by OutVcState

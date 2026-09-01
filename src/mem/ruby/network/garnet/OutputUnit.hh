@@ -38,6 +38,7 @@
 #include "base/compiler.hh"
 #include "mem/ruby/common/Consumer.hh"
 #include "mem/ruby/network/garnet/CommonTypes.hh"
+#include "mem/ruby/network/garnet/GarnetQuiescence.hh"
 #include "mem/ruby/network/garnet/NetworkLink.hh"
 #include "mem/ruby/network/garnet/OutVcState.hh"
 
@@ -81,6 +82,7 @@ class OutputUnit : public Consumer
     uint64_t bufferedFlits() const { return outBuffer.getSize(); }
     uint64_t nonIdleVcs() const;
     uint64_t creditDeficit() const;
+    void appendCreditLedger(GarnetCreditLedger &ledger) const;
 
     inline int
     get_outlink_id()

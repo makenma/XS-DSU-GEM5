@@ -1,0 +1,2642 @@
+{
+  "integration_cases": [
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "functional",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "max_network_cycles": 200000,
+      "name": "endpoint_probe",
+      "scenario": "configs/example/axi_garnet_scenarios/smoke.json",
+      "seed": 42,
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "functional",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "max_network_cycles": 200000,
+      "name": "single_write",
+      "scenario": "configs/example/axi_garnet_scenarios/single_write.json",
+      "seed": 42,
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "functional",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "max_network_cycles": 200000,
+      "name": "burst_read",
+      "scenario": "configs/example/axi_garnet_scenarios/burst_read.json",
+      "seed": 42,
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "functional",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "max_network_cycles": 200000,
+      "name": "partial_wstrb",
+      "scenario": "configs/example/axi_garnet_scenarios/partial_wstrb.json",
+      "seed": 42,
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "functional",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "max_network_cycles": 200000,
+      "name": "w_before_aw_at_target",
+      "scenario": "configs/example/axi_garnet_scenarios/w_before_aw_at_target.json",
+      "seed": 42,
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "ordering",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "max_network_cycles": 300000,
+      "name": "same_id_order",
+      "scenario": "configs/example/axi_garnet_scenarios/same_id_order.json",
+      "seed": 42,
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "ordering",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "max_network_cycles": 300000,
+      "name": "cross_id_reorder",
+      "scenario": "configs/example/axi_garnet_scenarios/cross_id_reorder.json",
+      "seed": 42,
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "args": [
+        "--link-width-bits=64",
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=1,1,1,1,1"
+      ],
+      "binary_role": "axi",
+      "category": "backpressure",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [
+        "router_credit"
+      ],
+      "max_network_cycles": 500000,
+      "name": "buffer_depth_credit_d1",
+      "scenario": "configs/example/axi_garnet_scenarios/buffer_depth_and_credit.json",
+      "seed": 42,
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "args": [
+        "--link-width-bits=64",
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=2,2,2,2,2"
+      ],
+      "binary_role": "axi",
+      "category": "backpressure",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [
+        "router_credit"
+      ],
+      "max_network_cycles": 500000,
+      "name": "buffer_depth_credit_d2",
+      "scenario": "configs/example/axi_garnet_scenarios/buffer_depth_and_credit.json",
+      "seed": 42,
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "args": [
+        "--link-width-bits=64",
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=8,8,8,8,8"
+      ],
+      "binary_role": "axi",
+      "category": "backpressure",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [
+        "router_credit"
+      ],
+      "max_network_cycles": 500000,
+      "name": "buffer_depth_credit_d8",
+      "scenario": "configs/example/axi_garnet_scenarios/buffer_depth_and_credit.json",
+      "seed": 42,
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "args": [
+        "--axi-target-write-contexts=2",
+        "--axi-target-write-assembly-beats=2",
+        "--axi-target-service-depths=1,1",
+        "--axi-orphan-w-transactions=1",
+        "--axi-orphan-w-beats=1"
+      ],
+      "binary_role": "axi",
+      "category": "backpressure",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [
+        "orphan_or_quota"
+      ],
+      "max_network_cycles": 500000,
+      "name": "target_quota_no_hol",
+      "scenario": "configs/example/axi_garnet_scenarios/target_quota_no_hol.json",
+      "seed": 42,
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "args": [
+        "--axi-local-delivery-depths=4,4,2,4,2",
+        "--axi-message-buffer-depths=2,2,2,2,2",
+        "--axi-source-fifo-depths=4,8,4,8,8",
+        "--axi-target-response-ready-depths=2,2"
+      ],
+      "binary_role": "axi",
+      "category": "backpressure",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [
+        "message_buffer_or_ni"
+      ],
+      "max_network_cycles": 500000,
+      "name": "ejection_backpressure",
+      "scenario": "configs/example/axi_garnet_scenarios/ejection_backpressure.json",
+      "seed": 42,
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "response_progress",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "max_network_cycles": 20000,
+      "name": "response_progress",
+      "scenario": "configs/example/axi_garnet_scenarios/response_progress.json",
+      "seed": 42,
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "random_quick",
+      "expect": "pass",
+      "expected_error_transactions": 3,
+      "expected_stall_mask": [],
+      "generator": "random",
+      "max_network_cycles": 2000000,
+      "name": "rand_quick_s1",
+      "seed": 1,
+      "stable_scenario_id": "rand_quick_s1",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 180,
+      "transaction_count": 500
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "random_quick",
+      "expect": "pass",
+      "expected_error_transactions": 3,
+      "expected_stall_mask": [],
+      "generator": "random",
+      "max_network_cycles": 2000000,
+      "name": "rand_quick_s7",
+      "seed": 7,
+      "stable_scenario_id": "rand_quick_s7",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 180,
+      "transaction_count": 500
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "random_quick",
+      "expect": "pass",
+      "expected_error_transactions": 3,
+      "expected_stall_mask": [],
+      "generator": "random",
+      "max_network_cycles": 2000000,
+      "name": "rand_quick_s42",
+      "seed": 42,
+      "stable_scenario_id": "rand_quick_s42",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 180,
+      "transaction_count": 500
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "determinism",
+      "expect": "pass",
+      "expected_error_transactions": 3,
+      "expected_stall_mask": [],
+      "generator": "determinism",
+      "max_network_cycles": 300000,
+      "name": "determinism_a",
+      "seed": 42,
+      "stable_scenario_id": "determinism_s42",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 120,
+      "transaction_count": 500
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "determinism",
+      "expect": "pass",
+      "expected_error_transactions": 3,
+      "expected_stall_mask": [],
+      "generator": "determinism",
+      "max_network_cycles": 300000,
+      "name": "determinism_b",
+      "seed": 42,
+      "stable_scenario_id": "determinism_s42",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 120,
+      "transaction_count": 500
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "determinism",
+      "expect": "pass",
+      "expected_error_transactions": 3,
+      "expected_stall_mask": [],
+      "generator": "determinism",
+      "max_network_cycles": 300000,
+      "name": "determinism_replay",
+      "seed": 42,
+      "stable_scenario_id": "determinism_s42",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 120,
+      "transaction_count": 500
+    },
+    {
+      "binary_role": "legacy",
+      "expect": "pass",
+      "inj_vnet": 0,
+      "name": "legacy_vnet0",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "binary_role": "legacy",
+      "expect": "pass",
+      "inj_vnet": 1,
+      "name": "legacy_vnet1",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "binary_role": "legacy",
+      "expect": "pass",
+      "inj_vnet": 2,
+      "name": "legacy_vnet2",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 120
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "expect": "fatal_init",
+      "expected_error_transactions": 0,
+      "expected_marker": "beat_count must be in [1,256]",
+      "expected_stall_mask": [],
+      "generator": "negative",
+      "max_injected_packets_before_failure": 0,
+      "max_network_cycles": 10000,
+      "name": "n1_static_zero_beat_count",
+      "seed": 1,
+      "stable_scenario_id": "n1_static_zero_beat_count",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 30
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "expect": "fatal_init",
+      "expected_error_transactions": 0,
+      "expected_marker": "beat_count must be in [1,256]",
+      "expected_stall_mask": [],
+      "generator": "negative",
+      "max_injected_packets_before_failure": 0,
+      "max_network_cycles": 10000,
+      "name": "n1_static_257_beat_count",
+      "seed": 1,
+      "stable_scenario_id": "n1_static_257_beat_count",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 30
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "expect": "fatal_runtime",
+      "expected_error_transactions": 0,
+      "expected_marker": "AXI_PROTOCOL: runtime beatCount",
+      "expected_stall_mask": [],
+      "generator": "negative",
+      "max_injected_packets_before_failure": 0,
+      "max_network_cycles": 10000,
+      "name": "n1_runtime_beat_count",
+      "seed": 1,
+      "stable_scenario_id": "n1_runtime_beat_count",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 30
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "expect": "fatal_init",
+      "expected_error_transactions": 0,
+      "expected_marker": "AXI transaction SIZE exceeds data bus",
+      "expected_stall_mask": [],
+      "generator": "negative",
+      "max_injected_packets_before_failure": 0,
+      "max_network_cycles": 10000,
+      "name": "n2_size",
+      "seed": 1,
+      "stable_scenario_id": "n2_size",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 30
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "expect": "architected_error",
+      "expected_error_transactions": 1,
+      "expected_marker": "AXI_MESH_FUNCTIONAL_SCENARIO_PASS",
+      "expected_stall_mask": [],
+      "generator": "negative",
+      "max_injected_packets_before_failure": null,
+      "max_network_cycles": 100000,
+      "name": "n3a_unaligned_decerr",
+      "seed": 1,
+      "stable_scenario_id": "n3a_unaligned_decerr",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "expect": "fatal_init",
+      "expected_error_transactions": 0,
+      "expected_marker": "AXI INCR burst crosses a 4 KiB boundary",
+      "expected_stall_mask": [],
+      "generator": "negative",
+      "max_injected_packets_before_failure": 0,
+      "max_network_cycles": 10000,
+      "name": "n3b_4k_crossing",
+      "seed": 1,
+      "stable_scenario_id": "n3b_4k_crossing",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 30
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "expect": "fatal_runtime",
+      "expected_error_transactions": 0,
+      "expected_marker": "AXI_PROTOCOL: WLAST position",
+      "expected_stall_mask": [],
+      "generator": "negative",
+      "max_injected_packets_before_failure": 0,
+      "max_network_cycles": 10000,
+      "name": "n4_early_wlast",
+      "seed": 1,
+      "stable_scenario_id": "n4_early_wlast",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 30
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "expect": "fatal_runtime",
+      "expected_error_transactions": 0,
+      "expected_marker": "AXI_PROTOCOL: W burst has more beats",
+      "expected_stall_mask": [],
+      "generator": "negative",
+      "max_injected_packets_before_failure": 0,
+      "max_network_cycles": 10000,
+      "name": "n4_late_wlast",
+      "seed": 1,
+      "stable_scenario_id": "n4_late_wlast",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 30
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "expect": "fatal_runtime",
+      "expected_error_transactions": 0,
+      "expected_marker": "AXI_PROTOCOL: WLAST missing",
+      "expected_stall_mask": [],
+      "generator": "negative",
+      "max_injected_packets_before_failure": 0,
+      "max_network_cycles": 10000,
+      "name": "n4_missing_wlast",
+      "seed": 1,
+      "stable_scenario_id": "n4_missing_wlast",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 30
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "expect": "fatal_runtime",
+      "expected_error_transactions": 0,
+      "expected_marker": "AXI_PROTOCOL: duplicate R beat",
+      "expected_stall_mask": [],
+      "generator": "negative",
+      "max_injected_packets_before_failure": 0,
+      "max_network_cycles": 10000,
+      "name": "n5_duplicate_rbeat",
+      "seed": 1,
+      "stable_scenario_id": "n5_duplicate_rbeat",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 30
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "expect": "fatal_runtime",
+      "expected_error_transactions": 0,
+      "expected_marker": "AXI_PROTOCOL: R packet beat index/count",
+      "expected_stall_mask": [],
+      "generator": "negative",
+      "max_injected_packets_before_failure": 0,
+      "max_network_cycles": 10000,
+      "name": "n5_out_of_range_rbeat",
+      "seed": 1,
+      "stable_scenario_id": "n5_out_of_range_rbeat",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 30
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "expect": "fatal_runtime",
+      "expected_error_transactions": 0,
+      "expected_marker": "AXI_PROTOCOL: duplicate txnUid",
+      "expected_stall_mask": [],
+      "generator": "negative",
+      "max_injected_packets_before_failure": 0,
+      "max_network_cycles": 10000,
+      "name": "n6_duplicate_uid",
+      "seed": 1,
+      "stable_scenario_id": "n6_duplicate_uid",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 30
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "expect": "fatal_runtime",
+      "expected_error_transactions": 0,
+      "expected_marker": "AXI_PROTOCOL: unknown response txnUid",
+      "expected_stall_mask": [],
+      "generator": "negative",
+      "max_injected_packets_before_failure": 0,
+      "max_network_cycles": 10000,
+      "name": "n6_unknown_response",
+      "seed": 1,
+      "stable_scenario_id": "n6_unknown_response",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 30
+    },
+    {
+      "args": [
+        "--axi-strict-protocol=false"
+      ],
+      "binary_role": "axi",
+      "expect": "fatal_init",
+      "expected_error_transactions": 0,
+      "expected_marker": "AXI_MESH supports strict_protocol=true only",
+      "expected_stall_mask": [],
+      "generator": "negative",
+      "max_injected_packets_before_failure": 0,
+      "max_network_cycles": 10000,
+      "name": "n7_strict_false",
+      "seed": 1,
+      "stable_scenario_id": "n7_strict_false",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 30
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "expect": "architected_error",
+      "expected_error_transactions": 1,
+      "expected_marker": "AXI_MESH_FUNCTIONAL_SCENARIO_PASS",
+      "expected_stall_mask": [],
+      "generator": "negative",
+      "max_injected_packets_before_failure": null,
+      "max_network_cycles": 100000,
+      "name": "n8_unmapped_decerr",
+      "seed": 1,
+      "stable_scenario_id": "n8_unmapped_decerr",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "expect": "architected_error",
+      "expected_error_transactions": 1,
+      "expected_marker": "AXI_MESH_FUNCTIONAL_SCENARIO_PASS",
+      "expected_stall_mask": [],
+      "generator": "negative",
+      "max_injected_packets_before_failure": null,
+      "max_network_cycles": 100000,
+      "name": "n9_lock_decerr",
+      "seed": 1,
+      "stable_scenario_id": "n9_lock_decerr",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "expect": "final_consistency_failure",
+      "expected_error_transactions": 0,
+      "expected_marker": "AXI_FINAL_CONSISTENCY: source W burst without AW",
+      "expected_stall_mask": [],
+      "generator": "negative",
+      "max_injected_packets_before_failure": null,
+      "max_network_cycles": 100000,
+      "name": "n10_source_w_without_aw",
+      "seed": 1,
+      "stable_scenario_id": "n10_source_w_without_aw",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "args": [
+        "--axi-source-fifo-depths=1,1,1,1,1"
+      ],
+      "binary_role": "axi",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_marker": "AXI_MESH_FUNCTIONAL_SCENARIO_PASS",
+      "expected_stall_mask": [
+        "local_fifo"
+      ],
+      "generator": "negative",
+      "max_injected_packets_before_failure": null,
+      "max_network_cycles": 500000,
+      "name": "n11_fifo_full",
+      "seed": 1,
+      "stable_scenario_id": "n11_fifo_full",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "args": [
+        "--axi-b-rob-transactions=1",
+        "--axi-max-outstanding-writes=1"
+      ],
+      "binary_role": "axi",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_marker": "AXI_MESH_FUNCTIONAL_SCENARIO_PASS",
+      "expected_stall_mask": [
+        "local_fifo"
+      ],
+      "generator": "negative",
+      "max_injected_packets_before_failure": null,
+      "max_network_cycles": 500000,
+      "name": "n11_rob_full",
+      "seed": 1,
+      "stable_scenario_id": "n11_rob_full",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "args": [
+        "--axi-orphan-w-transactions=1",
+        "--axi-orphan-w-beats=1"
+      ],
+      "binary_role": "axi",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_marker": "AXI_MESH_FUNCTIONAL_SCENARIO_PASS",
+      "expected_stall_mask": [
+        "orphan_or_quota"
+      ],
+      "generator": "negative",
+      "max_injected_packets_before_failure": null,
+      "max_network_cycles": 500000,
+      "name": "n11_orphan_full",
+      "seed": 1,
+      "stable_scenario_id": "n11_orphan_full",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 180
+    },
+    {
+      "args": [
+        "--garnet-buffers-per-vnet=1,1,1,1"
+      ],
+      "binary_role": "axi",
+      "expect": "fatal_init",
+      "expected_error_transactions": 0,
+      "expected_marker": "must contain exactly 5 non-empty integers",
+      "expected_stall_mask": [],
+      "generator": "negative",
+      "max_injected_packets_before_failure": 0,
+      "max_network_cycles": 10000,
+      "name": "n12_vector_length",
+      "seed": 1,
+      "stable_scenario_id": "n12_vector_length",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 30
+    },
+    {
+      "args": [
+        "--garnet-buffers-per-vnet=1,1,0,1,1"
+      ],
+      "binary_role": "axi",
+      "expect": "fatal_init",
+      "expected_error_transactions": 0,
+      "expected_marker": "entries must all be positive",
+      "expected_stall_mask": [],
+      "generator": "negative",
+      "max_injected_packets_before_failure": 0,
+      "max_network_cycles": 10000,
+      "name": "n12_zero_depth",
+      "seed": 1,
+      "stable_scenario_id": "n12_zero_depth",
+      "suites": [
+        "quick",
+        "full"
+      ],
+      "timeout_seconds": 30
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=1,1,1,1,1"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_11111_vc1_aw",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_11111_vc1_aw",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=1,1,1,1,1"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_11111_vc1_w",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_11111_vc1_w",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=1,1,1,1,1"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_11111_vc1_b",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_11111_vc1_b",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=1,1,1,1,1"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_11111_vc1_ar",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_11111_vc1_ar",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=1,1,1,1,1"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_11111_vc1_r",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_11111_vc1_r",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=1,1,1,1,1"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_11111_vc1_all",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_11111_vc1_all",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=1,1,1,1,1"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_11111_vc2_aw",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_11111_vc2_aw",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=1,1,1,1,1"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_11111_vc2_w",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_11111_vc2_w",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=1,1,1,1,1"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_11111_vc2_b",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_11111_vc2_b",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=1,1,1,1,1"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_11111_vc2_ar",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_11111_vc2_ar",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=1,1,1,1,1"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_11111_vc2_r",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_11111_vc2_r",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=1,1,1,1,1"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_11111_vc2_all",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_11111_vc2_all",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=1,1,1,1,1"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_11111_vc4_aw",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_11111_vc4_aw",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=1,1,1,1,1"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_11111_vc4_w",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_11111_vc4_w",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=1,1,1,1,1"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_11111_vc4_b",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_11111_vc4_b",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=1,1,1,1,1"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_11111_vc4_ar",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_11111_vc4_ar",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=1,1,1,1,1"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_11111_vc4_r",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_11111_vc4_r",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=1,1,1,1,1"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_11111_vc4_all",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_11111_vc4_all",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=2,4,2,2,4"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_24224_vc1_aw",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_24224_vc1_aw",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=2,4,2,2,4"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_24224_vc1_w",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_24224_vc1_w",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=2,4,2,2,4"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_24224_vc1_b",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_24224_vc1_b",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=2,4,2,2,4"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_24224_vc1_ar",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_24224_vc1_ar",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=2,4,2,2,4"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_24224_vc1_r",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_24224_vc1_r",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=2,4,2,2,4"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_24224_vc1_all",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_24224_vc1_all",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=2,4,2,2,4"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_24224_vc2_aw",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_24224_vc2_aw",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=2,4,2,2,4"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_24224_vc2_w",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_24224_vc2_w",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=2,4,2,2,4"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_24224_vc2_b",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_24224_vc2_b",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=2,4,2,2,4"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_24224_vc2_ar",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_24224_vc2_ar",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=2,4,2,2,4"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_24224_vc2_r",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_24224_vc2_r",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=2,4,2,2,4"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_24224_vc2_all",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_24224_vc2_all",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=2,4,2,2,4"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_24224_vc4_aw",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_24224_vc4_aw",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=2,4,2,2,4"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_24224_vc4_w",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_24224_vc4_w",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=2,4,2,2,4"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_24224_vc4_b",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_24224_vc4_b",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=2,4,2,2,4"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_24224_vc4_ar",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_24224_vc4_ar",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=2,4,2,2,4"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_24224_vc4_r",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_24224_vc4_r",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=2,4,2,2,4"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_24224_vc4_all",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_24224_vc4_all",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=4,8,4,4,8"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_48448_vc1_aw",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_48448_vc1_aw",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=4,8,4,4,8"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_48448_vc1_w",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_48448_vc1_w",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=4,8,4,4,8"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_48448_vc1_b",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_48448_vc1_b",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=4,8,4,4,8"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_48448_vc1_ar",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_48448_vc1_ar",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=4,8,4,4,8"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_48448_vc1_r",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_48448_vc1_r",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=4,8,4,4,8"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_48448_vc1_all",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_48448_vc1_all",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=4,8,4,4,8"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_48448_vc2_aw",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_48448_vc2_aw",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=4,8,4,4,8"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_48448_vc2_w",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_48448_vc2_w",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=4,8,4,4,8"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_48448_vc2_b",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_48448_vc2_b",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=4,8,4,4,8"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_48448_vc2_ar",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_48448_vc2_ar",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=4,8,4,4,8"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_48448_vc2_r",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_48448_vc2_r",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=4,8,4,4,8"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_48448_vc2_all",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_48448_vc2_all",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=4,8,4,4,8"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_48448_vc4_aw",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_48448_vc4_aw",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=4,8,4,4,8"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_48448_vc4_w",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_48448_vc4_w",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=4,8,4,4,8"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_48448_vc4_b",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_48448_vc4_b",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=4,8,4,4,8"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_48448_vc4_ar",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_48448_vc4_ar",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=4,8,4,4,8"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_48448_vc4_r",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_48448_vc4_r",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=4,8,4,4,8"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_48448_vc4_all",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_48448_vc4_all",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=8,16,8,8,16"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_8168816_vc1_aw",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_8168816_vc1_aw",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=8,16,8,8,16"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_8168816_vc1_w",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_8168816_vc1_w",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=8,16,8,8,16"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_8168816_vc1_b",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_8168816_vc1_b",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=8,16,8,8,16"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_8168816_vc1_ar",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_8168816_vc1_ar",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=8,16,8,8,16"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_8168816_vc1_r",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_8168816_vc1_r",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=1",
+        "--garnet-buffers-per-vnet=8,16,8,8,16"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_8168816_vc1_all",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_8168816_vc1_all",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=8,16,8,8,16"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_8168816_vc2_aw",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_8168816_vc2_aw",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=8,16,8,8,16"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_8168816_vc2_w",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_8168816_vc2_w",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=8,16,8,8,16"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_8168816_vc2_b",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_8168816_vc2_b",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=8,16,8,8,16"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_8168816_vc2_ar",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_8168816_vc2_ar",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=8,16,8,8,16"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_8168816_vc2_r",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_8168816_vc2_r",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=2",
+        "--garnet-buffers-per-vnet=8,16,8,8,16"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_8168816_vc2_all",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_8168816_vc2_all",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=8,16,8,8,16"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_8168816_vc4_aw",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_8168816_vc4_aw",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=8,16,8,8,16"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_8168816_vc4_w",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_8168816_vc4_w",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=8,16,8,8,16"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_8168816_vc4_b",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_8168816_vc4_b",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=8,16,8,8,16"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_8168816_vc4_ar",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_8168816_vc4_ar",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=8,16,8,8,16"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_8168816_vc4_r",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_8168816_vc4_r",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [
+        "--vcs-per-vnet=4",
+        "--garnet-buffers-per-vnet=8,16,8,8,16"
+      ],
+      "binary_role": "axi",
+      "category": "matrix",
+      "expect": "pass",
+      "expected_error_transactions": 0,
+      "expected_stall_mask": [],
+      "generator": "matrix",
+      "max_network_cycles": 5000000,
+      "name": "buffer_matrix_8168816_vc4_all",
+      "seed": 42,
+      "stable_scenario_id": "buffer_matrix_8168816_vc4_all",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "random_full",
+      "expect": "pass",
+      "expected_error_transactions": 16,
+      "expected_stall_mask": [],
+      "generator": "random",
+      "max_network_cycles": 5000000,
+      "name": "rand_full_s1",
+      "seed": 1,
+      "stable_scenario_id": "rand_full_s1",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300,
+      "transaction_count": 2000
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "random_full",
+      "expect": "pass",
+      "expected_error_transactions": 16,
+      "expected_stall_mask": [],
+      "generator": "random",
+      "max_network_cycles": 5000000,
+      "name": "rand_full_s7",
+      "seed": 7,
+      "stable_scenario_id": "rand_full_s7",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300,
+      "transaction_count": 2000
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "random_full",
+      "expect": "pass",
+      "expected_error_transactions": 16,
+      "expected_stall_mask": [],
+      "generator": "random",
+      "max_network_cycles": 5000000,
+      "name": "rand_full_s42",
+      "seed": 42,
+      "stable_scenario_id": "rand_full_s42",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300,
+      "transaction_count": 2000
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "random_full",
+      "expect": "pass",
+      "expected_error_transactions": 13,
+      "expected_stall_mask": [],
+      "generator": "random",
+      "max_network_cycles": 5000000,
+      "name": "rand_full_s20260831",
+      "seed": 20260831,
+      "stable_scenario_id": "rand_full_s20260831",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300,
+      "transaction_count": 2000
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "random_full",
+      "expect": "pass",
+      "expected_error_transactions": 15,
+      "expected_stall_mask": [],
+      "generator": "random",
+      "max_network_cycles": 5000000,
+      "name": "rand_full_s314159",
+      "seed": 314159,
+      "stable_scenario_id": "rand_full_s314159",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300,
+      "transaction_count": 2000
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "random_full",
+      "expect": "pass",
+      "expected_error_transactions": 20,
+      "expected_stall_mask": [],
+      "generator": "random",
+      "max_network_cycles": 5000000,
+      "name": "rand_full_s271828",
+      "seed": 271828,
+      "stable_scenario_id": "rand_full_s271828",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300,
+      "transaction_count": 2000
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "random_full",
+      "expect": "pass",
+      "expected_error_transactions": 19,
+      "expected_stall_mask": [],
+      "generator": "random",
+      "max_network_cycles": 5000000,
+      "name": "rand_full_s65537",
+      "seed": 65537,
+      "stable_scenario_id": "rand_full_s65537",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300,
+      "transaction_count": 2000
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "random_full",
+      "expect": "pass",
+      "expected_error_transactions": 16,
+      "expected_stall_mask": [],
+      "generator": "random",
+      "max_network_cycles": 5000000,
+      "name": "rand_full_s99",
+      "seed": 99,
+      "stable_scenario_id": "rand_full_s99",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300,
+      "transaction_count": 2000
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "random_full",
+      "expect": "pass",
+      "expected_error_transactions": 16,
+      "expected_stall_mask": [],
+      "generator": "random",
+      "max_network_cycles": 5000000,
+      "name": "rand_full_s1234",
+      "seed": 1234,
+      "stable_scenario_id": "rand_full_s1234",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300,
+      "transaction_count": 2000
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "random_full",
+      "expect": "pass",
+      "expected_error_transactions": 12,
+      "expected_stall_mask": [],
+      "generator": "random",
+      "max_network_cycles": 5000000,
+      "name": "rand_full_s9001",
+      "seed": 9001,
+      "stable_scenario_id": "rand_full_s9001",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 300,
+      "transaction_count": 2000
+    },
+    {
+      "args": [],
+      "binary_role": "axi",
+      "category": "nightly",
+      "expect": "pass",
+      "expected_error_transactions": 73,
+      "expected_stall_mask": [],
+      "generator": "random",
+      "max_network_cycles": 20000000,
+      "name": "rand_nightly_s42_10000",
+      "seed": 42,
+      "stable_scenario_id": "rand_nightly_s42_10000",
+      "suites": [
+        "full"
+      ],
+      "timeout_seconds": 1200,
+      "transaction_count": 10000
+    }
+  ],
+  "schema_version": 1,
+  "unit_binaries": [
+    {
+      "binary": "mem/axi/axi_validation.test.opt",
+      "suites": [
+        "AxiBurstValidationTest"
+      ],
+      "tests": [
+        "AxiBurstValidationTest.AcceptsDataWidths",
+        "AxiBurstValidationTest.AcceptsIncrLengths",
+        "AxiBurstValidationTest.MapsNarrowNonZeroLanes",
+        "AxiBurstValidationTest.Rejects4KiBCrossing",
+        "AxiBurstValidationTest.RejectsArithmeticOverflow",
+        "AxiBurstValidationTest.RejectsOutOfLaneStrobe",
+        "AxiBurstValidationTest.RoutesUnalignedToDecerr",
+        "AxiBurstValidationTest.RoutesUnsupportedFeaturesToDecerr"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "binary": "mem/axi/axi_packetization.test.opt",
+      "suites": [
+        "AxiDynamicWireBytesTest"
+      ],
+      "tests": [
+        "AxiDynamicWireBytesTest.CountsDefaultFiveChannels",
+        "AxiDynamicWireBytesTest.FallsBackForLegacyMessage",
+        "AxiDynamicWireBytesTest.IgnoresSemanticBytesForFlits",
+        "AxiDynamicWireBytesTest.RejectsInvalidWireSize"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "binary": "mem/axi/axi_write_pairing.test.opt",
+      "suites": [
+        "AxiLastAndBeatTest",
+        "AxiTargetOrphanWTest",
+        "AxiWritePairingTest"
+      ],
+      "tests": [
+        "AxiLastAndBeatTest.HandlesSingleAnd256BeatLast",
+        "AxiLastAndBeatTest.ReassemblesRByIndex",
+        "AxiLastAndBeatTest.RejectsDuplicateBeat",
+        "AxiLastAndBeatTest.RejectsEarlyWlast",
+        "AxiLastAndBeatTest.RejectsExtraWBeat",
+        "AxiLastAndBeatTest.RejectsMissingWlast",
+        "AxiTargetOrphanWTest.AllowsAwPastBlockedW",
+        "AxiTargetOrphanWTest.BackpressuresNewOrphanAtLimit",
+        "AxiTargetOrphanWTest.ConvertsSharedSlotInPlace",
+        "AxiTargetOrphanWTest.MergesWBeforeAw",
+        "AxiTargetOrphanWTest.RejectsDuplicatePacket",
+        "AxiTargetOrphanWTest.RejectsQuotaOversubscription",
+        "AxiWritePairingTest.BlocksUnboundWInjection",
+        "AxiWritePairingTest.BuffersMultiplePreAwBursts",
+        "AxiWritePairingTest.KeepsAwReadyWhenWFull",
+        "AxiWritePairingTest.PairsAwFirst",
+        "AxiWritePairingTest.PairsNthWithNth",
+        "AxiWritePairingTest.PairsWFirst",
+        "AxiWritePairingTest.StreamsPartialWAfterAw"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "binary": "mem/axi/axi_ordering.test.opt",
+      "suites": [
+        "AxiOrderingTest"
+      ],
+      "tests": [
+        "AxiOrderingTest.AllocatesSequencesAtAcceptance",
+        "AxiOrderingTest.DifferentIdReadCanInvert",
+        "AxiOrderingTest.DifferentIdWriteCanInvert",
+        "AxiOrderingTest.ReadWriteDomainsIndependent",
+        "AxiOrderingTest.SameIdBRetiresInOrder",
+        "AxiOrderingTest.SameIdCrossTargetRetiresGlobally",
+        "AxiOrderingTest.SameIdReadWaitsOlder",
+        "AxiOrderingTest.SameIdWriteCommitsInOrder"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "binary": "mem/axi/axi_flow_control.test.opt",
+      "suites": [
+        "AxiBackpressureTest"
+      ],
+      "tests": [
+        "AxiBackpressureTest.DepthOneChannelsBackpressure",
+        "AxiBackpressureTest.PausesAndResumesBAndR",
+        "AxiBackpressureTest.QueueFullReturnsNoError",
+        "AxiBackpressureTest.RetriesOnlyOnLaterEdge"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "binary": "mem/axi/axi_error_response.test.opt",
+      "suites": [
+        "AxiErrorResponseTest"
+      ],
+      "tests": [
+        "AxiErrorResponseTest.DecodeMissReadFullDecerr",
+        "AxiErrorResponseTest.DecodeMissWriteDrainsThenDecerr",
+        "AxiErrorResponseTest.ErrorReadReturnsZeroData",
+        "AxiErrorResponseTest.ErrorWriteCommitsNoBytes",
+        "AxiErrorResponseTest.NeverProducesExOkay",
+        "AxiErrorResponseTest.RangeTailRoutesWholeBurstToError",
+        "AxiErrorResponseTest.TargetFaultReturnsSlverr"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "binary": "mem/axi/axi_protocol_checker.test.opt",
+      "suites": [
+        "AxiProtocolCheckerTest"
+      ],
+      "tests": [
+        "AxiProtocolCheckerTest.AcceptsValidTrace",
+        "AxiProtocolCheckerTest.RejectsBadData",
+        "AxiProtocolCheckerTest.RejectsBadLast",
+        "AxiProtocolCheckerTest.RejectsBadResponseSequence",
+        "AxiProtocolCheckerTest.RejectsDuplicateOrMissingBeat"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "binary": "mem/ruby/network/garnet/garnet_vnet_config.test.opt",
+      "suites": [
+        "GarnetVnetConfigTest"
+      ],
+      "tests": [
+        "GarnetVnetConfigTest.AcceptsFaultModelCompatibleDepths",
+        "GarnetVnetConfigTest.MapsPerVnetDepth",
+        "GarnetVnetConfigTest.MapsVnetClass",
+        "GarnetVnetConfigTest.PreservesLegacyFallback",
+        "GarnetVnetConfigTest.RejectsFaultModelIncompatibleDepths",
+        "GarnetVnetConfigTest.RejectsInvalidVectors"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "binary": "mem/ruby/network/garnet/garnet_vc_isolation.test.opt",
+      "suites": [
+        "GarnetVcIsolationTest"
+      ],
+      "tests": [
+        "GarnetVcIsolationTest.ExhaustsOnlySelectedVc",
+        "GarnetVcIsolationTest.PreservesOtherVcs"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "binary": "mem/ruby/network/garnet/garnet_quiescence.test.opt",
+      "suites": [
+        "GarnetQuiescenceSnapshotTest"
+      ],
+      "tests": [
+        "GarnetQuiescenceSnapshotTest.AccessorsDoNotScheduleEvents",
+        "GarnetQuiescenceSnapshotTest.BecomesEmptyOnlyAfterRestore",
+        "GarnetQuiescenceSnapshotTest.DetectsEveryPendingClass"
+      ],
+      "timeout_seconds": 60
+    }
+  ]
+}

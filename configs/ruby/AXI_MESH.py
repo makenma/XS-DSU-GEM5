@@ -306,6 +306,9 @@ def _transaction_specs(scenario, initiators, target_specs, data_bus_bytes):
     specs = []
     plans_by_target = [[] for _ in target_specs]
     uid_counters = {}
+    target_seq_counters = {}
+    response_seq_counters = {}
+    write_ordinal_counters = {}
     max_extra_latency = [0, 0]
     max_arrival_cycle = 0
     for index, record in enumerate(records):
@@ -327,6 +330,12 @@ def _transaction_specs(scenario, initiators, target_specs, data_bus_bytes):
                 record.get("target_extra_latency_cycles", 0)
             )
             fault = str(record.get("target_fault", "okay")).lower()
+            burst = str(record.get("burst", "incr")).lower()
+            lock = int(record.get("lock", 0))
+            cache = int(record.get("cache", 0))
+            prot = int(record.get("prot", 0))
+            region = int(record.get("region", 0))
+            qos = int(record.get("qos", 0))
         except (KeyError, TypeError, ValueError):
             fatal("invalid AXI transactions[%d] entry", index)
         if kind not in ("write", "read"):
@@ -339,6 +348,14 @@ def _transaction_specs(scenario, initiators, target_specs, data_bus_bytes):
             fatal("AXI transaction beat_count must be in [1,256]")
         if not 0 <= size < 64 or (1 << size) > data_bus_bytes:
             fatal("AXI transaction SIZE exceeds data bus")
+        beat_bytes = 1 << size
+        if burst == "incr":
+            span_bytes = beat_count * beat_bytes
+            if span_bytes > 0xFFFFFFFFFFFFFFFF - address:
+                fatal("AXI INCR last address overflows uint64")
+            last_byte_exclusive = address + span_bytes
+            if (address >> 12) != ((last_byte_exclusive - 1) >> 12):
+                fatal("AXI INCR burst crosses a 4 KiB boundary")
         if not 0 <= axi_id < (1 << 16) or not 0 <= data_seed <= 255:
             fatal("AXI transaction ID or data_seed is out of range")
         if strobe not in ("full", "alternating"):
@@ -349,6 +366,12 @@ def _transaction_specs(scenario, initiators, target_specs, data_bus_bytes):
             fatal("AXI target extra latency must fit uint32")
         if fault not in ("okay", "slverr"):
             fatal("AXI target_fault must be okay or slverr")
+        if burst not in ("fixed", "incr", "wrap"):
+            fatal("AXI transaction burst must be fixed, incr, or wrap")
+        if not 0 <= lock <= 1 or not 0 <= cache <= 15 or \
+                not 0 <= prot <= 7 or not 0 <= region <= 15 or \
+                not 0 <= qos <= 15:
+            fatal("AXI transaction sideband field is out of range")
         direction = 1 if kind == "read" else 0
         max_extra_latency[direction] = max(
             max_extra_latency[direction], extra_latency
@@ -366,11 +389,32 @@ def _transaction_specs(scenario, initiators, target_specs, data_bus_bytes):
             | (direction << 39)
             | local_counter
         )
-        expected_resp = "slverr" if fault == "slverr" else "okay"
+        expected_resp = str(record.get(
+            "expected_response",
+            "slverr" if fault == "slverr" else "okay"
+        )).lower()
+        if expected_resp not in ("okay", "slverr", "decerr"):
+            fatal("AXI expected_response must be okay, slverr, or decerr")
+        target_key = (
+            int(source["src_node"]), int(source["src_port"]), axi_id,
+            bool(direction), dst_node,
+        )
+        response_key = target_key[:-1]
+        target_seq = target_seq_counters.get(target_key, 0)
+        response_seq = response_seq_counters.get(response_key, 0)
+        target_seq_counters[target_key] = target_seq + 1
+        response_seq_counters[response_key] = response_seq + 1
+        if direction:
+            write_ordinal = "none"
+        else:
+            write_ordinal = write_ordinal_counters.get(source_index, 0)
+            write_ordinal_counters[source_index] = write_ordinal + 1
         specs.append("|".join(str(value) for value in (
             kind, source_index, target_index[dst_node], axi_id,
             hex(address), beat_count, size, w_before_aw, data_seed, strobe,
-            expected_uid, arrival_cycle, expected_resp, index
+            expected_uid, arrival_cycle, expected_resp, index,
+            target_seq, response_seq, write_ordinal,
+            burst, lock, cache, prot, region, qos
         )))
         plans_by_target[target_index[dst_node]].append(
             (expected_uid, extra_latency, fault)
@@ -494,6 +538,12 @@ def create_system(
     if full_system or dma_ports or cpus:
         fatal("AXI_MESH requires full_system=false, dma_ports=[], cpus=[]")
 
+    # Fail malformed per-vnet vectors in Python before any SimObject is
+    # instantiated, so invalid configuration is an ordinary exit-1 fatal.
+    _positive_csv(
+        options.garnet_buffers_per_vnet, 5, "garnet_buffers_per_vnet"
+    )
+
     network_depths = _positive_csv(
         options.axi_message_buffer_depths, 5,
         "axi_message_buffer_depths"
@@ -588,6 +638,32 @@ def create_system(
     driver_mode = str(scenario.get("driver_mode", "sequential"))
     if driver_mode not in ("sequential", "concurrent"):
         fatal("AXI driver_mode must be sequential or concurrent")
+    runtime_fault = str(scenario.get("runtime_fault", ""))
+    allowed_runtime_faults = {
+        "", "beat_count_257", "early_wlast", "late_wlast",
+        "missing_wlast", "duplicate_rbeat", "out_of_range_rbeat",
+        "duplicate_uid", "unknown_response", "source_w_without_aw",
+    }
+    if runtime_fault not in allowed_runtime_faults:
+        fatal("unsupported AXI runtime_fault mode")
+    measurement = scenario.get("measurement_window_cycles")
+    measurement_cycles = [0, 0]
+    measurement_vnet = -2
+    if measurement is not None:
+        if not isinstance(measurement, dict):
+            fatal("measurement_window_cycles must be an object")
+        try:
+            measurement_cycles = [
+                int(measurement["start"]), int(measurement["end"])
+            ]
+            measurement_vnet = int(scenario["measurement_vnet"])
+        except (KeyError, TypeError, ValueError):
+            fatal("invalid AXI measurement window/vnet")
+        if measurement_cycles[0] < 0 or \
+                measurement_cycles[1] <= measurement_cycles[0]:
+            fatal("AXI measurement window must have 0 <= start < end")
+        if measurement_vnet < -1 or measurement_vnet >= 5:
+            fatal("AXI measurement_vnet must be -1 or in [0,4]")
     try:
         expected_router_vnet = int(
             scenario.get("expected_router_vnet", -1)
@@ -844,6 +920,18 @@ def create_system(
             transaction_specs=transaction_specs,
             case_name=str(scenario.get("name", "unnamed")),
             result_json=result_json,
+            event_trace_jsonl=os.path.join(
+                m5.options.outdir, "event_trace.jsonl"
+            ),
+            credit_ledger_json=os.path.join(
+                m5.options.outdir, "credit_ledger.json"
+            ),
+            residual_state_json=os.path.join(
+                m5.options.outdir, "residual_state.json"
+            ),
+            runtime_fault=runtime_fault,
+            seed=options.axi_seed,
+            wire_header_bytes=wire_headers,
             data_bus_bytes=data_bus_bytes,
             concurrent=(driver_mode == "concurrent"),
             consumer_stall_until=consumer_stalls,
@@ -853,6 +941,8 @@ def create_system(
             issue_stop_cycle=issue_stop_cycle,
             liveness_bound_components=liveness_bound_components,
             local_delivery_depths=local_depths,
+            measurement_window_cycles=measurement_cycles,
+            measurement_vnet=measurement_vnet,
         )
         ruby_system.axi_trace_tester = tester
 

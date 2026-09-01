@@ -59,6 +59,14 @@ struct AxiInitiatorProgress
     uint64_t readQuotaStalls = 0;
 };
 
+struct AxiInitiatorResidual
+{
+    uint64_t writeOrdinal = 0;
+    size_t bufferedWBeats = 0;
+    bool sawWlast = false;
+    bool txnUidPresent = false;
+};
+
 class AxiInitiatorState
 {
   public:
@@ -89,6 +97,9 @@ class AxiInitiatorState
     AxiInitiatorOccupancy occupancy() const;
     const AxiInitiatorProgress &progress() const { return _progress; }
     std::string finalConsistencyError() const;
+    std::optional<AxiInitiatorResidual> finalResidual() const;
+    const AxiAddressPacket &lastAcceptedAw() const;
+    const AxiAddressPacket &lastAcceptedAr() const;
 
     uint64_t nextAwOrdinal() const { return _nextAwOrdinal; }
     uint64_t nextWBurstOrdinal() const { return _nextWBurstOrdinal; }
@@ -190,6 +201,8 @@ class AxiInitiatorState
     BoundedFifo<ReadyR> _rReady;
 
     std::map<uint32_t, AxiQuota> _activeQuota;
+    std::optional<AxiAddressPacket> _lastAcceptedAw;
+    std::optional<AxiAddressPacket> _lastAcceptedAr;
     size_t _unboundBursts = 0;
     size_t _unboundBeats = 0;
     AxiInitiatorProgress _progress;

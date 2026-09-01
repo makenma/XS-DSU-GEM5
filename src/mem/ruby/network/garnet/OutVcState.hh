@@ -49,6 +49,8 @@ class OutVcState
 
     uint32_t get_credit_count() const { return m_credit_count; }
     uint32_t get_max_credit_count() const { return m_max_credit_count; }
+    uint64_t get_sent_count() const { return m_sent_count; }
+    uint64_t get_returned_count() const { return m_returned_count; }
     unsigned get_vnet() const { return m_vnet; }
     inline bool has_credit() const { return m_credit_count > 0; }
     void increment_credit();
@@ -74,6 +76,8 @@ class OutVcState
     VC_state_type m_vc_state;
     uint32_t m_credit_count;
     uint32_t m_max_credit_count;
+    uint64_t m_sent_count;
+    uint64_t m_returned_count;
 };
 
 } // namespace garnet

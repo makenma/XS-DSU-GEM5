@@ -45,6 +45,7 @@
       "address": "0x100",
       "beat_count": 1,
       "size": 6,
+      "qos": 7,
       "data_seed": 17,
       "strobe": "full"
     },
@@ -56,6 +57,7 @@
       "address": "0x100",
       "beat_count": 1,
       "size": 6,
+      "qos": 12,
       "data_seed": 0,
       "strobe": "full"
     }

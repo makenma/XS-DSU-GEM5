@@ -43,7 +43,8 @@ namespace garnet
 
 OutVcState::OutVcState(int id, unsigned vnet, uint32_t depth)
     : m_id(id), m_vnet(vnet), m_time(0), m_vc_state(IDLE_),
-      m_credit_count(depth), m_max_credit_count(depth)
+      m_credit_count(depth), m_max_credit_count(depth), m_sent_count(0),
+      m_returned_count(0)
 {
     fatal_if(depth == 0, "OutVcState vc=%d vnet=%u depth must be >= 1",
              m_id, m_vnet);
@@ -56,6 +57,7 @@ OutVcState::increment_credit()
              "Garnet credit overflow: vc=%d vnet=%u credit=%u depth=%u",
              m_id, m_vnet, m_credit_count, m_max_credit_count);
     m_credit_count++;
+    m_returned_count++;
 }
 
 void
@@ -65,6 +67,7 @@ OutVcState::decrement_credit()
              "Garnet credit underflow: vc=%d vnet=%u credit=0 depth=%u",
              m_id, m_vnet, m_max_credit_count);
     m_credit_count--;
+    m_sent_count++;
 }
 
 } // namespace garnet

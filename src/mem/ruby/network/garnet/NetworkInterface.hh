@@ -84,6 +84,9 @@ class NetworkInterface : public ClockedObject, public Consumer
 
     void scheduleFlit(flit *t_flit);
     GarnetQuiescenceSnapshot quiescenceSnapshot() const;
+    void appendCreditLedger(GarnetCreditLedger &ledger) const;
+    void collateStats();
+    void resetStats();
 
     int get_router_id(int vnet)
     {
@@ -128,6 +131,12 @@ class NetworkInterface : public ClockedObject, public Consumer
               return _outNetLink;
           }
 
+          const NetworkLink *
+          outNetLink() const
+          {
+              return _outNetLink;
+          }
+
           CreditLink *
           inCreditLink()
           {
@@ -158,6 +167,18 @@ class NetworkInterface : public ClockedObject, public Consumer
               }
               return false;
 
+          }
+
+          bool
+          isVnetSupported(int pVnet) const
+          {
+              if (_vnets.empty())
+                  return true;
+              for (const auto vnet : _vnets) {
+                  if (vnet == pVnet)
+                      return true;
+              }
+              return false;
           }
 
           std::string
@@ -298,6 +319,7 @@ class NetworkInterface : public ClockedObject, public Consumer
     // The flit buffers which will serve the Consumer
     std::vector<flitBuffer>  niOutVcs;
     std::vector<Tick> m_ni_out_vcs_enqueue_time;
+    std::vector<Cycles> m_ni_vc_last_accounted_cycle;
 
     // The Message buffers that takes messages from the protocol
     std::vector<MessageBuffer *> inNode_ptr;
@@ -316,6 +338,7 @@ class NetworkInterface : public ClockedObject, public Consumer
     void checkReschedule();
 
     void incrementStats(flit *t_flit);
+    void accountNiVc(int vc);
 
     InputPort *getInportForVnet(int vnet);
     OutputPort *getOutportForVnet(int vnet);

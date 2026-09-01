@@ -117,8 +117,16 @@ class GarnetNetwork : public Network
     void print(std::ostream& out) const;
 
     // increment counters
-    void increment_injected_packets(int vnet) { m_packets_injected[vnet]++; }
-    void increment_received_packets(int vnet) { m_packets_received[vnet]++; }
+    void increment_injected_packets(int vnet)
+    {
+        m_packets_injected[vnet]++;
+        m_packets_injected_raw[vnet]++;
+    }
+    void increment_received_packets(int vnet)
+    {
+        m_packets_received[vnet]++;
+        m_packets_received_raw[vnet]++;
+    }
 
     void
     increment_packet_network_latency(Tick latency, int vnet)
@@ -132,8 +140,18 @@ class GarnetNetwork : public Network
         m_packet_queueing_latency[vnet] += latency;
     }
 
-    void increment_injected_flits(int vnet) { m_flits_injected[vnet]++; }
-    void increment_received_flits(int vnet) { m_flits_received[vnet]++; }
+    void increment_injected_flits(int vnet)
+    {
+        m_flits_injected[vnet]++;
+        m_flits_injected_raw[vnet]++;
+    }
+    void increment_received_flits(int vnet)
+    {
+        m_flits_received[vnet]++;
+        m_flits_received_raw[vnet]++;
+    }
+    void increment_injected_wire_bytes(unsigned vnet, uint64_t bytes);
+    void increment_received_wire_bytes(unsigned vnet, uint64_t bytes);
 
     void
     increment_flit_network_latency(Tick latency, int vnet)
@@ -161,12 +179,29 @@ class GarnetNetwork : public Network
     void incrementRouterCreditStall(unsigned vnet);
     void incrementVcAllocStall(unsigned vnet);
     void incrementNiCreditStall(unsigned vnet);
+    void addInputVcIntegral(unsigned vnet, uint64_t occupancyFlitCycles,
+                            uint64_t fullVcCycles);
+    void addNiVcBusyCycles(unsigned vnet, uint64_t cycles);
+    uint64_t packetsInjected(unsigned vnet) const;
+    uint64_t packetsReceived(unsigned vnet) const;
+    uint64_t flitsInjected(unsigned vnet) const;
+    uint64_t flitsReceived(unsigned vnet) const;
+    uint64_t wireBytesInjected(unsigned vnet) const;
+    uint64_t wireBytesReceived(unsigned vnet) const;
+    uint64_t inputVcOccupancyFlitCycles(unsigned vnet) const;
+    uint64_t inputVcFullVcCycles(unsigned vnet) const;
+    uint64_t inputVcFullEvents(unsigned vnet) const;
+    uint64_t niVcBusyCycles(unsigned vnet) const;
     uint64_t inputVcMaxOccupancy(unsigned vnet) const;
     uint64_t routerCreditStalls(unsigned vnet) const;
     uint64_t vcAllocStalls(unsigned vnet) const;
     uint64_t niCreditStalls(unsigned vnet) const;
 
     GarnetQuiescenceSnapshot quiescenceSnapshot() const;
+    GarnetCreditLedger creditLedger() const;
+    GarnetInputVcHighWater inputVcHighWater() const;
+    void flushEventIntegratedStats();
+    void resetInputVcHighWater();
     bool isQuiescent() const { return quiescenceSnapshot().empty(); }
 
   protected:
@@ -204,6 +239,11 @@ class GarnetNetwork : public Network
     statistics::Vector m_credit_stall_vc_cycles;
     statistics::Vector m_vc_alloc_stall_vc_cycles;
     statistics::Vector m_ni_credit_stall_vc_cycles;
+    statistics::Vector m_wire_bytes_injected;
+    statistics::Vector m_wire_bytes_received;
+    statistics::Vector m_input_vc_occupancy_flit_cycles;
+    statistics::Vector m_input_vc_full_vc_cycles;
+    statistics::Vector m_ni_vc_busy_cycles;
 
     statistics::Formula m_avg_flit_vnet_latency;
     statistics::Formula m_avg_flit_vqueue_latency;
@@ -233,6 +273,15 @@ class GarnetNetwork : public Network
     std::vector<uint64_t> m_credit_stall_vc_cycles_raw;
     std::vector<uint64_t> m_vc_alloc_stall_vc_cycles_raw;
     std::vector<uint64_t> m_ni_credit_stall_vc_cycles_raw;
+    std::vector<uint64_t> m_packets_injected_raw;
+    std::vector<uint64_t> m_packets_received_raw;
+    std::vector<uint64_t> m_flits_injected_raw;
+    std::vector<uint64_t> m_flits_received_raw;
+    std::vector<uint64_t> m_wire_bytes_injected_raw;
+    std::vector<uint64_t> m_wire_bytes_received_raw;
+    std::vector<uint64_t> m_input_vc_occupancy_flit_cycles_raw;
+    std::vector<uint64_t> m_input_vc_full_vc_cycles_raw;
+    std::vector<uint64_t> m_ni_vc_busy_cycles_raw;
     std::vector<Router *> m_routers;   // All Routers in Network
     std::vector<NetworkLink *> m_networklinks; // All flit links in the network
     std::vector<NetworkBridge *> m_networkbridges; // All network bridges

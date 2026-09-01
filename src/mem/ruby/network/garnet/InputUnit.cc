@@ -31,6 +31,8 @@
 
 #include "mem/ruby/network/garnet/InputUnit.hh"
 
+#include <algorithm>
+
 #include "base/logging.hh"
 #include "debug/RubyNetwork.hh"
 #include "mem/ruby/network/garnet/Credit.hh"
@@ -63,12 +65,36 @@ InputUnit::InputUnit(int id, PortDirection direction, Router *router)
 
     // Instantiating the virtual channels
     virtualChannels.reserve(m_num_vcs);
+    m_vc_last_accounted_cycle.assign(m_num_vcs, m_router->curCycle());
+    m_vc_high_water.assign(m_num_vcs, 0);
     for (int i=0; i < m_num_vcs; i++) {
         const unsigned vnet = i / m_vc_per_vnet;
         const uint32_t capacity =
             m_router->get_net_ptr()->getBuffersPerVnet(vnet);
         virtualChannels.emplace_back(capacity);
     }
+}
+
+void
+InputUnit::accountVc(int vc)
+{
+    panic_if(vc < 0 || vc >= virtualChannels.size(),
+             "Router %d input port %d VC index %d is out of range",
+             m_router->get_id(), m_id, vc);
+    const Cycles now = m_router->curCycle();
+    const uint64_t elapsed = now - m_vc_last_accounted_cycle[vc];
+    const uint64_t occupancy = virtualChannels[vc].getOccupancy();
+    m_router->get_net_ptr()->addInputVcIntegral(
+        vc / m_vc_per_vnet, occupancy * elapsed,
+        virtualChannels[vc].isFull() ? elapsed : 0);
+    m_vc_last_accounted_cycle[vc] = now;
+}
+
+flit *
+InputUnit::getTopFlit(int vc)
+{
+    accountVc(vc);
+    return virtualChannels[vc].getTopFlit();
 }
 
 uint32_t
@@ -163,8 +189,13 @@ InputUnit::wakeup()
         }
 
 
+        // Account the old occupancy over elapsed router cycles before the
+        // insertion changes it.  Pops use the same event-integration rule.
+        accountVc(vc);
         // Buffer the flit
         virtualChannels[vc].insertFlit(t_flit);
+        m_vc_high_water[vc] = std::max<uint64_t>(
+            m_vc_high_water[vc], virtualChannels[vc].getOccupancy());
         m_router->get_net_ptr()->observeInputVc(
             vnet, virtualChannels[vc].getOccupancy(),
             virtualChannels[vc].getCapacity());
@@ -194,6 +225,31 @@ InputUnit::wakeup()
         if (m_in_link->isReady(curTick())) {
             m_router->schedule_wakeup(Cycles(1));
         }
+    }
+}
+
+void
+InputUnit::collateStats()
+{
+    for (int vc = 0; vc < virtualChannels.size(); ++vc)
+        accountVc(vc);
+}
+
+void
+InputUnit::resetInputVcHighWater()
+{
+    for (unsigned vc = 0; vc < virtualChannels.size(); ++vc)
+        m_vc_high_water[vc] = virtualChannels[vc].getOccupancy();
+}
+
+void
+InputUnit::appendInputVcHighWater(GarnetInputVcHighWater &entries) const
+{
+    for (unsigned vc = 0; vc < virtualChannels.size(); ++vc) {
+        entries.push_back({
+            m_router->get_id(), m_id, vc,
+            vc / static_cast<unsigned>(m_vc_per_vnet),
+            m_vc_high_water[vc], virtualChannels[vc].getCapacity()});
     }
 }
 
@@ -235,6 +291,11 @@ InputUnit::functionalWrite(Packet *pkt)
 void
 InputUnit::resetStats()
 {
+    const Cycles now = m_router->curCycle();
+    for (unsigned vc = 0; vc < virtualChannels.size(); ++vc) {
+        m_vc_last_accounted_cycle[vc] = now;
+        m_vc_high_water[vc] = virtualChannels[vc].getOccupancy();
+    }
     for (int j = 0; j < m_num_buffer_reads.size(); j++) {
         m_num_buffer_reads[j] = 0;
         m_num_buffer_writes[j] = 0;

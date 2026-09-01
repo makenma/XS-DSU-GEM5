@@ -1,6 +1,7 @@
 #ifndef __MEM_AXI_AXI_GARNET_ENDPOINT_HH__
 #define __MEM_AXI_AXI_GARNET_ENDPOINT_HH__
 
+#include <array>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -30,6 +31,14 @@ class MessageBuffer;
 namespace axi
 {
 
+struct AxiEndpointQueueHighWater
+{
+    std::array<size_t, 5> localFifo{};
+    std::array<size_t, 5> messageBuffer{};
+    std::array<size_t, 5> adapterIngress{};
+    std::array<uint64_t, 5> messageBufferStallCycles{};
+};
+
 struct AxiInitiatorAdapterProgress
 {
     AxiInitiatorProgress core;
@@ -56,11 +65,17 @@ class AxiInitiatorAdapter : public ClockedObject, public ruby::Consumer
 
     bool tryAcceptAw(const AxiAddressRequest &aw);
     bool tryAcceptW(const AxiWBeat &w);
+    bool tryAcceptWForFinalCheck(const AxiWBeat &w);
     bool tryAcceptAr(const AxiAddressRequest &ar);
     bool tryConsumeB(AxiBBeat &b);
     bool tryConsumeR(AxiRBeat &r);
+    AxiAddressPacket lastAcceptedAw() const;
+    AxiAddressPacket lastAcceptedAr() const;
     AxiInitiatorOccupancy functionalOccupancy() const;
     AxiInitiatorAdapterProgress functionalProgress() const;
+    AxiEndpointQueueHighWater functionalQueueHighWater() const;
+    std::string finalConsistencyError() const;
+    std::optional<AxiInitiatorResidual> finalResidual() const;
     bool functionalIdle() const;
 
     /** Commit 1-only out-of-band completion observation. */
@@ -74,6 +89,7 @@ class AxiInitiatorAdapter : public ClockedObject, public ruby::Consumer
     void ingestFunctionalResponses();
     void injectFunctionalRequests();
     bool hasFunctionalWork() const;
+    void updateQueueHighWater();
 
     ruby::AbstractController *const shim;
     ruby::AbstractController *const peer;
@@ -108,6 +124,7 @@ class AxiInitiatorAdapter : public ClockedObject, public ruby::Consumer
     const Cycles bResponseEjectionStallUntil;
     const Cycles rResponseEjectionStallUntil;
     AxiInitiatorAdapterProgress adapterProgress;
+    AxiEndpointQueueHighWater queueHighWater;
 };
 
 class AxiTargetAdapter : public ClockedObject, public ruby::Consumer
@@ -125,7 +142,9 @@ class AxiTargetAdapter : public ClockedObject, public ruby::Consumer
 
     AxiTargetOccupancy functionalOccupancy() const;
     AxiTargetProgress functionalProgress() const;
+    AxiEndpointQueueHighWater functionalQueueHighWater() const;
     uint8_t readMemoryByte(uint64_t address) const;
+    bool containsMemoryAddress(uint64_t address) const;
     void writeMemoryByte(uint64_t address, uint8_t value);
     bool functionalIdle() const;
 
@@ -137,6 +156,7 @@ class AxiTargetAdapter : public ClockedObject, public ruby::Consumer
     void ingestFunctionalRequests();
     void injectFunctionalResponses();
     bool hasFunctionalWork() const;
+    void updateQueueHighWater();
 
     ruby::AbstractController *const shim;
     ruby::AbstractController *const peer;
@@ -165,6 +185,8 @@ class AxiTargetAdapter : public ClockedObject, public ruby::Consumer
     BoundedFifo<AxiDataPacket> wIngress;
     BoundedFifo<AxiAddressPacket> arIngress;
     std::map<uint64_t, ruby::MachineID> responseDestinations;
+    AxiEndpointQueueHighWater queueHighWater;
+    uint64_t orphanOrQuotaStallCycles = 0;
 };
 
 } // namespace axi

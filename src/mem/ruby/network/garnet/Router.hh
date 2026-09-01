@@ -127,6 +127,8 @@ class Router : public BasicRouter, public Consumer
 
     void regStats();
     void collateStats();
+    void flushEventIntegratedStats();
+    void resetInputVcHighWater();
     void resetStats();
 
     // For Fault Model:
@@ -143,6 +145,8 @@ class Router : public BasicRouter, public Consumer
     bool functionalRead(Packet *pkt, WriteMask &mask);
     uint32_t functionalWrite(Packet *);
     GarnetQuiescenceSnapshot quiescenceSnapshot() const;
+    void appendCreditLedger(GarnetCreditLedger &ledger) const;
+    void appendInputVcHighWater(GarnetInputVcHighWater &entries) const;
 
   private:
     Cycles m_latency;

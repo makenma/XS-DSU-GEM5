@@ -51,21 +51,21 @@ TEST(DuelerTest, SetSample)
 
     // Initially nobody is sampled
     for (int id = 0; id < 64; id++) {
-        ASSERT_FALSE(dueler.isSample(1ULL << id, team));
+        ASSERT_FALSE(dueler.isSample(id, team));
     }
 
     // Mark the first num_sampled_ids as samples and assign alternating teams
     team = false;
     for (int id = 0; id < num_sampled_ids; id++) {
         team = !team;
-        dueler.setSample(1ULL << id, team);
+        dueler.setSample(id, team);
     }
 
     // Make sure that only the entries marked as samples previously are samples
     bool expected_team = false;
     for (int id = 0; id < 64; id++) {
         expected_team = !expected_team;
-        const bool is_sample = dueler.isSample(1ULL << id, team);
+        const bool is_sample = dueler.isSample(id, team);
         if (id < num_sampled_ids) {
             ASSERT_TRUE(is_sample);
             ASSERT_EQ(team, expected_team);
@@ -76,9 +76,8 @@ TEST(DuelerTest, SetSample)
 
 }
 
-// We assume that the monitors are assigned sequential powers of
-// two ids starting from 1
-static uint64_t monitor_id = 0;
+// We assume that monitors are assigned sequential integer ids from zero.
+static uint32_t monitor_id = 0;
 
 class DuelingMonitorTest : public testing::TestWithParam<
     std::tuple<unsigned, std::size_t, std::size_t, unsigned, double, double>>
@@ -149,7 +148,7 @@ TEST_P(DuelingMonitorTest, CountSamples)
     int count_samples_false = 0;
     bool team;
     for (auto& entry : entries) {
-        if (entry.isSample(1ULL << monitor_id, team)) {
+        if (entry.isSample(monitor_id, team)) {
             if (team) {
                 count_samples_true++;
             } else {
@@ -175,7 +174,7 @@ TEST_P(DuelingMonitorTest, WinnerSelection)
     int no_sample_index = -1;
     for (int index = 0; index < entries.size(); index++) {
         bool team;
-        if (entries[index].isSample(1ULL << monitor_id, team)) {
+        if (entries[index].isSample(monitor_id, team)) {
             if (team) {
                 team_true_index = index;
             } else {

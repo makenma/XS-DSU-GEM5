@@ -2,6 +2,7 @@
 #define __MEM_RUBY_NETWORK_GARNET_GARNET_QUIESCENCE_HH__
 
 #include <cstdint>
+#include <vector>
 
 namespace gem5
 {
@@ -9,6 +10,54 @@ namespace ruby
 {
 namespace garnet
 {
+
+/**
+ * Protocol-neutral accounting for one upstream output VC and its directed
+ * data link.  Credit conservation is checked as
+ * initial + returned - sent == current; a drained network additionally has
+ * current == initial.  ownerKind is 0 for an NI and 1 for a router.
+ */
+struct GarnetCreditLedgerEntry
+{
+    uint32_t ownerKind = 0;
+    int32_t ownerId = -1;
+    int32_t portId = -1;
+    int32_t linkId = -1;
+    uint32_t vc = 0;
+    uint32_t vnet = 0;
+    uint64_t initial = 0;
+    uint64_t sent = 0;
+    uint64_t returned = 0;
+    uint64_t current = 0;
+    uint64_t depth = 0;
+    // Internal-only identity, normalized by GarnetNetwork to a stable index
+    // before the ledger leaves the network.  It is never serialized.
+    const void *linkToken = nullptr;
+
+    bool conserved() const
+    {
+        return initial + returned == sent + current;
+    }
+
+    bool restored() const
+    {
+        return conserved() && current == initial;
+    }
+};
+
+using GarnetCreditLedger = std::vector<GarnetCreditLedgerEntry>;
+
+struct GarnetInputVcHighWaterEntry
+{
+    int32_t routerId = -1;
+    int32_t inportId = -1;
+    uint32_t vc = 0;
+    uint32_t vnet = 0;
+    uint64_t highWater = 0;
+    uint64_t depth = 0;
+};
+
+using GarnetInputVcHighWater = std::vector<GarnetInputVcHighWaterEntry>;
 
 /**
  * Protocol-neutral, read-only Garnet drain state.

@@ -655,8 +655,10 @@ AxiInitiatorAdapter::tryAcceptAw(const AxiAddressRequest &aw)
     fatal_if(rawProbe || !functionalState,
              "%s: functional AW used during raw probe", name());
     const bool accepted = functionalState->tryAcceptAw(aw, curTick());
-    if (accepted)
+    if (accepted) {
+        updateQueueHighWater();
         scheduleEvent(Cycles(1));
+    }
     return accepted;
 }
 
@@ -666,8 +668,21 @@ AxiInitiatorAdapter::tryAcceptW(const AxiWBeat &w)
     fatal_if(rawProbe || !functionalState,
              "%s: functional W used during raw probe", name());
     const bool accepted = functionalState->tryAcceptW(w, curTick());
-    if (accepted)
+    if (accepted) {
+        updateQueueHighWater();
         scheduleEvent(Cycles(1));
+    }
+    return accepted;
+}
+
+bool
+AxiInitiatorAdapter::tryAcceptWForFinalCheck(const AxiWBeat &w)
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: final-check W used during raw probe", name());
+    const bool accepted = functionalState->tryAcceptW(w, curTick());
+    if (accepted)
+        updateQueueHighWater();
     return accepted;
 }
 
@@ -677,9 +692,27 @@ AxiInitiatorAdapter::tryAcceptAr(const AxiAddressRequest &ar)
     fatal_if(rawProbe || !functionalState,
              "%s: functional AR used during raw probe", name());
     const bool accepted = functionalState->tryAcceptAr(ar, curTick());
-    if (accepted)
+    if (accepted) {
+        updateQueueHighWater();
         scheduleEvent(Cycles(1));
+    }
     return accepted;
+}
+
+AxiAddressPacket
+AxiInitiatorAdapter::lastAcceptedAw() const
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: functional AW metadata used during raw probe", name());
+    return functionalState->lastAcceptedAw();
+}
+
+AxiAddressPacket
+AxiInitiatorAdapter::lastAcceptedAr() const
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: functional AR metadata used during raw probe", name());
+    return functionalState->lastAcceptedAr();
 }
 
 bool
@@ -778,6 +811,8 @@ AxiInitiatorAdapter::injectFunctionalRequests()
                 wireBytesFor(channelWireBytes, AxiWireSlot::Aw));
             awOut->enqueue(msg, curTick(), clockPeriod());
             functionalState->popAwPacket();
+        } else if (curTick() >= eligible) {
+            ++queueHighWater.messageBufferStallCycles[0];
         }
     }
 
@@ -795,6 +830,8 @@ AxiInitiatorAdapter::injectFunctionalRequests()
                 dataBusBytes);
             wOut->enqueue(msg, curTick(), clockPeriod());
             functionalState->popWPacket();
+        } else if (curTick() >= eligible) {
+            ++queueHighWater.messageBufferStallCycles[1];
         }
     }
 
@@ -811,6 +848,8 @@ AxiInitiatorAdapter::injectFunctionalRequests()
                 wireBytesFor(channelWireBytes, AxiWireSlot::Ar));
             arOut->enqueue(msg, curTick(), clockPeriod());
             functionalState->popArPacket();
+        } else if (curTick() >= eligible) {
+            ++queueHighWater.messageBufferStallCycles[3];
         }
     }
 }
@@ -827,6 +866,7 @@ AxiInitiatorAdapter::hasFunctionalWork() const
 void
 AxiInitiatorAdapter::functionalWakeup()
 {
+    updateQueueHighWater();
     adapterProgress.bLocalHighWater = std::max(
         adapterProgress.bLocalHighWater,
         static_cast<size_t>(bLocal->getNumMessages()));
@@ -840,8 +880,33 @@ AxiInitiatorAdapter::functionalWakeup()
     processFunctionalIngress();
     injectFunctionalRequests();
     ingestFunctionalResponses();
+    updateQueueHighWater();
     if (hasFunctionalWork())
         scheduleEvent(Cycles(1));
+}
+
+void
+AxiInitiatorAdapter::updateQueueHighWater()
+{
+    const auto occupancy = functionalState->occupancy();
+    const std::array<size_t, 5> local = {
+        occupancy.aw, occupancy.w, occupancy.b, occupancy.ar, occupancy.r};
+    const std::array<size_t, 5> messages = {
+        static_cast<size_t>(awOut->getNumMessages()),
+        static_cast<size_t>(wOut->getNumMessages()),
+        static_cast<size_t>(bLocal->getNumMessages()),
+        static_cast<size_t>(arOut->getNumMessages()),
+        static_cast<size_t>(rLocal->getNumMessages())};
+    const std::array<size_t, 5> ingress = {
+        0, 0, bIngress.size(), 0, rIngress.size()};
+    for (unsigned channel = 0; channel < 5; ++channel) {
+        queueHighWater.localFifo[channel] = std::max(
+            queueHighWater.localFifo[channel], local[channel]);
+        queueHighWater.messageBuffer[channel] = std::max(
+            queueHighWater.messageBuffer[channel], messages[channel]);
+        queueHighWater.adapterIngress[channel] = std::max(
+            queueHighWater.adapterIngress[channel], ingress[channel]);
+    }
 }
 
 AxiInitiatorOccupancy
@@ -863,6 +928,30 @@ AxiInitiatorAdapter::functionalProgress() const
     AxiInitiatorAdapterProgress result = adapterProgress;
     result.core = functionalState->progress();
     return result;
+}
+
+AxiEndpointQueueHighWater
+AxiInitiatorAdapter::functionalQueueHighWater() const
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: functional queue stats used during raw probe", name());
+    return queueHighWater;
+}
+
+std::string
+AxiInitiatorAdapter::finalConsistencyError() const
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: final consistency used during raw probe", name());
+    return functionalState->finalConsistencyError();
+}
+
+std::optional<AxiInitiatorResidual>
+AxiInitiatorAdapter::finalResidual() const
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: final residual used during raw probe", name());
+    return functionalState->finalResidual();
 }
 
 bool
@@ -1029,20 +1118,29 @@ AxiTargetAdapter::processFunctionalIngress()
     const uint64_t now = curTick() / clockPeriod();
     // W is considered first so an intentionally earlier W can create W_ONLY;
     // the channels remain independent and a blocked W never blocks AW/AR.
-    if (!wIngress.empty() &&
-        functionalState->canAcceptW(wIngress.front())) {
-        functionalState->acceptW(wIngress.front(), now);
-        wIngress.pop();
+    if (!wIngress.empty()) {
+        if (functionalState->canAcceptW(wIngress.front())) {
+            functionalState->acceptW(wIngress.front(), now);
+            wIngress.pop();
+        } else {
+            ++orphanOrQuotaStallCycles;
+        }
     }
-    if (!awIngress.empty() &&
-        functionalState->canAcceptAw(awIngress.front())) {
-        functionalState->acceptAw(awIngress.front(), now);
-        awIngress.pop();
+    if (!awIngress.empty()) {
+        if (functionalState->canAcceptAw(awIngress.front())) {
+            functionalState->acceptAw(awIngress.front(), now);
+            awIngress.pop();
+        } else {
+            ++orphanOrQuotaStallCycles;
+        }
     }
-    if (!arIngress.empty() &&
-        functionalState->canAcceptAr(arIngress.front())) {
-        functionalState->acceptAr(arIngress.front(), now);
-        arIngress.pop();
+    if (!arIngress.empty()) {
+        if (functionalState->canAcceptAr(arIngress.front())) {
+            functionalState->acceptAr(arIngress.front(), now);
+            arIngress.pop();
+        } else {
+            ++orphanOrQuotaStallCycles;
+        }
     }
 }
 
@@ -1110,8 +1208,10 @@ void
 AxiTargetAdapter::injectFunctionalResponses()
 {
     functionalState->advance(curTick() / clockPeriod());
-    if (functionalState->hasBPacket() &&
-        bOut->areNSlotsAvailable(1, curTick())) {
+    if (functionalState->hasBPacket()) {
+        if (!bOut->areNSlotsAvailable(1, curTick())) {
+            ++queueHighWater.messageBufferStallCycles[2];
+        } else {
         const AxiBPacket &packet = functionalState->frontBPacket();
         const auto destination = responseDestinations.find(
             packet.meta.txnUid);
@@ -1123,10 +1223,13 @@ AxiTargetAdapter::injectFunctionalResponses()
         bOut->enqueue(msg, curTick(), clockPeriod());
         functionalState->popBPacket();
         responseDestinations.erase(destination);
+        }
     }
 
-    if (functionalState->hasRPacket() &&
-        rOut->areNSlotsAvailable(1, curTick())) {
+    if (functionalState->hasRPacket()) {
+        if (!rOut->areNSlotsAvailable(1, curTick())) {
+            ++queueHighWater.messageBufferStallCycles[4];
+        } else {
         const AxiDataPacket &packet = functionalState->frontRPacket();
         const auto destination = responseDestinations.find(
             packet.meta.txnUid);
@@ -1141,6 +1244,7 @@ AxiTargetAdapter::injectFunctionalResponses()
         functionalState->popRPacket();
         if (last)
             responseDestinations.erase(destination);
+        }
     }
 }
 
@@ -1159,11 +1263,38 @@ AxiTargetAdapter::hasFunctionalWork() const
 void
 AxiTargetAdapter::functionalWakeup()
 {
+    updateQueueHighWater();
     processFunctionalIngress();
     injectFunctionalResponses();
     ingestFunctionalRequests();
+    updateQueueHighWater();
     if (hasFunctionalWork())
         scheduleEvent(Cycles(1));
+}
+
+void
+AxiTargetAdapter::updateQueueHighWater()
+{
+    const auto occupancy = functionalState->occupancy();
+    const std::array<size_t, 5> local = {
+        occupancy.writeContexts, occupancy.writeReservedBeats,
+        occupancy.bReady, occupancy.readContexts, occupancy.rReady};
+    const std::array<size_t, 5> messages = {
+        static_cast<size_t>(awLocal->getNumMessages()),
+        static_cast<size_t>(wLocal->getNumMessages()),
+        static_cast<size_t>(bOut->getNumMessages()),
+        static_cast<size_t>(arLocal->getNumMessages()),
+        static_cast<size_t>(rOut->getNumMessages())};
+    const std::array<size_t, 5> ingress = {
+        awIngress.size(), wIngress.size(), 0, arIngress.size(), 0};
+    for (unsigned channel = 0; channel < 5; ++channel) {
+        queueHighWater.localFifo[channel] = std::max(
+            queueHighWater.localFifo[channel], local[channel]);
+        queueHighWater.messageBuffer[channel] = std::max(
+            queueHighWater.messageBuffer[channel], messages[channel]);
+        queueHighWater.adapterIngress[channel] = std::max(
+            queueHighWater.adapterIngress[channel], ingress[channel]);
+    }
 }
 
 AxiTargetOccupancy
@@ -1182,7 +1313,17 @@ AxiTargetAdapter::functionalProgress() const
 {
     fatal_if(rawProbe || !functionalState,
              "%s: functional progress used during raw probe", name());
-    return functionalState->progress();
+    AxiTargetProgress result = functionalState->progress();
+    result.orphanOrQuotaStallCycles = orphanOrQuotaStallCycles;
+    return result;
+}
+
+AxiEndpointQueueHighWater
+AxiTargetAdapter::functionalQueueHighWater() const
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: functional queue stats used during raw probe", name());
+    return queueHighWater;
 }
 
 uint8_t
@@ -1191,6 +1332,14 @@ AxiTargetAdapter::readMemoryByte(uint64_t address) const
     fatal_if(rawProbe || !functionalState,
              "%s: functional memory used during raw probe", name());
     return functionalState->memory().readByte(address);
+}
+
+bool
+AxiTargetAdapter::containsMemoryAddress(uint64_t address) const
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: functional memory used during raw probe", name());
+    return functionalState->memory().contains(address);
 }
 
 void

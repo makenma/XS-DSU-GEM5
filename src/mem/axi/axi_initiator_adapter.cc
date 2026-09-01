@@ -135,6 +135,7 @@ AxiInitiatorState::tryAcceptAw(const AxiAddressRequest &aw,
     packet.writeOrdinal = ordinal;
     packet.decodeResp = decode.response;
     state.aw = packet;
+    _lastAcceptedAw = packet;
     _writeOrdinalByUid.emplace(packet.meta.txnUid, ordinal);
     panic_if(!_awReady.push(ordinal), "AXI source AW FIFO overflow");
 
@@ -485,6 +486,7 @@ AxiInitiatorState::tryAcceptAr(const AxiAddressRequest &ar,
     const uint64_t uid = packet.meta.txnUid;
     panic_if(!_readsByUid.emplace(uid, std::move(state)).second,
              "AXI_PROTOCOL: duplicate read txnUid");
+    _lastAcceptedAr = packet;
     panic_if(!_arReady.push(uid), "AXI source AR FIFO overflow");
     return true;
 }
@@ -697,12 +699,6 @@ AxiInitiatorState::occupancy() const
 std::string
 AxiInitiatorState::finalConsistencyError() const
 {
-    if (_openWOrdinal) {
-        std::ostringstream out;
-        out << "source W burst without WLAST, writeOrdinal="
-            << *_openWOrdinal;
-        return out.str();
-    }
     for (const auto &[ordinal, state] : _writesByOrdinal) {
         if (!state.aw) {
             std::ostringstream out;
@@ -716,7 +712,41 @@ AxiInitiatorState::finalConsistencyError() const
             return out.str();
         }
     }
+    if (_openWOrdinal) {
+        std::ostringstream out;
+        out << "source W burst without WLAST, writeOrdinal="
+            << *_openWOrdinal;
+        return out.str();
+    }
     return {};
+}
+
+std::optional<AxiInitiatorResidual>
+AxiInitiatorState::finalResidual() const
+{
+    for (const auto &[ordinal, state] : _writesByOrdinal) {
+        if (!state.aw || state.observedW != state.aw->request.beatCount ||
+            !state.sawWlast) {
+            return AxiInitiatorResidual{
+                ordinal, state.stagedW.size(), state.sawWlast,
+                state.aw.has_value()};
+        }
+    }
+    return std::nullopt;
+}
+
+const AxiAddressPacket &
+AxiInitiatorState::lastAcceptedAw() const
+{
+    panic_if(!_lastAcceptedAw, "AXI_PROTOCOL: no accepted AW metadata");
+    return *_lastAcceptedAw;
+}
+
+const AxiAddressPacket &
+AxiInitiatorState::lastAcceptedAr() const
+{
+    panic_if(!_lastAcceptedAr, "AXI_PROTOCOL: no accepted AR metadata");
+    return *_lastAcceptedAr;
 }
 
 } // namespace axi

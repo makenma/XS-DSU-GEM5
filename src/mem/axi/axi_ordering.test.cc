@@ -125,11 +125,14 @@ targetMeta(uint64_t uid, uint32_t id, uint64_t target_seq,
 
 AxiAddressPacket
 targetAddress(uint64_t uid, uint32_t id, uint64_t target_seq,
-              uint64_t response_seq, uint64_t address = 0x100)
+              uint64_t response_seq, uint64_t address = 0x100,
+              uint8_t qos = 0)
 {
     AxiAddressPacket packet;
     packet.meta = targetMeta(uid, id, target_seq, response_seq);
     packet.request = request(id, address);
+    packet.meta.qos = qos;
+    packet.request.qos = qos;
     packet.writeOrdinal = uid;
     packet.decodeResp = AxiResp::Okay;
     return packet;
@@ -238,12 +241,14 @@ TEST(AxiOrderingTest, SameIdWriteCommitsInOrder)
     auto config = targetConfig();
     config.extraLatency = {{100, 10}, {101, 1}};
     AxiTargetState target(config);
-    const auto older = targetAddress(100, 5, 0, 0);
-    const auto younger = targetAddress(101, 5, 1, 1);
+    const auto older = targetAddress(100, 5, 0, 0, 0x100, 3);
+    const auto younger = targetAddress(101, 5, 1, 1, 0x100, 9);
     target.acceptAw(older, 0);
     target.acceptW(targetW(older, 0x11), 0);
     target.acceptAw(younger, 0);
     target.acceptW(targetW(younger, 0x22), 0);
+    EXPECT_EQ(target.progress().qosTransactions[3], 1);
+    EXPECT_EQ(target.progress().qosTransactions[9], 1);
     target.advance(1);
     EXPECT_FALSE(target.hasBPacket());
     EXPECT_GT(target.progress().sameIdReadyBlocked, 0);

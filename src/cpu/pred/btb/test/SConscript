@@ -1,5 +1,11 @@
 Import('*')
 
+# AXI_MESH and Garnet_standalone are deliberately CPU-less null-ISA builds.
+# The BTB tests compile predictor implementation files directly and require
+# the CPU-only SimObjects/debug flags skipped by src/cpu/pred/SConscript.
+if env['CONF']['TARGET_ISA'] == 'null':
+    Return()
+
 # all below tests must add --unit-test to enable unit test mode!
 # eg: scons build/RISCV/cpu/pred/btb/test/tage.test.debug --unit-test -j100
 

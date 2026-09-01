@@ -103,6 +103,15 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     m_credit_stall_vc_cycles_raw.assign(m_virtual_networks, 0);
     m_vc_alloc_stall_vc_cycles_raw.assign(m_virtual_networks, 0);
     m_ni_credit_stall_vc_cycles_raw.assign(m_virtual_networks, 0);
+    m_packets_injected_raw.assign(m_virtual_networks, 0);
+    m_packets_received_raw.assign(m_virtual_networks, 0);
+    m_flits_injected_raw.assign(m_virtual_networks, 0);
+    m_flits_received_raw.assign(m_virtual_networks, 0);
+    m_wire_bytes_injected_raw.assign(m_virtual_networks, 0);
+    m_wire_bytes_received_raw.assign(m_virtual_networks, 0);
+    m_input_vc_occupancy_flit_cycles_raw.assign(m_virtual_networks, 0);
+    m_input_vc_full_vc_cycles_raw.assign(m_virtual_networks, 0);
+    m_ni_vc_busy_cycles_raw.assign(m_virtual_networks, 0);
 
     // record the routers
     for (std::vector<BasicRouter*>::const_iterator i =  p.routers.begin();
@@ -435,6 +444,109 @@ GarnetNetwork::quiescenceSnapshot() const
     return snapshot;
 }
 
+GarnetCreditLedger
+GarnetNetwork::creditLedger() const
+{
+    GarnetCreditLedger ledger;
+    for (const auto *ni : m_nis)
+        ni->appendCreditLedger(ledger);
+    for (const auto *router : m_routers)
+        router->appendCreditLedger(ledger);
+    std::map<const void *, int32_t> stable_link_ids;
+    for (size_t index = 0; index < m_networklinks.size(); ++index)
+        stable_link_ids.emplace(m_networklinks[index], index);
+    for (size_t index = 0; index < m_networkbridges.size(); ++index) {
+        stable_link_ids.emplace(
+            m_networkbridges[index], m_networklinks.size() + index);
+    }
+    for (auto &entry : ledger) {
+        const auto found = stable_link_ids.find(entry.linkToken);
+        panic_if(found == stable_link_ids.end(),
+                 "%s: credit ledger output is not a registered data link",
+                 name());
+        entry.linkId = found->second;
+        entry.linkToken = nullptr;
+    }
+    return ledger;
+}
+
+GarnetInputVcHighWater
+GarnetNetwork::inputVcHighWater() const
+{
+    GarnetInputVcHighWater entries;
+    for (const auto *router : m_routers)
+        router->appendInputVcHighWater(entries);
+    return entries;
+}
+
+void
+GarnetNetwork::increment_injected_wire_bytes(unsigned vnet, uint64_t bytes)
+{
+    panic_if(vnet >= m_virtual_networks, "invalid injected-byte vnet");
+    m_wire_bytes_injected_raw[vnet] += bytes;
+    m_wire_bytes_injected[vnet] += bytes;
+}
+
+void
+GarnetNetwork::increment_received_wire_bytes(unsigned vnet, uint64_t bytes)
+{
+    panic_if(vnet >= m_virtual_networks, "invalid received-byte vnet");
+    m_wire_bytes_received_raw[vnet] += bytes;
+    m_wire_bytes_received[vnet] += bytes;
+}
+
+void
+GarnetNetwork::addInputVcIntegral(unsigned vnet,
+                                  uint64_t occupancy_flit_cycles,
+                                  uint64_t full_vc_cycles)
+{
+    panic_if(vnet >= m_virtual_networks, "invalid input-VC integral vnet");
+    m_input_vc_occupancy_flit_cycles_raw[vnet] += occupancy_flit_cycles;
+    m_input_vc_full_vc_cycles_raw[vnet] += full_vc_cycles;
+    m_input_vc_occupancy_flit_cycles[vnet] += occupancy_flit_cycles;
+    m_input_vc_full_vc_cycles[vnet] += full_vc_cycles;
+}
+
+void
+GarnetNetwork::addNiVcBusyCycles(unsigned vnet, uint64_t cycles)
+{
+    panic_if(vnet >= m_virtual_networks, "invalid NI-VC busy vnet");
+    m_ni_vc_busy_cycles_raw[vnet] += cycles;
+    m_ni_vc_busy_cycles[vnet] += cycles;
+}
+
+#define GARNET_RAW_VNET_GETTER(method, member, label)                       \
+uint64_t                                                                  \
+GarnetNetwork::method(unsigned vnet) const                                \
+{                                                                         \
+    panic_if(vnet >= m_virtual_networks, "invalid " label " vnet");      \
+    return member[vnet];                                                   \
+}
+
+GARNET_RAW_VNET_GETTER(packetsInjected, m_packets_injected_raw,
+                       "packets-injected")
+GARNET_RAW_VNET_GETTER(packetsReceived, m_packets_received_raw,
+                       "packets-received")
+GARNET_RAW_VNET_GETTER(flitsInjected, m_flits_injected_raw,
+                       "flits-injected")
+GARNET_RAW_VNET_GETTER(flitsReceived, m_flits_received_raw,
+                       "flits-received")
+GARNET_RAW_VNET_GETTER(wireBytesInjected, m_wire_bytes_injected_raw,
+                       "wire-bytes-injected")
+GARNET_RAW_VNET_GETTER(wireBytesReceived, m_wire_bytes_received_raw,
+                       "wire-bytes-received")
+GARNET_RAW_VNET_GETTER(inputVcOccupancyFlitCycles,
+                       m_input_vc_occupancy_flit_cycles_raw,
+                       "input-VC-occupancy")
+GARNET_RAW_VNET_GETTER(inputVcFullVcCycles,
+                       m_input_vc_full_vc_cycles_raw, "input-VC-full")
+GARNET_RAW_VNET_GETTER(inputVcFullEvents, m_input_vc_full_events_raw,
+                       "input-VC-full-events")
+GARNET_RAW_VNET_GETTER(niVcBusyCycles, m_ni_vc_busy_cycles_raw,
+                       "NI-VC-busy")
+
+#undef GARNET_RAW_VNET_GETTER
+
 void
 GarnetNetwork::observeInputVc(unsigned vnet, uint32_t occupancy,
                               uint32_t capacity)
@@ -481,6 +593,31 @@ GarnetNetwork::inputVcMaxOccupancy(unsigned vnet) const
 {
     panic_if(vnet >= m_virtual_networks, "invalid max-occupancy vnet");
     return m_input_vc_max_occupancy_raw[vnet];
+}
+
+void
+GarnetNetwork::flushEventIntegratedStats()
+{
+    for (auto *ni : m_nis)
+        ni->collateStats();
+    for (auto *router : m_routers)
+        router->flushEventIntegratedStats();
+}
+
+void
+GarnetNetwork::resetInputVcHighWater()
+{
+    for (auto *router : m_routers)
+        router->resetInputVcHighWater();
+    std::fill(m_input_vc_max_occupancy_raw.begin(),
+              m_input_vc_max_occupancy_raw.end(), 0);
+    for (const auto &entry : inputVcHighWater()) {
+        m_input_vc_max_occupancy_raw[entry.vnet] = std::max(
+            m_input_vc_max_occupancy_raw[entry.vnet], entry.highWater);
+    }
+    for (unsigned vnet = 0; vnet < m_virtual_networks; ++vnet)
+        m_input_vc_max_occupancy[vnet] =
+            m_input_vc_max_occupancy_raw[vnet];
 }
 
 uint64_t
@@ -558,6 +695,24 @@ GarnetNetwork::regStats()
     m_ni_credit_stall_vc_cycles
         .init(m_virtual_networks)
         .name(name() + ".ni_credit_stall_vc_cycles");
+    m_wire_bytes_injected
+        .init(m_virtual_networks)
+        .name(name() + ".wire_bytes_injected");
+    m_wire_bytes_received
+        .init(m_virtual_networks)
+        .name(name() + ".wire_bytes_received");
+    // Event-integrated over every router input VC.  Occupancy uses
+    // flit*router-cycle units; full time uses VC-cycle units and therefore
+    // may exceed elapsed simulation cycles.
+    m_input_vc_occupancy_flit_cycles
+        .init(m_virtual_networks)
+        .name(name() + ".input_vc_occupancy_flit_cycles");
+    m_input_vc_full_vc_cycles
+        .init(m_virtual_networks)
+        .name(name() + ".input_vc_full_vc_cycles");
+    m_ni_vc_busy_cycles
+        .init(m_virtual_networks)
+        .name(name() + ".ni_vc_busy_cycles");
     for (int i = 0; i < m_virtual_networks; ++i) {
         const std::string label = csprintf("vnet-%i", i);
         m_input_vc_full_events.subname(i, label);
@@ -565,6 +720,11 @@ GarnetNetwork::regStats()
         m_credit_stall_vc_cycles.subname(i, label);
         m_vc_alloc_stall_vc_cycles.subname(i, label);
         m_ni_credit_stall_vc_cycles.subname(i, label);
+        m_wire_bytes_injected.subname(i, label);
+        m_wire_bytes_received.subname(i, label);
+        m_input_vc_occupancy_flit_cycles.subname(i, label);
+        m_input_vc_full_vc_cycles.subname(i, label);
+        m_ni_vc_busy_cycles.subname(i, label);
     }
 
     m_avg_packet_vnet_latency
@@ -723,7 +883,12 @@ GarnetNetwork::collateStats()
         }
     }
 
-    // Ask the routers to collate their statistics
+    // Flush event-integrated NI and router VC state to the current cycle;
+    // neither integral relies on a component receiving a wakeup.
+    flushEventIntegratedStats();
+
+    // Router::collateStats flushes the same input integrals again at this
+    // cycle (an idempotent operation) and preserves legacy activity stats.
     for (int i = 0; i < m_routers.size(); i++) {
         m_routers[i]->collateStats();
     }
@@ -742,6 +907,22 @@ GarnetNetwork::resetStats()
               m_vc_alloc_stall_vc_cycles_raw.end(), 0);
     std::fill(m_ni_credit_stall_vc_cycles_raw.begin(),
               m_ni_credit_stall_vc_cycles_raw.end(), 0);
+    std::fill(m_packets_injected_raw.begin(), m_packets_injected_raw.end(), 0);
+    std::fill(m_packets_received_raw.begin(), m_packets_received_raw.end(), 0);
+    std::fill(m_flits_injected_raw.begin(), m_flits_injected_raw.end(), 0);
+    std::fill(m_flits_received_raw.begin(), m_flits_received_raw.end(), 0);
+    std::fill(m_wire_bytes_injected_raw.begin(),
+              m_wire_bytes_injected_raw.end(), 0);
+    std::fill(m_wire_bytes_received_raw.begin(),
+              m_wire_bytes_received_raw.end(), 0);
+    std::fill(m_input_vc_occupancy_flit_cycles_raw.begin(),
+              m_input_vc_occupancy_flit_cycles_raw.end(), 0);
+    std::fill(m_input_vc_full_vc_cycles_raw.begin(),
+              m_input_vc_full_vc_cycles_raw.end(), 0);
+    std::fill(m_ni_vc_busy_cycles_raw.begin(),
+              m_ni_vc_busy_cycles_raw.end(), 0);
+    for (auto *ni : m_nis)
+        ni->resetStats();
     for (int i = 0; i < m_routers.size(); i++) {
         m_routers[i]->resetStats();
     }

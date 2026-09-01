@@ -48,6 +48,10 @@ exit_event = m5.simulate(args.axi_max_sim_ticks)
 cause = exit_event.getCause()
 print("Exiting @ tick", m5.curTick(), "because", cause)
 
+if cause == "AXI_FINAL_CONSISTENCY: source W burst without AW":
+    print("AXI_FINAL_CONSISTENCY: source W burst without AW")
+    raise SystemExit(2)
+
 if args.axi_raw_shim_probe:
     expected = "AXI_MESH raw shim ownership probe passed"
     if cause != expected:
