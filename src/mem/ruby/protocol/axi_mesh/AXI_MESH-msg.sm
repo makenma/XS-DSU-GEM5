@@ -50,6 +50,7 @@ structure(AxiMeshMsg, desc="AXI beat transport envelope", interface="Message") {
   bool Last;
   AxiResp Resp;
   int Qos;
+  Tick AcceptedTick;
   int SemanticBytes;
   int WireSizeBytes, default="0";
   uint64_t PayloadDigest;

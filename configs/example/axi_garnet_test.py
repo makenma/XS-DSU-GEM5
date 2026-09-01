@@ -53,3 +53,8 @@ if args.axi_raw_shim_probe:
     if cause != expected:
         fatal("raw shim probe did not complete: %s", cause)
     print("AXI_MESH_RAW_SHIM_PROBE_PASS")
+else:
+    expected = "AXI_MESH functional scenario passed"
+    if cause != expected:
+        fatal("AXI functional scenario did not complete: %s", cause)
+    print("AXI_MESH_FUNCTIONAL_SCENARIO_PASS")

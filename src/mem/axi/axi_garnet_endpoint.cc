@@ -1,6 +1,10 @@
 #include "mem/axi/axi_garnet_endpoint.hh"
 
+#include <array>
+#include <limits>
 #include <memory>
+#include <tuple>
+#include <vector>
 
 #include "base/logging.hh"
 #include "base/trace.hh"
@@ -30,6 +34,367 @@ using ruby::AxiMeshMsg;
 
 constexpr uint64_t RawAwUid = 0xa001;
 constexpr uint64_t RawBUid = 0xb001;
+
+template <class T>
+void
+requireVectorSize(const std::vector<T> &values, size_t expected,
+                  const std::string &owner, const char *label)
+{
+    fatal_if(values.size() != expected,
+             "%s: %s length %llu must equal %llu", owner, label,
+             static_cast<unsigned long long>(values.size()),
+             static_cast<unsigned long long>(expected));
+}
+
+uint32_t
+checkedDepth(const std::vector<uint32_t> &values, size_t expected,
+             size_t index, const std::string &owner, const char *label)
+{
+    requireVectorSize(values, expected, owner, label);
+    fatal_if(values[index] == 0, "%s: %s[%llu] must be positive",
+             owner, label, static_cast<unsigned long long>(index));
+    return values[index];
+}
+
+AxiInitiatorConfig
+initiatorConfig(const AxiInitiatorAdapterParams &p)
+{
+    AxiInitiatorConfig config;
+    config.source = {p.src_node, p.src_port};
+    config.dataBusBytes = p.data_bus_bytes;
+    config.idWidth = p.id_width;
+    config.maxOutstandingReads = p.max_outstanding_reads;
+    config.maxOutstandingWrites = p.max_outstanding_writes;
+    requireVectorSize(p.source_fifo_depths, 5, p.name,
+                      "source_fifo_depths");
+    for (size_t i = 0; i < config.fifoDepths.size(); ++i) {
+        fatal_if(p.source_fifo_depths[i] == 0,
+                 "%s: source_fifo_depths[%llu] must be positive", p.name,
+                 static_cast<unsigned long long>(i));
+        config.fifoDepths[i] = p.source_fifo_depths[i];
+    }
+    config.preAwBursts = p.pre_aw_bursts;
+    config.preAwBeats = p.pre_aw_beats;
+    config.bRobTransactions = p.b_rob_transactions;
+    config.rRobBeats = p.r_rob_beats;
+    config.defaultErrorTarget = p.default_error_target;
+
+    requireVectorSize(p.range_ends, p.range_starts.size(), p.name,
+                      "range_ends");
+    requireVectorSize(p.range_targets, p.range_starts.size(), p.name,
+                      "range_targets");
+    for (size_t i = 0; i < p.range_starts.size(); ++i) {
+        config.ranges.push_back(
+            {p.range_starts[i], p.range_ends[i], p.range_targets[i]});
+    }
+
+    const size_t quota_count = p.quota_target_nodes.size();
+    requireVectorSize(p.quota_write_contexts, quota_count, p.name,
+                      "quota_write_contexts");
+    requireVectorSize(p.quota_write_beats, quota_count, p.name,
+                      "quota_write_beats");
+    requireVectorSize(p.quota_read_contexts, quota_count, p.name,
+                      "quota_read_contexts");
+    requireVectorSize(p.quota_read_beats, quota_count, p.name,
+                      "quota_read_beats");
+    for (size_t i = 0; i < quota_count; ++i) {
+        const bool inserted = config.targetQuotas.emplace(
+            p.quota_target_nodes[i],
+            AxiQuota{p.quota_write_contexts[i], p.quota_write_beats[i],
+                     p.quota_read_contexts[i], p.quota_read_beats[i]}).second;
+        fatal_if(!inserted, "%s: duplicate source quota target node %u",
+                 p.name, p.quota_target_nodes[i]);
+    }
+    return config;
+}
+
+AxiTargetConfig
+targetConfig(const AxiTargetAdapterParams &p)
+{
+    AxiTargetConfig config;
+    config.dstNode = p.dst_node;
+    config.dataBusBytes = p.data_bus_bytes;
+    config.capacity = {
+        p.target_write_contexts, p.target_write_assembly_beats,
+        p.target_read_contexts, p.target_read_response_beats};
+    config.orphanTransactions = p.orphan_w_transactions;
+    config.orphanBeats = p.orphan_w_beats;
+    requireVectorSize(p.response_ready_depths, 2, p.name,
+                      "response_ready_depths");
+    config.bReadyDepth = p.response_ready_depths[0];
+    config.rReadyDepth = p.response_ready_depths[1];
+
+    const size_t source_count = p.source_nodes.size();
+    requireVectorSize(p.source_ports, source_count, p.name, "source_ports");
+    requireVectorSize(p.quota_write_contexts, source_count, p.name,
+                      "quota_write_contexts");
+    requireVectorSize(p.quota_write_beats, source_count, p.name,
+                      "quota_write_beats");
+    requireVectorSize(p.quota_read_contexts, source_count, p.name,
+                      "quota_read_contexts");
+    requireVectorSize(p.quota_read_beats, source_count, p.name,
+                      "quota_read_beats");
+    for (size_t i = 0; i < source_count; ++i) {
+        const AxiEndpointKey source{p.source_nodes[i], p.source_ports[i]};
+        const bool inserted = config.sourceQuotas.emplace(
+            source,
+            AxiQuota{p.quota_write_contexts[i], p.quota_write_beats[i],
+                     p.quota_read_contexts[i], p.quota_read_beats[i]}).second;
+        fatal_if(!inserted, "%s: duplicate target quota source %u:%u",
+                 p.name, source.srcNode, source.srcPort);
+    }
+
+    requireVectorSize(p.memory_range_ends, p.memory_range_starts.size(),
+                      p.name, "memory_range_ends");
+    for (size_t i = 0; i < p.memory_range_starts.size(); ++i) {
+        config.memoryRanges.push_back(
+            {p.memory_range_starts[i], p.memory_range_ends[i], p.dst_node});
+    }
+    return config;
+}
+
+AxiBurst
+fromRubyBurst(ruby::AxiBurst burst)
+{
+    switch (burst) {
+      case ruby::AxiBurst_Fixed: return AxiBurst::Fixed;
+      case ruby::AxiBurst_Incr: return AxiBurst::Incr;
+      case ruby::AxiBurst_Wrap: return AxiBurst::Wrap;
+      default: panic("AXI_PROTOCOL: unknown Ruby AxiBurst");
+    }
+}
+
+ruby::AxiBurst
+toRubyBurst(AxiBurst burst)
+{
+    switch (burst) {
+      case AxiBurst::Fixed: return ruby::AxiBurst_Fixed;
+      case AxiBurst::Incr: return ruby::AxiBurst_Incr;
+      case AxiBurst::Wrap: return ruby::AxiBurst_Wrap;
+      default: panic("AXI_PROTOCOL: unknown AxiBurst");
+    }
+}
+
+AxiResp
+fromRubyResp(ruby::AxiResp resp)
+{
+    switch (resp) {
+      case ruby::AxiResp_Okay: return AxiResp::Okay;
+      case ruby::AxiResp_ExOkay: return AxiResp::ExOkay;
+      case ruby::AxiResp_SlvErr: return AxiResp::SlvErr;
+      case ruby::AxiResp_DecErr: return AxiResp::DecErr;
+      default: panic("AXI_PROTOCOL: unknown Ruby AxiResp");
+    }
+}
+
+ruby::AxiResp
+toRubyResp(AxiResp resp)
+{
+    switch (resp) {
+      case AxiResp::Okay: return ruby::AxiResp_Okay;
+      case AxiResp::ExOkay: return ruby::AxiResp_ExOkay;
+      case AxiResp::SlvErr: return ruby::AxiResp_SlvErr;
+      case AxiResp::DecErr: return ruby::AxiResp_DecErr;
+      default: panic("AXI_PROTOCOL: unknown AxiResp");
+    }
+}
+
+void
+setCommon(AxiMeshMsg &msg, const AxiCommonMeta &meta,
+          ruby::AxiChannel channel, const ruby::MachineID &source,
+          const ruby::MachineID &destination, int wire_bytes)
+{
+    ruby::NetDest destinations;
+    destinations.add(destination);
+    msg.setChannel(channel);
+    msg.setSource(source);
+    msg.setDestination(destinations);
+    msg.setSrcNode(meta.srcNode);
+    msg.setSrcPort(meta.srcPort);
+    msg.setDstNode(meta.dstNode);
+    msg.setTxnUid(meta.txnUid);
+    msg.setAxiId(meta.axiId);
+    msg.setTargetSeq(meta.targetSeq);
+    msg.setResponseSeq(meta.responseSeq);
+    msg.setQos(meta.qos);
+    msg.setAcceptedTick(meta.acceptedTick);
+    msg.setSemanticBytes(meta.semanticBytes);
+    msg.setWireSizeBytes(wire_bytes);
+}
+
+std::shared_ptr<AxiMeshMsg>
+addressMessage(Tick now, const AxiAddressPacket &packet,
+               ruby::AxiChannel channel, const ruby::MachineID &source,
+               const ruby::MachineID &destination, int wire_bytes)
+{
+    auto msg = std::make_shared<AxiMeshMsg>(now);
+    setCommon(*msg, packet.meta, channel, source, destination, wire_bytes);
+    msg->setWriteOrdinal(packet.writeOrdinal);
+    msg->setAddress(packet.request.address);
+    msg->setBeatIndex(0);
+    msg->setBeatCount(packet.request.beatCount);
+    msg->setSize(packet.request.size);
+    msg->setBurst(toRubyBurst(packet.request.burst));
+    msg->setLock(packet.request.lock);
+    msg->setCache(packet.request.cache);
+    msg->setProt(packet.request.prot);
+    msg->setRegion(packet.request.region);
+    msg->setByteStrobe(0);
+    msg->setLast(false);
+    msg->setResp(toRubyResp(packet.decodeResp));
+    msg->setPayloadDigest(0);
+    ruby::DataBlock data;
+    data.clear();
+    msg->setDataBlk(data);
+    msg->setMessageSize(ruby::MessageSizeType_Control);
+    return msg;
+}
+
+std::shared_ptr<AxiMeshMsg>
+dataMessage(Tick now, const AxiDataPacket &packet,
+            ruby::AxiChannel channel, const ruby::MachineID &source,
+            const ruby::MachineID &destination, int wire_bytes,
+            uint32_t data_bus_bytes)
+{
+    auto msg = std::make_shared<AxiMeshMsg>(now);
+    setCommon(*msg, packet.meta, channel, source, destination, wire_bytes);
+    msg->setWriteOrdinal(packet.writeOrdinal);
+    msg->setAddress(packet.address);
+    msg->setBeatIndex(packet.beatIndex);
+    msg->setBeatCount(packet.beatCount);
+    msg->setSize(0);
+    msg->setBurst(ruby::AxiBurst_Incr);
+    msg->setLock(0);
+    msg->setCache(0);
+    msg->setProt(0);
+    msg->setRegion(0);
+    msg->setByteStrobe(packet.byteStrobe);
+    msg->setLast(packet.last);
+    msg->setResp(toRubyResp(packet.resp));
+    msg->setPayloadDigest(packet.payloadDigest);
+    fatal_if(packet.functionalData.size() != data_bus_bytes,
+             "AXI data packet must carry one full bus word");
+    ruby::DataBlock data;
+    data.clear();
+    for (uint32_t i = 0; i < data_bus_bytes; ++i)
+        data.setByte(i, packet.functionalData[i]);
+    msg->setDataBlk(data);
+    msg->setMessageSize(ruby::MessageSizeType_Data);
+    return msg;
+}
+
+std::shared_ptr<AxiMeshMsg>
+bMessage(Tick now, const AxiBPacket &packet,
+         const ruby::MachineID &source,
+         const ruby::MachineID &destination, int wire_bytes)
+{
+    auto msg = std::make_shared<AxiMeshMsg>(now);
+    setCommon(*msg, packet.meta, ruby::AxiChannel_B,
+              source, destination, wire_bytes);
+    msg->setWriteOrdinal(0);
+    msg->setAddress(0);
+    msg->setBeatIndex(0);
+    msg->setBeatCount(1);
+    msg->setSize(0);
+    msg->setBurst(ruby::AxiBurst_Incr);
+    msg->setLock(0);
+    msg->setCache(0);
+    msg->setProt(0);
+    msg->setRegion(0);
+    msg->setByteStrobe(0);
+    msg->setLast(false);
+    msg->setResp(toRubyResp(packet.resp));
+    msg->setPayloadDigest(0);
+    ruby::DataBlock data;
+    data.clear();
+    msg->setDataBlk(data);
+    msg->setMessageSize(ruby::MessageSizeType_Control);
+    return msg;
+}
+
+AxiCommonMeta
+messageMeta(const AxiMeshMsg &msg)
+{
+    AxiCommonMeta meta;
+    meta.txnUid = msg.getTxnUid();
+    meta.targetSeq = msg.getTargetSeq();
+    meta.responseSeq = msg.getResponseSeq();
+    meta.srcNode = msg.getSrcNode();
+    fatal_if(msg.getSrcPort() < 0 || msg.getSrcPort() > 255,
+             "AXI_PROTOCOL: message SrcPort is out of range");
+    meta.srcPort = msg.getSrcPort();
+    meta.dstNode = msg.getDstNode();
+    meta.axiId = msg.getAxiId();
+    fatal_if(msg.getSemanticBytes() < 0 || msg.getWireSizeBytes() <= 0 ||
+             msg.getQos() < 0 || msg.getQos() > 255,
+             "AXI_PROTOCOL: message common integer field is invalid");
+    meta.semanticBytes = msg.getSemanticBytes();
+    meta.wireBytes = msg.getWireSizeBytes();
+    meta.qos = msg.getQos();
+    meta.acceptedTick = msg.getAcceptedTick();
+    return meta;
+}
+
+AxiAddressPacket
+messageAddressPacket(const AxiMeshMsg &msg)
+{
+    fatal_if(msg.getBeatCount() < 0 || msg.getBeatCount() > 65535 ||
+             msg.getSize() < 0 || msg.getSize() > 255 ||
+             msg.getLock() < 0 || msg.getLock() > 255 ||
+             msg.getCache() < 0 || msg.getCache() > 255 ||
+             msg.getProt() < 0 || msg.getProt() > 255 ||
+             msg.getRegion() < 0 || msg.getRegion() > 255,
+             "AXI_PROTOCOL: address message field is out of range");
+    AxiAddressPacket packet;
+    packet.meta = messageMeta(msg);
+    packet.request.axiId = msg.getAxiId();
+    packet.request.address = msg.getAddress();
+    packet.request.beatCount = msg.getBeatCount();
+    packet.request.size = msg.getSize();
+    packet.request.burst = fromRubyBurst(msg.getBurst());
+    packet.request.lock = msg.getLock();
+    packet.request.cache = msg.getCache();
+    packet.request.prot = msg.getProt();
+    packet.request.region = msg.getRegion();
+    packet.request.qos = packet.meta.qos;
+    packet.writeOrdinal = msg.getWriteOrdinal();
+    packet.decodeResp = fromRubyResp(msg.getResp());
+    return packet;
+}
+
+AxiDataPacket
+messageDataPacket(const AxiMeshMsg &msg, uint32_t data_bus_bytes)
+{
+    fatal_if(msg.getBeatIndex() < 0 || msg.getBeatIndex() > 65535 ||
+             msg.getBeatCount() < 0 || msg.getBeatCount() > 65535,
+             "AXI_PROTOCOL: data message beat field is out of range");
+    AxiDataPacket packet;
+    packet.meta = messageMeta(msg);
+    packet.writeOrdinal = msg.getWriteOrdinal();
+    packet.beatIndex = msg.getBeatIndex();
+    packet.beatCount = msg.getBeatCount();
+    packet.last = msg.getLast();
+    packet.byteStrobe = msg.getByteStrobe();
+    packet.resp = fromRubyResp(msg.getResp());
+    packet.payloadDigest = msg.getPayloadDigest();
+    packet.address = msg.getAddress();
+    packet.functionalData.resize(data_bus_bytes);
+    const ruby::DataBlock &data = msg.getDataBlk();
+    for (uint32_t i = 0; i < data_bus_bytes; ++i)
+        packet.functionalData[i] = data.getByte(i);
+    fatal_if(payloadDigest(packet.functionalData) != packet.payloadDigest,
+             "AXI_PROTOCOL: data message payload digest mismatch");
+    return packet;
+}
+
+AxiBPacket
+messageBPacket(const AxiMeshMsg &msg)
+{
+    AxiBPacket packet;
+    packet.meta = messageMeta(msg);
+    packet.resp = fromRubyResp(msg.getResp());
+    return packet;
+}
 
 AxiWireBytes
 checkedWireBytes(const std::string &owner,
@@ -77,6 +442,7 @@ rawMessage(Tick now, ruby::AxiChannel channel,
     msg->setLast(false);
     msg->setResp(ruby::AxiResp_Okay);
     msg->setQos(0);
+    msg->setAcceptedTick(now);
     msg->setSemanticBytes(24);
     msg->setWireSizeBytes(wire_size_bytes);
     msg->setPayloadDigest(0);
@@ -104,10 +470,41 @@ AxiInitiatorAdapter::AxiInitiatorAdapter(const Params &p)
       srcNode(p.src_node), srcPort(p.src_port), dstNode(p.dst_node),
       channelWireBytes(checkedWireBytes(
           p.name, p.wire_header_bytes, p.data_bus_bytes)),
-      rawProbe(p.raw_probe), rawProbeHoldCycles(p.raw_probe_hold_cycles)
+      dataBusBytes(p.data_bus_bytes), rawProbe(p.raw_probe),
+      rawProbeHoldCycles(p.raw_probe_hold_cycles),
+      functionalState(p.raw_probe ? nullptr :
+          std::make_unique<AxiInitiatorState>(initiatorConfig(p))),
+      bIngress(checkedDepth(p.source_fifo_depths, 5, 2, p.name,
+                            "source_fifo_depths")),
+      rIngress(checkedDepth(p.source_fifo_depths, 5, 4, p.name,
+                            "source_fifo_depths")),
+      awInjectionDelay((requireVectorSize(
+          p.injection_delays, 3, p.name, "injection_delays"),
+          p.injection_delays[0])),
+      wInjectionDelay(p.injection_delays[1]),
+      arInjectionDelay(p.injection_delays[2])
 {
     fatal_if(rawProbe && rawProbeHoldCycles < Cycles(2),
              "%s: raw probe hold must be at least two cycles", name());
+    if (!rawProbe) {
+        requireVectorSize(p.targets, p.target_nodes.size(), p.name,
+                          "targets");
+        for (size_t i = 0; i < p.targets.size(); ++i) {
+            fatal_if(!p.targets[i], "%s: null functional target shim", name());
+            fatal_if(!targetsByNode.emplace(
+                p.target_nodes[i], p.targets[i]).second,
+                "%s: duplicate functional target node %u", name(),
+                p.target_nodes[i]);
+        }
+        fatal_if(targetsByNode.count(p.default_error_target) == 0,
+                 "%s: default error target %u has no Ruby shim", name(),
+                 p.default_error_target);
+        for (const uint32_t target : p.range_targets) {
+            fatal_if(targetsByNode.count(target) == 0,
+                     "%s: normal range target %u has no Ruby shim", name(),
+                     target);
+        }
+    }
 }
 
 AxiInitiatorAdapter::~AxiInitiatorAdapter()
@@ -198,8 +595,10 @@ AxiInitiatorAdapter::consumeRawB()
 void
 AxiInitiatorAdapter::wakeup()
 {
-    if (!rawProbe)
+    if (!rawProbe) {
+        functionalWakeup();
         return;
+    }
 
     consumeRawB();
     injectRawAw();
@@ -214,6 +613,209 @@ AxiInitiatorAdapter::wakeup()
                "single-consumer local delivery preserved");
         exitSimLoop("AXI_MESH raw shim ownership probe passed");
     }
+}
+
+bool
+AxiInitiatorAdapter::tryAcceptAw(const AxiAddressRequest &aw)
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: functional AW used during raw probe", name());
+    const bool accepted = functionalState->tryAcceptAw(aw, curTick());
+    if (accepted)
+        scheduleEvent(Cycles(1));
+    return accepted;
+}
+
+bool
+AxiInitiatorAdapter::tryAcceptW(const AxiWBeat &w)
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: functional W used during raw probe", name());
+    const bool accepted = functionalState->tryAcceptW(w, curTick());
+    if (accepted)
+        scheduleEvent(Cycles(1));
+    return accepted;
+}
+
+bool
+AxiInitiatorAdapter::tryAcceptAr(const AxiAddressRequest &ar)
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: functional AR used during raw probe", name());
+    const bool accepted = functionalState->tryAcceptAr(ar, curTick());
+    if (accepted)
+        scheduleEvent(Cycles(1));
+    return accepted;
+}
+
+bool
+AxiInitiatorAdapter::tryConsumeB(AxiBBeat &b)
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: functional B used during raw probe", name());
+    const bool consumed = functionalState->tryConsumeB(b);
+    if (consumed)
+        scheduleEvent(Cycles(1));
+    return consumed;
+}
+
+bool
+AxiInitiatorAdapter::tryConsumeR(AxiRBeat &r)
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: functional R used during raw probe", name());
+    const bool consumed = functionalState->tryConsumeR(r);
+    if (consumed)
+        scheduleEvent(Cycles(1));
+    return consumed;
+}
+
+void
+AxiInitiatorAdapter::processFunctionalIngress()
+{
+    if (!bIngress.empty() && functionalState->canAcceptBPacket()) {
+        functionalState->acceptBPacket(bIngress.front());
+        bIngress.pop();
+    }
+    if (!rIngress.empty() && functionalState->canAcceptRPacket()) {
+        functionalState->acceptRPacket(rIngress.front());
+        rIngress.pop();
+    }
+}
+
+void
+AxiInitiatorAdapter::ingestFunctionalResponses()
+{
+    if (!bIngress.full() && bLocal->isReady(curTick())) {
+        auto msg = peekAxi(bLocal, "B local delivery");
+        fatal_if(msg->getChannel() != ruby::AxiChannel_B,
+                 "%s: non-B message in B local delivery", name());
+        const AxiBPacket packet = messageBPacket(*msg);
+        const auto target = targetsByNode.find(packet.meta.dstNode);
+        fatal_if(target == targetsByNode.end() ||
+                 msg->getSource() != target->second->getMachineID(),
+                 "%s: B response has an invalid Ruby source", name());
+        fatal_if(msg->getDestination().count() != 1 ||
+                 !msg->getDestination().isElement(shim->getMachineID()),
+                 "%s: B response has an invalid Ruby destination", name());
+        panic_if(!bIngress.push(packet), "AXI B ingress FIFO overflow");
+        bLocal->dequeue(curTick());
+    }
+
+    if (!rIngress.full() && rLocal->isReady(curTick())) {
+        auto msg = peekAxi(rLocal, "R local delivery");
+        fatal_if(msg->getChannel() != ruby::AxiChannel_R,
+                 "%s: non-R message in R local delivery", name());
+        const AxiDataPacket packet = messageDataPacket(*msg, dataBusBytes);
+        const auto target = targetsByNode.find(packet.meta.dstNode);
+        fatal_if(target == targetsByNode.end() ||
+                 msg->getSource() != target->second->getMachineID(),
+                 "%s: R response has an invalid Ruby source", name());
+        fatal_if(msg->getDestination().count() != 1 ||
+                 !msg->getDestination().isElement(shim->getMachineID()),
+                 "%s: R response has an invalid Ruby destination", name());
+        panic_if(!rIngress.push(packet), "AXI R ingress FIFO overflow");
+        rLocal->dequeue(curTick());
+    }
+}
+
+void
+AxiInitiatorAdapter::injectFunctionalRequests()
+{
+    functionalState->advance();
+
+    if (functionalState->hasAwPacket()) {
+        const auto &packet = functionalState->frontAwPacket();
+        const Tick eligible = packet.meta.acceptedTick +
+            awInjectionDelay * clockPeriod();
+        if (curTick() >= eligible &&
+            awOut->areNSlotsAvailable(1, curTick())) {
+            auto target = targetsByNode.at(packet.meta.dstNode);
+            auto msg = addressMessage(
+                curTick(), packet, ruby::AxiChannel_AW,
+                shim->getMachineID(), target->getMachineID(),
+                wireBytesFor(channelWireBytes, AxiWireSlot::Aw));
+            awOut->enqueue(msg, curTick(), clockPeriod());
+            functionalState->popAwPacket();
+        }
+    }
+
+    if (functionalState->hasWPacket()) {
+        const auto &packet = functionalState->frontWPacket();
+        const Tick eligible = packet.meta.acceptedTick +
+            wInjectionDelay * clockPeriod();
+        if (curTick() >= eligible &&
+            wOut->areNSlotsAvailable(1, curTick())) {
+            auto target = targetsByNode.at(packet.meta.dstNode);
+            auto msg = dataMessage(
+                curTick(), packet, ruby::AxiChannel_W,
+                shim->getMachineID(), target->getMachineID(),
+                wireBytesFor(channelWireBytes, AxiWireSlot::W),
+                dataBusBytes);
+            wOut->enqueue(msg, curTick(), clockPeriod());
+            functionalState->popWPacket();
+        }
+    }
+
+    if (functionalState->hasArPacket()) {
+        const auto &packet = functionalState->frontArPacket();
+        const Tick eligible = packet.meta.acceptedTick +
+            arInjectionDelay * clockPeriod();
+        if (curTick() >= eligible &&
+            arOut->areNSlotsAvailable(1, curTick())) {
+            auto target = targetsByNode.at(packet.meta.dstNode);
+            auto msg = addressMessage(
+                curTick(), packet, ruby::AxiChannel_AR,
+                shim->getMachineID(), target->getMachineID(),
+                wireBytesFor(channelWireBytes, AxiWireSlot::Ar));
+            arOut->enqueue(msg, curTick(), clockPeriod());
+            functionalState->popArPacket();
+        }
+    }
+}
+
+bool
+AxiInitiatorAdapter::hasFunctionalWork() const
+{
+    const auto occupancy = functionalState->occupancy();
+    return occupancy.aw != 0 || occupancy.w != 0 || occupancy.ar != 0 ||
+           !bIngress.empty() || !rIngress.empty() ||
+           bLocal->isReady(curTick()) || rLocal->isReady(curTick());
+}
+
+void
+AxiInitiatorAdapter::functionalWakeup()
+{
+    processFunctionalIngress();
+    injectFunctionalRequests();
+    ingestFunctionalResponses();
+    if (hasFunctionalWork())
+        scheduleEvent(Cycles(1));
+}
+
+AxiInitiatorOccupancy
+AxiInitiatorAdapter::functionalOccupancy() const
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: functional occupancy used during raw probe", name());
+    auto occupancy = functionalState->occupancy();
+    occupancy.b += bIngress.size();
+    occupancy.r += rIngress.size();
+    return occupancy;
+}
+
+bool
+AxiInitiatorAdapter::functionalIdle() const
+{
+    if (rawProbe || !functionalState)
+        return false;
+    const auto occupancy = functionalOccupancy();
+    return occupancy.aw == 0 && occupancy.w == 0 && occupancy.b == 0 &&
+           occupancy.ar == 0 && occupancy.r == 0 &&
+           occupancy.unboundBursts == 0 && occupancy.unboundBeats == 0 &&
+           occupancy.outstandingWrites == 0 &&
+           occupancy.outstandingReads == 0 &&
+           !bLocal->isReady(curTick()) && !rLocal->isReady(curTick());
 }
 
 void
@@ -239,8 +841,16 @@ AxiTargetAdapter::AxiTargetAdapter(const Params &p)
       srcNode(p.src_node), srcPort(p.src_port), dstNode(p.dst_node),
       channelWireBytes(checkedWireBytes(
           p.name, p.wire_header_bytes, p.data_bus_bytes)),
-      rawProbe(p.raw_probe),
-      rawProbeHoldCycles(p.raw_probe_hold_cycles)
+      dataBusBytes(p.data_bus_bytes), rawProbe(p.raw_probe),
+      rawProbeHoldCycles(p.raw_probe_hold_cycles),
+      functionalState(p.raw_probe ? nullptr :
+          std::make_unique<AxiTargetState>(targetConfig(p))),
+      awIngress(checkedDepth(p.ingress_depths, 3, 0, p.name,
+                             "ingress_depths")),
+      wIngress(checkedDepth(p.ingress_depths, 3, 1, p.name,
+                            "ingress_depths")),
+      arIngress(checkedDepth(p.ingress_depths, 3, 2, p.name,
+                             "ingress_depths"))
 {
     fatal_if(rawProbe && (!peer || !probeObserver),
              "%s: raw probe requires an initiator shim and observer", name());
@@ -338,8 +948,10 @@ AxiTargetAdapter::consumeRawAw()
 void
 AxiTargetAdapter::wakeup()
 {
-    if (!rawProbe)
+    if (!rawProbe) {
+        functionalWakeup();
         return;
+    }
 
     fatal_if(wLocal->isReady(curTick()) || arLocal->isReady(curTick()),
              "%s: unexpected W/AR message in Commit 1 raw probe", name());
@@ -348,6 +960,191 @@ AxiTargetAdapter::wakeup()
 
     if (!rawBSent)
         scheduleEvent(Cycles(1));
+}
+
+void
+AxiTargetAdapter::processFunctionalIngress()
+{
+    // W is considered first so an intentionally earlier W can create W_ONLY;
+    // the channels remain independent and a blocked W never blocks AW/AR.
+    if (!wIngress.empty() &&
+        functionalState->canAcceptW(wIngress.front())) {
+        functionalState->acceptW(wIngress.front());
+        wIngress.pop();
+    }
+    if (!awIngress.empty() &&
+        functionalState->canAcceptAw(awIngress.front())) {
+        functionalState->acceptAw(awIngress.front());
+        awIngress.pop();
+    }
+    if (!arIngress.empty() &&
+        functionalState->canAcceptAr(arIngress.front())) {
+        functionalState->acceptAr(arIngress.front());
+        arIngress.pop();
+    }
+}
+
+void
+AxiTargetAdapter::ingestFunctionalRequests()
+{
+    auto remember_route = [this](const AxiMeshMsg &msg) {
+        const uint64_t uid = msg.getTxnUid();
+        const auto [it, inserted] = responseDestinations.emplace(
+            uid, msg.getSource());
+        fatal_if(!inserted && it->second != msg.getSource(),
+                 "%s: txnUid arrived from conflicting Ruby sources", name());
+    };
+
+    if (!wIngress.full() && wLocal->isReady(curTick())) {
+        auto msg = peekAxi(wLocal, "W local delivery");
+        fatal_if(msg->getChannel() != ruby::AxiChannel_W,
+                 "%s: non-W message in W local delivery", name());
+        fatal_if(msg->getDestination().count() != 1 ||
+                 !msg->getDestination().isElement(shim->getMachineID()),
+                 "%s: W request has an invalid Ruby destination", name());
+        AxiDataPacket packet = messageDataPacket(*msg, dataBusBytes);
+        fatal_if(packet.meta.dstNode != dstNode,
+                 "%s: W logical destination mismatch", name());
+        remember_route(*msg);
+        panic_if(!wIngress.push(std::move(packet)),
+                 "AXI W ingress FIFO overflow");
+        wLocal->dequeue(curTick());
+    }
+
+    if (!awIngress.full() && awLocal->isReady(curTick())) {
+        auto msg = peekAxi(awLocal, "AW local delivery");
+        fatal_if(msg->getChannel() != ruby::AxiChannel_AW,
+                 "%s: non-AW message in AW local delivery", name());
+        fatal_if(msg->getDestination().count() != 1 ||
+                 !msg->getDestination().isElement(shim->getMachineID()),
+                 "%s: AW request has an invalid Ruby destination", name());
+        AxiAddressPacket packet = messageAddressPacket(*msg);
+        fatal_if(packet.meta.dstNode != dstNode,
+                 "%s: AW logical destination mismatch", name());
+        remember_route(*msg);
+        panic_if(!awIngress.push(std::move(packet)),
+                 "AXI AW ingress FIFO overflow");
+        awLocal->dequeue(curTick());
+    }
+
+    if (!arIngress.full() && arLocal->isReady(curTick())) {
+        auto msg = peekAxi(arLocal, "AR local delivery");
+        fatal_if(msg->getChannel() != ruby::AxiChannel_AR,
+                 "%s: non-AR message in AR local delivery", name());
+        fatal_if(msg->getDestination().count() != 1 ||
+                 !msg->getDestination().isElement(shim->getMachineID()),
+                 "%s: AR request has an invalid Ruby destination", name());
+        AxiAddressPacket packet = messageAddressPacket(*msg);
+        fatal_if(packet.meta.dstNode != dstNode,
+                 "%s: AR logical destination mismatch", name());
+        remember_route(*msg);
+        panic_if(!arIngress.push(std::move(packet)),
+                 "AXI AR ingress FIFO overflow");
+        arLocal->dequeue(curTick());
+    }
+}
+
+void
+AxiTargetAdapter::injectFunctionalResponses()
+{
+    functionalState->advance();
+    if (functionalState->hasBPacket() &&
+        bOut->areNSlotsAvailable(1, curTick())) {
+        const AxiBPacket &packet = functionalState->frontBPacket();
+        const auto destination = responseDestinations.find(
+            packet.meta.txnUid);
+        fatal_if(destination == responseDestinations.end(),
+                 "%s: B has no saved request Ruby source", name());
+        auto msg = bMessage(
+            curTick(), packet, shim->getMachineID(), destination->second,
+            wireBytesFor(channelWireBytes, AxiWireSlot::B));
+        bOut->enqueue(msg, curTick(), clockPeriod());
+        functionalState->popBPacket();
+        responseDestinations.erase(destination);
+    }
+
+    if (functionalState->hasRPacket() &&
+        rOut->areNSlotsAvailable(1, curTick())) {
+        const AxiDataPacket &packet = functionalState->frontRPacket();
+        const auto destination = responseDestinations.find(
+            packet.meta.txnUid);
+        fatal_if(destination == responseDestinations.end(),
+                 "%s: R has no saved request Ruby source", name());
+        const bool last = packet.last;
+        auto msg = dataMessage(
+            curTick(), packet, ruby::AxiChannel_R,
+            shim->getMachineID(), destination->second,
+            wireBytesFor(channelWireBytes, AxiWireSlot::R), dataBusBytes);
+        rOut->enqueue(msg, curTick(), clockPeriod());
+        functionalState->popRPacket();
+        if (last)
+            responseDestinations.erase(destination);
+    }
+}
+
+bool
+AxiTargetAdapter::hasFunctionalWork() const
+{
+    const auto occupancy = functionalState->occupancy();
+    return !awIngress.empty() || !wIngress.empty() || !arIngress.empty() ||
+           occupancy.bReady != 0 || occupancy.rReady != 0 ||
+           awLocal->isReady(curTick()) || wLocal->isReady(curTick()) ||
+           arLocal->isReady(curTick());
+}
+
+void
+AxiTargetAdapter::functionalWakeup()
+{
+    processFunctionalIngress();
+    injectFunctionalResponses();
+    ingestFunctionalRequests();
+    if (hasFunctionalWork())
+        scheduleEvent(Cycles(1));
+}
+
+AxiTargetOccupancy
+AxiTargetAdapter::functionalOccupancy() const
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: functional occupancy used during raw probe", name());
+    auto occupancy = functionalState->occupancy();
+    occupancy.writeContexts += awIngress.size() + wIngress.size();
+    occupancy.readContexts += arIngress.size();
+    return occupancy;
+}
+
+uint8_t
+AxiTargetAdapter::readMemoryByte(uint64_t address) const
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: functional memory used during raw probe", name());
+    return functionalState->memory().readByte(address);
+}
+
+void
+AxiTargetAdapter::writeMemoryByte(uint64_t address, uint8_t value)
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: functional memory used during raw probe", name());
+    functionalState->memory().writeByte(address, value);
+}
+
+bool
+AxiTargetAdapter::functionalIdle() const
+{
+    if (rawProbe || !functionalState)
+        return false;
+    const auto occupancy = functionalOccupancy();
+    return occupancy.writeContexts == 0 &&
+           occupancy.writeReservedBeats == 0 &&
+           occupancy.orphanTransactions == 0 &&
+           occupancy.orphanReservedBeats == 0 &&
+           occupancy.readContexts == 0 &&
+           occupancy.readReservedBeats == 0 &&
+           occupancy.bReady == 0 && occupancy.rReady == 0 &&
+           responseDestinations.empty() &&
+           !awLocal->isReady(curTick()) && !wLocal->isReady(curTick()) &&
+           !arLocal->isReady(curTick());
 }
 
 void

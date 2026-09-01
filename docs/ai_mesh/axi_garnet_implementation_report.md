@@ -352,3 +352,94 @@ distributions also matched.
 | U8/test-helper absence from both non-AXI builds | PASS |
 | specification section 15.5 Garnet AXI-leak scan | PASS; only the protocol-neutral hook is present |
 | `git diff --check` | PASS, no output |
+
+## Commit 4 gate: AXI beat messages and endpoint adapters
+
+### CPU-less endpoint and transaction boundary
+
+The AXI_MESH target remains a null-ISA, CPU-less system.  A dedicated
+`AxiTraceTester` drives architected AW/W/AR handshakes directly into source
+adapters and consumes B/R handshakes; no CPU, cache, sequencer, directory, or
+DRAM controller is introduced.  The initiator adapter allocates the specified
+UID, target sequence, and response sequence only when AW/AR admission succeeds.
+It implements independent bounded AW/W/B/AR/R queues, ordinal-based streaming
+AW/W pairing, bounded pre-AW storage, per-target injection quotas, and indexed
+R reassembly.
+
+The target adapter uses one shared bounded write-context pool for AW_ONLY,
+W_ONLY, and BOUND states.  W_ONLY entries additionally consume the configured
+orphan transaction/beat subquota and convert in place when AW arrives.  Static
+per-source quotas are checked against each target pool before instantiate.
+Address packets are revalidated at the target, and every non-DECERR request
+must fit completely in one of that target's configured memory ranges.
+
+The internal byte-addressable simple memory applies only selected WSTRB lanes
+after a complete successful burst.  Reads return a full data-bus word with
+zeroes outside legal narrow-transfer lanes.  Decode errors use the configured
+default error target, drain a complete write or produce a complete read, do
+not modify memory, and never generate EXOKAY.  Commit 5 will add the full
+same-ID architectural-commit/response-retire machinery and response
+obligations; this gate does not claim U5 or later behavior.
+
+### Exact U1-U4 unit suites
+
+Both explicitly registered binaries were rebuilt after the final target-range
+defense and completed without disabled or skipped tests:
+
+| Binary | Result |
+|---|---|
+| `build/AXI_MESH/mem/axi/axi_validation.test.opt` | PASS, 8/8 U1 tests |
+| `build/AXI_MESH/mem/axi/axi_write_pairing.test.opt` | PASS, 19/19 U2-U4 tests |
+
+The validation vectors cover 1/2/256-beat INCR traffic, all four supported bus
+widths, narrow lane mapping, unsupported-feature DECERR routing, strict 4 KiB
+and arithmetic checks, and illegal WSTRB rejection.  The pairing/context tests
+cover AW-first, W-first, two pre-AW bursts, Nth-to-Nth binding, partial
+streaming release, independent AW admission under W pressure, orphan merge and
+subquota backpressure, shared-slot conversion, duplicate rejection, LAST/beat
+validation, and indexed R reassembly.  Expected panic-path diagnostics printed
+by gem5's GTest handler are assertions exercised by those passing tests.
+
+### I0-I4 functional Garnet runs
+
+All five runs used `build/AXI_MESH/gem5.debug`, a 200,000-tick ceiling, and the
+real five-vnet Ruby/Garnet path.  The tester independently maintained a byte
+shadow and checked B/R results and target memory before declaring success.
+
+| Case | Result | Evidence |
+|---|---|---|
+| `endpoint_probe` | PASS, tick 27639 | write + read covered all five channels |
+| `single_write` | PASS, tick 17649 | 1 AW, 1 W, 1 B; memory matched shadow |
+| `burst_read` | PASS, tick 43290 | 1 AR, 16 R, one final RLAST |
+| `partial_wstrb` | PASS, tick 38295 | two writes + read; 512-bit narrow/WSTRB bytes matched |
+| `w_before_aw_at_target` | PASS, tick 22311 | orphan occupancy rose to 1 and drained to 0 |
+
+The I0 trace reports message sizes 24/80/8/24/80 bytes on vnets 0/1/2/3/4.
+With 16-byte flits, `stats.txt` records packet counts `[1,1,1,1,1]` and flit
+counts `[2,5,1,2,5]` for both injection and reception.  Every result summary
+reported `outstanding_at_exit=0`.  The current `axi_result.json` is a scoped
+Commit 4 summary; the complete section 12.2 schema, trace verifier, and suite
+manifest are Commit 6 deliverables.
+
+The protocol-neutral raw ownership/depth regression was also repeated with
+depth-one AW/B local delivery and passed at tick 7326.  It remains the explicit
+proof that a full local-delivery queue is not dequeued by its SLICC owner;
+functional I0 supplies the legal five-channel transaction proof.
+
+### Build and legacy regression
+
+The section 15.4 commands were rerun character-for-character.  All three
+exited 0 at tick 5000328 and retained the golden totals and latencies: vnet 0
+and vnet 1 each transported 100 one-flit packets at latency 2997; vnet 2
+transported 100 five-flit packets at packet latency 6040.62 and flit latency
+4681.314; average hops remained 2.
+
+| Command | Result |
+|---|---|
+| `scons build/AXI_MESH/gem5.debug -j4` | PASS, exit 0 |
+| `scons build/AXI_MESH/gem5.opt -j4` | PASS, exit 0 |
+| `scons build/Garnet_standalone/gem5.opt -j4` | PASS, exit 0 |
+| `scons build/RISCV_CHI/gem5.opt -j4` | PASS, exit 0 |
+| Commit 1 raw ownership regression | PASS, exit 0, tick 7326 |
+| specification section 15.5 Garnet AXI-leak scan | PASS, no output |
+| `git diff --check` | PASS, no output |

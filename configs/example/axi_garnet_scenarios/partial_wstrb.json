@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "name": "partial_wstrb",
+  "endpoint_to_router": {
+    "initiators": [
+      {"src_node": 0, "src_port": 0, "router_id": 0, "default_target": 1}
+    ],
+    "targets": [
+      {"dst_node": 1, "router_id": 3}
+    ]
+  },
+  "default_error_target": 1,
+  "target_ranges": [
+    {"dst_node": 1, "start": "0x0", "end": "0x10000"}
+  ],
+  "quotas": [
+    {"src_node": 0, "src_port": 0, "dst_node": 1,
+     "write_contexts": 8, "write_beats": 64,
+     "read_contexts": 8, "read_beats": 64}
+  ],
+  "transactions": [
+    {"kind": "write", "source_index": 0, "dst_node": 1,
+     "axi_id": 7, "address": "0x24", "beat_count": 1,
+     "size": 2, "data_seed": 80, "strobe": "full"},
+    {"kind": "write", "source_index": 0, "dst_node": 1,
+     "axi_id": 8, "address": "0x24", "beat_count": 1,
+     "size": 2, "data_seed": 160, "strobe": "alternating"},
+    {"kind": "read", "source_index": 0, "dst_node": 1,
+     "axi_id": 9, "address": "0x24", "beat_count": 1,
+     "size": 2, "data_seed": 0, "strobe": "full"}
+  ]
+}

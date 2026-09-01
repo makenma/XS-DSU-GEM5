@@ -2,9 +2,14 @@
 #define __MEM_AXI_AXI_GARNET_ENDPOINT_HH__
 
 #include <cstdint>
+#include <map>
+#include <memory>
 
+#include "mem/axi/axi_initiator_adapter.hh"
 #include "mem/axi/axi_packetization.hh"
+#include "mem/axi/axi_target_adapter.hh"
 #include "mem/ruby/common/Consumer.hh"
+#include "mem/ruby/common/MachineID.hh"
 #include "sim/clocked_object.hh"
 
 namespace gem5
@@ -25,13 +30,6 @@ class MessageBuffer;
 namespace axi
 {
 
-/**
- * Commit 1 endpoint shells.
- *
- * They deliberately implement only the raw queue-ownership probe.  The AXI
- * channel API, validation, pairing, ordering, and memory service are added by
- * the later behavior commits.
- */
 class AxiInitiatorAdapter : public ClockedObject, public ruby::Consumer
 {
   public:
@@ -45,12 +43,25 @@ class AxiInitiatorAdapter : public ClockedObject, public ruby::Consumer
     void wakeup() override;
     void print(std::ostream &out) const override;
 
+    bool tryAcceptAw(const AxiAddressRequest &aw);
+    bool tryAcceptW(const AxiWBeat &w);
+    bool tryAcceptAr(const AxiAddressRequest &ar);
+    bool tryConsumeB(AxiBBeat &b);
+    bool tryConsumeR(AxiRBeat &r);
+    AxiInitiatorOccupancy functionalOccupancy() const;
+    bool functionalIdle() const;
+
     /** Commit 1-only out-of-band completion observation. */
     void noteRawAwDrained();
 
   private:
     void injectRawAw();
     void consumeRawB();
+    void functionalWakeup();
+    void processFunctionalIngress();
+    void ingestFunctionalResponses();
+    void injectFunctionalRequests();
+    bool hasFunctionalWork() const;
 
     ruby::AbstractController *const shim;
     ruby::AbstractController *const peer;
@@ -64,6 +75,7 @@ class AxiInitiatorAdapter : public ClockedObject, public ruby::Consumer
     const uint16_t srcPort;
     const uint32_t dstNode;
     const AxiWireBytes channelWireBytes;
+    const uint32_t dataBusBytes;
     const bool rawProbe;
     const Cycles rawProbeHoldCycles;
 
@@ -73,6 +85,14 @@ class AxiInitiatorAdapter : public ClockedObject, public ruby::Consumer
     bool rawBDrained = false;
     Tick rawBHoldUntil = 0;
     bool exitRequested = false;
+
+    std::map<uint32_t, ruby::AbstractController *> targetsByNode;
+    std::unique_ptr<AxiInitiatorState> functionalState;
+    BoundedFifo<AxiBPacket> bIngress;
+    BoundedFifo<AxiDataPacket> rIngress;
+    const Cycles awInjectionDelay;
+    const Cycles wInjectionDelay;
+    const Cycles arInjectionDelay;
 };
 
 class AxiTargetAdapter : public ClockedObject, public ruby::Consumer
@@ -88,9 +108,19 @@ class AxiTargetAdapter : public ClockedObject, public ruby::Consumer
     void wakeup() override;
     void print(std::ostream &out) const override;
 
+    AxiTargetOccupancy functionalOccupancy() const;
+    uint8_t readMemoryByte(uint64_t address) const;
+    void writeMemoryByte(uint64_t address, uint8_t value);
+    bool functionalIdle() const;
+
   private:
     void injectRawB();
     void consumeRawAw();
+    void functionalWakeup();
+    void processFunctionalIngress();
+    void ingestFunctionalRequests();
+    void injectFunctionalResponses();
+    bool hasFunctionalWork() const;
 
     ruby::AbstractController *const shim;
     ruby::AbstractController *const peer;
@@ -105,6 +135,7 @@ class AxiTargetAdapter : public ClockedObject, public ruby::Consumer
     const uint16_t srcPort;
     const uint32_t dstNode;
     const AxiWireBytes channelWireBytes;
+    const uint32_t dataBusBytes;
     const bool rawProbe;
     const Cycles rawProbeHoldCycles;
 
@@ -112,6 +143,12 @@ class AxiTargetAdapter : public ClockedObject, public ruby::Consumer
     bool rawAwDrained = false;
     bool holdStarted = false;
     Tick holdUntilTick = 0;
+
+    std::unique_ptr<AxiTargetState> functionalState;
+    BoundedFifo<AxiAddressPacket> awIngress;
+    BoundedFifo<AxiDataPacket> wIngress;
+    BoundedFifo<AxiAddressPacket> arIngress;
+    std::map<uint64_t, ruby::MachineID> responseDestinations;
 };
 
 } // namespace axi

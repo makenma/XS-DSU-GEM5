@@ -11,10 +11,21 @@ SimObject('AxiGarnetEndpoint.py', sim_objects=[
     'AxiInitiatorAdapter',
     'AxiTargetAdapter',
 ])
+SimObject('AxiTraceTester.py', sim_objects=['AxiTraceTester'])
 
 Source('axi_garnet_endpoint.cc')
 Source('axi_packetization.cc')
+Source('axi_validation.cc')
+Source('axi_initiator_adapter.cc')
+Source('axi_target_adapter.cc')
+Source('axi_trace_tester.cc')
 DebugFlag('AxiGarnetProbe')
 
 GTest('axi_packetization.test',
       'axi_packetization.test.cc', 'axi_packetization.cc')
+GTest('axi_validation.test',
+      'axi_validation.test.cc', 'axi_validation.cc')
+GTest('axi_write_pairing.test',
+      'axi_write_pairing.test.cc',
+      'axi_initiator_adapter.cc', 'axi_target_adapter.cc',
+      'axi_validation.cc')

@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "name": "burst_read",
+  "endpoint_to_router": {
+    "initiators": [
+      {"src_node": 0, "src_port": 0, "router_id": 0, "default_target": 1}
+    ],
+    "targets": [
+      {"dst_node": 1, "router_id": 3}
+    ]
+  },
+  "default_error_target": 1,
+  "target_ranges": [
+    {"dst_node": 1, "start": "0x0", "end": "0x10000"}
+  ],
+  "quotas": [
+    {"src_node": 0, "src_port": 0, "dst_node": 1,
+     "write_contexts": 8, "write_beats": 64,
+     "read_contexts": 8, "read_beats": 64}
+  ],
+  "transactions": [
+    {"kind": "read", "source_index": 0, "dst_node": 1,
+     "axi_id": 5, "address": "0x400", "beat_count": 16,
+     "size": 6, "data_seed": 0, "strobe": "full"}
+  ]
+}
