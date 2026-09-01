@@ -59,3 +59,4 @@ GTest('garnet_vnet_config.test',
       'garnet_vnet_config.test.cc', 'VnetConfig.cc')
 GTest('garnet_vc_isolation.test',
       'garnet_vc_isolation.test.cc', 'OutVcState.cc')
+GTest('garnet_quiescence.test', 'garnet_quiescence.test.cc')

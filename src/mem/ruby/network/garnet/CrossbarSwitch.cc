@@ -120,6 +120,15 @@ CrossbarSwitch::resetStats()
     m_crossbar_activity = 0;
 }
 
+uint64_t
+CrossbarSwitch::pendingFlits() const
+{
+    uint64_t total = 0;
+    for (const auto &buffer : switchBuffers)
+        total += buffer.getSize();
+    return total;
+}
+
 } // namespace garnet
 } // namespace ruby
 } // namespace gem5

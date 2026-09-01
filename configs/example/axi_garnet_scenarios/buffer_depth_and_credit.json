@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "name": "buffer_depth_and_credit",
+  "driver_mode": "concurrent",
+  "expected_router_vnet": 1,
+  "endpoint_to_router": {
+    "initiators": [
+      {"src_node": 0, "src_port": 0, "router_id": 0,
+       "default_target": 1},
+      {"src_node": 2, "src_port": 0, "router_id": 2,
+       "default_target": 1}
+    ],
+    "targets": [
+      {"dst_node": 1, "router_id": 3}
+    ]
+  },
+  "default_error_target": 1,
+  "target_ranges": [
+    {"dst_node": 1, "start": "0x0", "end": "0x20000"}
+  ],
+  "quotas": [
+    {"src_node": 0, "src_port": 0, "dst_node": 1,
+     "write_contexts": 4, "write_beats": 64,
+     "read_contexts": 4, "read_beats": 64},
+    {"src_node": 2, "src_port": 0, "dst_node": 1,
+     "write_contexts": 4, "write_beats": 64,
+     "read_contexts": 4, "read_beats": 64}
+  ],
+  "transactions": [
+    {"kind": "write", "source_index": 0, "dst_node": 1,
+     "axi_id": 0, "address": "0x1000", "beat_count": 16, "size": 6,
+     "data_seed": 19, "strobe": "full"},
+    {"kind": "write", "source_index": 1, "dst_node": 1,
+     "axi_id": 1, "address": "0x2000", "beat_count": 16, "size": 6,
+     "data_seed": 83, "strobe": "full"}
+  ]
+}

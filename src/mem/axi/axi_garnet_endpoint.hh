@@ -30,6 +30,17 @@ class MessageBuffer;
 namespace axi
 {
 
+struct AxiInitiatorAdapterProgress
+{
+    AxiInitiatorProgress core;
+    uint64_t bEjectionStallCycles = 0;
+    uint64_t rEjectionStallCycles = 0;
+    size_t bLocalHighWater = 0;
+    size_t rLocalHighWater = 0;
+    size_t bIngressHighWater = 0;
+    size_t rIngressHighWater = 0;
+};
+
 class AxiInitiatorAdapter : public ClockedObject, public ruby::Consumer
 {
   public:
@@ -49,6 +60,7 @@ class AxiInitiatorAdapter : public ClockedObject, public ruby::Consumer
     bool tryConsumeB(AxiBBeat &b);
     bool tryConsumeR(AxiRBeat &r);
     AxiInitiatorOccupancy functionalOccupancy() const;
+    AxiInitiatorAdapterProgress functionalProgress() const;
     bool functionalIdle() const;
 
     /** Commit 1-only out-of-band completion observation. */
@@ -93,6 +105,9 @@ class AxiInitiatorAdapter : public ClockedObject, public ruby::Consumer
     const Cycles awInjectionDelay;
     const Cycles wInjectionDelay;
     const Cycles arInjectionDelay;
+    const Cycles bResponseEjectionStallUntil;
+    const Cycles rResponseEjectionStallUntil;
+    AxiInitiatorAdapterProgress adapterProgress;
 };
 
 class AxiTargetAdapter : public ClockedObject, public ruby::Consumer
@@ -109,6 +124,7 @@ class AxiTargetAdapter : public ClockedObject, public ruby::Consumer
     void print(std::ostream &out) const override;
 
     AxiTargetOccupancy functionalOccupancy() const;
+    AxiTargetProgress functionalProgress() const;
     uint8_t readMemoryByte(uint64_t address) const;
     void writeMemoryByte(uint64_t address, uint8_t value);
     bool functionalIdle() const;

@@ -66,8 +66,8 @@ meta(uint64_t uid, uint32_t axi_id = 0)
 {
     AxiCommonMeta meta;
     meta.txnUid = uid;
-    meta.targetSeq = uid;
-    meta.responseSeq = uid;
+    meta.targetSeq = 0;
+    meta.responseSeq = 0;
     meta.srcNode = 0;
     meta.srcPort = 0;
     meta.dstNode = 1;
@@ -116,6 +116,8 @@ targetConfig(uint32_t contexts = 8, uint32_t beats = 64,
     config.orphanBeats = orphan_beats;
     config.bReadyDepth = 8;
     config.rReadyDepth = 64;
+    config.writeBaseLatency = 0;
+    config.readBaseLatency = 0;
     config.sourceQuotas[{0, 0}] = {contexts, beats, 8, 64};
     config.memoryRanges = {{0, 0x1000, 1}};
     return config;

@@ -272,6 +272,18 @@ NetworkBridge::wakeup()
     }
 }
 
+uint64_t
+NetworkBridge::pendingItems() const
+{
+    uint64_t total = NetworkLink::pendingItems();
+    for (size_t vc = 0; vc < lenBuffer.size(); ++vc) {
+        total += lenBuffer[vc] != 0 || sizeSent[vc] != 0 ||
+                 flitsSent[vc] != 0;
+        total += extraCredit[vc].size();
+    }
+    return total;
+}
+
 } // namespace garnet
 } // namespace ruby
 } // namespace gem5

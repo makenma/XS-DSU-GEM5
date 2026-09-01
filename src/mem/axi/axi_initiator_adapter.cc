@@ -311,6 +311,10 @@ AxiInitiatorState::acquireWriteQuota(WriteState &state)
     if (active.writeContexts == limit.writeContexts ||
         state.aw->request.beatCount >
             limit.writeBeats - active.writeBeats) {
+        if (!state.quotaBlockCounted) {
+            state.quotaBlockCounted = true;
+            ++_progress.writeQuotaStalls;
+        }
         return false;
     }
     ++active.writeContexts;
@@ -329,6 +333,10 @@ AxiInitiatorState::acquireReadQuota(ReadState &state)
     AxiQuota &active = _activeQuota[target];
     if (active.readContexts == limit.readContexts ||
         state.ar.request.beatCount > limit.readBeats - active.readBeats) {
+        if (!state.quotaBlockCounted) {
+            state.quotaBlockCounted = true;
+            ++_progress.readQuotaStalls;
+        }
         return false;
     }
     ++active.readContexts;
@@ -367,6 +375,7 @@ void
 AxiInitiatorState::advance()
 {
     pumpStagedW();
+    pumpReadyB();
     pumpReadyR();
 }
 
@@ -481,69 +490,153 @@ AxiInitiatorState::tryAcceptAr(const AxiAddressRequest &ar,
 }
 
 bool
-AxiInitiatorState::canAcceptBPacket() const
+AxiInitiatorState::canAcceptBPacket(const AxiBPacket &packet) const
 {
-    return !_bReady.full();
+    const auto uid = _writeOrdinalByUid.find(packet.meta.txnUid);
+    return uid != _writeOrdinalByUid.end();
 }
 
 bool
-AxiInitiatorState::canAcceptRPacket() const
+AxiInitiatorState::canAcceptRPacket(const AxiDataPacket &packet) const
 {
-    return _rReady.available() != 0 || _readsByUid.size() != 0;
+    auto found = _readsByUid.find(packet.meta.txnUid);
+    return found != _readsByUid.end() &&
+           packet.beatIndex < found->second.received.size();
 }
 
 void
-AxiInitiatorState::acceptBPacket(const AxiBPacket &packet)
+AxiInitiatorState::acceptBPacket(const AxiBPacket &packet, Tick ready_tick)
 {
-    panic_if(_bReady.full(), "AXI source B ingress FIFO overflow");
     const auto uid = _writeOrdinalByUid.find(packet.meta.txnUid);
     panic_if(uid == _writeOrdinalByUid.end(),
              "AXI_PROTOCOL: unknown B txnUid");
     WriteState &state = _writesByOrdinal.at(uid->second);
-    panic_if(!state.aw || packet.meta.axiId != state.aw->meta.axiId,
+    panic_if(!state.aw || packet.meta.srcNode != state.aw->meta.srcNode ||
+             packet.meta.srcPort != state.aw->meta.srcPort ||
+             packet.meta.dstNode != state.aw->meta.dstNode ||
+             packet.meta.axiId != state.aw->meta.axiId ||
+             packet.meta.targetSeq != state.aw->meta.targetSeq ||
+             packet.meta.responseSeq != state.aw->meta.responseSeq,
              "AXI_PROTOCOL: B fields conflict with AW");
     panic_if(state.wInjected != state.aw->request.beatCount,
              "AXI_PROTOCOL: B arrived before all W beats were injected");
-    panic_if(!_bReady.push(packet), "AXI source B ingress FIFO overflow");
+    panic_if(state.response.has_value(),
+             "AXI_PROTOCOL: duplicate B packet");
+    panic_if(packet.resp == AxiResp::ExOkay,
+             "AXI_PROTOCOL: source received forbidden EXOKAY B");
+    state.response = packet;
+    state.responseReadyTick = ready_tick;
+    ++_progress.bPacketsBuffered;
+    pumpReadyB();
 }
 
 void
-AxiInitiatorState::acceptRPacket(const AxiDataPacket &packet)
+AxiInitiatorState::acceptRPacket(const AxiDataPacket &packet, Tick ready_tick)
 {
     auto found = _readsByUid.find(packet.meta.txnUid);
     panic_if(found == _readsByUid.end(),
              "AXI_PROTOCOL: unknown R txnUid");
     ReadState &state = found->second;
-    panic_if(packet.beatCount != state.ar.request.beatCount ||
+    panic_if(packet.meta.srcNode != state.ar.meta.srcNode ||
+             packet.meta.srcPort != state.ar.meta.srcPort ||
+             packet.meta.dstNode != state.ar.meta.dstNode ||
+             packet.meta.axiId != state.ar.meta.axiId ||
+             packet.meta.targetSeq != state.ar.meta.targetSeq ||
+             packet.meta.responseSeq != state.ar.meta.responseSeq ||
+             packet.beatCount != state.ar.request.beatCount ||
              packet.beatIndex >= state.ar.request.beatCount,
-             "AXI_PROTOCOL: R beat index/count conflict");
+             "AXI_PROTOCOL: R fields conflict with AR");
     panic_if(packet.last !=
              (packet.beatIndex + 1 == packet.beatCount),
              "AXI_PROTOCOL: RLAST position is invalid");
+    panic_if(packet.resp == AxiResp::ExOkay,
+             "AXI_PROTOCOL: source received forbidden EXOKAY R");
     panic_if(state.received[packet.beatIndex].has_value(),
              "AXI_PROTOCOL: duplicate R beat");
-    state.received[packet.beatIndex] = packet;
+    state.received[packet.beatIndex] = ReceivedR{packet, ready_tick};
+    ++_progress.rPacketsBuffered;
     pumpReadyR();
+}
+
+void
+AxiInitiatorState::pumpReadyB()
+{
+    while (!_bReady.full()) {
+        WriteState *selected = nullptr;
+        for (auto &[ordinal, state] : _writesByOrdinal) {
+            (void)ordinal;
+            if (!state.aw || !state.response || state.responseQueued)
+                continue;
+            const uint64_t expected =
+                _nextBRetireSeq[state.aw->meta.axiId];
+            if (state.aw->meta.responseSeq != expected) {
+                if (!state.orderingBlockCounted) {
+                    state.orderingBlockCounted = true;
+                    ++_progress.sameIdResponsesBlocked;
+                }
+                continue;
+            }
+            if (!selected ||
+                std::tie(state.responseReadyTick,
+                         state.aw->meta.txnUid) <
+                std::tie(selected->responseReadyTick,
+                         selected->aw->meta.txnUid)) {
+                selected = &state;
+            }
+        }
+        if (!selected)
+            return;
+        panic_if(!_bReady.push(*selected->response),
+                 "AXI source B ready FIFO overflow");
+        selected->responseQueued = true;
+    }
 }
 
 void
 AxiInitiatorState::pumpReadyR()
 {
-    for (auto &[uid, state] : _readsByUid) {
-        while (!_rReady.full() &&
-               state.nextReadyBeat < state.received.size() &&
-               state.received[state.nextReadyBeat].has_value()) {
-            ReadyR ready;
-            ready.txnUid = uid;
-            ready.packet = std::move(
-                *state.received[state.nextReadyBeat]);
-            state.received[state.nextReadyBeat].reset();
-            ++state.nextReadyBeat;
-            panic_if(!_rReady.push(std::move(ready)),
-                     "AXI source R ready FIFO overflow");
+    while (!_rReady.full()) {
+        uint64_t selected_uid = 0;
+        ReadState *selected = nullptr;
+        Tick selected_tick = 0;
+        for (auto &[uid, state] : _readsByUid) {
+            const uint64_t expected =
+                _nextRRetireSeq[state.ar.meta.axiId];
+            if (state.ar.meta.responseSeq != expected) {
+                bool has_received = false;
+                for (const auto &beat : state.received)
+                    has_received = has_received || beat.has_value();
+                if (has_received && !state.orderingBlockCounted) {
+                    state.orderingBlockCounted = true;
+                    ++_progress.sameIdResponsesBlocked;
+                }
+                continue;
+            }
+            if (state.nextQueuedBeat >= state.received.size() ||
+                !state.received[state.nextQueuedBeat]) {
+                continue;
+            }
+            const Tick ready_tick =
+                state.received[state.nextQueuedBeat]->readyTick;
+            if (!selected ||
+                std::tie(ready_tick, uid, state.nextQueuedBeat) <
+                std::tie(selected_tick, selected_uid,
+                         selected->nextQueuedBeat)) {
+                selected_uid = uid;
+                selected = &state;
+                selected_tick = ready_tick;
+            }
         }
-        if (_rReady.full())
+        if (!selected)
             return;
+        ReadyR ready;
+        ready.txnUid = selected_uid;
+        ready.packet = std::move(
+            selected->received[selected->nextQueuedBeat]->packet);
+        selected->received[selected->nextQueuedBeat].reset();
+        ++selected->nextQueuedBeat;
+        panic_if(!_rReady.push(std::move(ready)),
+                 "AXI source R ready FIFO overflow");
     }
 }
 
@@ -559,8 +652,11 @@ AxiInitiatorState::tryConsumeB(AxiBBeat &beat)
     beat.axiId = packet.meta.axiId;
     beat.resp = packet.resp;
     releaseWriteQuota(state);
+    ++_nextBRetireSeq[state.aw->meta.axiId];
+    ++_progress.bTransactionsRetired;
     _writeOrdinalByUid.erase(packet.meta.txnUid);
     _writesByOrdinal.erase(ordinal);
+    pumpReadyB();
     return true;
 }
 
@@ -582,6 +678,8 @@ AxiInitiatorState::tryConsumeR(AxiRBeat &beat)
         panic_if(state.consumedBeats != state.ar.request.beatCount,
                  "AXI_PROTOCOL: RLAST consumed before complete burst");
         releaseReadQuota(state);
+        ++_nextRRetireSeq[state.ar.meta.axiId];
+        ++_progress.rTransactionsRetired;
         _readsByUid.erase(ready.txnUid);
     }
     pumpReadyR();

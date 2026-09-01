@@ -34,6 +34,7 @@
 #include "base/logging.hh"
 #include "debug/RubyNetwork.hh"
 #include "mem/ruby/network/garnet/Credit.hh"
+#include "mem/ruby/network/garnet/GarnetNetwork.hh"
 #include "mem/ruby/network/garnet/Router.hh"
 
 namespace gem5
@@ -86,6 +87,24 @@ InputUnit::get_vc_occupancy(int vc) const
              "Router %d input port %d VC index %d is out of range",
              m_router->get_id(), m_id, vc);
     return virtualChannels[vc].getOccupancy();
+}
+
+uint64_t
+InputUnit::bufferedFlits() const
+{
+    uint64_t total = 0;
+    for (const auto &vc : virtualChannels)
+        total += vc.getOccupancy();
+    return total;
+}
+
+uint64_t
+InputUnit::nonIdleVcs() const
+{
+    uint64_t total = 0;
+    for (const auto &vc : virtualChannels)
+        total += vc.get_state() != IDLE_;
+    return total;
 }
 
 /*
@@ -146,6 +165,9 @@ InputUnit::wakeup()
 
         // Buffer the flit
         virtualChannels[vc].insertFlit(t_flit);
+        m_router->get_net_ptr()->observeInputVc(
+            vnet, virtualChannels[vc].getOccupancy(),
+            virtualChannels[vc].getCapacity());
 
         // number of writes same as reads
         // any flit that is written will be read only once

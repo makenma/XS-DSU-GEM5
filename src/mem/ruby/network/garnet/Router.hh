@@ -42,6 +42,7 @@
 #include "mem/ruby/network/garnet/CommonTypes.hh"
 #include "mem/ruby/network/garnet/CrossbarSwitch.hh"
 #include "mem/ruby/network/garnet/GarnetNetwork.hh"
+#include "mem/ruby/network/garnet/GarnetQuiescence.hh"
 #include "mem/ruby/network/garnet/RoutingUnit.hh"
 #include "mem/ruby/network/garnet/SwitchAllocator.hh"
 #include "mem/ruby/network/garnet/flit.hh"
@@ -141,6 +142,7 @@ class Router : public BasicRouter, public Consumer
 
     bool functionalRead(Packet *pkt, WriteMask &mask);
     uint32_t functionalWrite(Packet *);
+    GarnetQuiescenceSnapshot quiescenceSnapshot() const;
 
   private:
     Cycles m_latency;

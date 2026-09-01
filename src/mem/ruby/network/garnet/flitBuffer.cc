@@ -51,7 +51,7 @@ flitBuffer::flitBuffer(int maximum_size)
 }
 
 bool
-flitBuffer::isEmpty()
+flitBuffer::isEmpty() const
 {
     return (m_buffer.size() == 0);
 }

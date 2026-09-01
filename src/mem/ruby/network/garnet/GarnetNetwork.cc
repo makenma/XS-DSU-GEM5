@@ -98,6 +98,11 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     m_buffers_per_vnet = std::move(normalized.depths);
     m_buffers_per_ctrl_vc = normalized.legacyCtrlDepth;
     m_buffers_per_data_vc = normalized.legacyDataDepth;
+    m_input_vc_full_events_raw.assign(m_virtual_networks, 0);
+    m_input_vc_max_occupancy_raw.assign(m_virtual_networks, 0);
+    m_credit_stall_vc_cycles_raw.assign(m_virtual_networks, 0);
+    m_vc_alloc_stall_vc_cycles_raw.assign(m_virtual_networks, 0);
+    m_ni_credit_stall_vc_cycles_raw.assign(m_virtual_networks, 0);
 
     // record the routers
     for (std::vector<BasicRouter*>::const_iterator i =  p.routers.begin();
@@ -413,6 +418,92 @@ GarnetNetwork::get_router_id(int global_ni, int vnet)
     return m_nis[local_ni]->get_router_id(vnet);
 }
 
+GarnetQuiescenceSnapshot
+GarnetNetwork::quiescenceSnapshot() const
+{
+    GarnetQuiescenceSnapshot snapshot;
+    for (const auto *ni : m_nis)
+        snapshot += ni->quiescenceSnapshot();
+    for (const auto *router : m_routers)
+        snapshot += router->quiescenceSnapshot();
+    for (const auto *link : m_networklinks)
+        snapshot.dataLinkPendingFlits += link->pendingItems();
+    for (const auto *link : m_creditlinks)
+        snapshot.creditLinkPendingCredits += link->pendingItems();
+    for (const auto *bridge : m_networkbridges)
+        snapshot.bridgePendingItems += bridge->pendingItems();
+    return snapshot;
+}
+
+void
+GarnetNetwork::observeInputVc(unsigned vnet, uint32_t occupancy,
+                              uint32_t capacity)
+{
+    panic_if(vnet >= m_virtual_networks || occupancy > capacity,
+             "%s: invalid input VC observation vnet=%u occupancy=%u "
+             "capacity=%u", name(), vnet, occupancy, capacity);
+    if (occupancy > m_input_vc_max_occupancy_raw[vnet]) {
+        m_input_vc_max_occupancy_raw[vnet] = occupancy;
+        m_input_vc_max_occupancy[vnet] = occupancy;
+    }
+    if (occupancy == capacity) {
+        ++m_input_vc_full_events_raw[vnet];
+        ++m_input_vc_full_events[vnet];
+    }
+}
+
+void
+GarnetNetwork::incrementRouterCreditStall(unsigned vnet)
+{
+    panic_if(vnet >= m_virtual_networks, "invalid credit-stall vnet");
+    ++m_credit_stall_vc_cycles_raw[vnet];
+    ++m_credit_stall_vc_cycles[vnet];
+}
+
+void
+GarnetNetwork::incrementVcAllocStall(unsigned vnet)
+{
+    panic_if(vnet >= m_virtual_networks, "invalid VC-alloc-stall vnet");
+    ++m_vc_alloc_stall_vc_cycles_raw[vnet];
+    ++m_vc_alloc_stall_vc_cycles[vnet];
+}
+
+void
+GarnetNetwork::incrementNiCreditStall(unsigned vnet)
+{
+    panic_if(vnet >= m_virtual_networks, "invalid NI-credit-stall vnet");
+    ++m_ni_credit_stall_vc_cycles_raw[vnet];
+    ++m_ni_credit_stall_vc_cycles[vnet];
+}
+
+uint64_t
+GarnetNetwork::inputVcMaxOccupancy(unsigned vnet) const
+{
+    panic_if(vnet >= m_virtual_networks, "invalid max-occupancy vnet");
+    return m_input_vc_max_occupancy_raw[vnet];
+}
+
+uint64_t
+GarnetNetwork::routerCreditStalls(unsigned vnet) const
+{
+    panic_if(vnet >= m_virtual_networks, "invalid credit-stall vnet");
+    return m_credit_stall_vc_cycles_raw[vnet];
+}
+
+uint64_t
+GarnetNetwork::vcAllocStalls(unsigned vnet) const
+{
+    panic_if(vnet >= m_virtual_networks, "invalid VC-alloc-stall vnet");
+    return m_vc_alloc_stall_vc_cycles_raw[vnet];
+}
+
+uint64_t
+GarnetNetwork::niCreditStalls(unsigned vnet) const
+{
+    panic_if(vnet >= m_virtual_networks, "invalid NI-credit-stall vnet");
+    return m_ni_credit_stall_vc_cycles_raw[vnet];
+}
+
 void
 GarnetNetwork::regStats()
 {
@@ -450,6 +541,30 @@ GarnetNetwork::regStats()
         m_packets_injected.subname(i, csprintf("vnet-%i", i));
         m_packet_network_latency.subname(i, csprintf("vnet-%i", i));
         m_packet_queueing_latency.subname(i, csprintf("vnet-%i", i));
+    }
+
+    m_input_vc_full_events
+        .init(m_virtual_networks)
+        .name(name() + ".input_vc_full_events");
+    m_input_vc_max_occupancy
+        .init(m_virtual_networks)
+        .name(name() + ".input_vc_max_occupancy");
+    m_credit_stall_vc_cycles
+        .init(m_virtual_networks)
+        .name(name() + ".credit_stall_vc_cycles");
+    m_vc_alloc_stall_vc_cycles
+        .init(m_virtual_networks)
+        .name(name() + ".vc_alloc_stall_vc_cycles");
+    m_ni_credit_stall_vc_cycles
+        .init(m_virtual_networks)
+        .name(name() + ".ni_credit_stall_vc_cycles");
+    for (int i = 0; i < m_virtual_networks; ++i) {
+        const std::string label = csprintf("vnet-%i", i);
+        m_input_vc_full_events.subname(i, label);
+        m_input_vc_max_occupancy.subname(i, label);
+        m_credit_stall_vc_cycles.subname(i, label);
+        m_vc_alloc_stall_vc_cycles.subname(i, label);
+        m_ni_credit_stall_vc_cycles.subname(i, label);
     }
 
     m_avg_packet_vnet_latency
@@ -617,6 +732,16 @@ GarnetNetwork::collateStats()
 void
 GarnetNetwork::resetStats()
 {
+    std::fill(m_input_vc_full_events_raw.begin(),
+              m_input_vc_full_events_raw.end(), 0);
+    std::fill(m_input_vc_max_occupancy_raw.begin(),
+              m_input_vc_max_occupancy_raw.end(), 0);
+    std::fill(m_credit_stall_vc_cycles_raw.begin(),
+              m_credit_stall_vc_cycles_raw.end(), 0);
+    std::fill(m_vc_alloc_stall_vc_cycles_raw.begin(),
+              m_vc_alloc_stall_vc_cycles_raw.end(), 0);
+    std::fill(m_ni_credit_stall_vc_cycles_raw.begin(),
+              m_ni_credit_stall_vc_cycles_raw.end(), 0);
     for (int i = 0; i < m_routers.size(); i++) {
         m_routers[i]->resetStats();
     }

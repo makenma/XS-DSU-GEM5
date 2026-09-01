@@ -153,6 +153,7 @@ class MessageBuffer : public SimObject
 
     void recycle(Tick current_time, Tick recycle_latency);
     bool isEmpty() const { return m_prio_heap.size() == 0; }
+    unsigned int getNumMessages() const { return m_prio_heap.size(); }
     bool isStallMapEmpty() { return m_stall_msg_map.size() == 0; }
     unsigned int getStallMapSize() { return m_stall_msg_map.size(); }
 

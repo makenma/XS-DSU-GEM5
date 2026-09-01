@@ -43,6 +43,9 @@ class AxiInitiatorAdapter(ClockedObject):
     injection_delays = VectorParam.Cycles(
         [0, 0, 0], "Independent AW,W,AR injection delays"
     )
+    response_ejection_stall_until = VectorParam.Cycles(
+        [0, 0], "Absolute B and R local-delivery hold-off cycles"
+    )
     wire_header_bytes = VectorParam.UInt32(
         [24, 16, 8, 24, 16], "AW,W,B,AR,R wire header bytes"
     )
@@ -93,6 +96,21 @@ class AxiTargetAdapter(ClockedObject):
     orphan_w_beats = Param.UInt32(256, "W_ONLY beat subquota")
     response_ready_depths = VectorParam.UInt32(
         [16, 128], "B response and R beat ready depths"
+    )
+    service_depths = VectorParam.UInt32(
+        [32, 32], "Bounded write and read service slots"
+    )
+    base_latencies = VectorParam.UInt32(
+        [1, 1], "Write and read base service latency in target cycles"
+    )
+    planned_uids = VectorParam.UInt64(
+        [], "Transaction UIDs with deterministic service plans"
+    )
+    planned_extra_latency_cycles = VectorParam.UInt32(
+        [], "Extra target service latency for every planned UID"
+    )
+    planned_fault_responses = VectorParam.String(
+        [], "okay or slverr response plan for every planned UID"
     )
     ingress_depths = VectorParam.UInt32(
         [16, 64, 32], "AW,W,AR adapter ingress depths"

@@ -38,6 +38,7 @@
 #include "mem/ruby/network/Network.hh"
 #include "mem/ruby/network/fault_model/FaultModel.hh"
 #include "mem/ruby/network/garnet/CommonTypes.hh"
+#include "mem/ruby/network/garnet/GarnetQuiescence.hh"
 #include "params/GarnetNetwork.hh"
 
 namespace gem5
@@ -155,6 +156,19 @@ class GarnetNetwork : public Network
     void update_traffic_distribution(RouteInfo route);
     int getNextPacketID() { return m_next_packet_id++; }
 
+    void observeInputVc(unsigned vnet, uint32_t occupancy,
+                        uint32_t capacity);
+    void incrementRouterCreditStall(unsigned vnet);
+    void incrementVcAllocStall(unsigned vnet);
+    void incrementNiCreditStall(unsigned vnet);
+    uint64_t inputVcMaxOccupancy(unsigned vnet) const;
+    uint64_t routerCreditStalls(unsigned vnet) const;
+    uint64_t vcAllocStalls(unsigned vnet) const;
+    uint64_t niCreditStalls(unsigned vnet) const;
+
+    GarnetQuiescenceSnapshot quiescenceSnapshot() const;
+    bool isQuiescent() const { return quiescenceSnapshot().empty(); }
+
   protected:
     // Configuration
     int m_num_rows;
@@ -185,6 +199,12 @@ class GarnetNetwork : public Network
     statistics::Vector m_flit_network_latency;
     statistics::Vector m_flit_queueing_latency;
 
+    statistics::Vector m_input_vc_full_events;
+    statistics::Vector m_input_vc_max_occupancy;
+    statistics::Vector m_credit_stall_vc_cycles;
+    statistics::Vector m_vc_alloc_stall_vc_cycles;
+    statistics::Vector m_ni_credit_stall_vc_cycles;
+
     statistics::Formula m_avg_flit_vnet_latency;
     statistics::Formula m_avg_flit_vqueue_latency;
     statistics::Formula m_avg_flit_network_latency;
@@ -208,6 +228,11 @@ class GarnetNetwork : public Network
     GarnetNetwork& operator=(const GarnetNetwork& obj);
 
     std::vector<VNET_type > m_vnet_type;
+    std::vector<uint64_t> m_input_vc_full_events_raw;
+    std::vector<uint64_t> m_input_vc_max_occupancy_raw;
+    std::vector<uint64_t> m_credit_stall_vc_cycles_raw;
+    std::vector<uint64_t> m_vc_alloc_stall_vc_cycles_raw;
+    std::vector<uint64_t> m_ni_credit_stall_vc_cycles_raw;
     std::vector<Router *> m_routers;   // All Routers in Network
     std::vector<NetworkLink *> m_networklinks; // All flit links in the network
     std::vector<NetworkBridge *> m_networkbridges; // All network bridges

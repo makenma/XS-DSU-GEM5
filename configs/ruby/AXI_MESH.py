@@ -46,6 +46,7 @@ def define_options(parser):
         "--axi-target-read-response-beats", type=int, default=4096
     )
     parser.add_argument("--axi-target-service-depths", default="32,32")
+    parser.add_argument("--axi-target-base-latencies", default="1,1")
     parser.add_argument(
         "--axi-target-response-ready-depths", default="16,128"
     )
@@ -78,6 +79,19 @@ def _positive_csv(value, count, label):
         fatal("%s contains a non-integer element", label)
     if any(item <= 0 for item in parsed):
         fatal("%s entries must all be positive", label)
+    return parsed
+
+
+def _nonnegative_csv(value, count, label):
+    fields = value.split(",")
+    if len(fields) != count or any(field == "" for field in fields):
+        fatal("%s must contain exactly %d non-empty integers", label, count)
+    try:
+        parsed = [int(field, 10) for field in fields]
+    except ValueError:
+        fatal("%s contains a non-integer element", label)
+    if any(item < 0 for item in parsed):
+        fatal("%s entries must all be non-negative", label)
     return parsed
 
 
@@ -221,13 +235,79 @@ def _quota_map(scenario, initiators, target_nodes):
     return quotas
 
 
-def _transaction_specs(scenario, initiators, target_specs, data_bus_bytes):
+def _transaction_records(scenario, initiators, target_specs):
     records = scenario.get("transactions")
+    generator = scenario.get("traffic_generator")
+    if records is not None and generator is not None:
+        fatal("AXI scenario cannot specify both transactions and traffic_generator")
+    if records is not None:
+        return records
+    if not isinstance(generator, dict):
+        fatal("AXI functional scenario requires transactions or traffic_generator")
+    if generator.get("kind") != "response_progress_v1":
+        fatal("unsupported AXI traffic_generator kind")
+    if len(target_specs) != 1:
+        fatal("response_progress_v1 requires exactly one target")
+    try:
+        stop_cycle = int(generator["stop_cycle"])
+        id_count = int(generator.get("id_count", 8))
+        write_base = _u64(generator.get("write_base", 0x10000),
+                          "response-progress write_base")
+        read_base = _u64(generator.get("read_base", 0x40000),
+                         "response-progress read_base")
+        extra_latency_modulus = int(
+            generator.get("extra_latency_modulus", 4)
+        )
+    except (KeyError, TypeError, ValueError):
+        fatal("invalid response_progress_v1 generator configuration")
+    if stop_cycle != 2000:
+        fatal("response_progress_v1 stop_cycle must be 2000")
+    if id_count <= 0 or id_count > (1 << 16):
+        fatal("response_progress_v1 id_count must be in [1,65536]")
+    if extra_latency_modulus <= 0:
+        fatal("response_progress_v1 extra_latency_modulus must be positive")
+
+    dst_node = int(target_specs[0]["dst_node"])
+    generated = []
+    write_ordinal = 0
+    read_ordinal = 0
+    for cycle in range(stop_cycle + 1):
+        kind = "write" if cycle % 2 == 0 else "read"
+        ordinal = write_ordinal if kind == "write" else read_ordinal
+        address_base = write_base if kind == "write" else read_base
+        generated.append({
+            "kind": kind,
+            "source_index": cycle % len(initiators),
+            "dst_node": dst_node,
+            "axi_id": ordinal % id_count,
+            "address": address_base + ordinal * 64,
+            "beat_count": 1,
+            "size": 6,
+            "data_seed": (ordinal * 17 + cycle) & 0xFF,
+            "strobe": "full",
+            "arrival_cycle": cycle,
+            "target_extra_latency_cycles": (
+                ordinal % extra_latency_modulus
+            ),
+        })
+        if kind == "write":
+            write_ordinal += 1
+        else:
+            read_ordinal += 1
+    return generated
+
+
+def _transaction_specs(scenario, initiators, target_specs, data_bus_bytes):
+    records = _transaction_records(scenario, initiators, target_specs)
     if not isinstance(records, list) or not records:
         fatal("AXI functional scenario requires non-empty transactions")
     target_index = {int(target["dst_node"]): index
                     for index, target in enumerate(target_specs)}
     specs = []
+    plans_by_target = [[] for _ in target_specs]
+    uid_counters = {}
+    max_extra_latency = [0, 0]
+    max_arrival_cycle = 0
     for index, record in enumerate(records):
         if not isinstance(record, dict):
             fatal("AXI transactions[%d] must be an object", index)
@@ -242,6 +322,11 @@ def _transaction_specs(scenario, initiators, target_specs, data_bus_bytes):
             w_before_aw = int(bool(record.get("w_before_aw", False)))
             data_seed = int(record.get("data_seed", 0))
             strobe = record.get("strobe", "full")
+            arrival_cycle = int(record.get("arrival_cycle", 0))
+            extra_latency = int(
+                record.get("target_extra_latency_cycles", 0)
+            )
+            fault = str(record.get("target_fault", "okay")).lower()
         except (KeyError, TypeError, ValueError):
             fatal("invalid AXI transactions[%d] entry", index)
         if kind not in ("write", "read"):
@@ -258,11 +343,44 @@ def _transaction_specs(scenario, initiators, target_specs, data_bus_bytes):
             fatal("AXI transaction ID or data_seed is out of range")
         if strobe not in ("full", "alternating"):
             fatal("AXI transaction strobe mode is invalid")
+        if arrival_cycle < 0 or extra_latency < 0:
+            fatal("AXI transaction arrival/latency must be non-negative")
+        if extra_latency > 0xFFFFFFFF:
+            fatal("AXI target extra latency must fit uint32")
+        if fault not in ("okay", "slverr"):
+            fatal("AXI target_fault must be okay or slverr")
+        direction = 1 if kind == "read" else 0
+        max_extra_latency[direction] = max(
+            max_extra_latency[direction], extra_latency
+        )
+        max_arrival_cycle = max(max_arrival_cycle, arrival_cycle)
+        counter_key = (source_index, direction)
+        local_counter = uid_counters.get(counter_key, 0)
+        if local_counter >= (1 << 39):
+            fatal("AXI transaction UID local counter overflow")
+        uid_counters[counter_key] = local_counter + 1
+        source = initiators[source_index]
+        expected_uid = (
+            (int(source["src_node"]) << 48)
+            | (int(source["src_port"]) << 40)
+            | (direction << 39)
+            | local_counter
+        )
+        expected_resp = "slverr" if fault == "slverr" else "okay"
         specs.append("|".join(str(value) for value in (
             kind, source_index, target_index[dst_node], axi_id,
-            hex(address), beat_count, size, w_before_aw, data_seed, strobe
+            hex(address), beat_count, size, w_before_aw, data_seed, strobe,
+            expected_uid, arrival_cycle, expected_resp, index
         )))
-    return specs
+        plans_by_target[target_index[dst_node]].append(
+            (expected_uid, extra_latency, fault)
+        )
+    return specs, plans_by_target, {
+        "max_extra_latency": max_extra_latency,
+        "max_arrival_cycle": max_arrival_cycle,
+        "arrival_cycles": [int(record.get("arrival_cycle", 0))
+                           for record in records],
+    }
 
 
 def _validate_options(options, initiators, targets, default_error_target,
@@ -387,8 +505,12 @@ def create_system(
     source_depths = _positive_csv(
         options.axi_source_fifo_depths, 5, "axi_source_fifo_depths"
     )
-    _positive_csv(options.axi_target_service_depths, 2,
-                  "axi_target_service_depths")
+    target_service_depths = _positive_csv(
+        options.axi_target_service_depths, 2, "axi_target_service_depths"
+    )
+    target_base_latencies = _nonnegative_csv(
+        options.axi_target_base_latencies, 2, "axi_target_base_latencies"
+    )
     target_response_depths = _positive_csv(
         options.axi_target_response_ready_depths, 2,
         "axi_target_response_ready_depths"
@@ -419,6 +541,18 @@ def create_system(
     _validate_options(
         options, initiator_specs, target_specs, default_error_target, quotas
     )
+    transaction_specs = []
+    plans_by_target = [[] for _ in target_specs]
+    transaction_metadata = {
+        "max_extra_latency": [0, 0],
+        "max_arrival_cycle": 0,
+        "arrival_cycles": [],
+    }
+    if not options.axi_raw_shim_probe:
+        transaction_specs, plans_by_target, transaction_metadata = \
+            _transaction_specs(
+                scenario, initiator_specs, target_specs, data_bus_bytes
+            )
     delay_config = scenario.get("channel_injection_delay_cycles", {})
     if not isinstance(delay_config, dict):
         fatal("channel_injection_delay_cycles must be an object")
@@ -429,6 +563,104 @@ def create_system(
         fatal("AXI channel injection delays must be integers")
     if any(delay < 0 for delay in injection_delays):
         fatal("AXI channel injection delays must be non-negative")
+    response_stall = scenario.get("response_ejection_stall_until_cycle", {})
+    if not isinstance(response_stall, dict):
+        fatal("response_ejection_stall_until_cycle must be an object")
+    try:
+        response_ejection_stalls = [
+            int(response_stall.get(channel, 0)) for channel in ("b", "r")
+        ]
+    except (TypeError, ValueError):
+        fatal("AXI response ejection stall cycles must be integers")
+    if any(cycle < 0 for cycle in response_ejection_stalls):
+        fatal("AXI response ejection stall cycles must be non-negative")
+    consumer_stall = scenario.get("consumer_stall_until_cycle", {})
+    if not isinstance(consumer_stall, dict):
+        fatal("consumer_stall_until_cycle must be an object")
+    try:
+        consumer_stalls = [
+            int(consumer_stall.get(channel, 0)) for channel in ("b", "r")
+        ]
+    except (TypeError, ValueError):
+        fatal("AXI consumer stall cycles must be integers")
+    if any(cycle < 0 for cycle in consumer_stalls):
+        fatal("AXI consumer stall cycles must be non-negative")
+    driver_mode = str(scenario.get("driver_mode", "sequential"))
+    if driver_mode not in ("sequential", "concurrent"):
+        fatal("AXI driver_mode must be sequential or concurrent")
+    try:
+        expected_router_vnet = int(
+            scenario.get("expected_router_vnet", -1)
+        )
+        expected_router_depth = int(
+            scenario.get("expected_router_depth", 0)
+        )
+        progress_watchdog_cycles = int(
+            scenario.get("progress_watchdog_cycles", 256)
+        )
+        issue_stop_cycle = int(scenario.get("issue_stop_cycle", 0))
+    except (TypeError, ValueError):
+        fatal("AXI scenario expectation cycles/depths must be integers")
+    if expected_router_vnet < -1 or expected_router_vnet >= 5:
+        fatal("expected_router_vnet must be -1 or in [0,4]")
+    if expected_router_depth < 0 or progress_watchdog_cycles <= 0 or \
+            issue_stop_cycle < 0:
+        fatal("AXI scenario expectation values are out of range")
+    if expected_router_vnet >= 0 and expected_router_depth == 0:
+        configured_depths = _positive_csv(
+            options.garnet_buffers_per_vnet, 5,
+            "garnet_buffers_per_vnet"
+        )
+        expected_router_depth = configured_depths[expected_router_vnet]
+
+    liveness_bound_components = [0, 0, 0]
+    if str(scenario.get("name", "")) == "response_progress":
+        proof = scenario.get("liveness_bound_cycles")
+        if not isinstance(proof, dict):
+            fatal("response_progress requires liveness_bound_cycles proof")
+        try:
+            liveness_bound_components = [int(proof[field]) for field in (
+                "max_target_latency",
+                "max_forced_stall",
+                "packet_serialization_and_path_slack",
+            )]
+        except (KeyError, TypeError, ValueError):
+            fatal("response_progress liveness proof fields must be integers")
+        if any(value < 0 for value in liveness_bound_components):
+            fatal("response_progress liveness proof must be non-negative")
+
+        actual_target_latency = max(
+            target_base_latencies[index] +
+            transaction_metadata["max_extra_latency"][index]
+            for index in range(2)
+        )
+        actual_forced_stall = max(
+            response_ejection_stalls + consumer_stalls
+        )
+        link_bytes = options.link_width_bits // 8
+        max_packet_bytes = max(
+            header + (data_bus_bytes if channel in (1, 4) else 0)
+            for channel, header in enumerate(wire_headers)
+        )
+        max_packet_flits = (max_packet_bytes + link_bytes - 1) // link_bytes
+        columns = options.axi_mesh_routers // options.mesh_rows
+        mesh_diameter = options.mesh_rows + columns - 2
+        minimum_path_slack = (
+            2 * max_packet_flits + 4 * (mesh_diameter + 1)
+        )
+        if liveness_bound_components[0] < actual_target_latency:
+            fatal("response_progress max_target_latency proof is too small")
+        if liveness_bound_components[1] < actual_forced_stall:
+            fatal("response_progress max_forced_stall proof is too small")
+        if liveness_bound_components[2] < minimum_path_slack:
+            fatal("response_progress packet/path slack proof is too small")
+        if sum(liveness_bound_components) >= progress_watchdog_cycles:
+            fatal("response_progress liveness proof must be below watchdog")
+        if transaction_metadata["max_arrival_cycle"] != issue_stop_cycle:
+            fatal("response_progress last request must arrive at issue_stop_cycle")
+        if set(transaction_metadata["arrival_cycles"]) != \
+                set(range(issue_stop_cycle + 1)):
+            fatal("response_progress requires request creation every flood cycle")
 
     initiator_controllers = []
     target_controllers = []
@@ -478,6 +710,20 @@ def create_system(
     for version, (endpoint, controller) in enumerate(
         zip(initiator_specs, initiator_controllers)
     ):
+        endpoint_delay_config = endpoint.get(
+            "channel_injection_delay_cycles", delay_config
+        )
+        if not isinstance(endpoint_delay_config, dict):
+            fatal("initiator channel_injection_delay_cycles must be an object")
+        try:
+            endpoint_injection_delays = [
+                int(endpoint_delay_config.get(channel, 0))
+                for channel in ("aw", "w", "ar")
+            ]
+        except (TypeError, ValueError):
+            fatal("initiator channel injection delays must be integers")
+        if any(delay < 0 for delay in endpoint_injection_delays):
+            fatal("initiator channel injection delays must be non-negative")
         source_key = (int(endpoint["src_node"]), int(endpoint["src_port"]))
         source_quotas = [quotas[source_key + (target,)]
                          for target in ordered_target_nodes]
@@ -511,7 +757,8 @@ def create_system(
             pre_aw_beats=options.axi_source_pre_aw_beats,
             b_rob_transactions=options.axi_b_rob_transactions,
             r_rob_beats=options.axi_r_rob_beats,
-            injection_delays=injection_delays,
+            injection_delays=endpoint_injection_delays,
+            response_ejection_stall_until=response_ejection_stalls,
             wire_header_bytes=wire_headers,
             data_bus_bytes=data_bus_bytes,
             raw_probe=options.axi_raw_shim_probe,
@@ -532,6 +779,7 @@ def create_system(
         target_quotas = [quotas[key] for key in target_quota_keys]
         target_ranges = [entry for entry in normal_ranges
                          if entry[2] == target_node]
+        target_plans = plans_by_target[version]
         adapter_args = dict(
             shim=controller,
             b_out=controller.bToNetwork,
@@ -559,6 +807,11 @@ def create_system(
             orphan_w_transactions=options.axi_orphan_w_transactions,
             orphan_w_beats=options.axi_orphan_w_beats,
             response_ready_depths=target_response_depths,
+            service_depths=target_service_depths,
+            base_latencies=target_base_latencies,
+            planned_uids=[entry[0] for entry in target_plans],
+            planned_extra_latency_cycles=[entry[1] for entry in target_plans],
+            planned_fault_responses=[entry[2] for entry in target_plans],
             ingress_depths=[local_depths[0], local_depths[1],
                             local_depths[3]],
             wire_header_bytes=wire_headers,
@@ -580,20 +833,26 @@ def create_system(
         target_adapters.append(adapter)
 
     if not options.axi_raw_shim_probe:
-        transaction_specs = _transaction_specs(
-            scenario, initiator_specs, target_specs, data_bus_bytes
-        )
         result_json = options.axi_result_json or os.path.join(
             m5.options.outdir, "axi_result.json"
         )
         tester = AxiTraceTester(
             initiators=initiator_adapters,
             targets=target_adapters,
+            network=ruby_system.network,
             target_nodes=ordered_target_nodes,
             transaction_specs=transaction_specs,
             case_name=str(scenario.get("name", "unnamed")),
             result_json=result_json,
             data_bus_bytes=data_bus_bytes,
+            concurrent=(driver_mode == "concurrent"),
+            consumer_stall_until=consumer_stalls,
+            expected_router_vnet=expected_router_vnet,
+            expected_router_depth=expected_router_depth,
+            progress_watchdog_cycles=progress_watchdog_cycles,
+            issue_stop_cycle=issue_stop_cycle,
+            liveness_bound_components=liveness_bound_components,
+            local_delivery_depths=local_depths,
         )
         ruby_system.axi_trace_tester = tester
 

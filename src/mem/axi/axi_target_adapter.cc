@@ -126,7 +126,9 @@ AxiTargetState::AxiTargetState(const AxiTargetConfig &config)
         _config.capacity.readContexts == 0 ||
         _config.capacity.readResponseBeats == 0 ||
         _config.orphanTransactions == 0 || _config.orphanBeats == 0 ||
-        _config.bReadyDepth == 0 || _config.rReadyDepth == 0) {
+        _config.bReadyDepth == 0 || _config.rReadyDepth == 0 ||
+        _config.writeServiceDepth == 0 ||
+        _config.readServiceDepth == 0) {
         throw std::invalid_argument("AXI target capacities must be positive");
     }
     const std::string quota_error = validateAxiQuotaSums(
@@ -137,6 +139,12 @@ AxiTargetState::AxiTargetState(const AxiTargetConfig &config)
         if (range.dstNode != _config.dstNode)
             throw std::invalid_argument(
                 "AXI target memory range has a different dstNode");
+    }
+    for (const auto &[uid, response] : _config.transactionFaults) {
+        (void)uid;
+        if (response != AxiResp::Okay && response != AxiResp::SlvErr)
+            throw std::invalid_argument(
+                "AXI target fault response must be OKAY or SLVERR");
     }
 }
 
@@ -200,6 +208,9 @@ AxiTargetState::canReserveWrite(const AxiCommonMeta &meta,
     const AxiQuota active = _activeQuota.count(source) ?
         _activeQuota.at(source) : AxiQuota{};
     const AxiQuota limit = limit_it->second;
+    panic_if(active.writeContexts > limit.writeContexts ||
+             active.writeBeats > limit.writeBeats,
+             "AXI target active write quota exceeds static limit");
     return active.writeContexts < limit.writeContexts &&
            beat_count <= limit.writeBeats - active.writeBeats;
 }
@@ -220,6 +231,9 @@ AxiTargetState::canReserveRead(const AxiCommonMeta &meta,
     const AxiQuota active = _activeQuota.count(source) ?
         _activeQuota.at(source) : AxiQuota{};
     const AxiQuota limit = limit_it->second;
+    panic_if(active.readContexts > limit.readContexts ||
+             active.readBeats > limit.readBeats,
+             "AXI target active read quota exceeds static limit");
     return active.readContexts < limit.readContexts &&
            beat_count <= limit.readBeats - active.readBeats;
 }
@@ -310,7 +324,7 @@ AxiTargetState::canAcceptAr(const AxiAddressPacket &packet) const
 }
 
 void
-AxiTargetState::acceptAw(const AxiAddressPacket &packet)
+AxiTargetState::acceptAw(const AxiAddressPacket &packet, uint64_t now)
 {
     validateAddressPacket(packet, AxiChannel::Aw);
     auto found = _writes.find(packet.meta.txnUid);
@@ -345,11 +359,11 @@ AxiTargetState::acceptAw(const AxiAddressPacket &packet)
             context.wasOrphan = false;
         }
     }
-    advance();
+    advance(now);
 }
 
 void
-AxiTargetState::acceptW(const AxiDataPacket &packet)
+AxiTargetState::acceptW(const AxiDataPacket &packet, uint64_t now)
 {
     validateDataPacket(packet);
     auto found = _writes.find(packet.meta.txnUid);
@@ -381,11 +395,11 @@ AxiTargetState::acceptW(const AxiDataPacket &packet)
              "AXI_PROTOCOL: duplicate W beat");
     context.beats[packet.beatIndex] = packet;
     ++context.receivedBeats;
-    advance();
+    advance(now);
 }
 
 void
-AxiTargetState::acceptAr(const AxiAddressPacket &packet)
+AxiTargetState::acceptAr(const AxiAddressPacket &packet, uint64_t now)
 {
     validateAddressPacket(packet, AxiChannel::Ar);
     panic_if(_reads.count(packet.meta.txnUid),
@@ -396,111 +410,304 @@ AxiTargetState::acceptAr(const AxiAddressPacket &packet)
     context.ar = packet;
     reserveRead(context);
     _reads.emplace(packet.meta.txnUid, std::move(context));
-    advance();
+    advance(now);
+}
+
+uint32_t
+AxiTargetState::serviceLatency(const AxiCommonMeta &meta, bool read) const
+{
+    const uint32_t base = read ? _config.readBaseLatency :
+                                 _config.writeBaseLatency;
+    const auto extra = _config.extraLatency.find(meta.txnUid);
+    if (extra == _config.extraLatency.end())
+        return base;
+    panic_if(extra->second > std::numeric_limits<uint32_t>::max() - base,
+             "AXI target service latency overflows uint32");
+    return base + extra->second;
+}
+
+AxiResp
+AxiTargetState::serviceResponse(const AxiCommonMeta &meta,
+                                AxiResp decode_resp) const
+{
+    const auto fault = _config.transactionFaults.find(meta.txnUid);
+    if (fault == _config.transactionFaults.end())
+        return decode_resp;
+    return mergeResp(decode_resp, fault->second);
 }
 
 void
-AxiTargetState::completeWrites()
+AxiTargetState::startServices(uint64_t now)
 {
-    for (auto it = _writes.begin(); it != _writes.end();) {
-        WriteContext &context = it->second;
-        if (!context.aw || context.receivedBeats != context.beatCount ||
-            _bReady.full()) {
-            ++it;
-            continue;
+    while (_activeWriteServices < _config.writeServiceDepth) {
+        WriteContext *selected = nullptr;
+        for (auto &[uid, context] : _writes) {
+            if (context.serviceStarted || !context.aw ||
+                context.receivedBeats != context.beatCount) {
+                continue;
+            }
+            if (!selected ||
+                std::tie(context.aw->meta.acceptedTick, uid) <
+                std::tie(selected->aw->meta.acceptedTick,
+                         selected->meta.txnUid)) {
+                selected = &context;
+            }
         }
+        if (!selected)
+            break;
+        const uint64_t latency = serviceLatency(selected->meta, false);
+        panic_if(latency > std::numeric_limits<uint64_t>::max() - now,
+                 "AXI target write service-ready time overflows uint64");
+        selected->serviceStarted = true;
+        selected->serviceReadyAt = now + latency;
+        selected->serviceResponse = serviceResponse(
+            selected->meta, selected->aw->decodeResp);
+        ++_activeWriteServices;
+    }
+
+    while (_activeReadServices < _config.readServiceDepth) {
+        ReadContext *selected = nullptr;
+        for (auto &[uid, context] : _reads) {
+            if (context.serviceStarted)
+                continue;
+            if (!selected ||
+                std::tie(context.ar.meta.acceptedTick, uid) <
+                std::tie(selected->ar.meta.acceptedTick,
+                         selected->ar.meta.txnUid)) {
+                selected = &context;
+            }
+        }
+        if (!selected)
+            break;
+        const uint64_t latency = serviceLatency(selected->ar.meta, true);
+        panic_if(latency > std::numeric_limits<uint64_t>::max() - now,
+                 "AXI target read service-ready time overflows uint64");
+        selected->serviceStarted = true;
+        selected->serviceReadyAt = now + latency;
+        selected->serviceResponse = serviceResponse(
+            selected->ar.meta, selected->ar.decodeResp);
+        ++_activeReadServices;
+    }
+}
+
+void
+AxiTargetState::updateServiceReady(uint64_t now)
+{
+    for (auto &[uid, context] : _writes) {
+        (void)uid;
+        if (context.serviceStarted && !context.serviceReady &&
+            now >= context.serviceReadyAt) {
+            panic_if(_activeWriteServices == 0,
+                     "AXI target write service accounting underflow");
+            context.serviceReady = true;
+            --_activeWriteServices;
+            ++_progress.serviceReady;
+        }
+    }
+    for (auto &[uid, context] : _reads) {
+        (void)uid;
+        if (context.serviceStarted && !context.serviceReady &&
+            now >= context.serviceReadyAt) {
+            panic_if(_activeReadServices == 0,
+                     "AXI target read service accounting underflow");
+            context.serviceReady = true;
+            --_activeReadServices;
+            ++_progress.serviceReady;
+        }
+    }
+}
+
+void
+AxiTargetState::commitWrites(uint64_t now)
+{
+    (void)now;
+    while (!_bReady.full()) {
+        uint64_t selected_uid = 0;
+        WriteContext *selected = nullptr;
+        OrderingKey selected_key;
+        for (auto &[uid, context] : _writes) {
+            if (!context.serviceReady || !context.aw)
+                continue;
+            const OrderingKey key{
+                context.meta.srcNode, context.meta.srcPort,
+                context.meta.axiId, false, context.meta.dstNode};
+            const uint64_t expected = _nextTargetCommit[key];
+            panic_if(context.meta.targetSeq < expected,
+                     "AXI_PROTOCOL: write targetSeq retired twice");
+            if (context.meta.targetSeq != expected) {
+                if (!context.orderingBlockCounted) {
+                    context.orderingBlockCounted = true;
+                    ++_progress.sameIdReadyBlocked;
+                }
+                continue;
+            }
+            if (!selected ||
+                std::tie(context.serviceReadyAt, uid) <
+                std::tie(selected->serviceReadyAt, selected_uid)) {
+                selected_uid = uid;
+                selected = &context;
+                selected_key = key;
+            }
+        }
+        if (!selected)
+            return;
 
         std::vector<AxiDataPacket> beats;
-        beats.reserve(context.beatCount);
-        for (uint16_t index = 0; index < context.beatCount; ++index) {
-            panic_if(!context.beats[index],
+        beats.reserve(selected->beatCount);
+        for (uint16_t index = 0; index < selected->beatCount; ++index) {
+            panic_if(!selected->beats[index],
                      "AXI_PROTOCOL: write burst has a missing beat");
-            panic_if(context.beats[index]->beatIndex != index,
+            panic_if(selected->beats[index]->beatIndex != index,
                      "AXI_PROTOCOL: write beat index conflict");
             AxiWBeat beat;
-            beat.last = context.beats[index]->last;
-            beat.byteStrobe = context.beats[index]->byteStrobe;
-            beat.payloadDigest = context.beats[index]->payloadDigest;
-            beat.functionalData = context.beats[index]->functionalData;
+            beat.last = selected->beats[index]->last;
+            beat.byteStrobe = selected->beats[index]->byteStrobe;
+            beat.payloadDigest = selected->beats[index]->payloadDigest;
+            beat.functionalData = selected->beats[index]->functionalData;
             requireValidAxiWriteBeat(
-                context.aw->request, index, beat, _config.dataBusBytes);
-            beats.push_back(std::move(*context.beats[index]));
+                selected->aw->request, index, beat, _config.dataBusBytes);
+            beats.push_back(std::move(*selected->beats[index]));
         }
 
-        AxiResp response = context.aw->decodeResp;
+        AxiResp response = selected->serviceResponse;
         for (const auto &beat : beats)
             response = mergeResp(response, beat.resp);
         panic_if(response == AxiResp::ExOkay,
                  "AXI model must never generate EXOKAY");
         if (response == AxiResp::Okay) {
             _memory.commitWrite(
-                context.aw->request, beats, _config.dataBusBytes);
+                selected->aw->request, beats, _config.dataBusBytes);
         }
 
         AxiBPacket b;
-        b.meta = context.aw->meta;
+        b.meta = selected->aw->meta;
         b.meta.semanticBytes = 8;
         b.resp = response;
         panic_if(!_bReady.push(std::move(b)),
                  "AXI target B ready FIFO overflow");
-        if (context.wasOrphan) {
-            panic_if(_orphanTransactions == 0 ||
-                     _orphanBeats < context.beatCount,
-                     "AXI orphan accounting underflow");
-            --_orphanTransactions;
-            _orphanBeats -= context.beatCount;
-        }
-        releaseWrite(context);
+        releaseWrite(*selected);
         ++_completedWrites;
-        it = _writes.erase(it);
+        ++_progress.architecturalCommits;
+        ++_progress.writesCommitted;
+        ++_nextTargetCommit[selected_key];
+        _writes.erase(selected_uid);
+    }
+}
+
+void
+AxiTargetState::commitReads(uint64_t now)
+{
+    while (true) {
+        uint64_t selected_uid = 0;
+        ReadContext *selected = nullptr;
+        OrderingKey selected_key;
+        for (auto &[uid, context] : _reads) {
+            if (!context.serviceReady || context.responseEligible)
+                continue;
+            const OrderingKey key{
+                context.ar.meta.srcNode, context.ar.meta.srcPort,
+                context.ar.meta.axiId, true, context.ar.meta.dstNode};
+            const uint64_t expected = _nextTargetCommit[key];
+            panic_if(context.ar.meta.targetSeq < expected,
+                     "AXI_PROTOCOL: read targetSeq retired twice");
+            if (context.ar.meta.targetSeq != expected) {
+                if (!context.orderingBlockCounted) {
+                    context.orderingBlockCounted = true;
+                    ++_progress.sameIdReadyBlocked;
+                }
+                continue;
+            }
+            if (!selected ||
+                std::tie(context.serviceReadyAt, uid) <
+                std::tie(selected->serviceReadyAt, selected_uid)) {
+                selected_uid = uid;
+                selected = &context;
+                selected_key = key;
+            }
+        }
+        if (!selected)
+            return;
+
+        selected->frozenBeats.reserve(selected->ar.request.beatCount);
+        for (uint16_t index = 0;
+             index < selected->ar.request.beatCount; ++index) {
+            AxiDataPacket packet;
+            packet.meta = selected->ar.meta;
+            packet.meta.semanticBytes = static_cast<uint32_t>(
+                uint64_t{1} << selected->ar.request.size);
+            packet.beatIndex = index;
+            packet.beatCount = selected->ar.request.beatCount;
+            packet.last = index + 1 == packet.beatCount;
+            packet.resp = selected->serviceResponse;
+            packet.address = selected->ar.request.address;
+            if (packet.resp == AxiResp::Okay) {
+                packet.functionalData = _memory.readBeat(
+                    selected->ar.request, index, _config.dataBusBytes);
+            } else {
+                packet.functionalData.assign(_config.dataBusBytes, 0);
+            }
+            packet.payloadDigest = payloadDigest(packet.functionalData);
+            selected->frozenBeats.push_back(std::move(packet));
+        }
+        selected->responseEligible = true;
+        selected->responseEligibleAt = now;
+        ++_nextTargetCommit[selected_key];
+        ++_progress.architecturalCommits;
+        ++_progress.readsCommitted;
     }
 }
 
 void
 AxiTargetState::generateReads()
 {
-    for (auto it = _reads.begin(); it != _reads.end();) {
-        ReadContext &context = it->second;
-        while (context.nextBeat < context.ar.request.beatCount &&
-               !_rReady.full()) {
-            AxiDataPacket packet;
-            packet.meta = context.ar.meta;
-            packet.meta.semanticBytes = static_cast<uint32_t>(
-                uint64_t{1} << context.ar.request.size);
-            packet.beatIndex = context.nextBeat;
-            packet.beatCount = context.ar.request.beatCount;
-            packet.last = context.nextBeat + 1 == packet.beatCount;
-            packet.resp = context.ar.decodeResp;
-            packet.address = context.ar.request.address;
-            if (packet.resp == AxiResp::Okay) {
-                packet.functionalData = _memory.readBeat(
-                    context.ar.request, context.nextBeat,
-                    _config.dataBusBytes);
-            } else {
-                packet.functionalData.assign(_config.dataBusBytes, 0);
+    while (!_rReady.full()) {
+        uint64_t selected_uid = 0;
+        ReadContext *selected = nullptr;
+        for (auto &[uid, context] : _reads) {
+            if (!context.responseEligible ||
+                context.nextBeat >= context.frozenBeats.size()) {
+                continue;
             }
-            packet.payloadDigest = payloadDigest(packet.functionalData);
-            panic_if(!_rReady.push(std::move(packet)),
-                     "AXI target R ready FIFO overflow");
-            ++context.nextBeat;
+            if (!selected ||
+                std::tie(context.responseEligibleAt, uid,
+                         context.nextBeat) <
+                std::tie(selected->responseEligibleAt, selected_uid,
+                         selected->nextBeat)) {
+                selected_uid = uid;
+                selected = &context;
+            }
         }
-
-        if (context.nextBeat == context.ar.request.beatCount) {
-            releaseRead(context);
-            ++_completedReads;
-            it = _reads.erase(it);
-        } else {
-            ++it;
-        }
-        if (_rReady.full())
+        if (!selected)
             return;
+        panic_if(!_rReady.push(std::move(
+                     selected->frozenBeats[selected->nextBeat])),
+                 "AXI target R ready FIFO overflow");
+        ++selected->nextBeat;
+        if (selected->nextBeat == selected->frozenBeats.size()) {
+            releaseRead(*selected);
+            ++_completedReads;
+            _reads.erase(selected_uid);
+        }
     }
 }
 
 void
-AxiTargetState::advance()
+AxiTargetState::advance(uint64_t now)
 {
-    completeWrites();
+    panic_if(now < _now, "AXI target time moved backwards");
+    _now = now;
+    startServices(now);
+    updateServiceReady(now);
+    commitWrites(now);
+    commitReads(now);
+    generateReads();
+    // A zero-latency service may become available after a commit frees a
+    // bounded service slot.  Starting it here preserves the edge boundary;
+    // it will become ready on this or a later explicit advance call.
+    startServices(now);
+    updateServiceReady(now);
+    commitWrites(now);
+    commitReads(now);
     generateReads();
 }
 
@@ -509,7 +716,7 @@ AxiTargetState::popBPacket()
 {
     panic_if(_bReady.empty(), "popBPacket called on empty queue");
     _bReady.pop();
-    completeWrites();
+    advance(_now);
 }
 
 void
@@ -517,7 +724,7 @@ AxiTargetState::popRPacket()
 {
     panic_if(_rReady.empty(), "popRPacket called on empty queue");
     _rReady.pop();
-    generateReads();
+    advance(_now);
 }
 
 AxiTargetOccupancy
@@ -526,7 +733,8 @@ AxiTargetState::occupancy() const
     return {_writes.size(), _reservedWriteBeats,
             _orphanTransactions, _orphanBeats,
             _reads.size(), _reservedReadBeats,
-            _bReady.size(), _rReady.size()};
+            _bReady.size(), _rReady.size(),
+            _activeWriteServices, _activeReadServices};
 }
 
 } // namespace axi

@@ -123,6 +123,35 @@ targetConfig(const AxiTargetAdapterParams &p)
                       "response_ready_depths");
     config.bReadyDepth = p.response_ready_depths[0];
     config.rReadyDepth = p.response_ready_depths[1];
+    requireVectorSize(p.service_depths, 2, p.name, "service_depths");
+    requireVectorSize(p.base_latencies, 2, p.name, "base_latencies");
+    config.writeServiceDepth = p.service_depths[0];
+    config.readServiceDepth = p.service_depths[1];
+    config.writeBaseLatency = p.base_latencies[0];
+    config.readBaseLatency = p.base_latencies[1];
+
+    requireVectorSize(p.planned_extra_latency_cycles,
+                      p.planned_uids.size(), p.name,
+                      "planned_extra_latency_cycles");
+    requireVectorSize(p.planned_fault_responses, p.planned_uids.size(),
+                      p.name, "planned_fault_responses");
+    for (size_t i = 0; i < p.planned_uids.size(); ++i) {
+        const uint64_t uid = p.planned_uids[i];
+        fatal_if(!config.extraLatency.emplace(
+                     uid, p.planned_extra_latency_cycles[i]).second,
+                 "%s: duplicate planned txnUid %#llx", p.name,
+                 static_cast<unsigned long long>(uid));
+        const std::string &response = p.planned_fault_responses[i];
+        AxiResp fault = AxiResp::Okay;
+        if (response == "slverr") {
+            fault = AxiResp::SlvErr;
+        } else {
+            fatal_if(response != "okay",
+                     "%s: planned fault response must be okay or slverr",
+                     p.name);
+        }
+        config.transactionFaults.emplace(uid, fault);
+    }
 
     const size_t source_count = p.source_nodes.size();
     requireVectorSize(p.source_ports, source_count, p.name, "source_ports");
@@ -482,7 +511,12 @@ AxiInitiatorAdapter::AxiInitiatorAdapter(const Params &p)
           p.injection_delays, 3, p.name, "injection_delays"),
           p.injection_delays[0])),
       wInjectionDelay(p.injection_delays[1]),
-      arInjectionDelay(p.injection_delays[2])
+      arInjectionDelay(p.injection_delays[2]),
+      bResponseEjectionStallUntil((requireVectorSize(
+          p.response_ejection_stall_until, 2, p.name,
+          "response_ejection_stall_until"),
+          p.response_ejection_stall_until[0])),
+      rResponseEjectionStallUntil(p.response_ejection_stall_until[1])
 {
     fatal_if(rawProbe && rawProbeHoldCycles < Cycles(2),
              "%s: raw probe hold must be at least two cycles", name());
@@ -673,12 +707,12 @@ AxiInitiatorAdapter::tryConsumeR(AxiRBeat &r)
 void
 AxiInitiatorAdapter::processFunctionalIngress()
 {
-    if (!bIngress.empty() && functionalState->canAcceptBPacket()) {
-        functionalState->acceptBPacket(bIngress.front());
+    if (!bIngress.empty()) {
+        functionalState->acceptBPacket(bIngress.front(), curTick());
         bIngress.pop();
     }
-    if (!rIngress.empty() && functionalState->canAcceptRPacket()) {
-        functionalState->acceptRPacket(rIngress.front());
+    if (!rIngress.empty()) {
+        functionalState->acceptRPacket(rIngress.front(), curTick());
         rIngress.pop();
     }
 }
@@ -686,7 +720,14 @@ AxiInitiatorAdapter::processFunctionalIngress()
 void
 AxiInitiatorAdapter::ingestFunctionalResponses()
 {
-    if (!bIngress.full() && bLocal->isReady(curTick())) {
+    const bool b_stalled = curCycle() < bResponseEjectionStallUntil;
+    const bool r_stalled = curCycle() < rResponseEjectionStallUntil;
+    if (b_stalled && bLocal->isReady(curTick()))
+        ++adapterProgress.bEjectionStallCycles;
+    if (r_stalled && rLocal->isReady(curTick()))
+        ++adapterProgress.rEjectionStallCycles;
+
+    if (!b_stalled && !bIngress.full() && bLocal->isReady(curTick())) {
         auto msg = peekAxi(bLocal, "B local delivery");
         fatal_if(msg->getChannel() != ruby::AxiChannel_B,
                  "%s: non-B message in B local delivery", name());
@@ -702,7 +743,7 @@ AxiInitiatorAdapter::ingestFunctionalResponses()
         bLocal->dequeue(curTick());
     }
 
-    if (!rIngress.full() && rLocal->isReady(curTick())) {
+    if (!r_stalled && !rIngress.full() && rLocal->isReady(curTick())) {
         auto msg = peekAxi(rLocal, "R local delivery");
         fatal_if(msg->getChannel() != ruby::AxiChannel_R,
                  "%s: non-R message in R local delivery", name());
@@ -786,6 +827,16 @@ AxiInitiatorAdapter::hasFunctionalWork() const
 void
 AxiInitiatorAdapter::functionalWakeup()
 {
+    adapterProgress.bLocalHighWater = std::max(
+        adapterProgress.bLocalHighWater,
+        static_cast<size_t>(bLocal->getNumMessages()));
+    adapterProgress.rLocalHighWater = std::max(
+        adapterProgress.rLocalHighWater,
+        static_cast<size_t>(rLocal->getNumMessages()));
+    adapterProgress.bIngressHighWater = std::max(
+        adapterProgress.bIngressHighWater, bIngress.size());
+    adapterProgress.rIngressHighWater = std::max(
+        adapterProgress.rIngressHighWater, rIngress.size());
     processFunctionalIngress();
     injectFunctionalRequests();
     ingestFunctionalResponses();
@@ -802,6 +853,16 @@ AxiInitiatorAdapter::functionalOccupancy() const
     occupancy.b += bIngress.size();
     occupancy.r += rIngress.size();
     return occupancy;
+}
+
+AxiInitiatorAdapterProgress
+AxiInitiatorAdapter::functionalProgress() const
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: functional progress used during raw probe", name());
+    AxiInitiatorAdapterProgress result = adapterProgress;
+    result.core = functionalState->progress();
+    return result;
 }
 
 bool
@@ -965,21 +1026,22 @@ AxiTargetAdapter::wakeup()
 void
 AxiTargetAdapter::processFunctionalIngress()
 {
+    const uint64_t now = curTick() / clockPeriod();
     // W is considered first so an intentionally earlier W can create W_ONLY;
     // the channels remain independent and a blocked W never blocks AW/AR.
     if (!wIngress.empty() &&
         functionalState->canAcceptW(wIngress.front())) {
-        functionalState->acceptW(wIngress.front());
+        functionalState->acceptW(wIngress.front(), now);
         wIngress.pop();
     }
     if (!awIngress.empty() &&
         functionalState->canAcceptAw(awIngress.front())) {
-        functionalState->acceptAw(awIngress.front());
+        functionalState->acceptAw(awIngress.front(), now);
         awIngress.pop();
     }
     if (!arIngress.empty() &&
         functionalState->canAcceptAr(arIngress.front())) {
-        functionalState->acceptAr(arIngress.front());
+        functionalState->acceptAr(arIngress.front(), now);
         arIngress.pop();
     }
 }
@@ -1047,7 +1109,7 @@ AxiTargetAdapter::ingestFunctionalRequests()
 void
 AxiTargetAdapter::injectFunctionalResponses()
 {
-    functionalState->advance();
+    functionalState->advance(curTick() / clockPeriod());
     if (functionalState->hasBPacket() &&
         bOut->areNSlotsAvailable(1, curTick())) {
         const AxiBPacket &packet = functionalState->frontBPacket();
@@ -1087,6 +1149,8 @@ AxiTargetAdapter::hasFunctionalWork() const
 {
     const auto occupancy = functionalState->occupancy();
     return !awIngress.empty() || !wIngress.empty() || !arIngress.empty() ||
+           occupancy.writeContexts != 0 || occupancy.readContexts != 0 ||
+           occupancy.writeServices != 0 || occupancy.readServices != 0 ||
            occupancy.bReady != 0 || occupancy.rReady != 0 ||
            awLocal->isReady(curTick()) || wLocal->isReady(curTick()) ||
            arLocal->isReady(curTick());
@@ -1111,6 +1175,14 @@ AxiTargetAdapter::functionalOccupancy() const
     occupancy.writeContexts += awIngress.size() + wIngress.size();
     occupancy.readContexts += arIngress.size();
     return occupancy;
+}
+
+AxiTargetProgress
+AxiTargetAdapter::functionalProgress() const
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: functional progress used during raw probe", name());
+    return functionalState->progress();
 }
 
 uint8_t

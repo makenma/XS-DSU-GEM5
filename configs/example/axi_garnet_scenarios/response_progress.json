@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "name": "response_progress",
+  "driver_mode": "concurrent",
+  "issue_stop_cycle": 2000,
+  "progress_watchdog_cycles": 256,
+  "consumer_stall_until_cycle": {"b": 32, "r": 32},
+  "liveness_bound_cycles": {
+    "max_target_latency": 4,
+    "max_forced_stall": 32,
+    "packet_serialization_and_path_slack": 64
+  },
+  "endpoint_to_router": {
+    "initiators": [
+      {"src_node": 0, "src_port": 0, "router_id": 0,
+       "default_target": 1}
+    ],
+    "targets": [
+      {"dst_node": 1, "router_id": 3}
+    ]
+  },
+  "default_error_target": 1,
+  "target_ranges": [
+    {"dst_node": 1, "start": "0x0", "end": "0x80000"}
+  ],
+  "quotas": [
+    {"src_node": 0, "src_port": 0, "dst_node": 1,
+     "write_contexts": 64, "write_beats": 4096,
+     "read_contexts": 64, "read_beats": 4096}
+  ],
+  "traffic_generator": {
+    "kind": "response_progress_v1",
+    "stop_cycle": 2000,
+    "id_count": 8,
+    "write_base": "0x10000",
+    "read_base": "0x40000",
+    "extra_latency_modulus": 4
+  }
+}

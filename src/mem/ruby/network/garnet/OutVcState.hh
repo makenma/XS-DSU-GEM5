@@ -55,10 +55,11 @@ class OutVcState
     void decrement_credit();
 
     inline bool
-    isInState(VC_state_type state, Tick request_time)
+    isInState(VC_state_type state, Tick request_time) const
     {
         return ((m_vc_state == state) && (request_time >= m_time) );
     }
+    VC_state_type getState() const { return m_vc_state; }
     inline void
     setState(VC_state_type state, Tick time)
     {

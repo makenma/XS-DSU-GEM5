@@ -48,6 +48,17 @@ struct AxiInitiatorOccupancy
     size_t outstandingReads = 0;
 };
 
+struct AxiInitiatorProgress
+{
+    uint64_t bPacketsBuffered = 0;
+    uint64_t rPacketsBuffered = 0;
+    uint64_t sameIdResponsesBlocked = 0;
+    uint64_t bTransactionsRetired = 0;
+    uint64_t rTransactionsRetired = 0;
+    uint64_t writeQuotaStalls = 0;
+    uint64_t readQuotaStalls = 0;
+};
+
 class AxiInitiatorState
 {
   public:
@@ -67,15 +78,16 @@ class AxiInitiatorState
     void popWPacket();
     void popArPacket();
 
-    bool canAcceptBPacket() const;
-    bool canAcceptRPacket() const;
-    void acceptBPacket(const AxiBPacket &packet);
-    void acceptRPacket(const AxiDataPacket &packet);
+    bool canAcceptBPacket(const AxiBPacket &packet) const;
+    bool canAcceptRPacket(const AxiDataPacket &packet) const;
+    void acceptBPacket(const AxiBPacket &packet, Tick ready_tick = 0);
+    void acceptRPacket(const AxiDataPacket &packet, Tick ready_tick = 0);
     bool tryConsumeB(AxiBBeat &beat);
     bool tryConsumeR(AxiRBeat &beat);
 
     void advance();
     AxiInitiatorOccupancy occupancy() const;
+    const AxiInitiatorProgress &progress() const { return _progress; }
     std::string finalConsistencyError() const;
 
     uint64_t nextAwOrdinal() const { return _nextAwOrdinal; }
@@ -96,6 +108,17 @@ class AxiInitiatorState
         bool quotaAcquired = false;
         bool awInjected = false;
         uint16_t wInjected = 0;
+        std::optional<AxiBPacket> response;
+        Tick responseReadyTick = 0;
+        bool responseQueued = false;
+        bool orderingBlockCounted = false;
+        bool quotaBlockCounted = false;
+    };
+
+    struct ReceivedR
+    {
+        AxiDataPacket packet;
+        Tick readyTick = 0;
     };
 
     struct ReadState
@@ -103,9 +126,11 @@ class AxiInitiatorState
         AxiAddressPacket ar;
         bool quotaAcquired = false;
         bool arInjected = false;
-        std::vector<std::optional<AxiDataPacket>> received;
-        uint16_t nextReadyBeat = 0;
+        std::vector<std::optional<ReceivedR>> received;
+        uint16_t nextQueuedBeat = 0;
         uint16_t consumedBeats = 0;
+        bool orderingBlockCounted = false;
+        bool quotaBlockCounted = false;
     };
 
     struct ReadyR
@@ -133,6 +158,7 @@ class AxiInitiatorState
     void releaseReadQuota(const ReadState &state);
     void bindAndValidate(WriteState &state);
     void pumpStagedW();
+    void pumpReadyB();
     void pumpReadyR();
     void validateConfig() const;
 
@@ -154,6 +180,9 @@ class AxiInitiatorState
     std::map<uint64_t, uint64_t> _writeOrdinalByUid;
     std::map<uint64_t, ReadState> _readsByUid;
 
+    std::map<uint32_t, uint64_t> _nextBRetireSeq;
+    std::map<uint32_t, uint64_t> _nextRRetireSeq;
+
     BoundedFifo<uint64_t> _awReady;
     BoundedFifo<AxiDataPacket> _wReady;
     BoundedFifo<AxiBPacket> _bReady;
@@ -163,6 +192,7 @@ class AxiInitiatorState
     std::map<uint32_t, AxiQuota> _activeQuota;
     size_t _unboundBursts = 0;
     size_t _unboundBeats = 0;
+    AxiInitiatorProgress _progress;
 };
 
 } // namespace axi

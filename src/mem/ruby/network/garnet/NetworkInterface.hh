@@ -83,6 +83,7 @@ class NetworkInterface : public ClockedObject, public Consumer
     uint32_t functionalWrite(Packet *);
 
     void scheduleFlit(flit *t_flit);
+    GarnetQuiescenceSnapshot quiescenceSnapshot() const;
 
     int get_router_id(int vnet)
     {
@@ -111,6 +112,12 @@ class NetworkInterface : public ClockedObject, public Consumer
 
           flitBuffer *
           outFlitQueue()
+          {
+              return _outFlitQueue;
+          }
+
+          const flitBuffer *
+          outFlitQueue() const
           {
               return _outFlitQueue;
           }
@@ -203,6 +210,12 @@ class NetworkInterface : public ClockedObject, public Consumer
 
           flitBuffer *
           outCreditQueue()
+          {
+              return _outCreditQueue;
+          }
+
+          const flitBuffer *
+          outCreditQueue() const
           {
               return _outCreditQueue;
           }

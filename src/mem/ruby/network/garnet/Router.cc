@@ -121,6 +121,24 @@ Router::wakeup()
     crossbarSwitch.wakeup();
 }
 
+GarnetQuiescenceSnapshot
+Router::quiescenceSnapshot() const
+{
+    GarnetQuiescenceSnapshot snapshot;
+    for (const auto &input : m_input_unit) {
+        snapshot.routerBufferedFlits += input->bufferedFlits();
+        snapshot.nonIdleInputVcs += input->nonIdleVcs();
+        snapshot.creditLinkPendingCredits += input->pendingCredits();
+    }
+    for (const auto &output : m_output_unit) {
+        snapshot.routerBufferedFlits += output->bufferedFlits();
+        snapshot.nonIdleOutputVcs += output->nonIdleVcs();
+        snapshot.creditDeficit += output->creditDeficit();
+    }
+    snapshot.routerBufferedFlits += crossbarSwitch.pendingFlits();
+    return snapshot;
+}
+
 void
 Router::addInPort(PortDirection inport_dirn,
                   NetworkLink *in_link, CreditLink *credit_link)

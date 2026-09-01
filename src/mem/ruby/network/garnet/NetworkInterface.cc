@@ -324,6 +324,7 @@ void
 NetworkInterface::checkStallQueue()
 {
     // Check all stall queues.
+    bool made_progress = false;
     // There is one stall queue for each input link
     for (auto &iPort: inPorts) {
         iPort->messageEnqueuedThisCycle = false;
@@ -363,10 +364,25 @@ NetworkInterface::checkStallQueue()
                         outNode_ptr[vnet]->unregisterDequeueCallback();
 
                     iPort->messageEnqueuedThisCycle = true;
+                    made_progress = true;
                     break;
                 } else {
                     ++stallIter;
                 }
+            }
+        }
+    }
+
+    // Dequeues from different protocol vnets in one cycle can coalesce into a
+    // single NI wakeup.  Since ejection is intentionally limited to one
+    // message per input port per cycle, keep draining after a successful
+    // unstall instead of relying on another dequeue callback that may already
+    // have been coalesced.
+    if (made_progress) {
+        for (const auto *port : inPorts) {
+            if (!port->m_stall_queue.empty()) {
+                scheduleEvent(Cycles(1));
+                break;
             }
         }
     }
@@ -511,8 +527,11 @@ NetworkInterface::scheduleOutputPort(OutputPort *oPort)
        int t_vnet = get_vnet(vc);
        if (oPort->isVnetSupported(t_vnet)) {
            // model buffer backpressure
-           if (niOutVcs[vc].isReady(curTick()) &&
-               outVcState[vc].has_credit()) {
+           if (niOutVcs[vc].isReady(curTick())) {
+               if (!outVcState[vc].has_credit()) {
+                   m_net_ptr->incrementNiCreditStall(t_vnet);
+                   continue;
+               }
 
                bool is_candidate_vc = true;
                int vc_base = t_vnet * m_vc_per_vnet;
@@ -684,6 +703,37 @@ void
 NetworkInterface::print(std::ostream& out) const
 {
     out << "[Network Interface]";
+}
+
+GarnetQuiescenceSnapshot
+NetworkInterface::quiescenceSnapshot() const
+{
+    GarnetQuiescenceSnapshot snapshot;
+    for (const auto *buffer : inNode_ptr) {
+        if (buffer)
+            snapshot.niQueuedMessages += buffer->getNumMessages();
+    }
+    for (const auto *buffer : outNode_ptr) {
+        if (buffer)
+            snapshot.niQueuedMessages += buffer->getNumMessages();
+    }
+    for (const auto &buffer : niOutVcs)
+        snapshot.niQueuedFlits += buffer.getSize();
+    for (const auto *port : outPorts)
+        snapshot.niQueuedFlits += port->outFlitQueue()->getSize();
+    for (const auto *port : inPorts) {
+        snapshot.niQueuedFlits += port->m_stall_queue.size();
+        snapshot.creditLinkPendingCredits +=
+            port->outCreditQueue()->getSize();
+    }
+    for (const auto &vc : outVcState) {
+        snapshot.nonIdleOutputVcs += vc.getState() != IDLE_;
+        panic_if(vc.get_credit_count() > vc.get_max_credit_count(),
+                 "%s: NI output VC credit exceeds initial depth", name());
+        snapshot.creditDeficit +=
+            vc.get_max_credit_count() - vc.get_credit_count();
+    }
+    return snapshot;
 }
 
 bool

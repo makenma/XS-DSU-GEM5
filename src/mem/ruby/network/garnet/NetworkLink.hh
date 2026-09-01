@@ -68,6 +68,7 @@ class NetworkLink : public ClockedObject, public Consumer
     void print(std::ostream& out) const {}
     int get_id() const { return m_id; }
     flitBuffer *getBuffer() { return &linkBuffer;}
+    uint64_t pendingItems() const { return linkBuffer.getSize(); }
     virtual void wakeup();
 
     unsigned int getLinkUtilization() const { return m_link_utilized; }

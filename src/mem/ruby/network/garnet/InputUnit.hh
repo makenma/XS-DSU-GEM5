@@ -133,6 +133,9 @@ class InputUnit : public Consumer
 
     uint32_t get_vc_capacity(int vc) const;
     uint32_t get_vc_occupancy(int vc) const;
+    uint64_t bufferedFlits() const;
+    uint64_t nonIdleVcs() const;
+    uint64_t pendingCredits() const { return creditQueue.getSize(); }
 
     flitBuffer* getCreditQueue() { return &creditQueue; }
 

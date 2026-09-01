@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "name": "ejection_backpressure",
+  "driver_mode": "concurrent",
+  "response_ejection_stall_until_cycle": {"b": 200, "r": 200},
+  "endpoint_to_router": {
+    "initiators": [
+      {"src_node": 0, "src_port": 0, "router_id": 0,
+       "default_target": 1}
+    ],
+    "targets": [
+      {"dst_node": 1, "router_id": 3}
+    ]
+  },
+  "default_error_target": 1,
+  "target_ranges": [
+    {"dst_node": 1, "start": "0x0", "end": "0x20000"}
+  ],
+  "quotas": [
+    {"src_node": 0, "src_port": 0, "dst_node": 1,
+     "write_contexts": 16, "write_beats": 64,
+     "read_contexts": 16, "read_beats": 64}
+  ],
+  "transactions": [
+    {"kind": "write", "source_index": 0, "dst_node": 1,
+     "axi_id": 0, "address": "0x100", "beat_count": 1, "size": 6,
+     "data_seed": 1, "strobe": "full"},
+    {"kind": "read", "source_index": 0, "dst_node": 1,
+     "axi_id": 0, "address": "0x1000", "beat_count": 1, "size": 6,
+     "data_seed": 0, "strobe": "full"},
+    {"kind": "write", "source_index": 0, "dst_node": 1,
+     "axi_id": 1, "address": "0x180", "beat_count": 1, "size": 6,
+     "data_seed": 17, "strobe": "full"},
+    {"kind": "read", "source_index": 0, "dst_node": 1,
+     "axi_id": 1, "address": "0x1080", "beat_count": 1, "size": 6,
+     "data_seed": 0, "strobe": "full"},
+    {"kind": "write", "source_index": 0, "dst_node": 1,
+     "axi_id": 2, "address": "0x200", "beat_count": 1, "size": 6,
+     "data_seed": 33, "strobe": "full"},
+    {"kind": "read", "source_index": 0, "dst_node": 1,
+     "axi_id": 2, "address": "0x1100", "beat_count": 1, "size": 6,
+     "data_seed": 0, "strobe": "full"},
+    {"kind": "write", "source_index": 0, "dst_node": 1,
+     "axi_id": 3, "address": "0x280", "beat_count": 1, "size": 6,
+     "data_seed": 49, "strobe": "full"},
+    {"kind": "read", "source_index": 0, "dst_node": 1,
+     "axi_id": 3, "address": "0x1180", "beat_count": 1, "size": 6,
+     "data_seed": 0, "strobe": "full"},
+    {"kind": "write", "source_index": 0, "dst_node": 1,
+     "axi_id": 4, "address": "0x300", "beat_count": 1, "size": 6,
+     "data_seed": 65, "strobe": "full"},
+    {"kind": "read", "source_index": 0, "dst_node": 1,
+     "axi_id": 4, "address": "0x1200", "beat_count": 1, "size": 6,
+     "data_seed": 0, "strobe": "full"},
+    {"kind": "write", "source_index": 0, "dst_node": 1,
+     "axi_id": 5, "address": "0x380", "beat_count": 1, "size": 6,
+     "data_seed": 81, "strobe": "full"},
+    {"kind": "read", "source_index": 0, "dst_node": 1,
+     "axi_id": 5, "address": "0x1280", "beat_count": 1, "size": 6,
+     "data_seed": 0, "strobe": "full"},
+    {"kind": "write", "source_index": 0, "dst_node": 1,
+     "axi_id": 6, "address": "0x400", "beat_count": 1, "size": 6,
+     "data_seed": 97, "strobe": "full"},
+    {"kind": "read", "source_index": 0, "dst_node": 1,
+     "axi_id": 6, "address": "0x1300", "beat_count": 1, "size": 6,
+     "data_seed": 0, "strobe": "full"},
+    {"kind": "write", "source_index": 0, "dst_node": 1,
+     "axi_id": 7, "address": "0x480", "beat_count": 1, "size": 6,
+     "data_seed": 113, "strobe": "full"},
+    {"kind": "read", "source_index": 0, "dst_node": 1,
+     "axi_id": 7, "address": "0x1380", "beat_count": 1, "size": 6,
+     "data_seed": 0, "strobe": "full"}
+  ]
+}

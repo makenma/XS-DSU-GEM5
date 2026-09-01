@@ -46,8 +46,14 @@ struct AxiTargetConfig
     uint32_t orphanBeats = 256;
     uint32_t bReadyDepth = 16;
     uint32_t rReadyDepth = 128;
+    uint32_t writeServiceDepth = 32;
+    uint32_t readServiceDepth = 32;
+    uint32_t writeBaseLatency = 1;
+    uint32_t readBaseLatency = 1;
     std::map<AxiEndpointKey, AxiQuota> sourceQuotas;
     std::vector<AxiRange> memoryRanges;
+    std::map<uint64_t, uint32_t> extraLatency;
+    std::map<uint64_t, AxiResp> transactionFaults;
 };
 
 struct AxiTargetOccupancy
@@ -60,6 +66,17 @@ struct AxiTargetOccupancy
     size_t readReservedBeats = 0;
     size_t bReady = 0;
     size_t rReady = 0;
+    size_t writeServices = 0;
+    size_t readServices = 0;
+};
+
+struct AxiTargetProgress
+{
+    uint64_t serviceReady = 0;
+    uint64_t architecturalCommits = 0;
+    uint64_t sameIdReadyBlocked = 0;
+    uint64_t writesCommitted = 0;
+    uint64_t readsCommitted = 0;
 };
 
 class AxiTargetState
@@ -70,9 +87,9 @@ class AxiTargetState
     bool canAcceptAw(const AxiAddressPacket &packet) const;
     bool canAcceptW(const AxiDataPacket &packet) const;
     bool canAcceptAr(const AxiAddressPacket &packet) const;
-    void acceptAw(const AxiAddressPacket &packet);
-    void acceptW(const AxiDataPacket &packet);
-    void acceptAr(const AxiAddressPacket &packet);
+    void acceptAw(const AxiAddressPacket &packet, uint64_t now = 0);
+    void acceptW(const AxiDataPacket &packet, uint64_t now = 0);
+    void acceptAr(const AxiAddressPacket &packet, uint64_t now = 0);
 
     bool hasBPacket() const { return !_bReady.empty(); }
     bool hasRPacket() const { return !_rReady.empty(); }
@@ -81,8 +98,9 @@ class AxiTargetState
     void popBPacket();
     void popRPacket();
 
-    void advance();
+    void advance(uint64_t now = 0);
     AxiTargetOccupancy occupancy() const;
+    const AxiTargetProgress &progress() const { return _progress; }
     const AxiSimpleMemory &memory() const { return _memory; }
     AxiSimpleMemory &memory() { return _memory; }
 
@@ -99,6 +117,11 @@ class AxiTargetState
         uint16_t receivedBeats = 0;
         bool quotaReserved = false;
         bool wasOrphan = false;
+        bool serviceStarted = false;
+        bool serviceReady = false;
+        bool orderingBlockCounted = false;
+        uint64_t serviceReadyAt = 0;
+        AxiResp serviceResponse = AxiResp::Okay;
     };
 
     struct ReadContext
@@ -106,7 +129,18 @@ class AxiTargetState
         AxiAddressPacket ar;
         uint16_t nextBeat = 0;
         bool quotaReserved = false;
+        bool serviceStarted = false;
+        bool serviceReady = false;
+        bool responseEligible = false;
+        bool orderingBlockCounted = false;
+        uint64_t serviceReadyAt = 0;
+        uint64_t responseEligibleAt = 0;
+        AxiResp serviceResponse = AxiResp::Okay;
+        std::vector<AxiDataPacket> frozenBeats;
     };
+
+    using OrderingKey =
+        std::tuple<uint32_t, uint16_t, uint32_t, bool, uint32_t>;
 
     bool canReserveWrite(const AxiCommonMeta &meta,
                          uint16_t beat_count) const;
@@ -119,7 +153,13 @@ class AxiTargetState
     void validateAddressPacket(const AxiAddressPacket &packet,
                                AxiChannel channel) const;
     void validateDataPacket(const AxiDataPacket &packet) const;
-    void completeWrites();
+    uint32_t serviceLatency(const AxiCommonMeta &meta, bool read) const;
+    AxiResp serviceResponse(const AxiCommonMeta &meta,
+                            AxiResp decode_resp) const;
+    void startServices(uint64_t now);
+    void updateServiceReady(uint64_t now);
+    void commitWrites(uint64_t now);
+    void commitReads(uint64_t now);
     void generateReads();
 
     AxiTargetConfig _config;
@@ -133,8 +173,13 @@ class AxiTargetState
     size_t _reservedReadBeats = 0;
     size_t _orphanTransactions = 0;
     size_t _orphanBeats = 0;
+    size_t _activeWriteServices = 0;
+    size_t _activeReadServices = 0;
     uint64_t _completedWrites = 0;
     uint64_t _completedReads = 0;
+    uint64_t _now = 0;
+    std::map<OrderingKey, uint64_t> _nextTargetCommit;
+    AxiTargetProgress _progress;
 };
 
 } // namespace axi

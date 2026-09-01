@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "name": "same_id_order",
+  "driver_mode": "concurrent",
+  "endpoint_to_router": {
+    "initiators": [
+      {"src_node": 0, "src_port": 0, "router_id": 0,
+       "default_target": 1}
+    ],
+    "targets": [
+      {"dst_node": 1, "router_id": 3}
+    ]
+  },
+  "default_error_target": 1,
+  "target_ranges": [
+    {"dst_node": 1, "start": "0x0", "end": "0x10000"}
+  ],
+  "quotas": [
+    {"src_node": 0, "src_port": 0, "dst_node": 1,
+     "write_contexts": 8, "write_beats": 64,
+     "read_contexts": 8, "read_beats": 64}
+  ],
+  "transactions": [
+    {"kind": "write", "source_index": 0, "dst_node": 1,
+     "axi_id": 5, "address": "0x100", "beat_count": 1, "size": 6,
+     "data_seed": 17, "strobe": "full",
+     "target_extra_latency_cycles": 30},
+    {"kind": "write", "source_index": 0, "dst_node": 1,
+     "axi_id": 5, "address": "0x180", "beat_count": 1, "size": 6,
+     "data_seed": 81, "strobe": "full",
+     "target_extra_latency_cycles": 0},
+    {"kind": "read", "source_index": 0, "dst_node": 1,
+     "axi_id": 7, "address": "0x300", "beat_count": 1, "size": 6,
+     "data_seed": 0, "strobe": "full",
+     "target_extra_latency_cycles": 30},
+    {"kind": "read", "source_index": 0, "dst_node": 1,
+     "axi_id": 7, "address": "0x380", "beat_count": 1, "size": 6,
+     "data_seed": 0, "strobe": "full",
+     "target_extra_latency_cycles": 0}
+  ]
+}

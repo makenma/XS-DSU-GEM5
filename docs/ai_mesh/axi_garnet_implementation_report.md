@@ -443,3 +443,105 @@ transported 100 five-flit packets at packet latency 6040.62 and flit latency
 | Commit 1 raw ownership regression | PASS, exit 0, tick 7326 |
 | specification section 15.5 Garnet AXI-leak scan | PASS, no output |
 | `git diff --check` | PASS, no output |
+
+## Commit 5 gate: ordering, response ROB, and backpressure
+
+### Ordering and bounded response service
+
+AW and AR acceptance now freeze a globally unique transaction UID plus the
+target-local and source-response sequence domains.  Target write and read
+service may become ready out of order, but the target same-ID gate performs
+architectural commit in `targetSeq` order.  The source keeps independently
+bounded B-transaction and R-beat reorder storage and retires responses in the
+global per-source, per-direction `responseSeq` order, including same-ID
+transactions sent to different targets.  Read and write ordering domains
+remain independent, and different IDs are not globally serialized.
+
+Target service queues, ready-response queues, write/orphan assembly, source
+outstanding tables, response ROBs, endpoint ingress queues, SLICC network
+queues, and local-delivery queues all have explicit capacities.  Deterministic
+per-UID latency/fault plans let integration tests make a younger transaction
+service-ready first without changing its acceptance-time identity.  Quota
+pressure and B/R ejection pressure are exposed through stable progress and
+high-water counters.
+
+During I9, simultaneous B/R local dequeues exposed a protocol-neutral Garnet
+NI wakeup loss: multiple dequeue callbacks could coalesce into one scheduled
+NI event, while `checkStallQueue()` intentionally released only one stalled
+tail per input port per cycle.  The NI now reschedules itself one cycle later
+only when it made real unstall progress and another stalled tail remains.
+This preserves one-per-cycle behavior without spinning and fixes forward
+progress for every protocol using the same MessageBuffer/NI path.
+
+### Protocol-neutral drain state and stats
+
+`GarnetNetwork::quiescenceSnapshot()` now accounts for queued NI flits and
+messages (both injection and ejection MessageBuffers), router flits, non-IDLE
+input/output VCs, pending data/credit link items, bridge items, and every
+output-credit deficit.  Accessors are read-only and do not schedule events.
+The functional tester requires all AXI transactions complete, every adapter
+idle, and this snapshot empty for two consecutive network cycles.
+
+The same generic instrumentation records per-vnet input-VC maximum occupancy,
+router credit stalls, VC-allocation stalls, and NI credit stalls.  Garnet
+continues to see only vnet/VC/flit/link/credit state; the section 15.5 AXI
+type/include/channel scan remains empty.
+
+### Exact U5-U7, U10, and U12 suites
+
+All explicitly registered binaries were rebuilt and run with no skipped or
+disabled tests:
+
+| Binary | Result |
+|---|---|
+| `build/AXI_MESH/mem/axi/axi_ordering.test.opt` | PASS, 8/8 U5 tests |
+| `build/AXI_MESH/mem/axi/axi_flow_control.test.opt` | PASS, 4/4 U6 tests |
+| `build/AXI_MESH/mem/axi/axi_error_response.test.opt` | PASS, 7/7 U7 tests |
+| `build/AXI_MESH/mem/axi/axi_protocol_checker.test.opt` | PASS, 5/5 U10 tests |
+| `build/AXI_MESH/mem/ruby/network/garnet/garnet_quiescence.test.opt` | PASS, 3/3 U12 tests |
+
+The five earlier binaries were also rerun: U1 8/8, U2-U4 19/19, U8 4/4,
+U9 6/6, and U11 2/2.  The combined required unit set is therefore 66/66.
+
+### I5-I10 functional Garnet runs
+
+All runs used the real five-vnet Garnet path and parsed `axi_result.json`.
+Each result has issued=completed, zero protocol errors, zero outstanding,
+orphan, and ROB entries at exit, an all-zero protocol-neutral quiescence
+snapshot, and at least two consecutive quiet cycles.
+
+| Case | Result | Required evidence |
+|---|---|---|
+| `same_id_order` | PASS, tick 25641 | completion `[0,1,2,3]`; source buffered 2 and target blocked 2 younger same-ID responses |
+| `cross_id_reorder` | PASS, tick 24642 | completion `[3,1,2,0]`, proving real different-ID inversion |
+| `buffer_depth_credit_d1` | PASS, tick 514152 | 64-bit link, one VC/vnet; W VC max 1, credit stalls 2131 |
+| `buffer_depth_credit_d2` | PASS, tick 258408 | W VC max 2, credit stalls 1005 |
+| `buffer_depth_credit_d8` | PASS, tick 147852 | ten-flit W packet, W VC max 8, credit stalls 280 |
+| `target_quota_no_hol` | PASS, tick 27306 | orphan high-water 1, quota stall 1; source 1 completed first |
+| `ejection_backpressure` | PASS, tick 71262 | B/R local queues reached depth 2; 274 ejection-stall cycles; all 16 transactions drained |
+| `response_progress` | PASS, tick 3008988 | 2001 transactions created every cycle through cycle 2000; max eligible/no-progress 4 cycles |
+
+I10 records and validates its resolved liveness proof before simulation:
+target latency 4 + forced stall 32 + packet/path slack 64 = 100 cycles,
+strictly below the fixed 256-cycle watchdog.  It completed 1001 writes and
+1000 reads and drained around network cycle 9036, before cycle 20000.
+
+I0-I4 were repeated after the final NI wakeup change and passed at ticks
+21978, 11322, 37296, 32634, and 16650 respectively.  An AXI_MESH opt
+`single_write` smoke also passed at tick 11322.
+
+### Build and legacy regression
+
+| Command | Result |
+|---|---|
+| `scons build/AXI_MESH/gem5.debug -j4` | PASS, exit 0 |
+| `scons build/AXI_MESH/gem5.opt -j4` | PASS, exit 0 |
+| `scons build/Garnet_standalone/gem5.opt -j4` | PASS, exit 0 |
+| section 15.4 legacy vnet 0/1/2 commands | PASS, exit 0; exact golden match |
+| `scons build/RISCV_CHI/gem5.opt -j4` | PASS, exit 0 |
+| specification section 15.5 Garnet AXI-leak scan | PASS, no output |
+| `git diff --check` | PASS, no output |
+
+The three legacy cases again exited at tick 5000328.  Packet/flit totals,
+per-vnet distributions, average packet/flit latency, and average hops exactly
+match `tests/gem5/axi_garnet/golden/garnet_xs_dev_7478835a.json`.

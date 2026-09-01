@@ -73,10 +73,14 @@ class OutputUnit : public Consumer
     inline PortDirection get_direction() { return m_direction; }
 
     uint32_t
-    get_credit_count(int vc)
+    get_credit_count(int vc) const
     {
         return outVcState[vc].get_credit_count();
     }
+
+    uint64_t bufferedFlits() const { return outBuffer.getSize(); }
+    uint64_t nonIdleVcs() const;
+    uint64_t creditDeficit() const;
 
     inline int
     get_outlink_id()

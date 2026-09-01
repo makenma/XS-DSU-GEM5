@@ -70,6 +70,7 @@ class NetworkBridge: public CreditLink
     void scheduleFlit(flit *t_flit, Cycles latency);
     void flitisizeAndSend(flit *t_flit);
     void setVcsPerVnet(uint32_t consumerVcs);
+    uint64_t pendingItems() const;
 
   protected:
     // Pointer to co-existing bridge

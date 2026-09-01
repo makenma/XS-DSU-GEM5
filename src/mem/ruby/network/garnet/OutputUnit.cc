@@ -95,6 +95,27 @@ OutputUnit::increment_credit(int out_vc)
     outVcState[out_vc].increment_credit();
 }
 
+uint64_t
+OutputUnit::nonIdleVcs() const
+{
+    uint64_t total = 0;
+    for (const auto &vc : outVcState)
+        total += vc.getState() != IDLE_;
+    return total;
+}
+
+uint64_t
+OutputUnit::creditDeficit() const
+{
+    uint64_t total = 0;
+    for (const auto &vc : outVcState) {
+        panic_if(vc.get_credit_count() > vc.get_max_credit_count(),
+                 "Garnet output VC credit exceeds initial depth");
+        total += vc.get_max_credit_count() - vc.get_credit_count();
+    }
+    return total;
+}
+
 // Check if the output VC (i.e., input VC at next router)
 // has free credits (i..e, buffer slots).
 // This is tracked by OutVcState

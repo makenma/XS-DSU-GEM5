@@ -309,9 +309,16 @@ SwitchAllocator::send_allowed(int inport, int invc, int outport, int outvc)
         has_credit = output_unit->has_credit(outvc);
     }
 
-    // cannot send if no outvc or no credit.
-    if (!has_outvc || !has_credit)
+    // Account for the two distinct backpressure causes before retrying on a
+    // later router edge.
+    if (!has_outvc) {
+        m_router->get_net_ptr()->incrementVcAllocStall(vnet);
         return false;
+    }
+    if (!has_credit) {
+        m_router->get_net_ptr()->incrementRouterCreditStall(vnet);
+        return false;
+    }
 
 
     // protocol ordering check

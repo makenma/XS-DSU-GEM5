@@ -66,6 +66,7 @@ class CrossbarSwitch : public Consumer
     }
 
     inline double get_crossbar_activity() { return m_crossbar_activity; }
+    uint64_t pendingFlits() const;
 
     bool functionalRead(Packet *pkt, WriteMask &mask);
     uint32_t functionalWrite(Packet *pkt);
