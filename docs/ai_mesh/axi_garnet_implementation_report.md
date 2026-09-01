@@ -1,4 +1,4 @@
-# AXI Garnet implementation report
+# AXI Garnet MVP Implementation Report
 
 This file records implementation gates for
 `src/doc/ai_mesh/AXI_GARNET_CODEX_SPEC.md`.  It is an execution record, not a
@@ -545,3 +545,369 @@ I0-I4 were repeated after the final NI wakeup change and passed at ticks
 The three legacy cases again exited at tick 5000328.  Packet/flit totals,
 per-vnet distributions, average packet/flit latency, and average hops exactly
 match `tests/gem5/axi_garnet/golden/garnet_xs_dev_7478835a.json`.
+
+## Commit 6 gate: deterministic stress, replay, and regressions
+
+### Deterministic workload and artifact contract
+
+The final gate adds one shared, versioned deterministic contract for C++ and
+Python.  SplitMix64 keyed draws use the stable scenario ID, transaction index,
+stage, beat index, and draw kind, so adding an unrelated random draw cannot
+perturb existing traffic.  Golden vectors test both implementations.  The
+workload JSONL freezes expected UID, target/source ordering sequences, write
+ordinal, target, response, arrival, payload seed, and strobe before gem5
+starts; canonical encoding and SHA256 fields make replay inputs auditable.
+
+Every successful AXI process emits and independently verifies:
+
+- the resolved semantic configuration and its SHA256;
+- canonical workload and event traces with their SHA256 values;
+- packet, flit, and wire-byte conservation by vnet;
+- bounded queue high-water and categorized stall counters;
+- a rectangular link-by-VC credit ledger with stable link ownership IDs;
+- endpoint, MessageBuffer, NI, router, link, bridge, and credit drain state;
+- exact transaction completion order and architected error count.
+
+Strict failures run in separate processes and emit a negative-result schema
+with the expected marker, exit code, provenance, hashes, available artifacts,
+and explicit unavailable fields.  N10 is distinguished as a final-consistency
+failure with exit code 2: its intentionally residual source W burst is
+reported, while every credit-ledger entry proves `sent == 0`.
+
+### Measurement window and buffer matrix
+
+The 72-case matrix is the Cartesian product of four per-vnet depth profiles,
+three VC counts, and six traffic selectors.  Traffic is generated throughout
+the fixed network-cycle interval `[500,2500)`.  Counter snapshots at both
+boundaries produce window deltas; max occupancy is reset at the start
+boundary, and the tester holds the simulation open until the end boundary
+even if functional traffic has already drained.  The verifier rejects traffic
+on an unselected vnet, an incorrect boundary, a non-window-scoped occupancy or
+stall value, or any occupancy above the configured per-vnet depth.
+
+I6 now names and checks the intended pair rather than accepting an arbitrary
+different-ID inversion: source-0 fast write ID 1 must finish before slow write
+ID 0.  I7 uses a 64-bit link, so each 80-byte W packet contains ten flits and
+is larger than even the depth-8 VC.  Each depth-1/2/8 case must reach exactly
+the configured occupancy, observe credit backpressure, finish, and restore all
+credits.
+
+### Exact manifest and unit gates
+
+The generated manifest contains exactly 10 required C++ binaries and 66 named
+tests.  Its integration sets are exactly 44 quick processes and 127 full
+processes; the full set contains all 22 negative processes, 72 buffer-matrix
+processes, three quick random seeds, ten full-only random seeds, and one
+10,000-transaction nightly process.  Both runners reject missing, extra,
+disabled, skipped, xfailed, deselected, timed-out, or stale results.
+
+The aggregate null-ISA build required three build-only compatibility repairs:
+
+- every `GTest` clone defines its test-only `UNIT_TEST` macro, including when
+  reached through the aggregate target;
+- CPU/O3 trace and BTB tests return early for the deliberately CPU-less null
+  ISA, while real-ISA behavior is unchanged;
+- the existing dueling-cache test now uses the sequential integer monitor IDs
+  introduced by the user-approved working baseline.
+
+No CHI source or protocol file was changed.  These repairs only affect test
+construction and do not add a CPU to AXI_MESH or Garnet_standalone.
+
+## Final delivery summary
+
+### Repository state
+
+- Specification base: `7478835ac25d406941490578874d5022e3a46ec5`
+- User-approved working baseline: `65f3241a6cd486dffddaca251536f5c691af9a1f`
+- Branch: `feature/ai-mesh-axi-garnet`
+- Verified code SHA: `cef83f0f7eb2b4111b3797d5e65e3edd729c4dc1`
+- Final delivery diff from the specification base, including this report:
+  209 files, 34,250 insertions, 445 deletions.  This includes the pre-existing
+  working baseline commit described under Deviations below.
+- AXI/Decision-1 delivery alone, relative to the approved working baseline
+  and including this report: 112 files, 18,662 insertions, 158 deletions.
+
+The user-approved Decision-1 prerequisite is `5abfa985fd` (`build: restore
+null-ISA Garnet standalone baseline`).  The specification's implementation
+series is:
+
+1. `86360e441c` `axi-mesh: add isolated AXI_MESH build scaffold`
+2. `dd38e5bad6` `garnet: add per-vnet class and VC buffer depth`
+3. `7a7c2ceb58` `garnet: support protocol-neutral dynamic packet sizing`
+4. `2868eebc83` `axi-mesh: add AXI beat messages and endpoint adapters`
+5. `51774551c9` `axi-mesh: add ordering, response ROB, and backpressure`
+6. `cef83f0f7e` `tests: add AXI Garnet stress, replay, and regressions`
+7. `docs: document AXI Garnet configuration and limitations` (this report;
+   its SHA is recorded in the final handoff because embedding a commit's own
+   SHA would change that SHA)
+
+### Implemented scope
+
+- A separately selected, null-ISA `AXI_MESH` Ruby protocol and CPU-less
+  four-router mesh with explicit initiator/target placement.
+- Five independent AXI channel vnets (`AW/W/B/AR/R`), generated beat-level
+  messages, finite SLICC/local queues, and C++ initiator/target adapters.
+- Configurable data width, link width, VC count, per-vnet VC depth, endpoint
+  queue depths, target capacities, source quotas, ordering ROBs, and service
+  plans, all validated before simulation.
+- Full-bus data packet accounting, protocol-neutral dynamic Garnet
+  packetization, per-vnet class/depth configuration, and legacy fallback.
+- AXI4 INCR validation, Nth-AW/Nth-W-burst pairing, streaming W-first merge,
+  WSTRB/narrow accesses, simple byte memory, OKAY/DECERR/SLVERR responses, and
+  default error-target routing through the real NoC.
+- Per-source/per-direction same-ID ordering with different-ID reordering,
+  bounded response ROB/reassembly, response obligations, and lossless
+  backpressure from target service through network ejection.
+- Protocol-neutral credit ledger, queue/VC high-water and stall statistics,
+  two-cycle quiescence proof, deterministic workloads, replay, strict result
+  schemas, negative fault injection, and matrix-window measurement.
+
+### Configuration reference
+
+All comma-separated channel vectors use `AW,W,B,AR,R` order unless a row says
+otherwise.  A queue entry is one channel message: W and R therefore count
+beats, while AW, B, and AR count their address/response messages.  All cycle
+parameters use the owning Ruby/adapter clock; the supplied test configuration
+sets both Ruby and system clocks to 1 GHz.
+
+| Option | Default | Unit and contract |
+|---|---|---|
+| `--axi-mesh-routers` | `4` | router count; copied to legacy `num_cpus` only because the common topology interface uses that field as router count |
+| `--mesh-rows` | `2` | router rows; positive and must divide router count |
+| `--link-width-bits` | `128` | Garnet link/flit width in bits; positive multiple of 8 |
+| `--vcs-per-vnet` | `4` | VCs in each virtual network |
+| `--garnet-vnet-classes` | `ctrl,data,ctrl,ctrl,data` | five `ctrl`/`data` class names |
+| `--garnet-buffers-per-vnet` | `4,8,4,4,8` | flits per input VC for each vnet; also the corresponding initial/max upstream credit |
+| `--axi-data-width-bits` | `512` | AXI data bus bits; one of 64, 128, 256, or 512 |
+| `--axi-id-width-bits` | `8` | implemented AXI ID bits, range 1 through 16 |
+| `--axi-user-width-bits` | `0` | USER bits; zero is the only supported value |
+| `--axi-wire-header-bytes` | `24,16,8,24,16` | serialized header bytes per channel; W/R add one complete data-bus word |
+| `--axi-source-fifo-depths` | `16,64,16,32,128` | source adapter entries by channel |
+| `--axi-message-buffer-depths` | `16,64,16,32,128` | SLICC/network MessageBuffer entries by channel |
+| `--axi-local-delivery-depths` | `16,64,16,32,128` | finite post-network delivery entries by channel |
+| `--axi-max-outstanding-reads` | `64` | accepted read transactions per source adapter |
+| `--axi-max-outstanding-writes` | `32` | accepted write transactions per source adapter |
+| `--axi-source-pre-aw-bursts` | `16` | unbound W-burst slots per source adapter |
+| `--axi-source-pre-aw-beats` | `256` | total unbound W-beat slots per source adapter |
+| `--axi-b-rob-transactions` | `64` | B response-transaction ROB slots; must cover the write outstanding limit |
+| `--axi-r-rob-beats` | `1024` | R response-reassembly beat slots |
+| `--axi-target-write-contexts` | `64` | shared AW_ONLY/W_ONLY/BOUND transaction contexts per target |
+| `--axi-target-write-assembly-beats` | `4096` | total W assembly-beat reservations per target |
+| `--axi-target-read-contexts` | `64` | live read transaction contexts per target |
+| `--axi-target-read-response-beats` | `4096` | reserved/generated R beats per target |
+| `--axi-target-service-depths` | `32,32` | bounded write/read service transaction slots |
+| `--axi-target-base-latencies` | `1,1` | write/read base service cycles |
+| `--axi-target-response-ready-depths` | `16,128` | ready B transactions and ready R beats |
+| `--axi-orphan-w-transactions` | `16` | W_ONLY transaction subquota inside the shared write pool |
+| `--axi-orphan-w-beats` | `256` | W_ONLY beat subquota inside assembly storage |
+| `--axi-strict-protocol` | `true` | must remain true; false is rejected before instantiate |
+| `--axi-seed` | `42` | unsigned 64-bit deterministic master seed |
+| `--axi-scenario` | empty | JSON scenario path; empty selects the built-in smoke |
+| `--axi-max-sim-ticks` | `100000` | maximum simulation duration in gem5 ticks; supplied tests start at tick zero |
+| `--axi-result-json` | output-directory default | result JSON path override |
+| `--axi-raw-shim-probe` | false | Commit-1-only independent queue ownership probe, not an AXI transaction |
+| `--axi-raw-probe-hold-cycles` | `8` | local-delivery hold duration for the raw probe |
+
+Scenario `target_ranges` are half-open byte-address intervals.  Each quota row
+uses transaction units for `write_contexts/read_contexts` and beat units for
+`write_beats/read_beats`; the sum of statically configured source quotas may
+not exceed the target capacity.  A transaction's `size` is `log2(bytes per
+beat)`, `beat_count` is 1 through 256, `arrival_cycle` and
+`target_extra_latency_cycles` are non-negative cycles, and addresses are
+unsigned 64-bit byte addresses.  `measurement_window_cycles` is an inclusive
+start/exclusive end pair in network cycles; `measurement_vnet` is 0 through 4
+or -1 for all vnets.  The -2 sentinel is internal and means measurement is
+disabled.
+
+### AXI support matrix
+
+| Feature | Support and failure policy |
+|---|---|
+| Five independent channels | supported as five ordered vnets: AW=0, W=1, B=2, AR=3, R=4 |
+| Data width | 64/128/256/512 bits |
+| Burst length | 1 through 256 beats |
+| Naturally aligned INCR | supported, including narrow transfers and full-bus W/R wire accounting |
+| Unaligned INCR | architected DECERR after complete drain |
+| FIXED/WRAP | architected DECERR after complete drain |
+| 4 KiB crossing or arithmetic overflow | strict fatal before unsafe address arithmetic or injection |
+| WSTRB | byte-accurate full or arbitrary legal lane masks; integration generator covers full/alternating masks |
+| W before AW | supported with bounded ordinal-based orphan storage and in-place merge |
+| Multiple outstanding IDs | supported; same-ID commit/retire ordered, different IDs may reorder |
+| W interleaving | no WID exists in AXI4; a single W stream is segmented only by WLAST and paired Nth-to-Nth with AW |
+| Backpressure | lossless at source FIFO, MessageBuffer/NI, router credit, target quota/service, response-ready, local delivery, and source ROB boundaries |
+| Responses | OKAY, DECERR, and SLVERR; erroneous reads return all requested zero-data beats with only the final RLAST |
+| Decode miss | routed through a real default error target and real Garnet packets, never source-local shortcut |
+| LOCK/exclusive or nonzero REGION | architected DECERR |
+| CACHE/PROT | carried in trace metadata; no cache/permission semantics |
+| QOS | carried and counted; no Router/SwitchAllocator QoS policy |
+| USER | width must be zero |
+| ACE/CHI snoop, AXI5 ATOP/atomic | not represented and never silently downgraded |
+
+### Statistics and artifact semantics
+
+| Field | Meaning |
+|---|---|
+| `packets_{injected,ejected}[v]` | complete channel messages entering/leaving vnet `v` |
+| `flits_{injected,ejected}[v]` | dynamic `ceil(wireBytes/linkBytes)` flits entering/leaving vnet `v` |
+| `wire_bytes_{injected,ejected}[v]` | serialized header plus full data-bus word for W/R, summed by vnet |
+| `input_vc_occupancy_flit_cycles[v]` | sum over all router input VCs of occupancy multiplied by elapsed router cycles |
+| `input_vc_full_vc_cycles[v]` | sum of cycles in which each input VC is full; may exceed total simulation cycles because VCs are aggregated |
+| `input_vc_full_events[v]` | transitions into full state for input VCs in vnet `v` |
+| `input_vc_max_occupancy[v]` | maximum flits observed in any selected input VC; never greater than configured depth |
+| `credit_stall_vc_cycles[v]` | output-VC cycles blocked by unavailable downstream credit |
+| `vc_alloc_stall_vc_cycles[v]` | eligible head-flit VC-allocation stall cycles, separate from credit stalls |
+| `ni_credit_stall_vc_cycles[v]` | NI output-VC cycles blocked by credit |
+| `ni_vc_busy_cycles[v]` | NI cycles in which injection could not acquire a free output VC |
+| `queue_high_water` | maximum occupancy of local FIFO, MessageBuffer, router VC, and adapter ingress groups |
+| `stall_events` | separate local-FIFO, MessageBuffer/NI, router-credit, and VC-allocation observations |
+| `qos_transactions[0..15]` | target-side count of accepted AW/AR transactions by carried AxQOS value; the sum equals accepted transactions |
+| credit ledger entry | stable directed `link_id`, owner/port/vnet/VC, depth, initial/current credit, sent and returned counts; invariant `initial + returned == sent + current` |
+| `quiescence_snapshot_at_exit` | NI messages/flits, router flits/VC states, data/credit links, bridges, and credit deficit; every field must be zero twice consecutively |
+| `measurement_window` | boundary ticks plus window-delta counters; max occupancy is reset at its start boundary |
+
+`axi_result.json`, `workload.jsonl`, `event_trace.jsonl`, and
+`credit_ledger.json` are the normal mandatory artifacts.  Controlled failures
+instead use `negative_result.json` and declare which normal fields are
+unavailable.  Result status alone is never trusted: the runner recalculates
+semantic configuration, workload/trace hashes, transaction/beat/packet/flit
+counts, queue bounds, credit conservation, completion ordering, and drain.
+
+### Reproduction commands
+
+From the repository root, the mandatory commands are:
+
+```bash
+scons build/AXI_MESH/gem5.debug -j4
+scons build/AXI_MESH/gem5.opt -j4
+scons build/Garnet_standalone/gem5.opt -j4
+scons build/RISCV_CHI/gem5.opt -j4
+scons build/AXI_MESH/unittests.opt -j4
+
+python3 tests/gem5/axi_garnet/run_axi_unit_tests.py \
+  --build-dir build/AXI_MESH --variant opt \
+  --manifest tests/gem5/axi_garnet/manifest.json
+
+timeout 60s python3 -m pytest -q --runxfail \
+  --junitxml=m5out/axi-pyunit.xml tests/pyunit/ai_mesh
+
+python3 tests/gem5/axi_garnet/run_axi_garnet_tests.py \
+  --gem5 build/AXI_MESH/gem5.debug --suite quick
+python3 tests/gem5/axi_garnet/run_axi_garnet_tests.py \
+  --gem5 build/AXI_MESH/gem5.opt --suite full
+
+if rg -n '#include .*(axi|Axi|AXI)|dynamic_cast<.*Axi|AxiChannel|AXIChannel' \
+  src/mem/ruby/network/garnet; then
+  exit 1
+fi
+git diff --check
+```
+
+The exact three-command legacy loop is recorded under Gate 0 and was rerun
+unchanged for the final gate.  The runners require an empty unique output root
+when one is supplied, so a previous result cannot satisfy a new run.
+
+### Known unsupported features
+
+- Only naturally aligned AXI4 INCR transfers take the OKAY fast path.
+  FIXED/WRAP and unaligned transfers are fully drained through the default
+  error target and return DECERR; strict arithmetic and 4 KiB violations are
+  rejected as specified.
+- Exclusive/LOCK and nonzero REGION return DECERR.  USER width must be zero.
+- ACE/CHI snoops and AXI5 ATOP/atomic operations are not represented.
+- CACHE and PROT are trace metadata only.  QOS is carried and counted but does
+  not change Garnet switch arbitration.
+- The deterministic target memory/service model is not a DRAM timing model;
+  a modeled error has all-or-nothing side effects and is not claimed as AXI
+  architectural atomicity.
+- Queue/depth parameters are selectable before instantiate and are not
+  dynamically resized during simulation.
+
+### Verification
+
+| Command | Exit | Cases | Pass | Fail | Skip | Timeout | Result directory |
+|---|---:|---:|---:|---:|---:|---:|---|
+| `scons build/AXI_MESH/gem5.debug -j4` | 0 | - | - | 0 | 0 | 0 | `build/AXI_MESH/gem5.debug` |
+| `scons build/AXI_MESH/gem5.opt -j4` | 0 | - | - | 0 | 0 | 0 | `build/AXI_MESH/gem5.opt` |
+| `scons build/Garnet_standalone/gem5.opt -j4` | 0 | - | - | 0 | 0 | 0 | `build/Garnet_standalone/gem5.opt` |
+| `scons build/RISCV_CHI/gem5.opt -j4` | 0 | - | - | 0 | 0 | 0 | `build/RISCV_CHI/gem5.opt` |
+| `scons build/AXI_MESH/unittests.opt -j4` | 0 | all registered | target passed | 0 | 1 generic | 0 | `build/AXI_MESH/unittests.opt` |
+| AXI strict C++ unit runner | 0 | 66 | 66 | 0 | 0 | 0 | `m5out/axi-unit-suite` |
+| Python unit command from section 15.2 | 0 | 21 | 21 | 0 | 0 | 0 | `m5out/axi-pyunit.xml` |
+| debug quick integration suite | 0 | 44 | 44 | 0 | 0 | 0 | `m5out/axi-garnet-quick-20260901T050617281358Z-2` |
+| opt full integration suite | 0 | 127 | 127 | 0 | 0 | 0 | `m5out/axi-garnet-full-20260901T050847114952Z-2` |
+| section 15.4 legacy vnet 0/1/2 loop | 0 | 3 | 3 | 0 | 0 | 0 | `m5out/garnet-legacy-vnet{0,1,2}` |
+| section 15.5 Garnet AXI-leak scan | 0 | 1 | 1 | 0 | 0 | 0 | no output |
+| `git diff --check` | 0 | 1 | 1 | 0 | 0 | 0 | no output |
+
+The one aggregate skip is the repository's existing
+`SerializableFixtureDeathTest.NoSectionParamIn`, which explicitly skips in a
+fast build because assertions are compiled out.  It is outside the mandatory
+AXI set.  The exact AXI runner separately discovered and executed all 66 named
+tests with zero skipped or disabled tests.  The host `/usr/bin/python3` does
+not provide pytest, so the exact Python command was run with the already
+available `/tmp/axi-pytest-venv/bin` first in `PATH`; no dependency was
+installed or changed.
+
+The only build warnings were pre-existing optional-host-feature notices for
+missing PNG, HDF5, and backtrace support.  They did not disable an AXI,
+Garnet, Ruby, or CHI component.
+
+### Conservation and drain summary
+
+The full suite contains 105 normal AXI cases, three architected-error AXI
+cases, 16 strict/final-consistency failure processes, and three legacy cases.
+Across the 108 successful/architected-error AXI result artifacts:
+
+- issued = accepted = completed = 36,417 transactions; 253 expected
+  architected errors completed normally;
+- the target-observed AxQOS histogram was
+  `[5363,2021,2035,2048,2082,2064,2152,2029,2143,2091,2126,2043,2152,2086,2014,1968]`;
+  every value 0 through 15 was observed and its sum was exactly 36,417;
+- injected = ejected = 265,324 packets, distributed by vnet as
+  `[18657,107071,18657,17760,103179]`;
+- injected = ejected = 1,143,227 flits, distributed by vnet as
+  `[37320,535835,18657,35520,515895]`;
+- every credit ledger was rectangular and restored, across observed
+  `(directed links, VCs/link)` shapes `(12,5)`, `(12,10)`, `(12,20)`,
+  `(14,5)`, `(14,20)`, and `(64,20)`; total mismatches were zero;
+- the maximum at exit was zero for outstanding transactions, orphan W,
+  response ROB, MessageBuffers, local delivery, adapter ingress, response
+  obligations, business events, router VC flits, and credit mismatches;
+- every quiescence snapshot was empty for at least two consecutive network
+  cycles;
+- all workload and event trace SHA256 values were independently recomputed and
+  matched.  The determinism triplet also exact-matched config, workload, and
+  event-trace hashes;
+- all 16 strict/final-consistency failures matched their exit code and marker
+  with zero packets and flits injected before failure.  N10 additionally had
+  zero sent flits in every credit-ledger entry.
+
+All three explicit legacy runs exited at tick 5,000,328.  Packet/flit totals,
+per-vnet distributions, average packet/flit latency, and average hops matched
+the versioned baseline golden exactly (floating tolerance `1e-12`).
+
+### Deviations from this specification
+
+- The requested specification base is not the repository's checked-out
+  parent.  The user-approved working baseline includes pre-existing commit
+  `65f3241a6c` (`Fix 16-core CHI Linux checkpoint restore`).  Final diff
+  counts therefore report both the specification-base range and the isolated
+  AXI/Decision-1 range.  Those pre-existing changes were preserved.
+- Per user-selected Decision 1, commit `5abfa985fd` repairs only the null-ISA
+  build prerequisites needed by CPU-less AI Mesh/Garnet.  It does not add or
+  enable a CPU.  Later aggregate-test guards likewise omit CPU-only O3/BTB
+  tests only when `TARGET_ISA == 'null'`; real-ISA builds are unchanged.
+- Gate 0 found no runnable, image-free CHI smoke in this fork: the available
+  `ruby_random_test.py` path fails in pre-instantiate configuration because
+  the repository's default prefetcher expects `cpu.mmu` on a `RubyTester`.
+  As allowed by section 15.1, CHI runtime smoke is conditional-not-applicable;
+  the mandatory `RISCV_CHI` build passed.  No CHI file was changed to
+  manufacture a smoke.
+- There are no AXI protocol, packetization, ordering, flow-control, artifact,
+  or mandatory-test deviations from the specification.
+
+### Remaining blockers
+
+None.  All mandatory builds, exact unit sets, integration processes, legacy
+golden comparisons, conservation/drain checks, and static hygiene checks have
+completed successfully.
