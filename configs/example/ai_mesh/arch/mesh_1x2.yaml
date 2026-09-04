@@ -1,0 +1,62 @@
+schema_version: mesh-arch-v1
+arch_name: xs_ai_mesh_1x2
+clock_hz: 2000000000
+
+mesh:
+  rows: 1
+  cols: 2
+  endpoint_order: row_major_yx
+  routing: xy
+  core_ids: [0, 1]
+
+core:
+  command_rom_entries: 65536
+  decode_width: 1
+  event_visibility_cycles: 1
+  admit_window: 8
+  sram:
+    bytes: 2097152
+    banks: 16
+    read_ports_per_bank: 1
+    write_ports_per_bank: 1
+    bank_queue_depth: 2
+    read_bytes_per_cycle_per_bank: 32
+    write_bytes_per_cycle_per_bank: 32
+    base_alignment_bytes: 64
+  tensor_engine:
+    queue_depth: 8
+    setup_cycles: 8
+    pipeline_flush_cycles: 4
+    macs_per_cycle: {fp16: 256, bf16: 256, fp32: 64, int8: 512}
+  vector_engine:
+    queue_depth: 8
+    elements_per_cycle: {fp16: 128, bf16: 128, fp32: 64, int8: 256}
+  reduce_engine:
+    queue_depth: 8
+    setup_cycles: 4
+    flush_cycles: 2
+    ops_per_cycle: {fp16: 64, bf16: 64, fp32: 32, int32: 32}
+  dma:
+    read_engines: 1
+    write_engines: 1
+    descriptor_queue_depth: 16
+    segment_queue_depth: 32
+    read_outstanding: 16
+    write_outstanding: 16
+    setup_cycles: 2
+    burst_base_latency: 2
+
+axi:
+  data_bytes: 32
+  address_bits: 64
+  id_bits: 8
+  max_burst_beats: 16
+  enforce_4k_boundary: true
+  max_outstanding_per_id: 1
+  qos_default: 0
+
+memory_regions:
+  - {name: hbm, kind: HBM, base: 0x800000000, bytes: 0x400000000}
+  - {name: host_shared, kind: HOST_SHARED, base: 0x100000000, bytes: 0x10000000}
+  - {name: mesh_sram, kind: CORE_SRAM_APERTURE,
+     base: 0x400000000, tile_stride: 0x400000, tile_bytes: 0x200000}

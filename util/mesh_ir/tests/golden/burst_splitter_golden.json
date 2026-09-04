@@ -1,0 +1,228 @@
+[
+  {
+    "name": "single_byte",
+    "row_bytes": 1,
+    "rows": 1,
+    "base": 256,
+    "stride": 1,
+    "width": 32,
+    "max_beats": 16,
+    "beat_bytes": 32,
+    "useful_bytes": 1,
+    "bursts": [
+      {
+        "beat_base": 256,
+        "logical_start": 256,
+        "useful_bytes": 1,
+        "beats": 1
+      }
+    ]
+  },
+  {
+    "name": "width_minus_one",
+    "row_bytes": 31,
+    "rows": 1,
+    "base": 0,
+    "stride": 31,
+    "width": 32,
+    "max_beats": 16,
+    "beat_bytes": 32,
+    "useful_bytes": 31,
+    "bursts": [
+      {
+        "beat_base": 0,
+        "logical_start": 0,
+        "useful_bytes": 31,
+        "beats": 1
+      }
+    ]
+  },
+  {
+    "name": "width_plus_one",
+    "row_bytes": 33,
+    "rows": 1,
+    "base": 0,
+    "stride": 33,
+    "width": 32,
+    "max_beats": 16,
+    "beat_bytes": 64,
+    "useful_bytes": 33,
+    "bursts": [
+      {
+        "beat_base": 0,
+        "logical_start": 0,
+        "useful_bytes": 33,
+        "beats": 2
+      }
+    ]
+  },
+  {
+    "name": "unaligned_head",
+    "row_bytes": 100,
+    "rows": 1,
+    "base": 5,
+    "stride": 100,
+    "width": 32,
+    "max_beats": 16,
+    "beat_bytes": 128,
+    "useful_bytes": 100,
+    "bursts": [
+      {
+        "beat_base": 0,
+        "logical_start": 5,
+        "useful_bytes": 100,
+        "beats": 4
+      }
+    ]
+  },
+  {
+    "name": "cross_4k",
+    "row_bytes": 64,
+    "rows": 1,
+    "base": 4080,
+    "stride": 64,
+    "width": 32,
+    "max_beats": 16,
+    "beat_bytes": 96,
+    "useful_bytes": 64,
+    "bursts": [
+      {
+        "beat_base": 4064,
+        "logical_start": 4080,
+        "useful_bytes": 16,
+        "beats": 1
+      },
+      {
+        "beat_base": 4096,
+        "logical_start": 4096,
+        "useful_bytes": 48,
+        "beats": 2
+      }
+    ]
+  },
+  {
+    "name": "max_burst_cap",
+    "row_bytes": 600,
+    "rows": 1,
+    "base": 0,
+    "stride": 600,
+    "width": 32,
+    "max_beats": 16,
+    "beat_bytes": 608,
+    "useful_bytes": 600,
+    "bursts": [
+      {
+        "beat_base": 0,
+        "logical_start": 0,
+        "useful_bytes": 512,
+        "beats": 16
+      },
+      {
+        "beat_base": 512,
+        "logical_start": 512,
+        "useful_bytes": 88,
+        "beats": 3
+      }
+    ]
+  },
+  {
+    "name": "head_reduces_capacity",
+    "row_bytes": 512,
+    "rows": 1,
+    "base": 16,
+    "stride": 512,
+    "width": 32,
+    "max_beats": 16,
+    "beat_bytes": 544,
+    "useful_bytes": 512,
+    "bursts": [
+      {
+        "beat_base": 0,
+        "logical_start": 16,
+        "useful_bytes": 496,
+        "beats": 16
+      },
+      {
+        "beat_base": 512,
+        "logical_start": 512,
+        "useful_bytes": 16,
+        "beats": 1
+      }
+    ]
+  },
+  {
+    "name": "two_d_rows",
+    "row_bytes": 100,
+    "rows": 3,
+    "base": 512,
+    "stride": 128,
+    "width": 32,
+    "max_beats": 16,
+    "beat_bytes": 384,
+    "useful_bytes": 300,
+    "bursts": [
+      {
+        "beat_base": 512,
+        "logical_start": 512,
+        "useful_bytes": 100,
+        "beats": 4
+      },
+      {
+        "beat_base": 640,
+        "logical_start": 640,
+        "useful_bytes": 100,
+        "beats": 4
+      },
+      {
+        "beat_base": 768,
+        "logical_start": 768,
+        "useful_bytes": 100,
+        "beats": 4
+      }
+    ]
+  },
+  {
+    "name": "max_burst_minus_one",
+    "row_bytes": 480,
+    "rows": 1,
+    "base": 0,
+    "stride": 480,
+    "width": 32,
+    "max_beats": 16,
+    "beat_bytes": 480,
+    "useful_bytes": 480,
+    "bursts": [
+      {
+        "beat_base": 0,
+        "logical_start": 0,
+        "useful_bytes": 480,
+        "beats": 15
+      }
+    ]
+  },
+  {
+    "name": "max_burst_plus_one",
+    "row_bytes": 544,
+    "rows": 1,
+    "base": 0,
+    "stride": 544,
+    "width": 32,
+    "max_beats": 16,
+    "beat_bytes": 544,
+    "useful_bytes": 544,
+    "bursts": [
+      {
+        "beat_base": 0,
+        "logical_start": 0,
+        "useful_bytes": 512,
+        "beats": 16
+      },
+      {
+        "beat_base": 512,
+        "logical_start": 512,
+        "useful_bytes": 32,
+        "beats": 1
+      }
+    ]
+  }
+]

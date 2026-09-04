@@ -74,3 +74,10 @@ microbench/dramsim3*
 # Local state for the Codex Ralph runner
 /.ralph/
 !/progress.txt
+
+# AI Mesh acceptance harness must be committed despite /*test*
+!tests/
+tests/*
+!tests/gem5/
+tests/gem5/*
+!tests/gem5/ai_mesh/
