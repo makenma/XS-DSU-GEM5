@@ -1,0 +1,499 @@
+schema: mesh_ir_abi
+description: >
+  Single source of truth for the Scheduled Mesh IR binary ABI (.mshb).
+  Generates Python constants/records (mesh_ir/generated/abi.py), the C++
+  loader header (src/dev/ai_mesh/generated/mesh_ir_abi.hh) and the ABI
+  reference document (docs/generated/mesh_ir_abi.md). All integers are
+  little-endian; every record carries explicit reserved fields and no
+  implicit padding. Unknown enum values, non-zero reserved fields and
+  unknown required-feature bits are rejected fail-closed by every reader.
+abi:
+  major: 1
+  minor: 2
+  min_reader_minor: 0
+magic_hex: "4d53484200000001"
+
+enums:
+  section_type:
+    STRINGS: 1
+    ENTRYPOINTS: 2
+    PROFILES: 3
+    TENSORS: 4
+    SHARDS: 5
+    ALLOCATIONS: 6
+    STREAMS: 7
+    COMMANDS: 8
+    COMMAND_WAITS: 9
+    COMMAND_OPERANDS: 10
+    EVENTS: 11
+    DMA_DESCRIPTORS: 12
+    OP_ATTRS: 13
+    RELOCATIONS: 14
+    EXPECTED_TRAFFIC: 15
+    SOURCE_MAP: 101
+    PROFILE_HINTS: 102
+    CONTENT_DIGESTS: 103
+  required_sections:
+    - STRINGS
+    - ENTRYPOINTS
+    - PROFILES
+    - TENSORS
+    - SHARDS
+    - ALLOCATIONS
+    - STREAMS
+    - COMMANDS
+    - COMMAND_WAITS
+    - COMMAND_OPERANDS
+    - EVENTS
+    - DMA_DESCRIPTORS
+    - OP_ATTRS
+    - RELOCATIONS
+    - EXPECTED_TRAFFIC
+  opcode:
+    REQUEST_BEGIN: 1
+    REQUEST_END: 2
+    HALT: 3
+    DMA_LOAD: 4
+    DMA_STORE: 5
+    DMA_P2P_PUSH: 6
+    DMA_PREFETCH: 7
+    DMA_FILL: 8
+    AXI_FENCE: 9
+    GEMM: 10
+    BMM: 11
+    ELEMENTWISE: 12
+    LOCAL_REDUCE: 13
+    SOFTMAX: 14
+    NORM: 15
+    EVENT_WAIT: 16
+    EVENT_SIGNAL: 17
+    RECV_WAIT: 18
+    BARRIER: 19
+    REPEAT: 20
+  engine:
+    CONTROL: 1
+    DMA_READ: 2
+    DMA_WRITE: 3
+    TENSOR: 4
+    VECTOR: 5
+    REDUCE: 6
+  opcode_engine_map:
+    REQUEST_BEGIN: CONTROL
+    REQUEST_END: CONTROL
+    HALT: CONTROL
+    EVENT_WAIT: CONTROL
+    EVENT_SIGNAL: CONTROL
+    BARRIER: CONTROL
+    AXI_FENCE: CONTROL
+    RECV_WAIT: CONTROL
+    REPEAT: CONTROL
+    DMA_LOAD: DMA_READ
+    DMA_PREFETCH: DMA_READ
+    DMA_STORE: DMA_WRITE
+    DMA_P2P_PUSH: DMA_WRITE
+    DMA_FILL: DMA_WRITE
+    GEMM: TENSOR
+    BMM: TENSOR
+    ELEMENTWISE: VECTOR
+    SOFTMAX: VECTOR
+    NORM: VECTOR
+    LOCAL_REDUCE: REDUCE
+  memory_space:
+    HBM: 1
+    HOST_SHARED: 2
+    CORE_SRAM: 3
+    PEER_SRAM: 4
+  tensor_role:
+    INPUT: 1
+    OUTPUT: 2
+    WEIGHT: 3
+    CONSTANT: 4
+    ACTIVATION: 5
+    KV_CACHE: 6
+    STATE: 7
+  dtype:
+    FP32: 1
+    FP16: 2
+    BF16: 3
+    INT8: 4
+    INT32: 5
+  storage_class:
+    EXTERNAL: 1
+    HBM: 2
+    HOST_SHARED: 3
+    CORE_SRAM: 4
+    PRE_RESIDENT: 5
+  access_kind:
+    READ_ONLY: 1
+    READ_WRITE: 2
+  layout_kind:
+    CONTIGUOUS_ROW_MAJOR: 1
+    TRANSPOSED_2D_VIEW: 2
+    BLOCKED_MNK: 3
+  dma_kind:
+    LOAD: 1
+    STORE: 2
+    P2P_PUSH: 3
+    PREFETCH: 4
+    LOCAL_FILL: 5
+  event_kind:
+    NORMAL: 1
+    BARRIER: 2
+  attr_kind:
+    REPEAT_V1: 1
+    GEMM_V1: 2
+    BMM_V1: 3
+    ELEMENTWISE_V1: 4
+    REDUCE_V1: 5
+    SOFTMAX_V1: 6
+    NORM_V1: 7
+    FILL_V1: 8
+    BLOCKED_MNK_LAYOUT_V1: 9
+    RECV_WAIT_V1: 10
+    FENCE_V1: 11
+  relocation_kind:
+    REGION_BASE: 1
+    TENSOR_BASE: 2
+  vector_algorithm:
+    STANDARD: 1
+  fence_scope:
+    DMA_READ: 1
+    DMA_WRITE: 2
+    P2P: 3
+    HOST_SHARED_WRITE: 4
+    ALL_INSTANCE: 5
+  stream_flags:
+    IS_LIFECYCLE: 1
+    IS_LOCAL_CONTROL: 2
+  tensor_flags:
+    HAS_CONTENT_SHA256: 1
+
+header:
+  bytes: 128
+  fields:
+    - {name: magic, type: u64, offset: 0, const_hex: "4d53484200000001"}
+    - {name: abi_major, type: u16, offset: 8, const: 1}
+    - {name: abi_minor, type: u16, offset: 10}
+    - {name: header_bytes, type: u32, offset: 12, const: 128}
+    - {name: file_bytes, type: u64, offset: 16}
+    - {name: section_dir_offset, type: u64, offset: 24}
+    - {name: section_count, type: u32, offset: 32}
+    - {name: flags, type: u32, offset: 36, const: 0}
+    - {name: arch_digest, type: bytes32, offset: 40}
+    - {name: payload_sha256, type: bytes32, offset: 72}
+    # Spec 9.2 amendment: offset 104..111 carries required_features under
+    # ABI 1.1; an ABI 1.0 writer must keep 104..127 all zero and a 1.0-only
+    # reader rejects any nonzero bit here (unknown feature -> fail closed).
+    - {name: required_features, type: u64, offset: 104, const: 0}
+    - {name: reserved, type: bytes16, offset: 112, const_zero: true}
+
+section_dir:
+  bytes: 40
+  fields:
+    - {name: section_type, type: u16, offset: 0}
+    - {name: flags, type: u16, offset: 2, const: 0}
+    - {name: record_bytes, type: u32, offset: 4}
+    - {name: offset, type: u64, offset: 8}
+    - {name: size, type: u64, offset: 16}
+    - {name: count, type: u64, offset: 24}
+    - {name: crc32, type: u32, offset: 32}
+    - {name: reserved, type: u32, offset: 36, const_zero: true}
+
+records:
+  ENTRYPOINTS:
+    bytes: 24
+    fields:
+      - {name: entrypoint_id, type: u32, offset: 0}
+      - {name: name_sid, type: u32, offset: 4}
+      - {name: profile_begin, type: u32, offset: 8}
+      - {name: profile_count, type: u16, offset: 12}
+      - {name: lifecycle_core_id, type: u16, offset: 14}
+      - {name: lifecycle_stream_id, type: u16, offset: 16}
+      - {name: flags, type: u16, offset: 18}
+      - {name: reserved, type: u32, offset: 20, const_zero: true}
+  PROFILES:
+    bytes: 80
+    fields:
+      - {name: profile_id, type: u32, offset: 0}
+      - {name: entrypoint_id, type: u32, offset: 4}
+      - {name: name_sid, type: u32, offset: 8}
+      - {name: rank, type: u16, offset: 12}
+      - {name: reserved, type: u16, offset: 14, const_zero: true}
+      - {name: dims, type: u64x8, offset: 16}
+  TENSORS:
+    bytes: 136
+    fields:
+      - {name: tensor_id, type: u32, offset: 0}
+      - {name: name_sid, type: u32, offset: 4}
+      - {name: role, type: u16, offset: 8, enum: tensor_role}
+      - {name: dtype, type: u16, offset: 10, enum: dtype}
+      - {name: storage_class, type: u16, offset: 12, enum: storage_class}
+      - {name: access, type: u16, offset: 14, enum: access_kind}
+      - {name: rank, type: u16, offset: 16}
+      - {name: layout, type: u16, offset: 18, enum: layout_kind}
+      - {name: layout_attr, type: u32, offset: 20}
+      - {name: placement_id, type: u32, offset: 24}
+      - {name: sharding_id, type: u32, offset: 28}
+      - {name: flags, type: u32, offset: 32, enum: tensor_flags, flags: true}
+      - {name: reserved, type: u32, offset: 36, const_zero: true}
+      - {name: dims, type: u64x8, offset: 40}
+      - {name: content_sha256, type: bytes32, offset: 104}
+  SHARDS:
+    bytes: 240
+    fields:
+      - {name: shard_id, type: u32, offset: 0}
+      - {name: tensor_id, type: u32, offset: 4}
+      - {name: sharding_id, type: u32, offset: 8}
+      - {name: owner_core, type: u16, offset: 12}
+      - {name: rank, type: u16, offset: 14}
+      - {name: reserved, type: u16, offset: 16, const_zero: true}
+      - {name: flags, type: u16, offset: 18}
+      - {name: reserved0, type: u32, offset: 20, const_zero: true}
+      - {name: global_origin, type: u64x8, offset: 24}
+      - {name: local_shape, type: u64x8, offset: 88}
+      - {name: valid_shape, type: u64x8, offset: 152}
+      - {name: allocation_id, type: u32, offset: 216}
+      - {name: reserved2, type: u32, offset: 220, const_zero: true}
+      - {name: allocation_offset, type: u64, offset: 224}
+      - {name: span_bytes, type: u64, offset: 232}
+  ALLOCATIONS:
+    bytes: 32
+    fields:
+      - {name: allocation_id, type: u32, offset: 0}
+      - {name: owner_core, type: u16, offset: 4}
+      - {name: memory_space, type: u16, offset: 6, enum: memory_space}
+      - {name: offset_bytes, type: u64, offset: 8}
+      - {name: size_bytes, type: u64, offset: 16}
+      - {name: alignment_bytes, type: u32, offset: 24}
+      - {name: flags, type: u32, offset: 28}
+  STREAMS:
+    bytes: 16
+    fields:
+      - {name: core_id, type: u16, offset: 0}
+      - {name: stream_id, type: u16, offset: 2}
+      - {name: command_begin, type: u32, offset: 4}
+      - {name: command_count, type: u32, offset: 8}
+      - {name: flags, type: u16, offset: 12, enum: stream_flags, flags: true}
+      - {name: reserved, type: u16, offset: 14, const_zero: true}
+  COMMANDS:
+    bytes: 40
+    fields:
+      - {name: command_id, type: u32, offset: 0}
+      - {name: source_op_id, type: u32, offset: 4}
+      - {name: core_id, type: u16, offset: 8}
+      - {name: stream_id, type: u16, offset: 10}
+      - {name: engine, type: u16, offset: 12, enum: engine}
+      - {name: opcode, type: u16, offset: 14, enum: opcode}
+      - {name: wait_begin, type: u32, offset: 16}
+      - {name: wait_count, type: u16, offset: 20}
+      - {name: operand_count, type: u16, offset: 22}
+      - {name: operand_begin, type: u32, offset: 24}
+      - {name: signal_event, type: u32, offset: 28}
+      - {name: attr_index, type: u32, offset: 32}
+      - {name: debug_loc_id, type: u32, offset: 36}
+  COMMAND_WAITS:
+    bytes: 4
+    fields:
+      - {name: event_id, type: u32, offset: 0}
+  COMMAND_OPERANDS:
+    bytes: 16
+    fields:
+      - {name: tensor_id, type: u32, offset: 0}
+      - {name: shard_id, type: u32, offset: 4}
+      - {name: allocation_id, type: u32, offset: 8}
+      - {name: access, type: u16, offset: 12, enum: access_kind}
+      - {name: reserved, type: u16, offset: 14, const_zero: true}
+  EVENTS:
+    bytes: 20
+    fields:
+      - {name: event_id, type: u32, offset: 0}
+      - {name: kind, type: u16, offset: 4, enum: event_kind}
+      - {name: reserved, type: u16, offset: 6, const_zero: true}
+      - {name: producer_command_id, type: u32, offset: 8}
+      - {name: expected_arrivals, type: u32, offset: 12}
+      - {name: reserved2, type: u32, offset: 16, const_zero: true}
+  DMA_ENDPOINT:
+    bytes: 24
+    fields:
+      - {name: memory_space, type: u16, offset: 0, enum: memory_space}
+      - {name: region_id, type: u16, offset: 2}
+      - {name: owner_core, type: u16, offset: 4}
+      - {name: tensor_id, type: u32, offset: 6}
+      - {name: shard_id, type: u32, offset: 10}
+      - {name: reserved, type: u16, offset: 14, const_zero: true}
+      - {name: offset_bytes, type: u64, offset: 16}
+  DMA_DESCRIPTORS:
+    bytes: 120
+    fields:
+      - {name: descriptor_id, type: u32, offset: 0}
+      - {name: command_id, type: u32, offset: 4}
+      - {name: transfer_id, type: u32, offset: 8}
+      - {name: owner_core, type: u16, offset: 12}
+      - {name: kind, type: u16, offset: 14, enum: dma_kind}
+      - {name: src, type: record_ref, ref: DMA_ENDPOINT, offset: 16}
+      - {name: dst, type: record_ref, ref: DMA_ENDPOINT, offset: 40}
+      - {name: rows, type: u32, offset: 64}
+      - {name: row_bytes, type: u64, offset: 68}
+      - {name: src_stride_bytes, type: u64, offset: 76}
+      - {name: dst_stride_bytes, type: u64, offset: 84}
+      - {name: useful_bytes, type: u64, offset: 92}
+      - {name: physical_storage_bytes, type: u64, offset: 100}
+      - {name: axi_id, type: u16, offset: 108}
+      - {name: qos, type: u8, offset: 110}
+      - {name: reserved, type: u8, offset: 111, const_zero: true}
+      - {name: max_burst_beats, type: u16, offset: 112}
+      - {name: reserved2, type: u16, offset: 114, const_zero: true}
+      - {name: completion_event, type: u32, offset: 116}
+  OP_ATTRS:
+    bytes: 32
+    fields:
+      - {name: kind, type: u16, offset: 0, enum: attr_kind}
+      - {name: reserved, type: u16, offset: 2, const_zero: true}
+      - {name: payload, type: bytes28, offset: 4}
+  RELOCATIONS:
+    bytes: 32
+    fields:
+      - {name: relocation_id, type: u32, offset: 0}
+      - {name: symbol_sid, type: u32, offset: 4}
+      - {name: kind, type: u16, offset: 8, enum: relocation_kind}
+      - {name: region_id, type: u16, offset: 10}
+      - {name: tensor_id, type: u32, offset: 12}
+      - {name: reserved, type: u32, offset: 16, const_zero: true}
+      - {name: offset_bytes, type: u64, offset: 20}
+      - {name: reserved2, type: u32, offset: 28, const_zero: true}
+  EXPECTED_TRAFFIC:
+    bytes: 72
+    fields:
+      - {name: entrypoint_id, type: u32, offset: 0}
+      - {name: profile_id, type: u32, offset: 4}
+      - {name: command_id, type: u32, offset: 8}
+      - {name: descriptor_id, type: u32, offset: 12}
+      - {name: kind, type: u16, offset: 16, enum: dma_kind}
+      - {name: reserved, type: u16, offset: 18, const_zero: true}
+      - {name: useful_bytes, type: u64, offset: 20}
+      - {name: physical_beat_bytes, type: u64, offset: 28}
+      - {name: segments, type: u32, offset: 36}
+      - {name: bursts, type: u32, offset: 40}
+      - {name: ar_count, type: u32, offset: 44}
+      - {name: r_beats, type: u32, offset: 48}
+      - {name: aw_count, type: u32, offset: 52}
+      - {name: w_beats, type: u32, offset: 56}
+      - {name: b_count, type: u32, offset: 60}
+      - {name: min_flits, type: u32, offset: 64}
+      - {name: reserved2, type: u32, offset: 68, const_zero: true}
+  SOURCE_MAP:
+    bytes: 16
+    fields:
+      - {name: loc_id, type: u32, offset: 0}
+      - {name: file_sid, type: u32, offset: 4}
+      - {name: line, type: u32, offset: 8}
+      - {name: column, type: u32, offset: 12}
+  CONTENT_DIGESTS:
+    bytes: 40
+    fields:
+      - {name: object_kind, type: u16, offset: 0}
+      - {name: reserved, type: u16, offset: 2, const_zero: true}
+      - {name: object_id, type: u32, offset: 4}
+      - {name: digest, type: bytes32, offset: 8}
+
+blob_sections:
+  STRINGS:
+    directory_record_bytes: 8
+    directory_fields:
+      - {name: offset, type: u32}
+      - {name: length, type: u32}
+    record_bytes: 0
+    encoding: utf-8
+
+attr_payloads:
+  REPEAT_V1:
+    bytes: 16
+    fields:
+      - {name: subrange_begin_stream_ordinal, type: u32, offset: 0}
+      - {name: subrange_command_count, type: u32, offset: 4}
+      - {name: repeat_count, type: u32, offset: 8}
+      - {name: flags, type: u32, offset: 12, const: 0}
+  GEMM_V1:
+    bytes: 28
+    fields:
+      - {name: batch, type: u32, offset: 0}
+      - {name: m, type: u32, offset: 4}
+      - {name: n, type: u32, offset: 8}
+      - {name: k, type: u32, offset: 12}
+      - {name: a_transpose, type: u8, offset: 16}
+      - {name: b_transpose, type: u8, offset: 17}
+      - {name: dtype, type: u16, offset: 18, enum: dtype}
+      - {name: accum_dtype, type: u16, offset: 20, enum: dtype}
+      - {name: epilogue, type: u16, offset: 22}
+      - {name: efficiency_q16, type: u32, offset: 24}
+  BMM_V1:
+    bytes: 28
+    fields:
+      - {name: batch, type: u32, offset: 0}
+      - {name: m, type: u32, offset: 4}
+      - {name: n, type: u32, offset: 8}
+      - {name: k, type: u32, offset: 12}
+      - {name: a_transpose, type: u8, offset: 16}
+      - {name: b_transpose, type: u8, offset: 17}
+      - {name: dtype, type: u16, offset: 18, enum: dtype}
+      - {name: accum_dtype, type: u16, offset: 20, enum: dtype}
+      - {name: epilogue, type: u16, offset: 22}
+      - {name: efficiency_q16, type: u32, offset: 24}
+  ELEMENTWISE_V1:
+    bytes: 16
+    fields:
+      - {name: element_count, type: u64, offset: 0}
+      - {name: dtype, type: u16, offset: 8, enum: dtype}
+      - {name: op, type: u16, offset: 10}
+      - {name: ops_per_element, type: u16, offset: 12}
+      - {name: reserved, type: u16, offset: 14, const_zero: true}
+  REDUCE_V1:
+    bytes: 16
+    fields:
+      - {name: element_count, type: u64, offset: 0}
+      - {name: dtype, type: u16, offset: 8, enum: dtype}
+      - {name: accum_dtype, type: u16, offset: 10, enum: dtype}
+      - {name: op, type: u16, offset: 12}
+      - {name: fan_in, type: u16, offset: 14}
+  SOFTMAX_V1:
+    bytes: 16
+    fields:
+      - {name: axis_size, type: u64, offset: 0}
+      - {name: dtype, type: u16, offset: 8, enum: dtype}
+      - {name: algorithm, type: u16, offset: 10, enum: vector_algorithm}
+      - {name: reserved, type: u32, offset: 12, const_zero: true}
+  NORM_V1:
+    bytes: 16
+    fields:
+      - {name: element_count, type: u64, offset: 0}
+      - {name: dtype, type: u16, offset: 8, enum: dtype}
+      - {name: algorithm, type: u16, offset: 10, enum: vector_algorithm}
+      - {name: reserved, type: u32, offset: 12, const_zero: true}
+  FILL_V1:
+    bytes: 16
+    fields:
+      - {name: pattern, type: u64, offset: 0}
+      - {name: reserved, type: u64, offset: 8, const_zero: true}
+  BLOCKED_MNK_LAYOUT_V1:
+    bytes: 16
+    fields:
+      - {name: block_m, type: u32, offset: 0}
+      - {name: block_n, type: u32, offset: 4}
+      - {name: block_k, type: u32, offset: 8}
+      - {name: minor_to_major, type: u16, offset: 12}
+      - {name: reserved, type: u16, offset: 14, const_zero: true}
+  RECV_WAIT_V1:
+    bytes: 16
+    fields:
+      - {name: transfer_id, type: u32, offset: 0}
+      - {name: reserved0, type: u32, offset: 4, const_zero: true}
+      - {name: reserved1, type: u32, offset: 8, const_zero: true}
+      - {name: reserved2, type: u32, offset: 12, const_zero: true}
+  FENCE_V1:
+    bytes: 16
+    fields:
+      - {name: fence_scope, type: u16, offset: 0, enum: fence_scope}
+      - {name: reserved, type: u16, offset: 2, const_zero: true}
+      - {name: reserved0, type: u32, offset: 4, const_zero: true}
+      - {name: reserved1, type: u32, offset: 8, const_zero: true}
+      - {name: reserved2, type: u32, offset: 12, const_zero: true}
