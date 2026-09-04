@@ -16,6 +16,19 @@ namespace gem5
 namespace axi
 {
 
+// Read-only observation hook fired after a write burst's bytes are
+// committed to the target memory (or, for error responses, after the
+// drained burst is finalized with zero committed bytes) and before the B
+// response is made ready.  Implementations must not modify adapter state.
+class AxiWriteCommitObserver
+{
+  public:
+    virtual ~AxiWriteCommitObserver() = default;
+    virtual void onAxiWriteCommitted(const AxiAddressRequest &request,
+                                     const std::vector<AxiDataPacket> &beats,
+                                     AxiResp resp) = 0;
+};
+
 class AxiSimpleMemory
 {
   public:
@@ -107,6 +120,11 @@ class AxiTargetState
     const AxiSimpleMemory &memory() const { return _memory; }
     AxiSimpleMemory &memory() { return _memory; }
 
+    void setWriteCommitObserver(AxiWriteCommitObserver *observer)
+    {
+        writeCommitObserver = observer;
+    }
+
     uint64_t completedWrites() const { return _completedWrites; }
     uint64_t completedReads() const { return _completedReads; }
 
@@ -167,6 +185,7 @@ class AxiTargetState
 
     AxiTargetConfig _config;
     AxiSimpleMemory _memory;
+    AxiWriteCommitObserver *writeCommitObserver = nullptr;
     std::map<uint64_t, WriteContext> _writes;
     std::map<uint64_t, ReadContext> _reads;
     BoundedFifo<AxiBPacket> _bReady;

@@ -586,6 +586,9 @@ AxiTargetState::commitWrites(uint64_t now)
             _memory.commitWrite(
                 selected->aw->request, beats, _config.dataBusBytes);
         }
+        if (writeCommitObserver)
+            writeCommitObserver->onAxiWriteCommitted(
+                selected->aw->request, beats, response);
 
         AxiBPacket b;
         b.meta = selected->aw->meta;

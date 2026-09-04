@@ -427,6 +427,49 @@ def _transaction_specs(scenario, initiators, target_specs, data_bus_bytes):
     }
 
 
+def _mesh_program_plans(scenario, target_specs):
+    """Deterministic per-UID service plans for mesh-program traffic.
+
+    The Dummy Core runtime owns transaction generation, so plans cannot be
+    derived from a tester transaction list; the scenario states them
+    directly per target node (uid -> extra service cycles / fault).
+    """
+    nodes = [int(spec["dst_node"]) for spec in target_specs]
+    plans = [[] for _ in target_specs]
+    for kind, fields, fault_default in (
+        ("mesh_planned_extra_latency", ("uid", "cycles"), None),
+        ("mesh_planned_faults", ("uid",), "slverr"),
+    ):
+        records = scenario.get(kind, [])
+        if not isinstance(records, list):
+            fatal("AXI scenario %s must be a list", kind)
+        for index, record in enumerate(records):
+            if not isinstance(record, dict):
+                fatal("AXI %s[%d] must be an object", kind, index)
+            try:
+                target = int(record["target"])
+                uid = int(record[fields[0]])
+                value = (
+                    int(record[fields[1]])
+                    if len(fields) > 1
+                    else int(str(record.get("resp", fault_default)) == "slverr")
+                )
+            except (KeyError, TypeError, ValueError):
+                fatal("invalid AXI %s[%d] entry", kind, index)
+            if target not in nodes:
+                fatal("AXI %s references unknown target %d", kind, target)
+            if uid < 0 or (len(fields) > 1 and value < 0):
+                fatal("AXI %s uid/cycles must be non-negative", kind)
+            entry_fault = str(record.get("resp", fault_default)).lower()
+            if len(fields) == 1 and entry_fault not in ("okay", "slverr"):
+                fatal("AXI mesh_planned_faults resp must be okay or slverr")
+            if len(fields) > 1:
+                plans[nodes.index(target)].append((uid, value, "okay"))
+            else:
+                plans[nodes.index(target)].append((uid, 0, entry_fault))
+    return plans
+
+
 def _validate_options(options, initiators, targets, default_error_target,
                       quotas):
     if buildEnv["PROTOCOL"] != "AXI_MESH":
@@ -598,7 +641,12 @@ def create_system(
         "max_arrival_cycle": 0,
         "arrival_cycles": [],
     }
-    if not options.axi_raw_shim_probe:
+    driver_mode = str(scenario.get("driver_mode", "sequential"))
+    if driver_mode not in ("sequential", "concurrent", "mesh_program"):
+        fatal("AXI driver_mode must be sequential, concurrent, or mesh_program")
+    if driver_mode == "mesh_program":
+        plans_by_target = _mesh_program_plans(scenario, target_specs)
+    if not options.axi_raw_shim_probe and driver_mode != "mesh_program":
         transaction_specs, plans_by_target, transaction_metadata = \
             _transaction_specs(
                 scenario, initiator_specs, target_specs, data_bus_bytes
@@ -635,9 +683,6 @@ def create_system(
         fatal("AXI consumer stall cycles must be integers")
     if any(cycle < 0 for cycle in consumer_stalls):
         fatal("AXI consumer stall cycles must be non-negative")
-    driver_mode = str(scenario.get("driver_mode", "sequential"))
-    if driver_mode not in ("sequential", "concurrent"):
-        fatal("AXI driver_mode must be sequential or concurrent")
     runtime_fault = str(scenario.get("runtime_fault", ""))
     allowed_runtime_faults = {
         "", "beat_count_257", "early_wlast", "late_wlast",
@@ -908,7 +953,12 @@ def create_system(
         setattr(ruby_system, "axi_target_adapter%d" % version, adapter)
         target_adapters.append(adapter)
 
-    if not options.axi_raw_shim_probe:
+    driver_mode = str(scenario.get("driver_mode", "sequential"))
+    if driver_mode not in ("sequential", "concurrent", "mesh_program"):
+        fatal("AXI driver_mode must be sequential, concurrent, or mesh_program")
+    if driver_mode == "mesh_program":
+        plans_by_target = _mesh_program_plans(scenario, target_specs)
+    if not options.axi_raw_shim_probe and driver_mode != "mesh_program":
         result_json = options.axi_result_json or os.path.join(
             m5.options.outdir, "axi_result.json"
         )

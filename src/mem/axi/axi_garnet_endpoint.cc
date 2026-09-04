@@ -1350,6 +1350,14 @@ AxiTargetAdapter::writeMemoryByte(uint64_t address, uint8_t value)
     functionalState->memory().writeByte(address, value);
 }
 
+void
+AxiTargetAdapter::registerWriteCommitObserver(AxiWriteCommitObserver *observer)
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: commit observer used during raw probe", name());
+    functionalState->setWriteCommitObserver(observer);
+}
+
 bool
 AxiTargetAdapter::functionalIdle() const
 {

@@ -1,0 +1,58 @@
+# -*- mode:python -*-
+
+Import('*')
+
+# The AI Mesh dummy core stack only exists in the AXI_MESH protocol build,
+# mirroring the guard used by src/mem/axi/SConscript.
+if env['CONF']['PROTOCOL'] != 'AXI_MESH':
+    Return()
+
+SimObject('AiMesh.py', sim_objects=[
+    'DmaEngineBase',
+    'MeshProgramLoader',
+    'MockAxiTransport',
+    'TensorDmaEngine',
+    'AxiGarnetBridge',
+    'AxiTensorDmaEngine',
+    'PeerSramAperture',
+    'NpuMemoryEndpoint',
+    'MeshDummyCore',
+    'MeshDispatcher',
+])
+
+Source('mesh_binary.cc')
+Source('mesh_splitter.cc')
+Source('mesh_ir_verifier.cc')
+Source('mesh_program_loader.cc')
+Source('mock_axi_transport.cc')
+Source('tensor_dma_engine.cc')
+Source('axi_garnet_bridge.cc')
+Source('axi_tensor_dma_engine.cc')
+Source('peer_sram_aperture.cc')
+Source('npu_memory_endpoint.cc')
+Source('mesh_dummy_core.cc')
+Source('mesh_dispatcher.cc')
+Source('agent_crc32c.cc')
+DebugFlag('AiMesh')
+
+GTest('mesh_binary.test',
+      'mesh_binary.test.cc',
+      'acceptance_gtest_reporter.cc',
+      'mesh_binary.cc',
+      'mesh_ir_verifier.cc',
+      'mesh_splitter.cc')
+GTest('tensor_sram.test',
+      'tensor_sram.test.cc',
+      'acceptance_gtest_reporter.cc')
+GTest('tensor_sram_queue.test',
+      'tensor_sram_queue.test.cc')
+GTest('mesh_splitter.test',
+      'mesh_splitter.test.cc',
+      'acceptance_gtest_reporter.cc',
+      'mesh_splitter.cc', 'mesh_binary.cc')
+GTest('program_scoreboard.test',
+      'program_scoreboard.test.cc')
+GTest('agent_protocol.test',
+      'agent_protocol.test.cc',
+      'acceptance_gtest_reporter.cc',
+      'agent_crc32c.cc')

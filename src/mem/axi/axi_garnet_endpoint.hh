@@ -148,6 +148,8 @@ class AxiTargetAdapter : public ClockedObject, public ruby::Consumer
     void writeMemoryByte(uint64_t address, uint8_t value);
     bool functionalIdle() const;
 
+    void registerWriteCommitObserver(AxiWriteCommitObserver *observer);
+
   private:
     void injectRawB();
     void consumeRawAw();
