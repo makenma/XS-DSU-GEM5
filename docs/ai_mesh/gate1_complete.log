@@ -1,0 +1,136 @@
+# Dummy Core Gate 1 Complete — 修复结果与代码概述
+
+执行记录，非 spec 替代物。分支基线 `feature/ai-mesh-axi-garnet` @ `b580482a75`
+（`feature/ai-mesh-mesh-ir` 分支与 commit 待人工 review 批准后执行）。
+规范来源：`src/doc/ai_mesh/TORCH_EXPORT_MESH_IR_CODEX_SPEC.md`（ABI 层）、
+`src/doc/ai_mesh/DUMMY_AI_CORE_AGENT_CODEX_SPEC.md`（§18 Gate 0/1）。
+
+交付定位（经三轮审计校准）：**Dummy Core runtime prototype**——全部 20 个
+base opcode 有专用执行语义、双语言 fail-closed ABI（跨语言变异一致性
+测试）、内容级流量验证与 150-ID manifest（JUnit/summary/RunManifest 形态
+harness）；数值计算/真实 AXI/AgentAxiDriver/MoE 仍明确不在范围内。
+
+## 0. 第三轮审计修复（7 项）
+
+| # | 问题 | 修复 |
+|---|---|---|
+| P0-1 | C++ 非 fail-closed 且与 Python 分叉 | attr reserved C++ 侧强制零；LOAD/STORE/FILL 端点方向规则镜像进 C++ verifier；endpoint 地址 checked arithmetic（减法形式无回绕）；三个"重算 CRC/SHA 的非法 .mshb"变异在 pytest 与 GTest（recomputeMeshChecksums + MeshBinaryParityTest）双侧拒绝 |
+| P0-2 | runtime 基础结构缺失 | TensorSram 增加 bank/端口占用（line 32B、读写端口、bank busy/conflict 计数与 stats）；allocation valid/poison（输入 operand 无 committed producer 即 `E_TENSOR_NOT_RESIDENT` fatal，poison golden 程序覆盖）；有限 admit window（默认 8，背压真实生效）；GEMM 工作量 `__builtin_mul_overflow` 检查 + Python verifier 形状溢出（E_ABI_OVERFLOW） |
+| P0-3 | REPEAT 重叠 generation | replay 不再在 decode 时启动：generation-check 事件等待 generation 0 完全 drain（流上仅剩 REPEAT 自身）后才重置窗口事件并开放 replay 游标；golden 的 REPEAT 移除显式尾部 wait，证明 drain 由 runtime 强制 |
+| P0-4 | 多实例崩溃/状态泄漏 | dispatchInstance 清空 committed_transfers/recv_waiters/fence_waiters/outstanding_axi；watchdog 重派发前 deschedule（instances=2 + watchdog 不再断言崩溃） |
+| P0-5 | manifest 冒充 + selector 简化 | DC-3/7/8/9/11/15/16/34 全部重映射到与新 runtime 能力对应的真实子用例（35 subcases）；selector 重写为 harness 形态：固定子环境（LC_ALL/TZ/PYTHONHASHSEED/OMP_NUM_THREADS + AI_MESH_* ）、逐 subcase summary.json + run_manifest.json（argv/env/normalized execution digest）、聚合 JUnit XML、timeout/OS 异常兜底、`--expect-determinism` 双跑逐字节比较 |
+| P1-6 | arch SSOT/ABI 版本 | ArchManifest 扩展至 28 字段（decode_width、SRAM 端口/吞吐、engine/DMA 队列全部纳入 digest）；config 全部参数由 arch_manifest 派生（零硬编码）；ABI minor 升 1（1.1 required_features 语义，min_reader_minor 0） |
+| P1-7 | 双核 golden/内容 oracle | STORE descriptor 源 shard 改 s_final；verifier 新增 endpoint↔shard tensor/owner 一致性；digest 按操作语义区分——LOCAL_REDUCE 的结果 operand 是累加器（混入旧值），纯 producer 不混（保住 REPEAT 代间与跨实例稳定）；burst oracle 改用远端地址/stride（LOAD=src，STORE/P2P=dst，destination 偏移 1B 即被拒绝） |
+
+已知边界（后续 Gate）：Python verifier 尚无完整 producer-dominance 静态分析
+（runtime poison 检查承担该不变量）；SRAM bank 计时为解析占用模型（非逐
+周期端口仿真）。
+
+### 第四轮审计修复（6 项）
+
+| # | 问题 | 修复 |
+|---|---|---|
+| P0-1 | C++ loader 与 Python fail-closed 分叉 | 全部 record reserved 字段 C++ 侧强制零（operand/event/stream/entrypoint/profile/tensor/shard/relocation）+ attr payload padding 按各 kind 尺寸归零校验；section offset+size 与 count×record_bytes 改无回绕检查；PROFILES/TENSORS/SHARDS 解码入结构并镜像 operand tensor/shard/allocation 引用一致性；parity 测试扩展第 4 个变异向量（operand reserved，重算校验和）双侧拒绝 |
+| P0-2 | SRAM bank/port 只入统计不参与时序 | reserve 改 tick 一致单位、按 bank line 分段计费、每 bank 读/写端口各自 busy 跟踪；stall 进入 compute 完成时刻与 DMA commit tick（single tick 797001→866501 证明时序真实受 SRAM/transport 影响） |
+| P0-3 | poison 不能承担 producer-dominance | 输入集=全部非结果 operand +（单 operand 原地操作或 LOCAL_REDUCE 的结果 operand）；operand 引用未知 allocation 即 fatal；STORE/P2P 在 engine 读 SRAM 前检查源 operand 有效性；dispatchInstance 重置全部 allocation valid（跨实例不泄漏） |
+| P0-4 | C++ burst 按本地源地址切分 | planDescriptorRemote：读方向用 src、写方向（STORE/P2P）用 dst 地址与 stride；DMA 完成时延 = engine setup + transport transferLatency（burst_base_latency×bursts + beats）+ 本地 SRAM stall |
+| P1-5 | arch SSOT/硬编码 | ArchManifest 扩至 43 字段（event_visibility/routing/engine 数/outstanding/AXI address/id/4K/QoS/burst_base_latency，yaml dma 段新增 burst_base_latency）；config 时钟/时延/可见性/吞吐全部由 arch 派生（dtype 向量 [FP32,FP16,BF16,INT8,INT32] 按命令 attr dtype 索引）；publishEvent 按 event_visibility 延迟可见，REPEAT 代重置取消挂起的可见性事件 |
+| P1-6 | manifest 证据链 | normalized_execution_digest 改为对**实际执行**的 attempt argv 计算（逐 attempt execution.json）；golden 每次 selector 运行强制重建（不信任残留）；JUnit 改 ElementTree 生成（转义安全） |
+
+注：工作区同时含并行 Gate-2 代码（axi_garnet_bridge/axi_tensor_dma_engine/
+dma_types 与 core 的 error-drain/pin 扩展），本轮修复未触碰 Gate-2 文件；
+golden sha pin 已按 Gate-2 扩展后的全部 9 个程序重 pin。
+
+## 1. 审计两轮意见的修复结果
+
+### 第一轮必改（2 项）
+
+1. **gem5 statistics 注册**：core/transport/dispatcher 三层 `regStats()`
+   注册计数器，计数器即统计量（单一数据源），结果 JSON 从 `.value()` 派生。
+2. **未知 required-feature bit 负例**：header offset 104 置位 →
+   `E_ABI_VERSION`（该偏移在 payload SHA 之外，纯测 feature 拒收）。
+
+### 第二轮意见（8 项）
+
+| # | 问题 | 修复 |
+|---|---|---|
+| P0-1 | DMA 背压重复计数（issued=281） | `commandsIssued++` 移到 `submit()` 成功后；守恒检查改为 config 无条件执行 |
+| P0-2 | manifest 映射语义不足 | 全部 21 个 gate-1 ID 重映射为诚实子用例（现 30 个 subcase）：DC-3 = 稳定错误码 + 损坏二进制 loader fatal E2E；DC-35 = REPEAT wire + 3 代执行 E2E（traffic×3、digest 每命令 3 份）+ 拒绝负例 |
+| P0-3 | REPEAT/FILL/FENCE 未实现 | REPEAT：多代 replay、代内事件按 `{base,generation}` 重置、drain gate 封锁 post-REPEAT 游标、代间顺序 drain；DMA_FILL：pattern 真实写入 SRAM + 内容摘要；AXI_FENCE：捕获在途计数、drain 到零才完成 |
+| P0-4 | C++ reader 非 fail-closed | section directory 先验界（含 count×40 ≤ file）；alignment 先判零再取模；15 个必需 section 全部强制；attr kind 闭集校验 |
+| P1-5 | Python 接受非法程序 | flag 位掩码校验、attr reserved/payload padding 必须零、LOAD/STORE/FILL 端点 space 精确规则、每 descriptor 必须恰一 traffic 行、region 越界 → 稳定 `MeshIrError`、operand tensor/shard/owner 三方一致 |
+| P1-6 | 双核 golden 非法依赖链 | core1 GEMM 补 `(e_la1, e_lw1)` wait；`PARTIAL_BYTES` 改 8192（原 4096 算错）；保存 `s_final` 并在 STORE 正确引用（该缺陷正是被新加的 operand 一致性校验抓出） |
+| P1-7 | RECV_WAIT 丢通知竞态 + watchdog 无实现 | `committed_transfers` 注册表：早到的 commit 被记忆，后到的 RECV_WAIT 即刻完成；watchdog 按 tick 界检查命令进度，无进展即 `MESH_WATCHDOG` fatal（500 ticks 触发 / 600000 健康通过） |
+| P1-8 | digest/内容流无证明 | compute digest 混入有序输入 operand 的 SRAM 内容（对内容敏感、对 tick/地址/排队不敏感）；transport 对每次搬运计算 payload digest；E2E 用独立 Python 摘要 oracle：LOAD=零填充 HBM 摘要、FILL=pattern 摘要、STORE/P2P ≠ 零摘要（证明内容流经 SRAM） |
+
+### 交付问题（3 项）
+
+- `.gitignore` `/*test*` 曾吞掉 `tests/gem5/ai_mesh/**`：已加 `!tests/` 重含链，
+  manifest/harness 现可正常提交。
+- config 手工复制架构 + 手算 digest：改为经 `util/mesh_ir.builder.load_arch`
+  读同一份 arch yaml（SSOT），字段与 digest 全部派生。
+- ABI 1.0 对 offset 104 的解释：yaml 中注明 spec §9.2 amendment 语义
+  （1.0 writer 全零、1.0-only reader 非零即拒）。
+
+## 2. 代码概述
+
+```
+util/mesh_ir/                  ABI 工具链（Python）
+  mesh_ir/abi/mesh_ir_abi.yaml SSOT（枚举/header/section/record/offset）
+  mesh_ir/abi/generate_abi.py  yaml → Python/C++/docs 同源生成
+  mesh_ir/abi/{encoder,decoder,verifier}.py   双语言 fail-closed 之一
+  mesh_ir/burst_splitter.py    §7.2 参考 splitter（编译器侧 oracle）
+  mesh_ir/builder.py           ProgramBuilder + traffic oracle
+  mesh_ir/golden_programs.py   single / dual / fill / repeat
+  mesh_ir/cli.py               build / verify / emit-cpp-golden
+  tests/{unit,negative,golden} 53 项测试（0 skip）
+
+src/dev/ai_mesh/               Dummy Core runtime（C++）
+  mesh_binary.{hh,cc}          .mshb 解析 + SHA-256/CRC-32 完整性
+  mesh_ir_verifier.{hh,cc}     结构校验（与 Python 行为对齐）
+  mesh_splitter.{hh,cc}        独立 C++ splitter（跨语言向量 pin）
+  mesh_program_loader.cc       fail-closed 加载 + CommandROM 安装
+  tensor_sram.hh               功能 SRAM（bank/对齐参数化）
+  mesh_dummy_core.cc           调度器/记分板/解析引擎/REPEAT 状态机/digest
+  tensor_dma_engine.cc         descriptor→burst→transport；FILL pattern；背压
+  mock_axi_transport.cc        HBM 稀疏页 + SRAM 路由 + 解析时延 + 逐描述符记账
+  mesh_dispatcher.cc           首沿启动/多 instance/watchdog/结果 JSON
+  *.test.cc                    GTest 7+2（内嵌跨语言 golden 向量）
+
+configs/example/ai_mesh/
+  run_mesh_program.py          E2E：arch SSOT、无条件守恒、内容摘要对账
+  arch/mesh_1x2.yaml           1×2 架构（编译/运行共同真相）
+
+tests/gem5/ai_mesh/
+  generate_manifest.py         150-ID manifest 生成器（累计计数硬断言）
+  run_manifest_selector.py     gate-prefix selector（GEM5/GTEST/PYTEST）
+  mandatory_case_manifest.yaml 150 ID；gate≤1 = 30 个真实子用例
+```
+
+关键设计决策：mock transport 独立 SimObject（DmaDescriptor 接口与 Gate 2
+真桥兼容）；跨语言 golden 向量由 `emit-cpp-golden` 机器生成（手抄已被实证
+会错）；magic 按 spec 字节序列小端解释；manifest 全量注册一次成型。
+
+## 3. 验证汇总（第二轮修复后全量复跑）
+
+| 命令 | 结果 |
+|---|---|
+| `python3 -m pytest util/mesh_ir/tests -q` | 55 passed, 0 skipped（含 9 程序 sha pin） |
+| `./build/AXI_MESH/dev/ai_mesh/mesh_binary.test.opt` | 8 PASSED（含跨语言 parity） |
+| `./build/AXI_MESH/dev/ai_mesh/mesh_splitter.test.opt` | 2 PASSED |
+| `generate_abi.py --check` | exit 0（幂等） |
+| golden E2E single/dual/fill/repeat | 4× MESH_E2E_PASS（含内容摘要对账） |
+| `--dma-queue-depth 1`（背压） | MESH_E2E_PASS（守恒 7/7） |
+| `--instances 2`（重派发） | MESH_E2E_PASS（dual 28 完成，digest 跨实例稳定） |
+| `--watchdog-ticks 500 / 600000` | fatal 触发 / 健康通过 |
+| 损坏二进制（payload 翻位） | loader fatal `E_ABI_CHECKSUM`，rc=1 |
+| `reference_compute=true` | 启动 fatal，rc=1 |
+| `run_manifest_selector.py --gate 1` | **21/21 logical PASS, 0 FAIL, 0 skip（35 subcases；fresh goldens + attempt-argv digest + ElementTree JUnit）** |
+| 范围守卫 grep AgentAxiDriver/MoE | 0 命中 |
+
+## 4. 待决事项
+
+- 切 `feature/ai-mesh-mesh-ir` 分支并按可回滚单元提交（spec+探针 /
+  util/mesh_ir / src/dev/ai_mesh / configs+golden / tests+manifest /
+  .gitignore+docs），待人工 review 批准，未自动 commit/push。
+- Gate 2+（真实 AXI/Garnet、AgentAxiDriver、MoE）不在本阶段范围。
