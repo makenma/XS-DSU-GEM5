@@ -1,0 +1,8 @@
+[project]
+name = "mesh-ir"
+version = "0.1.0"
+description = "Scheduled Mesh IR ABI toolchain (.mshb encoder/decoder/verifier, builder, traffic oracle)"
+requires-python = ">=3.8"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
