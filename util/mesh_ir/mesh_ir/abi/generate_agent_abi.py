@@ -42,6 +42,34 @@ def load_schema(path: Path) -> dict:
     for record in schema["records"].values():
         check_layout(record.get("name", ""), record["fields"], record["bytes"]) \
             if False else check_layout("", record["fields"], record["bytes"])
+    detail_codes = set(schema["detail_code_registry"])
+    dispositions = schema["detail_dispositions_v1"]
+    assert set(dispositions) == detail_codes
+    for disposition in dispositions.values():
+        assert disposition["severity"] in schema["enums"]["detail_severity_v1"]
+        if disposition["cq_status"] is not None:
+            assert disposition["cq_status"] in schema["enums"]["cq_status"]
+        if disposition["run_exit_reason"] is not None:
+            assert disposition["run_exit_reason"] in schema["enums"]["run_exit_reason"]
+    sites = {
+        name for name in schema["enums"]["fault_site_v1"]
+        if not name.startswith("RESERVED_")
+    }
+    projections = schema["fault_site_projections_v1"]
+    assert set(projections) == sites
+    for projection in projections.values():
+        assert projection["source_class"] in schema["enums"]["fatal_source_class_v1"]
+        assert projection["component_kind"] in schema["enums"]["fatal_component_kind_v1"]
+        assert projection["object_kind"] in schema["enums"]["fatal_object_kind_v1"]
+        assert projection["detail_code"] in detail_codes
+    invariant_sites = set(schema["enums"]["invariant_site_v1"])
+    invariant_projections = schema["invariant_site_projections_v1"]
+    assert set(invariant_projections) == invariant_sites
+    for projection in invariant_projections.values():
+        assert projection["source_class"] in schema["enums"]["fatal_source_class_v1"]
+        assert projection["component_kind"] in schema["enums"]["fatal_component_kind_v1"]
+        assert projection["object_kind"] in schema["enums"]["fatal_object_kind_v1"]
+        assert projection["detail_code"] in detail_codes
     return schema
 
 
@@ -75,6 +103,24 @@ def render_python(schema, sha):
     lines.append("}")
     lines.append("DETAIL_CODE_BY_VALUE = {v: k for k, v in DETAIL_CODE.items()}")
     lines.append("")
+    lines.append("DETAIL_DISPOSITION_V1 = {")
+    for key, value in schema["detail_dispositions_v1"].items():
+        lines.append(
+            f"    {key!r}: ({value['severity']!r}, "
+            f"{value['cq_status']!r}, {value['run_exit_reason']!r}),"
+        )
+    lines.append("}")
+    lines.append("")
+    lines.append("INVARIANT_SITE_PROJECTION_V1 = {")
+    for key, value in schema["invariant_site_projections_v1"].items():
+        lines.append(f"    {key!r}: {value!r},")
+    lines.append("}")
+    lines.append("")
+    lines.append("FAULT_SITE_PROJECTION_V1 = {")
+    for key, value in schema["fault_site_projections_v1"].items():
+        lines.append(f"    {key!r}: {value!r},")
+    lines.append("}")
+    lines.append("")
     for record_name, record in schema["records"].items():
         fmt = "".join(
             SCALAR_FORMATS[f["type"]] if f["type"] in SCALAR_FORMATS
@@ -104,6 +150,7 @@ def render_cpp(schema, sha):
         "#include <array>",
         "#include <cstdint>",
         "#include <cstring>",
+        "#include <optional>",
         "",
         "namespace gem5",
         "{",
@@ -134,6 +181,98 @@ def render_cpp(schema, sha):
         out.append(f"    {key} = {value:#010x},")
     out.append("};")
     out.append("")
+    out.extend([
+        "constexpr const char *",
+        "detailCodeNameV1(DetailCode detailCode)",
+        "{",
+        "    switch (detailCode) {",
+    ])
+    for key in schema["detail_code_registry"]:
+        out.append(f"      case {key}: return \"{key}\";")
+    out.extend([
+        "    }",
+        "    return nullptr;",
+        "}",
+        "",
+    ])
+    out.extend([
+        "struct DetailDispositionV1",
+        "{",
+        "    DetailCode detailCode;",
+        "    DetailSeverityV1 severity;",
+        "    int32_t cqStatus;",
+        "    int32_t runExitReason;",
+        "};",
+        "",
+        "constexpr std::optional<DetailDispositionV1>",
+        "detailDispositionV1(DetailCode detailCode)",
+        "{",
+        "    switch (detailCode) {",
+    ])
+    for key, value in schema["detail_dispositions_v1"].items():
+        severity = f"DetailSeverityV1::{value['severity']}"
+        cq_status = "-1" if value["cq_status"] is None else \
+            f"static_cast<int32_t>(CqStatus::{value['cq_status']})"
+        exit_reason = "-1" if value["run_exit_reason"] is None else \
+            f"static_cast<int32_t>(RunExitReason::{value['run_exit_reason']})"
+        out.extend([
+            f"      case {key}:",
+            f"        return DetailDispositionV1{{{key}, {severity}, {cq_status}, {exit_reason}}};",
+        ])
+    out.extend([
+        "    }",
+        "    return std::nullopt;",
+        "}",
+        "",
+        "struct FatalSiteProjectionV1",
+        "{",
+        "    FatalSourceClassV1 sourceClass;",
+        "    FatalComponentKindV1 componentKind;",
+        "    FatalObjectKindV1 objectKind;",
+        "    DetailCode detailCode;",
+        "};",
+        "",
+        "constexpr std::optional<FatalSiteProjectionV1>",
+        "fatalSiteProjectionV1(FaultSiteV1 site)",
+        "{",
+        "    switch (site) {",
+    ])
+    for key, value in schema["fault_site_projections_v1"].items():
+        out.extend([
+            f"      case FaultSiteV1::{key}:",
+            "        return FatalSiteProjectionV1{" +
+            f"FatalSourceClassV1::{value['source_class']}, " +
+            f"FatalComponentKindV1::{value['component_kind']}, " +
+            f"FatalObjectKindV1::{value['object_kind']}, " +
+            f"{value['detail_code']}" + "};",
+        ])
+    out.extend([
+        "      case FaultSiteV1::RESERVED_16:",
+        "        return std::nullopt;",
+        "    }",
+        "    return std::nullopt;",
+        "}",
+        "",
+        "constexpr FatalSiteProjectionV1",
+        "invariantSiteProjectionV1(InvariantSiteV1 site)",
+        "{",
+        "    switch (site) {",
+    ])
+    for key, value in schema["invariant_site_projections_v1"].items():
+        out.extend([
+            f"      case InvariantSiteV1::{key}:",
+            "        return FatalSiteProjectionV1{" +
+            f"FatalSourceClassV1::{value['source_class']}, " +
+            f"FatalComponentKindV1::{value['component_kind']}, " +
+            f"FatalObjectKindV1::{value['object_kind']}, " +
+            f"{value['detail_code']}" + "};",
+        ])
+    out.extend([
+        "    }",
+        "    return FatalSiteProjectionV1{FatalSourceClassV1::INTERNAL_INVARIANT, FatalComponentKindV1::INTERNAL, FatalObjectKindV1::INTERNAL, E_AGENT_PROTOCOL_FATAL};",
+        "}",
+        "",
+    ])
     for record_name, record in schema["records"].items():
         struct = cpp_name(record_name)
         out.append(f"struct {struct}")
@@ -167,9 +306,103 @@ def render_cpp(schema, sha):
         "{ return uint32_t(rdU16(p)) | (uint32_t(rdU16(p + 2)) << 16); }",
         "inline uint64_t rdU64(const uint8_t *p)",
         "{ return uint64_t(rdU32(p)) | (uint64_t(rdU32(p + 4)) << 32); }",
+        "inline void wrU16(uint8_t *p, uint16_t value)",
+        "{",
+        "    p[0] = uint8_t(value);",
+        "    p[1] = uint8_t(value >> 8);",
+        "}",
+        "inline void wrU32(uint8_t *p, uint32_t value)",
+        "{",
+        "    wrU16(p, uint16_t(value));",
+        "    wrU16(p + 2, uint16_t(value >> 16));",
+        "}",
+        "inline void wrU64(uint8_t *p, uint64_t value)",
+        "{",
+        "    wrU32(p, uint32_t(value));",
+        "    wrU32(p + 4, uint32_t(value >> 32));",
+        "}",
         "",
         "uint32_t crc32c(const uint8_t *data, size_t size);",
         "",
+    ])
+    for record_name, record in schema["records"].items():
+        struct = cpp_name(record_name)
+        out.extend([
+            f"inline {struct} decode{struct}(const uint8_t *data)",
+            "{",
+            f"    {struct} value;",
+        ])
+        for field in record["fields"]:
+            name = field["name"]
+            offset = field["offset"]
+            ftype = field["type"]
+            if ftype == "u8":
+                out.append(f"    value.{name} = rdU8(data + {offset});")
+            elif ftype == "u16":
+                out.append(f"    value.{name} = rdU16(data + {offset});")
+            elif ftype == "u32":
+                out.append(f"    value.{name} = rdU32(data + {offset});")
+            elif ftype == "u64":
+                out.append(f"    value.{name} = rdU64(data + {offset});")
+            elif ftype == "bytes32":
+                out.append(
+                    f"    std::memcpy(value.{name}.data(), data + {offset}, 32);"
+                )
+        out.extend([
+            "    return value;",
+            "}",
+            "",
+            f"inline std::array<uint8_t, k{struct}Bytes> encode{struct}(const {struct} &value)",
+            "{",
+            f"    std::array<uint8_t, k{struct}Bytes> data{{}};",
+        ])
+        crc = record.get("crc")
+        crc_field = crc["field"] if crc else None
+        for field in record["fields"]:
+            name = field["name"]
+            offset = field["offset"]
+            ftype = field["type"]
+            if name == crc_field:
+                continue
+            if ftype == "u8":
+                out.append(f"    data[{offset}] = value.{name};")
+            elif ftype == "u16":
+                out.append(
+                    f"    wrU16(data.data() + {offset}, value.{name});"
+                )
+            elif ftype == "u32":
+                out.append(
+                    f"    wrU32(data.data() + {offset}, value.{name});"
+                )
+            elif ftype == "u64":
+                out.append(
+                    f"    wrU64(data.data() + {offset}, value.{name});"
+                )
+            elif ftype == "bytes32":
+                out.append(
+                    f"    std::memcpy(data.data() + {offset}, value.{name}.data(), 32);"
+                )
+        if crc:
+            field_offset = next(
+                field["offset"] for field in record["fields"]
+                if field["name"] == crc_field
+            )
+            cover = crc.get("cover")
+            if cover:
+                out.append(
+                    f"    wrU32(data.data() + {field_offset}, crc32c(data.data() + {cover[0]}, {cover[1] - cover[0]}));"
+                )
+            else:
+                out.append(
+                    f"    wrU32(data.data() + {field_offset}, 0);\n"
+                    f"    wrU32(data.data() + {field_offset}, crc32c(data.data(), k{struct}Bytes));"
+                )
+        out.extend([
+            "    return data;",
+            "}",
+            "",
+        ])
+    out.extend([
         "} // namespace agent_abi",
         "} // namespace ai_mesh",
         "} // namespace gem5",
@@ -199,6 +432,38 @@ def render_markdown(schema, sha):
     out.append("")
     for key, value in schema["detail_code_registry"].items():
         out.append(f"- `{key}` = {value:#010x}")
+    out.append("")
+    out.append("## Detail dispositions")
+    out.append("")
+    out.append("| detail | severity | CQ status | run exit reason |")
+    out.append("|---|---|---|---|")
+    for key, value in schema["detail_dispositions_v1"].items():
+        out.append(
+            f"| `{key}` | `{value['severity']}` | "
+            f"`{value['cq_status']}` | `{value['run_exit_reason']}` |"
+        )
+    out.append("")
+    out.append("## Fatal fault-site projections")
+    out.append("")
+    out.append("| site | source class | component | object | detail |")
+    out.append("|---|---|---|---|---|")
+    for key, value in schema["fault_site_projections_v1"].items():
+        out.append(
+            f"| `{key}` | `{value['source_class']}` | "
+            f"`{value['component_kind']}` | `{value['object_kind']}` | "
+            f"`{value['detail_code']}` |"
+        )
+    out.append("")
+    out.append("## Fatal invariant-site projections")
+    out.append("")
+    out.append("| site | source class | component | object | detail |")
+    out.append("|---|---|---|---|---|")
+    for key, value in schema["invariant_site_projections_v1"].items():
+        out.append(
+            f"| `{key}` | `{value['source_class']}` | "
+            f"`{value['component_kind']}` | `{value['object_kind']}` | "
+            f"`{value['detail_code']}` |"
+        )
     out.append("")
     out.append("## Records")
     out.append("")

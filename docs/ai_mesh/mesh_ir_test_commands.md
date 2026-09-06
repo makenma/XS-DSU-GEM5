@@ -29,20 +29,41 @@ cd util/mesh_ir && python3 -m mesh_ir.cli emit-agent-golden \
 ./build/AXI_MESH/dev/ai_mesh/agent_protocol.test.opt --gtest_color=no
 ```
 
-## Gate 3 pre-implementation contract
+## Gate 3 protocol runtime
 
 ```bash
 python3 tests/gem5/ai_mesh/gate3/run_preimplementation.py
 python3 tests/gem5/ai_mesh/gate3/runtime_contract.py
 python3 tests/gem5/ai_mesh/gate3/validate_observation.py <canonical-observation.json>
+python3 -m pytest \
+    util/mesh_ir/tests/unit/test_agent_protocol.py \
+    util/mesh_ir/tests/unit/test_gate3_oracle.py \
+    util/mesh_ir/tests/integration/test_gate3_e2e_prefix.py \
+    util/mesh_ir/tests/integration/test_gate3_protocol_regressions.py -q
+./build/AXI_MESH/dev/ai_mesh/agent_ring.test.opt --gtest_color=no
+./build/AXI_MESH/dev/ai_mesh/agent_submission.test.opt --gtest_color=no
+./build/AXI_MESH/dev/ai_mesh/gate3_axi_transfer.test.opt --gtest_color=no
+./build/AXI_MESH/dev/ai_mesh/gate3_completion_ledger.test.opt --gtest_color=no
+./build/AXI_MESH/dev/ai_mesh/gate3_fatal_reducer.test.opt --gtest_color=no
+./build/AXI_MESH/dev/ai_mesh/agent_protocol_validation.test.opt --gtest_color=no
+./build/AXI_MESH/dev/ai_mesh/gate3_msi_id_pool.test.opt --gtest_color=no
+./build/AXI_MESH/dev/ai_mesh/gate3_irq_commit_queue.test.opt --gtest_color=no
+./build/AXI_MESH/dev/ai_mesh/gate3_sq_intake_ledger.test.opt --gtest_color=no
 ```
 
-`run_preimplementation.py` reports `READY_FOR_IMPLEMENTATION` while the
-verifier, ABI parity and PROTO-17 selector are green and the 23 runtime PROTO
-IDs remain explicitly RED. `runtime_contract.py` is the implementation exit
-criterion and returns nonzero until every required manifest subcase, backend
-case and invariant registry entry exists. The observation schema is
+`runtime_contract.py` is the implementation exit criterion. Protocol semantics
+are indexed by `src/doc/ai_mesh/DUMMY_AI_CORE_AGENT_CODEX_SPEC.md`; executable
+cases come from `mesh_ir.gate3_contract.GATE3_CASES` and
+`mandatory_case_manifest.yaml`. The observation schema is
 `schemas/ai_mesh/gate3_observation_v1.schema.json`.
+
+Fatal cut timing and ACK watermark regressions are indexed by
+`test_msi_response_preserves_fatal_cut_state`,
+`test_fatal_ack_snapshot_uses_npu_target_watermark`, and
+`test_retirement_at_fatal_edge_preserves_tick_start_ownership` in
+`util/mesh_ir/tests/integration/test_gate3_protocol_regressions.py`;
+ledger lifecycle coverage is in
+`src/dev/ai_mesh/gate3_completion_ledger.test.cc`.
 
 ## Python unit / negative / golden / integration
 
@@ -192,12 +213,13 @@ python3 tests/gem5/axi_garnet/run_axi_garnet_tests.py \
     --gem5 build/AXI_MESH/gem5.opt --suite full
 ```
 
-## Scope guard
+## Gate scope authority
 
-```bash
-grep -rn "AgentAxiDriver\|MoE" src/dev/ai_mesh util/mesh_ir configs/example/ai_mesh
-# must return no implementation hits
-```
+`mesh_ir.acceptance.GATE_EXPRESSIONS` is the only Gate membership authority.
+Gate 3 runtime coverage derives from `mesh_ir.gate3_contract` and the
+canonical manifest; identifiers from future Gates must not be judged by a
+repository-wide text search because the manifest and specifications
+intentionally retain their placeholders.
 
 Acceptance tests for `reference_compute` and poison paths are indexed by
 `mandatory_case_manifest.yaml` and implemented in

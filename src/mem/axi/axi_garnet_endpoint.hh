@@ -149,6 +149,7 @@ class AxiTargetAdapter : public ClockedObject, public ruby::Consumer
     bool functionalIdle() const;
 
     void registerWriteCommitObserver(AxiWriteCommitObserver *observer);
+    void registerPreCommitPolicy(AxiWritePreCommitPolicy *policy);
 
   private:
     void injectRawB();

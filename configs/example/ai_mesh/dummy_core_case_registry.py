@@ -1,14 +1,21 @@
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT / "util" / "mesh_ir"))
+sys.path.insert(0, str(ROOT / "configs" / "example" / "ai_mesh"))
+
+from mesh_ir.gate3_contract import GATE3_CASES
+from gate3_profiles import profile_for
 
 
 class Backend(Enum):
     MOCK = "MOCK"
     GARNET = "GARNET"
+    GATE3 = "GATE3"
 
 
 @dataclass(frozen=True)
@@ -89,6 +96,19 @@ CASES = {
 }
 
 
+GATE3_PROFILES = {}
+for _requirements in GATE3_CASES.values():
+    for _requirement in _requirements:
+        if _requirement.runner != "GEM5":
+            continue
+        CASES[_requirement.backend_case] = CaseDefinition(
+            Backend.GATE3,
+            _requirement.backend_case,
+            _requirement.invariants,
+        )
+        GATE3_PROFILES[_requirement.backend_case] = profile_for(_requirement.name).name
+
+
 MOCK_BASE_INVARIANTS = (
     "exit_reason",
     "traffic_conservation",
@@ -123,7 +143,7 @@ def _option_values(arguments, name):
 
 def invariant_registry(case_name, arguments):
     definition = CASES[case_name]
-    if definition.backend is Backend.GARNET:
+    if definition.backend in (Backend.GARNET, Backend.GATE3):
         return definition.invariants
     names = list(MOCK_BASE_INVARIANTS)
     for option, name, enabled in MOCK_VALUE_INVARIANTS:
@@ -163,13 +183,22 @@ def invocation(case_name: str, arguments: list[str], sim_ticks: str) -> tuple[Pa
             "--sim-tick-limit",
             sim_ticks,
         ]
-    else:
+    elif definition.backend is Backend.GARNET:
         script = ROOT / "configs/example/ai_mesh/run_mesh_dma_garnet.py"
         argv = [
             str(script),
             "--case",
             definition.backend_case,
             "--axi-max-sim-ticks",
+            sim_ticks,
+        ]
+    else:
+        script = ROOT / "configs/example/ai_mesh/run_gate3_protocol.py"
+        argv = [
+            str(script),
+            "--profile",
+            GATE3_PROFILES[case_name],
+            "--sim-tick-limit",
             sim_ticks,
         ]
     return script, argv + list(arguments)

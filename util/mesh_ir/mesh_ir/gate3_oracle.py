@@ -41,6 +41,8 @@ READ_DIRECTIONS = {
     "SQ_ENTRY": "NPU_TO_DRIVER",
     "PARAMETER": "NPU_TO_DRIVER",
     "PROMPT": "NPU_TO_DRIVER",
+    "CQ_ENTRY_READ": "DRIVER_TO_NPU",
+    "METADATA_READ": "DRIVER_TO_NPU",
 }
 
 CONTROL_UPDATES = {
@@ -53,6 +55,7 @@ CONTROL_UPDATES = {
 
 EVENT_PHASES = {
     "LOCAL_VISIBLE": 0,
+    "LOCAL_READ": 0,
     "RELEASE_FENCE_DONE": 0,
     "AXI_ACCEPT": 0,
     "DOORBELL_TARGET_COMMIT": 1,
@@ -63,6 +66,11 @@ EVENT_PHASES = {
     "PUBLICATION_ROLLBACK": 3,
     "SQ_CONSUME": 3,
     "CQ_OBLIGATION_RESERVE": 3,
+    "TERMINAL_READY": 3,
+    "FAULT_INJECT": 3,
+    "CQ_REJECT": 3,
+    "PARAMETER_REJECT": 3,
+    "CQ_DETAIL": 3,
     "CAPACITY_ACCEPT": 3,
     "CQ_ASSIGN": 3,
     "CQ_CONSUME": 3,
@@ -224,6 +232,10 @@ def _expected_direction(control, channel):
 
 def _validate_axi_direction(events):
     for row in _matching(events, kind="AXI_ACCEPT"):
+        if row["direction"] == "LOCAL":
+            # Driver local reads are modeled from the driver-owned backing
+            # with zero AXI/Garnet traffic (spec 8.5).
+            continue
         expected = _expected_direction(row["control"], row["channel"])
         if row["direction"] != expected:
             raise Gate3OracleError(
@@ -231,7 +243,7 @@ def _validate_axi_direction(events):
             )
 
 
-def _validate_axi_lifecycle(events, fatal):
+def _validate_axi_lifecycle(events, fatal, data_bus_bytes):
     groups = defaultdict(list)
     for row in _matching(events, kind="AXI_ACCEPT"):
         groups[_value(row, "txn")].append(row)
@@ -240,12 +252,23 @@ def _validate_axi_lifecycle(events, fatal):
     for txn, rows in groups.items():
         channels = [row["channel"] for row in rows]
         if channels[0] == "AW":
-            expected = ["AW", "W", "B"]
+            valid = (
+                len(channels) >= 3
+                and channels[0] == "AW"
+                and channels[-1] == "B"
+                and all(channel == "W" for channel in channels[1:-1])
+            )
+            partial = channels[0] == "AW" and all(
+                channel == "W" for channel in channels[1:]
+            )
         elif channels[0] == "AR":
-            expected = ["AR", "R"]
+            valid = len(channels) >= 2 and all(
+                channel == "R" for channel in channels[1:]
+            )
+            partial = True
         else:
             raise Gate3OracleError(f"AXI transaction {txn} starts on a response channel")
-        if channels != expected and not (fatal and channels == expected[:len(channels)]):
+        if not valid and not (fatal and partial):
             raise Gate3OracleError(
                 f"AXI transaction lifecycle mismatch for transaction {txn}"
             )
@@ -254,6 +277,8 @@ def _validate_axi_lifecycle(events, fatal):
         ) != 1:
             raise Gate3OracleError(f"AXI transaction {txn} changes identity")
         for row in rows:
+            if row["address"] is None or row["size"] is None:
+                raise Gate3OracleError("AXI event has no address or SIZE")
             byte_count = _u64(row["bytes"], "bytes")
             if row["channel"] in ("AW", "AR", "B") and byte_count != 0:
                 raise Gate3OracleError("AXI request channel carries data bytes")
@@ -262,8 +287,14 @@ def _validate_axi_lifecycle(events, fatal):
             if row["channel"] == "W":
                 if row["wstrb"] is None:
                     raise Gate3OracleError("AXI W transfer has no WSTRB")
-                if int(row["wstrb"], 16) >= 1 << byte_count:
-                    raise Gate3OracleError("AXI WSTRB exceeds the transfer byte lanes")
+                strobe = int(row["wstrb"], 16)
+                expected = ((1 << byte_count) - 1) << (
+                    row["address"] % data_bus_bytes
+                )
+                if strobe != expected:
+                    raise Gate3OracleError(
+                        "AXI WSTRB does not match address lanes"
+                    )
             elif row["wstrb"] is not None:
                 raise Gate3OracleError("WSTRB appears outside a W transfer")
             if row["channel"] in ("B", "R"):
@@ -271,6 +302,10 @@ def _validate_axi_lifecycle(events, fatal):
                     raise Gate3OracleError("AXI response has no response code")
             elif row["response"] is not None:
                 raise Gate3OracleError("AXI request carries a response code")
+            if (row["channel"] in ("W", "R") and
+                    byte_count & (byte_count - 1) == 0 and
+                    byte_count != 1 << row["size"]):
+                raise Gate3OracleError("AXI SIZE does not match data bytes")
 
 
 def _validate_control_contract(document):
@@ -278,13 +313,19 @@ def _validate_control_contract(document):
     configuration = document["configuration"]
     fixed = configuration["non_msi_axi_ids"]
     control_bytes = configuration["control_bytes"]
-    full_wstrb = f"{(1 << control_bytes) - 1:x}"
+    data_bus_bytes = configuration["data_bus_bytes"]
     for row in _matching(events, kind="AXI_ACCEPT"):
         control = row["control"]
         if control in fixed and row["axi_id"] != fixed[control]:
             raise Gate3OracleError(f"{control} does not use its fixed AXI ID")
         if row["channel"] == "W" and control in CONTROL_UPDATES:
-            if _u64(row["bytes"], "bytes") != control_bytes or row["wstrb"] != full_wstrb:
+            if _u64(row["bytes"], "bytes") != control_bytes or row["wstrb"] is None:
+                raise Gate3OracleError(f"{control} does not use full WSTRB")
+            strobe = int(row["wstrb"], 16)
+            expected = ((1 << control_bytes) - 1) << (
+                row["address"] % data_bus_bytes
+            )
+            if row["size"] != 3 or strobe != expected:
                 raise Gate3OracleError(f"{control} does not use full WSTRB")
     for control in fixed:
         live = None
@@ -474,11 +515,16 @@ def _validate_sequence_state(document):
     if not (
         final["npu_cq_ack_seq"]
         <= final["driver_cq_consumer_seq"]
-        <= final["cq_notified_seq"]
+        <= final["npu_cq_producer_seq"]
+    ):
+        raise Gate3OracleError("driver CQ counters are not ordered")
+    if not (
+        final["cq_notified_seq"]
         <= final["cq_msi_issued_seq"]
         <= final["npu_cq_producer_seq"]
     ):
-        raise Gate3OracleError("CQ absolute sequence counters are not ordered")
+        raise Gate3OracleError(
+            "CQ notification watermark exceeds the issued prefix")
     consumed = [_value(row, "absolute_seq") for row in _matching(events, kind="CQ_CONSUME")]
     if consumed != list(range(len(consumed))):
         raise Gate3OracleError("CQ consumer does not consume a continuous prefix")
@@ -520,9 +566,13 @@ def _validate_terminal_ownership(document):
     owner_keys = set(reserves) | set(retires)
     if any(retires[key] > reserves[key] for key in owner_keys):
         raise Gate3OracleError("CQ obligation retired without ownership")
-    live = sum(reserves.values()) - sum(retires.values())
-    if live != final["live_cq_obligations"]:
+    unretired = sum(reserves.values()) - sum(retires.values())
+    owned = (final["live_cq_obligations"] +
+             final["fatal_cq_obligations"])
+    if unretired != owned:
         raise Gate3OracleError("CQ obligation ownership accounting mismatch")
+    if final["fatal"] and final["live_cq_obligations"] != 0:
+        raise Gate3OracleError("fatal cut retains live CQ ownership")
     if not final["fatal"] and any(
         final[name] != 0
         for name in (
@@ -542,7 +592,9 @@ def validate_observation(document):
     _validate_event_order(events)
     _validate_ring_identity(document)
     _validate_axi_direction(events)
-    _validate_axi_lifecycle(events, document["final"]["fatal"])
+    _validate_axi_lifecycle(
+        events, document["final"]["fatal"],
+        document["configuration"]["data_bus_bytes"])
     _validate_control_contract(document)
     _validate_submission(document)
     _validate_core_start(events)

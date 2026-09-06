@@ -23,6 +23,7 @@ sys.path.insert(0, str(MESH_IR_ROOT))
 sys.path.insert(0, str(CONFIG_ROOT))
 
 from dummy_core_case_registry import CASES as GEM5_CASES
+from dummy_core_case_registry import GATE3_PROFILES
 from dummy_core_case_registry import invariant_registry
 from mesh_ir.acceptance import (
     ARTIFACT_BASENAMES,
@@ -55,6 +56,7 @@ from mesh_ir.acceptance import (
 from mesh_ir.abi.decoder import decode_program
 from mesh_ir.builder import load_arch
 from mesh_ir.effective import EffectiveArchitecture
+from mesh_ir.gate3_oracle import load_observation, validate_observation
 
 
 MANIFEST = Path(__file__).resolve().parent / "mandatory_case_manifest.yaml"
@@ -279,11 +281,21 @@ def build_command(
             str(executable),
             f"--outdir={artifact_dir}",
             execution["config_script"],
-            f"--case={execution['case_name']}",
-            "--master-seed=20260901",
-            f"--sim-tick-limit={canonical_u64_text(timeout['sim_ticks'])}",
-            *arguments,
         ]
+        if execution["config_script"] == "configs/example/ai_mesh/run_gate3_protocol.py":
+            command.extend([
+                "--profile",
+                GATE3_PROFILES[execution["case_name"]],
+                "--sim-tick-limit",
+                canonical_u64_text(timeout["sim_ticks"]),
+            ])
+        else:
+            command.extend([
+                f"--case={execution['case_name']}",
+                "--master-seed=20260901",
+                f"--sim-tick-limit={canonical_u64_text(timeout['sim_ticks'])}",
+            ])
+        command.extend(arguments)
         registry_digest = _digest(str(CONFIG_ROOT / "dummy_core_case_registry.py"))
     else:
         raise ContractError(f"unknown runner {runner}")
@@ -353,6 +365,65 @@ def _argument_value(arguments: list[str], name: str, default=None):
 
 def _gem5_scenario(execution: dict, command: list[str], golden: Path) -> dict:
     arguments = [_replace_golden(value, golden) for value in execution["args"]]
+    if execution["config_script"] == "configs/example/ai_mesh/run_gate3_protocol.py":
+        configuration_digest = canonical_digest(
+            {"case_name": execution["case_name"], "arguments": arguments}
+        )
+        protocol_digest = canonical_digest(
+            {
+                "protocol": "ai_mesh_gate3",
+                "data_bus_bytes": 64,
+                "control_bytes": 8,
+            }
+        )
+        empty_digests = {
+            "program_weight_registry": None,
+            "model_weight_image": None,
+            "workload_plan": None,
+            "control_plan": None,
+            "host_arena_object_plan": None,
+            "capacity_plan": None,
+            "endpoint_map": None,
+            "host_task_identity": None,
+        }
+        period = 1_000_000_000_000 // 1_000_000_000
+        return {
+            "kind": "GEM5",
+            "master_seed": 20260901,
+            "data_mode": "FUNCTIONAL_BYTES",
+            "strict_replay_serial_batches": False,
+            "digests": {
+                "configuration": configuration_digest,
+                "base_architecture": protocol_digest,
+                "effective_architecture": configuration_digest,
+                "command_identity": canonical_digest({"command": command}),
+                **empty_digests,
+            },
+            "mesh_programs": [],
+            "provider_profiles": [],
+            "identity_counters": None,
+            "physical_source_counters": [],
+            "tick_projection": {
+                "host_clock_period_ticks": period,
+                "npu_clock_period_ticks": period,
+                "core_clock_period_ticks": period,
+                "host_tasks": [],
+            },
+            "endpoint_map": None,
+            "host_arena_object_plan": None,
+            "capacity_plan": None,
+            "host_task_identity_plan": None,
+            "approximation": {
+                "reference_compute": False,
+                "numeric_compute": False,
+                "cpu_instruction_simulation": False,
+                "cpu_mesh_simulation": False,
+                "ucie_protocol_simulation": False,
+                "remote_link_is_analytic_proxy": True,
+                "synthetic_weight_bytes": True,
+                "synthetic_output_bytes": True,
+            },
+        }
     program_dir_text = _argument_value(arguments, "--mesh-program-dir")
     if program_dir_text is None:
         raise ContractError("GEM5 execution has no mesh program directory")
@@ -608,6 +679,17 @@ def _judge_report(
                 )
                 if snapshot["run_manifest_digest"] != run_manifest_digest:
                     raise ContractError("fatal snapshot run manifest mismatch")
+            if "GATE3_OBSERVATION_JSON" in subcase["artifacts"]:
+                observation = load_observation(
+                    artifact_dir / ARTIFACT_BASENAMES["GATE3_OBSERVATION_JSON"]
+                )
+                validate_observation(observation)
+                if observation["id"] != case_id or observation["subcase"] != subcase["name"]:
+                    raise ContractError("Gate3 observation identity mismatch")
+                if observation["final"]["fatal"] != (
+                    subcase["terminal_class"] == "EXPECTED_INFRA_FATAL"
+                ):
+                    raise ContractError("Gate3 observation terminal state mismatch")
         except ContractError as error:
             failure_kind = "ARTIFACT_ERROR"
             detail = str(error)

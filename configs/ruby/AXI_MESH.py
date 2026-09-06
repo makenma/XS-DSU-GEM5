@@ -470,6 +470,106 @@ def _mesh_program_plans(scenario, target_specs):
     return plans
 
 
+def _post_commit_plans(scenario, target_specs):
+    nodes = [int(spec["dst_node"]) for spec in target_specs]
+    plans = [[] for _ in target_specs]
+    records = scenario.get("planned_post_commit_faults", [])
+    if not isinstance(records, list):
+        fatal("AXI planned_post_commit_faults must be a list")
+    for index, record in enumerate(records):
+        if not isinstance(record, dict):
+            fatal("AXI planned_post_commit_faults[%d] must be an object", index)
+        try:
+            target = int(record["target"])
+            uid = int(record["uid"])
+            response = str(record.get("resp", "slverr")).lower()
+        except (KeyError, TypeError, ValueError):
+            fatal("invalid AXI planned_post_commit_faults[%d] entry", index)
+        if target not in nodes:
+            fatal("AXI planned_post_commit_faults references unknown target %d",
+                  target)
+        if uid < 0 or response not in ("okay", "slverr"):
+            fatal("AXI planned_post_commit_faults uid/resp is invalid")
+        plans[nodes.index(target)].append((uid, response))
+    return plans
+
+
+def _write_commit_observer_plans(scenario, target_specs):
+    nodes = [int(spec["dst_node"]) for spec in target_specs]
+    replays = [[] for _ in target_specs]
+    tiebreaks = [[] for _ in target_specs]
+    records = scenario.get("planned_write_commit_replays", [])
+    if not isinstance(records, list):
+        fatal("AXI planned_write_commit_replays must be a list")
+    for index, record in enumerate(records):
+        if not isinstance(record, dict):
+            fatal("AXI planned_write_commit_replays[%d] must be an object",
+                  index)
+        try:
+            target = int(record["target"])
+            uid = _u64(record["uid"], "AXI write commit replay uid")
+            count = int(record["count"])
+        except (KeyError, TypeError, ValueError):
+            fatal("invalid AXI planned_write_commit_replays[%d] entry",
+                  index)
+        if target not in nodes or count <= 0:
+            fatal("invalid AXI write commit replay target/uid/count")
+        replays[nodes.index(target)].append((uid, count))
+    records = scenario.get("planned_write_commit_tiebreaks", [])
+    if not isinstance(records, list):
+        fatal("AXI planned_write_commit_tiebreaks must be a list")
+    for index, record in enumerate(records):
+        if not isinstance(record, dict):
+            fatal("AXI planned_write_commit_tiebreaks[%d] must be an object",
+                  index)
+        try:
+            target = int(record["target"])
+            uid = _u64(record["uid"], "AXI write commit tiebreak uid")
+            rank = int(record["rank"])
+        except (KeyError, TypeError, ValueError):
+            fatal("invalid AXI planned_write_commit_tiebreaks[%d] entry",
+                  index)
+        if target not in nodes or rank < 0:
+            fatal("invalid AXI write commit tiebreak target/uid/rank")
+        tiebreaks[nodes.index(target)].append((uid, rank))
+    return replays, tiebreaks
+
+
+def _gate3_plans(scenario, target_specs):
+    nodes = [int(spec["dst_node"]) for spec in target_specs]
+    plans = [[] for _ in target_specs]
+    b_delay_plans = [[] for _ in target_specs]
+    for field, with_cycles, default_response in (
+        ("planned_extra_latency", True, "okay"),
+        ("planned_faults", False, "slverr"),
+        ("planned_b_ejection", True, "okay"),
+    ):
+        records = scenario.get(field, [])
+        if not isinstance(records, list):
+            fatal("AXI Gate3 %s must be a list", field)
+        for index, record in enumerate(records):
+            if not isinstance(record, dict):
+                fatal("AXI Gate3 %s[%d] must be an object", field, index)
+            try:
+                target = int(record["target"])
+                uid = _u64(record["uid"], "AXI Gate3 plan uid")
+                if with_cycles:
+                    cycles = int(record["cycles"])
+                    response = "okay"
+                else:
+                    cycles = 0
+                    response = str(record.get("resp", default_response)).lower()
+            except (KeyError, TypeError, ValueError):
+                fatal("invalid AXI Gate3 %s[%d] entry", field, index)
+            if target not in nodes or cycles < 0 or response not in ("okay", "slverr"):
+                fatal("invalid AXI Gate3 %s target/uid/value", field)
+            if field == "planned_b_ejection":
+                b_delay_plans[nodes.index(target)].append((uid, cycles, response))
+            else:
+                plans[nodes.index(target)].append((uid, cycles, response))
+    return plans, b_delay_plans
+
+
 def _validate_options(options, initiators, targets, default_error_target,
                       quotas):
     if buildEnv["PROTOCOL"] != "AXI_MESH":
@@ -636,17 +736,30 @@ def create_system(
     )
     transaction_specs = []
     plans_by_target = [[] for _ in target_specs]
+    post_commit_plans_by_target = _post_commit_plans(
+        scenario, target_specs
+    )
+    write_commit_replays_by_target, write_commit_tiebreaks_by_target = (
+        _write_commit_observer_plans(scenario, target_specs)
+    )
     transaction_metadata = {
         "max_extra_latency": [0, 0],
         "max_arrival_cycle": 0,
         "arrival_cycles": [],
     }
     driver_mode = str(scenario.get("driver_mode", "sequential"))
-    if driver_mode not in ("sequential", "concurrent", "mesh_program"):
-        fatal("AXI driver_mode must be sequential, concurrent, or mesh_program")
+    if driver_mode not in (
+        "sequential", "concurrent", "mesh_program", "gate3_protocol"
+    ):
+        fatal("AXI driver_mode must be sequential, concurrent, mesh_program, or gate3_protocol")
+    b_delay_plans_by_target = [[] for _ in target_specs]
     if driver_mode == "mesh_program":
         plans_by_target = _mesh_program_plans(scenario, target_specs)
-    if not options.axi_raw_shim_probe and driver_mode != "mesh_program":
+    if driver_mode == "gate3_protocol":
+        plans_by_target, b_delay_plans_by_target = _gate3_plans(scenario, target_specs)
+    if not options.axi_raw_shim_probe and driver_mode not in (
+        "mesh_program", "gate3_protocol"
+    ):
         transaction_specs, plans_by_target, transaction_metadata = \
             _transaction_specs(
                 scenario, initiator_specs, target_specs, data_bus_bytes
@@ -672,6 +785,13 @@ def create_system(
         fatal("AXI response ejection stall cycles must be integers")
     if any(cycle < 0 for cycle in response_ejection_stalls):
         fatal("AXI response ejection stall cycles must be non-negative")
+    # Optional per-initiator overrides (list indexed by initiator order);
+    # entries may be dicts {"b":..,"r":..}.  Used to create targeted
+    # response-ordering stimuli such as an early ACK.
+    stall_by_initiator = scenario.get(
+        "response_ejection_stall_by_initiator", None)
+    if stall_by_initiator is not None and not isinstance(stall_by_initiator, list):
+        fatal("response_ejection_stall_by_initiator must be a list")
     consumer_stall = scenario.get("consumer_stall_until_cycle", {})
     if not isinstance(consumer_stall, dict):
         fatal("consumer_stall_until_cycle must be an object")
@@ -848,6 +968,19 @@ def create_system(
         source_key = (int(endpoint["src_node"]), int(endpoint["src_port"]))
         source_quotas = [quotas[source_key + (target,)]
                          for target in ordered_target_nodes]
+        endpoint_stalls = list(response_ejection_stalls)
+        if stall_by_initiator is not None:
+            if version >= len(stall_by_initiator):
+                fatal("response_ejection_stall_by_initiator shorter than "
+                      "the initiator set")
+            override = stall_by_initiator[version]
+            if override is not None:
+                try:
+                    endpoint_stalls = [
+                        int(override.get(channel, 0)) for channel in ("b", "r")
+                    ]
+                except (TypeError, ValueError):
+                    fatal("per-initiator ejection stalls must be integers")
         adapter = AxiInitiatorAdapter(
             shim=controller,
             peer=targets_by_node[int(endpoint["default_target"])],
@@ -879,7 +1012,7 @@ def create_system(
             b_rob_transactions=options.axi_b_rob_transactions,
             r_rob_beats=options.axi_r_rob_beats,
             injection_delays=endpoint_injection_delays,
-            response_ejection_stall_until=response_ejection_stalls,
+            response_ejection_stall_until=endpoint_stalls,
             wire_header_bytes=wire_headers,
             data_bus_bytes=data_bus_bytes,
             raw_probe=options.axi_raw_shim_probe,
@@ -932,7 +1065,22 @@ def create_system(
             base_latencies=target_base_latencies,
             planned_uids=[entry[0] for entry in target_plans],
             planned_extra_latency_cycles=[entry[1] for entry in target_plans],
+            planned_b_ejection_uids=[entry[0] for entry in b_delay_plans_by_target[version]],
+            planned_b_ejection_delays=[
+                entry[1] for entry in b_delay_plans_by_target[version]],
             planned_fault_responses=[entry[2] for entry in target_plans],
+            planned_post_commit_fault_uids=[entry[0] for entry in
+                                           post_commit_plans_by_target[version]],
+            planned_post_commit_fault_responses=[entry[1] for entry in
+                                                 post_commit_plans_by_target[version]],
+            planned_write_commit_replay_uids=[entry[0] for entry in
+                                              write_commit_replays_by_target[version]],
+            planned_write_commit_replay_counts=[entry[1] for entry in
+                                                write_commit_replays_by_target[version]],
+            planned_write_commit_tiebreak_uids=[entry[0] for entry in
+                                                write_commit_tiebreaks_by_target[version]],
+            planned_write_commit_tiebreak_ranks=[entry[1] for entry in
+                                                 write_commit_tiebreaks_by_target[version]],
             ingress_depths=[local_depths[0], local_depths[1],
                             local_depths[3]],
             wire_header_bytes=wire_headers,
@@ -954,11 +1102,15 @@ def create_system(
         target_adapters.append(adapter)
 
     driver_mode = str(scenario.get("driver_mode", "sequential"))
-    if driver_mode not in ("sequential", "concurrent", "mesh_program"):
-        fatal("AXI driver_mode must be sequential, concurrent, or mesh_program")
+    if driver_mode not in (
+        "sequential", "concurrent", "mesh_program", "gate3_protocol"
+    ):
+        fatal("AXI driver_mode must be sequential, concurrent, mesh_program, or gate3_protocol")
     if driver_mode == "mesh_program":
         plans_by_target = _mesh_program_plans(scenario, target_specs)
-    if not options.axi_raw_shim_probe and driver_mode != "mesh_program":
+    if not options.axi_raw_shim_probe and driver_mode not in (
+        "mesh_program", "gate3_protocol"
+    ):
         result_json = options.axi_result_json or os.path.join(
             m5.options.outdir, "axi_result.json"
         )

@@ -296,6 +296,53 @@ TEST(AxiOrderingTest, DifferentIdWriteCanInvert)
     EXPECT_EQ(target.frontBPacket().meta.axiId, 0);
 }
 
+TEST(AxiOrderingTest, SameTickWriteUsesConfiguredTieBreak)
+{
+    AxiTargetConfig config = targetConfig();
+    config.writeBaseLatency = 1;
+    config.writeCommitTieBreakRanks = {{300, 2}, {301, 0}, {302, 1}};
+    AxiTargetState target(config);
+    const auto first = targetAddress(300, 0, 0, 0, 0x100);
+    const auto second = targetAddress(301, 1, 0, 0, 0x200);
+    const auto third = targetAddress(302, 2, 0, 0, 0x300);
+    target.acceptAw(first, 0);
+    target.acceptW(targetW(first, 0x10), 0);
+    target.acceptAw(second, 0);
+    target.acceptW(targetW(second, 0x20), 0);
+    target.acceptAw(third, 0);
+    target.acceptW(targetW(third, 0x30), 0);
+
+    target.advance(1);
+    std::vector<uint64_t> order;
+    while (target.hasBPacket()) {
+        order.push_back(target.frontBPacket().meta.txnUid);
+        target.popBPacket();
+    }
+    EXPECT_EQ(order, (std::vector<uint64_t>{301, 302, 300}));
+}
+
+TEST(AxiOrderingTest, DifferentIdDelayedBDoesNotBlockReadyResponse)
+{
+    AxiTargetConfig config = targetConfig();
+    config.bEjectionDelay.emplace(10, 100);
+    AxiTargetState target(config);
+    const auto slow = targetAddress(10, 0, 0, 0, 0x100);
+    const auto fast = targetAddress(11, 1, 0, 0, 0x200);
+
+    target.acceptAw(slow, 0);
+    target.acceptW(targetW(slow, 0x10), 0);
+    target.acceptAw(fast, 0);
+    target.acceptW(targetW(fast, 0x20), 0);
+
+    ASSERT_TRUE(target.hasBPacket());
+    EXPECT_EQ(target.frontBPacket().meta.axiId, 1);
+    target.popBPacket();
+    EXPECT_FALSE(target.hasBPacket());
+    target.advance(100);
+    ASSERT_TRUE(target.hasBPacket());
+    EXPECT_EQ(target.frontBPacket().meta.axiId, 0);
+}
+
 TEST(AxiOrderingTest, ReadWriteDomainsIndependent)
 {
     AxiInitiatorState source(sourceConfig());

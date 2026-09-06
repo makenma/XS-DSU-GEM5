@@ -118,7 +118,7 @@ AxiSimpleMemory::commitWrite(const AxiAddressRequest &request,
 
 AxiTargetState::AxiTargetState(const AxiTargetConfig &config)
     : _config(config), _memory(config.memoryRanges),
-      _bReady(config.bReadyDepth), _rReady(config.rReadyDepth)
+      _rReady(config.rReadyDepth)
 {
     if (_config.dataBusBytes == 0 || _config.dataBusBytes > 64 ||
         _config.capacity.writeContexts == 0 ||
@@ -145,6 +145,12 @@ AxiTargetState::AxiTargetState(const AxiTargetConfig &config)
         if (response != AxiResp::Okay && response != AxiResp::SlvErr)
             throw std::invalid_argument(
                 "AXI target fault response must be OKAY or SLVERR");
+    }
+    for (const auto &[uid, response] : _config.transactionPostCommitFaults) {
+        (void)uid;
+        if (response != AxiResp::Okay && response != AxiResp::SlvErr)
+            throw std::invalid_argument(
+                "AXI target post-commit fault response must be OKAY or SLVERR");
     }
 }
 
@@ -529,7 +535,7 @@ void
 AxiTargetState::commitWrites(uint64_t now)
 {
     (void)now;
-    while (!_bReady.full()) {
+    while (_bReady.size() < _config.bReadyDepth) {
         uint64_t selected_uid = 0;
         WriteContext *selected = nullptr;
         OrderingKey selected_key;
@@ -549,9 +555,19 @@ AxiTargetState::commitWrites(uint64_t now)
                 }
                 continue;
             }
+            const auto rank = _config.writeCommitTieBreakRanks.find(uid);
+            const uint32_t candidate_rank =
+                rank == _config.writeCommitTieBreakRanks.end() ?
+                std::numeric_limits<uint32_t>::max() : rank->second;
+            const auto selected_rank =
+                _config.writeCommitTieBreakRanks.find(selected_uid);
+            const uint32_t current_rank =
+                selected_rank == _config.writeCommitTieBreakRanks.end() ?
+                std::numeric_limits<uint32_t>::max() : selected_rank->second;
             if (!selected ||
-                std::tie(context.serviceReadyAt, uid) <
-                std::tie(selected->serviceReadyAt, selected_uid)) {
+                std::tie(context.serviceReadyAt, candidate_rank, uid) <
+                std::tie(selected->serviceReadyAt, current_rank,
+                         selected_uid)) {
                 selected_uid = uid;
                 selected = &context;
                 selected_key = key;
@@ -582,20 +598,49 @@ AxiTargetState::commitWrites(uint64_t now)
             response = mergeResp(response, beat.resp);
         panic_if(response == AxiResp::ExOkay,
                  "AXI model must never generate EXOKAY");
-        if (response == AxiResp::Okay) {
+        bool policy_commit = true;
+        if (preCommitPolicy) {
+            const auto decision = preCommitPolicy->onWritePreCommit(
+                selected->aw->request, beats, response);
+            policy_commit = decision.commit;
+            response = mergeResp(response, decision.response);
+        }
+        const auto post_commit = _config.transactionPostCommitFaults.find(
+            selected->meta.txnUid);
+        const bool post_commit_fault = post_commit !=
+            _config.transactionPostCommitFaults.end() &&
+            response == AxiResp::Okay;
+        if ((response == AxiResp::Okay && policy_commit) ||
+            post_commit_fault) {
             _memory.commitWrite(
                 selected->aw->request, beats, _config.dataBusBytes);
         }
+        uint64_t b_ready_at = now;
+        const auto b_delay = _config.bEjectionDelay.find(selected->meta.txnUid);
+        if (b_delay != _config.bEjectionDelay.end())
+            b_ready_at += b_delay->second;
+        const AxiResp target_commit_response = response;
+        if (post_commit_fault)
+            response = mergeResp(response, post_commit->second);
         if (writeCommitObserver)
-            writeCommitObserver->onAxiWriteCommitted(
-                selected->aw->request, beats, response);
+            writeCommitObserver->onAxiWriteCommittedWithMeta(
+                *selected->aw, beats, target_commit_response);
+        const auto observer_replays =
+            _config.writeCommitObserverReplays.find(selected->meta.txnUid);
+        if (writeCommitObserver &&
+            observer_replays != _config.writeCommitObserverReplays.end()) {
+            for (uint32_t replay = 0;
+                 replay < observer_replays->second; ++replay) {
+                writeCommitObserver->onAxiWriteCommittedWithMeta(
+                    *selected->aw, beats, target_commit_response);
+            }
+        }
 
         AxiBPacket b;
         b.meta = selected->aw->meta;
         b.meta.semanticBytes = 8;
         b.resp = response;
-        panic_if(!_bReady.push(std::move(b)),
-                 "AXI target B ready FIFO overflow");
+        _bReady.push_back(ReadyB{std::move(b), b_ready_at});
         releaseWrite(*selected);
         ++_completedWrites;
         ++_progress.architecturalCommits;
@@ -722,11 +767,55 @@ AxiTargetState::advance(uint64_t now)
     generateReads();
 }
 
+bool
+AxiTargetState::hasBPacket() const
+{
+    return readyBIndex().has_value();
+}
+
+std::optional<size_t>
+AxiTargetState::readyBIndex() const
+{
+    std::optional<size_t> selected;
+    for (size_t index = 0; index < _bReady.size(); ++index) {
+        const ReadyB &candidate = _bReady[index];
+        if (candidate.readyAt > _now)
+            continue;
+        bool ordered = true;
+        for (size_t older = 0; older < _bReady.size(); ++older) {
+            const AxiCommonMeta &lhs = _bReady[older].packet.meta;
+            const AxiCommonMeta &rhs = candidate.packet.meta;
+            if (lhs.srcNode == rhs.srcNode && lhs.srcPort == rhs.srcPort &&
+                lhs.dstNode == rhs.dstNode && lhs.axiId == rhs.axiId &&
+                lhs.responseSeq < rhs.responseSeq) {
+                ordered = false;
+                break;
+            }
+        }
+        if (!ordered)
+            continue;
+        if (!selected ||
+            std::tie(candidate.readyAt, index) <
+            std::tie(_bReady[*selected].readyAt, *selected))
+            selected = index;
+    }
+    return selected;
+}
+
+const AxiBPacket &
+AxiTargetState::frontBPacket() const
+{
+    const auto index = readyBIndex();
+    panic_if(!index, "frontBPacket called without an eligible B response");
+    return _bReady[*index].packet;
+}
+
 void
 AxiTargetState::popBPacket()
 {
-    panic_if(_bReady.empty(), "popBPacket called on empty queue");
-    _bReady.pop();
+    const auto index = readyBIndex();
+    panic_if(!index, "popBPacket called without an eligible B response");
+    _bReady.erase(_bReady.begin() + *index);
     advance(_now);
 }
 

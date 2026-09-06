@@ -62,8 +62,10 @@
             "MSI_TARGET_COMMIT",
             "PUBLICATION_COMMIT",
             "PUBLICATION_ROLLBACK",
+            "LOCAL_READ",
             "SQ_CONSUME",
             "CQ_OBLIGATION_RESERVE",
+            "TERMINAL_READY",
             "CAPACITY_ACCEPT",
             "CORE_START",
             "CQ_ASSIGN",
@@ -72,6 +74,10 @@
             "CQ_ACK_TARGET_COMMIT",
             "CQ_OBLIGATION_RETIRE",
             "SLOT_REUSE",
+            "FAULT_INJECT",
+            "CQ_REJECT",
+            "PARAMETER_REJECT",
+            "CQ_DETAIL",
             "FATAL"
           ]
         },
@@ -90,10 +96,13 @@
                 "OUTPUT",
                 "METADATA",
                 "CQ_ENTRY",
+                "CQ_ENTRY_READ",
+                "METADATA_READ",
                 "CQ_TAIL",
                 "MSI",
                 "CQ_ACK",
-                "CONTEXT"
+                "CONTEXT",
+                "LOCAL_READ"
               ]
             }
           ]
@@ -140,7 +149,9 @@
             {
               "enum": [
                 "DRIVER_TO_NPU",
-                "NPU_TO_DRIVER"
+                "NPU_TO_DRIVER",
+                "LOCAL",
+                "LOCAL"
               ]
             }
           ]
@@ -160,6 +171,8 @@
                 "OUTPUT",
                 "METADATA",
                 "CQ_ENTRY",
+                "CQ_ENTRY_READ",
+                "METADATA_READ",
                 "CQ_TAIL_UPDATE",
                 "MSI",
                 "CQ_HEAD_ACK"
@@ -168,6 +181,12 @@
           ]
         },
         "axi_id": {
+          "$ref": "#/$defs/nullableU32"
+        },
+        "address": {
+          "$ref": "#/$defs/nullableU64Json"
+        },
+        "size": {
           "$ref": "#/$defs/nullableU32"
         },
         "response": {
@@ -200,7 +219,7 @@
           ]
         },
         "status": {
-          "oneOf": [
+          "anyOf": [
             {
               "type": "null"
             },
@@ -208,8 +227,19 @@
               "enum": [
                 "SUCCESS",
                 "ERROR",
-                "SQ_SEQ_ONLY_ERROR"
+                "SQ_SEQ_ONLY_ERROR",
+                "SQ_IDENTITY_ERROR",
+                "E_PARAMETER_LENGTH_MISMATCH",
+                "E_REQUEST_BINDING",
+                "E_SQ_MALFORMED",
+                "E_RESERVED_FIELD",
+                "HEADER",
+                "TAIL"
               ]
+            },
+            {
+              "type": "string",
+              "pattern": "^E_[A-Z0-9_]+$"
             }
           ]
         }
@@ -230,6 +260,8 @@
         "direction",
         "control",
         "axi_id",
+        "address",
+        "size",
         "response",
         "bytes",
         "wstrb",
@@ -279,6 +311,9 @@
         "live_cq_obligations": {
           "$ref": "#/$defs/u32"
         },
+        "fatal_cq_obligations": {
+          "$ref": "#/$defs/u32"
+        },
         "msi_rob_entries": {
           "$ref": "#/$defs/u32"
         },
@@ -312,6 +347,7 @@
         "live_submissions",
         "live_contexts",
         "live_cq_obligations",
+        "fatal_cq_obligations",
         "msi_rob_entries",
         "ack_wait_b",
         "fatal",
@@ -331,7 +367,7 @@
       "const": 1
     },
     "id": {
-      "pattern": "^PROTO-(?:[1-9]|[12][0-9]|30)$",
+      "pattern": "^(PROTO-(?:[1-9]|[12][0-9]|30)|E2E-D)$",
       "type": "string"
     },
     "subcase": {
@@ -352,6 +388,11 @@
           "maximum": 4294967295
         },
         "control_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "data_bus_bytes": {
           "type": "integer",
           "minimum": 1,
           "maximum": 256
@@ -385,6 +426,7 @@
         "sq_depth",
         "cq_depth",
         "control_bytes",
+        "data_bus_bytes",
         "non_msi_axi_ids"
       ],
       "additionalProperties": false

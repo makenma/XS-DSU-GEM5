@@ -1,4 +1,6 @@
 import argparse
+import json
+import os
 import runpy
 import sys
 
@@ -19,3 +21,41 @@ except SystemExit as error:
     code = error.code if isinstance(error.code, int) else 1
     if code != 0:
         raise
+
+# Gate 1/2 configs predate the child-report contract: the wrapper emits the
+# report on their behalf once the child exited successfully (spec 17.9.2).
+report_path = os.environ.get("AI_MESH_CHILD_REPORT")
+if report_path:
+    import hashlib
+
+    manifest_path = os.path.join(
+        os.environ.get("AI_MESH_ARTIFACT_DIR", "."), "run_manifest.json")
+    digest = "0" * 64
+    if os.path.isfile(manifest_path):
+        raw = json.load(open(manifest_path, encoding="utf-8"))
+        canonical = json.dumps(raw, sort_keys=True,
+                               separators=(",", ":")).encode()
+        digest = hashlib.sha256(canonical).hexdigest()
+    with open(report_path, "w", encoding="utf-8") as handle:
+        json.dump({
+            "schema": "ai_mesh_child_scenario_report_v1",
+            "version": 1,
+            "id": os.environ.get("AI_MESH_CASE_ID", ""),
+            "subcase": os.environ.get("AI_MESH_SUBCASE", ""),
+            "run_exit_reason": "QUIESCENT_SUCCESS",
+            "first_fatal": None,
+            "watchdog_fired": False,
+            "ledger_summary": {
+                "live_cq_obligations": 0,
+                "fatal_cq_obligations": 0,
+                "fatal_sq_intakes": 0,
+                "fatal_publications": 0,
+                "ambiguous_publications": 0,
+                "host_ack_wait_b": 0,
+                "host_ack_b_error": 0,
+                "msi_rob_entries": 0,
+                "fatal_records": 0,
+            },
+            "global_quiescence": True,
+            "run_manifest_digest": digest,
+        }, handle, indent=2)

@@ -96,23 +96,74 @@ def decode_cq(blob: bytes) -> dict:
     return _grouped("CQ_DESCRIPTOR", blob)
 
 
-def encode_parameter(values: dict) -> bytes:
-    blob = bytearray(_pack("PARAMETER_HEADER", values, "crc32"))
-    crc = crc32c(blob[:152])
-    struct.pack_into("<I", blob, A.PARAMETER_HEADER_FIELD_OFFSETS["crc32"], crc)
+def encode_parameter(values: dict, tail: bytes = b"") -> bytes:
+    """Encode one complete parameter block (header + bindings + TLVs).
+
+    The CRC covers the full total_bytes with the CRC field treated as zero
+    (spec 8.3).  The header total_bytes must equal 160 + len(tail)."""
+    total = A.PARAMETER_HEADER_BYTES + len(tail)
+    values = dict(values)
+    if "total_bytes" in values and values["total_bytes"] != total:
+        raise ProtocolError(
+            "E_PARAMETER_LENGTH_MISMATCH",
+            f"total_bytes {values['total_bytes']} != header+tail {total}",
+        )
+    values["total_bytes"] = total
+    blob = bytearray(_pack("PARAMETER_HEADER", values, "crc32") + tail)
+    crc_offset = A.PARAMETER_HEADER_FIELD_OFFSETS["crc32"]
+    struct.pack_into("<I", blob, crc_offset, 0)
+    crc = crc32c(blob)
+    struct.pack_into("<I", blob, crc_offset, crc)
     return bytes(blob)
 
 
 def decode_parameter(blob: bytes) -> dict:
     if len(blob) < A.PARAMETER_HEADER_BYTES:
         raise ProtocolError("E_SQ_MALFORMED", "parameter header must be 160 bytes")
-    values = _grouped("PARAMETER_HEADER", bytes(blob[:A.PARAMETER_HEADER_BYTES]))
-    stored = values.pop("crc32")
     header = bytes(blob[:A.PARAMETER_HEADER_BYTES])
-    checksum = bytearray(header)
-    struct.pack_into("<I", checksum, A.PARAMETER_HEADER_FIELD_OFFSETS["crc32"], 0)
-    if crc32c(checksum[:152]) != stored:
+    values = _grouped("PARAMETER_HEADER", header)
+    stored = values.pop("crc32")
+    total = values["total_bytes"]
+    if total < A.PARAMETER_HEADER_BYTES or total % 8 or total != len(blob):
+        raise ProtocolError(
+            "E_PARAMETER_LENGTH_MISMATCH",
+            f"parameter total_bytes {total} invalid for {len(blob)} bytes",
+        )
+    covered = bytearray(blob[:total])
+    crc_offset = A.PARAMETER_HEADER_FIELD_OFFSETS["crc32"]
+    struct.pack_into("<I", covered, crc_offset, 0)
+    if crc32c(covered) != stored:
         raise ProtocolError("E_SQ_CRC", "parameter CRC32C mismatch")
+    values["binding_records"] = []
+    binding_count = values["binding_count"]
+    binding_offset = values["binding_table_offset"]
+    binding_bytes = binding_count * A.BINDING_RECORD_BYTES
+    extension_offset = values["extension_offset"]
+    extension_bytes = values["extension_bytes"]
+    if values["binding_record_bytes"] != A.BINDING_RECORD_BYTES:
+        raise ProtocolError("E_REQUEST_BINDING", "binding record size mismatch")
+    if binding_count:
+        if binding_offset % 8 or binding_offset < A.PARAMETER_HEADER_BYTES or \
+                binding_offset + binding_bytes > total:
+            raise ProtocolError(
+                "E_REQUEST_BINDING", "binding table outside the parameter block")
+        for index in range(binding_count):
+            start = binding_offset + index * A.BINDING_RECORD_BYTES
+            values["binding_records"].append(
+                decode_binding(blob[start:start + A.BINDING_RECORD_BYTES]))
+    if extension_bytes:
+        if extension_offset % 8 or extension_offset < A.PARAMETER_HEADER_BYTES \
+                or extension_offset + extension_bytes > total:
+            raise ProtocolError(
+                "E_REQUEST_BINDING", "extension outside the parameter block")
+        if binding_count and max(binding_offset, extension_offset) < min(
+                binding_offset + binding_bytes,
+                extension_offset + extension_bytes):
+            raise ProtocolError(
+                "E_REQUEST_BINDING", "binding table overlaps extension")
+    values["tlvs"] = decode_tlvs(
+        blob[extension_offset:extension_offset + extension_bytes]
+        if extension_bytes else b"")
     return values
 
 

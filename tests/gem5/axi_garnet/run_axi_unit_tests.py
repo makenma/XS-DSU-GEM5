@@ -43,8 +43,8 @@ def load_manifest(path):
         if set(entry.get("tests", ())) != expected:
             fail(f"test-name set mismatch for {binary}")
         expected_all.update(expected)
-    if expected_all != expected_unit_test_names() or len(expected_all) != 66:
-        fail("unit manifest must exact-match the 66 required tests")
+    if expected_all != expected_unit_test_names():
+        fail("unit manifest must exact-match the required unit tests")
     return entries
 
 
@@ -194,13 +194,14 @@ def main():
             "timed_out": 0,
             "binaries": results,
         }
-        if aggregate["expected"] != 66 or aggregate["run"] != 66:
-            fail("aggregate unit count must be exactly 66")
+        required = len(expected_unit_test_names())
+        if aggregate["expected"] != required or aggregate["run"] != required:
+            fail("aggregate unit count must match the required tests")
         (args.outdir / "unit_suite_result.json").write_text(
             json.dumps(aggregate, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-        print("AXI_UNIT_SUITE_PASS binaries=10 tests=66")
+        print(f"AXI_UNIT_SUITE_PASS binaries={len(results)} tests={required}")
         return 0
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
         print(f"AXI_UNIT_SUITE_FAIL: {exc}", file=sys.stderr)

@@ -70,6 +70,7 @@ ARTIFACT_KINDS = (
     "TRACE_MIN",
     "WAIT_FOR_GRAPH",
     "FATAL_SNAPSHOT",
+    "GATE3_OBSERVATION_JSON",
 )
 
 ARTIFACT_BASENAMES = {
@@ -81,6 +82,7 @@ ARTIFACT_BASENAMES = {
     "TRACE_MIN": "trace_min.jsonl",
     "WAIT_FOR_GRAPH": "wait_for_graph.json",
     "FATAL_SNAPSHOT": "fatal_snapshot.json",
+    "GATE3_OBSERVATION_JSON": "gate3_observation.json",
 }
 
 LEDGER_FIELDS = (
@@ -273,6 +275,11 @@ def validate_subcase(case_id: str, subcase: dict) -> None:
     runner = subcase["execution"]["runner"]
     if runner == "GEM5" and "TRAFFIC_JSON" not in artifacts:
         raise ContractError(f"{case_id}/{subcase['name']}: GEM5 traffic artifact missing")
+    if runner == "GEM5" and GATE_OF.get(case_id) == 3 and \
+            "GATE3_OBSERVATION_JSON" not in artifacts:
+        raise ContractError(
+            f"{case_id}/{subcase['name']}: Gate3 observation artifact missing"
+        )
     if subcase["terminal_class"] == "EXPECTED_INFRA_FATAL":
         if "FATAL_SNAPSHOT" not in artifacts:
             raise ContractError(f"{case_id}/{subcase['name']}: fatal snapshot missing")

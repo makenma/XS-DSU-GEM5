@@ -112,6 +112,66 @@ class NpuMemoryEndpoint(ClockedObject):
     verify_json = Param.String("", "Drain-time verify ranges file")
 
 
+class Gate3ObservationRecorder(SimObject):
+    type = "Gate3ObservationRecorder"
+    cxx_header = "dev/ai_mesh/gate3_observation_recorder.hh"
+    cxx_class = "gem5::ai_mesh::Gate3ObservationRecorder"
+
+    output_path = Param.String("", "Raw Gate3 observation facts path")
+
+
+class AgentAxiDriver(ClockedObject):
+    type = "AgentAxiDriver"
+    cxx_header = "dev/ai_mesh/gate3_protocol_runtime.hh"
+    cxx_class = "gem5::ai_mesh::AgentAxiDriver"
+
+    master = Param.AxiInitiatorAdapter("Driver AXI initiator")
+    target = Param.AxiTargetAdapter("Driver host-memory target")
+    recorder = Param.Gate3ObservationRecorder("Gate3 observation recorder")
+    data_bus_bytes = Param.UInt32(64, "AXI data bus width in bytes")
+    sq_depth = Param.UInt32(2, "Submission queue depth")
+    cq_depth = Param.UInt32(2, "Completion queue depth")
+    control_bytes = Param.UInt32(8, "Control window transfer bytes")
+    max_burst_beats = Param.UInt16(256, "Maximum AXI burst beats")
+    host_base = Param.UInt64(0x10000000, "Host memory base")
+    npu_control_base = Param.UInt64(0x30000000, "NPU control base")
+    agent_proxy_control_base = Param.UInt64(0x30100000, "Agent proxy control base")
+    profile = Param.String("NORMAL", "Gate3 runtime profile")
+    request_count = Param.UInt32(1, "Logical requests to execute")
+    local_visibility_delay = Param.Cycles(0, "Local visibility delay")
+    request_id_capacity = Param.UInt32(8, "Finite request ID capacity")
+    drain_cycles = Param.Cycles(8, "Drain interval before exit")
+    doorbell_axi_id = Param.UInt32(16, "Fixed SQ doorbell AXI ID")
+    ack_axi_id = Param.UInt32(17, "Fixed CQ ACK AXI ID")
+
+
+class NpuServingFrontend(ClockedObject):
+    type = "NpuServingFrontend"
+    cxx_header = "dev/ai_mesh/gate3_protocol_runtime.hh"
+    cxx_class = "gem5::ai_mesh::NpuServingFrontend"
+
+    master = Param.AxiInitiatorAdapter("NPU serving AXI initiator")
+    control_target = Param.AxiTargetAdapter("NPU control target")
+    recorder = Param.Gate3ObservationRecorder("Gate3 observation recorder")
+    data_bus_bytes = Param.UInt32(64, "AXI data bus width in bytes")
+    sq_depth = Param.UInt32(2, "Submission queue depth")
+    cq_depth = Param.UInt32(2, "Completion queue depth")
+    control_bytes = Param.UInt32(8, "Control window transfer bytes")
+    max_burst_beats = Param.UInt16(256, "Maximum AXI burst beats")
+    host_base = Param.UInt64(0x10000000, "Host memory base")
+    npu_control_base = Param.UInt64(0x30000000, "NPU control base")
+    agent_proxy_control_base = Param.UInt64(0x30100000, "Agent proxy control base")
+    profile = Param.String("NORMAL", "Gate3 runtime profile")
+    request_count = Param.UInt32(1, "Logical requests to execute")
+    sq_read_issue_delay = Param.Cycles(0, "SQ read issue delay")
+    doorbell_axi_id = Param.UInt32(16, "Fixed SQ doorbell AXI ID")
+    sq_head_axi_id = Param.UInt32(18, "Fixed SQ head AXI ID")
+    cq_tail_axi_id = Param.UInt32(19, "Fixed CQ tail AXI ID")
+    cq_entry_axi_id = Param.UInt32(20, "CQ entry AXI ID")
+    msi_axi_id = Param.UInt32(32, "MSI AXI ID pool base")
+    msi_axi_id_count = Param.UInt32(4, "MSI AXI ID pool size")
+
+
 class MeshDummyCore(ClockedObject):
     type = "MeshDummyCore"
     cxx_header = "dev/ai_mesh/mesh_dummy_core.hh"

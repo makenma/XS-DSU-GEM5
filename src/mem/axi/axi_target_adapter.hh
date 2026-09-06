@@ -3,11 +3,13 @@
 
 #include <array>
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include "base/logging.hh"
 #include "mem/axi/axi_types.hh"
 #include "mem/axi/axi_validation.hh"
 
@@ -27,6 +29,34 @@ class AxiWriteCommitObserver
     virtual void onAxiWriteCommitted(const AxiAddressRequest &request,
                                      const std::vector<AxiDataPacket> &beats,
                                      AxiResp resp) = 0;
+    virtual void onAxiWriteCommittedWithMeta(
+        const AxiAddressPacket &packet,
+        const std::vector<AxiDataPacket> &beats,
+        AxiResp resp)
+    {
+        onAxiWriteCommitted(packet.request, beats, resp);
+    }
+};
+
+// Pre-commit control policy: consulted before any state change or memory
+// commit for an accepted write.  Implementations return the response the
+// target must return and whether the write may commit; a non-OKAY policy
+// response suppresses the commit (spec 8.0: bad window/format/writes
+// return SLVERR/DECERR and produce no state change).
+class AxiWritePreCommitPolicy
+{
+  public:
+    virtual ~AxiWritePreCommitPolicy() = default;
+
+    struct Decision
+    {
+        AxiResp response = AxiResp::Okay;
+        bool commit = true;
+    };
+
+    virtual Decision onWritePreCommit(const AxiAddressRequest &request,
+                                      const std::vector<AxiDataPacket> &beats,
+                                      AxiResp transport_response) = 0;
 };
 
 class AxiSimpleMemory
@@ -67,7 +97,15 @@ struct AxiTargetConfig
     std::map<AxiEndpointKey, AxiQuota> sourceQuotas;
     std::vector<AxiRange> memoryRanges;
     std::map<uint64_t, uint32_t> extraLatency;
+    // Per-transaction delay between the write commit (target commit
+    // callback) and the B response ejection.  Used to create a true
+    // early-ACK window: the driver's ACK write can commit on the control
+    // target before the MSI B leaves the target (spec 8.5).
+    std::map<uint64_t, uint32_t> bEjectionDelay;
     std::map<uint64_t, AxiResp> transactionFaults;
+    std::map<uint64_t, AxiResp> transactionPostCommitFaults;
+    std::map<uint64_t, uint32_t> writeCommitObserverReplays;
+    std::map<uint64_t, uint32_t> writeCommitTieBreakRanks;
 };
 
 struct AxiTargetOccupancy
@@ -107,9 +145,9 @@ class AxiTargetState
     void acceptW(const AxiDataPacket &packet, uint64_t now = 0);
     void acceptAr(const AxiAddressPacket &packet, uint64_t now = 0);
 
-    bool hasBPacket() const { return !_bReady.empty(); }
+    bool hasBPacket() const;
     bool hasRPacket() const { return !_rReady.empty(); }
-    const AxiBPacket &frontBPacket() const { return _bReady.front(); }
+    const AxiBPacket &frontBPacket() const;
     const AxiDataPacket &frontRPacket() const { return _rReady.front(); }
     void popBPacket();
     void popRPacket();
@@ -122,7 +160,16 @@ class AxiTargetState
 
     void setWriteCommitObserver(AxiWriteCommitObserver *observer)
     {
+        fatal_if(writeCommitObserver != nullptr,
+                 "AXI target write-commit observer already registered");
         writeCommitObserver = observer;
+    }
+
+    void setPreCommitPolicy(AxiWritePreCommitPolicy *policy)
+    {
+        fatal_if(preCommitPolicy != nullptr,
+                 "AXI target pre-commit policy already registered");
+        preCommitPolicy = policy;
     }
 
     uint64_t completedWrites() const { return _completedWrites; }
@@ -160,6 +207,12 @@ class AxiTargetState
         std::vector<AxiDataPacket> frozenBeats;
     };
 
+    struct ReadyB
+    {
+        AxiBPacket packet;
+        uint64_t readyAt = 0;
+    };
+
     using OrderingKey =
         std::tuple<uint32_t, uint16_t, uint32_t, bool, uint32_t>;
 
@@ -182,13 +235,15 @@ class AxiTargetState
     void commitWrites(uint64_t now);
     void commitReads(uint64_t now);
     void generateReads();
+    std::optional<size_t> readyBIndex() const;
 
     AxiTargetConfig _config;
     AxiSimpleMemory _memory;
     AxiWriteCommitObserver *writeCommitObserver = nullptr;
+    AxiWritePreCommitPolicy *preCommitPolicy = nullptr;
     std::map<uint64_t, WriteContext> _writes;
     std::map<uint64_t, ReadContext> _reads;
-    BoundedFifo<AxiBPacket> _bReady;
+    std::deque<ReadyB> _bReady;
     BoundedFifo<AxiDataPacket> _rReady;
     std::map<AxiEndpointKey, AxiQuota> _activeQuota;
     size_t _reservedWriteBeats = 0;

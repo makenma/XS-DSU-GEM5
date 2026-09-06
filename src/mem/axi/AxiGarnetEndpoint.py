@@ -106,11 +106,33 @@ class AxiTargetAdapter(ClockedObject):
     planned_uids = VectorParam.UInt64(
         [], "Transaction UIDs with deterministic service plans"
     )
+    planned_b_ejection_uids = VectorParam.UInt64(
+        [], "Transaction uids with a delayed B ejection")
+    planned_b_ejection_delays = VectorParam.UInt32(
+        [], "Per uid: extra ticks between target commit and B ejection")
     planned_extra_latency_cycles = VectorParam.UInt32(
         [], "Extra target service latency for every planned UID"
     )
     planned_fault_responses = VectorParam.String(
         [], "okay or slverr response plan for every planned UID"
+    )
+    planned_post_commit_fault_uids = VectorParam.UInt64(
+        [], "Transaction UIDs with post-commit response plans"
+    )
+    planned_post_commit_fault_responses = VectorParam.String(
+        [], "okay or slverr post-commit response plan"
+    )
+    planned_write_commit_replay_uids = VectorParam.UInt64(
+        [], "Transaction UIDs with repeated write commit notifications"
+    )
+    planned_write_commit_replay_counts = VectorParam.UInt32(
+        [], "Additional write commit notifications per planned UID"
+    )
+    planned_write_commit_tiebreak_uids = VectorParam.UInt64(
+        [], "Transaction UIDs with same-tick write commit ranks"
+    )
+    planned_write_commit_tiebreak_ranks = VectorParam.UInt32(
+        [], "Same-tick write commit rank per planned UID"
     )
     ingress_depths = VectorParam.UInt32(
         [16, 64, 32], "AW,W,AR adapter ingress depths"

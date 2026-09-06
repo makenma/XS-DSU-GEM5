@@ -74,6 +74,63 @@ TEST(AgentRecordGoldenTest, MetadataCrcVerifies)
               9u);
 }
 
+TEST(AgentRecordCodecTest, GeneratedEncodersRoundTrip)
+{
+    SqDescriptor sq;
+    sq.abi_major = kAbiMajor;
+    sq.sq_seq = 11;
+    sq.request_id = 22;
+    sq.completion_cookie = 33;
+    const auto sq_bytes = encodeSqDescriptor(sq);
+    const auto sq_decoded = decodeSqDescriptor(sq_bytes.data());
+    EXPECT_EQ(sq_decoded.sq_seq, sq.sq_seq);
+    EXPECT_EQ(sq_decoded.request_id, sq.request_id);
+    EXPECT_EQ(sq_decoded.completion_cookie, sq.completion_cookie);
+    EXPECT_EQ(crc32c(sq_bytes.data(), kSqDescriptorCrcCoverBytes),
+              rdU32(sq_bytes.data() + kSqDescriptorCrcFieldOffset));
+
+    ParameterHeader parameter;
+    parameter.magic = 0x504e4741;
+    parameter.header_bytes = kParameterHeaderBytes;
+    parameter.total_bytes = kParameterHeaderBytes;
+    parameter.input_addr = 44;
+    const auto parameter_bytes = encodeParameterHeader(parameter);
+    const auto parameter_decoded = decodeParameterHeader(parameter_bytes.data());
+    EXPECT_EQ(parameter_decoded.input_addr, parameter.input_addr);
+    // Parameter CRC covers total_bytes with the CRC field treated as zero
+    // (spec 8.3); kParameterHeaderCrcCoverBytes==0 selects that variant.
+    {
+        std::vector<uint8_t> covered(parameter_bytes.begin(),
+                                     parameter_bytes.end());
+        std::memset(covered.data() + kParameterHeaderCrc32Offset, 0, 4);
+        EXPECT_EQ(crc32c(covered.data(), kParameterHeaderBytes),
+                  rdU32(parameter_bytes.data() + kParameterHeaderCrc32Offset));
+    }
+
+    CqDescriptor cq;
+    cq.cq_seq = 55;
+    cq.request_id = 66;
+    cq.completion_cookie = 77;
+    const auto cq_bytes = encodeCqDescriptor(cq);
+    const auto cq_decoded = decodeCqDescriptor(cq_bytes.data());
+    EXPECT_EQ(cq_decoded.cq_seq, cq.cq_seq);
+    EXPECT_EQ(cq_decoded.request_id, cq.request_id);
+    EXPECT_EQ(cq_decoded.completion_cookie, cq.completion_cookie);
+}
+
+TEST(AgentAbiRegistryTest, FatalProjectionUsesTypedSite)
+{
+    const auto projection = fatalSiteProjectionV1(
+        FaultSiteV1::MSI_TARGET_OR_B);
+    ASSERT_TRUE(projection);
+    EXPECT_EQ(projection->sourceClass, FatalSourceClassV1::MSI);
+    EXPECT_EQ(projection->componentKind,
+              FatalComponentKindV1::NPU_FRONTEND);
+    EXPECT_EQ(projection->objectKind, FatalObjectKindV1::MSI);
+    EXPECT_EQ(projection->detailCode, E_INTERRUPT);
+    EXPECT_FALSE(fatalSiteProjectionV1(FaultSiteV1::RESERVED_16));
+}
+
 } // namespace
 } // namespace agent_abi
 } // namespace ai_mesh

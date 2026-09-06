@@ -16,6 +16,9 @@ SimObject('AiMesh.py', sim_objects=[
     'AxiTensorDmaEngine',
     'PeerSramAperture',
     'NpuMemoryEndpoint',
+    'Gate3ObservationRecorder',
+    'AgentAxiDriver',
+    'NpuServingFrontend',
     'MeshDummyCore',
     'MeshDispatcher',
 ])
@@ -30,6 +33,19 @@ Source('axi_garnet_bridge.cc')
 Source('axi_tensor_dma_engine.cc')
 Source('peer_sram_aperture.cc')
 Source('npu_memory_endpoint.cc')
+Source('gate3_observation_recorder.cc')
+Source('gate3_protocol_runtime.cc')
+Source('gate3_protocol_frontend.cc')
+Source('gate3_axi_transfer.cc')
+Source('gate3_completion_ledger.cc')
+Source('gate3_fatal_reducer.cc')
+Source('gate3_msi_id_pool.cc')
+Source('gate3_irq_commit_queue.cc')
+Source('gate3_sq_intake_ledger.cc')
+Source('agent_protocol_validation.cc')
+Source('agent_protocol_layout.cc')
+Source('agent_ring_state.cc')
+Source('agent_submission_ledger.cc')
 Source('mesh_dummy_core.cc')
 Source('mesh_dispatcher.cc')
 Source('agent_crc32c.cc')
@@ -56,3 +72,37 @@ GTest('agent_protocol.test',
       'agent_protocol.test.cc',
       'acceptance_gtest_reporter.cc',
       'agent_crc32c.cc')
+GTest('agent_ring.test',
+      'agent_ring.test.cc',
+      'agent_runtime_types.cc',
+      'agent_ring_state.cc',
+      'agent_protocol_layout.cc')
+GTest('gate3_axi_transfer.test',
+      'gate3_axi_transfer.test.cc',
+      'gate3_axi_transfer.cc',
+      '../../mem/axi/axi_validation.cc')
+GTest('gate3_completion_ledger.test',
+      'gate3_completion_ledger.test.cc',
+      'gate3_completion_ledger.cc',
+      'agent_runtime_types.cc')
+GTest('gate3_fatal_reducer.test',
+      'gate3_fatal_reducer.test.cc',
+      'gate3_fatal_reducer.cc')
+GTest('gate3_msi_id_pool.test',
+      'gate3_msi_id_pool.test.cc',
+      'gate3_msi_id_pool.cc')
+GTest('gate3_irq_commit_queue.test',
+      'gate3_irq_commit_queue.test.cc',
+      'gate3_irq_commit_queue.cc')
+GTest('gate3_sq_intake_ledger.test',
+      'gate3_sq_intake_ledger.test.cc',
+      'gate3_sq_intake_ledger.cc')
+GTest('agent_protocol_validation.test',
+      'agent_protocol_validation.test.cc',
+      'agent_protocol_validation.cc',
+      'agent_crc32c.cc')
+GTest('agent_submission.test',
+      'agent_submission.test.cc',
+      'agent_runtime_types.cc',
+      'agent_ring_state.cc',
+      'agent_submission_ledger.cc')

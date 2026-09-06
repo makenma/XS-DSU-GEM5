@@ -105,6 +105,8 @@ UNIT_BINARIES = {
             "DifferentIdReadCanInvert", "SameIdWriteCommitsInOrder",
             "SameIdBRetiresInOrder", "DifferentIdWriteCanInvert",
             "ReadWriteDomainsIndependent", "SameIdCrossTargetRetiresGlobally",
+            "SameTickWriteUsesConfiguredTieBreak",
+            "DifferentIdDelayedBDoesNotBlockReadyResponse",
         )
     },
     "mem/axi/axi_flow_control.test.opt": {

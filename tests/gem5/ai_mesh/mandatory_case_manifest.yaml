@@ -1,5 +1,3 @@
-# Mandatory acceptance-case registry.
-# Semantics and gate mapping: src/doc/ai_mesh/DUMMY_AI_CORE_AGENT_CODEX_SPEC.md section 17.9.
 schema: ai_mesh_mandatory_manifest_v1
 version: 1
 cases:
@@ -2550,7 +2548,7 @@ cases:
 - id: PROTO-1
   earliest_gate: 3
   subcases:
-  - name: default
+  - name: depth1_wrap
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2564,19 +2562,46 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout:
-      sim_ticks: 20000000
+    timeout: &id003
+      sim_ticks: 5000000
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: &id004
+    - SUMMARY_JSON
+    - JUNIT_XML
+    - RUN_MANIFEST
+    - INVARIANTS_JSON
+    - TRAFFIC_JSON
+    - GATE3_OBSERVATION_JSON
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_1
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_1_depth1_wrap
+      args: []
+  - name: depth2_wrap
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_1_depth2_wrap
       args: []
 - id: PROTO-2
   earliest_gate: 3
   subcases:
-  - name: default
+  - name: sq_full
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2590,19 +2615,38 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+    timeout: *id003
+    artifacts: *id004
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_2
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_2_sq_full
+      args: []
+  - name: cq_full
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_2_cq_full
       args: []
 - id: PROTO-3
   earliest_gate: 3
   subcases:
-  - name: default
+  - name: stale_doorbell
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2616,19 +2660,112 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+    timeout: *id003
+    artifacts: *id004
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_3
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_3_stale_doorbell
+      args: []
+  - name: duplicate_doorbell
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_3_duplicate_doorbell
+      args: []
+  - name: empty_doorbell
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_3_empty_doorbell
       args: []
 - id: PROTO-4
   earliest_gate: 3
   subcases:
-  - name: default
+  - name: sq_read_error
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_AGENT_PROTOCOL_FATAL
+      value: 131074
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 1
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 1
+    timeout: *id003
+    artifacts: &id005
+    - SUMMARY_JSON
+    - JUNIT_XML
+    - RUN_MANIFEST
+    - INVARIANTS_JSON
+    - TRAFFIC_JSON
+    - FATAL_SNAPSHOT
+    - GATE3_OBSERVATION_JSON
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_4_sq_read_error
+      args: []
+  - name: sq_sequence_mismatch
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_AGENT_PROTOCOL_FATAL
+      value: 131074
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 1
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 1
+    timeout: *id003
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_4_sq_sequence_mismatch
+      args: []
+  - name: sq_crc
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2642,19 +2779,101 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+    timeout: *id003
+    artifacts: *id004
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_4
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_4_sq_crc
+      args: []
+  - name: parameter_read_error
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_4_parameter_read_error
+      args: []
+  - name: parameter_crc
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_4_parameter_crc
+      args: []
+  - name: parameter_bounds
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_4_parameter_bounds
+      args: []
+  - name: parameter_binding_oob
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_4_parameter_binding_oob
       args: []
 - id: PROTO-5
   earliest_gate: 3
   subcases:
-  - name: default
+  - name: prompt_not_visible
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2668,19 +2887,101 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+    timeout: *id003
+    artifacts: *id004
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_5_prompt_not_visible
+      args: []
+  - name: parameter_not_visible
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_5_parameter_not_visible
+      args: []
+  - name: sq_not_visible
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_5_sq_not_visible
+      args: []
+  - name: release_fence_pending
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_5_release_fence_pending
+      args: []
+  - name: producer_commit
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_5_producer_commit
       args: []
 - id: PROTO-6
   earliest_gate: 3
   subcases:
-  - name: default
+  - name: early_normal_cq
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2694,19 +2995,218 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+    timeout: *id003
+    artifacts: *id004
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_6
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_6_early_normal_cq
+      args: []
+  - name: early_seq_only_cq
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_6_early_seq_only_cq
+      args: []
+  - name: early_cumulative_head
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_6_early_cumulative_head
+      args: []
+  - name: proven_no_effect_b_error
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_6_proven_no_effect_b_error
+      args: []
+  - name: same_edge_acceptance_conflict
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_AGENT_PROTOCOL_FATAL
+      value: 131074
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 1
+      fatal_publications: 1
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 1
+    timeout: *id003
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_6_same_edge_acceptance_conflict
+      args: []
+  - name: ambiguous_b
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_AGENT_PROTOCOL_FATAL
+      value: 131074
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 1
+      fatal_publications: 1
+      ambiguous_publications: 1
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 1
+    timeout: *id003
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_6_ambiguous_b
+      args: []
+  - name: pre_ar_intake_fatal
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_AGENT_PROTOCOL_FATAL
+      value: 131074
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 1
+      fatal_publications: 1
+      ambiguous_publications: 1
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 1
+    timeout: *id003
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_6_pre_ar_intake_fatal
+      args: []
+  - name: normal_sq_at_fatal_cut
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_AGENT_PROTOCOL_FATAL
+      value: 131074
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 1
+      fatal_publications: 1
+      ambiguous_publications: 1
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 1
+    timeout: *id003
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_6_normal_sq_at_fatal_cut
+      args: []
+  - name: sq_error_at_fatal_cut
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_AGENT_PROTOCOL_FATAL
+      value: 131074
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 1
+      fatal_publications: 1
+      ambiguous_publications: 1
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 1
+    timeout: *id003
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_6_sq_error_at_fatal_cut
+      args: []
+  - name: driver_commit_at_fatal_cut
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_AGENT_PROTOCOL_FATAL
+      value: 131074
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 1
+      fatal_publications: 1
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 1
+    timeout: *id003
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_6_driver_commit_at_fatal_cut
       args: []
 - id: PROTO-7
   earliest_gate: 3
   subcases:
-  - name: default
+  - name: delayed_prompt_r
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2720,19 +3220,17 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+    timeout: *id003
+    artifacts: *id004
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_7
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_7_delayed_prompt_r
       args: []
 - id: PROTO-8
   earliest_gate: 3
   subcases:
-  - name: default
+  - name: delayed_output_b
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2746,19 +3244,17 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+    timeout: *id003
+    artifacts: *id004
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_8
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_8_delayed_output_b
       args: []
 - id: PROTO-9
   earliest_gate: 3
   subcases:
-  - name: default
+  - name: delayed_cq_b
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2772,45 +3268,89 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+    timeout: *id003
+    artifacts: *id004
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_9
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_9_delayed_cq_b
       args: []
 - id: PROTO-10
   earliest_gate: 3
   subcases:
-  - name: default
-    terminal_class: QUIESCENT_SUCCESS
-    expected_exit_reason: QUIESCENT_SUCCESS
-    expected_first_fatal: null
+  - name: stale_cq_seq
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_AGENT_PROTOCOL_FATAL
+      value: 131074
     expected_ledgers:
       live_cq_obligations: 0
-      fatal_cq_obligations: 0
+      fatal_cq_obligations: 1
       fatal_sq_intakes: 0
       fatal_publications: 0
       ambiguous_publications: 0
       host_ack_wait_b: 0
       host_ack_b_error: 0
       msi_rob_entries: 0
-      fatal_records: 0
-    timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+      fatal_records: 1
+    timeout: *id003
+    artifacts: *id005
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_10
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_10_stale_cq_seq
+      args: []
+  - name: request_mismatch
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_AGENT_PROTOCOL_FATAL
+      value: 131074
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 1
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 1
+    timeout: *id003
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_10_request_mismatch
+      args: []
+  - name: cookie_mismatch
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_AGENT_PROTOCOL_FATAL
+      value: 131074
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 1
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 1
+    timeout: *id003
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_10_cookie_mismatch
       args: []
 - id: PROTO-11
   earliest_gate: 3
   subcases:
-  - name: default
+  - name: ack_before_target_commit
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2824,14 +3364,12 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+    timeout: *id003
+    artifacts: *id004
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_11
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_11_ack_before_target_commit
       args: []
 - id: PROTO-12
   earliest_gate: 6
@@ -2862,7 +3400,7 @@ cases:
 - id: PROTO-13
   earliest_gate: 3
   subcases:
-  - name: default
+  - name: bulk_saturation
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2876,19 +3414,17 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+    timeout: *id003
+    artifacts: *id004
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_13
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_13_bulk_saturation
       args: []
 - id: PROTO-14
   earliest_gate: 3
   subcases:
-  - name: default
+  - name: directional_traffic
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2902,19 +3438,17 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+    timeout: *id003
+    artifacts: *id004
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_14
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_14_directional_traffic
       args: []
 - id: PROTO-15
   earliest_gate: 3
   subcases:
-  - name: default
+  - name: doorbell_sequence
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2928,19 +3462,122 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+    timeout: *id003
+    artifacts: *id004
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_15
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_15_doorbell_sequence
+      args: []
+  - name: sq_head_sequence
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_15_sq_head_sequence
+      args: []
+  - name: cq_tail_sequence
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_15_cq_tail_sequence
+      args: []
+  - name: cq_ack_sequence
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_15_cq_ack_sequence
+      args: []
+  - name: msi_sequence
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_15_msi_sequence
+      args: []
+  - name: bad_response_order
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_15_bad_response_order
       args: []
 - id: PROTO-16
   earliest_gate: 3
   subcases:
-  - name: default
+  - name: sq_crc_identity
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2954,14 +3591,33 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+    timeout: *id003
+    artifacts: *id004
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_16
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_16_sq_crc_identity
+      args: []
+  - name: parameter_error_identity
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_16_parameter_error_identity
       args: []
 - id: PROTO-17
   earliest_gate: 3
@@ -3267,7 +3923,7 @@ cases:
 - id: PROTO-18
   earliest_gate: 3
   subcases:
-  - name: default
+  - name: delayed_metadata_b
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -3281,19 +3937,17 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+    timeout: *id003
+    artifacts: *id004
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_18
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_18_delayed_metadata_b
       args: []
 - id: PROTO-19
   earliest_gate: 3
   subcases:
-  - name: default
+  - name: output_capacity
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -3307,19 +3961,38 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+    timeout: *id003
+    artifacts: *id004
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_19
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_19_output_capacity
+      args: []
+  - name: metadata_capacity
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_19_metadata_capacity
       args: []
 - id: PROTO-20
   earliest_gate: 3
   subcases:
-  - name: default
+  - name: cq_not_acked
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -3333,14 +4006,12 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+    timeout: *id003
+    artifacts: *id004
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_20
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_20_cq_not_acked
       args: []
 - id: PROTO-21
   earliest_gate: 4
@@ -3423,7 +4094,7 @@ cases:
 - id: PROTO-24
   earliest_gate: 3
   subcases:
-  - name: default
+  - name: qos_out_of_order
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -3437,14 +4108,33 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+    timeout: *id003
+    artifacts: *id004
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_24
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_24_qos_out_of_order
+      args: []
+  - name: same_tick_seq_only
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_24_same_tick_seq_only
       args: []
 - id: PROTO-25
   earliest_gate: 6
@@ -3475,10 +4165,127 @@ cases:
 - id: PROTO-26
   earliest_gate: 3
   subcases:
-  - name: default
-    terminal_class: QUIESCENT_SUCCESS
-    expected_exit_reason: QUIESCENT_SUCCESS
-    expected_first_fatal: null
+  - name: cq_entry_b_error
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_COMPLETION_PATH_AXI
+      value: 131075
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 1
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 1
+    timeout: *id003
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_26_cq_entry_b_error
+      args: []
+  - name: sq_head_b_error
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_COMPLETION_PATH_AXI
+      value: 131075
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 1
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 1
+    timeout: *id003
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_26_sq_head_b_error
+      args: []
+  - name: cq_tail_b_error
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_COMPLETION_PATH_AXI
+      value: 131075
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 1
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 1
+    timeout: *id003
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_26_cq_tail_b_error
+      args: []
+  - name: msi_b_error
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_INTERRUPT
+      value: 131078
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 1
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 1
+      fatal_records: 1
+    timeout: *id003
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_26_msi_b_error
+      args: []
+  - name: ack_no_target_commit
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_COMPLETION_PATH_AXI
+      value: 131075
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 1
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 1
+      msi_rob_entries: 0
+      fatal_records: 1
+    timeout: *id003
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_26_ack_no_target_commit
+      args: []
+  - name: ack_after_target_commit
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_COMPLETION_PATH_AXI
+      value: 131075
     expected_ledgers:
       live_cq_obligations: 0
       fatal_cq_obligations: 0
@@ -3486,17 +4293,15 @@ cases:
       fatal_publications: 0
       ambiguous_publications: 0
       host_ack_wait_b: 0
-      host_ack_b_error: 0
+      host_ack_b_error: 1
       msi_rob_entries: 0
-      fatal_records: 0
-    timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+      fatal_records: 1
+    timeout: *id003
+    artifacts: *id005
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_26
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_26_ack_after_target_commit
       args: []
 - id: PROTO-27
   earliest_gate: 4
@@ -3527,7 +4332,7 @@ cases:
 - id: PROTO-28
   earliest_gate: 3
   subcases:
-  - name: default
+  - name: local_store_visibility
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -3541,19 +4346,59 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+    timeout: *id003
+    artifacts: *id004
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_28
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_28_local_store_visibility
+      args: []
+  - name: release_fence
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_28_release_fence
+      args: []
+  - name: local_store_no_fabric
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_28_local_store_no_fabric
       args: []
 - id: PROTO-29
   earliest_gate: 3
   subcases:
-  - name: default
+  - name: ack_commit_before_b
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -3567,19 +4412,105 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+    timeout: *id003
+    artifacts: *id004
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_29
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_29_ack_commit_before_b
+      args: []
+  - name: ack_no_target_commit_error
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_COMPLETION_PATH_AXI
+      value: 131075
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 1
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 1
+      msi_rob_entries: 0
+      fatal_records: 1
+    timeout: *id003
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_29_ack_no_target_commit_error
+      args: []
+  - name: ack_postcommit_error
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_COMPLETION_PATH_AXI
+      value: 131075
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 1
+      msi_rob_entries: 0
+      fatal_records: 1
+    timeout: *id003
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_29_ack_postcommit_error
       args: []
 - id: PROTO-30
   earliest_gate: 3
   subcases:
-  - name: default
+  - name: control_windows
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_30_control_windows
+      args: []
+  - name: early_ack
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_30_early_ack
+      args: []
+  - name: msi_reverse_b
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -3594,13 +4525,168 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: 15000000
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id004
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_30
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_30_msi_reverse_b
+      args: []
+  - name: msi_error_hole
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_INTERRUPT
+      value: 131078
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 3
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 3
+      fatal_records: 1
+    timeout:
+      sim_ticks: 15000000
+      wall_seconds: 240
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_30_msi_error_hole
+      args: []
+  - name: same_edge_callbacks
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_30_same_edge_callbacks
+      args: []
+  - name: msi_callback_hole
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 15000000
+      wall_seconds: 240
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_30_msi_callback_hole
+      args: []
+  - name: msi_callback_duplicate
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_30_msi_callback_duplicate
+      args: []
+  - name: same_tick_completion_faults
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_INTERRUPT
+      value: 131078
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 1
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 1
+      msi_rob_entries: 1
+      fatal_records: 1
+    timeout: *id003
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_30_same_tick_completion_faults
+      args: []
+  - name: ack_beyond_issued
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_30_ack_beyond_issued
+      args: []
+  - name: topology
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout: *id003
+    artifacts: *id004
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate3_protocol.py
+      case_name: proto_30_topology
       args: []
 - id: HOST-1
   earliest_gate: 4

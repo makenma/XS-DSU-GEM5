@@ -62,6 +62,7 @@ GATE3_CASES = {
         _s("PROTO-4", "parameter_read_error", "minimal_error_cq", "trusted_sq_identity"),
         _s("PROTO-4", "parameter_crc", "minimal_error_cq", "trusted_sq_identity"),
         _s("PROTO-4", "parameter_bounds", "minimal_error_cq", "trusted_sq_identity"),
+        _s("PROTO-4", "parameter_binding_oob", "parameter_binding_detail", "zero_execution"),
     ),
     "PROTO-5": (
         _s("PROTO-5", "prompt_not_visible", "doorbell_held_before_prompt_visibility"),
@@ -76,7 +77,11 @@ GATE3_CASES = {
         _s("PROTO-6", "early_cumulative_head", "committed_prefix_split", "pending_suffix_split"),
         _s("PROTO-6", "proven_no_effect_b_error", "publication_rollback", "absolute_slot_reused", "request_id_not_reused"),
         _s("PROTO-6", "same_edge_acceptance_conflict", "acceptance_evidence_priority", terminal="EXPECTED_INFRA_FATAL"),
-        _s("PROTO-6", "ambiguous_b", "ambiguous_publication_retained", terminal="EXPECTED_INFRA_FATAL"),
+        _s("PROTO-6", "ambiguous_b", "ambiguous_publication_retained", "fatal_intake_conservation", "post_cut_sq_r_retained", terminal="EXPECTED_INFRA_FATAL"),
+        _s("PROTO-6", "pre_ar_intake_fatal", "ambiguous_publication_retained", "fatal_intake_conservation", "pre_ar_intake_retained", terminal="EXPECTED_INFRA_FATAL"),
+        _s("PROTO-6", "normal_sq_at_fatal_cut", "fatal_intake_conservation", "same_tick_normal_sq_discarded", terminal="EXPECTED_INFRA_FATAL"),
+        _s("PROTO-6", "sq_error_at_fatal_cut", "fatal_intake_conservation", "same_tick_sq_error_collected", terminal="EXPECTED_INFRA_FATAL"),
+        _s("PROTO-6", "driver_commit_at_fatal_cut", "fatal_intake_conservation", "same_tick_driver_commit_discarded", terminal="EXPECTED_INFRA_FATAL"),
     ),
     "PROTO-7": (
         _s("PROTO-7", "delayed_prompt_r", "core_held_until_prompt_r"),
@@ -88,9 +93,18 @@ GATE3_CASES = {
         _s("PROTO-9", "delayed_cq_b", "msi_held_until_cq_b", "irq_held_until_cq_b"),
     ),
     "PROTO-10": (
-        _s("PROTO-10", "stale_cq_seq", "stale_cq_rejected"),
-        _s("PROTO-10", "request_mismatch", "cq_request_rejected"),
-        _s("PROTO-10", "cookie_mismatch", "cq_cookie_rejected"),
+        _s(
+            "PROTO-10", "stale_cq_seq", "stale_cq_rejected",
+            terminal="EXPECTED_INFRA_FATAL",
+        ),
+        _s(
+            "PROTO-10", "request_mismatch", "cq_request_rejected",
+            terminal="EXPECTED_INFRA_FATAL",
+        ),
+        _s(
+            "PROTO-10", "cookie_mismatch", "cq_cookie_rejected",
+            terminal="EXPECTED_INFRA_FATAL",
+        ),
     ),
     "PROTO-11": (
         _s("PROTO-11", "ack_before_target_commit", "cq_slot_held_until_ack_commit"),
@@ -167,6 +181,9 @@ GATE3_CASES = {
         _s("PROTO-30", "msi_reverse_b", "msi_contiguous_ok_prefix"),
         _s("PROTO-30", "msi_error_hole", "msi_error_holds_prefix", terminal="EXPECTED_INFRA_FATAL"),
         _s("PROTO-30", "same_edge_callbacks", "same_edge_deterministic_prefix"),
+        _s("PROTO-30", "msi_callback_hole", "callback_hole_holds_prefix"),
+        _s("PROTO-30", "msi_callback_duplicate", "duplicate_callback_idempotent"),
+        _s("PROTO-30", "same_tick_completion_faults", "same_tick_fatal_reduction", terminal="EXPECTED_INFRA_FATAL"),
         _s("PROTO-30", "ack_beyond_issued", "future_ack_rejected"),
         _s("PROTO-30", "topology", "single_npu_fabric", "zero_cpu_core", "zero_cpu_garnet", "zero_ucie", "shaper_is_driver_helper"),
     ),

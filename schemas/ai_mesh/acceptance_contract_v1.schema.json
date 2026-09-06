@@ -125,7 +125,8 @@
         "TRAFFIC_JSON",
         "TRACE_MIN",
         "WAIT_FOR_GRAPH",
-        "FATAL_SNAPSHOT"
+        "FATAL_SNAPSHOT",
+        "GATE3_OBSERVATION_JSON"
       ]
     },
     "unitTimeout": {
@@ -209,7 +210,10 @@
           "const": "GEM5"
         },
         "config_script": {
-          "const": "configs/example/ai_mesh/run_dummy_core_agent.py"
+          "enum": [
+            "configs/example/ai_mesh/run_dummy_core_agent.py",
+            "configs/example/ai_mesh/run_gate3_protocol.py"
+          ]
         },
         "case_name": {
           "type": "string",
@@ -1567,6 +1571,201 @@
       ],
       "additionalProperties": false
     },
+    "fatalCqObligation": {
+      "type": "object",
+      "properties": {
+        "cq_obligation_id": {"$ref": "#/$defs/positiveU64Json"},
+        "absolute_sq_seq": {"$ref": "#/$defs/u64Json"},
+        "request_id": {"$ref": "#/$defs/u64Json"},
+        "cq_seq": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/u64Json"}
+          ]
+        },
+        "slot_id": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/u32"}
+          ]
+        },
+        "state_at_cut": {
+          "enum": [
+            "PRETERMINAL",
+            "TERMINAL_PENDING",
+            "POSTED_UNACKED",
+            "EARLY_ACK_WAIT_MSI_B"
+          ]
+        }
+      },
+      "required": [
+        "cq_obligation_id",
+        "absolute_sq_seq",
+        "request_id",
+        "cq_seq",
+        "slot_id",
+        "state_at_cut"
+      ],
+      "additionalProperties": false
+    },
+    "fatalSqIntake": {
+      "type": "object",
+      "properties": {
+        "intake_id": {"$ref": "#/$defs/positiveU64Json"},
+        "expected_sq_seq": {"$ref": "#/$defs/u64Json"},
+        "read_tag": {"$ref": "#/$defs/u64Json"},
+        "first_error": {"type": "string", "minLength": 1},
+        "state_at_cut": {"enum": ["PRE_AR", "WAIT_R"]},
+        "terminal_evidence": {"enum": ["NONE", "R_OK", "R_ERROR"]}
+      },
+      "required": [
+        "intake_id",
+        "expected_sq_seq",
+        "read_tag",
+        "first_error",
+        "state_at_cut",
+        "terminal_evidence"
+      ],
+      "additionalProperties": false
+    },
+    "fatalPublication": {
+      "type": "object",
+      "properties": {
+        "publication_id": {"$ref": "#/$defs/positiveU64Json"},
+        "doorbell_issue_ordinal": {"$ref": "#/$defs/positiveU64Json"},
+        "base_seq": {"$ref": "#/$defs/u64Json"},
+        "pending_tail": {"$ref": "#/$defs/positiveU64Json"},
+        "request_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/positiveU64Json"}
+        },
+        "state_at_cut": {"const": "AW_W_ACCEPTED"},
+        "terminal_evidence": {"enum": ["B_OK", "B_ERROR"]},
+        "target_commit_evidence": {"enum": ["NO", "YES"]},
+        "ambiguous": {"type": "boolean"},
+        "transaction_token_wire": {"$ref": "#/$defs/lowerHex64"},
+        "response_token_wire": {"$ref": "#/$defs/lowerHex64"}
+      },
+      "required": [
+        "publication_id",
+        "doorbell_issue_ordinal",
+        "base_seq",
+        "pending_tail",
+        "request_ids",
+        "state_at_cut",
+        "terminal_evidence",
+        "target_commit_evidence",
+        "ambiguous",
+        "transaction_token_wire",
+        "response_token_wire"
+      ],
+      "additionalProperties": false
+    },
+    "fatalAckRecord": {
+      "type": "object",
+      "properties": {
+        "issue_ordinal": {"$ref": "#/$defs/positiveU64Json"},
+        "ack_seq": {"$ref": "#/$defs/positiveU64Json"},
+        "axi_id": {"$ref": "#/$defs/u32"},
+        "state_at_cut": {"const": "WAIT_B"},
+        "terminal_evidence": {"enum": ["NONE", "B_OK", "B_ERROR"]},
+        "target_commit_evidence": {"enum": ["UNKNOWN", "NO", "YES"]},
+        "transaction_token_wire": {"$ref": "#/$defs/lowerHex64"},
+        "response_token_wire": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/lowerHex64"}
+          ]
+        }
+      },
+      "required": [
+        "issue_ordinal",
+        "ack_seq",
+        "axi_id",
+        "state_at_cut",
+        "terminal_evidence",
+        "target_commit_evidence",
+        "transaction_token_wire",
+        "response_token_wire"
+      ],
+      "additionalProperties": false
+    },
+    "fatalMsiRecord": {
+      "type": "object",
+      "properties": {
+        "issue_ordinal": {"$ref": "#/$defs/positiveU64Json"},
+        "tail": {"$ref": "#/$defs/positiveU64Json"},
+        "axi_id": {"$ref": "#/$defs/u32"},
+        "state_at_cut": {"const": "ISSUED"},
+        "terminal_evidence": {"enum": ["NONE", "B_OK", "B_ERROR"]},
+        "target_commit_evidence": {"enum": ["UNKNOWN", "NO", "YES"]},
+        "transaction_token_wire": {"$ref": "#/$defs/lowerHex64"},
+        "response_token_wire": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/lowerHex64"}
+          ]
+        }
+      },
+      "required": [
+        "issue_ordinal",
+        "tail",
+        "axi_id",
+        "state_at_cut",
+        "terminal_evidence",
+        "target_commit_evidence",
+        "transaction_token_wire",
+        "response_token_wire"
+      ],
+      "additionalProperties": false
+    },
+    "retainedSequenceSlotSnapshot": {
+      "type": "object",
+      "properties": {
+        "sq_consumer_seq": {"$ref": "#/$defs/u64Json"},
+        "cq_producer_seq": {"$ref": "#/$defs/u64Json"},
+        "cq_consumer_seq": {"$ref": "#/$defs/u64Json"},
+        "cq_notified_seq": {"$ref": "#/$defs/u64Json"},
+        "cq_ack_received_seq": {"$ref": "#/$defs/u64Json"},
+        "cq_msi_issued_seq": {"$ref": "#/$defs/u64Json"},
+        "occupied_cq_slots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "slot_id": {"$ref": "#/$defs/u32"},
+              "cq_obligation_id": {"$ref": "#/$defs/positiveU64Json"}
+            },
+            "required": ["slot_id", "cq_obligation_id"],
+            "additionalProperties": false
+          }
+        },
+        "early_ack_records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ack_seq": {"$ref": "#/$defs/positiveU64Json"},
+              "axi_id": {"$ref": "#/$defs/u32"}
+            },
+            "required": ["ack_seq", "axi_id"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "sq_consumer_seq",
+        "cq_producer_seq",
+        "cq_consumer_seq",
+        "cq_notified_seq",
+        "cq_ack_received_seq",
+        "cq_msi_issued_seq",
+        "occupied_cq_slots",
+        "early_ack_records"
+      ],
+      "additionalProperties": false
+    },
     "fatalSnapshot": {
       "type": "object",
       "properties": {
@@ -1608,22 +1807,27 @@
           "$ref": "#/$defs/ledgers"
         },
         "fatal_cq_obligations": {
-          "type": "array"
+          "type": "array",
+          "items": {"$ref": "#/$defs/fatalCqObligation"}
         },
         "fatal_sq_intakes": {
-          "type": "array"
+          "type": "array",
+          "items": {"$ref": "#/$defs/fatalSqIntake"}
         },
         "fatal_publications": {
-          "type": "array"
+          "type": "array",
+          "items": {"$ref": "#/$defs/fatalPublication"}
         },
         "host_ack_records": {
-          "type": "array"
+          "type": "array",
+          "items": {"$ref": "#/$defs/fatalAckRecord"}
         },
         "msi_records": {
-          "type": "array"
+          "type": "array",
+          "items": {"$ref": "#/$defs/fatalMsiRecord"}
         },
         "retained_sequence_slot_snapshot": {
-          "type": "object"
+          "$ref": "#/$defs/retainedSequenceSlotSnapshot"
         }
       },
       "required": [

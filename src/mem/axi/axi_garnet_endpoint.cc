@@ -135,6 +135,12 @@ targetConfig(const AxiTargetAdapterParams &p)
                       "planned_extra_latency_cycles");
     requireVectorSize(p.planned_fault_responses, p.planned_uids.size(),
                       p.name, "planned_fault_responses");
+    fatal_if(p.planned_b_ejection_uids.size() !=
+                 p.planned_b_ejection_delays.size(),
+             "%s: planned_b_ejection uid/delay count mismatch", p.name);
+    for (size_t i = 0; i < p.planned_b_ejection_uids.size(); ++i)
+        config.bEjectionDelay.emplace(p.planned_b_ejection_uids[i],
+            uint64_t(p.planned_b_ejection_delays[i]));
     for (size_t i = 0; i < p.planned_uids.size(); ++i) {
         const uint64_t uid = p.planned_uids[i];
         fatal_if(!config.extraLatency.emplace(
@@ -151,6 +157,56 @@ targetConfig(const AxiTargetAdapterParams &p)
                      p.name);
         }
         config.transactionFaults.emplace(uid, fault);
+    }
+
+    requireVectorSize(p.planned_post_commit_fault_responses,
+                      p.planned_post_commit_fault_uids.size(), p.name,
+                      "planned_post_commit_fault_responses");
+    for (size_t i = 0; i < p.planned_post_commit_fault_uids.size(); ++i) {
+        const std::string &response =
+            p.planned_post_commit_fault_responses[i];
+        AxiResp fault = AxiResp::Okay;
+        if (response == "slverr") {
+            fault = AxiResp::SlvErr;
+        } else {
+            fatal_if(response != "okay",
+                     "%s: planned post-commit response must be okay or slverr",
+                     p.name);
+        }
+        fatal_if(!config.transactionPostCommitFaults.emplace(
+                     p.planned_post_commit_fault_uids[i], fault).second,
+                 "%s: duplicate planned post-commit txnUid %#llx", p.name,
+                 static_cast<unsigned long long>(
+                     p.planned_post_commit_fault_uids[i]));
+    }
+    requireVectorSize(p.planned_write_commit_replay_counts,
+                      p.planned_write_commit_replay_uids.size(), p.name,
+                      "planned_write_commit_replay_counts");
+    for (size_t i = 0;
+         i < p.planned_write_commit_replay_uids.size(); ++i) {
+        fatal_if(p.planned_write_commit_replay_counts[i] == 0,
+                 "%s: write commit replay count must be positive", p.name);
+        fatal_if(!config.writeCommitObserverReplays.emplace(
+                     p.planned_write_commit_replay_uids[i],
+                     p.planned_write_commit_replay_counts[i]).second,
+                 "%s: duplicate write commit replay txnUid %#llx", p.name,
+                 static_cast<unsigned long long>(
+                     p.planned_write_commit_replay_uids[i]));
+    }
+    requireVectorSize(p.planned_write_commit_tiebreak_ranks,
+                      p.planned_write_commit_tiebreak_uids.size(), p.name,
+                      "planned_write_commit_tiebreak_ranks");
+    std::map<uint32_t, uint64_t> write_commit_ranks;
+    for (size_t i = 0;
+         i < p.planned_write_commit_tiebreak_uids.size(); ++i) {
+        const uint64_t uid = p.planned_write_commit_tiebreak_uids[i];
+        const uint32_t rank = p.planned_write_commit_tiebreak_ranks[i];
+        fatal_if(!write_commit_ranks.emplace(rank, uid).second,
+                 "%s: duplicate same-tick write commit rank %u", p.name,
+                 rank);
+        fatal_if(!config.writeCommitTieBreakRanks.emplace(uid, rank).second,
+                 "%s: duplicate same-tick write commit txnUid %#llx", p.name,
+                 static_cast<unsigned long long>(uid));
     }
 
     const size_t source_count = p.source_nodes.size();
@@ -1356,6 +1412,14 @@ AxiTargetAdapter::registerWriteCommitObserver(AxiWriteCommitObserver *observer)
     fatal_if(rawProbe || !functionalState,
              "%s: commit observer used during raw probe", name());
     functionalState->setWriteCommitObserver(observer);
+}
+
+void
+AxiTargetAdapter::registerPreCommitPolicy(AxiWritePreCommitPolicy *policy)
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: pre-commit policy used during raw probe", name());
+    functionalState->setPreCommitPolicy(policy);
 }
 
 bool

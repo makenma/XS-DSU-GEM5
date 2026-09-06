@@ -77,7 +77,97 @@ def test_parameter_round_trip():
     assert len(blob) == 160
     decoded = P.decode_parameter(blob)
     decoded.pop("crc32", None)
+    decoded.pop("binding_records")
+    decoded.pop("tlvs")
     assert decoded == values
+
+
+def test_parameter_full_block_crc_covers_tail():
+    """A semantic parameter block (header + mandatory GENERATE TLVs) must
+    have its CRC cover every byte of total_bytes with the CRC field zeroed:
+    flipping a tail byte must be rejected (spec 8.3)."""
+    from mesh_ir import agent_protocol as P2
+    values = {
+        "magic": 0x504e4741, "abi_major": 1, "abi_minor": 0,
+        "header_bytes": 160, "flags": 0, "reserved": 0,
+        "input_addr": 0x20000, "input_bytes": 32, "input_tokens": 4,
+        "cached_tokens": 0, "output_addr": 0x30000,
+        "output_capacity_bytes": 32, "output_metadata_addr": 0x40000,
+        "output_metadata_capacity_bytes": 128, "max_output_tokens": 8,
+        "kv_handle": 0, "kv_generation": 0, "moe_route_profile_id": 0,
+        "user_id": 1, "task_seq": 1, "repair_round": 0, "qos": 2,
+        "request_kind": A.SQ_OPCODE.GENERATE, "workload_plan_item_id": 3,
+        "target_request_id": 0, "binding_table_offset": 160,
+        "binding_count": 0, "binding_record_bytes": 24,
+        "extension_offset": 160, "extension_bytes": 96,
+        "requested_profile_key": 1, "reserved2": 0, "reserved3": 0,
+    }
+    tlvs = (
+        P.encode_tlv(A.TLV_TYPE.INPUT_DIGEST, bytes(32), A.TLV_FLAGS.REQUIRED)
+        + P.encode_tlv(A.TLV_TYPE.OUTPUT_CHUNK_BYTES, bytes(8),
+                       A.TLV_FLAGS.REQUIRED)
+        + P.encode_tlv(A.TLV_TYPE.WORKLOAD_ID_DIGEST, bytes(32),
+                       A.TLV_FLAGS.REQUIRED)
+    )
+    blob = P.encode_parameter(values, tail=tlvs)
+    assert len(blob) == 160 + len(tlvs)
+    decoded = P.decode_parameter(blob)
+    assert len(decoded["tlvs"]) == 3
+    corrupt = bytearray(blob)
+    corrupt[-1] ^= 0x01
+    with pytest.raises(P.ProtocolError) as err:
+        P.decode_parameter(bytes(corrupt))
+    assert err.value.code == "E_SQ_CRC"
+
+
+@pytest.mark.parametrize(
+    ("binding_offset", "binding_count", "record_bytes", "extension_offset",
+     "extension_bytes"),
+    (
+        (4096, 1, 24, 160, 96),
+        (152, 1, 24, 160, 96),
+        (160, 1, 24, 160, 96),
+        (256, 1, 16, 160, 96),
+    ),
+)
+def test_parameter_rejects_invalid_binding_layout(
+    binding_offset, binding_count, record_bytes, extension_offset,
+    extension_bytes
+):
+    values = {
+        "magic": 0x504e4741, "abi_major": 1, "abi_minor": 0,
+        "header_bytes": 160, "flags": 0, "reserved": 0,
+        "input_addr": 0x2000, "input_bytes": 64, "input_tokens": 4,
+        "cached_tokens": 0, "output_addr": 0x3000,
+        "output_capacity_bytes": 64, "output_metadata_addr": 0x4000,
+        "output_metadata_capacity_bytes": 128, "max_output_tokens": 8,
+        "kv_handle": 0, "kv_generation": 0, "moe_route_profile_id": 0,
+        "user_id": 1, "task_seq": 1, "repair_round": 0, "qos": 2,
+        "request_kind": A.SQ_OPCODE.GENERATE, "workload_plan_item_id": 3,
+        "target_request_id": 0, "binding_table_offset": binding_offset,
+        "binding_count": binding_count, "binding_record_bytes": record_bytes,
+        "extension_offset": extension_offset,
+        "extension_bytes": extension_bytes,
+        "requested_profile_key": 0, "reserved2": 0, "reserved3": 0,
+    }
+    tlvs = (
+        P.encode_tlv(A.TLV_TYPE.INPUT_DIGEST, bytes(32), A.TLV_FLAGS.REQUIRED)
+        + P.encode_tlv(A.TLV_TYPE.OUTPUT_CHUNK_BYTES, bytes(8),
+                       A.TLV_FLAGS.REQUIRED)
+        + P.encode_tlv(A.TLV_TYPE.WORKLOAD_ID_DIGEST, bytes(32),
+                       A.TLV_FLAGS.REQUIRED)
+    )
+    binding = P.encode_binding({
+        "symbol_id": 1,
+        "kind": A.BINDING_KIND.HOST_INPUT,
+        "flags": A.BINDING_FLAGS.READ,
+        "address": 0x2000,
+        "bytes": 64,
+    })
+    blob = P.encode_parameter(values, tail=tlvs + binding)
+    with pytest.raises(P.ProtocolError) as error:
+        P.decode_parameter(blob)
+    assert error.value.code == "E_REQUEST_BINDING"
 
 
 def test_binding_round_trip():
@@ -141,3 +231,10 @@ def test_ring_helpers():
 def test_detail_code_registry_closed():
     assert A.DETAIL_CODE["E_OK"] == 0
     assert A.DETAIL_CODE_BY_VALUE[0x00020002] == "E_AGENT_PROTOCOL_FATAL"
+    assert set(A.DETAIL_DISPOSITION_V1) == set(A.DETAIL_CODE)
+    assert A.FAULT_SITE_PROJECTION_V1["MSI_TARGET_OR_B"] == {
+        "source_class": "MSI",
+        "component_kind": "NPU_FRONTEND",
+        "object_kind": "MSI",
+        "detail_code": "E_INTERRUPT",
+    }

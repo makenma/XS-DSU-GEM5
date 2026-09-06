@@ -78,6 +78,111 @@ enums:
     TEST_ASSERTION_FAILED: 22
     CONFIG_ERROR: 23
     INTERNAL_ABORT: 24
+  detail_severity_v1:
+    INFO: 0
+    REQUEST_RECOVERABLE: 1
+    CONFIG_FATAL: 2
+    BUSINESS_TERMINAL: 3
+    TEST_ASSERTION: 4
+    INFRA_FATAL: 5
+  fatal_source_class_v1:
+    SQ_INTAKE: 0
+    PUBLICATION_AMBIGUITY: 1
+    CQ_OR_METADATA: 2
+    CONTROL_UPDATE: 3
+    MSI: 4
+    HOST_ACK_RESPONSE: 5
+    DATA_PLANE_INVARIANT: 6
+    INTERNAL_INVARIANT: 7
+  fatal_site_domain_v1:
+    FAULT: 0
+    INVARIANT: 1
+  fault_site_v1:
+    SQ_R_TRANSPORT: 0
+    SEQUENCE_MISMATCH: 1
+    DOORBELL_AMBIGUOUS_OR_ACCEPTANCE_CONFLICT: 2
+    CQ_ENTRY_B: 3
+    METADATA_B: 4
+    SQ_HEAD_B: 5
+    CQ_TAIL_B: 6
+    OUTPUT_METADATA_RELEASE_FENCE: 7
+    CQ_RELEASE_FENCE: 8
+    DRIVER_CQ_READ: 9
+    DRIVER_METADATA_READ: 10
+    ACK_B_PROVEN_NO_TARGET_COMMIT: 11
+    ACK_B_AFTER_TARGET_COMMIT: 12
+    CONTROL_BAD_ID_OR_WINDOW: 13
+    MSI_TARGET_OR_B: 14
+    AGENT_PROXY_DRAIN: 15
+    RESERVED_16: 16
+  invariant_site_v1:
+    DCORE_STATE: 0
+    LEDGER_OWNERSHIP: 1
+    RING_SEQUENCE: 2
+    KV_PIN: 3
+    CACHE_TOKEN: 4
+    ADDRESS_ALIAS: 5
+    GLOBAL_DRAIN: 6
+    HOST_STAGE_ORDER: 7
+    RELEASE_WAITER_STATUS: 8
+    RELEASE_SUBMIT_ROLLBACK: 9
+    SQ_CAPACITY_OWNERSHIP: 10
+    CQ_CAPACITY_OWNERSHIP: 11
+    REQUEST_CONTEXT_CAPACITY_OWNERSHIP: 12
+    SQ_MALFORMED_INTERNAL: 13
+  fatal_component_kind_v1:
+    HOST_AGENT: 0
+    NPU_COMMAND: 1
+    NPU_FRONTEND: 2
+    KV_MANAGER: 3
+    DUMMY_CORE: 4
+    MOE_CACHE: 5
+    AXI_ENDPOINT: 6
+    AGENT_AXI_PROXY: 7
+    GARNET: 8
+    INTERNAL: 9
+  endpoint_kind_v1:
+    HOST_AXI: 0
+    NPU_AXI: 1
+    HOST_CONTROL: 2
+    NPU_CONTROL: 3
+    HOST_MEMORY: 4
+    NPU_MEMORY: 5
+    MSI_TARGET: 6
+    DUMMY_CORE_P2P: 7
+    AGENT_PROXY_PORT: 8
+    GARNET_NI: 9
+  fatal_object_kind_v1:
+    SQ_INTAKE: 0
+    PUBLICATION: 1
+    CQ_ENTRY: 2
+    OUTPUT_METADATA: 3
+    CONTROL_UPDATE: 4
+    MSI: 5
+    HOST_ACK: 6
+    MESH_OBJECT: 7
+    INTERNAL: 8
+    FAULT_CONTEXT: 9
+  control_update_kind_v1:
+    SQ_DOORBELL: 0
+    CQ_HEAD_ACK: 1
+    SQ_HEAD_UPDATE: 2
+    CQ_TAIL_UPDATE: 3
+    CQ_MSI: 4
+    OUTPUT_METADATA_RELEASE_FENCE: 5
+    CQ_RELEASE_FENCE: 6
+  physical_source_kind_v1:
+    AXI_TRANSACTION: 0
+    FENCE: 1
+    PROXY_TRANSFER: 2
+    INTERNAL_EDGE: 3
+    AXI_RESPONSE_OBSERVATION: 4
+  axi_transaction_subkind_v1:
+    READ_AR: 0
+    WRITE_AW_W: 1
+  axi_response_observation_subkind_v1:
+    R: 0
+    B: 1
 
 detail_code_registry:
   E_OK: 0x00000000
@@ -118,6 +223,140 @@ detail_code_registry:
   E_WORKLOAD_PLAN_MISMATCH: 0x00030005
   E_MOE_CAPACITY: 0x00040001
   E_MOE_COMBINE_BYTES: 0x00040002
+  E_MOE_DISPATCH_BYTES: 0x00040003
+  E_MOE_MATERIALIZE_CAPACITY: 0x00040004
+  E_MOE_PROFILE: 0x00040005
+  E_MOE_ROUTE_DIGEST: 0x00040006
+  E_MOE_ROUTE_REPLAY: 0x00040007
+  E_MOE_TOPK_DUP: 0x00040008
+  E_UNSUPPORTED_WEIGHT_RESIDENCY: 0x00040009
+  E_HOST_IO_SIZE_MISMATCH: 0x00050001
+  E_OUTPUT_CAPACITY: 0x00050002
+  E_OUTPUT_CHUNK_MISMATCH: 0x00050003
+  E_REQUEST_PROFILE: 0x00050004
+  E_REQUEST_PROFILE_KEY: 0x00050005
+  E_SESSION_EXISTS: 0x00050006
+  E_KV_FLAG_COMBINATION: 0x00050007
+  E_KV_REUSE_REQUIRED: 0x00050008
+  E_KV_SESSION_NOT_FOUND: 0x00050009
+  E_KV_STATE: 0x0005000a
+  E_KV_TOKEN_MISMATCH: 0x0005000b
+  E_KV_STALE_GENERATION: 0x0005000c
+  E_KV_CONTRACT_MISMATCH: 0x0005000d
+  E_HOST_POOL_CAPACITY: 0x00060001
+  E_HOST_STAGE_ORDER: 0x00060002
+  E_RAW_LOG_ENTERED_NPU_FABRIC: 0x00060003
+  E_RELEASE_WAITER_STATUS: 0x00060004
+  E_RELEASE_SUBMIT_ROLLBACK: 0x00060005
+  E_ADDRESS_PLAN: 0x00070001
+  E_CAPABILITY_MISMATCH: 0x00070002
+  E_CAPACITY_PLAN: 0x00070003
+  E_TRAFFIC_MISMATCH: 0x00070004
+  E_GLOBAL_DRAIN: 0x00070005
+
+detail_dispositions_v1:
+  E_OK: {severity: INFO, cq_status: SUCCESS, run_exit_reason: null}
+  E_REQUEST_CANCELLED: {severity: REQUEST_RECOVERABLE, cq_status: CANCELLED, run_exit_reason: null}
+  E_SQ_CRC: {severity: REQUEST_RECOVERABLE, cq_status: SQ_CRC, run_exit_reason: null}
+  E_REQUEST_BINDING: &parameter_error {severity: REQUEST_RECOVERABLE, cq_status: PARAM_ERROR, run_exit_reason: null}
+  E_BINDING_ALIAS_MISMATCH: *parameter_error
+  E_BINDING_ROLE: *parameter_error
+  E_RESERVED_FIELD: *parameter_error
+  E_PARAMETER_LENGTH_MISMATCH: *parameter_error
+  E_REQUEST_IDENTITY: *parameter_error
+  E_OUTPUT_CAPACITY: *parameter_error
+  E_OUTPUT_CHUNK_MISMATCH: *parameter_error
+  E_SESSION_EXISTS: *parameter_error
+  E_KV_FLAG_COMBINATION: *parameter_error
+  E_WORKLOAD_PLAN_MISMATCH: *parameter_error
+  E_HOST_IO_SIZE_MISMATCH: &profile_error {severity: REQUEST_RECOVERABLE, cq_status: PROFILE_ERROR, run_exit_reason: null}
+  E_REQUEST_PROFILE: *profile_error
+  E_REQUEST_PROFILE_KEY: *profile_error
+  E_KV_REUSE_REQUIRED: *profile_error
+  E_KV_TOKEN_MISMATCH: *profile_error
+  E_KV_CONTRACT_MISMATCH: *profile_error
+  E_KV_SESSION_NOT_FOUND: {severity: REQUEST_RECOVERABLE, cq_status: NOT_FOUND, run_exit_reason: null}
+  E_KV_STALE_GENERATION: {severity: REQUEST_RECOVERABLE, cq_status: STALE_GENERATION, run_exit_reason: null}
+  E_DCORE_COMMAND_STATE: &program_error {severity: REQUEST_RECOVERABLE, cq_status: PROGRAM_ERROR, run_exit_reason: null}
+  E_DCORE_ENGINE: *program_error
+  E_DCORE_EVENT: *program_error
+  E_DCORE_EVENT_NAMESPACE: *program_error
+  E_DCORE_OPCODE: *program_error
+  E_DCORE_POISON_READ: *program_error
+  E_DCORE_SRAM_BOUNDS: *program_error
+  E_DCORE_SRAM_LIFETIME: *program_error
+  E_DCORE_TIMING_OVERFLOW: *program_error
+  E_MOE_CAPACITY: *program_error
+  E_MOE_COMBINE_BYTES: *program_error
+  E_MOE_DISPATCH_BYTES: *program_error
+  E_MOE_MATERIALIZE_CAPACITY: *program_error
+  E_MOE_PROFILE: *program_error
+  E_MOE_ROUTE_DIGEST: *program_error
+  E_MOE_ROUTE_REPLAY: *program_error
+  E_MOE_TOPK_DUP: *program_error
+  E_KV_STATE: *program_error
+  E_AXI_RESPONSE: {severity: REQUEST_RECOVERABLE, cq_status: AXI_ERROR, run_exit_reason: null}
+  E_DCORE_QUEUE_CAPACITY: &config_fatal {severity: CONFIG_FATAL, cq_status: null, run_exit_reason: CONFIG_ERROR}
+  E_DCORE_REFERENCE_COMPUTE: *config_fatal
+  E_AGENT_PLAN: *config_fatal
+  E_BATCH_REPLAY_DIVERGENCE: *config_fatal
+  E_UNSUPPORTED_WEIGHT_RESIDENCY: *config_fatal
+  E_HOST_POOL_CAPACITY: *config_fatal
+  E_ADDRESS_PLAN: *config_fatal
+  E_CAPABILITY_MISMATCH: *config_fatal
+  E_CAPACITY_PLAN: *config_fatal
+  E_AGENT_ROUND_LIMIT: {severity: BUSINESS_TERMINAL, cq_status: null, run_exit_reason: null}
+  E_WORKLOAD_CHANGED_BY_TIMING: &test_assertion {severity: TEST_ASSERTION, cq_status: null, run_exit_reason: TEST_ASSERTION_FAILED}
+  E_RAW_LOG_ENTERED_NPU_FABRIC: *test_assertion
+  E_TRAFFIC_MISMATCH: *test_assertion
+  E_DCORE_DEADLOCK: {severity: INFRA_FATAL, cq_status: null, run_exit_reason: WATCHDOG}
+  E_AGENT_PROTOCOL_FATAL: &infra_fatal {severity: INFRA_FATAL, cq_status: null, run_exit_reason: INFRA_FATAL}
+  E_COMPLETION_PATH_AXI: *infra_fatal
+  E_CQ_FULL: *infra_fatal
+  E_CQ_ORDER: *infra_fatal
+  E_INTERRUPT: *infra_fatal
+  E_SQ_FULL: *infra_fatal
+  E_SQ_MALFORMED: *infra_fatal
+  E_AGENT_AXI_PROXY_DRAIN: *infra_fatal
+  E_REQUEST_CONTEXT_FULL: *infra_fatal
+  E_HOST_STAGE_ORDER: *infra_fatal
+  E_RELEASE_WAITER_STATUS: *infra_fatal
+  E_RELEASE_SUBMIT_ROLLBACK: *infra_fatal
+  E_GLOBAL_DRAIN: *infra_fatal
+
+fault_site_projections_v1:
+  SQ_R_TRANSPORT: {source_class: SQ_INTAKE, component_kind: NPU_COMMAND, object_kind: SQ_INTAKE, detail_code: E_AGENT_PROTOCOL_FATAL}
+  SEQUENCE_MISMATCH: {source_class: SQ_INTAKE, component_kind: NPU_COMMAND, object_kind: SQ_INTAKE, detail_code: E_AGENT_PROTOCOL_FATAL}
+  DOORBELL_AMBIGUOUS_OR_ACCEPTANCE_CONFLICT: {source_class: PUBLICATION_AMBIGUITY, component_kind: HOST_AGENT, object_kind: PUBLICATION, detail_code: E_AGENT_PROTOCOL_FATAL}
+  CQ_ENTRY_B: {source_class: CQ_OR_METADATA, component_kind: NPU_FRONTEND, object_kind: CQ_ENTRY, detail_code: E_COMPLETION_PATH_AXI}
+  METADATA_B: {source_class: CQ_OR_METADATA, component_kind: NPU_FRONTEND, object_kind: OUTPUT_METADATA, detail_code: E_COMPLETION_PATH_AXI}
+  SQ_HEAD_B: {source_class: CONTROL_UPDATE, component_kind: NPU_COMMAND, object_kind: CONTROL_UPDATE, detail_code: E_COMPLETION_PATH_AXI}
+  CQ_TAIL_B: {source_class: CONTROL_UPDATE, component_kind: NPU_FRONTEND, object_kind: CONTROL_UPDATE, detail_code: E_COMPLETION_PATH_AXI}
+  OUTPUT_METADATA_RELEASE_FENCE: {source_class: CQ_OR_METADATA, component_kind: NPU_FRONTEND, object_kind: CONTROL_UPDATE, detail_code: E_COMPLETION_PATH_AXI}
+  CQ_RELEASE_FENCE: {source_class: CQ_OR_METADATA, component_kind: NPU_FRONTEND, object_kind: CONTROL_UPDATE, detail_code: E_COMPLETION_PATH_AXI}
+  DRIVER_CQ_READ: {source_class: CQ_OR_METADATA, component_kind: HOST_AGENT, object_kind: CQ_ENTRY, detail_code: E_AGENT_PROTOCOL_FATAL}
+  DRIVER_METADATA_READ: {source_class: CQ_OR_METADATA, component_kind: HOST_AGENT, object_kind: OUTPUT_METADATA, detail_code: E_AGENT_PROTOCOL_FATAL}
+  ACK_B_PROVEN_NO_TARGET_COMMIT: {source_class: HOST_ACK_RESPONSE, component_kind: HOST_AGENT, object_kind: HOST_ACK, detail_code: E_COMPLETION_PATH_AXI}
+  ACK_B_AFTER_TARGET_COMMIT: {source_class: HOST_ACK_RESPONSE, component_kind: HOST_AGENT, object_kind: HOST_ACK, detail_code: E_COMPLETION_PATH_AXI}
+  CONTROL_BAD_ID_OR_WINDOW: {source_class: CONTROL_UPDATE, component_kind: AXI_ENDPOINT, object_kind: FAULT_CONTEXT, detail_code: E_CQ_ORDER}
+  MSI_TARGET_OR_B: {source_class: MSI, component_kind: NPU_FRONTEND, object_kind: MSI, detail_code: E_INTERRUPT}
+  AGENT_PROXY_DRAIN: {source_class: DATA_PLANE_INVARIANT, component_kind: AGENT_AXI_PROXY, object_kind: FAULT_CONTEXT, detail_code: E_AGENT_AXI_PROXY_DRAIN}
+
+invariant_site_projections_v1:
+  DCORE_STATE: {source_class: DATA_PLANE_INVARIANT, component_kind: DUMMY_CORE, object_kind: INTERNAL, detail_code: E_AGENT_PROTOCOL_FATAL}
+  LEDGER_OWNERSHIP: {source_class: INTERNAL_INVARIANT, component_kind: NPU_FRONTEND, object_kind: INTERNAL, detail_code: E_AGENT_PROTOCOL_FATAL}
+  RING_SEQUENCE: {source_class: INTERNAL_INVARIANT, component_kind: NPU_FRONTEND, object_kind: INTERNAL, detail_code: E_AGENT_PROTOCOL_FATAL}
+  KV_PIN: {source_class: DATA_PLANE_INVARIANT, component_kind: KV_MANAGER, object_kind: INTERNAL, detail_code: E_AGENT_PROTOCOL_FATAL}
+  CACHE_TOKEN: {source_class: DATA_PLANE_INVARIANT, component_kind: MOE_CACHE, object_kind: INTERNAL, detail_code: E_AGENT_PROTOCOL_FATAL}
+  ADDRESS_ALIAS: {source_class: DATA_PLANE_INVARIANT, component_kind: NPU_FRONTEND, object_kind: INTERNAL, detail_code: E_AGENT_PROTOCOL_FATAL}
+  GLOBAL_DRAIN: {source_class: INTERNAL_INVARIANT, component_kind: INTERNAL, object_kind: INTERNAL, detail_code: E_GLOBAL_DRAIN}
+  HOST_STAGE_ORDER: {source_class: INTERNAL_INVARIANT, component_kind: HOST_AGENT, object_kind: INTERNAL, detail_code: E_HOST_STAGE_ORDER}
+  RELEASE_WAITER_STATUS: {source_class: INTERNAL_INVARIANT, component_kind: HOST_AGENT, object_kind: INTERNAL, detail_code: E_RELEASE_WAITER_STATUS}
+  RELEASE_SUBMIT_ROLLBACK: {source_class: INTERNAL_INVARIANT, component_kind: HOST_AGENT, object_kind: INTERNAL, detail_code: E_RELEASE_SUBMIT_ROLLBACK}
+  SQ_CAPACITY_OWNERSHIP: {source_class: INTERNAL_INVARIANT, component_kind: NPU_COMMAND, object_kind: INTERNAL, detail_code: E_SQ_FULL}
+  CQ_CAPACITY_OWNERSHIP: {source_class: INTERNAL_INVARIANT, component_kind: NPU_FRONTEND, object_kind: INTERNAL, detail_code: E_CQ_FULL}
+  REQUEST_CONTEXT_CAPACITY_OWNERSHIP: {source_class: INTERNAL_INVARIANT, component_kind: NPU_FRONTEND, object_kind: INTERNAL, detail_code: E_REQUEST_CONTEXT_FULL}
+  SQ_MALFORMED_INTERNAL: {source_class: INTERNAL_INVARIANT, component_kind: NPU_COMMAND, object_kind: INTERNAL, detail_code: E_SQ_MALFORMED}
 
 records:
   SQ_DESCRIPTOR:
@@ -156,7 +395,7 @@ records:
     bytes: 160
     crc:
       algorithm: crc32c
-      cover: [0, 152]
+      cover_zero_field: crc32
       field: crc32
     fields:
       - {name: magic, type: u32, offset: 0, const: 0x504e4741}

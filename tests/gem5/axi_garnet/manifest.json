@@ -2547,13 +2547,15 @@
       ],
       "tests": [
         "AxiOrderingTest.AllocatesSequencesAtAcceptance",
+        "AxiOrderingTest.DifferentIdDelayedBDoesNotBlockReadyResponse",
         "AxiOrderingTest.DifferentIdReadCanInvert",
         "AxiOrderingTest.DifferentIdWriteCanInvert",
         "AxiOrderingTest.ReadWriteDomainsIndependent",
         "AxiOrderingTest.SameIdBRetiresInOrder",
         "AxiOrderingTest.SameIdCrossTargetRetiresGlobally",
         "AxiOrderingTest.SameIdReadWaitsOlder",
-        "AxiOrderingTest.SameIdWriteCommitsInOrder"
+        "AxiOrderingTest.SameIdWriteCommitsInOrder",
+        "AxiOrderingTest.SameTickWriteUsesConfiguredTieBreak"
       ],
       "timeout_seconds": 60
     },

@@ -60,6 +60,8 @@ def event(kind, tick, **values):
         "direction": None,
         "control": None,
         "axi_id": None,
+        "address": None,
+        "size": None,
         "response": None,
         "bytes": 0,
         "wstrb": None,
@@ -70,6 +72,8 @@ def event(kind, tick, **values):
 
 
 def axi(tick, txn, channel, direction, control, axi_id, **values):
+    values.setdefault("address", 0)
+    values.setdefault("size", 3)
     return event(
         "AXI_ACCEPT",
         tick,
@@ -132,6 +136,7 @@ def read_transaction(events, tick, txn, control, axi_id, byte_count, **identity)
                 axi_id,
                 response="OKAY",
                 bytes=byte_count,
+                size=byte_count.bit_length() - 1,
                 **identity,
             ),
         ]
@@ -365,6 +370,7 @@ def complete_observation():
             "sq_depth": 2,
             "cq_depth": 2,
             "control_bytes": 8,
+            "data_bus_bytes": 64,
             "non_msi_axi_ids": dict(NON_MSI_IDS),
         },
         "events": events,
@@ -382,6 +388,7 @@ def complete_observation():
             "live_submissions": 0,
             "live_contexts": 0,
             "live_cq_obligations": 0,
+            "fatal_cq_obligations": 0,
             "msi_rob_entries": 0,
             "ack_wait_b": 0,
             "fatal": False,
@@ -423,6 +430,18 @@ def test_complete_protocol_lifecycle_is_accepted():
         "absolute_sequence_state",
         "terminal_ownership",
     )
+
+
+def test_axi_bursts_keep_one_transaction_identity():
+    observation = complete_observation()
+    index = event_index(observation, "AXI_ACCEPT", "PARAMETER", "R")
+    observation["events"][index]["bytes"] = 64
+    observation["events"][index]["size"] = 6
+    second = copy.deepcopy(observation["events"][index])
+    second["bytes"] = 96
+    observation["events"].insert(index + 1, second)
+    resequence(observation)
+    validate_observation(observation)
 
 
 def test_schema_rejects_extra_event_field():
@@ -593,6 +612,16 @@ def test_control_write_requires_full_wstrb_and_fixed_id():
     observation = complete_observation()
     index = event_index(observation, "AXI_ACCEPT", "CQ_HEAD_ACK", "W")
     observation["events"][index]["wstrb"] = "0f"
+    with pytest.raises(Gate3OracleError, match="WSTRB"):
+        validate_observation(observation)
+    observation = complete_observation()
+    index = event_index(observation, "AXI_ACCEPT", "CQ_HEAD_ACK", "W")
+    observation["events"][index]["size"] = 2
+    with pytest.raises(Gate3OracleError, match="SIZE"):
+        validate_observation(observation)
+    observation = complete_observation()
+    index = event_index(observation, "AXI_ACCEPT", "CQ_HEAD_ACK", "W")
+    observation["events"][index]["address"] = 8
     with pytest.raises(Gate3OracleError, match="WSTRB"):
         validate_observation(observation)
     observation = complete_observation()
