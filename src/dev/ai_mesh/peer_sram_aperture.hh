@@ -74,6 +74,9 @@ class PeerSramAperture : public ClockedObject,
 
     void bindCore(MeshDummyCore *core) { owner = core; }
 
+    axi::AxiEndpointQueueHighWater queueHighWater() const
+    { return adapter->functionalQueueHighWater(); }
+
   private:
     axi::AxiTargetAdapter *const adapter;
     MeshDummyCore *owner = nullptr;

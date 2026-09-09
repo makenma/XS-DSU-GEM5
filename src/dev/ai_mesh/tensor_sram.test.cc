@@ -149,6 +149,107 @@ TEST(TensorSramTest, CanReserveHasNoSideEffects)
     EXPECT_EQ(first.conflict_ticks, 0u);
 }
 
+TEST(TensorSramTest, AdmissionChecksEveryBankInTheRange)
+{
+    TensorSram sram(4096, 4, 32, 32, 32, 32, 1, 1, 500, 1);
+    sram.reserve(1000, 32, 32, true);
+    EXPECT_FALSE(sram.canReserve(1000, 0, 64, true));
+    EXPECT_EQ(sram.bankQueueLoad(1000, 0, 64, true), 1);
+    EXPECT_TRUE(sram.canReserve(1500, 0, 64, true));
+    EXPECT_TRUE(sram.canReserve(1000, 0, 64, false));
+}
+
+TEST(TensorSramTest, MultipleLinesInOneBankUseOneRequestEntry)
+{
+    TensorSram sram(4096, 2, 32, 32, 32, 32, 1, 1, 500, 2);
+    sram.reserve(1000, 0, 160, true);
+    EXPECT_EQ(sram.bankQueueLoad(1000, 0, 32, true), 1);
+    EXPECT_EQ(sram.bankQueueLoad(1000, 32, 32, true), 1);
+    EXPECT_TRUE(sram.canReserve(1000, 0, 32, true));
+    EXPECT_EQ(sram.bankQueueLoad(2000, 0, 32, true), 1);
+    EXPECT_EQ(sram.bankQueueLoad(2500, 0, 32, true), 0);
+}
+
+TEST(TensorSramTest, EmptyRangeConsumesNoQueueEntry)
+{
+    TensorSram sram(4096, 4, 32, 32, 32, 32, 1, 1, 500, 1);
+    sram.reserve(1000, 0, 32, true);
+    EXPECT_TRUE(sram.canReserve(1000, 0, 0, true));
+    EXPECT_TRUE(sram.canReserve(1000, sram.capacity(), 0, true));
+    EXPECT_EQ(sram.bankQueueLoad(1000, 0, 0, true), 0);
+}
+
+TEST(TensorSramTest, AdmissionRejectsOutOfBoundsRanges)
+{
+    TensorSram sram(4096, 4, 32, 32, 32, 32, 1, 1, 500, 1);
+    EXPECT_FALSE(sram.canReserve(1000, sram.capacity(), 1, true));
+    EXPECT_FALSE(sram.canReserve(1000, UINT64_MAX, 32, true));
+    EXPECT_FALSE(sram.canReserve(1000, sram.capacity() + 1, 0, true));
+}
+
+TEST(TensorSramTest, FailedTryReserveDoesNotPartiallyReserveOtherBanks)
+{
+    TensorSram sram(4096, 4, 32, 32, 32, 32, 1, 1, 500, 1);
+    ASSERT_TRUE(sram.tryReserve(1000, 32, 32, true));
+    EXPECT_FALSE(sram.tryReserve(1000, 0, 64, true));
+    auto independent = sram.tryReserve(1000, 0, 32, true);
+    ASSERT_TRUE(independent);
+    EXPECT_EQ(independent->stall_ticks, 500);
+    EXPECT_EQ(independent->conflict_ticks, 0);
+}
+
+TEST(TensorSramTest, TryReserveBoundsRequestsUntilTheirFinalBankService)
+{
+    TensorSram sram(4096, 2, 32, 32, 32, 32, 1, 1, 500, 2);
+    ASSERT_TRUE(sram.tryReserve(1000, 0, 160, true));
+    ASSERT_TRUE(sram.tryReserve(1000, 0, 32, true));
+    EXPECT_FALSE(sram.tryReserve(1000, 0, 32, true));
+    EXPECT_EQ(sram.bankQueueLoad(1000, 0, 32, true), 2);
+    EXPECT_FALSE(sram.tryReserve(2000, 0, 32, true));
+    auto next = sram.tryReserve(2500, 0, 32, true);
+    ASSERT_TRUE(next);
+    EXPECT_EQ(next->stall_ticks, 1000);
+    EXPECT_EQ(sram.bankQueueLoad(2500, 0, 32, true), 2);
+}
+
+TEST(TensorSramTest, TryReserveDirectionsHaveIndependentCapacity)
+{
+    TensorSram sram(4096, 4, 32, 32, 32, 32, 1, 1, 500, 1);
+    ASSERT_TRUE(sram.tryReserve(1000, 0, 32, true));
+    ASSERT_TRUE(sram.tryReserve(1000, 0, 32, false));
+    EXPECT_FALSE(sram.tryReserve(1000, 0, 32, true));
+    EXPECT_FALSE(sram.tryReserve(1000, 0, 32, false));
+}
+
+TEST(TensorSramTest, ReservationRejectsInvalidSpanAndZeroClock)
+{
+    TensorSram sram(4096, 4, 32, 32, 32, 32, 1, 1, 500, 1);
+    EXPECT_ANY_THROW(sram.reserve(1000, UINT64_MAX, 32, true));
+    EXPECT_ANY_THROW(sram.tryReserve(1000, 4096, 1, true));
+    EXPECT_ANY_THROW(TensorSram(4096, 4, 32, 32, 32, 32, 1, 1, 0, 1));
+}
+
+TEST(TensorSramTest, RejectionAttemptsAreDirectionalAndQueriesArePassive)
+{
+    TensorSram sram(4096, 4, 32, 32, 32, 32, 1, 1, 500, 1);
+    ASSERT_TRUE(sram.tryReserve(1000, 0, 32, true));
+    EXPECT_FALSE(sram.canReserve(1000, 0, 32, true));
+    EXPECT_FALSE(sram.canReserve(1000, 0, 32, true));
+    EXPECT_EQ(sram.reservationRejectionAttempts(true), 0);
+    EXPECT_FALSE(sram.tryReserve(1000, 0, 32, true));
+    EXPECT_FALSE(sram.tryReserve(1000, 0, 32, true));
+    EXPECT_EQ(sram.reservationRejectionAttempts(true), 2);
+    EXPECT_EQ(sram.reservationRejectionAttempts(false), 0);
+    ASSERT_TRUE(sram.tryReserve(1000, 0, 32, false));
+    EXPECT_FALSE(sram.tryReserve(1000, 0, 32, false));
+    EXPECT_EQ(sram.reservationRejectionAttempts(false), 1);
+    const auto next = sram.tryReserve(1500, 0, 32, true);
+    ASSERT_TRUE(next);
+    EXPECT_EQ(next->stall_ticks, 500);
+    EXPECT_EQ(next->conflict_ticks, 0);
+    EXPECT_EQ(sram.reservationRejectionAttempts(true), 2);
+}
+
 } // anonymous namespace
 } // namespace ai_mesh
 } // namespace gem5

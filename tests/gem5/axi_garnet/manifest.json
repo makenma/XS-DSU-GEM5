@@ -2506,7 +2506,8 @@
         "AxiDynamicWireBytesTest.CountsDefaultFiveChannels",
         "AxiDynamicWireBytesTest.FallsBackForLegacyMessage",
         "AxiDynamicWireBytesTest.IgnoresSemanticBytesForFlits",
-        "AxiDynamicWireBytesTest.RejectsInvalidWireSize"
+        "AxiDynamicWireBytesTest.RejectsInvalidWireSize",
+        "AxiDynamicWireBytesTest.SidebandDataHeadersKeepFullBeatInOneFlit"
       ],
       "timeout_seconds": 60
     },
@@ -2543,7 +2544,8 @@
     {
       "binary": "mem/axi/axi_ordering.test.opt",
       "suites": [
-        "AxiOrderingTest"
+        "AxiOrderingTest",
+        "AxiReadArbitrationTest"
       ],
       "tests": [
         "AxiOrderingTest.AllocatesSequencesAtAcceptance",
@@ -2555,20 +2557,36 @@
         "AxiOrderingTest.SameIdCrossTargetRetiresGlobally",
         "AxiOrderingTest.SameIdReadWaitsOlder",
         "AxiOrderingTest.SameIdWriteCommitsInOrder",
-        "AxiOrderingTest.SameTickWriteUsesConfiguredTieBreak"
+        "AxiOrderingTest.SameTickWriteUsesConfiguredTieBreak",
+        "AxiReadArbitrationTest.FullReadyQueuePreservesNextSource",
+        "AxiReadArbitrationTest.PreservesTurnAcrossIdle",
+        "AxiReadArbitrationTest.PreservesWithinSourceUidAndBeatOrder",
+        "AxiReadArbitrationTest.RoundRobinAcrossReadySources",
+        "AxiReadArbitrationTest.SkipsUnreadySourceThenRejoins",
+        "AxiReadArbitrationTest.SourcePortParticipatesInRoundRobin",
+        "AxiReadArbitrationTest.WithinSourceReadyTimePrecedesUid"
       ],
       "timeout_seconds": 60
     },
     {
       "binary": "mem/axi/axi_flow_control.test.opt",
       "suites": [
-        "AxiBackpressureTest"
+        "AxiBackpressureTest",
+        "AxiObservationTest",
+        "AxiReadOutstandingTest"
       ],
       "tests": [
         "AxiBackpressureTest.DepthOneChannelsBackpressure",
         "AxiBackpressureTest.PausesAndResumesBAndR",
         "AxiBackpressureTest.QueueFullReturnsNoError",
-        "AxiBackpressureTest.RetriesOnlyOnLaterEdge"
+        "AxiBackpressureTest.RetriesOnlyOnLaterEdge",
+        "AxiObservationTest.AddressRejectionsPreserveFirstReasonPriority",
+        "AxiObservationTest.ReadReservationRejectionsCoverSizeAndTotal",
+        "AxiObservationTest.ReadRobLiveBeatsCountReadyAndReorderedOnce",
+        "AxiObservationTest.ReadStagesArePassiveAndCloseAtRlast",
+        "AxiObservationTest.WriteResponseCapacityCannotUndersizeWindow",
+        "AxiObservationTest.WriteStagesExcludeUnboundAndRetireOnB",
+        "AxiReadOutstandingTest.SlidingWindowReleasesCreditOnRlast"
       ],
       "timeout_seconds": 60
     },
@@ -2637,6 +2655,38 @@
         "GarnetQuiescenceSnapshotTest.AccessorsDoNotScheduleEvents",
         "GarnetQuiescenceSnapshotTest.BecomesEmptyOnlyAfterRestore",
         "GarnetQuiescenceSnapshotTest.DetectsEveryPendingClass"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "binary": "mem/ruby/network/garnet/dual_lane_selector.test.opt",
+      "suites": [
+        "DualLaneSelectorTest"
+      ],
+      "tests": [
+        "DualLaneSelectorTest.ContinuouslyIdleInjectsLane0",
+        "DualLaneSelectorTest.CountsSumOverVcGroup",
+        "DualLaneSelectorTest.GreaterCountLoses",
+        "DualLaneSelectorTest.OtherVnetsAndInputsAreIsolated",
+        "DualLaneSelectorTest.PortNameIdentityRoundTrip",
+        "DualLaneSelectorTest.SelectedLaneBackpressuresWithoutDiversion",
+        "DualLaneSelectorTest.SmallerCountWins",
+        "DualLaneSelectorTest.TieAlwaysTakesLane0",
+        "DualLaneSelectorTest.VcStateAndCapacityGateAcceptance"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "binary": "mem/ruby/network/garnet/lane_arbitration.test.opt",
+      "suites": [
+        "LaneArbitrationTest"
+      ],
+      "tests": [
+        "LaneArbitrationTest.EmptyLaneDoesNotBlockAvailableLane",
+        "LaneArbitrationTest.OtherLaneCannotStarveAnInput",
+        "LaneArbitrationTest.OutputsAndLanesProgressIndependently",
+        "LaneArbitrationTest.RejectedCandidateDoesNotAdvanceEitherArbiter",
+        "LaneArbitrationTest.SingleLanePreservesInputAndVcRoundRobin"
       ],
       "timeout_seconds": 60
     }

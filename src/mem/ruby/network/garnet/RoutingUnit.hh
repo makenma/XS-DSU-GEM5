@@ -34,6 +34,7 @@
 #include "mem/ruby/common/Consumer.hh"
 #include "mem/ruby/common/NetDest.hh"
 #include "mem/ruby/network/garnet/CommonTypes.hh"
+#include "mem/ruby/network/garnet/DualLane.hh"
 #include "mem/ruby/network/garnet/GarnetNetwork.hh"
 #include "mem/ruby/network/garnet/flit.hh"
 
@@ -54,8 +55,9 @@ class RoutingUnit
   public:
     RoutingUnit(Router *router);
     int outportCompute(RouteInfo route,
-                      int inport,
-                      PortDirection inport_dirn);
+                       int inport,
+                       PortDirection inport_dirn,
+                       LaneId lane);
 
     // Topology-agnostic Routing Table based routing (default)
     void addRoute(std::vector<NetDest>& routing_table_entry);
@@ -65,18 +67,19 @@ class RoutingUnit
     int  lookupRoutingTable(int vnet, NetDest net_dest);
 
     // Topology-specific direction based routing
-    void addInDirection(PortDirection inport_dirn, int inport);
-    void addOutDirection(PortDirection outport_dirn, int outport);
+    void addInDirection(const PortIdentity &identity, int inport);
+    void addOutDirection(const PortIdentity &identity, int outport);
 
     // Routing for Mesh
-    int outportComputeXY(RouteInfo route,
-                         int inport,
-                         PortDirection inport_dirn);
+    int outportComputeDimensionOrder(RouteInfo route,
+                                     PortDirection inport_dirn,
+                                     LaneId lane);
 
     // Custom Routing Algorithm using Port Directions
     int outportComputeCustom(RouteInfo route,
                              int inport,
-                             PortDirection inport_dirn);
+                             PortDirection inport_dirn,
+                             LaneId lane);
 
     // Returns true if vnet is present in the vector
     // of vnets or if the vector supports all vnets.
@@ -90,11 +93,13 @@ class RoutingUnit
     std::vector<std::vector<NetDest>> m_routing_table;
     std::vector<int> m_weight_table;
 
-    // Inport and Outport direction to idx maps
-    std::map<PortDirection, int> m_inports_dirn2idx;
+    // Inport and Outport identity (lane, logical direction) to idx maps.
+    // The lane is part of the port identity; the "_ext" suffix never
+    // collides with the plain logical direction.
+    std::map<std::pair<LaneId, PortDirection>, int> m_inports_dirn2idx;
     std::map<int, PortDirection> m_inports_idx2dirn;
     std::map<int, PortDirection> m_outports_idx2dirn;
-    std::map<PortDirection, int> m_outports_dirn2idx;
+    std::map<std::pair<LaneId, PortDirection>, int> m_outports_dirn2idx;
 };
 
 } // namespace garnet

@@ -68,7 +68,11 @@ class NetworkInterface : public ClockedObject, public Consumer
 
     void addInPort(NetworkLink *in_link, CreditLink *credit_link);
     void addOutPort(NetworkLink *out_link, CreditLink *credit_link,
-        SwitchID router_id, uint32_t consumerVcs);
+        SwitchID router_id, uint32_t consumerVcs,
+        const std::vector<uint32_t> &receiverDepths,
+        bool strictReceiverCapacity);
+    int inputPortCount() const { return inPorts.size(); }
+    int outputPortCount() const { return outPorts.size(); }
 
     void dequeueCallback();
     void wakeup();
@@ -312,6 +316,7 @@ class NetworkInterface : public ClockedObject, public Consumer
     std::vector<InputPort *> inPorts;
     int m_deadlock_threshold;
     std::vector<OutVcState> outVcState;
+    std::vector<int> m_vnet_outport;
 
     std::vector<int> m_stall_count;
 

@@ -73,6 +73,11 @@ class NetworkLink : public ClockedObject, public Consumer
 
     unsigned int getLinkUtilization() const { return m_link_utilized; }
     const std::vector<unsigned int> & getVcLoad() const { return m_vc_load; }
+    uint64_t experimentFlits() const { return m_experiment_flits; }
+    const std::vector<uint64_t> &experimentVcFlits() const
+    {
+        return m_experiment_vc_load;
+    }
 
     inline bool isReady(Tick curTime)
     {
@@ -99,6 +104,8 @@ class NetworkLink : public ClockedObject, public Consumer
     // Statistical variables
     unsigned int m_link_utilized;
     std::vector<unsigned int> m_vc_load;
+    uint64_t m_experiment_flits = 0;
+    std::vector<uint64_t> m_experiment_vc_load;
 
   protected:
     uint32_t m_virt_nets;

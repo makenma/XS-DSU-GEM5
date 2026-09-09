@@ -31,7 +31,9 @@
 
 #include "mem/ruby/network/garnet/CrossbarSwitch.hh"
 
+#include "debug/GarnetDualLane.hh"
 #include "debug/RubyNetwork.hh"
+#include "mem/ruby/network/garnet/InputUnit.hh"
 #include "mem/ruby/network/garnet/OutputUnit.hh"
 #include "mem/ruby/network/garnet/Router.hh"
 
@@ -69,7 +71,9 @@ CrossbarSwitch::wakeup()
             "at time: %lld\n",
             m_router->get_id(), m_router->curCycle());
 
-    for (auto& switch_buffer : switchBuffers) {
+    for (unsigned inport_idx = 0; inport_idx < switchBuffers.size();
+         ++inport_idx) {
+        auto& switch_buffer = switchBuffers[inport_idx];
         if (!switch_buffer.isReady(curTick())) {
             continue;
         }
@@ -77,6 +81,17 @@ CrossbarSwitch::wakeup()
         flit *t_flit = switch_buffer.peekTopFlit();
         if (t_flit->is_stage(ST_, curTick())) {
             int outport = t_flit->get_outport();
+
+            DPRINTF(GarnetDualLane,
+                    "DL_SEND cycle=%llu router=%d input=%u lane=%u "
+                    "outport=%d direction=%s vnet=%d vc=%d "
+                    "packet=%d flit=%d\n",
+                    m_router->curCycle(), m_router->get_id(), inport_idx,
+                    m_router->getInputUnit(inport_idx)->get_lane(), outport,
+                    m_router->getPortDirectionName(
+                        m_router->getOutputUnit(outport)->get_direction()),
+                    t_flit->get_vnet(), t_flit->get_vc(),
+                    t_flit->getPacketID(), t_flit->get_id());
 
             // flit performs LT_ in the next cycle
             t_flit->advance_stage(LT_, m_router->clockEdge(Cycles(1)));

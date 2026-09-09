@@ -841,6 +841,10 @@ def _evidence(name, profile, events, final, metrics, traffic, scenario):
             and rejected[0]["absolute_seq"] != 0
             and not cq_consumes
             and final["fatal"]
+            and final["cq_notified_seq"] == 0
+            and final["msi_rob_entries"] == 1
+            and any(row["terminal_evidence"] == "B_OK"
+                    for row in metrics.get("_fatal_msi_records", []))
             and not _events(events, control="CQ_HEAD_ACK")
         )
     if name == "cq_request_rejected":
@@ -854,6 +858,10 @@ def _evidence(name, profile, events, final, metrics, traffic, scenario):
             and not consumed
             and injected[0]["request_id"] == rejected[0]["request_id"]
             and final["fatal"]
+            and final["cq_notified_seq"] == 0
+            and final["msi_rob_entries"] == 1
+            and any(row["terminal_evidence"] == "B_OK"
+                    for row in metrics.get("_fatal_msi_records", []))
             and not _events(events, control="CQ_HEAD_ACK")
         )
     if name == "cq_cookie_rejected":
@@ -866,6 +874,10 @@ def _evidence(name, profile, events, final, metrics, traffic, scenario):
             and rejected[0]["cookie"] != 1
             and not cq_consumes
             and final["fatal"]
+            and final["cq_notified_seq"] == 0
+            and final["msi_rob_entries"] == 1
+            and any(row["terminal_evidence"] == "B_OK"
+                    for row in metrics.get("_fatal_msi_records", []))
             and not _events(events, control="CQ_HEAD_ACK")
         )
     if name == "cq_slot_held_until_ack_commit":

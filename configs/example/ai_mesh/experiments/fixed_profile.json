@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "profile_id": "mesh25_full_timing_v1",
+  "arch_template": "configs/example/ai_mesh/arch/mesh_1x2.yaml",
+  "architecture_overrides": {
+    "arch_name": "xs_ai_mesh_5x5_experiment",
+    "mesh": {
+      "rows": 5,
+      "cols": 5,
+      "core_ids": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
+    },
+    "core": {
+      "sram": {"bank_queue_depth": 16},
+      "dma": {"descriptor_queue_depth": 4, "segment_queue_depth": 256}
+    }
+  },
+  "supported_n": [1, 2, 4, 8, 16, 32, 64, 128],
+  "network": {
+    "flit_bytes": 16,
+    "vcs_per_vnet": 4,
+    "router_latency": 1,
+    "link_latency": 1,
+    "baseline_depths": [4, 8, 4, 4, 8],
+    "ni_depths": [4, 8, 4, 4, 8]
+  },
+  "axi": {
+    "source_fifo_depths": [32, 128, 128, 128, 256],
+    "message_buffer_depths": [32, 128, 128, 128, 256],
+    "local_delivery_depths": [32, 128, 128, 128, 256],
+    "source_pre_aw_bursts": 16,
+    "source_pre_aw_beats": 256,
+    "b_rob_transactions": 256,
+    "r_rob_beats": 4096,
+    "wire_header_bytes": [24, 16, 8, 24, 16],
+    "w_beats_per_cycle": 1,
+    "target_quota": {
+      "write_contexts": 128,
+      "write_beats": 2048,
+      "read_contexts": 128,
+      "read_beats": 2048
+    },
+    "target_service_depths": [256, 256],
+    "target_response_ready_depths": [128, 256],
+    "orphan_w_transactions": 128,
+    "orphan_w_beats": 2048
+  },
+  "backend": {
+    "backend_id": "synthetic_100ns_32B_shared_v1",
+    "base_latency_cycles": 200,
+    "bytes_per_cycle": 32,
+    "queue_depth": 256,
+    "port_bytes": 1073741824
+  },
+  "runtime": {
+    "max_sim_ticks": 100000000000,
+    "watchdog_ticks": 1000000000,
+    "host_timeout_seconds": 3600,
+    "host_parallelism": 32
+  },
+  "measurement": {
+    "ticks_per_second": 1000000000000,
+    "stability_tolerance": 0.02,
+    "mixed_read_fraction": 0.5,
+    "mixed_fraction_tolerance": 0.02,
+    "subwindows": 3
+  }
+}

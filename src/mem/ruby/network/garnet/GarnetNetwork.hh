@@ -39,6 +39,7 @@
 #include "mem/ruby/network/fault_model/FaultModel.hh"
 #include "mem/ruby/network/garnet/CommonTypes.hh"
 #include "mem/ruby/network/garnet/GarnetQuiescence.hh"
+#include "mem/ruby/network/garnet/InputCapacityConfig.hh"
 #include "params/GarnetNetwork.hh"
 
 namespace gem5
@@ -74,15 +75,19 @@ class GarnetNetwork : public Network
 
     // for 2D topology
     int getNumRows() const { return m_num_rows; }
-    int getNumCols() { return m_num_cols; }
+    int getNumCols() const { return m_num_cols; }
 
     // for network
     uint32_t getNiFlitSize() const { return m_ni_flit_size; }
     uint32_t getBuffersPerDataVC() const { return m_buffers_per_data_vc; }
     uint32_t getBuffersPerCtrlVC() const { return m_buffers_per_ctrl_vc; }
     uint32_t getBuffersPerVnet(unsigned vnet) const;
+    std::vector<uint32_t> routerInputDepths(uint32_t router,
+                                           uint32_t inport) const;
     VNET_type getVnetType(unsigned vnet) const;
     int getRoutingAlgorithm() const { return m_routing_algorithm; }
+    bool useYxRouting(int vnet) const { return m_yx_vnets.at(vnet); }
+    bool dualLane() const { return m_dual_lane; }
 
     bool isFaultModelEnabled() const { return m_enable_fault_model; }
     FaultModel* fault_model = nullptr;
@@ -121,11 +126,13 @@ class GarnetNetwork : public Network
     {
         m_packets_injected[vnet]++;
         m_packets_injected_raw[vnet]++;
+        m_experiment_packets_injected[vnet]++;
     }
     void increment_received_packets(int vnet)
     {
         m_packets_received[vnet]++;
         m_packets_received_raw[vnet]++;
+        m_experiment_packets_received[vnet]++;
     }
 
     void
@@ -144,11 +151,13 @@ class GarnetNetwork : public Network
     {
         m_flits_injected[vnet]++;
         m_flits_injected_raw[vnet]++;
+        m_experiment_flits_injected[vnet]++;
     }
     void increment_received_flits(int vnet)
     {
         m_flits_received[vnet]++;
         m_flits_received_raw[vnet]++;
+        m_experiment_flits_received[vnet]++;
     }
     void increment_injected_wire_bytes(unsigned vnet, uint64_t bytes);
     void increment_received_wire_bytes(unsigned vnet, uint64_t bytes);
@@ -200,6 +209,8 @@ class GarnetNetwork : public Network
     GarnetQuiescenceSnapshot quiescenceSnapshot() const;
     GarnetCreditLedger creditLedger() const;
     GarnetInputVcHighWater inputVcHighWater() const;
+    GarnetReceiverCapacityMap receiverCapacityMap() const;
+    GarnetExperimentSnapshot experimentSnapshot() const;
     void flushEventIntegratedStats();
     void resetInputVcHighWater();
     bool isQuiescent() const { return quiescenceSnapshot().empty(); }
@@ -214,7 +225,22 @@ class GarnetNetwork : public Network
     uint32_t m_buffers_per_ctrl_vc;
     uint32_t m_buffers_per_data_vc;
     std::vector<uint32_t> m_buffers_per_vnet;
+    InputCapacityConfig m_input_capacity;
+    GarnetReceiverCapacityMap m_receiver_capacity_map;
+    std::vector<uint64_t> m_experiment_packets_injected;
+    std::vector<uint64_t> m_experiment_packets_received;
+    std::vector<uint64_t> m_experiment_flits_injected;
+    std::vector<uint64_t> m_experiment_flits_received;
+    std::vector<uint64_t> m_experiment_wire_bytes_injected;
+    std::vector<uint64_t> m_experiment_wire_bytes_received;
+    void recordReceiverCapacity(uint32_t senderKind, int32_t senderId,
+        int32_t senderPort, const std::string &senderDirection,
+        uint32_t receiverKind, int32_t receiverId, int32_t receiverPort,
+        const std::string &receiverDirection, int32_t linkId,
+        const std::vector<uint32_t> &depths, uint32_t vcsPerVnet,
+        const std::vector<int> &supportedVnets);
     int m_routing_algorithm;
+    std::vector<bool> m_yx_vnets;
     bool m_enable_fault_model;
 
     // Statistical variables
@@ -267,7 +293,13 @@ class GarnetNetwork : public Network
     GarnetNetwork(const GarnetNetwork& obj);
     GarnetNetwork& operator=(const GarnetNetwork& obj);
 
+    /** Dual-lane transport constraints: XY routing and single-flit
+     *  packets on every vnet under the effective wire configuration. */
+    void validateDualLaneConfig() const;
+
     std::vector<VNET_type > m_vnet_type;
+    bool m_dual_lane = false;
+    std::vector<uint32_t> m_dual_lane_wire_bytes;
     std::vector<uint64_t> m_input_vc_full_events_raw;
     std::vector<uint64_t> m_input_vc_max_occupancy_raw;
     std::vector<uint64_t> m_credit_stall_vc_cycles_raw;

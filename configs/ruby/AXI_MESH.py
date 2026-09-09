@@ -21,6 +21,7 @@ def _strict_bool(value):
 
 def define_options(parser):
     parser.add_argument("--axi-mesh-routers", type=int, default=4)
+    parser.add_argument("--axi-shared-router-endpoints", action="store_true")
     parser.add_argument("--axi-data-width-bits", type=int, default=512)
     parser.add_argument("--axi-id-width-bits", type=int, default=8)
     parser.add_argument("--axi-user-width-bits", type=int, default=0)
@@ -55,6 +56,7 @@ def define_options(parser):
     parser.add_argument("--axi-b-rob-transactions", type=int, default=64)
     parser.add_argument("--axi-r-rob-beats", type=int, default=1024)
     parser.add_argument("--axi-wire-header-bytes", default="24,16,8,24,16")
+    parser.add_argument("--axi-data-header-sideband", action="store_true")
     parser.add_argument(
         "--axi-strict-protocol", type=_strict_bool, default=True
     )
@@ -651,7 +653,7 @@ def _validate_options(options, initiators, targets, default_error_target,
         fatal("duplicate AXI dst_node endpoint")
     if default_error_target not in target_set:
         fatal("AXI default_error_target does not exist")
-    if len(router_ids) != len(set(router_ids)):
+    if not options.axi_shared_router_endpoints and len(router_ids) != len(set(router_ids)):
         fatal("AXI endpoint router IDs must be unique")
     if any(rid < 0 or rid >= options.axi_mesh_routers for rid in router_ids):
         fatal("AXI endpoint router ID is out of range")
@@ -712,10 +714,9 @@ def create_system(
         options.axi_wire_header_bytes, 5, "axi_wire_header_bytes"
     )
     data_bus_bytes = options.axi_data_width_bits // 8
-    for channel, header_bytes in enumerate(wire_headers):
-        wire_bytes = header_bytes
-        if channel in (1, 4):
-            wire_bytes += data_bus_bytes
+    wire_sizes = [data_bus_bytes + (0 if options.axi_data_header_sideband else header)
+                  if channel in (1, 4) else header for channel, header in enumerate(wire_headers)]
+    for channel, wire_bytes in enumerate(wire_sizes):
         if wire_bytes > 0x7FFFFFFF:
             fatal("AXI wire bytes for channel index %d must fit positive int",
                   channel)
@@ -879,10 +880,7 @@ def create_system(
             response_ejection_stalls + consumer_stalls
         )
         link_bytes = options.link_width_bits // 8
-        max_packet_bytes = max(
-            header + (data_bus_bytes if channel in (1, 4) else 0)
-            for channel, header in enumerate(wire_headers)
-        )
+        max_packet_bytes = max(wire_sizes)
         max_packet_flits = (max_packet_bytes + link_bytes - 1) // link_bytes
         columns = options.axi_mesh_routers // options.mesh_rows
         mesh_diameter = options.mesh_rows + columns - 2
@@ -1014,6 +1012,7 @@ def create_system(
             injection_delays=endpoint_injection_delays,
             response_ejection_stall_until=endpoint_stalls,
             wire_header_bytes=wire_headers,
+            data_header_sideband=options.axi_data_header_sideband,
             data_bus_bytes=data_bus_bytes,
             raw_probe=options.axi_raw_shim_probe,
             raw_probe_hold_cycles=options.axi_raw_probe_hold_cycles,
@@ -1084,6 +1083,7 @@ def create_system(
             ingress_depths=[local_depths[0], local_depths[1],
                             local_depths[3]],
             wire_header_bytes=wire_headers,
+            data_header_sideband=options.axi_data_header_sideband,
             data_bus_bytes=data_bus_bytes,
             raw_probe=options.axi_raw_shim_probe,
             raw_probe_hold_cycles=options.axi_raw_probe_hold_cycles,
@@ -1134,6 +1134,7 @@ def create_system(
             runtime_fault=runtime_fault,
             seed=options.axi_seed,
             wire_header_bytes=wire_headers,
+            data_header_sideband=options.axi_data_header_sideband,
             data_bus_bytes=data_bus_bytes,
             concurrent=(driver_mode == "concurrent"),
             consumer_stall_until=consumer_stalls,
@@ -1149,6 +1150,9 @@ def create_system(
         ruby_system.axi_trace_tester = tester
 
     ruby_system.network.number_of_virtual_networks = 5
+    # The AXI wire sizes are the single source feeding both message-buffer
+    # configuration and the dual-lane single-flit validation.
+    ruby_system.network.dual_lane_vnet_wire_bytes = wire_sizes
     controllers = initiator_controllers + target_controllers
     topology = create_topology(controllers, options)
     return ([], [], topology)

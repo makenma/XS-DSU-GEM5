@@ -38,11 +38,13 @@
 #include "base/compiler.hh"
 #include "base/logging.hh"
 #include "debug/RubyNetwork.hh"
+#include "debug/GarnetDualLane.hh"
 #include "mem/ruby/common/NetDest.hh"
 #include "mem/ruby/network/MessageBuffer.hh"
 #include "mem/ruby/network/garnet/CommonTypes.hh"
 #include "mem/ruby/network/garnet/CreditLink.hh"
 #include "mem/ruby/network/garnet/GarnetLink.hh"
+#include "mem/ruby/network/garnet/Packetization.hh"
 #include "mem/ruby/network/garnet/NetworkInterface.hh"
 #include "mem/ruby/network/garnet/NetworkLink.hh"
 #include "mem/ruby/network/garnet/Router.hh"
@@ -74,6 +76,19 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     m_buffers_per_data_vc = p.buffers_per_data_vc;
     m_buffers_per_ctrl_vc = p.buffers_per_ctrl_vc;
     m_routing_algorithm = p.routing_algorithm;
+    fatal_if(!p.yx_vnets.empty() && m_routing_algorithm != XY_,
+             "%s: yx_vnets requires dimension-order routing_algorithm=1",
+             name());
+    m_yx_vnets.assign(m_virtual_networks, false);
+    for (int vnet : p.yx_vnets) {
+        fatal_if(vnet < 0 || vnet >= m_virtual_networks,
+                 "%s: yx_vnets contains invalid vnet %d", name(), vnet);
+        fatal_if(m_yx_vnets[vnet],
+                 "%s: yx_vnets contains duplicate vnet %d", name(), vnet);
+        m_yx_vnets[vnet] = true;
+    }
+    m_dual_lane = p.dual_lane;
+    m_dual_lane_wire_bytes = p.dual_lane_vnet_wire_bytes;
     m_next_packet_id = 0;
 
     m_enable_fault_model = p.enable_fault_model;
@@ -98,6 +113,11 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     m_buffers_per_vnet = std::move(normalized.depths);
     m_buffers_per_ctrl_vc = normalized.legacyCtrlDepth;
     m_buffers_per_data_vc = normalized.legacyDataDepth;
+    const std::string input_capacity_error = m_input_capacity.configure(
+        m_buffers_per_vnet, p.ni_buffers_per_vnet,
+        p.router_input_vc_depths, p.routers.size(), m_enable_fault_model);
+    fatal_if(!input_capacity_error.empty(), "%s: %s",
+             name(), input_capacity_error);
     m_input_vc_full_events_raw.assign(m_virtual_networks, 0);
     m_input_vc_max_occupancy_raw.assign(m_virtual_networks, 0);
     m_credit_stall_vc_cycles_raw.assign(m_virtual_networks, 0);
@@ -112,6 +132,12 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     m_input_vc_occupancy_flit_cycles_raw.assign(m_virtual_networks, 0);
     m_input_vc_full_vc_cycles_raw.assign(m_virtual_networks, 0);
     m_ni_vc_busy_cycles_raw.assign(m_virtual_networks, 0);
+    m_experiment_packets_injected.assign(m_virtual_networks, 0);
+    m_experiment_packets_received.assign(m_virtual_networks, 0);
+    m_experiment_flits_injected.assign(m_virtual_networks, 0);
+    m_experiment_flits_received.assign(m_virtual_networks, 0);
+    m_experiment_wire_bytes_injected.assign(m_virtual_networks, 0);
+    m_experiment_wire_bytes_received.assign(m_virtual_networks, 0);
 
     // record the routers
     for (std::vector<BasicRouter*>::const_iterator i =  p.routers.begin();
@@ -135,6 +161,35 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     inform("Garnet version %s\n", garnetVersion);
 }
 
+void
+GarnetNetwork::validateDualLaneConfig() const
+{
+    if (!m_dual_lane)
+        return;
+
+    fatal_if(m_routing_algorithm != XY_,
+             "%s: dual-lane mode requires dimension-order routing", name());
+    fatal_if(m_dual_lane_wire_bytes.size() != m_vnet_type.size(),
+             "%s: dual-lane mode requires wire bytes for all %zu vnets",
+             name(), m_vnet_type.size());
+    // Spec 1: dual-lane transport is defined for single-flit packets on
+    // all five channels under the effective configuration; anything else
+    // is an initialization-time configuration error.
+    for (unsigned vnet = 0; vnet < m_dual_lane_wire_bytes.size(); ++vnet) {
+        MessagePacketization packetization;
+        const std::string error = resolveMessagePacketization(
+            0, m_dual_lane_wire_bytes[vnet], m_ni_flit_size, packetization);
+        fatal_if(!error.empty(),
+                 "%s: dual-lane vnet %u wire bytes invalid: %s",
+                 name(), vnet, error.c_str());
+        fatal_if(packetization.numFlits != 1,
+                 "%s: dual-lane vnet %u transports %d flits per packet "
+                 "(wire %d B, flit %u B); single-flit packets required",
+                 name(), vnet, packetization.numFlits,
+                 packetization.wireBytes, m_ni_flit_size);
+    }
+}
+
 uint32_t
 GarnetNetwork::getBuffersPerVnet(unsigned vnet) const
 {
@@ -142,6 +197,12 @@ GarnetNetwork::getBuffersPerVnet(unsigned vnet) const
              "%s: vnet %u is outside configured range [0,%zu)",
              name(), vnet, m_buffers_per_vnet.size());
     return m_buffers_per_vnet[vnet];
+}
+
+std::vector<uint32_t>
+GarnetNetwork::routerInputDepths(uint32_t router, uint32_t inport) const
+{
+    return m_input_capacity.routerDepths(router, inport);
 }
 
 VNET_type
@@ -158,6 +219,8 @@ GarnetNetwork::init()
 {
     Network::init();
 
+    validateDualLaneConfig();
+
     for (int i=0; i < m_nodes; i++) {
         m_nis[i]->addNode(m_toNetQueues[i], m_fromNetQueues[i]);
     }
@@ -166,6 +229,12 @@ GarnetNetwork::init()
     // parent network constructor
     assert(m_topology_ptr != NULL);
     m_topology_ptr->createLinks(this);
+    std::vector<uint32_t> input_ports;
+    for (const auto *router : m_routers)
+        input_ports.push_back(router->get_num_inports());
+    const auto input_capacity_error = m_input_capacity.validatePorts(input_ports);
+    fatal_if(!input_capacity_error.empty(), "%s: %s",
+             name(), input_capacity_error);
 
     // Initialize topology specific parameters
     if (getNumRows() > 0) {
@@ -214,6 +283,11 @@ GarnetNetwork::makeExtInLink(NodeID global_src, SwitchID dest, BasicLink* link,
 
     GarnetExtLink* garnet_link = safe_cast<GarnetExtLink*>(link);
 
+    fatal_if(m_input_capacity.extended() &&
+             (garnet_link->extBridgeEn || garnet_link->intBridgeEn),
+             "%s: receiver capacity overrides do not support CDC/SerDes",
+             name());
+
     // GarnetExtLink is bi-directional
     NetworkLink* net_link = garnet_link->m_network_links[LinkDirection_In];
     net_link->setType(EXT_IN_);
@@ -223,6 +297,13 @@ GarnetNetwork::makeExtInLink(NodeID global_src, SwitchID dest, BasicLink* link,
     m_creditlinks.push_back(credit_link);
 
     PortDirection dst_inport_dirn = "Local";
+    const int receiver_port = m_routers[dest]->get_num_inports();
+    const int sender_port = m_nis[local_src]->outputPortCount();
+    const auto receiver_depths = routerInputDepths(dest, receiver_port);
+    recordReceiverCapacity(0, local_src, sender_port, "Local",
+        1, dest, receiver_port, dst_inport_dirn,
+        m_networklinks.size() - 1, receiver_depths,
+        m_routers[dest]->get_vc_per_vnet(), net_link->mVnets);
 
     m_max_vcs_per_vnet = std::max(m_max_vcs_per_vnet,
                              m_routers[dest]->get_vc_per_vnet());
@@ -247,11 +328,13 @@ GarnetNetwork::makeExtInLink(NodeID global_src, SwitchID dest, BasicLink* link,
         m_nis[local_src]->
         addOutPort(n_bridge,
                    garnet_link->extCredBridge[LinkDirection_In],
-                   dest, m_routers[dest]->get_vc_per_vnet());
+                   dest, m_routers[dest]->get_vc_per_vnet(),
+                   receiver_depths, m_input_capacity.extended());
         m_networkbridges.push_back(n_bridge);
     } else {
         m_nis[local_src]->addOutPort(net_link, credit_link, dest,
-            m_routers[dest]->get_vc_per_vnet());
+            m_routers[dest]->get_vc_per_vnet(), receiver_depths,
+            m_input_capacity.extended());
     }
 
     if (garnet_link->intBridgeEn) {
@@ -287,6 +370,11 @@ GarnetNetwork::makeExtOutLink(SwitchID src, NodeID global_dest,
 
     GarnetExtLink* garnet_link = safe_cast<GarnetExtLink*>(link);
 
+    fatal_if(m_input_capacity.extended() &&
+             (garnet_link->extBridgeEn || garnet_link->intBridgeEn),
+             "%s: receiver capacity overrides do not support CDC/SerDes",
+             name());
+
     // GarnetExtLink is bi-directional
     NetworkLink* net_link = garnet_link->m_network_links[LinkDirection_Out];
     net_link->setType(EXT_OUT_);
@@ -296,6 +384,12 @@ GarnetNetwork::makeExtOutLink(SwitchID src, NodeID global_dest,
     m_creditlinks.push_back(credit_link);
 
     PortDirection src_outport_dirn = "Local";
+    const int receiver_port = m_nis[local_dest]->inputPortCount();
+    const int sender_port = m_routers[src]->get_num_outports();
+    const auto &receiver_depths = m_input_capacity.niDepths();
+    recordReceiverCapacity(1, src, sender_port, src_outport_dirn,
+        0, local_dest, receiver_port, "Local", m_networklinks.size() - 1,
+        receiver_depths, m_routers[src]->get_vc_per_vnet(), net_link->mVnets);
 
     m_max_vcs_per_vnet = std::max(m_max_vcs_per_vnet,
                              m_routers[src]->get_vc_per_vnet());
@@ -333,14 +427,14 @@ GarnetNetwork::makeExtOutLink(SwitchID src, NodeID global_dest,
                        n_bridge,
                        routing_table_entry, link->m_weight,
                        garnet_link->intCredBridge[LinkDirection_Out],
-                       m_routers[src]->get_vc_per_vnet());
+                       m_routers[src]->get_vc_per_vnet(), receiver_depths);
         m_networkbridges.push_back(n_bridge);
     } else {
         m_routers[src]->
             addOutPort(src_outport_dirn, net_link,
                        routing_table_entry,
                        link->m_weight, credit_link,
-                       m_routers[src]->get_vc_per_vnet());
+                       m_routers[src]->get_vc_per_vnet(), receiver_depths);
     }
 }
 
@@ -357,6 +451,11 @@ GarnetNetwork::makeInternalLink(SwitchID src, SwitchID dest, BasicLink* link,
 {
     GarnetIntLink* garnet_link = safe_cast<GarnetIntLink*>(link);
 
+    fatal_if(m_input_capacity.extended() &&
+             (garnet_link->srcBridgeEn || garnet_link->dstBridgeEn),
+             "%s: receiver capacity overrides do not support CDC/SerDes",
+             name());
+
     // GarnetIntLink is unidirectional
     NetworkLink* net_link = garnet_link->m_network_link;
     net_link->setType(INT_);
@@ -364,6 +463,18 @@ GarnetNetwork::makeInternalLink(SwitchID src, SwitchID dest, BasicLink* link,
 
     m_networklinks.push_back(net_link);
     m_creditlinks.push_back(credit_link);
+
+    const int receiver_port = m_routers[dest]->get_num_inports();
+    const int sender_port = m_routers[src]->get_num_outports();
+    // A lane-1 (_ext) input port derives its capacity from its lane-0
+    // twin; the capacity ledger records that actual receive resource.
+    const uint32_t depth_source = m_routers[dest]->inputDepthSource(
+        receiver_port, parsePortName(dst_inport_dirn));
+    const auto receiver_depths = routerInputDepths(dest, depth_source);
+    recordReceiverCapacity(1, src, sender_port, src_outport_dirn,
+        1, dest, receiver_port, dst_inport_dirn,
+        m_networklinks.size() - 1, receiver_depths,
+        m_routers[dest]->get_vc_per_vnet(), net_link->mVnets);
 
     m_max_vcs_per_vnet = std::max(m_max_vcs_per_vnet,
                              std::max(m_routers[dest]->get_vc_per_vnet(),
@@ -401,13 +512,13 @@ GarnetNetwork::makeInternalLink(SwitchID src, SwitchID dest, BasicLink* link,
             addOutPort(src_outport_dirn, n_bridge,
                        routing_table_entry,
                        link->m_weight, garnet_link->srcCredBridge,
-                       m_routers[dest]->get_vc_per_vnet());
+                       m_routers[dest]->get_vc_per_vnet(), receiver_depths);
         m_networkbridges.push_back(n_bridge);
     } else {
         m_routers[src]->addOutPort(src_outport_dirn, net_link,
                         routing_table_entry,
                         link->m_weight, credit_link,
-                        m_routers[dest]->get_vc_per_vnet());
+                        m_routers[dest]->get_vc_per_vnet(), receiver_depths);
     }
 }
 
@@ -480,10 +591,63 @@ GarnetNetwork::inputVcHighWater() const
 }
 
 void
+GarnetNetwork::recordReceiverCapacity(uint32_t senderKind, int32_t senderId,
+    int32_t senderPort, const std::string &senderDirection,
+    uint32_t receiverKind, int32_t receiverId, int32_t receiverPort,
+    const std::string &receiverDirection, int32_t linkId,
+    const std::vector<uint32_t> &depths, uint32_t vcsPerVnet,
+    const std::vector<int> &supportedVnets)
+{
+    for (uint32_t vnet = 0; vnet < depths.size(); ++vnet) {
+        if (!supportedVnets.empty() &&
+            std::find(supportedVnets.begin(), supportedVnets.end(), vnet) ==
+                supportedVnets.end())
+            continue;
+        for (uint32_t offset = 0; offset < vcsPerVnet; ++offset) {
+            m_receiver_capacity_map.push_back({
+                senderKind, senderId, senderPort, senderDirection,
+                receiverKind, receiverId, receiverPort, receiverDirection,
+                linkId, vnet, vnet * vcsPerVnet + offset,
+                depths[vnet], depths[vnet]});
+        }
+    }
+}
+
+GarnetReceiverCapacityMap
+GarnetNetwork::receiverCapacityMap() const
+{
+    return m_receiver_capacity_map;
+}
+
+GarnetExperimentSnapshot
+GarnetNetwork::experimentSnapshot() const
+{
+    GarnetExperimentSnapshot snapshot;
+    snapshot.tick = curTick();
+    snapshot.networkCycle = curCycle();
+    snapshot.packetsInjected = m_experiment_packets_injected;
+    snapshot.packetsReceived = m_experiment_packets_received;
+    snapshot.flitsInjected = m_experiment_flits_injected;
+    snapshot.flitsReceived = m_experiment_flits_received;
+    snapshot.wireBytesInjected = m_experiment_wire_bytes_injected;
+    snapshot.wireBytesReceived = m_experiment_wire_bytes_received;
+    for (const auto *router : m_routers)
+        router->appendExperimentSnapshot(snapshot);
+    for (size_t link = 0; link < m_networklinks.size(); ++link) {
+        const auto *network_link = m_networklinks[link];
+        snapshot.links.push_back({static_cast<int32_t>(link),
+            network_link->bitWidth, network_link->experimentFlits(),
+            network_link->experimentVcFlits()});
+    }
+    return snapshot;
+}
+
+void
 GarnetNetwork::increment_injected_wire_bytes(unsigned vnet, uint64_t bytes)
 {
     panic_if(vnet >= m_virtual_networks, "invalid injected-byte vnet");
     m_wire_bytes_injected_raw[vnet] += bytes;
+    m_experiment_wire_bytes_injected[vnet] += bytes;
     m_wire_bytes_injected[vnet] += bytes;
 }
 
@@ -492,6 +656,7 @@ GarnetNetwork::increment_received_wire_bytes(unsigned vnet, uint64_t bytes)
 {
     panic_if(vnet >= m_virtual_networks, "invalid received-byte vnet");
     m_wire_bytes_received_raw[vnet] += bytes;
+    m_experiment_wire_bytes_received[vnet] += bytes;
     m_wire_bytes_received[vnet] += bytes;
 }
 
@@ -891,6 +1056,35 @@ GarnetNetwork::collateStats()
     // cycle (an idempotent operation) and preserves legacy activity stats.
     for (int i = 0; i < m_routers.size(); i++) {
         m_routers[i]->collateStats();
+    }
+    if (DTRACE(GarnetDualLane)) {
+        DPRINTF(GarnetDualLane, "DL_SNAPSHOT tick=%llu\n", curTick());
+        for (const auto &entry : receiverCapacityMap()) {
+            DPRINTF(GarnetDualLane,
+                    "DL_CAPACITY link=%d vc=%u vnet=%u kind=%u "
+                    "receiver=%d port=%d direction=%s depth=%u\n",
+                    entry.linkId, entry.vc, entry.vnet, entry.receiverKind,
+                    entry.receiverId, entry.receiverPort,
+                    entry.receiverDirection, entry.depth);
+        }
+        for (const auto &entry : experimentSnapshot().inputVcs) {
+            DPRINTF(GarnetDualLane,
+                    "DL_BUFFER router=%d input=%d ingress=%d lane=%u "
+                    "vc=%u vnet=%u depth=%u occupancy=%u high_water=%llu "
+                    "enqueued=%llu dequeued=%llu\n",
+                    entry.routerId, entry.inportId, entry.ingressPort,
+                    entry.lane, entry.vc, entry.vnet, entry.depth,
+                    entry.occupancy, entry.highWater,
+                    entry.enqueued, entry.dequeued);
+        }
+        for (const auto &entry : creditLedger()) {
+            DPRINTF(GarnetDualLane,
+                    "DL_CREDIT link=%d vc=%u initial=%llu sent=%llu "
+                    "returned=%llu current=%llu\n",
+                    entry.linkId, entry.vc, entry.initial, entry.sent,
+                    entry.returned, entry.current);
+        }
+        DPRINTF(GarnetDualLane, "DL_SNAPSHOT_END tick=%llu\n", curTick());
     }
 }
 

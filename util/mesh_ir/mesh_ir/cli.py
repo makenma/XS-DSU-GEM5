@@ -38,6 +38,10 @@ from mesh_ir.golden_programs import (
     build_p2p_reuse_program,
     build_barrier_e2e_program,
     build_cross_fault_program,
+    build_read_window_program,
+    build_load_saturation_contiguous_program,
+    build_load_saturation_multi_tensor_program,
+    build_load_saturation_strided_program,
 )
 
 BUILDERS = {
@@ -60,6 +64,10 @@ BUILDERS = {
     "repeat_error": build_repeat_error_program,
     "p2p_reuse": build_p2p_reuse_program,
     "barrier_e2e": build_barrier_e2e_program,
+    "read_window": build_read_window_program,
+    "load_saturation_contiguous": build_load_saturation_contiguous_program,
+    "load_saturation_multi_tensor": build_load_saturation_multi_tensor_program,
+    "load_saturation_strided": build_load_saturation_strided_program,
     "cross_fault": build_cross_fault_program,
     "region_edge": build_region_edge_program,
     "compute_timing": build_compute_timing_program,

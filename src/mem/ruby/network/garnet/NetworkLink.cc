@@ -70,6 +70,7 @@ void
 NetworkLink::setVcsPerVnet(uint32_t consumerVcs)
 {
     m_vc_load.resize(m_virt_nets * consumerVcs);
+    m_experiment_vc_load.resize(m_virt_nets * consumerVcs);
 }
 
 void
@@ -102,6 +103,8 @@ NetworkLink::wakeup()
         link_consumer->scheduleEventAbsolute(clockEdge(m_latency));
         m_link_utilized++;
         m_vc_load[t_flit->get_vc()]++;
+        ++m_experiment_flits;
+        ++m_experiment_vc_load[t_flit->get_vc()];
     }
 
     if (!link_srcQueue->isEmpty()) {

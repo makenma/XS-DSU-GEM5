@@ -45,7 +45,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "util" / "mesh_ir")
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from dma_uid_predict import predict  # noqa: E402
 from mesh_ir.builder import load_arch  # noqa: E402
-from mesh_ir.effective import EffectiveArchitecture  # noqa: E402
+from mesh_ir.effective import (  # noqa: E402
+    EffectiveArchitecture,
+    apply_cli_dma_overrides,
+)
 from mesh_ir.generated import abi as A  # noqa: E402
 
 ARCH_YAML = Path(__file__).resolve().parent / "arch/mesh_1x2.yaml"
@@ -59,6 +62,22 @@ def _region(kind):
         if region.kind == kind:
             return region
     raise RuntimeError(f"arch yaml has no {kind} region")
+
+
+def _layout_key(manifest):
+    """Routing-relevant manifest identity: sweep arches may vary dma/axi
+    tuning fields but must keep the scenario's address map and topology."""
+    return (
+        manifest.clock_hz,
+        tuple(manifest.core_ids),
+        manifest.sram_bytes,
+        manifest.sram_banks,
+        manifest.axi_data_bytes,
+        manifest.axi_address_bits,
+        manifest.axi_id_bits,
+        tuple((r.kind, r.base, r.bytes, getattr(r, "tile_stride", 0),
+               getattr(r, "tile_bytes", 0)) for r in manifest.regions),
+    )
 
 
 HOST_SHARED_BASE = _region("HOST_SHARED").base
@@ -338,9 +357,7 @@ def case_constrained(ctx):
     ctx.options.quota_write_beats = 32
     ctx.options.quota_read_contexts = 2
     ctx.options.quota_read_beats = 64
-    ctx.bridge_aw_queue = 2
-    ctx.bridge_ar_queue = 2
-    ctx.max_outstanding_bursts = 2
+    EFFECTIVE_ARCH.override("dma_segment_queue_depth", 2)
 
 
 @case("fence_scopes")
@@ -403,6 +420,73 @@ def case_p2p_reuse(ctx):
     ctx.program = "p2p_reuse"
     ctx.seeds = []
     ctx.verify = []
+
+
+def _load_saturation_case(ctx, shape):
+    """Saturation benchmark: both cores stream their LOAD plan from the
+    shared HBM node; optional uniform HBM read latency forms the sweep's
+    latency axis."""
+    ctx.program = "load_saturation_" + shape
+    ctx.instances = 1
+    ctx.seeds = []
+    ctx.verify = []
+    from mesh_ir.golden_programs import (
+        LOAD_SATURATION_HBM_BASE,
+        LOAD_SATURATION_TENSOR_BYTES,
+        load_saturation_layout,
+    )
+    for core in (0, 1):
+        for index, (rows, row_bytes, stride) in enumerate(
+                load_saturation_layout(shape)):
+            base = HBM_BASE + LOAD_SATURATION_HBM_BASE + (
+                core * 8 + index) * LOAD_SATURATION_TENSOR_BYTES
+            ctx.seeds.append(
+                (base, (rows - 1) * stride + row_bytes, 0x41 + core * 0x10))
+    if ctx.options.load_latency_cycles > 0:
+        for core in (0, 1):
+            for uid in predict(
+                    ctx.program_dir, ctx.arch, {0: 0, 1: 1})[core]["read"]:
+                ctx.scenario["mesh_planned_extra_latency"].append(
+                    {"target": NODE_HBM, "uid": uid,
+                     "cycles": ctx.options.load_latency_cycles})
+
+
+@case("load_saturation_contiguous")
+def case_load_saturation_contiguous(ctx):
+    _load_saturation_case(ctx, "contiguous")
+
+
+@case("load_saturation_multi_tensor")
+def case_load_saturation_multi_tensor(ctx):
+    _load_saturation_case(ctx, "multi_tensor")
+
+
+@case("load_saturation_strided")
+def case_load_saturation_strided(ctx):
+    _load_saturation_case(ctx, "strided")
+
+
+@case("read_outstanding_window")
+def case_read_outstanding_window(ctx):
+    """Sliding read window: a 6 KiB LOAD splits into 24 8-beat bursts; the
+    4-deep read outstanding window refills on RLAST (not on SRAM commit),
+    even when the local SRAM write service is slowed."""
+    ctx.program = "read_window"
+    ctx.seeds = [(HBM_BASE + 0x100000, 6 * 1024, 0x63)]
+    ctx.verify = []
+    ctx.instances = 1
+    EFFECTIVE_ARCH.override("dma_segment_queue_depth", 8)
+    EFFECTIVE_ARCH.override("axi_id_bits", 2)
+    EFFECTIVE_ARCH.override("sram_write_bytes_per_cycle_per_bank", 1)
+    EFFECTIVE_ARCH.override("dma_read_outstanding", 4)
+    EFFECTIVE_ARCH.override("dma_write_outstanding", 4)
+    ctx.checks = ["conservation", "quiescence", "completion_timing",
+                  "read_window_slides"]
+    uids = predict(ctx.program_dir, ctx.arch, {0: 0, 1: 1})[0]["read"]
+    for uid in uids:
+        ctx.scenario["mesh_planned_extra_latency"].append(
+            {"target": NODE_HBM, "uid": uid, "cycles": 400}
+        )
 
 
 @case("dma_zero")
@@ -963,6 +1047,43 @@ def check_fence_scopes(ctx, result, expected_rows, out):
     out.append("fence scopes: PASS")
 
 
+def check_read_window_slides(ctx, result, expected_rows, out):
+    limit = EFFECTIVE_ARCH.dma_read_outstanding
+    bursts = result.get("burst_timings", [])
+    fatal_if(not bursts, "missing per-burst evidence")
+    for row in bursts:
+        length = row["beats"] * row["beat_bytes"]
+        fatal_if(row["beats"] > 8 or row["beats"] <= 0 or
+                 row["address"] // 4096 != (row["address"] + length - 1) // 4096,
+                 "burst violates beat/page bounds")
+    reads = sorted((row for row in bursts if row["channel"] == "AR"),
+                   key=lambda row: (row["ar_aw_tick"], row["ordinal"]))
+    fatal_if(len(reads) <= limit, "missing refill burst")
+    fatal_if(len({row["core_id"] for row in reads}) != 1,
+             "read-window stimulus must use one initiator")
+    first = reads[0]
+    release = min(row["response_tick"] for row in reads)
+    fatal_if(release <= 0 or first["commit_tick"] <= 0,
+             "missing RLAST or first burst commit")
+    fatal_if(sum(row["ar_aw_tick"] < release for row in reads) != limit,
+             "first RLAST must follow exactly the configured number of ARs")
+    refill = reads[limit]
+    fatal_if(not (release <= refill["ar_aw_tick"] < first["commit_tick"]),
+             "refill must precede first burst SRAM commit")
+    fatal_if(refill["axi_id"] != first["axi_id"], "refill did not reuse first ID")
+    fatal_if(len({row["axi_id"] for row in reads}) != limit,
+             "read-window stimulus did not use a bounded ID pool")
+    previous = {}
+    for row in reads:
+        prior = previous.get(row["axi_id"])
+        fatal_if(prior is not None and row["ar_aw_tick"] < prior["response_tick"],
+                 "ID reused before RLAST consumption")
+        previous[row["axi_id"]] = row
+    peaks = [b["peak_read_outstanding"] for b in result["bridges"]]
+    fatal_if(not peaks or max(peaks) != limit, "adapter read window peak differs from limit")
+    out.append("read window slides: PASS")
+
+
 def check_p2p_reuse_commits(ctx, result, expected_rows, out):
     p2p_rows = [r for r in result["transport"] if r["p2p_bytes"] > 0]
     fatal_if(len(p2p_rows) != 2,
@@ -1161,6 +1282,7 @@ CHECKS = {
     "cross_error_drain": check_cross_error_drain,
     "first_instance_error_only": check_first_instance_error_only,
     "p2p_reuse_commits": check_p2p_reuse_commits,
+    "read_window_slides": check_read_window_slides,
     "repeat_error_drain": check_repeat_error_drain,
     "edge_bytes": check_edge_bytes,
     "p2p_commit": check_p2p_commit,
@@ -1184,6 +1306,7 @@ class CaseContext:
 
 
 def main():
+    global ARCH_MANIFEST, EFFECTIVE_ARCH
     parser = argparse.ArgumentParser()
     Options.addNoISAOptions(parser)
     Ruby.define_options(parser)
@@ -1198,20 +1321,25 @@ def main():
     )
     parser.add_argument("--case", choices=backend_cases(Backend.GARNET), required=True)
     parser.add_argument("--mesh-program-dir", required=True)
+    parser.add_argument("--arch", default=str(ARCH_YAML),
+                        help="Architecture manifest; may vary dma/axi tuning "
+                             "fields only (regions/clock/topology are pinned)")
+    parser.add_argument("--load-latency-cycles", type=int, default=0,
+                        help="Extra HBM read latency injected on every "
+                             "load_saturation LOAD uid")
     parser.add_argument("--instances", type=int, default=1)
     parser.add_argument("--quota-write-contexts", type=int, default=16)
     parser.add_argument("--quota-write-beats", type=int, default=512)
     parser.add_argument("--quota-read-contexts", type=int, default=16)
     parser.add_argument("--quota-read-beats", type=int, default=512)
-    parser.add_argument("--bridge-aw-queue", type=int,
-                        default=ARCH_MANIFEST.dma_segment_queue_depth)
-    parser.add_argument("--bridge-ar-queue", type=int,
-                        default=ARCH_MANIFEST.dma_segment_queue_depth)
-    parser.add_argument("--max-outstanding-bursts", type=int,
-                        default=min(ARCH_MANIFEST.dma_read_outstanding,
-                                    ARCH_MANIFEST.dma_write_outstanding))
+    parser.add_argument("--read-outstanding", type=int, default=None,
+                        help="Override arch dma.read_outstanding (tuning)")
+    parser.add_argument("--write-outstanding", type=int, default=None,
+                        help="Override arch dma.write_outstanding (tuning)")
+    parser.add_argument("--segment-queue-depth", type=int,
+                        default=None)
     parser.add_argument("--dma-descriptor-queue-depth", type=int,
-                        default=ARCH_MANIFEST.dma_descriptor_queue_depth)
+                        default=None)
     parser.add_argument("--watchdog-ticks", type=int, default=4000000)
     parser.add_argument("--only-check", action="append", choices=sorted(CHECKS))
     args = parser.parse_args()
@@ -1234,6 +1362,12 @@ def main():
              "run_mesh_dma_garnet.py requires the AXI_MESH protocol")
 
     args.num_cpus = args.axi_mesh_routers
+    if Path(args.arch).resolve() != ARCH_YAML.resolve():
+        requested = load_arch(args.arch)
+        fatal_if(_layout_key(requested) != _layout_key(ARCH_MANIFEST),
+                 "--arch may only vary dma/axi tuning fields")
+        ARCH_MANIFEST = requested
+        EFFECTIVE_ARCH = EffectiveArchitecture(ARCH_MANIFEST)
     arch_manifest = ARCH_MANIFEST
     arch = {
         "core_ids": list(arch_manifest.core_ids),
@@ -1266,14 +1400,13 @@ def main():
         for row in json.loads((program_dir / "expected_traffic.json").read_text())
     }
     ctx.scenario = base_scenario(args)
-    ctx.bridge_aw_queue = args.bridge_aw_queue
-    ctx.bridge_ar_queue = args.bridge_ar_queue
-    ctx.max_outstanding_bursts = args.max_outstanding_bursts
     ctx.instances = args.instances
 
     if set(SCENARIOS) != set(backend_cases(Backend.GARNET)):
         fatal("Garnet case registry and scenario implementations differ")
     SCENARIOS[args.case](ctx)
+    apply_cli_dma_overrides(EFFECTIVE_ARCH, args)
+    arch_manifest = EFFECTIVE_ARCH
     ctx.checks = list(invariant_registry(args.case, sys.argv[1:]))
     if args.only_check:
         ctx.checks = args.only_check
@@ -1290,6 +1423,10 @@ def main():
     system.clk_domain = SrcClockDomain(
         clock=clock, voltage_domain=system.voltage_domain
     )
+
+    args.axi_id_width_bits = EFFECTIVE_ARCH.axi_id_bits
+    args.axi_max_outstanding_reads = EFFECTIVE_ARCH.dma_read_outstanding
+    args.axi_max_outstanding_writes = EFFECTIVE_ARCH.dma_write_outstanding
 
     Ruby.create_system(args, False, system, cpus=[])
     system.ruby.clk_domain = SrcClockDomain(
@@ -1326,8 +1463,8 @@ def main():
         bridge = AxiGarnetBridge(
             adapter=getattr(ruby, "axi_initiator_adapter%d" % core_id),
             data_bus_bytes=arch_manifest.axi_data_bytes,
-            aw_queue_depth=ctx.bridge_aw_queue,
-            ar_queue_depth=ctx.bridge_ar_queue,
+            aw_queue_depth=arch_manifest.dma_segment_queue_depth,
+            ar_queue_depth=arch_manifest.dma_segment_queue_depth,
             axi_id_count=id_pool,
             axi_id_base=0,
         )
@@ -1339,8 +1476,8 @@ def main():
             data_bus_bytes=arch_manifest.axi_data_bytes,
             max_burst_beats=arch_manifest.axi_max_burst_beats,
             setup_cycles=arch_manifest.dma_setup_cycles,
-            descriptor_queue_depth=args.dma_descriptor_queue_depth,
-            max_outstanding_bursts=ctx.max_outstanding_bursts,
+            descriptor_queue_depth=arch_manifest.dma_descriptor_queue_depth,
+            segment_queue_depth=arch_manifest.dma_segment_queue_depth,
             axi_id_count=id_pool,
         )
         engine.clk_domain = system.clk_domain
@@ -1388,7 +1525,7 @@ def main():
         program_file=str(program_dir / "program.mshb"),
         cores=cores,
         apertures=apertures,
-        arch_digest=arch_manifest.digest().hex(),
+        arch_digest=EFFECTIVE_ARCH.base_digest().hex(),
         effective_arch_digest=EFFECTIVE_ARCH.digest().hex(),
         core_ids=arch["core_ids"],
         sram_bytes=arch["sram_bytes"],

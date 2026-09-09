@@ -757,6 +757,7 @@ bool MeshDummyCore::issueDma(const DecodedCommand &command)
             descriptor.useful_bytes > 0 && dispatcher)
             dispatcher->armTransferExpectation(descriptor.transfer_id);
         commandsIssued++;
+        command_issue_ticks[command.command_id] = curTick();
         live_commands++;
         live_per_stream[command.stream_id]++;
         outstanding_axi++;

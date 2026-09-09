@@ -148,7 +148,7 @@ class AxiTraceTester : public ClockedObject, public ruby::Consumer
     const std::string residualStateJson;
     const std::string runtimeFault;
     const uint64_t seed;
-    const std::vector<uint32_t> wireHeaderBytes;
+    AxiWireBytes channelWireBytes;
     const uint32_t dataBusBytes;
     const uint32_t drainCycles;
     const bool concurrent;

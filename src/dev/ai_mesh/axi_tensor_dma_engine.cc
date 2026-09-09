@@ -36,7 +36,7 @@ AxiTensorDmaEngine::AxiTensorDmaEngine(const Params &p)
       max_burst_beats(p.max_burst_beats),
       setup_cycles(p.setup_cycles),
       descriptor_queue_depth(p.descriptor_queue_depth),
-      max_outstanding_bursts(p.max_outstanding_bursts),
+      segment_queue_depth(p.segment_queue_depth),
       axi_id_count(p.axi_id_count),
       tick_event(this)
 {
@@ -86,6 +86,24 @@ AxiTensorDmaEngine::idle() const
            pending_local_events == 0;
 }
 
+uint32_t
+AxiTensorDmaEngine::pendingReadReservations() const
+{
+    uint32_t count = 0;
+    for (const auto &[ordinal, burst] : live_read_bursts)
+        count += burst.service_state == ReadServiceState::AwaitingReservation;
+    return count;
+}
+
+uint32_t
+AxiTensorDmaEngine::scheduledReadCommits() const
+{
+    uint32_t count = 0;
+    for (const auto &[ordinal, burst] : live_read_bursts)
+        count += burst.service_state == ReadServiceState::CommitScheduled;
+    return count;
+}
+
 bool
 AxiTensorDmaEngine::submit(const DecodedDmaDescriptor &descriptor,
                            Tick issue_tick)
@@ -111,9 +129,11 @@ AxiTensorDmaEngine::submit(const DecodedDmaDescriptor &descriptor,
         state.bursts_total = 0;  // zero-length: every kind, no SRAM service
     else if (is_fill)
         state.bursts_total = descriptor.rows;
-    else
-        state.bursts_total = uint32_t(planOf(descriptor).size());
-    queue.push_back(state);
+    else {
+        state.plan = planOf(descriptor);
+        state.bursts_total = uint32_t(state.plan.size());
+    }
+    queue.push_back(std::move(state));
     scheduleTick();
     return true;
 }
@@ -178,6 +198,9 @@ AxiTensorDmaEngine::scheduleTick()
 void
 AxiTensorDmaEngine::tick()
 {
+    for (auto &[ordinal, burst] : live_read_bursts)
+        if (burst.service_state == ReadServiceState::AwaitingReservation)
+            tryScheduleReadCommit(ordinal, burst);
     if (!read_queue.empty())
         driveReadDescriptor();
     if (!write_queue.empty())
@@ -202,10 +225,10 @@ AxiTensorDmaEngine::driveReadDescriptor()
     }
     if (state.burst_ordinals.size() >= state.bursts_total)
         return;
-    if (live_read_bursts.size() >= max_outstanding_bursts)
+    if (live_read_bursts.size() >= segment_queue_depth)
         return;
 
-    const std::vector<AxiBurst> plan = planOf(state.descriptor);
+    const std::vector<AxiBurst> &plan = state.plan;
     const AxiBurst &burst_plan = plan[state.burst_ordinals.size()];
 
     // Destination: local SRAM offset of this burst's logical interval.
@@ -250,6 +273,12 @@ AxiTensorDmaEngine::driveReadDescriptor()
     live_read_bursts.emplace(ordinal, std::move(burst));
     state.burst_ordinals.push_back(ordinal);
     read_bursts_submitted++;
+    ++read_ar_accepted;
+    ar_accept_ticks.push_back(curTick());
+    const uint32_t window = uint32_t(
+        read_ar_accepted - read_rlast_consumed);
+    if (window > peak_read_window)
+        peak_read_window = window;
     DescriptorTiming &timing = timings[descriptor.descriptor_id];
     if (timing.first_ar_tick == 0)
         timing.first_ar_tick = curTick();
@@ -274,10 +303,10 @@ AxiTensorDmaEngine::driveWriteDescriptor()
     }
     if (state.burst_ordinals.size() >= state.bursts_total)
         return;
-    if (live_write_bursts.size() >= max_outstanding_bursts)
+    if (live_write_bursts.size() >= segment_queue_depth)
         return;
 
-    const std::vector<AxiBurst> plan = planOf(descriptor);
+    const std::vector<AxiBurst> &plan = state.plan;
     const uint32_t burst_index = uint32_t(state.burst_ordinals.size());
     const AxiBurst &burst_plan = plan[burst_index];
 
@@ -311,9 +340,11 @@ AxiTensorDmaEngine::driveWriteDescriptor()
         // The local SRAM read must complete before any W data of this
         // burst is offered to the bridge (spec 7.4): schedule the beat
         // build on the read-service completion event.
-        const auto service = owner->reserveSramService(
+        const auto service = owner->tryReserveSramService(
             row_src_local, burst_plan.useful_bytes, false);
-        const Tick ready = curTick() + service.stall_ticks;
+        if (!service)
+            return;
+        const Tick ready = curTick() + service->stall_ticks;
         state.prepare_pending = true;
         pending_local_events++;
         auto *event = new WritePrepareEvent(
@@ -348,7 +379,6 @@ AxiTensorDmaEngine::driveWriteDescriptor()
         timing.first_aw_tick = curTick();
     if (timing.first_w_tick == 0)
         timing.first_w_tick = curTick();
-    write_valid_bytes += burst_plan.useful_bytes;
     ActualTraffic &submit_row = rowOf(descriptor.descriptor_id);
     if (descriptor.kind == mesh_abi::kDmaKindSTORE)
         submit_row.write_bursts++;
@@ -369,7 +399,7 @@ AxiTensorDmaEngine::prepareWriteBurst(uint32_t descriptor_id,
     fatal_if(!state.prepare_pending, "unexpected write prepare event");
     state.prepare_pending = false;
 
-    const std::vector<AxiBurst> plan = planOf(state.descriptor);
+    const std::vector<AxiBurst> &plan = state.plan;
     const AxiBurst &burst_plan = plan[burst_index];
 
     std::vector<uint8_t> logical(burst_plan.useful_bytes);
@@ -418,9 +448,11 @@ AxiTensorDmaEngine::driveFill(DescriptorState &state)
     const uint32_t next_row = state.bursts_done;
     const uint64_t dst_off = descriptor.dst.offset_bytes +
                              uint64_t(next_row) * descriptor.dst_stride_bytes;
-    const auto service = owner->reserveSramService(
+    const auto service = owner->tryReserveSramService(
         dst_off, descriptor.row_bytes, true);
-    const Tick ready = curTick() + service.stall_ticks;
+    if (!service)
+        return;
+    const Tick ready = curTick() + service->stall_ticks;
     state.prepare_pending = true;
     pending_local_events++;
     auto *event = new FillRowEvent(this, descriptor.descriptor_id, next_row);
@@ -488,6 +520,15 @@ AxiTensorDmaEngine::protocolErrorTrampoline(void *ctx, bool read_direction)
 }
 
 void
+AxiTensorDmaEngine::releaseReadAxiId(ReadBurst &burst)
+{
+    if (burst.axiIdReleased)
+        return;
+    burst.axiIdReleased = true;
+    free_read_ids.push_back(burst.axi_id);
+}
+
+void
 AxiTensorDmaEngine::onReadBeat(uint64_t burst_ordinal, uint16_t beat_index,
                                bool last, axi::AxiResp resp,
                                const uint8_t *data)
@@ -520,8 +561,18 @@ AxiTensorDmaEngine::onReadBeat(uint64_t burst_ordinal, uint16_t beat_index,
 
     if (!last)
         return;
+    ++read_rlast_consumed;
+    if (first_rlast_tick == 0)
+        first_rlast_tick = curTick();
     burst.last_r_tick = curTick();
     timings[burst.descriptor_id].last_r_tick = curTick();
+
+    // The AXI read transaction ends at RLAST: the AXI ID returns to the
+    // pool here for both the normal and the error path, so a new AR can be
+    // accepted while this burst still waits for its local SRAM commit
+    // (spec 7.4 vs the AXI outstanding window, which the initiator
+    // adapter owns).  The burst itself stays ordinal-keyed until commit.
+    releaseReadAxiId(burst);
 
     if (burst.errored) {
         // Error bursts drain every beat (delivered above) and commit zero
@@ -531,7 +582,6 @@ AxiTensorDmaEngine::onReadBeat(uint64_t burst_ordinal, uint16_t beat_index,
         row.read_discarded_bytes += plan.useful_bytes;
         row.read_bursts++;
         read_bursts_completed++;
-        free_read_ids.push_back(burst.axi_id);
         live_read_bursts.erase(burst_ordinal);
         retireBurst(true, burst_ordinal, true);
         return;
@@ -539,9 +589,23 @@ AxiTensorDmaEngine::onReadBeat(uint64_t burst_ordinal, uint16_t beat_index,
 
     // The functional commit and the burst's retirement happen on the SRAM
     // write-service completion event, not at RLAST (spec 7.4).
-    const auto service = owner->reserveSramService(
+    burst.service_state = ReadServiceState::AwaitingReservation;
+    tryScheduleReadCommit(burst_ordinal, burst);
+    scheduleTick();
+}
+
+void
+AxiTensorDmaEngine::tryScheduleReadCommit(uint64_t burst_ordinal,
+                                          ReadBurst &burst)
+{
+    fatal_if(burst.service_state != ReadServiceState::AwaitingReservation,
+             "read SRAM reservation attempted in the wrong state");
+    const auto service = owner->tryReserveSramService(
         burst.dst_base, burst.packed.size(), true);
-    const Tick ready = curTick() + service.stall_ticks;
+    if (!service)
+        return;
+    burst.service_state = ReadServiceState::CommitScheduled;
+    const Tick ready = curTick() + service->stall_ticks;
     pending_local_events++;
     auto *event = new ReadCommitEvent(this, burst_ordinal);
     schedule(event, ready > clockEdge(Cycles(1)) ? ready
@@ -558,10 +622,14 @@ AxiTensorDmaEngine::commitReadBurst(uint64_t burst_ordinal)
              (unsigned long long)burst_ordinal);
     ReadBurst &burst = it->second;
 
+    fatal_if(burst.service_state != ReadServiceState::CommitScheduled,
+             "read SRAM commit attempted in the wrong state");
+
     fatal_if(!owner->functionalSramWrite(burst.dst_base,
                                          burst.packed.size(),
                                          burst.packed.data()),
              "read beat commit escapes SRAM");
+    read_commit_ticks.emplace(burst_ordinal, curTick());
     read_valid_bytes += burst.packed.size();
     notePayload(burst.descriptor_id, burst.packed.data(),
                 burst.packed.size());
@@ -575,7 +643,6 @@ AxiTensorDmaEngine::commitReadBurst(uint64_t burst_ordinal)
         timings[burst.descriptor_id].local_commit_tick = curTick();
         timings[burst.descriptor_id].last_r_tick = burst.last_r_tick;
     }
-    free_read_ids.push_back(burst.axi_id);
     live_read_bursts.erase(burst_ordinal);
     retireBurst(true, burst_ordinal, false);
 }
@@ -626,6 +693,7 @@ AxiTensorDmaEngine::onWriteDone(uint64_t burst_ordinal, axi::AxiResp resp)
         write_bursts_errored++;
         row.write_drained_uncommitted_bytes += burst.plan.useful_bytes;
     } else {
+        write_valid_bytes += burst.plan.useful_bytes;
         // Committed bytes are accounted only on the successful B; faulted
         // bursts drained all W beats but committed zero bytes.
         if (burst.kind == mesh_abi::kDmaKindSTORE)

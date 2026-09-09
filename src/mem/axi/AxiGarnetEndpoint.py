@@ -49,6 +49,7 @@ class AxiInitiatorAdapter(ClockedObject):
     wire_header_bytes = VectorParam.UInt32(
         [24, 16, 8, 24, 16], "AW,W,B,AR,R wire header bytes"
     )
+    data_header_sideband = Param.Bool(False, "Carry W/R metadata beside the serialized data payload")
     data_bus_bytes = Param.UInt32(64, "AXI data bus width in bytes")
     raw_probe = Param.Bool(False, "Run Commit 1 raw shim probe")
     raw_probe_hold_cycles = Param.Cycles(
@@ -103,6 +104,13 @@ class AxiTargetAdapter(ClockedObject):
     base_latencies = VectorParam.UInt32(
         [1, 1], "Write and read base service latency in target cycles"
     )
+    synthetic_hbm_enabled = Param.Bool(False, "Use shared synthetic HBM service")
+    synthetic_hbm_bytes_per_cycle = Param.UInt32(
+        32, "Shared read/write service bytes per target cycle"
+    )
+    synthetic_hbm_queue_depth = Param.UInt32(
+        64, "Finite synthetic HBM requests including completed service"
+    )
     planned_uids = VectorParam.UInt64(
         [], "Transaction UIDs with deterministic service plans"
     )
@@ -140,6 +148,7 @@ class AxiTargetAdapter(ClockedObject):
     wire_header_bytes = VectorParam.UInt32(
         [24, 16, 8, 24, 16], "AW,W,B,AR,R wire header bytes"
     )
+    data_header_sideband = Param.Bool(False, "Carry W/R metadata beside the serialized data payload")
     data_bus_bytes = Param.UInt32(64, "AXI data bus width in bytes")
     raw_probe = Param.Bool(False, "Run Commit 1 raw shim probe")
     raw_probe_hold_cycles = Param.Cycles(

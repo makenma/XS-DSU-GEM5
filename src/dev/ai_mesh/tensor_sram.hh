@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstring>
 #include <map>
+#include <optional>
 #include <vector>
 
 #include "base/logging.hh"
@@ -49,6 +50,7 @@ class TensorSram
         fatal_if(bytes == 0, "TensorSram: bytes must be nonzero");
         fatal_if(banks == 0, "TensorSram: banks must be nonzero");
         fatal_if(line_bytes == 0, "TensorSram: line_bytes must be nonzero");
+        fatal_if(line_tick == 0, "TensorSram: line_tick must be nonzero");
         fatal_if(read_bytes_per_cycle == 0 || write_bytes_per_cycle == 0,
                  "TensorSram: bytes-per-cycle must be nonzero");
         fatal_if(read_ports == 0 || write_ports == 0,
@@ -123,25 +125,52 @@ class TensorSram
     uint32_t bankQueueLoad(uint64_t tick, uint64_t offset, uint64_t size,
                            bool is_write) const
     {
-        auto &ledger = is_write ? write_request_ledger : read_request_ledger;
-        const uint32_t bank =
-            static_cast<uint32_t>((offset / line_bytes) % banks);
-        uint32_t queued = 0;
-        for (uint64_t done : ledger[bank])
-            if (done > tick)
-                queued++;
-        return queued;
+        if (!fits(offset, size))
+            return bank_queue_depth;
+        if (size == 0)
+            return 0;
+        const auto &ledger = is_write ? write_request_ledger
+                                       : read_request_ledger;
+        const uint64_t first_line = offset / line_bytes;
+        const uint64_t last_line = (offset + size - 1) / line_bytes;
+        const uint32_t touched = std::min<uint64_t>(
+            banks, last_line - first_line + 1);
+        uint32_t maximum = 0;
+        for (uint32_t index = 0; index < touched; ++index) {
+            const uint32_t bank = (first_line + index) % banks;
+            uint32_t queued = 0;
+            for (uint64_t done : ledger[bank])
+                queued += done > tick;
+            maximum = std::max(maximum, queued);
+        }
+        return maximum;
+    }
+
+    std::optional<ReserveResult> tryReserve(uint64_t tick, uint64_t offset,
+                                            uint64_t size, bool is_write)
+    {
+        fatal_if(!fits(offset, size), "TensorSram: reservation escapes SRAM");
+        if (!canReserve(tick, offset, size, is_write)) {
+            if (is_write)
+                ++write_reservation_rejection_attempts;
+            else
+                ++read_reservation_rejection_attempts;
+            return std::nullopt;
+        }
+        return reserve(tick, offset, size, is_write);
     }
 
     ReserveResult reserve(uint64_t tick, uint64_t offset, uint64_t size, bool is_write)
     {
         ReserveResult result;
+        fatal_if(!fits(offset, size), "TensorSram: reservation escapes SRAM");
         if (size == 0)
             return result;
         const uint32_t per_cycle =
             is_write ? write_bytes_per_cycle : read_bytes_per_cycle;
         const uint32_t ports = is_write ? write_ports : read_ports;
         auto &busy_pool = is_write ? write_busy : read_busy;
+        std::vector<uint64_t> request_done(banks, 0);
         uint64_t done_at = tick;
         uint64_t first_line = offset / line_bytes;
         uint64_t last_line = (offset + size - 1) / line_bytes;
@@ -169,15 +198,8 @@ class TensorSram
             if (start > tick)
                 result.conflict_ticks += start - tick;
             busy_pool[bank][chosen] = start + service;
-            auto &ledger =
-                is_write ? write_request_ledger : read_request_ledger;
-            auto &entries = ledger[bank];
-            entries.erase(std::remove_if(entries.begin(), entries.end(),
-                                         [tick](uint64_t done) {
-                                             return done <= tick;
-                                         }),
-                          entries.end());
-            entries.push_back(busy_pool[bank][chosen]);
+            request_done[bank] = std::max(request_done[bank],
+                                           busy_pool[bank][chosen]);
             if (busy_pool[bank][chosen] > done_at)
                 done_at = busy_pool[bank][chosen];
             result.service_ticks += service;
@@ -186,6 +208,18 @@ class TensorSram
             else
                 bank_reads[bank]++;
         }
+        auto &ledger = is_write ? write_request_ledger : read_request_ledger;
+        for (uint32_t bank = 0; bank < banks; ++bank) {
+            if (request_done[bank] == 0)
+                continue;
+            auto &entries = ledger[bank];
+            entries.erase(std::remove_if(entries.begin(), entries.end(),
+                                         [tick](uint64_t done) {
+                                             return done <= tick;
+                                         }),
+                          entries.end());
+            entries.push_back(request_done[bank]);
+        }
         result.stall_ticks = done_at > tick ? done_at - tick : 0;
         return result;
     }
@@ -193,6 +227,11 @@ class TensorSram
     uint64_t capacity() const { return storage.size(); }
     uint32_t bankCount() const { return banks; }
     uint32_t baseAlignment() const { return alignment; }
+    uint64_t reservationRejectionAttempts(bool is_write) const
+    {
+        return is_write ? write_reservation_rejection_attempts
+                        : read_reservation_rejection_attempts;
+    }
 
     // Allocation validity / poison tracking (spec 17.2.16): reads of an
     // allocation that was never written are poison and must fault.
@@ -218,6 +257,8 @@ class TensorSram
     uint32_t write_ports;
     uint64_t line_tick; // ticks per SRAM service cycle
     uint32_t bank_queue_depth;
+    uint64_t read_reservation_rejection_attempts = 0;
+    uint64_t write_reservation_rejection_attempts = 0;
     std::vector<std::vector<uint64_t>> read_busy;
     std::vector<std::vector<uint64_t>> write_busy;
     std::vector<std::vector<uint64_t>> read_request_ledger;

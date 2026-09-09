@@ -19,6 +19,13 @@ GEM5是一个模块化的离散事件驱动的计算机系统架构模拟器平�
 !!! note
     本项目正在积极开发中。
 
+## AXI Mesh
+
+- [双 lane Router Spec](ai_mesh/dual_lane_router_spec.md)
+- [双 lane Router 验收复核](ai_mesh/dual_lane_router_review.md)
+- [读 XY、写 YX 的双 lane 完整实验 Spec](ai_mesh/dual_lane_xy_yx_experiment_spec.md)
+- [Mesh 路由与双 lane 实验结论（Word）](ai_mesh/mesh_route_lane_experiment_conclusions_20260909.docx)
+
 ## 如何添加新文档
 
 在docs目录下添加新的md文件
@@ -35,4 +42,4 @@ mkdocs serve
 git add docs/frontend/test.md
 git commit -m "添加新文档 [skip ci]"    # 跳过CI检查
 git push
-``` 
+```

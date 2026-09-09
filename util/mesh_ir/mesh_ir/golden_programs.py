@@ -1784,3 +1784,137 @@ def build_cross_fault_program(arch):
 
     stream1.command(A.OPCODE.HALT, waits=(e_load,))
     return builder.build()
+
+
+def build_read_window_program(arch):
+    """Sliding-window stimulus: a single 6 KiB LOAD splits into 24 bursts of
+    8 beats (256 B) at the 32 B bus, requiring the 4-deep read outstanding
+    window to refill repeatedly (spec 5.6)."""
+    from mesh_ir.builder import ProgramBuilder
+
+    size = 6 * 1024
+    builder = ProgramBuilder(arch, "golden_read_window")
+    entrypoint_id = builder.entrypoint("main", "b1_read_window",
+                                       lifecycle_core=0, lifecycle_stream=0)
+    t_in = builder.tensor("input", A.TENSOR_ROLE.INPUT, FP16,
+                          A.STORAGE_CLASS.HBM, RO, (size,))
+    builder.relocation("input", A.RELOCATION_KIND.TENSOR_BASE,
+                       HBM_REGION, t_in, 0x100000)
+    a_buf = builder.allocation(0, 0x0000, size, arch.sram_base_alignment_bytes)
+    s_in = builder.shard(t_in, 0, a_buf, (size,), size)
+
+    stream = builder.stream(0, 0, flags=A.STREAM_FLAGS.IS_LIFECYCLE |
+                            A.STREAM_FLAGS.IS_LOCAL_CONTROL)
+    e_begin = builder.event()
+    e_load = builder.event()
+    e_end = builder.event()
+
+    stream.command(A.OPCODE.REQUEST_BEGIN, signal_event=e_begin)
+    cmd_load = stream.command(
+        A.OPCODE.DMA_LOAD, waits=(e_begin,),
+        operands=((t_in, s_in, a_buf, RO),))
+    d_load = builder.dma(
+        cmd_load, A.DMA_KIND.LOAD,
+        src=_hbm(t_in, 0, 0x100000), dst=_sram(t_in, s_in, 0, 0x0000),
+        rows=1, row_bytes=size, src_stride=size, dst_stride=size,
+        max_burst_beats=8,
+        completion_event=e_load)
+    builder.oracle(entrypoint_id, 1, d_load, cmd_load.command_id,
+                   A.DMA_KIND.LOAD, 0x100000, 1, size, size,
+                   max_burst_beats=8)
+    stream.command(A.OPCODE.REQUEST_END, waits=(e_load,), signal_event=e_end)
+    stream.command(A.OPCODE.HALT, waits=(e_end,))
+    return builder.build()
+
+
+LOAD_SATURATION_TENSOR_BYTES = 0x40000
+LOAD_SATURATION_HBM_BASE = 0x100000
+
+
+def load_saturation_layout(shape):
+    """Per-core LOAD plan (rows, row_bytes, src_stride) for a saturation
+    shape; both cores run the same plan.  Single source for the program
+    builder and the config-side seed ranges."""
+    if shape == "contiguous":
+        return [(1, 64 * 1024, 64 * 1024)]
+    if shape == "multi_tensor":
+        return [(1, 16 * 1024, 16 * 1024)] * 4
+    if shape == "strided":
+        return [(64, 512, 1024)]
+    raise ValueError(f"unknown load saturation shape {shape}")
+
+
+def _build_load_saturation_program(arch, shape):
+    """Saturation stimulus: both cores stream their full LOAD plan from the
+    shared HBM node with no inter-command waits, keeping the descriptor
+    queue and the read outstanding window full (perf sweep workload)."""
+    from mesh_ir.builder import ProgramBuilder
+
+    builder = ProgramBuilder(arch, f"golden_load_saturation_{shape}")
+    entrypoint_id = builder.entrypoint("main", "b1_load_saturation",
+                                       lifecycle_core=0, lifecycle_stream=0)
+    plans = {}
+    for core in (0, 1):
+        allocations = []
+        for index, (rows, row_bytes, stride) in enumerate(
+                load_saturation_layout(shape)):
+            name = f"load_c{core}_t{index}"
+            tensor = builder.tensor(
+                name, A.TENSOR_ROLE.INPUT, FP16, A.STORAGE_CLASS.HBM, RO,
+                (rows * row_bytes,))
+            offset = LOAD_SATURATION_HBM_BASE + (
+                core * 8 + index) * LOAD_SATURATION_TENSOR_BYTES
+            builder.relocation(name, A.RELOCATION_KIND.TENSOR_BASE,
+                               HBM_REGION, tensor, offset)
+            allocation = builder.allocation(
+                core, index * 0x20000, rows * row_bytes,
+                arch.sram_base_alignment_bytes)
+            shard = builder.shard(tensor, core, allocation, (rows * row_bytes,),
+                                  rows * row_bytes)
+            allocations.append((tensor, shard, allocation, offset,
+                                rows, row_bytes, stride))
+        plans[core] = allocations
+
+    e_begin = builder.event()
+    stream0 = builder.stream(
+        0, 0, flags=A.STREAM_FLAGS.IS_LIFECYCLE | A.STREAM_FLAGS.IS_LOCAL_CONTROL)
+    stream1 = builder.stream(1, 0, flags=A.STREAM_FLAGS.IS_LOCAL_CONTROL)
+    stream0.command(A.OPCODE.REQUEST_BEGIN, signal_event=e_begin)
+
+    for core, stream in ((0, stream0), (1, stream1)):
+        done_events = []
+        for index, (tensor, shard, allocation, offset,
+                    rows, row_bytes, stride) in enumerate(plans[core]):
+            completion = builder.event()
+            command = stream.command(
+                A.OPCODE.DMA_LOAD,
+                waits=(e_begin,) if core == 0 else (),
+                operands=((tensor, shard, allocation, RO),))
+            descriptor = builder.dma(
+                command, A.DMA_KIND.LOAD,
+                src=_hbm(tensor, shard, offset),
+                dst=_sram(tensor, shard, core, index * 0x20000),
+                rows=rows, row_bytes=row_bytes,
+                src_stride=stride, dst_stride=row_bytes,
+                completion_event=completion)
+            builder.oracle(entrypoint_id, 1, descriptor,
+                           command.command_id, A.DMA_KIND.LOAD, offset,
+                           rows, row_bytes, stride)
+            done_events.append(completion)
+        e_done = builder.event()
+        stream.command(A.OPCODE.REQUEST_END, waits=tuple(done_events),
+                       signal_event=e_done)
+        stream.command(A.OPCODE.HALT, waits=(e_done,))
+    return builder.build()
+
+
+def build_load_saturation_contiguous_program(arch):
+    return _build_load_saturation_program(arch, "contiguous")
+
+
+def build_load_saturation_multi_tensor_program(arch):
+    return _build_load_saturation_program(arch, "multi_tensor")
+
+
+def build_load_saturation_strided_program(arch):
+    return _build_load_saturation_program(arch, "strided")

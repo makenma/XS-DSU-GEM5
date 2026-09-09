@@ -52,7 +52,22 @@ class GarnetNetwork(RubyNetwork):
     buffers_per_vnet = VectorParam.UInt32(
         [], "Optional input depth in flits for every VC of each vnet"
     )
+    router_input_vc_depths = VectorParam.String(
+        [], "Router input overrides: router:inport:vnet:flits_per_vc"
+    )
+    ni_buffers_per_vnet = VectorParam.UInt32(
+        [], "Fixed NI receiver credit depths; empty uses buffers_per_vnet"
+    )
     routing_algorithm = Param.Int(0, "0: Weight-based Table, 1: XY, 2: Custom")
+    yx_vnets = VectorParam.Int(
+        [], "Vnets using Y-first dimension order with routing_algorithm=1"
+    )
+    dual_lane = Param.Bool(
+        False, "duplicate the router internal datapath into two lanes"
+    )
+    dual_lane_vnet_wire_bytes = VectorParam.UInt32(
+        [], "per-vnet AXI wire bytes; required to validate dual lane"
+    )
     enable_fault_model = Param.Bool(False, "enable network fault model")
     fault_model = Param.FaultModel(NULL, "network fault model")
     garnet_deadlock_threshold = Param.UInt32(
@@ -89,6 +104,9 @@ class GarnetRouter(BasicRouter):
     )
     width = Param.UInt32(
         Parent.ni_flit_size, "bit width supported by the router"
+    )
+    dual_lane = Param.Bool(
+        Parent.dual_lane, "duplicate this router's datapath into two lanes"
     )
 
 

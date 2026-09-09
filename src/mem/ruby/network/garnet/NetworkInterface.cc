@@ -86,13 +86,17 @@ NetworkInterface::addInPort(NetworkLink *in_link,
 void
 NetworkInterface::addOutPort(NetworkLink *out_link,
                              CreditLink *credit_link,
-                             SwitchID router_id, uint32_t consumerVcs)
+                             SwitchID router_id, uint32_t consumerVcs,
+                             const std::vector<uint32_t> &receiverDepths,
+                             bool strictReceiverCapacity)
 {
     OutputPort *newOutPort = new OutputPort(out_link, credit_link, router_id);
     outPorts.push_back(newOutPort);
 
     fatal_if(consumerVcs == 0,
              "%s: consumerVcs must be >= 1", name());
+    fatal_if(receiverDepths.size() != m_virtual_networks,
+             "%s: receiver capacity vnet count mismatch", name());
     // We are not allowing different physical links to have different vcs
     // If it is required that the Network Interface support different VCs
     // for every physical link connected to it. Then they need to change
@@ -107,11 +111,12 @@ NetworkInterface::addOutPort(NetworkLink *out_link,
         outVcState.reserve(m_num_vcs);
         m_ni_out_vcs_enqueue_time.resize(m_num_vcs);
         m_ni_vc_last_accounted_cycle.assign(m_num_vcs, curCycle());
+        m_vnet_outport.assign(m_virtual_networks, -1);
         // instantiating the NI flit buffers
         for (int i = 0; i < m_num_vcs; i++) {
             m_ni_out_vcs_enqueue_time[i] = Tick(INFINITE_);
             const unsigned vnet = i / consumerVcs;
-            const uint32_t depth = m_net_ptr->getBuffersPerVnet(vnet);
+            const uint32_t depth = receiverDepths[vnet];
             outVcState.emplace_back(i, vnet, depth);
         }
 
@@ -125,6 +130,21 @@ NetworkInterface::addOutPort(NetworkLink *out_link,
         fatal_if(consumerVcs != m_vc_per_vnet,
         "%s: Connected Physical links have different vc requests: %d and %d\n",
         name(), consumerVcs, m_vc_per_vnet);
+    }
+
+    for (int vnet = 0; vnet < m_virtual_networks; ++vnet) {
+        if (!newOutPort->isVnetSupported(vnet))
+            continue;
+        fatal_if(strictReceiverCapacity && m_vnet_outport[vnet] != -1,
+                 "%s: receiver capacity requires one output per vnet %d",
+                 name(), vnet);
+        if (m_vnet_outport[vnet] != -1)
+            continue;
+        m_vnet_outport[vnet] = outPorts.size() - 1;
+        for (uint32_t offset = 0; offset < consumerVcs; ++offset) {
+            const int vc = vnet * consumerVcs + offset;
+            outVcState[vc] = OutVcState(vc, vnet, receiverDepths[vnet]);
+        }
     }
 
     DPRINTF(RubyNetwork, "OutputPort:%s Vnet: %s\n",

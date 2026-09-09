@@ -38,6 +38,7 @@
 #include "mem/ruby/common/Consumer.hh"
 #include "mem/ruby/network/garnet/CommonTypes.hh"
 #include "mem/ruby/network/garnet/CreditLink.hh"
+#include "mem/ruby/network/garnet/DualLane.hh"
 #include "mem/ruby/network/garnet/NetworkLink.hh"
 #include "mem/ruby/network/garnet/Router.hh"
 #include "mem/ruby/network/garnet/VirtualChannel.hh"
@@ -55,13 +56,22 @@ namespace garnet
 class InputUnit : public Consumer
 {
   public:
-    InputUnit(int id, PortDirection direction, Router *router);
+    InputUnit(int id, PortDirection direction, Router *router,
+              LaneId lane, int ingressPort,
+              const std::vector<uint32_t> &depths);
     ~InputUnit() = default;
 
     void wakeup();
     void print(std::ostream& out) const {};
 
     inline PortDirection get_direction() { return m_direction; }
+    inline PortDirection get_logical_direction()
+    {
+        return m_logical_direction;
+    }
+    inline LaneId get_lane() { return m_lane; }
+    inline int get_id() const { return m_id; }
+    inline int getVcsPerVnet() const { return m_vc_per_vnet; }
 
     inline void
     set_vc_idle(int vc, Tick curTime)
@@ -129,12 +139,23 @@ class InputUnit : public Consumer
 
     uint32_t get_vc_capacity(int vc) const;
     uint32_t get_vc_occupancy(int vc) const;
+    /** Real flit count summed over all VCs of one vnet in this input
+     *  FIFO group (spec 3.1 count definition). */
+    uint32_t vnetOccupancy(uint32_t vnet) const;
+    /** Capacity + VC-state acceptance condition for one more flit. */
+    bool canAccept(int vc, bool head) const;
+    /** The unique write entry into this lane's input FIFOs.  Consumed
+     *  flits from the physical link (single lane) and from the
+     *  DualLaneSelector (shared P ingress) both go through here. */
+    void enqueueFlit(flit *t_flit);
     uint64_t bufferedFlits() const;
     uint64_t nonIdleVcs() const;
     uint64_t pendingCredits() const { return creditQueue.getSize(); }
     void collateStats();
     void resetInputVcHighWater();
     void appendInputVcHighWater(GarnetInputVcHighWater &entries) const;
+    void appendExperimentSnapshot(GarnetExperimentSnapshot &snapshot) const;
+    void recordStall(int vc, GarnetInputStall reason);
 
     flitBuffer* getCreditQueue() { return &creditQueue; }
 
@@ -144,6 +165,8 @@ class InputUnit : public Consumer
         m_in_link = link;
     }
 
+    inline NetworkLink* get_in_link() { return m_in_link; }
+
     inline int get_inlink_id() { return m_in_link->get_id(); }
 
     inline void
@@ -151,6 +174,21 @@ class InputUnit : public Consumer
     {
         m_credit_link = credit_link;
     }
+
+    /** A selector-managed input unit is owned by its DualLaneSelector:
+     *  lane 0 keeps the physical links but never self-consumes; a lane-1
+     *  twin additionally has no links — its flits arrive through
+     *  enqueueFlit() and its credits return over the shared P credit
+     *  link into the lane-0 credit queue. */
+    void setSelectorManaged() { m_selector_managed = true; }
+    void shareCreditSink(flitBuffer *sink, CreditLink *credit_link)
+    {
+        m_credit_sink = sink;
+        m_credit_link = credit_link;
+        setSelectorManaged();
+    }
+
+    inline bool selectorManaged() const { return m_selector_managed; }
 
     double get_buf_read_activity(unsigned int vnet) const
     { return m_num_buffer_reads[vnet]; }
@@ -166,10 +204,16 @@ class InputUnit : public Consumer
     Router *m_router;
     int m_id;
     PortDirection m_direction;
+    PortDirection m_logical_direction;
+    LaneId m_lane;
     int m_vc_per_vnet;
     NetworkLink *m_in_link;
     CreditLink *m_credit_link;
     flitBuffer creditQueue;
+    /** Insert target for returned credits; defaults to creditQueue and is
+     *  redirected to the lane-0 queue for selector-managed twins. */
+    flitBuffer *m_credit_sink;
+    bool m_selector_managed = false;
 
     // Input Virtual channels
     std::vector<VirtualChannel> virtualChannels;
@@ -179,6 +223,8 @@ class InputUnit : public Consumer
     std::vector<double> m_num_buffer_reads;
     std::vector<Cycles> m_vc_last_accounted_cycle;
     std::vector<uint64_t> m_vc_high_water;
+    std::vector<GarnetInputVcStatsEntry> m_experiment_vcs;
+    std::vector<Cycles> m_experiment_last_cycle;
 
     void accountVc(int vc);
 };

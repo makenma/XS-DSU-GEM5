@@ -28,7 +28,8 @@ using AxiWireBytes = std::array<int, AxiWireSlotCount>;
 
 std::string normalizeAxiWireBytes(const std::vector<uint32_t> &header_bytes,
                                   uint32_t data_bus_bytes,
-                                  AxiWireBytes &output);
+                                  AxiWireBytes &output,
+                                  bool data_header_sideband = false);
 
 inline int
 wireBytesFor(const AxiWireBytes &wire_bytes, AxiWireSlot slot)

@@ -48,6 +48,8 @@ Source('agent_ring_state.cc')
 Source('agent_submission_ledger.cc')
 Source('mesh_dummy_core.cc')
 Source('mesh_dispatcher.cc')
+SimObject('MeshExperimentObserver.py', sim_objects=['MeshExperimentObserver'])
+Source('mesh_experiment_observer.cc')
 Source('agent_crc32c.cc')
 DebugFlag('AiMesh')
 

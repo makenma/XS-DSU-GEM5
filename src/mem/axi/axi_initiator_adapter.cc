@@ -106,9 +106,16 @@ bool
 AxiInitiatorState::tryAcceptAw(const AxiAddressRequest &aw,
                                Tick accepted_tick)
 {
-    if (_awReady.full() ||
-        _writeOrdinalByUid.size() >= _config.maxOutstandingWrites ||
-        _writeOrdinalByUid.size() >= _config.bRobTransactions) {
+    if (_awReady.full()) {
+        ++_progress.awRejectionAttempts.fifoFull;
+        return false;
+    }
+    if (_writeOrdinalByUid.size() >= _config.maxOutstandingWrites) {
+        ++_progress.awRejectionAttempts.outstandingFull;
+        return false;
+    }
+    if (_writeOrdinalByUid.size() >= _config.bRobTransactions) {
+        ++_progress.awRejectionAttempts.responseReservationFull;
         return false;
     }
     panic_if(aw.axiId >= (uint32_t{1} << _config.idWidth),
@@ -457,16 +464,27 @@ bool
 AxiInitiatorState::tryAcceptAr(const AxiAddressRequest &ar,
                                Tick accepted_tick)
 {
-    if (_arReady.full() || _readsByUid.size() >= _config.maxOutstandingReads ||
-        _config.rRobBeats < ar.beatCount)
+    if (_arReady.full()) {
+        ++_progress.arRejectionAttempts.fifoFull;
         return false;
+    }
+    if (_readsByUid.size() >= _config.maxOutstandingReads) {
+        ++_progress.arRejectionAttempts.outstandingFull;
+        return false;
+    }
+    if (_config.rRobBeats < ar.beatCount) {
+        ++_progress.arRejectionAttempts.responseReservationFull;
+        return false;
+    }
     size_t reserved = 0;
     for (const auto &[uid, state] : _readsByUid) {
         (void)uid;
         reserved += state.ar.request.beatCount;
     }
-    if (reserved + ar.beatCount > _config.rRobBeats)
+    if (reserved + ar.beatCount > _config.rRobBeats) {
+        ++_progress.arRejectionAttempts.responseReservationFull;
         return false;
+    }
     panic_if(ar.axiId >= (uint32_t{1} << _config.idWidth),
              "AXI_PROTOCOL: ARID exceeds configured width");
     const auto validation = validateAxiBurst(ar, _config.dataBusBytes);
@@ -486,6 +504,9 @@ AxiInitiatorState::tryAcceptAr(const AxiAddressRequest &ar,
     const uint64_t uid = packet.meta.txnUid;
     panic_if(!_readsByUid.emplace(uid, std::move(state)).second,
              "AXI_PROTOCOL: duplicate read txnUid");
+    if (_readsByUid.size() > _peakOutstandingReads)
+        _peakOutstandingReads = _readsByUid.size();
+    _arAcceptTicks.push_back(accepted_tick);
     _lastAcceptedAr = packet;
     panic_if(!_arReady.push(uid), "AXI source AR FIFO overflow");
     return true;
@@ -663,7 +684,7 @@ AxiInitiatorState::tryConsumeB(AxiBBeat &beat)
 }
 
 bool
-AxiInitiatorState::tryConsumeR(AxiRBeat &beat)
+AxiInitiatorState::tryConsumeR(AxiRBeat &beat, Tick tick)
 {
     if (_rReady.empty())
         return false;
@@ -680,6 +701,8 @@ AxiInitiatorState::tryConsumeR(AxiRBeat &beat)
         panic_if(state.consumedBeats != state.ar.request.beatCount,
                  "AXI_PROTOCOL: RLAST consumed before complete burst");
         releaseReadQuota(state);
+        if (_progress.rTransactionsRetired == 0)
+            _firstCreditReleaseTick = tick;
         ++_nextRRetireSeq[state.ar.meta.axiId];
         ++_progress.rTransactionsRetired;
         _readsByUid.erase(ready.txnUid);
@@ -694,6 +717,37 @@ AxiInitiatorState::occupancy() const
     return {_awReady.size(), _wReady.size(), _bReady.size(),
             _arReady.size(), _rReady.size(), _unboundBursts,
             _unboundBeats, _writeOrdinalByUid.size(), _readsByUid.size()};
+}
+
+AxiInitiatorResourceOccupancy
+AxiInitiatorState::resourceOccupancy() const
+{
+    AxiInitiatorResourceOccupancy result;
+    result.rRobBufferedBeats = _rReady.size();
+    for (const auto &[uid, state] : _readsByUid) {
+        if (!state.quotaAcquired)
+            ++result.readWaitingQuota;
+        else if (!state.arInjected)
+            ++result.readGrantedWaitingForward;
+        else
+            ++result.readForwardedToMessageBuffer;
+        result.rRobReservedBeats += state.ar.request.beatCount;
+        for (const auto &beat : state.received)
+            result.rRobBufferedBeats += beat.has_value();
+    }
+    result.bRobReservedTransactions = _writeOrdinalByUid.size();
+    for (const auto &[ordinal, state] : _writesByOrdinal) {
+        if (!state.aw)
+            continue;
+        if (!state.quotaAcquired)
+            ++result.writeWaitingQuota;
+        else if (!state.awInjected)
+            ++result.writeGrantedWaitingForward;
+        else
+            ++result.writeForwardedToMessageBuffer;
+        result.bRobBufferedTransactions += state.response.has_value();
+    }
+    return result;
 }
 
 std::string

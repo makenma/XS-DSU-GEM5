@@ -1,5 +1,7 @@
 #include "dev/ai_mesh/axi_garnet_bridge.hh"
 
+#include <algorithm>
+
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "debug/AiMesh.hh"
@@ -17,6 +19,7 @@ AxiGarnetBridge::AxiGarnetBridge(const Params &p)
       data_bus_bytes(p.data_bus_bytes),
       aw_queue_depth(p.aw_queue_depth),
       ar_queue_depth(p.ar_queue_depth),
+      w_beats_per_cycle(p.w_beats_per_cycle),
       max_axi_ids(p.axi_id_count),
       axi_id_base(p.axi_id_base),
       tick_event(this)
@@ -107,7 +110,13 @@ void AxiGarnetBridge::driveWrites()
         if (!adapter->tryAcceptAw(write.aw))
             return;
         write.aw_accepted = true;
-        ordinal_handshake[write.ordinal].addr_accept = curTick();
+        auto &timing = ordinal_handshake[write.ordinal];
+        timing.read = false;
+        timing.axi_id = write.aw.axiId;
+        timing.address = write.aw.address;
+        timing.beats = write.aw.beatCount;
+        timing.beat_bytes = 1u << write.aw.size;
+        timing.addr_accept = curTick();
         ctr.awAccepted++;
         write_ordinal_by_id[write.aw.axiId].push_back(write.ordinal);
         live_writes.emplace(write.ordinal, PendingWrite{});
@@ -117,7 +126,14 @@ void AxiGarnetBridge::driveWrites()
                 write.aw.axiId);
     }
 
+    const uint64_t cycle = curTick() / clockPeriod();
+    if (cycle != w_accept_cycle) {
+        w_accept_cycle = cycle;
+        w_accepted_this_cycle = 0;
+    }
     while (write.next_beat < write.beats.size()) {
+        if (w_beats_per_cycle && w_accepted_this_cycle >= w_beats_per_cycle)
+            return;
         if (!adapter->tryAcceptW(write.beats[write.next_beat]))
             return;
         auto &ticks = ordinal_handshake[write.ordinal];
@@ -125,6 +141,9 @@ void AxiGarnetBridge::driveWrites()
             ticks.first_w = curTick();
         ctr.wAccepted++;
         write.next_beat++;
+        ++w_accepted_this_cycle;
+        ctr.peakWAcceptedPerCycle = std::max(ctr.peakWAcceptedPerCycle,
+                                             w_accepted_this_cycle);
     }
 
     live_writes.at(write.ordinal) = std::move(write);
@@ -139,7 +158,13 @@ void AxiGarnetBridge::driveReads()
     if (!adapter->tryAcceptAr(read.ar))
         return;
     pending_ar.pop_front();
-    ordinal_handshake[read.ordinal].addr_accept = curTick();
+    auto &timing = ordinal_handshake[read.ordinal];
+    timing.read = true;
+    timing.axi_id = read.ar.axiId;
+    timing.address = read.ar.address;
+    timing.beats = read.ar.beatCount;
+    timing.beat_bytes = 1u << read.ar.size;
+    timing.addr_accept = curTick();
     ctr.arAccepted++;
     read_beats_of_ordinal[read.ordinal] = read.ar.beatCount;
     live_reads.emplace(read.ordinal, read);
@@ -158,6 +183,45 @@ AxiGarnetBridge::ordinalTicks(uint64_t ordinal) const
 {
     auto it = ordinal_handshake.find(ordinal);
     return it == ordinal_handshake.end() ? nullptr : &it->second;
+}
+
+uint32_t
+AxiGarnetBridge::peakOutstandingReads() const
+{
+    return adapter ? adapter->peakOutstandingReads() : 0;
+}
+
+std::vector<Tick>
+AxiGarnetBridge::arAcceptTicks() const
+{
+    return adapter ? adapter->arAcceptTicks() : std::vector<Tick>{};
+}
+
+Tick
+AxiGarnetBridge::firstCreditReleaseTick() const
+{
+    return adapter ? adapter->firstCreditReleaseTick() : 0;
+}
+
+axi::AxiEndpointQueueHighWater
+AxiGarnetBridge::queueHighWater() const
+{
+    return adapter ? adapter->functionalQueueHighWater()
+                   : axi::AxiEndpointQueueHighWater{};
+}
+
+axi::AxiInitiatorAdapterProgress
+AxiGarnetBridge::initiatorProgress() const
+{
+    fatal_if(!adapter, "%s: initiator progress requires an adapter", name());
+    return adapter->functionalProgress();
+}
+
+axi::AxiInitiatorResourceOccupancy
+AxiGarnetBridge::initiatorResourceOccupancy() const
+{
+    fatal_if(!adapter, "%s: resource occupancy requires an adapter", name());
+    return adapter->resourceOccupancy();
 }
 
 void AxiGarnetBridge::consumeB()

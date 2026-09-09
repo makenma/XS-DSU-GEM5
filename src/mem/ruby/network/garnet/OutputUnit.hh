@@ -58,7 +58,8 @@ class OutputUnit : public Consumer
 {
   public:
     OutputUnit(int id, PortDirection direction, Router *router,
-               uint32_t consumerVcs);
+               uint32_t consumerVcs,
+               const std::vector<uint32_t> &receiverDepths);
     ~OutputUnit() = default;
     void set_out_link(NetworkLink *link);
     void set_credit_link(CreditLink *credit_link);

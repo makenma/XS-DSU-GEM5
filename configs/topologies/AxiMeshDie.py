@@ -19,15 +19,17 @@ class AxiMeshDie(SimpleTopology):
         if num_routers % num_rows != 0:
             raise ValueError("AXI_MESH mesh_rows must divide router count")
         num_columns = num_routers // num_rows
+        dual_lane = getattr(options, "garnet_dual_lane", False)
 
         routers = [
-            Router(router_id=i, latency=options.router_latency)
+            Router(router_id=i, latency=options.router_latency,
+                   dual_lane=dual_lane)
             for i in range(num_routers)
         ]
         network.routers = routers
 
         router_ids = [int(node.router_id) for node in self.nodes]
-        if len(router_ids) != len(set(router_ids)):
+        if not options.axi_shared_router_endpoints and len(router_ids) != len(set(router_ids)):
             raise ValueError("AXI_MESH endpoint router IDs must be unique")
         if any(rid < 0 or rid >= num_routers for rid in router_ids):
             raise ValueError("AXI_MESH endpoint router ID is out of range")
@@ -46,68 +48,77 @@ class AxiMeshDie(SimpleTopology):
             link_id += 1
         network.ext_links = ext_links
 
+        # Dual lane: plain direction ports form lane 0, "_ext" ports lane
+        # 1.  Each adjacent pair gets a second parallel link pair with the
+        # same weight; boundary directions stay linkless.  P (ext) links
+        # are never doubled.
+        def lane_int_links(**kwargs):
+            links = [IntLink(link_id=link_id, **kwargs)]
+            if dual_lane:
+                links.append(
+                    IntLink(
+                        link_id=link_id + 1,
+                        src_node=kwargs["src_node"],
+                        dst_node=kwargs["dst_node"],
+                        src_outport=kwargs["src_outport"] + "_ext",
+                        dst_inport=kwargs["dst_inport"] + "_ext",
+                        latency=kwargs["latency"],
+                        weight=kwargs["weight"],
+                        lane_parallel=True,
+                    )
+                )
+            return links
+
         int_links = []
 
         # Horizontal links have weight 1; vertical links have weight 2.  This
         # is the stock Mesh_XY weighting and keeps table routing equivalent to
         # deterministic XY when requested.
+        def append_lane_links(links):
+            int_links.extend(links)
+            return len(links)
+
         for row in range(num_rows):
             for col in range(num_columns - 1):
                 left = col + row * num_columns
                 right = left + 1
-                int_links.append(
-                    IntLink(
-                        link_id=link_id,
-                        src_node=routers[left],
-                        dst_node=routers[right],
-                        src_outport="East",
-                        dst_inport="West",
-                        latency=options.link_latency,
-                        weight=1,
-                    )
-                )
-                link_id += 1
-                int_links.append(
-                    IntLink(
-                        link_id=link_id,
-                        src_node=routers[right],
-                        dst_node=routers[left],
-                        src_outport="West",
-                        dst_inport="East",
-                        latency=options.link_latency,
-                        weight=1,
-                    )
-                )
-                link_id += 1
+                link_id += append_lane_links(lane_int_links(
+                    src_node=routers[left],
+                    dst_node=routers[right],
+                    src_outport="East",
+                    dst_inport="West",
+                    latency=options.link_latency,
+                    weight=1,
+                ))
+                link_id += append_lane_links(lane_int_links(
+                    src_node=routers[right],
+                    dst_node=routers[left],
+                    src_outport="West",
+                    dst_inport="East",
+                    latency=options.link_latency,
+                    weight=1,
+                ))
 
         for col in range(num_columns):
             for row in range(num_rows - 1):
                 north = col + row * num_columns
                 south = north + num_columns
-                int_links.append(
-                    IntLink(
-                        link_id=link_id,
-                        src_node=routers[north],
-                        dst_node=routers[south],
-                        src_outport="North",
-                        dst_inport="South",
-                        latency=options.link_latency,
-                        weight=2,
-                    )
-                )
-                link_id += 1
-                int_links.append(
-                    IntLink(
-                        link_id=link_id,
-                        src_node=routers[south],
-                        dst_node=routers[north],
-                        src_outport="South",
-                        dst_inport="North",
-                        latency=options.link_latency,
-                        weight=2,
-                    )
-                )
-                link_id += 1
+                link_id += append_lane_links(lane_int_links(
+                    src_node=routers[north],
+                    dst_node=routers[south],
+                    src_outport="North",
+                    dst_inport="South",
+                    latency=options.link_latency,
+                    weight=2,
+                ))
+                link_id += append_lane_links(lane_int_links(
+                    src_node=routers[south],
+                    dst_node=routers[north],
+                    src_outport="South",
+                    dst_inport="North",
+                    latency=options.link_latency,
+                    weight=2,
+                ))
 
         network.int_links = int_links
 

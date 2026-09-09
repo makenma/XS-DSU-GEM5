@@ -146,17 +146,19 @@ RoutingUnit::lookupRoutingTable(int vnet, NetDest msg_destination)
 
 
 void
-RoutingUnit::addInDirection(PortDirection inport_dirn, int inport_idx)
+RoutingUnit::addInDirection(const PortIdentity &identity, int inport_idx)
 {
-    m_inports_dirn2idx[inport_dirn] = inport_idx;
-    m_inports_idx2dirn[inport_idx]  = inport_dirn;
+    m_inports_dirn2idx[{identity.lane, identity.logical}] = inport_idx;
+    m_inports_idx2dirn[inport_idx] = lanePortName(identity.logical,
+                                                  identity.lane);
 }
 
 void
-RoutingUnit::addOutDirection(PortDirection outport_dirn, int outport_idx)
+RoutingUnit::addOutDirection(const PortIdentity &identity, int outport_idx)
 {
-    m_outports_dirn2idx[outport_dirn] = outport_idx;
-    m_outports_idx2dirn[outport_idx]  = outport_dirn;
+    m_outports_dirn2idx[{identity.lane, identity.logical}] = outport_idx;
+    m_outports_idx2dirn[outport_idx] = lanePortName(identity.logical,
+                                                    identity.lane);
 }
 
 // outportCompute() is called by the InputUnit
@@ -167,7 +169,7 @@ RoutingUnit::addOutDirection(PortDirection outport_dirn, int outport_idx)
 
 int
 RoutingUnit::outportCompute(RouteInfo route, int inport,
-                            PortDirection inport_dirn)
+                            PortDirection inport_dirn, LaneId lane)
 {
     int outport = -1;
 
@@ -189,10 +191,10 @@ RoutingUnit::outportCompute(RouteInfo route, int inport,
         case TABLE_:  outport =
             lookupRoutingTable(route.vnet, route.net_dest); break;
         case XY_:     outport =
-            outportComputeXY(route, inport, inport_dirn); break;
+            outportComputeDimensionOrder(route, inport_dirn, lane); break;
         // any custom algorithm
         case CUSTOM_: outport =
-            outportComputeCustom(route, inport, inport_dirn); break;
+            outportComputeCustom(route, inport, inport_dirn, lane); break;
         default: outport =
             lookupRoutingTable(route.vnet, route.net_dest); break;
     }
@@ -201,63 +203,27 @@ RoutingUnit::outportCompute(RouteInfo route, int inport,
     return outport;
 }
 
-// XY routing implemented using port directions
-// Only for reference purpose in a Mesh
-// By default Garnet uses the routing table
 int
-RoutingUnit::outportComputeXY(RouteInfo route,
-                              int inport,
-                              PortDirection inport_dirn)
+RoutingUnit::outportComputeDimensionOrder(RouteInfo route,
+                                         PortDirection inport_dirn,
+                                         LaneId lane)
 {
-    PortDirection outport_dirn = "Unknown";
-
-    [[maybe_unused]] int num_rows = m_router->get_net_ptr()->getNumRows();
-    int num_cols = m_router->get_net_ptr()->getNumCols();
-    assert(num_rows > 0 && num_cols > 0);
-
-    int my_id = m_router->get_id();
-    int my_x = my_id % num_cols;
-    int my_y = my_id / num_cols;
-
-    int dest_id = route.dest_router;
-    int dest_x = dest_id % num_cols;
-    int dest_y = dest_id / num_cols;
-
-    int x_hops = abs(dest_x - my_x);
-    int y_hops = abs(dest_y - my_y);
-
-    bool x_dirn = (dest_x >= my_x);
-    bool y_dirn = (dest_y >= my_y);
-
-    // already checked that in outportCompute() function
-    assert(!(x_hops == 0 && y_hops == 0));
-
-    if (x_hops > 0) {
-        if (x_dirn) {
-            assert(inport_dirn == "Local" || inport_dirn == "West");
-            outport_dirn = "East";
-        } else {
-            assert(inport_dirn == "Local" || inport_dirn == "East");
-            outport_dirn = "West";
-        }
-    } else if (y_hops > 0) {
-        if (y_dirn) {
-            // "Local" or "South" or "West" or "East"
-            assert(inport_dirn != "North");
-            outport_dirn = "North";
-        } else {
-            // "Local" or "North" or "West" or "East"
-            assert(inport_dirn != "South");
-            outport_dirn = "South";
-        }
-    } else {
-        // x_hops == 0 and y_hops == 0
-        // this is not possible
-        // already checked that in outportCompute() function
-        panic("x_hops == y_hops == 0");
-    }
-
-    return m_outports_dirn2idx[outport_dirn];
+    const auto *network = m_router->get_net_ptr();
+    const int columns = network->getNumCols();
+    assert(network->getNumRows() > 0 && columns > 0);
+    const int dx = route.dest_router % columns - m_router->get_id() % columns;
+    const int dy = route.dest_router / columns - m_router->get_id() / columns;
+    assert(dx != 0 || dy != 0);
+    const bool y_first = network->useYxRouting(route.vnet);
+    const bool route_y = y_first ? dy != 0 : dx == 0;
+    const PortDirection output = route_y ? (dy > 0 ? "North" : "South") :
+                                          (dx > 0 ? "East" : "West");
+    [[maybe_unused]] const PortDirection upstream =
+        route_y ? (dy > 0 ? "South" : "North") : (dx > 0 ? "West" : "East");
+    assert(inport_dirn != output);
+    assert(route_y != y_first || inport_dirn == "Local" ||
+           inport_dirn == upstream);
+    return m_outports_dirn2idx.at({lane, output});
 }
 
 // Template for implementing custom routing algorithm
@@ -265,7 +231,8 @@ RoutingUnit::outportComputeXY(RouteInfo route,
 int
 RoutingUnit::outportComputeCustom(RouteInfo route,
                                  int inport,
-                                 PortDirection inport_dirn)
+                                 PortDirection inport_dirn,
+                                 LaneId lane)
 {
     panic("%s placeholder executed", __FUNCTION__);
 }

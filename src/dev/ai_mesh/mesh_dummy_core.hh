@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <utility>
 #include <vector>
@@ -93,10 +94,15 @@ class MeshDummyCore : public ClockedObject
     // Reserve the LOCAL endpoint of a DMA descriptor and return its stall.
     bool dmaSramAdmissible(const DecodedDmaDescriptor &descriptor);
     uint64_t reserveDmaSram(const DecodedDmaDescriptor &descriptor, bool is_write);
-    TensorSram::ReserveResult reserveSramService(uint64_t offset, uint64_t size,
-                                                 bool write)
+    std::optional<TensorSram::ReserveResult> tryReserveSramService(
+        uint64_t offset, uint64_t size, bool write)
     {
-        return sram.reserve(curTick(), offset, size, write);
+        auto result = sram.tryReserve(curTick(), offset, size, write);
+        if (result) {
+            sramServiceCycles += result->service_ticks / clockPeriod();
+            sramBankConflicts += result->conflict_ticks / clockPeriod();
+        }
+        return result;
     }
     void setSramBacking(SramBacking *backing) { sram.setBacking(backing); }
 
@@ -111,6 +117,10 @@ class MeshDummyCore : public ClockedObject
     {
         return command_done_ticks;
     }
+    const std::map<uint32_t, Tick> &commandIssueTicks() const
+    {
+        return command_issue_ticks;
+    }
 
     // Counters exposed to stats.txt and the result JSON oracle.
     statistics::Scalar commandsIssued;
@@ -124,6 +134,11 @@ class MeshDummyCore : public ClockedObject
     statistics::Scalar gemmCycles;
     statistics::Scalar reduceCommands;
     statistics::Scalar reduceCycles;
+    uint64_t sramReservationRejectionAttempts(bool is_write) const
+    {
+        return sram.reservationRejectionAttempts(is_write);
+    }
+
     statistics::Scalar sramBankConflicts;
     statistics::Scalar sramServiceCycles;
     statistics::Scalar poisonReadFaults;

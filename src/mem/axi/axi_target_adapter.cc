@@ -40,8 +40,8 @@ AxiSimpleMemory::readByte(uint64_t address) const
 {
     panic_if(!contains(address),
              "AXI simple memory read outside configured range");
-    const auto found = _bytes.find(address);
-    return found == _bytes.end() ? 0 : found->second;
+    const auto found = _pages.find(address / PageBytes);
+    return found == _pages.end() ? 0 : found->second[address % PageBytes];
 }
 
 void
@@ -49,17 +49,21 @@ AxiSimpleMemory::writeByte(uint64_t address, uint8_t value)
 {
     panic_if(!contains(address),
              "AXI simple memory write outside configured range");
-    _bytes[address] = value;
+    _pages[address / PageBytes][address % PageBytes] = value;
 }
 
 void
 AxiSimpleMemory::fill(uint8_t value)
 {
     for (const auto &range : _ranges) {
-        for (uint64_t address = range.start; address < range.end; ++address) {
-            _bytes[address] = value;
-            panic_if(address == std::numeric_limits<uint64_t>::max(),
-                     "AXI memory range iteration overflow");
+        uint64_t address = range.start;
+        while (address < range.end) {
+            auto &page = _pages[address / PageBytes];
+            const uint64_t offset = address % PageBytes;
+            const uint64_t size = std::min(range.end - address,
+                                             PageBytes - offset);
+            std::fill_n(page.begin() + offset, size, value);
+            address += size;
         }
     }
 }
@@ -111,7 +115,7 @@ AxiSimpleMemory::commitWrite(const AxiAddressRequest &request,
             (beat_address / data_bus_bytes) * data_bus_bytes;
         for (uint32_t lane = 0; lane < data_bus_bytes; ++lane) {
             if ((beat.byteStrobe >> lane) & 1)
-                _bytes[bus_base + lane] = beat.functionalData[lane];
+                writeByte(bus_base + lane, beat.functionalData[lane]);
         }
     }
 }
@@ -120,6 +124,9 @@ AxiTargetState::AxiTargetState(const AxiTargetConfig &config)
     : _config(config), _memory(config.memoryRanges),
       _rReady(config.rReadyDepth)
 {
+    if (_config.syntheticHbmEnabled)
+        _syntheticBackend.emplace(_config.syntheticHbmBytesPerCycle,
+                                   _config.syntheticHbmQueueDepth);
     if (_config.dataBusBytes == 0 || _config.dataBusBytes > 64 ||
         _config.capacity.writeContexts == 0 ||
         _config.capacity.writeAssemblyBeats == 0 ||
@@ -453,6 +460,60 @@ AxiTargetState::serviceResponse(const AxiCommonMeta &meta,
 void
 AxiTargetState::startServices(uint64_t now)
 {
+    if (_syntheticBackend) {
+        while (!_syntheticBackend->full()) {
+            WriteContext *write = nullptr;
+            ReadContext *read = nullptr;
+            const AxiCommonMeta *selected = nullptr;
+            if (_activeWriteServices < _config.writeServiceDepth) {
+                for (auto &[uid, context] : _writes) {
+                    if (context.serviceStarted || !context.aw ||
+                        context.receivedBeats != context.beatCount)
+                        continue;
+                    if (!selected ||
+                        std::tie(context.meta.acceptedTick, uid) <
+                        std::tie(selected->acceptedTick, selected->txnUid)) {
+                        selected = &context.meta;
+                        write = &context;
+                    }
+                }
+            }
+            if (_activeReadServices < _config.readServiceDepth) {
+                for (auto &[uid, context] : _reads) {
+                    if (context.serviceStarted)
+                        continue;
+                    if (!selected ||
+                        std::tie(context.ar.meta.acceptedTick, uid) <
+                        std::tie(selected->acceptedTick, selected->txnUid)) {
+                        selected = &context.ar.meta;
+                        read = &context;
+                        write = nullptr;
+                    }
+                }
+            }
+            if (!selected)
+                break;
+            const auto &request = read ? read->ar.request : write->aw->request;
+            const uint64_t bytes = uint64_t(request.beatCount) << request.size;
+            const bool accepted = _syntheticBackend->trySubmit(
+                selected->txnUid, read ? SyntheticHbmDirection::Read
+                                       : SyntheticHbmDirection::Write,
+                bytes, now, serviceLatency(*selected, read != nullptr));
+            panic_if(!accepted, "synthetic HBM admission changed without a grant");
+            if (read) {
+                read->serviceStarted = true;
+                read->serviceResponse = serviceResponse(*selected,
+                                                         read->ar.decodeResp);
+                ++_activeReadServices;
+            } else {
+                write->serviceStarted = true;
+                write->serviceResponse = serviceResponse(*selected,
+                                                          write->aw->decodeResp);
+                ++_activeWriteServices;
+            }
+        }
+        return;
+    }
     while (_activeWriteServices < _config.writeServiceDepth) {
         WriteContext *selected = nullptr;
         for (auto &[uid, context] : _writes) {
@@ -507,10 +568,16 @@ AxiTargetState::startServices(uint64_t now)
 void
 AxiTargetState::updateServiceReady(uint64_t now)
 {
+    if (_syntheticBackend)
+        _syntheticBackend->advance(now);
     for (auto &[uid, context] : _writes) {
-        (void)uid;
         if (context.serviceStarted && !context.serviceReady &&
-            now >= context.serviceReadyAt) {
+            (_syntheticBackend ? _syntheticBackend->ready(uid)
+                               : now >= context.serviceReadyAt)) {
+            if (_syntheticBackend) {
+                context.serviceReadyAt = _syntheticBackend->completionCycle(uid);
+                _syntheticBackend->retire(uid);
+            }
             panic_if(_activeWriteServices == 0,
                      "AXI target write service accounting underflow");
             context.serviceReady = true;
@@ -519,9 +586,13 @@ AxiTargetState::updateServiceReady(uint64_t now)
         }
     }
     for (auto &[uid, context] : _reads) {
-        (void)uid;
         if (context.serviceStarted && !context.serviceReady &&
-            now >= context.serviceReadyAt) {
+            (_syntheticBackend ? _syntheticBackend->ready(uid)
+                               : now >= context.serviceReadyAt)) {
+            if (_syntheticBackend) {
+                context.serviceReadyAt = _syntheticBackend->completionCycle(uid);
+                _syntheticBackend->retire(uid);
+            }
             panic_if(_activeReadServices == 0,
                      "AXI target read service accounting underflow");
             context.serviceReady = true;
@@ -614,6 +685,10 @@ AxiTargetState::commitWrites(uint64_t now)
             post_commit_fault) {
             _memory.commitWrite(
                 selected->aw->request, beats, _config.dataBusBytes);
+            for (const auto &beat : beats)
+                _progress.writeCommittedBytes += __builtin_popcountll(
+                    beat.byteStrobe);
+            _progress.lastWriteCommitCycle = now;
         }
         uint64_t b_ready_at = now;
         const auto b_delay = _config.bEjectionDelay.find(selected->meta.txnUid);
@@ -706,6 +781,10 @@ AxiTargetState::commitReads(uint64_t now)
             selected->frozenBeats.push_back(std::move(packet));
         }
         selected->responseEligible = true;
+        if (selected->serviceResponse == AxiResp::Okay)
+            _progress.readCommittedBytes +=
+                uint64_t(selected->ar.request.beatCount) <<
+                selected->ar.request.size;
         selected->responseEligibleAt = now;
         ++_nextTargetCommit[selected_key];
         ++_progress.architecturalCommits;
@@ -717,30 +796,38 @@ void
 AxiTargetState::generateReads()
 {
     while (!_rReady.full()) {
-        uint64_t selected_uid = 0;
-        ReadContext *selected = nullptr;
+        std::map<AxiEndpointKey, ReadContext *> candidates;
         for (auto &[uid, context] : _reads) {
             if (!context.responseEligible ||
                 context.nextBeat >= context.frozenBeats.size()) {
                 continue;
             }
-            if (!selected ||
-                std::tie(context.responseEligibleAt, uid,
-                         context.nextBeat) <
-                std::tie(selected->responseEligibleAt, selected_uid,
-                         selected->nextBeat)) {
-                selected_uid = uid;
-                selected = &context;
+            const AxiEndpointKey source{
+                context.ar.meta.srcNode, context.ar.meta.srcPort};
+            auto [candidate, inserted] = candidates.try_emplace(source, &context);
+            if (!inserted &&
+                std::tie(context.responseEligibleAt, uid, context.nextBeat) <
+                std::tie(candidate->second->responseEligibleAt,
+                         candidate->second->ar.meta.txnUid,
+                         candidate->second->nextBeat)) {
+                candidate->second = &context;
             }
         }
-        if (!selected)
+        if (candidates.empty())
             return;
+        auto grant = _lastReadSource ? candidates.upper_bound(*_lastReadSource)
+                                     : candidates.begin();
+        if (grant == candidates.end())
+            grant = candidates.begin();
+        ReadContext &selected = *grant->second;
+        const uint64_t selected_uid = selected.ar.meta.txnUid;
         panic_if(!_rReady.push(std::move(
-                     selected->frozenBeats[selected->nextBeat])),
+                     selected.frozenBeats[selected.nextBeat])),
                  "AXI target R ready FIFO overflow");
-        ++selected->nextBeat;
-        if (selected->nextBeat == selected->frozenBeats.size()) {
-            releaseRead(*selected);
+        _lastReadSource = grant->first;
+        ++selected.nextBeat;
+        if (selected.nextBeat == selected.frozenBeats.size()) {
+            releaseRead(selected);
             ++_completedReads;
             _reads.erase(selected_uid);
         }

@@ -50,7 +50,7 @@ namespace garnet
 {
 
 OutputUnit::OutputUnit(int id, PortDirection direction, Router *router,
-  uint32_t consumerVcs)
+  uint32_t consumerVcs, const std::vector<uint32_t> &receiverDepths)
   : Consumer(router), m_router(router), m_id(id), m_direction(direction),
     m_vc_per_vnet(consumerVcs)
 {
@@ -62,11 +62,13 @@ OutputUnit::OutputUnit(int id, PortDirection direction, Router *router,
              "Router %d output VC count overflows int",
              m_router->get_id());
     const int m_num_vcs = consumerVcs * m_router->get_num_vnets();
+    fatal_if(receiverDepths.size() != m_router->get_num_vnets(),
+             "Router %d output port %d receiver depth count mismatch",
+             m_router->get_id(), m_id);
     outVcState.reserve(m_num_vcs);
     for (int i = 0; i < m_num_vcs; i++) {
         const unsigned vnet = i / consumerVcs;
-        const uint32_t depth =
-            m_router->get_net_ptr()->getBuffersPerVnet(vnet);
+        const uint32_t depth = receiverDepths[vnet];
         outVcState.emplace_back(i, vnet, depth);
     }
 }

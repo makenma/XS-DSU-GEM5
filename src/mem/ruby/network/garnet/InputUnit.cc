@@ -48,9 +48,13 @@ namespace ruby
 namespace garnet
 {
 
-InputUnit::InputUnit(int id, PortDirection direction, Router *router)
+InputUnit::InputUnit(int id, PortDirection direction, Router *router,
+                     LaneId lane, int ingressPort,
+                     const std::vector<uint32_t> &depths)
   : Consumer(router), m_router(router), m_id(id), m_direction(direction),
-    m_vc_per_vnet(m_router->get_vc_per_vnet())
+    m_logical_direction(parsePortName(direction).logical), m_lane(lane),
+    m_vc_per_vnet(m_router->get_vc_per_vnet()),
+    m_credit_sink(&creditQueue)
 {
     const int m_num_vcs = m_router->get_num_vcs();
     fatal_if(m_vc_per_vnet == 0,
@@ -67,11 +71,26 @@ InputUnit::InputUnit(int id, PortDirection direction, Router *router)
     virtualChannels.reserve(m_num_vcs);
     m_vc_last_accounted_cycle.assign(m_num_vcs, m_router->curCycle());
     m_vc_high_water.assign(m_num_vcs, 0);
+    m_experiment_last_cycle.assign(m_num_vcs, m_router->curCycle());
+    fatal_if(depths.size() != m_num_buffer_reads.size(),
+             "Router %d input port %d depth vector mismatch: %zu vs %zu",
+             m_router->get_id(), m_id, depths.size(),
+             m_num_buffer_reads.size());
     for (int i=0; i < m_num_vcs; i++) {
         const unsigned vnet = i / m_vc_per_vnet;
-        const uint32_t capacity =
-            m_router->get_net_ptr()->getBuffersPerVnet(vnet);
+        const uint32_t capacity = depths[vnet];
         virtualChannels.emplace_back(capacity);
+        GarnetInputVcStatsEntry stats;
+        stats.routerId = m_router->get_id();
+        stats.inportId = m_id;
+        stats.ingressPort = ingressPort;
+        stats.lane = m_lane;
+        stats.direction = m_direction;
+        stats.vnet = vnet;
+        stats.vc = i;
+        stats.depth = capacity;
+        stats.timeHistogram.assign(static_cast<size_t>(capacity) + 1, 0);
+        m_experiment_vcs.push_back(std::move(stats));
     }
 }
 
@@ -88,12 +107,16 @@ InputUnit::accountVc(int vc)
         vc / m_vc_per_vnet, occupancy * elapsed,
         virtualChannels[vc].isFull() ? elapsed : 0);
     m_vc_last_accounted_cycle[vc] = now;
+    m_experiment_vcs[vc].timeHistogram[occupancy] +=
+        now - m_experiment_last_cycle[vc];
+    m_experiment_last_cycle[vc] = now;
 }
 
 flit *
 InputUnit::getTopFlit(int vc)
 {
     accountVc(vc);
+    ++m_experiment_vcs[vc].dequeued;
     return virtualChannels[vc].getTopFlit();
 }
 
@@ -133,6 +156,28 @@ InputUnit::nonIdleVcs() const
     return total;
 }
 
+uint32_t
+InputUnit::vnetOccupancy(uint32_t vnet) const
+{
+    const int base = vnet * m_vc_per_vnet;
+    uint32_t total = 0;
+    for (int offset = 0; offset < m_vc_per_vnet; ++offset)
+        total += virtualChannels[base + offset].getOccupancy();
+    return total;
+}
+
+bool
+InputUnit::canAccept(int vc, bool head) const
+{
+    if (vc < 0 || vc >= static_cast<int>(virtualChannels.size()))
+        return false;
+    const VirtualChannel &channel = virtualChannels[vc];
+    if (channel.isFull())
+        return false;
+    const VC_state_type state = channel.get_state();
+    return head ? state == IDLE_ : state == ACTIVE_;
+}
+
 /*
  * The InputUnit wakeup function reads the input flit from its input link.
  * Each flit arrives with an input VC.
@@ -147,7 +192,7 @@ void
 InputUnit::wakeup()
 {
     flit *t_flit;
-    if (m_in_link->isReady(curTick())) {
+    if (!m_selector_managed && m_in_link->isReady(curTick())) {
         t_flit = m_in_link->peekLink();
         const int vc = t_flit->get_vc();
         panic_if(vc < 0 || vc >= virtualChannels.size(),
@@ -166,65 +211,81 @@ InputUnit::wakeup()
         DPRINTF(RubyNetwork, "Router[%d] Consuming:%s Width: %d Flit:%s\n",
         m_router->get_id(), m_in_link->name(),
         m_router->getBitWidth(), *t_flit);
-        assert(t_flit->m_width == m_router->getBitWidth());
-        t_flit->increment_hops(); // for stats
 
-        if ((t_flit->get_type() == HEAD_) ||
-            (t_flit->get_type() == HEAD_TAIL_)) {
-
-            assert(virtualChannels[vc].get_state() == IDLE_);
-            set_vc_active(vc, curTick());
-
-            // Route computation for this vc
-            int outport = m_router->route_compute(t_flit->get_route(),
-                m_id, m_direction);
-
-            // Update output port in VC
-            // All flits in this packet will use this output port
-            // The output port field in the flit is updated after it wins SA
-            grant_outport(vc, outport);
-
-        } else {
-            assert(virtualChannels[vc].get_state() == ACTIVE_);
-        }
-
-
-        // Account the old occupancy over elapsed router cycles before the
-        // insertion changes it.  Pops use the same event-integration rule.
-        accountVc(vc);
-        // Buffer the flit
-        virtualChannels[vc].insertFlit(t_flit);
-        m_vc_high_water[vc] = std::max<uint64_t>(
-            m_vc_high_water[vc], virtualChannels[vc].getOccupancy());
-        m_router->get_net_ptr()->observeInputVc(
-            vnet, virtualChannels[vc].getOccupancy(),
-            virtualChannels[vc].getCapacity());
-
-        // number of writes same as reads
-        // any flit that is written will be read only once
-        m_num_buffer_writes[vnet]++;
-        m_num_buffer_reads[vnet]++;
-
-        Cycles pipe_stages = m_router->get_pipe_stages();
-        if (pipe_stages == 1) {
-            // 1-cycle router
-            // Flit goes for SA directly
-            t_flit->advance_stage(SA_, curTick());
-        } else {
-            assert(pipe_stages > 1);
-            // Router delay is modeled by making flit wait in buffer for
-            // (pipe_stages cycles - 1) cycles before going for SA
-
-            Cycles wait_time = pipe_stages - Cycles(1);
-            t_flit->advance_stage(SA_, m_router->clockEdge(wait_time));
-
-            // Wakeup the router in that cycle to perform SA
-            m_router->schedule_wakeup(Cycles(wait_time));
-        }
+        enqueueFlit(t_flit);
 
         if (m_in_link->isReady(curTick())) {
             m_router->schedule_wakeup(Cycles(1));
         }
+    }
+}
+
+void
+InputUnit::enqueueFlit(flit *t_flit)
+{
+    const int vc = t_flit->get_vc();
+    panic_if(vc < 0 || vc >= virtualChannels.size(),
+             "Garnet invalid input VC: router=%d inport=%d vc=%d "
+             "num_vcs=%zu", m_router->get_id(), m_id, vc,
+             virtualChannels.size());
+    const int vnet = vc / m_vc_per_vnet;
+    assert(t_flit->m_width == m_router->getBitWidth());
+    t_flit->increment_hops(); // for stats
+
+    if ((t_flit->get_type() == HEAD_) ||
+        (t_flit->get_type() == HEAD_TAIL_)) {
+
+        assert(virtualChannels[vc].get_state() == IDLE_);
+        set_vc_active(vc, curTick());
+
+        // Route computation for this vc
+        int outport = m_router->route_compute(t_flit->get_route(),
+            m_id, m_logical_direction, m_lane);
+
+        // Update output port in VC
+        // All flits in this packet will use this output port
+        grant_outport(vc, outport);
+
+    } else {
+        assert(virtualChannels[vc].get_state() == ACTIVE_);
+    }
+
+
+    // Account the old occupancy over elapsed router cycles before the
+    // insertion changes it.  Pops use the same event-integration rule.
+    accountVc(vc);
+    // Buffer the flit
+    virtualChannels[vc].insertFlit(t_flit);
+    ++m_experiment_vcs[vc].enqueued;
+    m_experiment_vcs[vc].highWater = std::max<uint64_t>(
+        m_experiment_vcs[vc].highWater,
+        virtualChannels[vc].getOccupancy());
+    m_vc_high_water[vc] = std::max<uint64_t>(
+        m_vc_high_water[vc], virtualChannels[vc].getOccupancy());
+    m_router->get_net_ptr()->observeInputVc(
+        vnet, virtualChannels[vc].getOccupancy(),
+        virtualChannels[vc].getCapacity());
+
+    // number of writes same as reads
+    // any flit that is written will be read only once
+    m_num_buffer_writes[vnet]++;
+    m_num_buffer_reads[vnet]++;
+
+    Cycles pipe_stages = m_router->get_pipe_stages();
+    if (pipe_stages == 1) {
+        // 1-cycle router
+        // Flit goes for SA directly
+        t_flit->advance_stage(SA_, curTick());
+    } else {
+        assert(pipe_stages > 1);
+        // Router delay is modeled by making flit wait in buffer for
+        // (pipe_stages cycles - 1) cycles before going for SA
+
+        Cycles wait_time = pipe_stages - Cycles(1);
+        t_flit->advance_stage(SA_, m_router->clockEdge(wait_time));
+
+        // Wakeup the router in that cycle to perform SA
+        m_router->schedule_wakeup(Cycles(wait_time));
     }
 }
 
@@ -253,6 +314,36 @@ InputUnit::appendInputVcHighWater(GarnetInputVcHighWater &entries) const
     }
 }
 
+void
+InputUnit::appendExperimentSnapshot(GarnetExperimentSnapshot &snapshot) const
+{
+    const Cycles now = m_router->curCycle();
+    for (unsigned vc = 0; vc < virtualChannels.size(); ++vc) {
+        auto entry = m_experiment_vcs[vc];
+        entry.occupancy = virtualChannels[vc].getOccupancy();
+        entry.timeHistogram[entry.occupancy] +=
+            now - m_experiment_last_cycle[vc];
+        snapshot.inputVcs.push_back(std::move(entry));
+    }
+}
+
+void
+InputUnit::recordStall(int vc, GarnetInputStall reason)
+{
+    auto &entry = m_experiment_vcs.at(vc);
+    switch (reason) {
+      case GarnetInputStall::Credit:
+        ++entry.creditStalls;
+        break;
+      case GarnetInputStall::NoVc:
+        ++entry.noVcStalls;
+        break;
+      case GarnetInputStall::SaLost:
+        ++entry.saLost;
+        break;
+    }
+}
+
 // Send a credit back to upstream router for this VC.
 // Called by SwitchAllocator when the flit in this VC wins the Switch.
 void
@@ -261,7 +352,7 @@ InputUnit::increment_credit(int in_vc, bool free_signal, Tick curTime)
     DPRINTF(RubyNetwork, "Router[%d]: Sending a credit vc:%d free:%d to %s\n",
     m_router->get_id(), in_vc, free_signal, m_credit_link->name());
     Credit *t_credit = new Credit(in_vc, free_signal, curTime);
-    creditQueue.insert(t_credit);
+    m_credit_sink->insert(t_credit);
     m_credit_link->scheduleEventAbsolute(m_router->clockEdge(Cycles(1)));
 }
 

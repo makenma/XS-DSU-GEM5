@@ -86,6 +86,13 @@ def define_options(parser):
         "--garnet-deadlock-threshold", action="store",
         type=int, default=50000,
         help="network-level deadlock threshold.")
+    parser.add_argument(
+        "--garnet-dual-lane", action="store_true",
+        default=False,
+        help="""duplicate the garnet router internal datapath into two
+            lanes: plain direction ports form lane 0, _ext ports lane 1;
+            P (Local) ingresses stay single and feed both lanes through a
+            count-comparing selector.""")
     parser.add_argument("--simple-physical-channels", action="store_true",
         default=False,
         help="""SimpleNetwork links uses a separate physical
@@ -145,6 +152,7 @@ def init_network(options, network, InterfaceClass):
         network.vcs_per_vnet = options.vcs_per_vnet
         network.vnet_classes = class_fields
         network.buffers_per_vnet = depths
+        network.dual_lane = options.garnet_dual_lane
         network.ni_flit_size = options.link_width_bits // 8
         network.routing_algorithm = options.routing_algorithm
         network.garnet_deadlock_threshold = options.garnet_deadlock_threshold

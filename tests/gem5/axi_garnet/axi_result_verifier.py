@@ -346,7 +346,7 @@ def validate_axi_result(result_path, case, workload_path, trace_path,
                         credit_path, config_hash, git_sha, expected_links,
                         expected_vcs, link_width_bits=128,
                         data_width_bits=512,
-                        wire_header_bytes=(24, 16, 8, 24, 16)):
+                        wire_header_bytes=(24, 16, 8, 24, 16), data_header_sideband=False):
     result = load_json_strict(result_path)
     required = {
         "schema_version", "case", "status", "git_sha", "config_hash", "seed",
@@ -448,7 +448,8 @@ def validate_axi_result(result_path, case, workload_path, trace_path,
     data_bytes = data_width_bits // 8
     link_bytes = link_width_bits // 8
     wire_per_packet = [
-        wire_header_bytes[index] + (data_bytes if index in (1, 4) else 0)
+        data_bytes + (0 if data_header_sideband else wire_header_bytes[index])
+        if index in (1, 4) else wire_header_bytes[index]
         for index in range(5)
     ]
     expected_wire = [expected_channels[index] * wire_per_packet[index]

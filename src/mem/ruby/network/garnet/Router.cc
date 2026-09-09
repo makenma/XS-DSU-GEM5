@@ -76,7 +76,7 @@ Router::Router(const Params &p)
   : BasicRouter(p), Consumer(this), m_latency(p.latency),
     m_virtual_networks(p.virt_nets), m_vc_per_vnet(p.vcs_per_vnet),
     m_num_vcs(checkedNumVcs(p.virt_nets, p.vcs_per_vnet, p.router_id)),
-    m_bit_width(p.width),
+    m_bit_width(p.width), m_dual_lane(p.dual_lane),
     m_network_ptr(nullptr), routingUnit(this), switchAllocator(this),
     crossbarSwitch(this)
 {
@@ -89,6 +89,12 @@ Router::init()
 {
     BasicRouter::init();
 
+    fatal_if(m_dual_lane &&
+             (m_network_ptr == nullptr ||
+              m_network_ptr->getRoutingAlgorithm() != XY_),
+             "Router %d: dual-lane mode requires XY routing",
+             m_id);
+
     switchAllocator.init();
     crossbarSwitch.init();
 }
@@ -99,8 +105,14 @@ Router::wakeup()
     DPRINTF(RubyNetwork, "Router %d woke up\n", m_id);
     assert(clockEdge() == curTick());
 
-    // check for incoming flits
+    // check for incoming flits; shared Local ingresses are consumed once
+    // by their DualLaneSelector instead of the individual lane units
+    for (auto &selector : m_local_selectors) {
+        selector->wakeup();
+    }
     for (int inport = 0; inport < m_input_unit.size(); inport++) {
+        if (m_input_unit[inport]->selectorManaged())
+            continue;
         m_input_unit[inport]->wakeup();
     }
 
@@ -154,6 +166,34 @@ Router::appendInputVcHighWater(GarnetInputVcHighWater &entries) const
 }
 
 void
+Router::appendExperimentSnapshot(GarnetExperimentSnapshot &snapshot) const
+{
+    for (const auto &input : m_input_unit)
+        input->appendExperimentSnapshot(snapshot);
+}
+
+bool
+Router::sharedLocalOutport(int outport) const
+{
+    return m_dual_lane && outport >= 0 &&
+        outport < static_cast<int>(m_output_unit.size()) &&
+        m_output_unit[outport]->get_direction() == "Local";
+}
+
+uint32_t
+Router::inputDepthSource(uint32_t port_num,
+                         const PortIdentity &identity) const
+{
+    if (identity.lane == 0)
+        return port_num;
+    const auto twin = m_input_identity2idx.find({0, identity.logical});
+    fatal_if(twin == m_input_identity2idx.end(),
+             "Router %d: _ext input %s has no lane-0 twin",
+             m_id, identity.logical.c_str());
+    return twin->second;
+}
+
+void
 Router::addInPort(PortDirection inport_dirn,
                   NetworkLink *in_link, CreditLink *credit_link)
 {
@@ -161,8 +201,15 @@ Router::addInPort(PortDirection inport_dirn,
             " not match that of Router%d(%d). Consider inserting SerDes "
             "Units.", in_link->name(), in_link->bitWidth, m_id, m_bit_width);
 
+    const PortIdentity identity = parsePortName(inport_dirn);
     int port_num = m_input_unit.size();
-    InputUnit *input_unit = new InputUnit(port_num, inport_dirn, this);
+
+    const auto depth_source = inputDepthSource(port_num, identity);
+    const std::vector<uint32_t> input_depths =
+        m_network_ptr->routerInputDepths(m_id, depth_source);
+
+    InputUnit *input_unit = new InputUnit(port_num, inport_dirn, this,
+                                          identity.lane, port_num, input_depths);
 
     input_unit->set_in_link(in_link);
     input_unit->set_credit_link(credit_link);
@@ -172,22 +219,44 @@ Router::addInPort(PortDirection inport_dirn,
     credit_link->setVcsPerVnet(get_vc_per_vnet());
 
     m_input_unit.push_back(std::shared_ptr<InputUnit>(input_unit));
+    m_input_identity2idx[{identity.lane, identity.logical}] = port_num;
 
-    routingUnit.addInDirection(inport_dirn, port_num);
+    routingUnit.addInDirection(identity, port_num);
+
+    // Dual lane: a Local ingress owns two lane input FIFO groups behind a
+    // selector.  Both units are selector-managed, so the shared physical
+    // link has exactly one consumer (the selector) and every flit goes
+    // through the count decision exactly once (spec 3.3).
+    if (m_dual_lane && identity.logical == "Local") {
+        fatal_if(identity.lane != 0,
+                 "Router %d: _ext Local ingress is not a valid port name",
+                 m_id);
+        input_unit->setSelectorManaged();
+        InputUnit *ext_unit = new InputUnit(port_num + 1, inport_dirn, this,
+                                            1, port_num, input_depths);
+        ext_unit->shareCreditSink(input_unit->getCreditQueue(), credit_link);
+        m_input_unit.push_back(std::shared_ptr<InputUnit>(ext_unit));
+        m_input_identity2idx[{1, identity.logical}] = port_num + 1;
+        routingUnit.addInDirection(PortIdentity{"Local", 1}, port_num + 1);
+        m_local_selectors.push_back(
+            std::make_unique<DualLaneSelector>(this, input_unit, ext_unit));
+    }
 }
 
 void
 Router::addOutPort(PortDirection outport_dirn,
                    NetworkLink *out_link,
                    std::vector<NetDest>& routing_table_entry, int link_weight,
-                   CreditLink *credit_link, uint32_t consumerVcs)
+                   CreditLink *credit_link, uint32_t consumerVcs,
+                   const std::vector<uint32_t> &receiverDepths)
 {
     fatal_if(out_link->bitWidth != m_bit_width, "Widths of units do not match."
             " Consider inserting SerDes Units");
 
+    const PortIdentity identity = parsePortName(outport_dirn);
     int port_num = m_output_unit.size();
     OutputUnit *output_unit = new OutputUnit(port_num, outport_dirn, this,
-                                             consumerVcs);
+                                             consumerVcs, receiverDepths);
 
     output_unit->set_out_link(out_link);
     output_unit->set_credit_link(credit_link);
@@ -198,9 +267,14 @@ Router::addOutPort(PortDirection outport_dirn,
 
     m_output_unit.push_back(std::shared_ptr<OutputUnit>(output_unit));
 
-    routingUnit.addRoute(routing_table_entry);
-    routingUnit.addWeight(link_weight);
-    routingUnit.addOutDirection(outport_dirn, port_num);
+    // _ext lane ports stay out of the weight-based routing table: lane
+    // selection never reroutes traffic, and Local delivery must resolve
+    // to the single shared local port only (spec 3.2/5/7).
+    if (identity.lane == 0) {
+        routingUnit.addRoute(routing_table_entry);
+        routingUnit.addWeight(link_weight);
+    }
+    routingUnit.addOutDirection(identity, port_num);
 }
 
 PortDirection
@@ -216,9 +290,10 @@ Router::getInportDirection(int inport)
 }
 
 int
-Router::route_compute(RouteInfo route, int inport, PortDirection inport_dirn)
+Router::route_compute(RouteInfo route, int inport, PortDirection inport_dirn,
+                      LaneId lane)
 {
-    return routingUnit.outportCompute(route, inport, inport_dirn);
+    return routingUnit.outportCompute(route, inport, inport_dirn, lane);
 }
 
 void

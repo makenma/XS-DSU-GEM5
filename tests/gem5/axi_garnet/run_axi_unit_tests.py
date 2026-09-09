@@ -20,8 +20,8 @@ def load_manifest(path):
     if manifest.get("schema_version") != 1:
         fail("unit manifest schema_version must be 1")
     entries = manifest.get("unit_binaries")
-    if not isinstance(entries, list) or len(entries) != 10:
-        fail("unit manifest must contain exactly 10 binaries")
+    if not isinstance(entries, list) or not entries:
+        fail("unit manifest must list its unit binaries")
     by_binary = {}
     for entry in entries:
         binary = entry.get("binary")

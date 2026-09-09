@@ -22,6 +22,7 @@ class AxiTraceTester(ClockedObject):
     wire_header_bytes = VectorParam.UInt32(
         [24, 16, 8, 24, 16], "AW,W,B,AR,R wire header bytes"
     )
+    data_header_sideband = Param.Bool(False, "Carry W/R metadata beside the serialized data payload")
     data_bus_bytes = Param.UInt32(64, "AXI data bus width in bytes")
     drain_cycles = Param.UInt32(2, "Consecutive quiet network cycles")
     concurrent = Param.Bool(False, "Drive AW, W, and AR independently")

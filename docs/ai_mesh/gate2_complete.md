@@ -61,8 +61,8 @@ decoder miss→default error target（DECERR）、`GarnetNetwork::quiescenceSnap
   write_error/fence/fence_scopes/dma_zero/cross_error/repeat_error/
   pin/constrained/sram_persist/p2p_persist 全部真实 AXI-over-Garnet case）
 - manifest、contract tests、Python/C++ 单元测试和 AXI 回归命令见唯一命令索引
-- AXI 回归：`run_axi_unit_tests.py`（AXI_UNIT_SUITE_PASS 10 binaries/66 tests）、
-  `run_axi_garnet_tests.py --suite quick|full`（0 FAIL）
+- AXI 回归：`run_axi_unit_tests.py`（AXI_UNIT_SUITE_PASS，数量以 `axi_test_lib.py`
+  的 UNIT_BINARIES 合同为准）、`run_axi_garnet_tests.py --suite quick|full`（0 FAIL）
 
 selector 的结构与语义合同由 `schemas/ai_mesh/acceptance_contract_v1.schema.json`
 和 `util/mesh_ir/mesh_ir/acceptance.py` 共同执行；checked-in manifest 是唯一写入口，

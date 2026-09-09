@@ -10,7 +10,8 @@ namespace axi
 
 std::string
 normalizeAxiWireBytes(const std::vector<uint32_t> &header_bytes,
-                      uint32_t data_bus_bytes, AxiWireBytes &output)
+                      uint32_t data_bus_bytes, AxiWireBytes &output,
+                      bool data_header_sideband)
 {
     output.fill(0);
 
@@ -33,7 +34,7 @@ normalizeAxiWireBytes(const std::vector<uint32_t> &header_bytes,
         uint64_t bytes = header_bytes[i];
         if (i == static_cast<size_t>(AxiWireSlot::W) ||
             i == static_cast<size_t>(AxiWireSlot::R)) {
-            bytes += data_bus_bytes;
+            bytes = data_bus_bytes + (data_header_sideband ? 0 : bytes);
         }
         if (bytes > static_cast<uint64_t>(
                 std::numeric_limits<int>::max())) {

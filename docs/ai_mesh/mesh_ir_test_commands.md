@@ -78,6 +78,18 @@ python3 -m pytest util/mesh_ir/tests -q
 ./build/AXI_MESH/dev/ai_mesh/mesh_splitter.test.opt --gtest_color=no
 ```
 
+## AXI read-return arbitration
+
+```bash
+scons build/AXI_MESH/mem/axi/axi_ordering.test.opt -j4
+build/AXI_MESH/mem/axi/axi_ordering.test.opt --gtest_filter='AxiReadArbitrationTest.*:AxiOrderingTest.*'
+```
+
+The arbitration contract is defined in
+`src/doc/ai_mesh/AXI_GARNET_CODEX_SPEC.md` section 5.4. Its regression cases
+are `AxiReadArbitrationTest` in `src/mem/axi/axi_ordering.test.cc`; test
+registration is indexed by `tests/gem5/axi_garnet/axi_test_lib.py`.
+
 ## Golden program artifacts
 
 ```bash
@@ -176,6 +188,60 @@ Case-to-assertion map (checks are named in
 | sram_persist | DC-33 cross-instance SRAM/state isolation |
 | p2p_persist | DC-33 every instance re-observes its P2P transfers |
 | dma_shapes | DC-17 PREFETCH+FILL+multi-row strided P2P/STORE+cross-core event |
+| read_outstanding_window | strict AXI read window slides on RLAST (spec 5.6) |
+| load_saturation_* | perf benchmark: dual-core HBM LOAD saturation (contiguous/multi_tensor/strided) |
+
+## Dual-lane router
+
+规格与资源合同见 [Router Spec](dual_lane_router_spec.md)，验证范围与证据见
+[复核记录](dual_lane_router_review.md)。仲裁状态入口为
+[LaneArbiter](../../src/mem/ruby/network/garnet/LaneArbiter.hh)。
+
+```bash
+scons build/AXI_MESH/gem5.opt \
+    build/AXI_MESH/mem/ruby/network/garnet/lane_arbitration.test.opt \
+    build/AXI_MESH/mem/ruby/network/garnet/dual_lane_selector.test.opt -j8
+build/AXI_MESH/mem/ruby/network/garnet/lane_arbitration.test.opt
+build/AXI_MESH/mem/ruby/network/garnet/dual_lane_selector.test.opt
+PYTHONPATH=util/mesh_ir python3 -m pytest -q \
+    util/mesh_ir/tests/unit/test_dual_lane_checks.py \
+    util/mesh_ir/tests/unit/test_mesh_experiment_verify.py
+python3 tests/gem5/ai_mesh/run_dual_lane_checks.py \
+    --program-dir <built load_saturation_contiguous program> \
+    --workdir <new-or-empty-directory>
+```
+
+真实 gem5 验收的配置、事件字段及断言由
+[run_dual_lane_checks.py](../../tests/gem5/ai_mesh/run_dual_lane_checks.py)
+定义；产物包含独立保存的单/双 lane 命令、配置、日志、数据检查结果和
+`checks.json`。`GarnetDualLane` 开关输出选择、发送、合并 grant 和资源快照。
+构建完成后再启动仿真。
+
+5×5 tensor 实验通过 profile 的 `network.dual_lane` 布尔字段启用双 lane；
+[实验入口](../../configs/example/ai_mesh/run_mesh_experiment.py) 和
+[校验器](../../util/mesh_ir/mesh_ir/experiment/verify.py) 读取同一 profile。
+物理链路统计保留 lane 身份，按逻辑路由汇总后与 workload oracle 核对。
+LOAD 图及运行证据见 [实验报告](../../src/doc/ai_mesh/goal_mesh_outstanding_buffer_experiment.md)。
+
+## Load saturation sweep (perf, not a gate)
+
+```bash
+python3 tests/gem5/ai_mesh/run_load_sweep.py --workdir "$(mktemp -d /tmp/load-sweep.XXXXXX)"
+```
+
+The command and measurement fields are defined in
+`tests/gem5/ai_mesh/run_load_sweep.py`. Selection is per workload and latency;
+throughput uses core cycles, with the clock period retained in the result.
+Pareto compares throughput and router credit stall VC-cycles. Adapter blocked
+cycles, target blocked cycles, NI stalls and MessageBuffer queue-time ticks
+remain separate. Completion-time skew measures imbalance; it is not a
+fixed-window service fairness measurement.
+
+Runtime evidence comes from `MeshDispatcher::writeConservationJson` and
+`AxiGarnetBridge::burstTimings`. Regressions:
+`util/mesh_ir/tests/unit/test_load_sweep.py`,
+`util/mesh_ir/tests/unit/test_read_outstanding_config.py`, and
+`util/mesh_ir/tests/integration/test_axi_outstanding_runtime.py`.
 
 ## Mandatory manifest selector (Dummy Core Gates)
 
@@ -224,3 +290,50 @@ intentionally retain their placeholders.
 Acceptance tests for `reference_compute` and poison paths are indexed by
 `mandatory_case_manifest.yaml` and implemented in
 `util/mesh_ir/tests/integration/test_runtime_rejections.py`.
+
+## 5×5 outstanding / router input buffer experiment
+
+The experiment contract and implementation boundaries are indexed by
+[outstanding_router_fifo_experiment_design.md](outstanding_router_fifo_experiment_design.md).
+The measured configurations, frozen execution budget, raw artifacts and
+reproduction commands are indexed by
+[outstanding_router_fifo_experiment_report.md](outstanding_router_fifo_experiment_report.md).
+This experiment is separate from the two-core load saturation sweep.
+
+```bash
+python3 -m pytest util/mesh_ir/tests/unit/test_mesh_experiment_*.py -q
+python3 -m pytest \
+    util/mesh_ir/tests/integration/test_mesh_experiment_topology.py \
+    util/mesh_ir/tests/integration/test_mesh_experiment_observer.py \
+    util/mesh_ir/tests/integration/test_mesh_experiment_measurement.py -q
+build/AXI_MESH/mem/axi/synthetic_hbm_backend.test.opt
+build/AXI_MESH/mem/axi/axi_simple_memory.test.opt
+build/AXI_MESH/mem/ruby/network/garnet/garnet_input_capacity.test.opt
+```
+
+The runner is `tests/gem5/ai_mesh/run_mesh_experiment.py`; its `smoke`, `run`,
+`sweep`, `resume`, `verify` and `analyze` subcommands share
+`util/mesh_ir/mesh_ir/experiment/`. The real gem5 configuration is
+`configs/example/ai_mesh/run_mesh_experiment.py`, and non-search resources
+are defined in `configs/example/ai_mesh/experiments/fixed_profile.json`.
+
+按 vnet 选择 XY/YX 的配置入口为
+[GarnetNetwork](../../src/mem/ruby/network/garnet/GarnetNetwork.py) 的 `yx_vnets`，
+实验 profile 通过 `network.yx_vnets` 传入。
+路径实现见 [RoutingUnit](../../src/mem/ruby/network/garnet/RoutingUnit.cc)，
+独立逐链路 oracle 见 [workload.py](../../util/mesh_ir/mesh_ir/experiment/workload.py)。
+写 tensor 对照的结果和复现输入见
+[实验报告](../../src/doc/ai_mesh/goal_mesh_outstanding_buffer_experiment.md#写-tensor-yx-路由对照)。
+读 XY、写 YX 的混合负载对照见
+[MIXED 实验](../../src/doc/ai_mesh/goal_mesh_outstanding_buffer_experiment.md#mixed-读-xy-写-yx-路由对照)。
+固定读 XY、写 YX 的单/双 lane 全套实验按
+[执行 Spec](dual_lane_xy_yx_experiment_spec.md) 组织矩阵、容量搜索验收与结果对照。
+
+```bash
+python3 -m pytest -q \
+    util/mesh_ir/tests/unit/test_mesh_experiment_workload.py \
+    util/mesh_ir/tests/unit/test_mesh_experiment_runner.py \
+    util/mesh_ir/tests/unit/test_mesh_experiment_verify.py
+python3 -m pytest -q \
+    util/mesh_ir/tests/integration/test_mesh_experiment_measurement.py
+```

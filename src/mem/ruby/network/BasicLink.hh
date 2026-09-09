@@ -61,6 +61,7 @@ class BasicLink : public SimObject
     Cycles m_latency;
     int m_bandwidth_factor;
     int m_weight;
+    bool m_lane_parallel;
     std::vector<int> mVnets;
 };
 

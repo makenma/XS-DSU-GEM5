@@ -129,6 +129,9 @@ targetConfig(const AxiTargetAdapterParams &p)
     config.readServiceDepth = p.service_depths[1];
     config.writeBaseLatency = p.base_latencies[0];
     config.readBaseLatency = p.base_latencies[1];
+    config.syntheticHbmEnabled = p.synthetic_hbm_enabled;
+    config.syntheticHbmBytesPerCycle = p.synthetic_hbm_bytes_per_cycle;
+    config.syntheticHbmQueueDepth = p.synthetic_hbm_queue_depth;
 
     requireVectorSize(p.planned_extra_latency_cycles,
                       p.planned_uids.size(), p.name,
@@ -484,11 +487,11 @@ messageBPacket(const AxiMeshMsg &msg)
 AxiWireBytes
 checkedWireBytes(const std::string &owner,
                  const std::vector<uint32_t> &header_bytes,
-                 uint32_t data_bus_bytes)
+                 uint32_t data_bus_bytes, bool data_header_sideband)
 {
     AxiWireBytes wire_bytes;
     const std::string error = normalizeAxiWireBytes(
-        header_bytes, data_bus_bytes, wire_bytes);
+        header_bytes, data_bus_bytes, wire_bytes, data_header_sideband);
     fatal_if(!error.empty(), "%s: %s", owner, error);
     return wire_bytes;
 }
@@ -554,7 +557,7 @@ AxiInitiatorAdapter::AxiInitiatorAdapter(const Params &p)
       arOut(p.ar_out), bLocal(p.b_local), rLocal(p.r_local),
       srcNode(p.src_node), srcPort(p.src_port), dstNode(p.dst_node),
       channelWireBytes(checkedWireBytes(
-          p.name, p.wire_header_bytes, p.data_bus_bytes)),
+          p.name, p.wire_header_bytes, p.data_bus_bytes, p.data_header_sideband)),
       dataBusBytes(p.data_bus_bytes), rawProbe(p.raw_probe),
       rawProbeHoldCycles(p.raw_probe_hold_cycles),
       functionalState(p.raw_probe ? nullptr :
@@ -787,7 +790,7 @@ AxiInitiatorAdapter::tryConsumeR(AxiRBeat &r)
 {
     fatal_if(rawProbe || !functionalState,
              "%s: functional R used during raw probe", name());
-    const bool consumed = functionalState->tryConsumeR(r);
+    const bool consumed = functionalState->tryConsumeR(r, curTick());
     if (consumed)
         scheduleEvent(Cycles(1));
     return consumed;
@@ -965,6 +968,25 @@ AxiInitiatorAdapter::updateQueueHighWater()
     }
 }
 
+uint32_t
+AxiInitiatorAdapter::peakOutstandingReads() const
+{
+    return functionalState ? functionalState->peakOutstandingReads() : 0;
+}
+
+std::vector<Tick>
+AxiInitiatorAdapter::arAcceptTicks() const
+{
+    return functionalState ? functionalState->arAcceptTicks()
+                           : std::vector<Tick>{};
+}
+
+Tick
+AxiInitiatorAdapter::firstCreditReleaseTick() const
+{
+    return functionalState ? functionalState->firstCreditReleaseTick() : 0;
+}
+
 AxiInitiatorOccupancy
 AxiInitiatorAdapter::functionalOccupancy() const
 {
@@ -992,6 +1014,14 @@ AxiInitiatorAdapter::functionalQueueHighWater() const
     fatal_if(rawProbe || !functionalState,
              "%s: functional queue stats used during raw probe", name());
     return queueHighWater;
+}
+
+AxiInitiatorResourceOccupancy
+AxiInitiatorAdapter::resourceOccupancy() const
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: resource occupancy used during raw probe", name());
+    return functionalState->resourceOccupancy();
 }
 
 std::string
@@ -1046,7 +1076,7 @@ AxiTargetAdapter::AxiTargetAdapter(const Params &p)
       awLocal(p.aw_local), wLocal(p.w_local), arLocal(p.ar_local),
       srcNode(p.src_node), srcPort(p.src_port), dstNode(p.dst_node),
       channelWireBytes(checkedWireBytes(
-          p.name, p.wire_header_bytes, p.data_bus_bytes)),
+          p.name, p.wire_header_bytes, p.data_bus_bytes, p.data_header_sideband)),
       dataBusBytes(p.data_bus_bytes), rawProbe(p.raw_probe),
       rawProbeHoldCycles(p.raw_probe_hold_cycles),
       functionalState(p.raw_probe ? nullptr :
@@ -1372,6 +1402,19 @@ AxiTargetAdapter::functionalProgress() const
     AxiTargetProgress result = functionalState->progress();
     result.orphanOrQuotaStallCycles = orphanOrQuotaStallCycles;
     return result;
+}
+
+bool
+AxiTargetAdapter::syntheticBackendEnabled() const
+{
+    return functionalState && functionalState->syntheticBackendEnabled();
+}
+
+SyntheticHbmStats
+AxiTargetAdapter::syntheticBackendStats() const
+{
+    return functionalState ? functionalState->syntheticBackendStats()
+                           : SyntheticHbmStats{};
 }
 
 AxiEndpointQueueHighWater

@@ -33,7 +33,9 @@
 #define __MEM_RUBY_NETWORK_GARNET_0_ROUTER_HH__
 
 #include <iostream>
+#include <map>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "mem/ruby/common/Consumer.hh"
@@ -41,6 +43,7 @@
 #include "mem/ruby/network/BasicRouter.hh"
 #include "mem/ruby/network/garnet/CommonTypes.hh"
 #include "mem/ruby/network/garnet/CrossbarSwitch.hh"
+#include "mem/ruby/network/garnet/DualLaneSelector.hh"
 #include "mem/ruby/network/garnet/GarnetNetwork.hh"
 #include "mem/ruby/network/garnet/GarnetQuiescence.hh"
 #include "mem/ruby/network/garnet/RoutingUnit.hh"
@@ -81,13 +84,14 @@ class Router : public BasicRouter, public Consumer
     void addOutPort(PortDirection outport_dirn, NetworkLink *link,
                     std::vector<NetDest>& routing_table_entry,
                     int link_weight, CreditLink *credit_link,
-                    uint32_t consumerVcs);
+                    uint32_t consumerVcs,
+                    const std::vector<uint32_t> &receiverDepths);
 
     Cycles get_pipe_stages(){ return m_latency; }
     uint32_t get_num_vcs()       { return m_num_vcs; }
     uint32_t get_num_vnets()     { return m_virtual_networks; }
     uint32_t get_vc_per_vnet()   { return m_vc_per_vnet; }
-    int get_num_inports()   { return m_input_unit.size(); }
+    int get_num_inports() const { return m_input_unit.size(); }
     int get_num_outports()  { return m_output_unit.size(); }
     int get_id()            { return m_id; }
 
@@ -117,9 +121,21 @@ class Router : public BasicRouter, public Consumer
     PortDirection getOutportDirection(int outport);
     PortDirection getInportDirection(int inport);
 
-    int route_compute(RouteInfo route, int inport, PortDirection direction);
+    int route_compute(RouteInfo route, int inport, PortDirection direction,
+                      LaneId lane);
     void grant_switch(int inport, flit *t_flit);
     void schedule_wakeup(Cycles time);
+
+    bool dualLane() const { return m_dual_lane; }
+
+    /** Dual-lane shared Local output port: both lanes' flits destined to
+     *  the local NI merge here under the lane-level RR (spec 5). */
+    bool sharedLocalOutport(int outport) const;
+
+    /** Capacity source index for a (future) input port: a lane-1 port
+     *  derives its FIFO depths from its lane-0 twin (spec 6). */
+    uint32_t inputDepthSource(uint32_t port_num,
+                              const PortIdentity &identity) const;
 
     std::string getPortDirectionName(PortDirection direction);
     void printFaultVector(std::ostream& out);
@@ -147,11 +163,13 @@ class Router : public BasicRouter, public Consumer
     GarnetQuiescenceSnapshot quiescenceSnapshot() const;
     void appendCreditLedger(GarnetCreditLedger &ledger) const;
     void appendInputVcHighWater(GarnetInputVcHighWater &entries) const;
+    void appendExperimentSnapshot(GarnetExperimentSnapshot &snapshot) const;
 
   private:
     Cycles m_latency;
     uint32_t m_virtual_networks, m_vc_per_vnet, m_num_vcs;
     uint32_t m_bit_width;
+    bool m_dual_lane;
     GarnetNetwork *m_network_ptr;
 
     RoutingUnit routingUnit;
@@ -160,6 +178,13 @@ class Router : public BasicRouter, public Consumer
 
     std::vector<std::shared_ptr<InputUnit>> m_input_unit;
     std::vector<std::shared_ptr<OutputUnit>> m_output_unit;
+
+    // Registered input port identity -> index, for twin capacity lookup.
+    std::map<std::pair<LaneId, PortDirection>, int> m_input_identity2idx;
+
+    // One selector per shared Local P ingress in dual-lane mode; the two
+    // lane input units of that port are selector-managed.
+    std::vector<std::unique_ptr<DualLaneSelector>> m_local_selectors;
 
     // Statistical variables required for power computations
     statistics::Scalar m_buffer_reads;

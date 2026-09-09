@@ -37,6 +37,7 @@
 
 #include "mem/ruby/common/Consumer.hh"
 #include "mem/ruby/network/garnet/CommonTypes.hh"
+#include "mem/ruby/network/garnet/LaneArbiter.hh"
 
 namespace gem5
 {
@@ -57,14 +58,7 @@ class SwitchAllocator : public Consumer
     SwitchAllocator(Router *router);
     void wakeup();
     void init();
-    void clear_request_vector();
-    void check_for_wakeup();
-    int get_vnet (int invc);
     void print(std::ostream& out) const {};
-    void arbitrate_inports();
-    void arbitrate_outports();
-    bool send_allowed(int inport, int invc, int outport, int outvc);
-    int vc_allocate(int outport, int inport, int invc);
 
     inline double
     get_input_arbiter_activity()
@@ -80,16 +74,24 @@ class SwitchAllocator : public Consumer
     void resetStats();
 
   private:
+    void check_for_wakeup();
+    int get_vnet(int invc);
+    void arbitrate_merged_local_outport(int outport);
+    void grantOutport(int outport, LaneArbiter &lane,
+                      const SwitchGrant &grant);
+    void arbitrate_inports();
+    void arbitrate_outports();
+    bool send_allowed(int inport, int invc, int outport, int outvc);
+    int vc_allocate(int outport, int inport, int invc);
+
     int m_num_inports, m_num_outports;
     int m_num_vcs, m_vc_per_vnet;
 
     double m_input_arbiter_activity, m_output_arbiter_activity;
 
     Router *m_router;
-    std::vector<int> m_round_robin_invc;
-    std::vector<int> m_round_robin_inport;
-    std::vector<int> m_port_requests;
-    std::vector<int> m_vc_winners;
+    std::vector<LaneArbiter> m_lanes;
+    std::vector<LaneMergeArbiter> m_local_merges;
 };
 
 } // namespace garnet

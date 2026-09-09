@@ -354,12 +354,12 @@ TEST(AxiLastAndBeatTest, ReassemblesRByIndex)
 
     source.acceptRPacket(r1);
     AxiRBeat beat;
-    EXPECT_FALSE(source.tryConsumeR(beat));
+    EXPECT_FALSE(source.tryConsumeR(beat, 200));
     source.acceptRPacket(r0);
-    ASSERT_TRUE(source.tryConsumeR(beat));
+    ASSERT_TRUE(source.tryConsumeR(beat, 200));
     EXPECT_FALSE(beat.last);
     EXPECT_EQ(beat.functionalData[0], 0x11);
-    ASSERT_TRUE(source.tryConsumeR(beat));
+    ASSERT_TRUE(source.tryConsumeR(beat, 200));
     EXPECT_TRUE(beat.last);
     EXPECT_EQ(beat.functionalData[0], 0x22);
 }

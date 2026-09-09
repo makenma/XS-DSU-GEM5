@@ -1,8 +1,10 @@
 #include "dev/ai_mesh/mesh_dispatcher.hh"
 
+#include <algorithm>
 #include <fstream>
 #include <iomanip>
 #include <map>
+#include <numeric>
 #include <set>
 
 #include "base/logging.hh"
@@ -229,6 +231,58 @@ MeshDispatcher::anyCoreErrored() const
 void
 MeshDispatcher::writeConservationJson(std::ofstream &out)
 {
+    const std::pair<axi::AxiChannel, const char *> channels[] = {
+        {axi::AxiChannel::Aw, "AW"}, {axi::AxiChannel::W, "W"},
+        {axi::AxiChannel::B, "B"}, {axi::AxiChannel::Ar, "AR"},
+        {axi::AxiChannel::R, "R"}};
+    const auto writeBlocked = [&out, &channels](const auto &counts) {
+        out << "{";
+        bool first = true;
+        for (const auto &[channel, name] : channels) {
+            if (!first)
+                out << ", ";
+            first = false;
+            out << '"' << name << "\": " << counts[unsigned(channel)];
+        }
+        out << "}";
+    };
+    out << "  \"core_clock_period_ticks\": " << clockPeriod() << ",\n";
+    out << "  \"target_message_buffer_blocked_cycles\": {";
+    bool first_target = true;
+    for (const PeerSramAperture *aperture : apertures) {
+        if (!first_target)
+            out << ", ";
+        first_target = false;
+        out << '"' << aperture->name() << "\": ";
+        writeBlocked(aperture->queueHighWater().messageBufferStallCycles);
+    }
+    if (endpoint) {
+        if (!first_target)
+            out << ", ";
+        out << '"' << endpoint->name() << "\": ";
+        writeBlocked(endpoint->queueHighWater().messageBufferStallCycles);
+    }
+    out << "},\n  \"network_stalls\": {";
+    const auto *garnet = dynamic_cast<ruby::garnet::GarnetNetwork *>(network);
+    if (garnet) {
+        bool first_channel = true;
+        for (const auto &[channel, name] : channels) {
+            if (!first_channel)
+                out << ", ";
+            first_channel = false;
+            const unsigned vnet = unsigned(channel);
+            out << '"' << name << "\": {\"router_credit_stall_vc_cycles\": "
+                << garnet->routerCreditStalls(vnet)
+                << ", \"router_vc_alloc_stall_vc_cycles\": "
+                << garnet->vcAllocStalls(vnet)
+                << ", \"ni_credit_stall_vc_cycles\": "
+                << garnet->niCreditStalls(vnet)
+                << ", \"ni_vc_busy_cycles\": " << garnet->niVcBusyCycles(vnet)
+                << "}";
+        }
+    }
+    out << "},\n";
+
     out << "  \"error_drained\": " << (anyCoreErrored() ? 1 : 0) << ",\n";
 
     out << "  \"apertures\": [\n";
@@ -286,7 +340,8 @@ MeshDispatcher::writeConservationJson(std::ofstream &out)
             if (!first)
                 out << ",\n";
             first = false;
-            out << "    {\"descriptor_id\": " << kv.first
+            out << "    {\"core_id\": " << core->archCoreId()
+                << ", \"descriptor_id\": " << kv.first
                 << ", \"first_ar_tick\": " << kv.second.first_ar_tick
                 << ", \"first_aw_tick\": " << kv.second.first_aw_tick
                 << ", \"first_w_tick\": " << kv.second.first_w_tick
@@ -297,6 +352,78 @@ MeshDispatcher::writeConservationJson(std::ofstream &out)
         }
     }
     out << "\n  ],\n";
+
+    {
+        uint64_t ar = 0, rlast = 0, refill = 0;
+        uint32_t peak = 0;
+        Tick first_rlast = 0;
+        for (const MeshDummyCore *core : cores) {
+            const auto *engine =
+                dynamic_cast<const AxiTensorDmaEngine *>(core->dmaEngine());
+            if (!engine)
+                continue;
+            ar += engine->readArAccepted();
+            rlast += engine->readRlastConsumed();
+            peak += engine->peakReadWindow();
+            if (first_rlast == 0 ||
+                (engine->firstRlastTick() != 0 &&
+                 engine->firstRlastTick() < first_rlast))
+                first_rlast = engine->firstRlastTick();
+        }
+        std::vector<Tick> ar_ticks;
+        Tick first_credit_release = 0;
+        for (const MeshDummyCore *core : cores) {
+            const AxiTensorDmaEngine *engine =
+                dynamic_cast<const AxiTensorDmaEngine *>(core->dmaEngine());
+            const AxiGarnetBridge *bridge = engine ? engine->bridgeOf() : nullptr;
+            if (!bridge)
+                continue;
+            std::vector<Tick> ticks = bridge->arAcceptTicks();
+            ar_ticks.insert(ar_ticks.end(), ticks.begin(), ticks.end());
+            const Tick release = bridge->firstCreditReleaseTick();
+            if (release != 0 &&
+                (first_credit_release == 0 || release < first_credit_release))
+                first_credit_release = release;
+        }
+        std::sort(ar_ticks.begin(), ar_ticks.end());
+        out << "  \"read_window\": {\"segment_peak\": " << peak
+            << ", \"first_credit_release_tick\": " << first_credit_release
+            << ", \"ar_accept_ticks\": [";
+        for (size_t i = 0; i < ar_ticks.size(); ++i) {
+            if (i)
+                out << ", ";
+            out << ar_ticks[i];
+        }
+        out << "]},\n";
+    }
+
+    out << "  \"burst_timings\": [";
+    bool first_burst = true;
+    for (const MeshDummyCore *core : cores) {
+        const auto *engine = dynamic_cast<const AxiTensorDmaEngine *>(
+            core->dmaEngine());
+        if (!engine || !engine->bridgeOf())
+            continue;
+        for (const auto &[ordinal, ticks] : engine->bridgeOf()->burstTimings()) {
+            if (!first_burst)
+                out << ", ";
+            first_burst = false;
+            const auto commit = engine->readCommitTicks().find(ordinal);
+            out << "{\"core_id\": " << core->archCoreId()
+                << ", \"ordinal\": " << ordinal
+                << ", \"channel\": \"" << (ticks.read ? "AR" : "AW") << '"'
+                << ", \"axi_id\": " << ticks.axi_id
+                << ", \"address\": " << ticks.address
+                << ", \"beats\": " << ticks.beats
+                << ", \"beat_bytes\": " << ticks.beat_bytes
+                << ", \"ar_aw_tick\": " << ticks.addr_accept
+                << ", \"response_tick\": " << ticks.resp_last
+                << ", \"commit_tick\": "
+                << (commit == engine->readCommitTicks().end() ? 0 : commit->second)
+                << "}";
+        }
+    }
+    out << "],\n";
 
     out << "  \"bridges\": [\n";
     first = true;
@@ -309,6 +436,7 @@ MeshDispatcher::writeConservationJson(std::ofstream &out)
         if (!first)
             out << ",\n";
         first = false;
+        const axi::AxiEndpointQueueHighWater high_water = bridge->queueHighWater();
         out << "    {\"core_id\": " << core->archCoreId()
             << ", \"aw_accepted\": " << bridge->acceptedWrites()
             << ", \"ar_accepted\": " << bridge->acceptedReads()
@@ -329,7 +457,10 @@ MeshDispatcher::writeConservationJson(std::ofstream &out)
             << ", \"pending_ar\": " << bridge->pendingReads()
             << ", \"outstanding_writes\": " << bridge->outstandingWrites()
             << ", \"outstanding_reads\": " << bridge->outstandingReads()
-            << ", \"idle\": " << (bridge->idle() ? 1 : 0)
+            << ", \"peak_read_outstanding\": " << bridge->peakOutstandingReads()
+            << ", \"message_buffer_blocked_cycles\": ";
+        writeBlocked(high_water.messageBufferStallCycles);
+        out            << ", \"idle\": " << (bridge->idle() ? 1 : 0)
             << ", \"b_retire_order\": [";
         bool first_b = true;
         for (uint64_t ordinal : bridge->counters().bOrder) {

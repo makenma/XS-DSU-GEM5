@@ -2,7 +2,10 @@
 #define __MEM_RUBY_NETWORK_GARNET_GARNET_QUIESCENCE_HH__
 
 #include <cstdint>
+#include <string>
 #include <vector>
+
+#include "mem/ruby/network/garnet/DualLane.hh"
 
 namespace gem5
 {
@@ -58,6 +61,74 @@ struct GarnetInputVcHighWaterEntry
 };
 
 using GarnetInputVcHighWater = std::vector<GarnetInputVcHighWaterEntry>;
+
+struct GarnetReceiverCapacityEntry
+{
+    uint32_t senderKind = 0;
+    int32_t senderId = -1;
+    int32_t senderPort = -1;
+    std::string senderDirection;
+    uint32_t receiverKind = 0;
+    int32_t receiverId = -1;
+    int32_t receiverPort = -1;
+    std::string receiverDirection;
+    int32_t linkId = -1;
+    uint32_t vnet = 0;
+    uint32_t vc = 0;
+    uint32_t depth = 0;
+    uint32_t initialCredit = 0;
+};
+
+using GarnetReceiverCapacityMap = std::vector<GarnetReceiverCapacityEntry>;
+
+struct GarnetInputVcStatsEntry
+{
+    int32_t routerId = -1;
+    int32_t inportId = -1;
+    int32_t ingressPort = -1;
+    LaneId lane = 0;
+    std::string direction;
+    uint32_t vnet = 0;
+    uint32_t vc = 0;
+    uint32_t depth = 0;
+    uint32_t occupancy = 0;
+    uint64_t highWater = 0;
+    uint64_t enqueued = 0;
+    uint64_t dequeued = 0;
+    uint64_t creditStalls = 0;
+    uint64_t noVcStalls = 0;
+    uint64_t saLost = 0;
+    std::vector<uint64_t> timeHistogram;
+};
+
+enum class GarnetInputStall
+{
+    Credit,
+    NoVc,
+    SaLost
+};
+
+struct GarnetLinkStatsEntry
+{
+    int32_t linkId = -1;
+    uint32_t widthBytes = 0;
+    uint64_t flits = 0;
+    std::vector<uint64_t> vcFlits;
+};
+
+struct GarnetExperimentSnapshot
+{
+    uint64_t tick = 0;
+    uint64_t networkCycle = 0;
+    std::vector<GarnetInputVcStatsEntry> inputVcs;
+    std::vector<GarnetLinkStatsEntry> links;
+    std::vector<uint64_t> packetsInjected;
+    std::vector<uint64_t> packetsReceived;
+    std::vector<uint64_t> flitsInjected;
+    std::vector<uint64_t> flitsReceived;
+    std::vector<uint64_t> wireBytesInjected;
+    std::vector<uint64_t> wireBytesReceived;
+};
 
 /**
  * Protocol-neutral, read-only Garnet drain state.

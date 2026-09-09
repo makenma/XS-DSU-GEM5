@@ -75,6 +75,9 @@ class AxiGarnetBridge(ClockedObject):
     ar_queue_depth = Param.UInt32(8, "Finite pending read-burst queue depth")
     axi_id_count = Param.UInt32(8, "Round-robin AXI ID pool size")
     axi_id_base = Param.UInt16(0, "First AXI ID of the pool")
+    w_beats_per_cycle = Param.UInt32(
+        0, "Local W acceptance per cycle; zero retains legacy burst admission"
+    )
 
 
 class AxiTensorDmaEngine(DmaEngineBase):
@@ -87,7 +90,9 @@ class AxiTensorDmaEngine(DmaEngineBase):
     max_burst_beats = Param.UInt32(16, "Maximum AXI burst beats")
     setup_cycles = Param.Cycles(2, "Descriptor setup latency")
     descriptor_queue_depth = Param.UInt32(16, "Finite descriptor queue depth per direction")
-    max_outstanding_bursts = Param.UInt32(8, "Outstanding burst limit per direction")
+    segment_queue_depth = Param.UInt32(8,
+        "Per-direction segment/read-return queue capacity (burst issued to "
+        "SRAM commit); not the AXI outstanding window")
     axi_id_count = Param.UInt32(8, "Round-robin AXI ID pool size")
 
 

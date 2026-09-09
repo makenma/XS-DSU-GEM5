@@ -98,6 +98,24 @@ TEST(AxiDynamicWireBytesTest, FallsBackForLegacyMessage)
     EXPECT_EQ(output.numFlits, 5);
 }
 
+TEST(AxiDynamicWireBytesTest, SidebandDataHeadersKeepFullBeatInOneFlit)
+{
+    AxiWireBytes wire_bytes;
+    ASSERT_TRUE(normalizeAxiWireBytes(
+        {24, 16, 8, 24, 16}, 32, wire_bytes, true).empty());
+    EXPECT_EQ(wire_bytes, (AxiWireBytes{24, 32, 8, 24, 32}));
+    for (const int size : wire_bytes) {
+        DynamicTestMessage message(size, 32);
+        std::string error;
+        const auto output = packetize(message, 8, 32, error);
+        EXPECT_TRUE(error.empty());
+        EXPECT_EQ(output.numFlits, 1);
+    }
+    std::string error;
+    DynamicTestMessage message(wire_bytes[4], 32);
+    EXPECT_EQ(packetize(message, 8, 16, error).numFlits, 2);
+}
+
 TEST(AxiDynamicWireBytesTest, IgnoresSemanticBytesForFlits)
 {
     DynamicTestMessage sparse_payload(80, 1);

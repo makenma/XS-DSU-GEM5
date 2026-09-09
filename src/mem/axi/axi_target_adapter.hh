@@ -12,6 +12,7 @@
 #include "base/logging.hh"
 #include "mem/axi/axi_types.hh"
 #include "mem/axi/axi_validation.hh"
+#include "mem/axi/synthetic_hbm_backend.hh"
 
 namespace gem5
 {
@@ -77,8 +78,9 @@ class AxiSimpleMemory
                      uint32_t data_bus_bytes);
 
   private:
+    static constexpr uint64_t PageBytes = 4096;
     std::vector<AxiRange> _ranges;
-    std::map<uint64_t, uint8_t> _bytes;
+    std::map<uint64_t, std::array<uint8_t, PageBytes>> _pages;
 };
 
 struct AxiTargetConfig
@@ -94,6 +96,9 @@ struct AxiTargetConfig
     uint32_t readServiceDepth = 32;
     uint32_t writeBaseLatency = 1;
     uint32_t readBaseLatency = 1;
+    bool syntheticHbmEnabled = false;
+    uint32_t syntheticHbmBytesPerCycle = 32;
+    uint32_t syntheticHbmQueueDepth = 64;
     std::map<AxiEndpointKey, AxiQuota> sourceQuotas;
     std::vector<AxiRange> memoryRanges;
     std::map<uint64_t, uint32_t> extraLatency;
@@ -130,6 +135,9 @@ struct AxiTargetProgress
     uint64_t orphanOrQuotaStallCycles = 0;
     uint64_t writesCommitted = 0;
     uint64_t readsCommitted = 0;
+    uint64_t writeCommittedBytes = 0;
+    uint64_t readCommittedBytes = 0;
+    uint64_t lastWriteCommitCycle = 0;
     std::array<uint64_t, 16> qosTransactions{};
 };
 
@@ -155,6 +163,13 @@ class AxiTargetState
     void advance(uint64_t now = 0);
     AxiTargetOccupancy occupancy() const;
     const AxiTargetProgress &progress() const { return _progress; }
+    bool syntheticBackendEnabled() const
+    { return _syntheticBackend.has_value(); }
+    SyntheticHbmStats syntheticBackendStats() const
+    {
+        return _syntheticBackend ? _syntheticBackend->stats()
+                                 : SyntheticHbmStats{};
+    }
     const AxiSimpleMemory &memory() const { return _memory; }
     AxiSimpleMemory &memory() { return _memory; }
 
@@ -239,12 +254,14 @@ class AxiTargetState
 
     AxiTargetConfig _config;
     AxiSimpleMemory _memory;
+    std::optional<SyntheticHbmBackend> _syntheticBackend;
     AxiWriteCommitObserver *writeCommitObserver = nullptr;
     AxiWritePreCommitPolicy *preCommitPolicy = nullptr;
     std::map<uint64_t, WriteContext> _writes;
     std::map<uint64_t, ReadContext> _reads;
     std::deque<ReadyB> _bReady;
     BoundedFifo<AxiDataPacket> _rReady;
+    std::optional<AxiEndpointKey> _lastReadSource;
     std::map<AxiEndpointKey, AxiQuota> _activeQuota;
     size_t _reservedWriteBeats = 0;
     size_t _reservedReadBeats = 0;

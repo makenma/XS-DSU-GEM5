@@ -48,6 +48,27 @@ struct AxiInitiatorOccupancy
     size_t outstandingReads = 0;
 };
 
+struct AxiInitiatorResourceOccupancy
+{
+    size_t readWaitingQuota = 0;
+    size_t readGrantedWaitingForward = 0;
+    size_t readForwardedToMessageBuffer = 0;
+    size_t writeWaitingQuota = 0;
+    size_t writeGrantedWaitingForward = 0;
+    size_t writeForwardedToMessageBuffer = 0;
+    size_t rRobReservedBeats = 0;
+    size_t rRobBufferedBeats = 0;
+    size_t bRobReservedTransactions = 0;
+    size_t bRobBufferedTransactions = 0;
+};
+
+struct AxiAdmissionRejectionAttempts
+{
+    uint64_t fifoFull = 0;
+    uint64_t outstandingFull = 0;
+    uint64_t responseReservationFull = 0;
+};
+
 struct AxiInitiatorProgress
 {
     uint64_t bPacketsBuffered = 0;
@@ -57,6 +78,8 @@ struct AxiInitiatorProgress
     uint64_t rTransactionsRetired = 0;
     uint64_t writeQuotaStalls = 0;
     uint64_t readQuotaStalls = 0;
+    AxiAdmissionRejectionAttempts arRejectionAttempts;
+    AxiAdmissionRejectionAttempts awRejectionAttempts;
 };
 
 struct AxiInitiatorResidual
@@ -91,10 +114,14 @@ class AxiInitiatorState
     void acceptBPacket(const AxiBPacket &packet, Tick ready_tick = 0);
     void acceptRPacket(const AxiDataPacket &packet, Tick ready_tick = 0);
     bool tryConsumeB(AxiBBeat &beat);
-    bool tryConsumeR(AxiRBeat &beat);
+    bool tryConsumeR(AxiRBeat &beat, Tick tick);
 
     void advance();
     AxiInitiatorOccupancy occupancy() const;
+    AxiInitiatorResourceOccupancy resourceOccupancy() const;
+    uint32_t peakOutstandingReads() const { return _peakOutstandingReads; }
+    const std::vector<Tick> &arAcceptTicks() const { return _arAcceptTicks; }
+    Tick firstCreditReleaseTick() const { return _firstCreditReleaseTick; }
     const AxiInitiatorProgress &progress() const { return _progress; }
     std::string finalConsistencyError() const;
     std::optional<AxiInitiatorResidual> finalResidual() const;
@@ -201,6 +228,9 @@ class AxiInitiatorState
     BoundedFifo<ReadyR> _rReady;
 
     std::map<uint32_t, AxiQuota> _activeQuota;
+    uint32_t _peakOutstandingReads = 0;
+    std::vector<Tick> _arAcceptTicks;
+    Tick _firstCreditReleaseTick = 0;
     std::optional<AxiAddressPacket> _lastAcceptedAw;
     std::optional<AxiAddressPacket> _lastAcceptedAr;
     size_t _unboundBursts = 0;

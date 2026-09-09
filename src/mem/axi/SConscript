@@ -20,6 +20,7 @@ Source('axi_validation.cc')
 Source('axi_protocol_checker.cc')
 Source('axi_initiator_adapter.cc')
 Source('axi_target_adapter.cc')
+Source('synthetic_hbm_backend.cc')
 Source('axi_trace_tester.cc')
 DebugFlag('AxiGarnetProbe')
 
@@ -30,18 +31,24 @@ GTest('axi_validation.test',
 GTest('axi_write_pairing.test',
       'axi_write_pairing.test.cc',
       'axi_initiator_adapter.cc', 'axi_target_adapter.cc',
-      'axi_validation.cc')
+      'axi_validation.cc', 'synthetic_hbm_backend.cc')
 GTest('axi_ordering.test',
       'axi_ordering.test.cc',
       'axi_initiator_adapter.cc', 'axi_target_adapter.cc',
-      'axi_validation.cc')
+      'axi_validation.cc', 'synthetic_hbm_backend.cc')
 GTest('axi_flow_control.test',
       'axi_flow_control.test.cc',
       'axi_initiator_adapter.cc', 'axi_target_adapter.cc',
-      'axi_validation.cc')
+      'axi_validation.cc', 'synthetic_hbm_backend.cc')
 GTest('axi_error_response.test',
       'axi_error_response.test.cc',
-      'axi_target_adapter.cc', 'axi_validation.cc')
+      'axi_target_adapter.cc', 'axi_validation.cc', 'synthetic_hbm_backend.cc')
+GTest('synthetic_hbm_backend.test',
+      'synthetic_hbm_backend.test.cc',
+      'axi_target_adapter.cc', 'axi_validation.cc', 'synthetic_hbm_backend.cc')
+GTest('axi_simple_memory.test',
+      'axi_simple_memory.test.cc',
+      'axi_target_adapter.cc', 'axi_validation.cc', 'synthetic_hbm_backend.cc')
 GTest('axi_protocol_checker.test',
       'axi_protocol_checker.test.cc', 'axi_protocol_checker.cc',
       'axi_determinism.cc')

@@ -175,7 +175,198 @@ targetConfig()
     return config;
 }
 
+class AxiReadArbitrationTest : public ::testing::Test
+{
+  protected:
+    static AxiInitiatorConfig endpointConfig(AxiEndpointKey endpoint)
+    {
+        auto config = sourceConfig();
+        config.source = endpoint;
+        return config;
+    }
+
+    static AxiTargetConfig readTargetConfig(uint32_t ready_depth = 1)
+    {
+        auto config = targetConfig();
+        config.capacity = {24, 24, 24, 24};
+        config.bReadyDepth = 24;
+        config.rReadyDepth = ready_depth;
+        config.readBaseLatency = 10;
+        config.sourceQuotas[{3, 5}] = {8, 8, 8, 8};
+        config.sourceQuotas[{4, 0}] = {8, 8, 8, 8};
+        return config;
+    }
+
+    static AxiAddressPacket read(AxiInitiatorState &source, uint32_t id,
+                                 uint64_t address, uint16_t beats = 2)
+    {
+        auto ar = request(id, address);
+        ar.beatCount = beats;
+        return issueRead(source, ar);
+    }
+
+    static void expectBeat(AxiTargetState &target,
+                           const AxiAddressPacket &ar, uint16_t index)
+    {
+        ASSERT_TRUE(target.hasRPacket());
+        const auto &packet = target.frontRPacket();
+        EXPECT_EQ(packet.meta.txnUid, ar.meta.txnUid);
+        EXPECT_EQ(packet.meta.srcNode, ar.meta.srcNode);
+        EXPECT_EQ(packet.meta.srcPort, ar.meta.srcPort);
+        EXPECT_EQ(packet.meta.axiId, ar.meta.axiId);
+        EXPECT_EQ(packet.beatIndex, index);
+        EXPECT_EQ(packet.beatCount, ar.request.beatCount);
+        EXPECT_EQ(packet.last, index + 1 == ar.request.beatCount);
+        EXPECT_EQ(packet.resp, AxiResp::Okay);
+        target.popRPacket();
+    }
+
+    AxiInitiatorState a{endpointConfig({3, 2})};
+    AxiInitiatorState b{endpointConfig({3, 5})};
+    AxiInitiatorState c{endpointConfig({4, 0})};
+};
+
 } // anonymous namespace
+
+TEST_F(AxiReadArbitrationTest, RoundRobinAcrossReadySources)
+{
+    AxiTargetState target(readTargetConfig());
+    const auto first = read(a, 4, 0x100);
+    const auto second = read(c, 7, 0x200);
+    target.acceptAr(second, 0);
+    target.acceptAr(first, 0);
+    EXPECT_FALSE(target.hasRPacket());
+    target.advance(10);
+    ASSERT_EQ(target.progress().readsCommitted, 2u);
+    expectBeat(target, first, 0);
+    expectBeat(target, second, 0);
+    expectBeat(target, first, 1);
+    expectBeat(target, second, 1);
+    EXPECT_FALSE(target.hasRPacket());
+    EXPECT_EQ(target.occupancy().readReservedBeats, 0u);
+}
+
+TEST_F(AxiReadArbitrationTest, SourcePortParticipatesInRoundRobin)
+{
+    AxiTargetState target(readTargetConfig(8));
+    const auto first = read(a, 4, 0x100);
+    const auto second = read(b, 4, 0x200);
+    target.acceptAr(first, 0);
+    target.acceptAr(second, 0);
+    target.advance(10);
+    ASSERT_EQ(target.occupancy().rReady, 4u);
+    expectBeat(target, first, 0);
+    expectBeat(target, second, 0);
+    expectBeat(target, first, 1);
+    expectBeat(target, second, 1);
+    EXPECT_FALSE(target.hasRPacket());
+}
+
+TEST_F(AxiReadArbitrationTest, FullReadyQueuePreservesNextSource)
+{
+    AxiTargetState target(readTargetConfig());
+    const auto first = read(a, 4, 0x100);
+    const auto second = read(b, 4, 0x200);
+    const auto third = read(c, 4, 0x300);
+    target.acceptAr(first, 0);
+    target.acceptAr(second, 0);
+    target.acceptAr(third, 0);
+    target.advance(10);
+    target.advance(11);
+    ASSERT_EQ(target.occupancy().rReady, 1u);
+    for (uint16_t index = 0; index < 2; ++index) {
+        expectBeat(target, first, index);
+        expectBeat(target, second, index);
+        expectBeat(target, third, index);
+    }
+    EXPECT_FALSE(target.hasRPacket());
+}
+
+TEST_F(AxiReadArbitrationTest, SkipsUnreadySourceThenRejoins)
+{
+    AxiTargetState target(readTargetConfig());
+    const auto first = read(a, 4, 0x100);
+    const auto delayed = read(b, 4, 0x200);
+    const auto third = read(c, 4, 0x300);
+    target.acceptAr(first, 0);
+    target.acceptAr(third, 0);
+    target.acceptAr(delayed, 5);
+    target.advance(10);
+    ASSERT_EQ(target.progress().readsCommitted, 2u);
+    expectBeat(target, first, 0);
+    target.advance(15);
+    ASSERT_EQ(target.progress().readsCommitted, 3u);
+    expectBeat(target, third, 0);
+    expectBeat(target, first, 1);
+    expectBeat(target, delayed, 0);
+    expectBeat(target, third, 1);
+    expectBeat(target, delayed, 1);
+    EXPECT_FALSE(target.hasRPacket());
+}
+
+TEST_F(AxiReadArbitrationTest, PreservesWithinSourceUidAndBeatOrder)
+{
+    AxiTargetState target(readTargetConfig());
+    const auto older = read(a, 4, 0x100);
+    const auto younger = read(a, 4, 0x200);
+    const auto other = read(c, 7, 0x300);
+    target.acceptAr(younger, 0);
+    target.acceptAr(older, 0);
+    target.acceptAr(other, 0);
+    target.advance(10);
+    for (uint16_t index = 0; index < 2; ++index) {
+        expectBeat(target, older, index);
+        expectBeat(target, other, index);
+    }
+    expectBeat(target, younger, 0);
+    expectBeat(target, younger, 1);
+    EXPECT_FALSE(target.hasRPacket());
+}
+
+TEST_F(AxiReadArbitrationTest, PreservesTurnAcrossIdle)
+{
+    AxiTargetState target(readTargetConfig());
+    const auto initial = read(a, 4, 0x100);
+    target.acceptAr(initial, 0);
+    target.advance(10);
+    expectBeat(target, initial, 0);
+    expectBeat(target, initial, 1);
+    EXPECT_FALSE(target.hasRPacket());
+    target.advance(11);
+    const auto first = read(a, 5, 0x200);
+    const auto second = read(b, 7, 0x300);
+    target.acceptAr(first, 12);
+    target.acceptAr(second, 12);
+    target.advance(22);
+    for (uint16_t index = 0; index < 2; ++index) {
+        expectBeat(target, second, index);
+        expectBeat(target, first, index);
+    }
+    EXPECT_FALSE(target.hasRPacket());
+}
+
+TEST_F(AxiReadArbitrationTest, WithinSourceReadyTimePrecedesUid)
+{
+    const auto blocker = read(c, 7, 0x300, 1);
+    const auto older = read(a, 4, 0x100);
+    const auto younger = read(a, 5, 0x200);
+    auto config = readTargetConfig();
+    config.extraLatency[older.meta.txnUid] = 10;
+    AxiTargetState target(config);
+    target.acceptAr(blocker, 0);
+    target.acceptAr(older, 1);
+    target.acceptAr(younger, 1);
+    target.advance(10);
+    target.advance(11);
+    target.advance(21);
+    ASSERT_EQ(target.progress().readsCommitted, 3u);
+    expectBeat(target, blocker, 0);
+    expectBeat(target, younger, 0);
+    expectBeat(target, younger, 1);
+    expectBeat(target, older, 0);
+    expectBeat(target, older, 1);
+    EXPECT_FALSE(target.hasRPacket());
+}
 
 TEST(AxiOrderingTest, AllocatesSequencesAtAcceptance)
 {
@@ -213,11 +404,11 @@ TEST(AxiOrderingTest, SameIdReadWaitsOlder)
     const auto younger = issueRead(source, request(4, 0x200));
     source.acceptRPacket(rPacket(younger, 0x22), 1);
     AxiRBeat beat;
-    EXPECT_FALSE(source.tryConsumeR(beat));
+    EXPECT_FALSE(source.tryConsumeR(beat, 200));
     source.acceptRPacket(rPacket(older, 0x11), 10);
-    ASSERT_TRUE(source.tryConsumeR(beat));
+    ASSERT_TRUE(source.tryConsumeR(beat, 200));
     EXPECT_EQ(beat.functionalData[0], 0x11);
-    ASSERT_TRUE(source.tryConsumeR(beat));
+    ASSERT_TRUE(source.tryConsumeR(beat, 200));
     EXPECT_EQ(beat.functionalData[0], 0x22);
     EXPECT_GT(source.progress().sameIdResponsesBlocked, 0);
 }
@@ -229,10 +420,10 @@ TEST(AxiOrderingTest, DifferentIdReadCanInvert)
     const auto fast = issueRead(source, request(1, 0x200));
     source.acceptRPacket(rPacket(fast, 0x21), 1);
     AxiRBeat beat;
-    ASSERT_TRUE(source.tryConsumeR(beat));
+    ASSERT_TRUE(source.tryConsumeR(beat, 200));
     EXPECT_EQ(beat.axiId, 1);
     source.acceptRPacket(rPacket(slow, 0x10), 10);
-    ASSERT_TRUE(source.tryConsumeR(beat));
+    ASSERT_TRUE(source.tryConsumeR(beat, 200));
     EXPECT_EQ(beat.axiId, 0);
 }
 
@@ -350,7 +541,7 @@ TEST(AxiOrderingTest, ReadWriteDomainsIndependent)
     const auto read = issueRead(source, request(6, 0x200));
     source.acceptRPacket(rPacket(read, 0x33), 1);
     AxiRBeat beat;
-    ASSERT_TRUE(source.tryConsumeR(beat));
+    ASSERT_TRUE(source.tryConsumeR(beat, 200));
     EXPECT_EQ(beat.axiId, 6);
     EXPECT_EQ(source.progress().rTransactionsRetired, 1);
     EXPECT_EQ(source.progress().bTransactionsRetired, 0);

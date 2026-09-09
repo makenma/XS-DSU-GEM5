@@ -417,6 +417,7 @@ class ProgramBuilder:
         completion_event,
         transfer_id=0,
         physical=None,
+        max_burst_beats=None,
     ) -> int:
         useful = checked_mul(rows, row_bytes)
         descriptor = DmaDescriptor(
@@ -436,14 +437,16 @@ class ProgramBuilder:
             axi_id=command.command_id & 0xFFFF,
             qos=0,
             reserved=0,
-            max_burst_beats=self.arch.axi_max_burst_beats,
+            max_burst_beats=(
+                self.arch.axi_max_burst_beats if max_burst_beats is None
+                else max_burst_beats),
             reserved2=0,
             completion_event=completion_event,
         )
         self.dma_descriptors.append(descriptor)
         return descriptor.descriptor_id
 
-    def oracle(self, entrypoint_id, profile_id, descriptor_id, command_id, kind, base, rows, row_bytes, stride) -> None:
+    def oracle(self, entrypoint_id, profile_id, descriptor_id, command_id, kind, base, rows, row_bytes, stride, max_burst_beats=None) -> None:
         if kind == A.DMA_KIND.LOCAL_FILL:
             bursts, beat_bytes, segments = 0, 0, 0
         else:
@@ -453,7 +456,8 @@ class ProgramBuilder:
                 base,
                 stride,
                 self.arch.axi_data_bytes,
-                self.arch.axi_max_burst_beats,
+                self.arch.axi_max_burst_beats if max_burst_beats is None
+                else max_burst_beats,
             )
             bursts, beat_bytes, segments = len(plan.bursts), plan.beat_bytes, plan.segments
         is_write = kind in (A.DMA_KIND.STORE, A.DMA_KIND.P2P_PUSH)

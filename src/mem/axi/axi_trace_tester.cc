@@ -117,7 +117,7 @@ AxiTraceTester::AxiTraceTester(const Params &p)
       creditLedgerJson(p.credit_ledger_json),
       residualStateJson(p.residual_state_json), runtimeFault(p.runtime_fault),
       seed(p.seed),
-      wireHeaderBytes(p.wire_header_bytes),
+      channelWireBytes{},
       dataBusBytes(p.data_bus_bytes),
       drainCycles(p.drain_cycles), concurrent(p.concurrent),
       bConsumerStallUntil(checkedCyclePair(
@@ -140,11 +140,11 @@ AxiTraceTester::AxiTraceTester(const Params &p)
     fatal_if(!network, "%s: requires a GarnetNetwork", name());
     fatal_if(dataBusBytes == 0 || dataBusBytes > 64,
              "%s: data_bus_bytes must be in [1,64]", name());
-    fatal_if(wireHeaderBytes.size() != 5,
-             "%s: wire_header_bytes requires five entries", name());
-    fatal_if(std::any_of(wireHeaderBytes.begin(), wireHeaderBytes.end(),
-                         [](uint32_t bytes) { return bytes == 0; }),
-             "%s: wire_header_bytes entries must be positive", name());
+    const auto packetization_error = normalizeAxiWireBytes(
+        p.wire_header_bytes, dataBusBytes, channelWireBytes,
+        p.data_header_sideband);
+    fatal_if(!packetization_error.empty(), "%s: %s", name(),
+             packetization_error);
     fatal_if(drainCycles < 2, "%s: drain_cycles must be at least two", name());
     fatal_if(progressWatchdogCycles == 0,
              "%s: progress_watchdog_cycles must be positive", name());
@@ -944,7 +944,7 @@ AxiTraceTester::checkCaseRequirements() const
                  "I7 requires an expected router vnet and depth");
         const unsigned vnet = expectedRouterVnet;
         const uint64_t w_packet_flits =
-            (uint64_t(wireHeaderBytes[1]) + dataBusBytes +
+            (uint64_t(channelWireBytes[1]) +
              network->getNiFlitSize() - 1) / network->getNiFlitSize();
         fatal_if(w_packet_flits <= expectedRouterDepth,
                  "I7 requires a W packet larger than one VC: "
@@ -1039,8 +1039,7 @@ AxiTraceTester::writeEventTrace() const
             if (*event.channel != AxiChannel::B)
                 beat_count = txn->request.beatCount;
             const unsigned channel = static_cast<unsigned>(*event.channel);
-            wire_bytes = wireHeaderBytes[channel] +
-                (data ? dataBusBytes : 0);
+            wire_bytes = channelWireBytes[channel];
             semantic_bytes = address ? 24 :
                 (*event.channel == AxiChannel::B ? 8 :
                  uint64_t{1} << txn->request.size);

@@ -32,6 +32,7 @@
 #include "mem/ruby/network/garnet/SwitchAllocator.hh"
 
 #include "debug/RubyNetwork.hh"
+#include "debug/GarnetDualLane.hh"
 #include "mem/ruby/network/garnet/GarnetNetwork.hh"
 #include "mem/ruby/network/garnet/InputUnit.hh"
 #include "mem/ruby/network/garnet/OutputUnit.hh"
@@ -62,20 +63,17 @@ SwitchAllocator::init()
 {
     m_num_inports = m_router->get_num_inports();
     m_num_outports = m_router->get_num_outports();
-    m_round_robin_inport.resize(m_num_outports);
-    m_round_robin_invc.resize(m_num_inports);
-    m_port_requests.resize(m_num_inports);
-    m_vc_winners.resize(m_num_inports);
-
-    for (int i = 0; i < m_num_inports; i++) {
-        m_round_robin_invc[i] = 0;
-        m_port_requests[i] = -1;
-        m_vc_winners[i] = -1;
+    const auto lane_count = m_router->dualLane() ? 2 : 1;
+    m_lanes.clear();
+    for (LaneId lane = 0; lane < lane_count; ++lane) {
+        std::vector<int> ports;
+        for (int port = 0; port < m_num_inports; ++port) {
+            if (m_router->getInputUnit(port)->get_lane() == lane)
+                ports.push_back(port);
+        }
+        m_lanes.emplace_back(ports, m_num_outports, m_num_vcs);
     }
-
-    for (int i = 0; i < m_num_outports; i++) {
-        m_round_robin_inport[i] = 0;
-    }
+    m_local_merges.assign(m_num_outports, LaneMergeArbiter{});
 }
 
 /*
@@ -93,7 +91,16 @@ SwitchAllocator::wakeup()
     arbitrate_inports(); // First stage of allocation
     arbitrate_outports(); // Second stage of allocation
 
-    clear_request_vector();
+    for (auto &lane : m_lanes) {
+        for (size_t slot = 0; slot < lane.size(); ++slot) {
+            if (lane.pendingVc(slot) != -1) {
+                m_router->getInputUnit(lane.inputPort(slot))->recordStall(
+                    lane.pendingVc(slot), GarnetInputStall::SaLost);
+            }
+        }
+        lane.clearRequests();
+    }
+
     check_for_wakeup();
 }
 
@@ -110,37 +117,23 @@ SwitchAllocator::wakeup()
 void
 SwitchAllocator::arbitrate_inports()
 {
-    // Select a VC from each input in a round robin manner
-    // Independent arbiter at each input port
-    for (int inport = 0; inport < m_num_inports; inport++) {
-        int invc = m_round_robin_invc[inport];
-
-        for (int invc_iter = 0; invc_iter < m_num_vcs; invc_iter++) {
-            auto input_unit = m_router->getInputUnit(inport);
-
-            if (input_unit->need_stage(invc, SA_, curTick())) {
-                // This flit is in SA stage
-
-                int outport = input_unit->get_outport(invc);
-                int outvc = input_unit->get_outvc(invc);
-
-                // check if the flit in this InputVC is allowed to be sent
-                // send_allowed conditions described in that function.
-                bool make_request =
-                    send_allowed(inport, invc, outport, outvc);
-
-                if (make_request) {
-                    m_input_arbiter_activity++;
-                    m_port_requests[inport] = outport;
-                    m_vc_winners[inport] = invc;
-
-                    break; // got one vc winner for this port
+    for (auto &lane : m_lanes) {
+        for (size_t slot = 0; slot < lane.size(); ++slot) {
+            const int inport = lane.inputPort(slot);
+            auto input = m_router->getInputUnit(inport);
+            int invc = lane.firstVc(slot);
+            for (int examined = 0; examined < m_num_vcs; ++examined) {
+                if (input->need_stage(invc, SA_, curTick())) {
+                    const int outport = input->get_outport(invc);
+                    if (send_allowed(inport, invc, outport,
+                                     input->get_outvc(invc))) {
+                        ++m_input_arbiter_activity;
+                        lane.request(slot, outport, invc);
+                        break;
+                    }
                 }
+                invc = (invc + 1) % m_num_vcs;
             }
-
-            invc++;
-            if (invc >= m_num_vcs)
-                invc = 0;
         }
     }
 }
@@ -162,108 +155,115 @@ SwitchAllocator::arbitrate_inports()
 void
 SwitchAllocator::arbitrate_outports()
 {
-    // Now there are a set of input vc requests for output vcs.
-    // Again do round robin arbitration on these requests
-    // Independent arbiter at each output port
-    for (int outport = 0; outport < m_num_outports; outport++) {
-        int inport = m_round_robin_inport[outport];
-
-        for (int inport_iter = 0; inport_iter < m_num_inports;
-                 inport_iter++) {
-
-            // inport has a request this cycle for outport
-            if (m_port_requests[inport] == outport) {
-                auto output_unit = m_router->getOutputUnit(outport);
-                auto input_unit = m_router->getInputUnit(inport);
-
-                // grant this outport to this inport
-                int invc = m_vc_winners[inport];
-
-                int outvc = input_unit->get_outvc(invc);
-                if (outvc == -1) {
-                    // VC Allocation - select any free VC from outport
-                    outvc = vc_allocate(outport, inport, invc);
-                }
-
-                // remove flit from Input VC
-                flit *t_flit = input_unit->getTopFlit(invc);
-
-                DPRINTF(RubyNetwork, "SwitchAllocator at Router %d "
-                                     "granted outvc %d at outport %d "
-                                     "to invc %d at inport %d to flit %s at "
-                                     "cycle: %lld\n",
-                        m_router->get_id(), outvc,
-                        m_router->getPortDirectionName(
-                            output_unit->get_direction()),
-                        invc,
-                        m_router->getPortDirectionName(
-                            input_unit->get_direction()),
-                            *t_flit,
-                        m_router->curCycle());
-
-
-                // Update outport field in the flit since this is
-                // used by CrossbarSwitch code to send it out of
-                // correct outport.
-                // Note: post route compute in InputUnit,
-                // outport is updated in VC, but not in flit
-                t_flit->set_outport(outport);
-
-                // set outvc (i.e., invc for next hop) in flit
-                // (This was updated in VC by vc_allocate, but not in flit)
-                t_flit->set_vc(outvc);
-
-                // decrement credit in outvc
-                output_unit->decrement_credit(outvc);
-
-                // flit ready for Switch Traversal
-                t_flit->advance_stage(ST_, curTick());
-                m_router->grant_switch(inport, t_flit);
-                m_output_arbiter_activity++;
-
-                if ((t_flit->get_type() == TAIL_) ||
-                    t_flit->get_type() == HEAD_TAIL_) {
-
-                    // This Input VC should now be empty
-                    assert(!(input_unit->isReady(invc, curTick())));
-
-                    // Free this VC
-                    input_unit->set_vc_idle(invc, curTick());
-
-                    // Send a credit back
-                    // along with the information that this VC is now idle
-                    input_unit->increment_credit(invc, true, curTick());
-                } else {
-                    // Send a credit back
-                    // but do not indicate that the VC is idle
-                    input_unit->increment_credit(invc, false, curTick());
-                }
-
-                // remove this request
-                m_port_requests[inport] = -1;
-
-                // Update Round Robin pointer
-                m_round_robin_inport[outport] = inport + 1;
-                if (m_round_robin_inport[outport] >= m_num_inports)
-                    m_round_robin_inport[outport] = 0;
-
-                // Update Round Robin pointer to the next VC
-                // We do it here to keep it fair.
-                // Only the VC which got switch traversal
-                // is updated.
-                m_round_robin_invc[inport] = invc + 1;
-                if (m_round_robin_invc[inport] >= m_num_vcs)
-                    m_round_robin_invc[inport] = 0;
-
-
-                break; // got a input winner for this outport
-            }
-
-            inport++;
-            if (inport >= m_num_inports)
-                inport = 0;
+    for (int outport = 0; outport < m_num_outports; ++outport) {
+        if (m_router->sharedLocalOutport(outport)) {
+            arbitrate_merged_local_outport(outport);
+        } else {
+            const auto identity = parsePortName(
+                m_router->getOutportDirection(outport));
+            auto &lane = m_lanes.at(identity.lane);
+            if (const auto winner = lane.candidate(outport))
+                grantOutport(outport, lane, *winner);
         }
     }
+}
+
+void
+SwitchAllocator::arbitrate_merged_local_outport(int outport)
+{
+    const std::array<std::optional<SwitchGrant>, 2> candidates{
+        m_lanes[0].candidate(outport), m_lanes[1].candidate(outport)};
+    auto &merge = m_local_merges[outport];
+    const auto selected = merge.select(
+        {candidates[0].has_value(), candidates[1].has_value()});
+    if (!selected)
+        return;
+
+    const int req0 = candidates[0] ?
+        m_lanes[0].inputPort(candidates[0]->slot) : -1;
+    const int req1 = candidates[1] ?
+        m_lanes[1].inputPort(candidates[1]->slot) : -1;
+    DPRINTF(GarnetDualLane,
+            "DL_MERGE cycle=%llu router=%d outport=%d req0=%d req1=%d "
+            "selected=%u winner=%d\n",
+            m_router->curCycle(), m_router->get_id(), outport, req0, req1,
+            *selected, *selected == 0 ? req0 : req1);
+    grantOutport(outport, m_lanes[*selected], *candidates[*selected]);
+    merge.commit(*selected);
+}
+
+void
+SwitchAllocator::grantOutport(int outport, LaneArbiter &lane,
+                               const SwitchGrant &grant)
+{
+    const int inport = lane.inputPort(grant.slot);
+    auto output_unit = m_router->getOutputUnit(outport);
+    auto input_unit = m_router->getInputUnit(inport);
+
+    // grant this outport to this inport
+    int invc = grant.vc;
+
+    int outvc = input_unit->get_outvc(invc);
+    if (outvc == -1) {
+        // VC Allocation - select any free VC from outport
+        outvc = vc_allocate(outport, inport, invc);
+    }
+
+    // remove flit from Input VC
+    flit *t_flit = input_unit->getTopFlit(invc);
+
+    DPRINTF(RubyNetwork, "SwitchAllocator at Router %d "
+                         "granted outvc %d at outport %d "
+                         "to invc %d at inport %d to flit %s at "
+                         "cycle: %lld\n",
+            m_router->get_id(), outvc,
+            m_router->getPortDirectionName(
+                output_unit->get_direction()),
+            invc,
+            m_router->getPortDirectionName(
+                input_unit->get_direction()),
+                *t_flit,
+            m_router->curCycle());
+
+
+    // Update outport field in the flit since this is
+    // used by CrossbarSwitch code to send it out of
+    // correct outport.
+    // Note: post route compute in InputUnit,
+    // outport is updated in VC, but not in flit
+    t_flit->set_outport(outport);
+
+    // set outvc (i.e., invc for next hop) in flit
+    // (This was updated in VC by vc_allocate, but not in flit)
+    t_flit->set_vc(outvc);
+
+    // decrement credit in outvc
+    output_unit->decrement_credit(outvc);
+
+    // flit ready for Switch Traversal
+    t_flit->advance_stage(ST_, curTick());
+    m_router->grant_switch(inport, t_flit);
+    m_output_arbiter_activity++;
+
+    if ((t_flit->get_type() == TAIL_) ||
+        t_flit->get_type() == HEAD_TAIL_) {
+
+        // This Input VC should now be empty
+        assert(!(input_unit->isReady(invc, curTick())));
+
+        // Free this VC
+        input_unit->set_vc_idle(invc, curTick());
+
+        // Send a credit back
+        // along with the information that this VC is now idle
+        input_unit->increment_credit(invc, true, curTick());
+    } else {
+        // Send a credit back
+        // but do not indicate that the VC is idle
+        input_unit->increment_credit(invc, false, curTick());
+    }
+
+    lane.commit(outport, grant);
 }
 
 /*
@@ -313,10 +313,14 @@ SwitchAllocator::send_allowed(int inport, int invc, int outport, int outvc)
     // later router edge.
     if (!has_outvc) {
         m_router->get_net_ptr()->incrementVcAllocStall(vnet);
+        m_router->getInputUnit(inport)->recordStall(
+            invc, GarnetInputStall::NoVc);
         return false;
     }
     if (!has_credit) {
         m_router->get_net_ptr()->incrementRouterCreditStall(vnet);
+        m_router->getInputUnit(inport)->recordStall(
+            invc, GarnetInputStall::Credit);
         return false;
     }
 
@@ -387,14 +391,6 @@ SwitchAllocator::get_vnet(int invc)
     return vnet;
 }
 
-
-// Clear the request vector within the allocator at end of SA-II.
-// Was populated by SA-I.
-void
-SwitchAllocator::clear_request_vector()
-{
-    std::fill(m_port_requests.begin(), m_port_requests.end(), -1);
-}
 
 void
 SwitchAllocator::resetStats()

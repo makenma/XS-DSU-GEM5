@@ -156,8 +156,10 @@ Topology::createLinks(Network *net)
             if (link->mVnets.size() == 0) {
                 for (int v = 0; v < m_vnets; v++) {
                     // Two links connecting same src and destination
-                    // cannot carry same vnets.
-                    fatal_if(vnet_done[v], "Two links connecting same src"
+                    // cannot carry same vnets; explicit parallel lane
+                    // twins are exempt and simply re-state the weights.
+                    fatal_if(vnet_done[v] && !link->m_lane_parallel,
+                    "Two links connecting same src"
                     " and destination cannot support same vnets");
 
                     component_latencies[src][dst][v] = link->m_latency;
@@ -170,8 +172,10 @@ Topology::createLinks(Network *net)
                     fatal_if(vnet >= m_vnets, "Not enough virtual networks "
                              "(setting latency and weight for vnet %d)", vnet);
                     // Two links connecting same src and destination
-                    // cannot carry same vnets.
-                    fatal_if(vnet_done[vnet], "Two links connecting same src"
+                    // cannot carry same vnets; explicit parallel lane
+                    // twins are exempt and simply re-state the weights.
+                    fatal_if(vnet_done[vnet] && !link->m_lane_parallel,
+                    "Two links connecting same src"
                     " and destination cannot support same vnets");
 
                     component_latencies[src][dst][vnet] = link->m_latency;

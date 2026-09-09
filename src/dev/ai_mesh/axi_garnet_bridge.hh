@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "dev/ai_mesh/mesh_splitter.hh"
+#include "mem/axi/axi_garnet_endpoint.hh"
 #include "mem/axi/axi_types.hh"
 #include "sim/clocked_object.hh"
 #include "sim/eventq.hh"
@@ -52,6 +53,7 @@ class AxiGarnetBridge : public ClockedObject
     {
         uint64_t awAccepted = 0;
         uint64_t wAccepted = 0;
+        uint64_t peakWAcceptedPerCycle = 0;
         uint64_t arAccepted = 0;
         uint64_t bConsumed = 0;
         uint64_t rBeatsConsumed = 0;
@@ -61,6 +63,12 @@ class AxiGarnetBridge : public ClockedObject
         uint64_t rErrorBeats = 0;
     };
     const Counters &counters() const { return ctr; }
+    uint32_t peakOutstandingReads() const;
+    std::vector<Tick> arAcceptTicks() const;
+    Tick firstCreditReleaseTick() const;
+    axi::AxiEndpointQueueHighWater queueHighWater() const;
+    axi::AxiInitiatorAdapterProgress initiatorProgress() const;
+    axi::AxiInitiatorResourceOccupancy initiatorResourceOccupancy() const;
 
     // Pending work still queued or outstanding (drain accounting).
     uint32_t pendingReads() const { return pending_ar.size(); }
@@ -74,11 +82,18 @@ class AxiGarnetBridge : public ClockedObject
 
     struct OrdinalTicks
     {
+        bool read = false;
+        uint32_t axi_id = 0;
+        uint64_t address = 0;
+        uint32_t beats = 0;
+        uint32_t beat_bytes = 0;
         Tick addr_accept = 0;  // real AR/AW handshake tick
         Tick first_w = 0;      // first W beat accepted
         Tick resp_last = 0;    // last R beat / B response tick
     };
     const OrdinalTicks *ordinalTicks(uint64_t ordinal) const;
+    const std::map<uint64_t, OrdinalTicks> &burstTimings() const
+    { return ordinal_handshake; }
 
     // Completion notification targets (the DMA engine).
     void setReadBeatSink(void *ctx,
@@ -129,8 +144,11 @@ class AxiGarnetBridge : public ClockedObject
     const uint32_t data_bus_bytes;
     const uint32_t aw_queue_depth;
     const uint32_t ar_queue_depth;
+    const uint32_t w_beats_per_cycle;
     const uint32_t max_axi_ids;
     const uint16_t axi_id_base;
+    uint64_t w_accept_cycle = 0;
+    uint64_t w_accepted_this_cycle = 0;
 
     std::deque<PendingWrite> pending_aw;
     std::deque<PendingRead> pending_ar;

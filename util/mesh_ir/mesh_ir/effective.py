@@ -20,7 +20,21 @@ TUNING_OVERRIDE_FIELDS = (
     "dma_read_outstanding",
     "dma_write_outstanding",
     "dma_segment_queue_depth",
+    "axi_id_bits",
+    "sram_write_bytes_per_cycle_per_bank",
 )
+
+
+def apply_cli_dma_overrides(effective, args) -> None:
+    for argument, field in (
+        ("read_outstanding", "dma_read_outstanding"),
+        ("write_outstanding", "dma_write_outstanding"),
+        ("segment_queue_depth", "dma_segment_queue_depth"),
+        ("dma_descriptor_queue_depth", "dma_descriptor_queue_depth"),
+    ):
+        value = getattr(args, argument, None)
+        if value is not None:
+            effective.override(field, value)
 
 
 class EffectiveArchitecture:

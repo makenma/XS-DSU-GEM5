@@ -84,6 +84,12 @@ CASES = {
     "repeat_error": _garnet("repeat_error", "repeat_error_drain"),
     "p2p_reuse": _garnet("p2p_reuse", "p2p_reuse_commits"),
     "dma_zero": _garnet("dma_zero"),
+    "read_outstanding_window": _garnet(
+        "read_outstanding_window", "read_window_slides"
+    ),
+    "load_saturation_contiguous": _garnet("load_saturation_contiguous"),
+    "load_saturation_multi_tensor": _garnet("load_saturation_multi_tensor"),
+    "load_saturation_strided": _garnet("load_saturation_strided"),
     "dma_shapes": _garnet(
         "dma_shapes", "p2p_commit", "shapes_content", "cross_core_order"
     ),

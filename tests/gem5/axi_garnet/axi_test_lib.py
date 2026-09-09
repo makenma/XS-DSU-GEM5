@@ -80,6 +80,7 @@ UNIT_BINARIES = {
         "AxiDynamicWireBytesTest": (
             "CountsDefaultFiveChannels", "FallsBackForLegacyMessage",
             "IgnoresSemanticBytesForFlits", "RejectsInvalidWireSize",
+            "SidebandDataHeadersKeepFullBeatInOneFlit",
         )
     },
     "mem/axi/axi_write_pairing.test.opt": {
@@ -107,13 +108,33 @@ UNIT_BINARIES = {
             "ReadWriteDomainsIndependent", "SameIdCrossTargetRetiresGlobally",
             "SameTickWriteUsesConfiguredTieBreak",
             "DifferentIdDelayedBDoesNotBlockReadyResponse",
-        )
+        ),
+        "AxiReadArbitrationTest": (
+            "RoundRobinAcrossReadySources",
+            "SourcePortParticipatesInRoundRobin",
+            "FullReadyQueuePreservesNextSource",
+            "SkipsUnreadySourceThenRejoins",
+            "PreservesWithinSourceUidAndBeatOrder",
+            "PreservesTurnAcrossIdle",
+            "WithinSourceReadyTimePrecedesUid",
+        ),
     },
     "mem/axi/axi_flow_control.test.opt": {
         "AxiBackpressureTest": (
             "DepthOneChannelsBackpressure", "PausesAndResumesBAndR",
             "QueueFullReturnsNoError", "RetriesOnlyOnLaterEdge",
-        )
+        ),
+        "AxiReadOutstandingTest": (
+            "SlidingWindowReleasesCreditOnRlast",
+        ),
+        "AxiObservationTest": (
+            "AddressRejectionsPreserveFirstReasonPriority",
+            "ReadReservationRejectionsCoverSizeAndTotal",
+            "WriteResponseCapacityCannotUndersizeWindow",
+            "ReadStagesArePassiveAndCloseAtRlast",
+            "ReadRobLiveBeatsCountReadyAndReorderedOnce",
+            "WriteStagesExcludeUnboundAndRetireOnB",
+        ),
     },
     "mem/axi/axi_error_response.test.opt": {
         "AxiErrorResponseTest": (
@@ -145,6 +166,24 @@ UNIT_BINARIES = {
         "GarnetQuiescenceSnapshotTest": (
             "DetectsEveryPendingClass", "BecomesEmptyOnlyAfterRestore",
             "AccessorsDoNotScheduleEvents",
+        )
+    },
+    "mem/ruby/network/garnet/dual_lane_selector.test.opt": {
+        "DualLaneSelectorTest": (
+            "SmallerCountWins", "GreaterCountLoses", "TieAlwaysTakesLane0",
+            "ContinuouslyIdleInjectsLane0", "CountsSumOverVcGroup",
+            "OtherVnetsAndInputsAreIsolated",
+            "SelectedLaneBackpressuresWithoutDiversion",
+            "VcStateAndCapacityGateAcceptance", "PortNameIdentityRoundTrip",
+        )
+    },
+    "mem/ruby/network/garnet/lane_arbitration.test.opt": {
+        "LaneArbitrationTest": (
+            "OtherLaneCannotStarveAnInput",
+            "RejectedCandidateDoesNotAdvanceEitherArbiter",
+            "OutputsAndLanesProgressIndependently",
+            "EmptyLaneDoesNotBlockAvailableLane",
+            "SingleLanePreservesInputAndVcRoundRobin",
         )
     },
 }

@@ -72,7 +72,11 @@ class AxiInitiatorAdapter : public ClockedObject, public ruby::Consumer
     AxiAddressPacket lastAcceptedAw() const;
     AxiAddressPacket lastAcceptedAr() const;
     AxiInitiatorOccupancy functionalOccupancy() const;
+    uint32_t peakOutstandingReads() const;
+    std::vector<Tick> arAcceptTicks() const;
+    Tick firstCreditReleaseTick() const;
     AxiInitiatorAdapterProgress functionalProgress() const;
+    AxiInitiatorResourceOccupancy resourceOccupancy() const;
     AxiEndpointQueueHighWater functionalQueueHighWater() const;
     std::string finalConsistencyError() const;
     std::optional<AxiInitiatorResidual> finalResidual() const;
@@ -142,6 +146,8 @@ class AxiTargetAdapter : public ClockedObject, public ruby::Consumer
 
     AxiTargetOccupancy functionalOccupancy() const;
     AxiTargetProgress functionalProgress() const;
+    bool syntheticBackendEnabled() const;
+    SyntheticHbmStats syntheticBackendStats() const;
     AxiEndpointQueueHighWater functionalQueueHighWater() const;
     uint8_t readMemoryByte(uint64_t address) const;
     bool containsMemoryAddress(uint64_t address) const;

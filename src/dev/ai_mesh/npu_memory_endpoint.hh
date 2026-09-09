@@ -66,6 +66,9 @@ class NpuMemoryEndpoint : public ClockedObject,
                               const std::vector<axi::AxiDataPacket> &beats,
                               axi::AxiResp resp) override;
 
+    axi::AxiEndpointQueueHighWater queueHighWater() const
+    { return adapter->functionalQueueHighWater(); }
+
   private:
     void seedBytes(uint64_t address, uint64_t size, uint8_t pattern);
 

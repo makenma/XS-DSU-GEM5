@@ -1022,6 +1022,36 @@ cases:
       args:
       - --mesh-program-dir
       - $GOLDEN/dma_edge
+  - name: read_outstanding_window
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 20000000
+      wall_seconds: 240
+    artifacts:
+    - SUMMARY_JSON
+    - JUNIT_XML
+    - RUN_MANIFEST
+    - INVARIANTS_JSON
+    - TRAFFIC_JSON
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
+      case_name: read_outstanding_window
+      args:
+      - --mesh-program-dir
+      - $GOLDEN/read_window
 - id: DC-19
   earliest_gate: 2
   subcases:
@@ -3292,7 +3322,7 @@ cases:
       ambiguous_publications: 0
       host_ack_wait_b: 0
       host_ack_b_error: 0
-      msi_rob_entries: 0
+      msi_rob_entries: 1
       fatal_records: 1
     timeout: *id003
     artifacts: *id005
@@ -3315,7 +3345,7 @@ cases:
       ambiguous_publications: 0
       host_ack_wait_b: 0
       host_ack_b_error: 0
-      msi_rob_entries: 0
+      msi_rob_entries: 1
       fatal_records: 1
     timeout: *id003
     artifacts: *id005
@@ -3338,7 +3368,7 @@ cases:
       ambiguous_publications: 0
       host_ack_wait_b: 0
       host_ack_b_error: 0
-      msi_rob_entries: 0
+      msi_rob_entries: 1
       fatal_records: 1
     timeout: *id003
     artifacts: *id005

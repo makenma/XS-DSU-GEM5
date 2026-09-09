@@ -81,6 +81,9 @@ class AxiTensorDmaEngine : public DmaEngineBase
         return timings;
     }
 
+    const std::map<uint64_t, Tick> &readCommitTicks() const
+    { return read_commit_ticks; }
+
     uint64_t submittedReadBursts() const { return read_bursts_submitted; }
     uint64_t submittedWriteBursts() const { return write_bursts_submitted; }
     uint64_t completedReadBursts() const { return read_bursts_completed; }
@@ -89,10 +92,26 @@ class AxiTensorDmaEngine : public DmaEngineBase
     uint64_t errorWriteBursts() const { return write_bursts_errored; }
     uint64_t validReadBytes() const { return read_valid_bytes; }
     uint64_t validWriteBytes() const { return write_valid_bytes; }
+    uint32_t pendingReadReservations() const;
+    uint32_t scheduledReadCommits() const;
+
+    // Strict AXI read window evidence (AR handshake to RLAST consumed).
+    uint64_t readArAccepted() const { return read_ar_accepted; }
+    uint64_t readRlastConsumed() const { return read_rlast_consumed; }
+    uint32_t peakReadWindow() const { return peak_read_window; }
+    Tick firstRlastTick() const { return first_rlast_tick; }
+    const std::vector<Tick> &arAcceptTicks() const { return ar_accept_ticks; }
 
     const AxiGarnetBridge *bridgeOf() const { return bridge; }
 
   private:
+    enum class ReadServiceState : uint8_t
+    {
+        Receiving,
+        AwaitingReservation,
+        CommitScheduled
+    };
+
     struct ReadBurst
     {
         AxiBurst plan;
@@ -101,9 +120,14 @@ class AxiTensorDmaEngine : public DmaEngineBase
         uint16_t axi_id = 0;
         bool errored = false;      // latched on ANY error beat (spec 7.4)
         bool seen_error_beat = false;
+        bool axiIdReleased = false;  // one-shot AXI ID release at RLAST
         std::vector<uint8_t> packed; // valid lane bytes in logical order
         Tick last_r_tick = 0;
+        ReadServiceState service_state = ReadServiceState::Receiving;
     };
+
+    void releaseReadAxiId(ReadBurst &burst);
+
     struct WriteBurst
     {
         AxiBurst plan;
@@ -121,6 +145,7 @@ class AxiTensorDmaEngine : public DmaEngineBase
         bool terminal = false;
         bool prepare_pending = false;
         Tick ready_tick = 0;
+        std::vector<AxiBurst> plan;
         std::vector<uint64_t> burst_ordinals;
         std::optional<std::vector<axi::AxiWBeat>> prepared_beats;
     };
@@ -202,6 +227,7 @@ class AxiTensorDmaEngine : public DmaEngineBase
     void driveWriteDescriptor();
     void driveFill(DescriptorState &state);
     void commitReadBurst(uint64_t burst_ordinal);
+    void tryScheduleReadCommit(uint64_t burst_ordinal, ReadBurst &burst);
     void prepareWriteBurst(uint32_t descriptor_id, uint32_t burst_index,
                            uint64_t row_src_local);
     void commitFillRow(uint32_t descriptor_id, uint32_t row);
@@ -219,7 +245,10 @@ class AxiTensorDmaEngine : public DmaEngineBase
     const uint32_t max_burst_beats;
     const Cycles setup_cycles;
     const uint32_t descriptor_queue_depth;
-    const uint32_t max_outstanding_bursts;
+    // Per-direction segment/read-return queue capacity: bounds bursts from
+    // issue to local SRAM commit.  Distinct from the AXI outstanding window
+    // (AR handshake to RLAST), which the initiator adapter owns.
+    const uint32_t segment_queue_depth;
     const uint16_t axi_id_count;
 
     MeshDummyCore *owner = nullptr;
@@ -228,6 +257,7 @@ class AxiTensorDmaEngine : public DmaEngineBase
     std::deque<DescriptorState> read_queue;
     std::deque<DescriptorState> write_queue;
     std::map<uint64_t, ReadBurst> live_read_bursts;
+    std::map<uint64_t, Tick> read_commit_ticks;
     std::map<uint64_t, WriteBurst> live_write_bursts;
     std::map<uint32_t, std::pair<uint64_t, uint64_t>> payload_state;
     std::map<uint32_t, ActualTraffic> actual;
@@ -248,6 +278,11 @@ class AxiTensorDmaEngine : public DmaEngineBase
     uint64_t write_bursts_errored = 0;
     uint64_t read_valid_bytes = 0;
     uint64_t write_valid_bytes = 0;
+    uint64_t read_ar_accepted = 0;
+    uint64_t read_rlast_consumed = 0;
+    uint32_t peak_read_window = 0;
+    Tick first_rlast_tick = 0;
+    std::vector<Tick> ar_accept_ticks;
     uint64_t protocol_dropped_beats = 0;
 
     TickEvent tick_event;

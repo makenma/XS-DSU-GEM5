@@ -50,6 +50,8 @@ Source('SwitchAllocator.cc')
 Source('CrossbarSwitch.cc')
 Source('VirtualChannel.cc')
 Source('VnetConfig.cc')
+Source('InputCapacityConfig.cc')
+Source('DualLaneSelector.cc')
 Source('flitBuffer.cc')
 Source('flit.cc')
 Source('Credit.cc')
@@ -60,3 +62,9 @@ GTest('garnet_vnet_config.test',
 GTest('garnet_vc_isolation.test',
       'garnet_vc_isolation.test.cc', 'OutVcState.cc')
 GTest('garnet_quiescence.test', 'garnet_quiescence.test.cc')
+GTest('garnet_input_capacity.test',
+      'garnet_input_capacity.test.cc', 'InputCapacityConfig.cc')
+GTest('dual_lane_selector.test', 'dual_lane_selector.test.cc',
+      'VirtualChannel.cc', 'flit.cc', 'flitBuffer.cc',
+      '../../common/NetDest.cc', '../../../../base/debug.cc')
+GTest('lane_arbitration.test', 'lane_arbitration.test.cc')
