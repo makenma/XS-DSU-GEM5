@@ -21,6 +21,7 @@ GEM5是一个模块化的离散事件驱动的计算机系统架构模拟器平�
 
 ## AXI Mesh
 
+- [Dummy AI Core Gate 4 Coding Spec](../src/doc/ai_mesh/DUMMY_AI_CORE_GATE4_CODING_SPEC.md)
 - [双 lane Router Spec](ai_mesh/dual_lane_router_spec.md)
 - [双 lane Router 验收复核](ai_mesh/dual_lane_router_review.md)
 - [读 XY、写 YX 的双 lane 完整实验 Spec](ai_mesh/dual_lane_xy_yx_experiment_spec.md)

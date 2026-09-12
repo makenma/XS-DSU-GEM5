@@ -54,9 +54,22 @@ from mesh_ir.acceptance import (
     validate_traffic,
 )
 from mesh_ir.abi.decoder import decode_program
+from mesh_ir.agent_config import (
+    build_capacity_plan,
+    load_agent_runtime_config,
+    release_policy_of,
+)
+from mesh_ir.agent_planning import (
+    build_command_identity_plan,
+    build_host_arena_object_plan,
+    build_host_task_identity_plan,
+)
+from mesh_ir.agent_surrogate import load_surrogate_profiles
+from mesh_ir.agent_workload import load_control_plan, load_workload_plan
 from mesh_ir.builder import load_arch
 from mesh_ir.effective import EffectiveArchitecture
 from mesh_ir.gate3_oracle import load_observation, validate_observation
+from mesh_ir.gate4_oracle import arena_regions
 
 
 MANIFEST = Path(__file__).resolve().parent / "mandatory_case_manifest.yaml"
@@ -65,6 +78,9 @@ GTEST_BINARIES = (
     REPO / "build/AXI_MESH/dev/ai_mesh/tensor_sram.test.opt",
     REPO / "build/AXI_MESH/dev/ai_mesh/mesh_splitter.test.opt",
     REPO / "build/AXI_MESH/dev/ai_mesh/agent_protocol.test.opt",
+    REPO / "build/AXI_MESH/dev/ai_mesh/host_resource_manager.test.opt",
+    REPO / "build/AXI_MESH/dev/ai_mesh/agent_object_table.test.opt",
+    REPO / "build/AXI_MESH/dev/ai_mesh/agent_workload_manager.test.opt",
 )
 
 
@@ -289,6 +305,11 @@ def build_command(
                 "--sim-tick-limit",
                 canonical_u64_text(timeout["sim_ticks"]),
             ])
+        elif execution["config_script"] == "configs/example/ai_mesh/run_gate4_agent.py":
+            command.extend([
+                "--sim-tick-limit",
+                canonical_u64_text(timeout["sim_ticks"]),
+            ])
         else:
             command.extend([
                 f"--case={execution['case_name']}",
@@ -363,8 +384,110 @@ def _argument_value(arguments: list[str], name: str, default=None):
     return default
 
 
+def _repo_path(value: str) -> Path:
+    path = Path(value)
+    return path if path.is_absolute() else REPO / path
+
+
+@functools.lru_cache(maxsize=None)
+def _gate4_plan_documents(
+    config_text: str, surrogate_text: str
+) -> tuple:
+    config = load_agent_runtime_config(_repo_path(config_text))
+    agent = config.document["agent"]
+    config_path = Path(config_text)
+    workload = load_workload_plan(
+        _repo_path(str(config_path.parent / agent["workload_plan"]))
+    )
+    control = (
+        load_control_plan(
+            _repo_path(str(config_path.parent / agent["control_plan"])), workload
+        )
+        if agent["control_plan"] is not None
+        else None
+    )
+    surrogate = load_surrogate_profiles(_repo_path(surrogate_text))
+    policy = release_policy_of(config)
+    regions = arena_regions(config.document["serving"]["address_map"])
+    identity = build_command_identity_plan(workload, control, policy)
+    host_tasks = build_host_task_identity_plan(workload)
+    arena = build_host_arena_object_plan(workload, control, policy, regions)
+    capacity = build_capacity_plan(workload, control, config)
+    return workload, control, identity, host_tasks, arena, capacity
+
+
+def _gate4_scenario(execution: dict, arguments: list[str]) -> dict:
+    config_text = _argument_value(arguments, "--runtime-config")
+    surrogate_text = _argument_value(arguments, "--surrogate-profiles")
+    if config_text is None or surrogate_text is None:
+        raise ContractError("Gate4 execution lacks its plan fixtures")
+    workload, control, identity, host_tasks, arena, capacity = _gate4_plan_documents(
+        config_text, surrogate_text
+    )
+    configuration_digest = canonical_digest(
+        {"case_name": execution["case_name"], "arguments": arguments}
+    )
+    protocol_digest = canonical_digest(
+        {
+            "protocol": "ai_mesh_gate3",
+            "data_bus_bytes": 64,
+            "control_bytes": 8,
+        }
+    )
+    empty_digests = {
+        "program_weight_registry": None,
+        "model_weight_image": None,
+        "endpoint_map": None,
+    }
+    period = 1_000_000_000_000 // 1_000_000_000
+    return {
+        "kind": "GEM5",
+        "master_seed": 20260901,
+        "data_mode": "FUNCTIONAL_BYTES",
+        "strict_replay_serial_batches": False,
+        "digests": {
+            "configuration": configuration_digest,
+            "base_architecture": protocol_digest,
+            "effective_architecture": configuration_digest,
+            "command_identity": identity["command_identity_digest"],
+            "workload_plan": workload.digest,
+            "control_plan": arena["control_plan_digest"],
+            "host_task_identity": host_tasks["host_task_identity_digest"],
+            "host_arena_object_plan": arena["host_arena_object_digest"],
+            "capacity_plan": capacity["capacity_plan_digest"],
+            **empty_digests,
+        },
+        "mesh_programs": [],
+        "provider_profiles": [],
+        "identity_counters": None,
+        "physical_source_counters": [],
+        "tick_projection": {
+            "host_clock_period_ticks": period,
+            "npu_clock_period_ticks": period,
+            "core_clock_period_ticks": period,
+            "host_tasks": [],
+        },
+        "endpoint_map": None,
+        "host_arena_object_plan": None,
+        "capacity_plan": None,
+        "host_task_identity_plan": None,
+        "approximation": {
+            "reference_compute": False,
+            "numeric_compute": False,
+            "cpu_instruction_simulation": False,
+            "cpu_mesh_simulation": False,
+            "ucie_protocol_simulation": False,
+            "remote_link_is_analytic_proxy": True,
+            "synthetic_weight_bytes": True,
+            "synthetic_output_bytes": True,
+        },
+    }
+
+
 def _gem5_scenario(execution: dict, command: list[str], golden: Path) -> dict:
     arguments = [_replace_golden(value, golden) for value in execution["args"]]
+    if execution["config_script"] == "configs/example/ai_mesh/run_gate4_agent.py":
+        return _gate4_scenario(execution, arguments)
     if execution["config_script"] == "configs/example/ai_mesh/run_gate3_protocol.py":
         configuration_digest = canonical_digest(
             {"case_name": execution["case_name"], "arguments": arguments}

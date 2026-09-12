@@ -1,0 +1,110 @@
+schema: agent_runtime_config_v1
+version: 1
+runtime:
+  mode: FULL_TIMING
+  master_seed: 20260909
+  stop_after_completed_tasks: 0
+  stop_accepting_new_tasks_at_tick: null
+  require_global_drain: true
+agent:
+  users: 2
+  mode: replay_plan
+  workload_plan: agent_workload_plan_two_user.json
+  workload_output_oracle: null
+  control_plan: null
+  max_repair_rounds: 1
+  release_session_on_task_terminal: false
+  completion_mode: interrupt
+serving:
+  output_chunk_bytes: 4096
+  sq_entries: 8
+  cq_entries: 8
+  max_inflight_msi_writes: 4
+  max_active_sequences: 1
+  max_request_contexts: 8
+  sq_intake_slots: 8
+  cq_obligation_entries: 8
+  terminal_result_queue_depth: 8
+  driver_submission_table_entries: 4
+  early_completion_cache_entries: 4
+  max_pending_sq_publications: 1
+  max_sq_entries_per_publication: 1
+  host_ack_response_entries: 1
+  early_cq_ack_entries: 4
+  seen_request_id_entries: 16
+  host_issued_request_id_entries: 16
+  batch_failure_record_entries: 4
+  session_release_waiter_entries: 4
+  kv_session_record_entries: 8
+  kv_session_tombstone_entries: 4
+  kv_admission_wait_entries: 8
+  cache_reservation_queue_entries: 64
+  instance_view_buffer_depth: 4096
+  instance_view_ref_buffer_depth: 4096
+  address_map:
+    npu_control_page_base: 206158430208
+    host_control_page_base: 4294967296
+    msi_address: 4294967552
+    sq_ring_base: 4295032832
+    cq_ring_base: 4295098368
+    parameter_arena:
+      base: 4296015872
+      bytes: 8388608
+    input_arena:
+      base: 4311744512
+      bytes: 67108864
+    output_arena:
+      base: 4378853376
+      bytes: 67108864
+    metadata_arena:
+      base: 4445962240
+      bytes: 8388608
+    arena_alignment_bytes: 32
+  control_axi_ids:
+    sq_doorbell: 16
+    cq_head_ack: 17
+    sq_head_update: 18
+    cq_tail_update: 19
+  msi_axi_id_base: 32
+  msi_axi_id_count: 16
+agent_axi_driver:
+  mode: REMOTE_HOST_PROXY
+  clock: 1GHz
+  remote_host_memory:
+    base: 4294967296
+    bytes: 4294967296
+    target_request_queue_depth: 64
+    target_response_queue_depth: 64
+    local_store_queue_depth: 64
+  remote_link_shaper:
+    enabled: false
+    to_npu_latency_cycles: 0
+    to_agent_latency_cycles: 0
+    bytes_per_cycle_per_direction: 0
+    to_npu_queue_depth: 0
+    to_agent_queue_depth: 0
+  synthetic_host_services:
+    compute_tokens: 24
+    host_available_fraction_q16: 52428
+    compile_slots: 4
+    test_slots: 6
+    log_parse_slots: 4
+    service_queue_depth: 8
+    sq_submit_ready_queue_entries: 16
+    control_trigger_queue_entries: 8
+    irq_queue_entries: 16
+    completion_read_queue_entries: 16
+    cancel_join_entries: 4
+    standalone_control_waiter_entries: 8
+    scheduler_weights:
+      compile: 4
+      test: 3
+      log_parse: 2
+    aging_threshold_ns: 50000000
+    host_admission_registry_entries: 8
+    release_waiter_entries: 4
+    agent_object_table_entries: 16
+    local_io_model:
+      enabled: true
+      fixed_latency_ns: 1000
+      bytes_per_ns: 64

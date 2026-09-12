@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent_control_plan_v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "version", "workload_plan_digest", "actions"],
+  "properties": {
+    "schema": {"const": "agent_control_plan_v1"},
+    "version": {"const": 1},
+    "workload_plan_digest": {"$ref": "#/$defs/hex64"},
+    "actions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/controlAction"}}
+  },
+  "$defs": {
+    "u32": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+    "positiveU32": {"type": "integer", "minimum": 1, "maximum": 4294967295},
+    "u16": {"type": "integer", "minimum": 0, "maximum": 65535},
+    "u64Json": {
+      "anyOf": [
+        {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        {"type": "string", "pattern": "^0x[0-9a-f]{16}$"}
+      ]
+    },
+    "positiveU64Json": {
+      "anyOf": [
+        {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        {"type": "string", "pattern": "^0x[0-9a-f]{16}$"}
+      ]
+    },
+    "hex64": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "SCENARIO_START",
+            "AFTER_SQ_ACCEPT",
+            "AFTER_SESSION_ADMISSION",
+            "AFTER_BATCH_FREEZE",
+            "AFTER_FIRST_OUTPUT_CHUNK",
+            "SAME_EDGE_AS_TERMINAL",
+            "AFTER_GENERATE_TERMINAL",
+            "AFTER_RELEASE_TERMINAL"
+          ]
+        },
+        "event_user_id": {"$ref": "#/$defs/u32"},
+        "event_task_seq": {"$ref": "#/$defs/u32"},
+        "event_repair_round": {"$ref": "#/$defs/u16"},
+        "after_control_ordinal": {"$ref": "#/$defs/positiveU32"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "SCENARIO_START"}}},
+          "then": {
+            "not": {
+              "anyOf": [
+                {"required": ["event_user_id"]},
+                {"required": ["event_task_seq"]},
+                {"required": ["event_repair_round"]},
+                {"required": ["after_control_ordinal"]}
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "AFTER_SQ_ACCEPT",
+                  "AFTER_SESSION_ADMISSION",
+                  "AFTER_BATCH_FREEZE",
+                  "AFTER_FIRST_OUTPUT_CHUNK",
+                  "SAME_EDGE_AS_TERMINAL",
+                  "AFTER_GENERATE_TERMINAL"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": ["event_user_id", "event_task_seq", "event_repair_round"],
+            "not": {"required": ["after_control_ordinal"]}
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "AFTER_RELEASE_TERMINAL"}}},
+          "then": {
+            "required": ["after_control_ordinal"],
+            "not": {
+              "anyOf": [
+                {"required": ["event_user_id"]},
+                {"required": ["event_task_seq"]},
+                {"required": ["event_repair_round"]}
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "controlAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "control_ordinal",
+        "opcode",
+        "trigger",
+        "issuer_user_id",
+        "issuer_task_seq"
+      ],
+      "properties": {
+        "control_ordinal": {"$ref": "#/$defs/positiveU32"},
+        "opcode": {"enum": ["CANCEL", "RELEASE_SESSION"]},
+        "trigger": {"$ref": "#/$defs/trigger"},
+        "issuer_user_id": {"$ref": "#/$defs/u32"},
+        "issuer_task_seq": {"$ref": "#/$defs/u32"},
+        "target_user_id": {"$ref": "#/$defs/u32"},
+        "target_task_seq": {"$ref": "#/$defs/u32"},
+        "target_repair_round": {"$ref": "#/$defs/u16"},
+        "target_session_id": {"$ref": "#/$defs/positiveU64Json"},
+        "target_kv_handle": {"$ref": "#/$defs/positiveU64Json"},
+        "target_generation": {"$ref": "#/$defs/positiveU32"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"opcode": {"const": "CANCEL"}}},
+          "then": {
+            "required": ["target_user_id", "target_task_seq", "target_repair_round"],
+            "not": {
+              "anyOf": [
+                {"required": ["target_session_id"]},
+                {"required": ["target_kv_handle"]},
+                {"required": ["target_generation"]}
+              ]
+            }
+          }
+        },
+        {
+          "if": {"properties": {"opcode": {"const": "RELEASE_SESSION"}}},
+          "then": {
+            "required": ["target_session_id", "target_kv_handle", "target_generation"],
+            "not": {
+              "anyOf": [
+                {"required": ["target_user_id"]},
+                {"required": ["target_task_seq"]},
+                {"required": ["target_repair_round"]}
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

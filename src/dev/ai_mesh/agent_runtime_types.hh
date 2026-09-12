@@ -43,6 +43,8 @@ struct AxiTxnUidTag;
 struct CqObligationIdTag;
 struct MsiIssueOrdinalTag;
 struct SqIntakeIdTag;
+struct HostTaskIdTag;
+struct AgentObjectIdTag;
 
 using SqSeq = SequenceValue<SqSeqTag>;
 using CqSeq = SequenceValue<CqSeqTag>;
@@ -52,6 +54,8 @@ using AxiTxnUid = SequenceValue<AxiTxnUidTag>;
 using CqObligationId = SequenceValue<CqObligationIdTag>;
 using MsiIssueOrdinal = SequenceValue<MsiIssueOrdinalTag>;
 using SqIntakeId = SequenceValue<SqIntakeIdTag>;
+using HostTaskId = SequenceValue<HostTaskIdTag>;
+using AgentObjectId = SequenceValue<AgentObjectIdTag>;
 
 template <class Sequence>
 std::optional<Sequence>

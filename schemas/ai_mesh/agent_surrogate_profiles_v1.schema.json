@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent_surrogate_profiles_v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "version", "profiles"],
+  "properties": {
+    "schema": {"const": "agent_surrogate_profiles_v1"},
+    "version": {"const": 1},
+    "profiles": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/surrogateProfile"}}
+  },
+  "$defs": {
+    "u16": {"type": "integer", "minimum": 1, "maximum": 65535},
+    "u32": {"type": "integer", "minimum": 1, "maximum": 4294967295},
+    "positiveU64Json": {
+      "anyOf": [
+        {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        {"type": "string", "pattern": "^0x[0-9a-f]{16}$"}
+      ]
+    },
+    "surrogateProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "program_id",
+        "profile_id",
+        "profile_key",
+        "input_tokens",
+        "input_bytes",
+        "output_tokens",
+        "output_bytes",
+        "service_ns",
+        "publish_chunk_bytes"
+      ],
+      "properties": {
+        "program_id": {"$ref": "#/$defs/u16"},
+        "profile_id": {"$ref": "#/$defs/u16"},
+        "profile_key": {"$ref": "#/$defs/positiveU64Json"},
+        "input_tokens": {"$ref": "#/$defs/u32"},
+        "input_bytes": {"$ref": "#/$defs/positiveU64Json"},
+        "output_tokens": {"$ref": "#/$defs/u32"},
+        "output_bytes": {"$ref": "#/$defs/positiveU64Json"},
+        "service_ns": {"$ref": "#/$defs/positiveU64Json"},
+        "publish_chunk_bytes": {"$ref": "#/$defs/u32"}
+      }
+    }
+  }
+}

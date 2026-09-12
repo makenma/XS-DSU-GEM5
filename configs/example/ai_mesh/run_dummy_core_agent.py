@@ -22,8 +22,10 @@ except SystemExit as error:
     if code != 0:
         raise
 
-# Gate 1/2 configs predate the child-report contract: the wrapper emits the
-# report on their behalf once the child exited successfully (spec 17.9.2).
+definition = CASES[arguments.case]
+if definition.backend.name not in ("MOCK", "GARNET"):
+    raise SystemExit(0)
+
 report_path = os.environ.get("AI_MESH_CHILD_REPORT")
 if report_path:
     import hashlib

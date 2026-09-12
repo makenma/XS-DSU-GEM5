@@ -50,7 +50,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/unit/test_abi.py::test_opcode_closed_set_and_engine_mapping
+      node_id: "util/mesh_ir/tests/unit/test_abi.py::test_opcode_closed_set_and_engine_mapping"
 - id: DC-2
   earliest_gate: 1
   subcases:
@@ -74,7 +74,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/negative/test_fail_closed.py::test_unknown_opcode_rejected
+      node_id: "util/mesh_ir/tests/negative/test_fail_closed.py::test_unknown_opcode_rejected"
   - name: engine_mismatch
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -95,7 +95,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/negative/test_fail_closed.py::test_engine_mismatch_rejected
+      node_id: "util/mesh_ir/tests/negative/test_fail_closed.py::test_engine_mismatch_rejected"
   - name: unknown_feature_bit
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -116,7 +116,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/negative/test_fail_closed.py::test_unknown_required_feature_bits_rejected
+      node_id: "util/mesh_ir/tests/negative/test_fail_closed.py::test_unknown_required_feature_bits_rejected"
 - id: DC-3
   earliest_gate: 1
   subcases:
@@ -148,9 +148,9 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: mock_dual
       args:
-      - --mesh-program-dir
-      - $GOLDEN/dual
-      - --assert-all-done
+      - "--mesh-program-dir"
+      - "$GOLDEN/dual"
+      - "--assert-all-done"
   - name: stable_error_codes
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -171,7 +171,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/negative/test_fail_closed.py::test_recomputed_checksum_mutations_rejected
+      node_id: "util/mesh_ir/tests/negative/test_fail_closed.py::test_recomputed_checksum_mutations_rejected"
   - name: loader_rejects_corrupt_binary
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -220,9 +220,9 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: mock_single
       args:
-      - --mesh-program-dir
-      - $GOLDEN/single
-      - --assert-event-visibility
+      - "--mesh-program-dir"
+      - "$GOLDEN/single"
+      - "--assert-event-visibility"
 - id: DC-5
   earliest_gate: 1
   subcases:
@@ -246,7 +246,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/negative/test_fail_closed.py::test_event_multiple_producers_rejected
+      node_id: "util/mesh_ir/tests/negative/test_fail_closed.py::test_event_multiple_producers_rejected"
   - name: no_producer
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -267,7 +267,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/negative/test_fail_closed.py::test_event_without_producer_rejected
+      node_id: "util/mesh_ir/tests/negative/test_fail_closed.py::test_event_without_producer_rejected"
   - name: barrier_arrivals
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -288,7 +288,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/negative/test_fail_closed.py::test_barrier_arrival_mismatch_rejected
+      node_id: "util/mesh_ir/tests/negative/test_fail_closed.py::test_barrier_arrival_mismatch_rejected"
 - id: DC-6
   earliest_gate: 1
   subcases:
@@ -315,11 +315,11 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: mock_single
       args:
-      - --mesh-program-dir
-      - $GOLDEN/single
-      - --instances
-      - '2'
-      - --digest-stable-across-instances
+      - "--mesh-program-dir"
+      - "$GOLDEN/single"
+      - "--instances"
+      - "2"
+      - "--digest-stable-across-instances"
 - id: DC-7
   earliest_gate: 1
   subcases:
@@ -346,10 +346,10 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: mock_single
       args:
-      - --mesh-program-dir
-      - $GOLDEN/single
-      - --dma-queue-depth
-      - '1'
+      - "--mesh-program-dir"
+      - "$GOLDEN/single"
+      - "--dma-queue-depth"
+      - "1"
   - name: admit_window_backpressure
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -373,10 +373,10 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: mock_dual
       args:
-      - --mesh-program-dir
-      - $GOLDEN/dual
-      - --admit-window
-      - '2'
+      - "--mesh-program-dir"
+      - "$GOLDEN/dual"
+      - "--admit-window"
+      - "2"
 - id: DC-8
   earliest_gate: 1
   subcases:
@@ -400,7 +400,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/integration/test_runtime_rejections.py::test_mock_arbitration_is_reproducible
+      node_id: "util/mesh_ir/tests/integration/test_runtime_rejections.py::test_mock_arbitration_is_reproducible"
   - name: deterministic_encode
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -421,7 +421,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/unit/test_abi.py::test_encode_is_deterministic_across_hashseeds
+      node_id: "util/mesh_ir/tests/unit/test_abi.py::test_encode_is_deterministic_across_hashseeds"
 - id: DC-9
   earliest_gate: 1
   subcases:
@@ -448,12 +448,12 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: mock_single
       args:
-      - --mesh-program-dir
-      - $GOLDEN/single
-      - --expect-ticks
-      - '866501'
-      - --expect-gemm-cycles
-      - '1036'
+      - "--mesh-program-dir"
+      - "$GOLDEN/single"
+      - "--expect-ticks"
+      - "866501"
+      - "--expect-gemm-cycles"
+      - "1036"
 - id: DC-10
   earliest_gate: 1
   subcases:
@@ -480,8 +480,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: mock_fill
       args:
-      - --mesh-program-dir
-      - $GOLDEN/fill
+      - "--mesh-program-dir"
+      - "$GOLDEN/fill"
   - name: zero_length_mock
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -505,8 +505,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: mock_zero_dma
       args:
-      - --mesh-program-dir
-      - $GOLDEN/zero_dma
+      - "--mesh-program-dir"
+      - "$GOLDEN/zero_dma"
 - id: DC-11
   earliest_gate: 1
   subcases:
@@ -530,7 +530,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/negative/test_fail_closed.py::test_useful_bytes_overflow_rejected
+      node_id: "util/mesh_ir/tests/negative/test_fail_closed.py::test_useful_bytes_overflow_rejected"
   - name: gemm_shape_overflow
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -551,7 +551,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/negative/test_fail_closed.py::test_gemm_shape_overflow_rejected
+      node_id: "util/mesh_ir/tests/negative/test_fail_closed.py::test_gemm_shape_overflow_rejected"
 - id: DC-12
   earliest_gate: 1
   subcases:
@@ -578,11 +578,11 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: mock_single
       args:
-      - --mesh-program-dir
-      - $GOLDEN/single
-      - --instances
-      - '2'
-      - --digest-stable-across-instances
+      - "--mesh-program-dir"
+      - "$GOLDEN/single"
+      - "--instances"
+      - "2"
+      - "--digest-stable-across-instances"
 - id: DC-13
   earliest_gate: 1
   subcases:
@@ -609,9 +609,9 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: mock_dual
       args:
-      - --mesh-program-dir
-      - $GOLDEN/dual
-      - --expect-digests-differ
+      - "--mesh-program-dir"
+      - "$GOLDEN/dual"
+      - "--expect-digests-differ"
 - id: DC-14
   earliest_gate: 1
   subcases:
@@ -635,7 +635,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/integration/test_runtime_rejections.py::test_runtime_rejection_is_observed[reference_compute]
+      node_id: "util/mesh_ir/tests/integration/test_runtime_rejections.py::test_runtime_rejection_is_observed[reference_compute]"
 - id: DC-15
   earliest_gate: 1
   subcases:
@@ -662,10 +662,10 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: mock_sram_parallel
       args:
-      - --mesh-program-dir
-      - $GOLDEN/sram_parallel
-      - --expect-ticks
-      - '28001'
+      - "--mesh-program-dir"
+      - "$GOLDEN/sram_parallel"
+      - "--expect-ticks"
+      - "28001"
   - name: conflict_placement_tick
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -689,10 +689,10 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: mock_sram_conflict
       args:
-      - --mesh-program-dir
-      - $GOLDEN/sram_conflict
-      - --expect-ticks
-      - '28501'
+      - "--mesh-program-dir"
+      - "$GOLDEN/sram_conflict"
+      - "--expect-ticks"
+      - "28501"
   - name: two_ports_shorten_conflict
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -716,12 +716,12 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: mock_sram_conflict
       args:
-      - --arch
-      - configs/example/ai_mesh/arch/mesh_1x2_2port.yaml
-      - --mesh-program-dir
-      - $GOLDEN/sram_conflict_2port
-      - --expect-ticks
-      - '28001'
+      - "--arch"
+      - "configs/example/ai_mesh/arch/mesh_1x2_2port.yaml"
+      - "--mesh-program-dir"
+      - "$GOLDEN/sram_conflict_2port"
+      - "--expect-ticks"
+      - "28001"
   - name: placement_ordering
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -742,7 +742,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/unit/test_sram_placement.py::test_conflict_completes_later_than_parallel
+      node_id: "util/mesh_ir/tests/unit/test_sram_placement.py::test_conflict_completes_later_than_parallel"
   - name: allocation_overlap
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -763,7 +763,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/negative/test_fail_closed.py::test_sram_overlap_rejected
+      node_id: "util/mesh_ir/tests/negative/test_fail_closed.py::test_sram_overlap_rejected"
   - name: directional_sram_ports
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -809,7 +809,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/negative/test_fail_closed.py::test_sram_oom_rejected
+      node_id: "util/mesh_ir/tests/negative/test_fail_closed.py::test_sram_oom_rejected"
   - name: poison_read_fault
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -830,7 +830,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/integration/test_runtime_rejections.py::test_runtime_rejection_is_observed[poison]
+      node_id: "util/mesh_ir/tests/integration/test_runtime_rejections.py::test_runtime_rejection_is_observed[poison]"
   - name: poison_inplace_elementwise
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -851,7 +851,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/integration/test_runtime_rejections.py::test_runtime_rejection_is_observed[poison_ew]
+      node_id: "util/mesh_ir/tests/integration/test_runtime_rejections.py::test_runtime_rejection_is_observed[poison_ew]"
   - name: poison_store
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -872,7 +872,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/integration/test_runtime_rejections.py::test_runtime_rejection_is_observed[poison_store]
+      node_id: "util/mesh_ir/tests/integration/test_runtime_rejections.py::test_runtime_rejection_is_observed[poison_store]"
   - name: poison_reduce_dst_old
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -893,7 +893,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/integration/test_runtime_rejections.py::test_runtime_rejection_is_observed[poison_reduce]
+      node_id: "util/mesh_ir/tests/integration/test_runtime_rejections.py::test_runtime_rejection_is_observed[poison_reduce]"
 - id: DC-17
   earliest_gate: 2
   subcases:
@@ -920,8 +920,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: dma_edge
       args:
-      - --mesh-program-dir
-      - $GOLDEN/dma_edge
+      - "--mesh-program-dir"
+      - "$GOLDEN/dma_edge"
   - name: zero_length_all_kinds
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -945,8 +945,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: dma_zero
       args:
-      - --mesh-program-dir
-      - $GOLDEN/zero_dma
+      - "--mesh-program-dir"
+      - "$GOLDEN/zero_dma"
   - name: prefetch_fill_multirow
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -970,8 +970,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: dma_shapes
       args:
-      - --mesh-program-dir
-      - $GOLDEN/dma_shapes
+      - "--mesh-program-dir"
+      - "$GOLDEN/dma_shapes"
   - name: cross_language_splitter
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -1020,8 +1020,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: dma_edge
       args:
-      - --mesh-program-dir
-      - $GOLDEN/dma_edge
+      - "--mesh-program-dir"
+      - "$GOLDEN/dma_edge"
   - name: read_outstanding_window
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -1039,19 +1039,14 @@ cases:
     timeout:
       sim_ticks: 20000000
       wall_seconds: 240
-    artifacts:
-    - SUMMARY_JSON
-    - JUNIT_XML
-    - RUN_MANIFEST
-    - INVARIANTS_JSON
-    - TRAFFIC_JSON
+    artifacts: *id002
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: read_outstanding_window
       args:
-      - --mesh-program-dir
-      - $GOLDEN/read_window
+      - "--mesh-program-dir"
+      - "$GOLDEN/read_window"
 - id: DC-19
   earliest_gate: 2
   subcases:
@@ -1078,8 +1073,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: dma_basic
       args:
-      - --mesh-program-dir
-      - $GOLDEN/single
+      - "--mesh-program-dir"
+      - "$GOLDEN/single"
 - id: DC-20
   earliest_gate: 2
   subcases:
@@ -1106,8 +1101,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: p2p_basic
       args:
-      - --mesh-program-dir
-      - $GOLDEN/dual
+      - "--mesh-program-dir"
+      - "$GOLDEN/dual"
 - id: DC-21
   earliest_gate: 2
   subcases:
@@ -1134,8 +1129,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: delayed_b
       args:
-      - --mesh-program-dir
-      - $GOLDEN/single
+      - "--mesh-program-dir"
+      - "$GOLDEN/single"
 - id: DC-22
   earliest_gate: 2
   subcases:
@@ -1162,8 +1157,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: p2p_delayed
       args:
-      - --mesh-program-dir
-      - $GOLDEN/dual
+      - "--mesh-program-dir"
+      - "$GOLDEN/dual"
   - name: p2p_range_reuse
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -1187,8 +1182,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: p2p_reuse
       args:
-      - --mesh-program-dir
-      - $GOLDEN/p2p_reuse
+      - "--mesh-program-dir"
+      - "$GOLDEN/p2p_reuse"
 - id: DC-23
   earliest_gate: 2
   subcases:
@@ -1215,8 +1210,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: read_error
       args:
-      - --mesh-program-dir
-      - $GOLDEN/dma_error
+      - "--mesh-program-dir"
+      - "$GOLDEN/dma_error"
 - id: DC-24
   earliest_gate: 1
   subcases:
@@ -1243,11 +1238,11 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: mock_dual
       args:
-      - --mesh-program-dir
-      - $GOLDEN/dual
-      - --instances
-      - '2'
-      - --digest-stable-across-instances
+      - "--mesh-program-dir"
+      - "$GOLDEN/dual"
+      - "--instances"
+      - "2"
+      - "--digest-stable-across-instances"
 - id: DC-25
   earliest_gate: 2
   subcases:
@@ -1274,8 +1269,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: write_error
       args:
-      - --mesh-program-dir
-      - $GOLDEN/dma_write_error
+      - "--mesh-program-dir"
+      - "$GOLDEN/dma_write_error"
 - id: DC-26
   earliest_gate: 2
   subcases:
@@ -1302,8 +1297,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: constrained
       args:
-      - --mesh-program-dir
-      - $GOLDEN/dual
+      - "--mesh-program-dir"
+      - "$GOLDEN/dual"
 - id: DC-27
   earliest_gate: 1
   subcases:
@@ -1327,7 +1322,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/negative/test_fail_closed.py::test_lifecycle_missing_request_end_rejected
+      node_id: "util/mesh_ir/tests/negative/test_fail_closed.py::test_lifecycle_missing_request_end_rejected"
 - id: DC-28
   earliest_gate: 2
   subcases:
@@ -1354,8 +1349,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: fence
       args:
-      - --mesh-program-dir
-      - $GOLDEN/dma_fence
+      - "--mesh-program-dir"
+      - "$GOLDEN/dma_fence"
   - name: fence_scope_matrix
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -1379,8 +1374,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: fence_scopes
       args:
-      - --mesh-program-dir
-      - $GOLDEN/fence_scopes
+      - "--mesh-program-dir"
+      - "$GOLDEN/fence_scopes"
 - id: DC-29
   earliest_gate: 1
   subcases:
@@ -1407,11 +1402,11 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: mock_dual
       args:
-      - --mesh-program-dir
-      - $GOLDEN/dual
-      - --instances
-      - '2'
-      - --digest-stable-across-instances
+      - "--mesh-program-dir"
+      - "$GOLDEN/dual"
+      - "--instances"
+      - "2"
+      - "--digest-stable-across-instances"
 - id: DC-30
   earliest_gate: 2
   subcases:
@@ -1438,8 +1433,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: read_error
       args:
-      - --mesh-program-dir
-      - $GOLDEN/dma_error
+      - "--mesh-program-dir"
+      - "$GOLDEN/dma_error"
   - name: write_fault_uncommitted
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -1463,8 +1458,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: write_error
       args:
-      - --mesh-program-dir
-      - $GOLDEN/dma_write_error
+      - "--mesh-program-dir"
+      - "$GOLDEN/dma_write_error"
   - name: cross_core_error_drain
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -1488,8 +1483,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: cross_error
       args:
-      - --mesh-program-dir
-      - $GOLDEN/cross_error
+      - "--mesh-program-dir"
+      - "$GOLDEN/cross_error"
 - id: DC-31
   earliest_gate: 2
   subcases:
@@ -1513,7 +1508,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/negative/test_fail_closed.py::test_sram_oom_rejected
+      node_id: "util/mesh_ir/tests/negative/test_fail_closed.py::test_sram_oom_rejected"
   - name: finite_backpressure
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -1537,8 +1532,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: constrained
       args:
-      - --mesh-program-dir
-      - $GOLDEN/dual
+      - "--mesh-program-dir"
+      - "$GOLDEN/dual"
 - id: DC-32
   earliest_gate: 2
   subcases:
@@ -1565,8 +1560,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: pin
       args:
-      - --mesh-program-dir
-      - $GOLDEN/dma_pin
+      - "--mesh-program-dir"
+      - "$GOLDEN/dma_pin"
   - name: static_reuse_rejected
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -1587,7 +1582,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/negative/test_fail_closed.py::test_sram_overlap_rejected
+      node_id: "util/mesh_ir/tests/negative/test_fail_closed.py::test_sram_overlap_rejected"
 - id: DC-33
   earliest_gate: 2
   subcases:
@@ -1614,8 +1609,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: sram_persist
       args:
-      - --mesh-program-dir
-      - $GOLDEN/single
+      - "--mesh-program-dir"
+      - "$GOLDEN/single"
   - name: p2p_multi_instance
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -1639,8 +1634,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: p2p_persist
       args:
-      - --mesh-program-dir
-      - $GOLDEN/dual
+      - "--mesh-program-dir"
+      - "$GOLDEN/dual"
 - id: DC-34
   earliest_gate: 1
   subcases:
@@ -1667,13 +1662,13 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: mock_repeat
       args:
-      - --mesh-program-dir
-      - $GOLDEN/repeat
-      - --traffic-multiplier
-      - '3'
-      - --digest-repeat-count
-      - '3'
-      - --assert-all-done
+      - "--mesh-program-dir"
+      - "$GOLDEN/repeat"
+      - "--traffic-multiplier"
+      - "3"
+      - "--digest-repeat-count"
+      - "3"
+      - "--assert-all-done"
 - id: DC-35
   earliest_gate: 1
   subcases:
@@ -1700,12 +1695,12 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: mock_repeat
       args:
-      - --mesh-program-dir
-      - $GOLDEN/repeat
-      - --traffic-multiplier
-      - '3'
-      - --digest-repeat-count
-      - '3'
+      - "--mesh-program-dir"
+      - "$GOLDEN/repeat"
+      - "--traffic-multiplier"
+      - "3"
+      - "--digest-repeat-count"
+      - "3"
   - name: repeat_wire_golden
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -1726,7 +1721,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/unit/test_repeat.py::test_repeat_attr_wire_round_trip
+      node_id: "util/mesh_ir/tests/unit/test_repeat.py::test_repeat_attr_wire_round_trip"
   - name: repeat_rejections
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -1747,7 +1742,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/unit/test_repeat.py::test_repeat_non_adjacent_subrange_rejected
+      node_id: "util/mesh_ir/tests/unit/test_repeat.py::test_repeat_non_adjacent_subrange_rejected"
   - name: repeat_generation_error
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -1771,8 +1766,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: repeat_error
       args:
-      - --mesh-program-dir
-      - $GOLDEN/repeat_error
+      - "--mesh-program-dir"
+      - "$GOLDEN/repeat_error"
   - name: begin_count_wrap
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -2592,10 +2587,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: &id003
+    timeout:
       sim_ticks: 5000000
       wall_seconds: 240
-    artifacts: &id004
+    artifacts: &id003
     - SUMMARY_JSON
     - JUNIT_XML
     - RUN_MANIFEST
@@ -2621,8 +2616,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -2645,8 +2642,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -2666,8 +2665,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -2690,8 +2691,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -2711,8 +2714,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -2732,8 +2737,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -2758,8 +2765,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 1
-    timeout: *id003
-    artifacts: &id005
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: &id004
     - SUMMARY_JSON
     - JUNIT_XML
     - RUN_MANIFEST
@@ -2788,8 +2797,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 1
-    timeout: *id003
-    artifacts: *id005
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id004
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -2809,8 +2820,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -2830,8 +2843,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -2851,8 +2866,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -2872,8 +2889,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -2893,8 +2912,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -2917,8 +2938,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -2938,8 +2961,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -2959,8 +2984,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -2980,8 +3007,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3001,8 +3030,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3025,8 +3056,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3046,8 +3079,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3067,8 +3102,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3088,8 +3125,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3111,8 +3150,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 1
-    timeout: *id003
-    artifacts: *id005
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id004
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3134,8 +3175,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 1
-    timeout: *id003
-    artifacts: *id005
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id004
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3157,8 +3200,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 1
-    timeout: *id003
-    artifacts: *id005
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id004
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3180,8 +3225,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 1
-    timeout: *id003
-    artifacts: *id005
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id004
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3203,8 +3250,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 1
-    timeout: *id003
-    artifacts: *id005
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id004
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3226,8 +3275,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 1
-    timeout: *id003
-    artifacts: *id005
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id004
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3250,8 +3301,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3274,8 +3327,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3298,8 +3353,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3324,8 +3381,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 1
       fatal_records: 1
-    timeout: *id003
-    artifacts: *id005
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id004
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3347,8 +3406,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 1
       fatal_records: 1
-    timeout: *id003
-    artifacts: *id005
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id004
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3370,8 +3431,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 1
       fatal_records: 1
-    timeout: *id003
-    artifacts: *id005
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id004
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3394,8 +3457,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3444,8 +3509,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3468,8 +3535,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3492,8 +3561,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3513,8 +3584,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3534,8 +3607,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3555,8 +3630,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3576,8 +3653,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3597,8 +3676,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3621,8 +3702,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3642,8 +3725,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3672,7 +3757,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/unit/test_agent_protocol.py::test_crc32c_reference_vector
+      node_id: "util/mesh_ir/tests/unit/test_agent_protocol.py::test_crc32c_reference_vector"
   - name: py_sq_round_trip
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -3693,7 +3778,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/unit/test_agent_protocol.py::test_sq_round_trip_with_crc
+      node_id: "util/mesh_ir/tests/unit/test_agent_protocol.py::test_sq_round_trip_with_crc"
   - name: py_sq_crc
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -3714,7 +3799,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/unit/test_agent_protocol.py::test_sq_crc_corruption_rejected
+      node_id: "util/mesh_ir/tests/unit/test_agent_protocol.py::test_sq_crc_corruption_rejected"
   - name: py_cq_round_trip
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -3735,7 +3820,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/unit/test_agent_protocol.py::test_cq_round_trip
+      node_id: "util/mesh_ir/tests/unit/test_agent_protocol.py::test_cq_round_trip"
   - name: py_parameter_round_trip
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -3756,7 +3841,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/unit/test_agent_protocol.py::test_parameter_round_trip
+      node_id: "util/mesh_ir/tests/unit/test_agent_protocol.py::test_parameter_round_trip"
   - name: py_binding_round_trip
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -3777,7 +3862,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/unit/test_agent_protocol.py::test_binding_round_trip
+      node_id: "util/mesh_ir/tests/unit/test_agent_protocol.py::test_binding_round_trip"
   - name: py_tlv
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -3798,7 +3883,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/unit/test_agent_protocol.py::test_tlv_encode_decode_and_ordering
+      node_id: "util/mesh_ir/tests/unit/test_agent_protocol.py::test_tlv_encode_decode_and_ordering"
   - name: py_metadata
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -3819,7 +3904,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/unit/test_agent_protocol.py::test_metadata_round_trip_with_tlv_tail
+      node_id: "util/mesh_ir/tests/unit/test_agent_protocol.py::test_metadata_round_trip_with_tlv_tail"
   - name: py_ring_helpers
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -3840,7 +3925,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/unit/test_agent_protocol.py::test_ring_helpers
+      node_id: "util/mesh_ir/tests/unit/test_agent_protocol.py::test_ring_helpers"
   - name: py_detail_codes
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -3861,7 +3946,7 @@ cases:
     artifacts: *id001
     execution:
       runner: PYTEST
-      node_id: util/mesh_ir/tests/unit/test_agent_protocol.py::test_detail_code_registry_closed
+      node_id: "util/mesh_ir/tests/unit/test_agent_protocol.py::test_detail_code_registry_closed"
   - name: cpp_crc32c
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
@@ -3967,8 +4052,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -3991,8 +4078,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4012,8 +4101,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4036,8 +4127,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4046,7 +4139,7 @@ cases:
 - id: PROTO-21
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: cancel_wins
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -4061,18 +4154,375 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: &id005
+    - SUMMARY_JSON
+    - JUNIT_XML
+    - RUN_MANIFEST
+    - INVARIANTS_JSON
+    - TRAFFIC_JSON
+    - GATE4_OBSERVATION_JSON
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_21
-      args: []
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: proto_21_cancel_wins
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_cancel_live.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_three_user.json"
+  - name: standalone_after_target_cq
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: proto_21_standalone_after_target_cq
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_cancel_late.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_three_user.json"
+  - name: standalone_after_target_error_cq
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: proto_21_standalone_after_target_error_cq
+      args:
+      - --runtime-config
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_cancel_late.yaml"
+      - --surrogate-profiles
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_three_user.json"
+      - "--inject-output-b-error"
+      - "8589934593"
+  - name: target_success_wins_late_anchor
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: proto_21_target_success_wins_late_anchor
+      args:
+      - --runtime-config
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_cancel_late_anchor.yaml"
+      - --surrogate-profiles
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_three_user.json"
+  - name: target_error_wins_late_anchor
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: proto_21_target_error_wins_late_anchor
+      args:
+      - --runtime-config
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_cancel_late_anchor.yaml"
+      - --surrogate-profiles
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_three_user.json"
+      - "--inject-output-b-error"
+      - "4294967297"
+  - name: cq_order_control_first
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: proto_21_cq_order_control_first
+      args:
+      - --runtime-config
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_cancel_live.yaml"
+      - --surrogate-profiles
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_three_user.json"
+      - "--control-cq-first"
+  - name: cq_order_target_first
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: proto_21_cq_order_target_first
+      args:
+      - --runtime-config
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_cancel_live.yaml"
+      - --surrogate-profiles
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_three_user.json"
+  - name: same_edge_cq_before_intent
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: proto_21_same_edge_cq_before_intent
+      args:
+      - --runtime-config
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_cancel_same_edge.yaml"
+      - --surrogate-profiles
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_three_user.json"
+  - name: command_cq_before_b
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: proto_21_command_cq_before_b
+      args:
+      - --runtime-config
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_cancel_live.yaml"
+      - --surrogate-profiles
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_three_user.json"
+      - "--early-command-cq"
+  - name: control_rollback
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: proto_21_control_rollback
+      args:
+      - --runtime-config
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_cancel_live.yaml"
+      - --surrogate-profiles
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_three_user.json"
+      - "--inject-control-doorbell-b-error"
+      - "1"
+  - name: illegal_dual_leg
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_AGENT_PROTOCOL_FATAL
+      value: 131074
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 2
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 1
+      fatal_records: 1
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: &id010
+    - SUMMARY_JSON
+    - JUNIT_XML
+    - RUN_MANIFEST
+    - INVARIANTS_JSON
+    - TRAFFIC_JSON
+    - FATAL_SNAPSHOT
+    - GATE4_OBSERVATION_JSON
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: proto_21_illegal_dual_leg
+      args:
+      - --runtime-config
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_cancel_live.yaml"
+      - --surrogate-profiles
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_three_user.json"
+      - "--mutate-cancel-command-status"
+      - "1:ALREADY_TERMINAL"
+  - name: concurrent_cancel_joins
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: proto_21_concurrent_cancel_joins
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_multi_cancel.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_three_user.json"
+  - name: concurrent_cancel_illegal
+    terminal_class: EXPECTED_INFRA_FATAL
+    expected_exit_reason: INFRA_FATAL
+    expected_first_fatal:
+      symbol: E_AGENT_PROTOCOL_FATAL
+      value: 131074
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 3
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 1
+      fatal_records: 1
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id010
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: proto_21_concurrent_cancel_illegal
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_multi_cancel.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_three_user.json"
+      - "--mutate-cancel-command-status"
+      - "1:ALREADY_TERMINAL"
 - id: PROTO-22
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: release_notfound
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -4087,14 +4537,205 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_22
-      args: []
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: proto_22_release_notfound
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_release_notfound.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_three_user.json"
+  - name: cancel_notfound_before_target
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: proto_22_cancel_notfound_before_target
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_cancel_before_target.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_three_user.json"
+  - name: cancel_notfound_future_round
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: proto_22_cancel_notfound_future_round
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_cancel_future_round.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_three_user.json"
+  - name: cancel_already_terminal_past_round
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: proto_22_cancel_already_terminal_past_round
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_cancel_past_round.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_three_user.json"
+  - name: cancel_already_terminal_cross_past_round
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: proto_22_cancel_already_terminal_cross_past_round
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_cancel_cross_past_round.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_three_user.json"
+  - name: output_drain_split
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: proto_22_output_drain_split
+      args:
+      - --runtime-config
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_su_output_drain.yaml"
+      - --surrogate-profiles
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_su_output_drain.json"
+      - "--inject-output-b-error-at"
+      - "1:2"
+  - name: cancel_output_chunk
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: proto_22_cancel_output_chunk
+      args:
+      - --runtime-config
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_cancel_output.yaml"
+      - --surrogate-profiles
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_su_output_cancel.json"
+      - "--cancel-output-prefix-bytes"
+      - "8192"
+  - name: self_target_rejected
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/negative/test_agent_workload_negative.py::test_workload_and_control_rejections[control_cancel_self_target]"
 - id: PROTO-23
   earliest_gate: 6
   subcases:
@@ -4138,8 +4779,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4159,8 +4802,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4211,8 +4856,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 1
-    timeout: *id003
-    artifacts: *id005
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id004
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4234,8 +4881,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 1
-    timeout: *id003
-    artifacts: *id005
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id004
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4257,8 +4906,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 1
-    timeout: *id003
-    artifacts: *id005
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id004
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4280,8 +4931,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 1
       fatal_records: 1
-    timeout: *id003
-    artifacts: *id005
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id004
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4303,8 +4956,10 @@ cases:
       host_ack_b_error: 1
       msi_rob_entries: 0
       fatal_records: 1
-    timeout: *id003
-    artifacts: *id005
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id004
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4326,8 +4981,10 @@ cases:
       host_ack_b_error: 1
       msi_rob_entries: 0
       fatal_records: 1
-    timeout: *id003
-    artifacts: *id005
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id004
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4336,7 +4993,7 @@ cases:
 - id: PROTO-27
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: host_visible_carrier
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -4351,14 +5008,39 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_proto_27
-      args: []
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: proto_27_host_visible_carrier
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_three_user.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_three_user.json"
+  - name: read_delay_variation
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 1800
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/integration/test_gate4_determinism.py::test_cq_metadata_read_delay_moves_host_visible_later_only"
 - id: PROTO-28
   earliest_gate: 3
   subcases:
@@ -4376,8 +5058,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4397,8 +5081,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4418,8 +5104,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4442,8 +5130,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4465,8 +5155,10 @@ cases:
       host_ack_b_error: 1
       msi_rob_entries: 0
       fatal_records: 1
-    timeout: *id003
-    artifacts: *id005
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id004
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4488,8 +5180,10 @@ cases:
       host_ack_b_error: 1
       msi_rob_entries: 0
       fatal_records: 1
-    timeout: *id003
-    artifacts: *id005
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id004
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4512,8 +5206,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4533,8 +5229,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4557,7 +5255,7 @@ cases:
     timeout:
       sim_ticks: 15000000
       wall_seconds: 240
-    artifacts: *id004
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4582,7 +5280,7 @@ cases:
     timeout:
       sim_ticks: 15000000
       wall_seconds: 240
-    artifacts: *id005
+    artifacts: *id004
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4602,8 +5300,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4626,7 +5326,7 @@ cases:
     timeout:
       sim_ticks: 15000000
       wall_seconds: 240
-    artifacts: *id004
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4646,8 +5346,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4669,8 +5371,10 @@ cases:
       host_ack_b_error: 1
       msi_rob_entries: 1
       fatal_records: 1
-    timeout: *id003
-    artifacts: *id005
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id004
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4690,8 +5394,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4711,8 +5417,10 @@ cases:
       host_ack_b_error: 0
       msi_rob_entries: 0
       fatal_records: 0
-    timeout: *id003
-    artifacts: *id004
+    timeout:
+      sim_ticks: 5000000
+      wall_seconds: 240
+    artifacts: *id003
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_gate3_protocol.py
@@ -4721,7 +5429,7 @@ cases:
 - id: HOST-1
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: first_pass
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -4736,18 +5444,22 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_1
-      args: []
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: host_1_first_pass
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_su_first_pass.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_su_first_pass.json"
 - id: HOST-2
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: compile_repair
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -4762,18 +5474,22 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_2
-      args: []
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: host_2_compile_repair
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_su_compile_repair.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_su_compile_repair.json"
 - id: HOST-3
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: test_repair
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -4788,18 +5504,22 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_3
-      args: []
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: host_3_test_repair
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_su_test_repair.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_su_test_repair.json"
 - id: HOST-4
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: repair_edge_compile_fail_with_test
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -4814,18 +5534,58 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_4
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/negative/test_agent_workload_negative.py::test_workload_and_control_rejections[compile_fail_with_test]"
+  - name: repair_edge_cap_with_parse
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/negative/test_agent_workload_negative.py::test_workload_and_control_rejections[fail_at_cap_with_parse]"
+  - name: repair_edge_success_with_parse
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/negative/test_agent_workload_negative.py::test_workload_and_control_rejections[success_with_log_parse]"
 - id: HOST-5
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: repair_limit
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -4840,18 +5600,43 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_5
-      args: []
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: host_5_repair_limit
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_su_repair_limit.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_su_repair_limit.json"
+  - name: round_beyond_cap_rejected
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/negative/test_agent_workload_negative.py::test_workload_and_control_rejections[round_beyond_cap]"
 - id: HOST-6
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: slot_token_atomic
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -4866,18 +5651,39 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_6
-      args: []
+      runner: GTEST
+      binary_target: UNITTESTS_OPT
+      gtest_filter: HostResourceManagerTest.SlotAndTokenAcquisitionIsAtomic
+  - name: scores_frozen_when_blocked
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: GTEST
+      binary_target: UNITTESTS_OPT
+      gtest_filter: HostResourceManagerTest.ScoresFreezeWhenNothingIsEligible
 - id: HOST-7
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: release_exactly_once
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -4892,18 +5698,17 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_7
-      args: []
+      runner: GTEST
+      binary_target: UNITTESTS_OPT
+      gtest_filter: HostResourceManagerTest.ReleaseReturnsResourcesExactlyOnce
 - id: HOST-8
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: actual_done_timer_cases
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -4918,18 +5723,17 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_8
-      args: []
+      runner: GTEST
+      binary_target: UNITTESTS_OPT
+      gtest_filter: AgentWorkloadManager.ActualDoneTakesMaxOfNominalAndLocalIo
 - id: HOST-9
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: swrr_golden
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -4944,18 +5748,48 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
+    execution:
+      runner: GTEST
+      binary_target: UNITTESTS_OPT
+      gtest_filter: HostResourceManagerTest.SwrrRoundRobinsAcrossKindsWithWeights
+  - name: twelve_user_queue_pressure
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_9
-      args: []
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: host_9_twelve_user_queue_pressure
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_twelve_user.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_twelve_user.json"
+      - "--host-compute-tokens"
+      - "6"
+      - "--host-aging-threshold-ns"
+      - "5000000"
 - id: HOST-10
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: repair_full_context_bytes
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -4970,18 +5804,49 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_10
-      args: []
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: host_10_repair_full_context_bytes
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_su_compile_repair.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_su_compile_repair.json"
+  - name: big_log_full_context
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: host_10_big_log_full_context
+      args:
+      - --runtime-config
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_su_big_log.yaml"
+      - --surrogate-profiles
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_su_big_log.json"
 - id: HOST-11
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: raw_log_fabric_zero
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -4996,18 +5861,43 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_11
-      args: []
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: host_11_raw_log_fabric_zero
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_su_compile_repair.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_su_compile_repair.json"
+  - name: oracle_tamper_negatives
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 1800
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/integration/test_gate4_oracle_tamper.py::test_oracle_rejects_tampered_owner_and_byte_facts"
 - id: HOST-12
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: digest_canonical_formula
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -5022,18 +5912,64 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_agent_workload.py::test_digest_is_canonical_json_sha256_of_document"
+  - name: outcome_invariance
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_12
-      args: []
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: host_12_outcome_invariance
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_su_first_pass.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_su_first_pass.json"
+  - name: three_repeat_single_user
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 1800
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/integration/test_gate4_determinism.py::test_single_user_three_repeat_is_byte_identical"
 - id: HOST-13
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: three_user_paths
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -5048,18 +5984,43 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_13
-      args: []
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: host_13_three_user_paths
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_three_user.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_three_user.json"
+  - name: three_repeat_three_user
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 1800
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/integration/test_gate4_determinism.py::test_three_user_three_repeat_is_byte_identical"
 - id: HOST-14
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: twelve_user_all_terminal
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -5074,14 +6035,45 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_14
-      args: []
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: host_14_twelve_user_all_terminal
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_twelve_user.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_twelve_user.json"
+  - name: concurrent_generate_acceptance
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: host_14_concurrent_generate_acceptance
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_twelve_user.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_twelve_user.json"
 - id: HOST-15
   earliest_gate: 6
   subcases:
@@ -5111,7 +6103,7 @@ cases:
 - id: HOST-16
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: plan_mode_multi_msi
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -5126,18 +6118,43 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_16
-      args: []
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: host_16_plan_mode_multi_msi
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_plan_mode_two_user.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_two_user.json"
+  - name: polling_completion_rejected
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_agent_config.py::test_polling_completion_mode_rejected"
 - id: HOST-17
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: stop_after_completed_tasks
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -5152,18 +6169,95 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_17
-      args: []
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: host_17_stop_after_completed_tasks
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_twelve_user.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_twelve_user.json"
+      - "--stop-after-completed-tasks"
+      - "4"
+  - name: stop_accepting_at_tick
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: host_17_stop_accepting_at_tick
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_twelve_user.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_twelve_user.json"
+      - "--stop-accepting-at-tick"
+      - "350000000"
+  - name: cutoff_suppresses_anchored_control
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 900
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/integration/test_gate4_matrix.py::test_gate4_cutoff_after_completion_suppresses_anchored_control"
+  - name: zero_request_cutoff_quiesces
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 900
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/integration/test_gate4_matrix.py::test_gate4_zero_request_cutoff_quiesces"
 - id: HOST-18
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: positive_fixture_frozen_digest
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -5178,18 +6272,205 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_18
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_agent_workload.py::test_minimal_fixture_loads_with_frozen_digest"
+  - name: identity_gap_rejected
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/negative/test_agent_workload_negative.py::test_workload_and_control_rejections[user_gap]"
+  - name: stage_kind_rejected
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/negative/test_agent_workload_negative.py::test_workload_and_control_rejections[stage_kind_mismatch]"
+  - name: token_equation_rejected
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/negative/test_agent_workload_negative.py::test_workload_and_control_rejections[token_equation]"
+  - name: output_capacity_rejected
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/negative/test_agent_workload_negative.py::test_workload_and_control_rejections[output_capacity_below_generated]"
+  - name: duplicate_key_rejected
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/negative/test_agent_workload_negative.py::test_strict_parser_rejections[duplicate_json_key]"
+  - name: non_nfc_rejected
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/negative/test_agent_workload_negative.py::test_strict_parser_rejections[non_nfc_string]"
+  - name: config_user_count_rejected
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_agent_config.py::test_user_count_mismatch_rejected"
+  - name: config_repair_cap_rejected
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_agent_config.py::test_repair_cap_mismatch_rejected"
+  - name: config_chunk_mismatch_rejected
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_agent_config.py::test_chunk_mismatch_rejected"
 - id: HOST-19
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: aging_completion_bound
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -5204,18 +6485,26 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_19
-      args: []
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: host_19_aging_completion_bound
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_twelve_user.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_twelve_user.json"
+      - "--host-compute-tokens"
+      - "6"
+      - "--host-aging-threshold-ns"
+      - "5000000"
 - id: HOST-20
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: reservation_pauses_allocation
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -5230,18 +6519,39 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_20
-      args: []
+      runner: GTEST
+      binary_target: UNITTESTS_OPT
+      gtest_filter: HostResourceManagerTest.AgingReservationPausesAllocationUntilTargetRuns
+  - name: reservation_target_completes
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: GTEST
+      binary_target: UNITTESTS_OPT
+      gtest_filter: AgentWorkloadManager.AgingReservationStartsTargetAfterRelease
 - id: HOST-21
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: non_divisible_timing
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -5256,18 +6566,44 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
+    execution:
+      runner: GTEST
+      binary_target: UNITTESTS_OPT
+      gtest_filter: AgentWorkloadManager.ActualDoneTakesMaxOfNominalAndLocalIo
+  - name: zero_host_local_axi
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_21
-      args: []
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: host_21_zero_host_local_axi
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_su_compile_repair.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_su_compile_repair.json"
 - id: HOST-22
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: host_object_commit_same_object
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -5282,18 +6618,39 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_22
-      args: []
+      runner: GTEST
+      binary_target: UNITTESTS_OPT
+      gtest_filter: AgentObjectTable.HostObjectCommitsAtomically
+  - name: refs_only_on_committed
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: GTEST
+      binary_target: UNITTESTS_OPT
+      gtest_filter: AgentObjectTable.ConsumerRefsOnlyOnCommittedObjects
 - id: HOST-23
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: queue_full_arrival_order
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -5308,18 +6665,39 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_23
-      args: []
+      runner: GTEST
+      binary_target: UNITTESTS_OPT
+      gtest_filter: HostResourceManagerTest.QueueFullWaitersAreAdmittedInArrivalOrder
+  - name: waiter_admitted_on_release
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: GTEST
+      binary_target: UNITTESTS_OPT
+      gtest_filter: AgentWorkloadManager.QueueFullWaiterAdmittedOnRelease
 - id: HOST-24
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: arena_first_command_bases
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -5334,14 +6712,75 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_24
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_agent_arena.py::test_arena_plan_first_command_bases_and_validity"
+  - name: arena_monotonic_aligned
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_agent_arena.py::test_arena_allocations_are_monotonic_and_aligned"
+  - name: image_digest_frozen
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_agent_plan_image.py::test_image_digest_is_frozen_and_self_consistent"
+  - name: fixture_matches_rebuild
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_agent_plan_image.py::test_checked_in_fixture_matches_rebuild"
 - id: HOST-25
   earliest_gate: 6
   subcases:
@@ -5371,7 +6810,7 @@ cases:
 - id: HOST-26
   earliest_gate: 4
   subcases:
-  - name: default
+  - name: output_b_error_domain
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -5386,14 +6825,86 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
-    artifacts: *id002
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
     execution:
       runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_host_26
-      args: []
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: host_26_output_b_error_domain
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_three_user.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_three_user.json"
+      - "--inject-output-b-error"
+      - "4294967297"
+  - name: host_produce_drain
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: host_26_host_produce_drain
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_su_compile_repair.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_su_compile_repair.json"
+      - "--host-fault-site"
+      - "object_produce"
+      - "--host-fault-task"
+      - "0"
+      - "--host-fault-round"
+      - "0"
+  - name: host_read_drain
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 2000000000000
+      wall_seconds: 900
+    artifacts: *id005
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_gate4_agent.py
+      case_name: host_26_host_read_drain
+      args:
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_runtime_config_su_first_pass.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate4/agent_surrogate_profiles_su_first_pass.json"
+      - "--host-fault-site"
+      - "object_read"
+      - "--host-fault-task"
+      - "0"
+      - "--host-fault-round"
+      - "0"
 - id: SERV-1
   earliest_gate: 6
   subcases:
@@ -5966,8 +7477,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: dma_basic
       args:
-      - --mesh-program-dir
-      - $GOLDEN/single
+      - "--mesh-program-dir"
+      - "$GOLDEN/single"
 - id: E2E-B
   earliest_gate: 2
   subcases:
@@ -5994,8 +7505,8 @@ cases:
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
       case_name: p2p_basic
       args:
-      - --mesh-program-dir
-      - $GOLDEN/dual
+      - "--mesh-program-dir"
+      - "$GOLDEN/dual"
 - id: E2E-C
   earliest_gate: 5
   subcases:

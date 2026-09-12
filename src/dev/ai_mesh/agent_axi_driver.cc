@@ -1,14 +1,16 @@
-#include "dev/ai_mesh/gate3_protocol_runtime.hh"
+#include "dev/ai_mesh/agent_axi_driver.hh"
 #include "dev/ai_mesh/gate3_protocol_runtime_internal.hh"
 
 #include <algorithm>
 #include <limits>
+#include <map>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
 
 #include "base/logging.hh"
 #include "params/AgentAxiDriver.hh"
+#include "sim/core.hh"
 #include "sim/cur_tick.hh"
 #include "sim/sim_exit.hh"
 
@@ -20,21 +22,32 @@ namespace ai_mesh
 AgentAxiDriver::AgentAxiDriver(const Params &p)
     : ClockedObject(p),
       master(p.master), target(p.target), recorder(p.recorder),
+      planDrivenMode(p.request_source == "replay_plan"),
       dataBusBytes(p.data_bus_bytes), sqDepth(p.sq_depth),
       cqDepth(p.cq_depth), controlBytes(p.control_bytes),
       maxBurstBeats(p.max_burst_beats),
       hostBase(p.host_base), npuControlBase(p.npu_control_base),
       agentProxyControlBase(p.agent_proxy_control_base),
+      cqRingBase(p.cq_ring_base), msiBase(p.msi_base),
       profile(p.profile), requestCount(p.request_count),
       localVisibilityDelay(p.local_visibility_delay),
       requestIdCapacity(p.request_id_capacity), drainCycles(p.drain_cycles),
       doorbellAxiId(p.doorbell_axi_id), ackAxiId(p.ack_axi_id),
-      ringLayout(rangeEnd(p.host_base, HostSqBase), p.sq_depth,
-                 rangeEnd(p.host_base, HostCqBase), p.cq_depth),
+      controlDoorbellErrorOrdinal(p.control_doorbell_error_ordinal),
+      mutateCancelCommandOrdinal(p.mutate_cancel_command_ordinal),
+      mutateCancelCommandStatus(p.mutate_cancel_command_status),
+      controlDoorbellBHoldTicks(p.control_doorbell_b_hold_ns *
+                                sim_clock::as_int::ns),
+      cqReadDelayTicks(p.cq_read_delay_ns * sim_clock::as_int::ns),
+      metadataReadDelayTicks(p.metadata_read_delay_ns *
+                             sim_clock::as_int::ns),
+      ringLayout(p.sq_ring_base, p.sq_depth,
+                 p.cq_ring_base, p.cq_depth),
       transferPlanner(p.data_bus_bytes, p.max_burst_beats),
       ledger(p.sq_depth, p.request_id_capacity), irqCommitQueue(p.cq_depth),
       tickEvent(this),
-      fatalDrainEvent(this)
+      fatalDrainEvent(this),
+      managerWakeEvent(this)
 {
     fatal_if(dataBusBytes == 0 || dataBusBytes > 64,
              "%s: invalid AXI data bus width", name());
@@ -42,10 +55,133 @@ AgentAxiDriver::AgentAxiDriver(const Params &p)
              "%s: Gate3 control window must be 8 bytes", name());
     fatal_if(!isPowerOfTwo(sqDepth) || !isPowerOfTwo(cqDepth),
              "%s: ring depths must be powers of two", name());
+    const bool planMode = p.request_source == "replay_plan";
+    fatal_if(!planMode && p.request_source != "protocol_profile",
+             "%s: unknown request source %s", name(), p.request_source);
+    if (planMode) {        fatal_if(p.plan_image.empty(),
+                 "%s: replay_plan requires a plan image", name());
+        auto image = loadAgentPlanImageFile(p.plan_image);
+        fatal_if(!image, "%s: plan image %s cannot be loaded", name(),
+                 p.plan_image);
+        fatal_if(!image->surrogateRegistry(),
+                 "%s: plan image has no surrogate profile registry", name());
+        for (const AgentControlAction &action : image->controlActions())
+            fatal_if(action.triggerKind >
+                         static_cast<uint8_t>(
+                             ControlTriggerEvent::AfterGenerateTerminal),
+                     "%s: control ordinal %u uses trigger kind %u that Gate "
+                     "4 does not implement (E_AGENT_PLAN)",
+                     name(), action.controlOrdinal, action.triggerKind);
+        for (const AgentCommandRecord &record : image->commands()) {
+            if (record.commandKind != kAgentCommandCancel)
+                continue;
+            const AgentCommandRecord *target = nullptr;
+            for (const AgentCommandRecord &candidate : image->commands())
+                if (candidate.requestId == record.targetRequestId) {
+                    target = &candidate;
+                    break;
+                }
+            fatal_if(target == nullptr ||
+                         target->commandKind != kAgentCommandGenerate,
+                     "%s: CANCEL request %llu targets non-GENERATE command "
+                     "(E_AGENT_PLAN)",
+                     name(), static_cast<unsigned long long>(
+                                 record.targetRequestId));
+        }
+        coordinator = std::make_unique<ControlTriggerCoordinator>(
+            image->controlActions().size());
+        fatal_if(!coordinator->loadFromImage(*image),
+                 "%s: plan image control actions cannot be loaded (E_AGENT_PLAN)",
+                 name());
+        controlRequestByIndex.assign(image->controlActions().size(), 0);
+        for (size_t index = 0; index < image->controlActions().size();
+             ++index)
+            for (const AgentCommandRecord &record : image->commands())
+                if (record.controlOrdinal ==
+                        image->controlActions()[index].controlOrdinal &&
+                    record.commandKind != kAgentCommandGenerate) {
+                    controlIndexByRequest.emplace(record.requestId, index);
+                    controlRequestByIndex[index] = record.requestId;
+                    break;
+                }
+        requestCount = image->generateCommandCount();
+        fatal_if(requestCount == 0,
+                 "%s: plan image has no GENERATE commands", name());
+        fatal_if(p.request_id_capacity < image->commands().size(),
+                 "%s: request ID capacity %u cannot cover the plan's %zu "
+                 "commands (E_CAPACITY_PLAN)",
+                 name(), p.request_id_capacity, image->commands().size());
+        fatal_if(p.host_available_fraction_q16 == 0 ||
+                 p.host_available_fraction_q16 > 65536,
+                 "%s: host_available_fraction_q16 out of range", name());
+        fatal_if(p.host_compile_slots == 0 || p.host_test_slots == 0 ||
+                 p.host_log_parse_slots == 0 ||
+                 p.host_service_queue_depth == 0 ||
+                 p.agent_object_table_entries == 0,
+                 "%s: synthetic host service capacity must be nonzero",
+                 name());
+        fatal_if(p.host_local_io_enabled && p.host_local_io_bytes_per_ns == 0,
+                 "%s: host_local_io_bytes_per_ns must be nonzero", name());
+        const uint64_t ticksPerSecond = sim_clock::as_int::s;
+        AgentWorkloadManagerConfig managerConfig;
+        managerConfig.hostComputeTokens = p.host_compute_tokens;
+        managerConfig.hostAvailableFractionQ16 =
+            p.host_available_fraction_q16;
+        managerConfig.hostCompileSlots = p.host_compile_slots;
+        managerConfig.hostTestSlots = p.host_test_slots;
+        managerConfig.hostLogParseSlots = p.host_log_parse_slots;
+        managerConfig.hostServiceQueueDepth = p.host_service_queue_depth;
+        managerConfig.hostWeightCompile = p.host_weight_compile;
+        managerConfig.hostWeightTest = p.host_weight_test;
+        managerConfig.hostWeightLogParse = p.host_weight_log_parse;
+        managerConfig.hostAgingThresholdNs = p.host_aging_threshold_ns;
+        managerConfig.hostLocalIoEnabled = p.host_local_io_enabled;
+        managerConfig.hostLocalIoFixedNs = p.host_local_io_fixed_ns;
+        managerConfig.hostLocalIoBytesPerNs = p.host_local_io_bytes_per_ns;
+        managerConfig.agentObjectTableEntries =
+            p.agent_object_table_entries;
+        cancelJoinCapacity = p.cancel_join_entries;
+        managerConfig.stopAfterCompletedTasks =
+            p.stop_after_completed_tasks;
+        managerConfig.stopAcceptingEnabled = p.stop_accepting_enabled;
+        managerConfig.stopAcceptingAtTick = p.stop_accepting_at_tick;
+        if (!p.host_fault_site.empty()) {
+            if (p.host_fault_site == "object_produce")
+                managerConfig.hostFaultSite =
+                    agent_abi::HostLocalFaultSiteV1::OBJECT_PRODUCE;
+            else if (p.host_fault_site == "object_read")
+                managerConfig.hostFaultSite =
+                    agent_abi::HostLocalFaultSiteV1::OBJECT_READ;
+            else
+                fatal("%s: unknown host_fault_site %s", name(),
+                      p.host_fault_site);
+        }
+        managerConfig.hostFaultTask = p.host_fault_task;
+        managerConfig.hostFaultRound = p.host_fault_round;
+        managerConfig.clockTicksPerSecond = ticksPerSecond;
+        auto manager = std::make_unique<AgentWorkloadManager>(
+            std::move(*image), managerConfig,
+            AgentWorkloadFactsSink{
+                [this](const std::string &kind, const std::string &object,
+                       uint64_t requestId, const std::string &status) {
+                    recordSemantic(kind, object, std::nullopt, requestId,
+                                   std::nullopt, status);
+                },
+                [this](const std::string &metricName, uint64_t value) {
+                    recorder->setMetric(metricName, value);
+                }});
+        fatal_if(manager->hostResources().availableTokens() == 0,
+                 "%s: host token pool resolves to zero tokens", name());
+        workloadManager = manager.get();
+        requestSource = std::move(manager);
+        return;
+    }
     fatal_if(requestCount == 0,
              "%s: request count must be positive", name());
     fatal_if(requestIdCapacity < requestCount,
              "%s: request ID capacity is too small", name());
+    requestSource = std::make_unique<ProtocolProfileRequestSource>(
+        requestCount);
 }
 
 void
@@ -70,6 +206,9 @@ void
 AgentAxiDriver::startup()
 {
     ClockedObject::startup();
+    if (coordinator)
+        coordinator->onAuthoritativeEvent(
+            ControlTriggerEvent::ScenarioStart, ControlAnchor{}, 0, curTick());
     schedule(&tickEvent, clockEdge() + 1);
 }
 
@@ -78,6 +217,36 @@ AgentAxiDriver::scheduleTick()
 {
     if (!tickEvent.scheduled())
         schedule(&tickEvent, clockEdge() + 1);
+}
+
+Tick
+AgentAxiDriver::clockEdgeAtOrAfter(Tick deadline) const
+{
+    const Tick aligned = clockEdge();
+    if (deadline <= aligned)
+        return aligned == curTick() ? nextCycle() : aligned;
+    return clockEdge(ticksToCycles(deadline - aligned));
+}
+
+bool
+AgentAxiDriver::managerEdgeDue() const
+{
+    return workloadManager && !recorder->fatalRecorded() &&
+        clockEdge() == curTick();
+}
+
+void
+AgentAxiDriver::scheduleManagerWake(std::optional<Tick> deadline)
+{
+    if (!deadline)
+        return;
+    const Tick edge = clockEdgeAtOrAfter(*deadline);
+    if (!managerWakeEvent.scheduled()) {
+        schedule(&managerWakeEvent, edge);
+        return;
+    }
+    if (edge < managerWakeEvent.when())
+        reschedule(&managerWakeEvent, edge, true);
 }
 
 bool
@@ -157,7 +326,7 @@ AgentAxiDriver::cqAddress(uint64_t sequence) const
 uint64_t
 AgentAxiDriver::msiAddress(uint64_t sequence) const
 {
-    return rangeEnd(hostBase, HostMsiBase + sequence * 0x100);
+    return msiBase + sequence * 0x100;
 }
 
 std::vector<uint8_t>
@@ -199,6 +368,7 @@ AgentAxiDriver::encodeSq(uint64_t sequence, uint64_t requestId,
         data[0] ^= 0x5a;
     return data;
 }
+
 
 std::vector<uint8_t>
 AgentAxiDriver::encodeParameter(uint64_t requestId) const
@@ -514,7 +684,8 @@ AgentAxiDriver::recordFatalPublication(
         requestIds.push_back(requestId.value());
     const uint64_t ordinal = axiIssueOrdinal(response.work.txn);
     recorder->recordFatalPublication(
-        currentSqSequence + 1, ordinal, pending->base.value(),
+        (planDrivenMode ? submitSqSequence : currentSqSequence) + 1, ordinal,
+        pending->base.value(),
         pending->tail.value(), std::move(requestIds),
         recorder->hasEvent(
             "DOORBELL_TARGET_COMMIT", "DOORBELL", pending->tail.value()),
@@ -568,47 +739,15 @@ AgentAxiDriver::onGate3NormalCommit(Tick tick)
     }
 }
 
-void
-AgentAxiDriver::prepareLocalRecords()
-{
-    const std::vector<uint8_t> parameterBlob =
-        encodeParameter(currentRequestId);
-    currentParameterBlockBytes = parameterBlob.size();
-    if (mode("PARAMETER_ENVELOPE_LONG"))
-        currentParameterBlockBytes += dataBusBytes;
-    else if (mode("PARAMETER_ENVELOPE_SHORT"))
-        currentParameterBlockBytes -= dataBusBytes;
-    const auto parameter =
-        agent_abi::decodeParameterHeader(parameterBlob.data());
-    const auto sqBlob =
-        encodeSq(currentSqSequence, currentRequestId, currentCookie);
-    const auto sq = agent_abi::decodeSqDescriptor(sqBlob.data());
-    submissionContexts.push_back(SubmissionContext{
-        SqSeq(currentSqSequence), RequestId(currentRequestId),
-        CompletionCookie(currentCookie), sq.session_id, parameter.user_id,
-        parameter.task_seq, parameter.repair_round,
-        parameter.output_metadata_addr,
-        parameter.output_metadata_capacity_bytes});
-    storeBytes(sqAddress(currentSqSequence), sqBlob);
-    storeBytes(parameterAddress(currentSqSequence), parameterBlob);
-    storeBytes(promptAddress(currentSqSequence),
-               makePayload(0x20 + currentSqSequence, dataBusBytes));
-    recordSemantic("LOCAL_VISIBLE", "PROMPT", std::nullopt,
-                   currentRequestId, currentCookie);
-    recordSemantic("LOCAL_VISIBLE", "PARAMETER", std::nullopt,
-                   currentRequestId, currentCookie);
-    recordSemantic("LOCAL_VISIBLE", "SQ_ENTRY", currentSqSequence,
-                   currentRequestId, currentCookie);
-    localReadyTick = curTick() + localVisibilityDelay * clockPeriod();
-}
 
 void
 AgentAxiDriver::prepareRequest()
 {
-    if (completedRequests >= requestCount) {
+    if (runtimeExhausted(completedRequests)) {
         stage = Stage::Drain;
         if (drainUntilTick == 0)
             drainUntilTick = curTick() + drainCycles * clockPeriod();
+        scheduleTick();
         return;
     }
     if (currentPrepared)
@@ -618,38 +757,47 @@ AgentAxiDriver::prepareRequest()
         startDoorbellProbe(0, 0, 0);
         return;
     }
-    if (submissionAttempts == 0 && requestCount > 1 &&
-        requestCount <= sqDepth) {
+    if (ledger.available() == 0) {
+        scheduleTick();
+        return;
+    }
+    const std::vector<AgentSubmissionIntent> intents =
+        requestSource->nextBatch(issuedRequestIds, submissionAttempts,
+                                 sqDepth);
+    if (intents.empty()) {
+        fatal_if(!workloadManager,
+                 "%s: request source produced no submission intents", name());
+        scheduleManagerWake(workloadManager->nextWakeTick());
+        if (!tickEvent.scheduled() && !managerWakeEvent.scheduled())
+            scheduleTick();
+        return;
+    }
+    if (intents.size() > 1) {
         std::vector<RequestId> requestIds;
-        requestIds.reserve(requestCount);
-        for (uint64_t index = 0; index < requestCount; ++index)
-            requestIds.emplace_back(index + 1);
+        requestIds.reserve(intents.size());
+        for (const AgentSubmissionIntent &intent : intents)
+            requestIds.emplace_back(intent.requestId);
         const auto base = ledger.reserveBatch(requestIds);
         if (!base) {
             requestFatal(agent_abi::E_REQUEST_CONTEXT_FULL);
             return;
         }
-        for (uint64_t index = 0; index < requestCount; ++index) {
+        for (size_t index = 0; index < intents.size(); ++index) {
             currentSqSequence = base->value() + index;
-            currentRequestId = index + 1;
-            currentCookie = index + 1;
+            currentRequestId = intents[index].requestId;
+            currentCookie = intents[index].completionCookie;
             issuedRequestIds.insert(currentRequestId);
+            currentIntent = intents[index];
             prepareLocalRecords();
         }
-        submissionAttempts = requestCount;
-        currentDoorbellTail = base->value() + requestCount;
+        submissionAttempts += intents.size();
+        currentDoorbellTail = base->value() + intents.size();
         currentPrepared = true;
         stage = Stage::Fence;
         return;
     }
-    uint64_t candidate = submissionAttempts + 1;
-    while (issuedRequestIds.count(candidate) != 0) {
-        fatal_if(candidate == std::numeric_limits<uint64_t>::max(),
-                 "%s: request ID counter exhausted", name());
-        ++candidate;
-    }
-    currentRequestId = candidate;
-    currentCookie = candidate;
+    currentRequestId = intents.front().requestId;
+    currentCookie = intents.front().completionCookie;
     const auto sequence = ledger.reserve(RequestId(currentRequestId));
     if (!sequence) {
         requestFatal(agent_abi::E_REQUEST_CONTEXT_FULL);
@@ -670,9 +818,22 @@ AgentAxiDriver::prepareRequest()
             sqBackpressureObserved = true;
         }
     }
+    currentIntent = intents.front();
     prepareLocalRecords();
     currentPrepared = true;
     stage = Stage::Fence;
+}
+
+
+bool
+AgentAxiDriver::runtimeExhausted(uint64_t completedRequests) const
+{
+    if (!requestSource->exhausted(completedRequests))
+        return false;
+    if (!workloadManager || !coordinator)
+        return true;
+    return !workloadManager->controlIntentsPending() &&
+        coordinator->allTerminal();
 }
 
 void
@@ -710,9 +871,17 @@ AgentAxiDriver::driveWrite()
             axiSourceToken(agent_abi::FatalComponentKindV1::HOST_AGENT,
                            false, work.txn));
     }
-    stage = work.control == "SQ_DOORBELL" ?
-        (work.requestId ? Stage::DoorbellResponse : Stage::DoorbellProbeResponse) :
-        Stage::AckResponse;
+    if (planDrivenMode) {
+        if (work.control == "SQ_DOORBELL")
+            submitPhase = SubmitPhase::DoorbellResponse;
+        else
+            completePhase = CompletePhase::AckResponse;
+    } else {
+        stage = work.control == "SQ_DOORBELL" ?
+            (work.requestId ? Stage::DoorbellResponse :
+                              Stage::DoorbellProbeResponse) :
+            Stage::AckResponse;
+    }
     scheduleTick();
 }
 
@@ -721,6 +890,16 @@ AgentAxiDriver::consumeB()
 {
     if (!activeWrite || !activeWrite->awAccepted ||
         activeWrite->nextBeat != activeWrite->beats.size()) {
+        scheduleTick();
+        return;
+    }
+    if (activeWrite->control == "SQ_DOORBELL" &&
+        activeWrite->requestId && controlDoorbellBHoldTicks != 0 &&
+        (planDrivenMode ? submitIntent : currentIntent).planDriven &&
+        (planDrivenMode ? submitIntent : currentIntent).commandKind !=
+            kAgentCommandGenerate &&
+        curTick() < controlDoorbellBHeldUntil &&
+        !ledger.pendingCompletionEvidence()) {
         scheduleTick();
         return;
     }
@@ -779,7 +958,9 @@ AgentAxiDriver::consumeB()
         }
     } else if (work.control == "SQ_DOORBELL" &&
                response.resp != axi::AxiResp::Okay &&
-               !mode("PROVEN_NO_EFFECT_B_ERROR")) {
+               !mode("PROVEN_NO_EFFECT_B_ERROR") &&
+               !(controlDoorbellFaultTail != 0 &&
+                 work.absoluteSeq == controlDoorbellFaultTail)) {
         handleDoorbellResponse(work, response.resp);
         return;
     } else if (work.control == "CQ_HEAD_ACK" &&
@@ -854,26 +1035,58 @@ void
 AgentAxiDriver::handleDoorbellResponse(const Gate3WriteWork &work,
                                        axi::AxiResp response)
 {
+    const uint64_t issueSequence = planDrivenMode ?
+        submitSqSequence : currentSqSequence;
+    const uint64_t issueRequestId = planDrivenMode ?
+        submitRequestId : currentRequestId;
+    const uint64_t issueCookie = planDrivenMode ? submitCookie : currentCookie;
+    const uint64_t issueDoorbellTail = planDrivenMode ?
+        submitDoorbellTail : currentDoorbellTail;
     if (response == axi::AxiResp::Okay) {
         const auto result = ledger.resolve(response);
         if (result != PublicationResolution::Committed) {
             requestFatal(agent_abi::E_AGENT_PROTOCOL_FATAL);
             return;
         }
-        recordSemantic("PUBLICATION_COMMIT", "DOORBELL",
-                       currentDoorbellTail, currentRequestId, currentCookie);
-        stage = Stage::Completion;
+        CancelJoinRecord *joinByCommand =
+            findCancelJoinByCommand(issueRequestId);
+        if (joinByCommand)
+            joinByCommand->doorbellCommitted = true;
+        recordSemantic("PUBLICATION_COMMIT", "DOORBELL", issueDoorbellTail,
+                       issueRequestId, issueCookie);
+        if (planDrivenMode && submitIntent.planDriven &&
+                submitIntent.commandKind == kAgentCommandGenerate)
+            acceptedGenerateRequests.insert(issueRequestId);
+        if (planDrivenMode) {
+            submitPhase = SubmitPhase::Idle;
+            scheduleTick();
+        } else {
+            stage = Stage::Completion;
+            scheduleTick();
+        }
         return;
     }
-    const bool proven = mode("PROVEN_NO_EFFECT_B_ERROR");
+    const bool proven = mode("PROVEN_NO_EFFECT_B_ERROR") ||
+        (controlDoorbellFaultTail != 0 &&
+         work.absoluteSeq == controlDoorbellFaultTail);
     const auto result = ledger.resolve(response, proven);
     if (result == PublicationResolution::RolledBack) {
-        recordSemantic("PUBLICATION_ROLLBACK", "DOORBELL",
-                       currentDoorbellTail, currentRequestId, currentCookie);
+        recordSemantic("PUBLICATION_ROLLBACK", "DOORBELL", issueDoorbellTail,
+                       issueRequestId, issueCookie);
         recorder->setMetric("publication_rollbacks",
                             recorder->metric("publication_rollbacks") + 1);
-        currentPrepared = false;
-        stage = Stage::Prepare;
+        if (submitIntent.planDriven &&
+                submitIntent.commandKind != kAgentCommandGenerate)
+            noteControlLocalSubmitFailed(issueRequestId);
+        if (proven && controlDoorbellFaultTail != 0 &&
+                work.absoluteSeq == controlDoorbellFaultTail)
+            controlDoorbellFaultTail = 0;
+        if (planDrivenMode)
+            submitPhase = SubmitPhase::Idle;
+        else {
+            currentPrepared = false;
+            stage = Stage::Prepare;
+        }
         scheduleTick();
         return;
     }
@@ -885,7 +1098,7 @@ AgentAxiDriver::handleDoorbellResponse(const Gate3WriteWork &work,
         requestIds.push_back(requestId.value());
     const uint64_t ordinal = axiIssueOrdinal(work.txn);
     recorder->recordFatalPublication(
-        currentSqSequence + 1, ordinal, pending->base.value(),
+        issueSequence + 1, ordinal, pending->base.value(),
         pending->tail.value(), std::move(requestIds),
         recorder->hasEvent(
             "DOORBELL_TARGET_COMMIT", "DOORBELL", pending->tail.value()),
@@ -898,8 +1111,8 @@ AgentAxiDriver::handleDoorbellResponse(const Gate3WriteWork &work,
     requestFault(
         agent_abi::FaultSiteV1::DOORBELL_AMBIGUOUS_OR_ACCEPTANCE_CONFLICT,
         gate3PublicationKey(
-            currentSqSequence + 1, currentSqSequence,
-            currentDoorbellTail, currentRequestId),
+            issueSequence + 1, issueSequence, issueDoorbellTail,
+            issueRequestId),
         ordinal,
         axiSourceToken(agent_abi::FatalComponentKindV1::HOST_AGENT,
                        false, work.txn));
@@ -912,6 +1125,12 @@ AgentAxiDriver::startCqRead()
         schedule(&tickEvent, localReadyTick);
         return;
     }
+    if (curTick() < cqReadReadyTick) {
+        if (!tickEvent.scheduled())
+            schedule(&tickEvent, cqReadReadyTick);
+        return;
+    }
+    cqReadDelayPending = false;
     Gate3ReadWork work;
     work.object = "CQ_ENTRY";
     work.control = "CQ_ENTRY_READ";
@@ -921,6 +1140,27 @@ AgentAxiDriver::startCqRead()
     work.cookie = currentCookie;
     work.address = cqAddress(currentCqSequence);
     work.bytes = agent_abi::kCqDescriptorBytes;
+    if (mutateCancelCommandOrdinal != 0) {
+        std::vector<uint8_t> raw(agent_abi::kCqDescriptorBytes);
+        for (uint64_t index = 0; index < work.bytes; ++index)
+            raw[index] = target->readMemoryByte(work.address + index);
+        auto value = agent_abi::decodeCqDescriptor(raw.data());
+        const auto control = controlIndexByRequest.find(value.request_id);
+        if ((value.flags & agent_abi::kCqFlagsCONTROL_COMMAND) != 0 &&
+                control != controlIndexByRequest.end() &&
+                coordinator->action(control->second).controlOrdinal ==
+                    mutateCancelCommandOrdinal &&
+                value.status != static_cast<uint16_t>(
+                                   mutateCancelCommandStatus)) {
+            value.status = static_cast<uint16_t>(mutateCancelCommandStatus);
+            const auto injected = agent_abi::encodeCqDescriptor(value);
+            for (uint64_t index = 0; index < work.bytes; ++index)
+                target->writeMemoryByte(work.address + index,
+                                        injected[index]);
+            recordSemantic("FAULT_INJECT", "CQ_ENTRY", value.cq_seq,
+                           value.request_id, value.completion_cookie);
+        }
+    }
     std::vector<uint8_t> saved;
     if (mode("STALE_CQ_SEQ") || mode("CQ_REQUEST_MISMATCH") ||
         mode("CQ_COOKIE_MISMATCH")) {
@@ -1043,29 +1283,81 @@ AgentAxiDriver::handleCqRead()
         recordSemantic("CQ_DETAIL", "CQ_ENTRY", currentCqSequence,
                        currentRequestId, currentCookie, detailName);
     }
-    const std::string status = isSuccessStatus(value.status) ?
-        "SUCCESS" : "ERROR";
     observedCqStatus = value.status;
     observedCqFlags = value.flags;
     observedCqValue = value.output_bytes_or_detail_code;
-    recordSemantic("CQ_CONSUME", "CQ_ENTRY", currentCqSequence,
-                   currentRequestId, currentCookie,
-                   status);
-    ++cqConsumer;
-    recorder->setMetric("driver_cq_consumer_seq", cqConsumer);
-    recorder->setMetric("live_cq_obligations", 1);
+    if (value.flags & agent_abi::kCqFlagsCONTROL_COMMAND) {
+        if (!controlCqValid(value)) {
+            requestFatal(agent_abi::E_AGENT_PROTOCOL_FATAL);
+            return;
+        }
+        recordSemantic("CQ_CONSUME", "CQ_ENTRY", currentCqSequence,
+                       currentRequestId, currentCookie,
+                       cqConsumeStatusName(value.status));
+        noteControlCommandCompletion(value.status);
+        resolveCancelJoin();
+        ++cqConsumer;
+        recorder->setMetric("driver_cq_consumer_seq", cqConsumer);
+        recorder->setMetric("live_cq_obligations", 1);
+        beginCompletionAck();
+        return;
+    }
     if (value.flags & agent_abi::kCqFlagsMETADATA_VALID) {
+        cqMetadataPending = true;
         metadataReadPhase = MetadataReadPhase::Header;
         metadataTotalBytes = 0;
         metadataData.clear();
         recorder->setMetric("metadata_read_bytes", 0);
-        metadataReadReadyTick = clockEdge(Cycles(1));
-        stage = Stage::MetadataRead;
+        metadataReadReadyTick =
+            clockEdge(Cycles(1)) + metadataReadDelayTicks;
+        if (planDrivenMode)
+            completePhase = CompletePhase::Metadata;
+        else
+            stage = Stage::MetadataRead;
         if (!tickEvent.scheduled())
             schedule(&tickEvent, metadataReadReadyTick);
-    } else {
-        startAck();
+        return;
     }
+    finishGenerateConsume();
+    beginCompletionAck();
+}
+
+CancelJoinRecord *
+AgentAxiDriver::findCancelJoinByCommand(uint64_t requestId)
+{
+    const auto entry = cancelJoins.find(requestId);
+    return entry == cancelJoins.end() ? nullptr : &entry->second;
+}
+
+CancelJoinRecord *
+AgentAxiDriver::findCancelJoinByTarget(uint64_t requestId)
+{
+    for (auto &entry : cancelJoins)
+        if (entry.second.targetRequestId == requestId)
+            return &entry.second;
+    return nullptr;
+}
+
+void
+AgentAxiDriver::finishGenerateConsume()
+{
+    recordSemantic("CQ_CONSUME", "CQ_ENTRY", currentCqSequence,
+                   currentRequestId, currentCookie,
+                   cqConsumeStatusName(observedCqStatus));
+    acceptedGenerateRequests.erase(currentRequestId);
+    CancelJoinRecord *joinByTarget =
+        findCancelJoinByTarget(currentRequestId);
+    if (joinByTarget) {
+        joinByTarget->targetStatus = observedCqStatus;
+        joinByTarget->targetCqSeen = true;
+    } else {
+        advanceGenerateBusiness(currentRequestId, observedCqStatus);
+    }
+    resolveCancelJoin();
+    notifyGenerateTerminalVisible(currentRequestId);
+    ++cqConsumer;
+    recorder->setMetric("driver_cq_consumer_seq", cqConsumer);
+    recorder->setMetric("live_cq_obligations", 1);
 }
 
 void
@@ -1137,16 +1429,6 @@ AgentAxiDriver::startMetadataRead()
     handleMetadataRead();
 }
 
-Gate3MetadataExpectation
-AgentAxiDriver::metadataExpectation() const
-{
-    const SubmissionContext &context =
-        submissionContexts.at(currentSqSequence);
-    return Gate3MetadataExpectation{
-        currentRequestId, context.sessionId, context.userId,
-        context.taskSequence, context.repairRound, observedCqStatus,
-        observedCqFlags, observedCqValue, context.metadataCapacity};
-}
 
 void
 AgentAxiDriver::handleMetadataRead()
@@ -1186,8 +1468,12 @@ AgentAxiDriver::handleMetadataRead()
         metadataTotalBytes = header.total_bytes;
         if (metadataTotalBytes > agent_abi::kOutputMetadataBytes) {
             metadataReadPhase = MetadataReadPhase::Tail;
-            metadataReadReadyTick = clockEdge(Cycles(1));
-            stage = Stage::MetadataRead;
+            metadataReadReadyTick =
+                clockEdge(Cycles(1)) + metadataReadDelayTicks;
+            if (planDrivenMode)
+                completePhase = CompletePhase::Metadata;
+            else
+                stage = Stage::MetadataRead;
             if (!tickEvent.scheduled())
                 schedule(&tickEvent, metadataReadReadyTick);
             return;
@@ -1210,7 +1496,11 @@ AgentAxiDriver::handleMetadataRead()
     metadataData.clear();
     metadataTotalBytes = 0;
     metadataReadPhase = MetadataReadPhase::Header;
-    startAck();
+    if (cqMetadataPending) {
+        cqMetadataPending = false;
+        finishGenerateConsume();
+    }
+    beginCompletionAck();
 }
 
 void
@@ -1223,7 +1513,20 @@ AgentAxiDriver::startAck(bool future)
         ackAxiId, encodeControl(sequence));
     recorder->setMetric("ack_wait_b", 1);
     futureAckProbe = future;
-    stage = Stage::Ack;
+    if (planDrivenMode)
+        completePhase = CompletePhase::Ack;
+    else
+        stage = Stage::Ack;
+}
+
+void
+AgentAxiDriver::beginCompletionAck()
+{
+    if (planDrivenMode) {
+        completePhase = CompletePhase::AckWait;
+        return;
+    }
+    startAck();
 }
 
 void
@@ -1287,7 +1590,9 @@ AgentAxiDriver::handleAckResponse(const Gate3WriteWork &work,
     recorder->setMetric("driver_cq_ack_seq", cqAck);
     recorder->setMetric("ack_wait_b", 0);
     currentPrepared = false;
-    if (completedRequests == requestCount) {
+    if (planDrivenMode)
+        completePhase = CompletePhase::Idle;
+    if (runtimeExhausted(completedRequests)) {
         if (mode("STALE_DOORBELL") && !staleSent) {
             staleSent = true;
             startDoorbellProbe(completedRequests - 1, 0, 0);
@@ -1369,16 +1674,10 @@ AgentAxiDriver::onAxiWriteCommittedWithMeta(
         control = "SQ_HEAD_UPDATE";
     else if (address == rangeEnd(agentProxyControlBase, AgentProxyCqTailOffset))
         control = "CQ_TAIL_UPDATE";
-    else if (address >= rangeEnd(hostBase, HostOutputBase) &&
-             address < rangeEnd(hostBase, HostMetadataBase))
-        control = "OUTPUT";
-    else if (address >= rangeEnd(hostBase, HostMetadataBase) &&
-             address < rangeEnd(hostBase, HostCqBase))
-        control = "METADATA";
-    else if (address >= rangeEnd(hostBase, HostCqBase) &&
-             address < rangeEnd(hostBase, HostMsiBase))
+    else if (address >= cqRingBase &&
+             address < cqRingBase + ringLayout.cqSpanBytes())
         control = "CQ_ENTRY";
-    else if (address >= rangeEnd(hostBase, HostMsiBase))
+    else if (address >= msiBase && address < msiBase + 0x10000)
         control = "MSI";
     if (control == "MSI" && resp == axi::AxiResp::Okay && !beats.empty()) {
         uint64_t lane = 0;
@@ -1469,6 +1768,13 @@ AgentAxiDriver::wakeup()
 {
     if (!recorder->fatalPending())
         processIrqCommits();
+    pumpControlDelivery();
+    if (managerEdgeDue()) {
+        workloadManager->onEdge(curTick());
+        suppressUnreachableControls();
+    }
+    if (workloadManager && !recorder->fatalRecorded())
+        scheduleManagerWake(workloadManager->nextWakeTick());
     if (recorder->fatalRecorded()) {
         if (activeWrite) {
             if (!activeWrite->awAccepted) {
@@ -1504,6 +1810,10 @@ AgentAxiDriver::wakeup()
             scheduleTick();
         return;
     }
+    if (planDrivenMode) {
+        planPump();
+        return;
+    }
     switch (stage) {
       case Stage::Prepare:
         prepareRequest();
@@ -1525,6 +1835,9 @@ AgentAxiDriver::wakeup()
             doorbellAxiId,
             encodeControl(currentDoorbellTail));
         ++doorbellAttempts;
+        if (controlDoorbellBHoldTicks != 0 && currentIntent.planDriven &&
+                currentIntent.commandKind != kAgentCommandGenerate)
+            controlDoorbellBHeldUntil = curTick() + controlDoorbellBHoldTicks;
         driveWrite();
         break;
       case Stage::DoorbellResponse:
@@ -1539,10 +1852,13 @@ AgentAxiDriver::wakeup()
       case Stage::Completion:
         currentCqSequence = cqConsumer;
         if (recorder->hasEvent("IRQ_DELIVER", "MSI",
-                               currentCqSequence + 1))
+                               currentCqSequence + 1)) {
+            if (!cqReadDelayPending) {
+                cqReadDelayPending = true;
+                cqReadReadyTick = curTick() + cqReadDelayTicks;
+            }
             startCqRead();
-        else
-            scheduleTick();
+        }
         break;
       case Stage::CqRead:
       case Stage::CqReadResponse:
@@ -1564,7 +1880,11 @@ AgentAxiDriver::wakeup()
         finishIfDrained();
         break;
     }
-    if (stage != Stage::Drain && stage != Stage::Done)
+    pumpControlDelivery();
+    if (stage != Stage::Drain && stage != Stage::Done &&
+        stage != Stage::DoorbellResponse &&
+        stage != Stage::DoorbellProbeResponse &&
+        stage != Stage::AckResponse && stage != Stage::Completion)
         scheduleTick();
 }
 

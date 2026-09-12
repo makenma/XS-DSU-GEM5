@@ -1,6 +1,7 @@
 #ifndef DEV_AI_MESH_AGENT_PROTOCOL_VALIDATION_HH
 #define DEV_AI_MESH_AGENT_PROTOCOL_VALIDATION_HH
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -23,6 +24,11 @@ struct Gate3MetadataExpectation
     uint16_t cqFlags = 0;
     uint32_t cqValue = 0;
     uint32_t capacity = 0;
+    uint32_t metadataFlags = 0;
+    bool checkSurrogate = false;
+    uint32_t outputTokens = 0;
+    uint32_t completedInstanceCount = 0;
+    std::array<uint8_t, 32> semanticDigest{};
 };
 
 std::optional<agent_abi::DetailCode> gate3ParameterStructureError(

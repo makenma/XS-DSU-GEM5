@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "host_arena_object_plan_v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "workload_plan_digest",
+    "control_plan_digest",
+    "records",
+    "host_arena_object_digest"
+  ],
+  "properties": {
+    "schema": {"const": "host_arena_object_plan_v1"},
+    "version": {"const": 1},
+    "workload_plan_digest": {"$ref": "#/$defs/hex64"},
+    "control_plan_digest": {"$ref": "#/$defs/hex64"},
+    "records": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/arenaObject"}},
+    "host_arena_object_digest": {"$ref": "#/$defs/hex64"}
+  },
+  "$defs": {
+    "u32": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+    "positiveU32": {"type": "integer", "minimum": 1, "maximum": 4294967295},
+    "u16": {"type": "integer", "minimum": 0, "maximum": 65535},
+    "u64Json": {
+      "anyOf": [
+        {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        {"type": "string", "pattern": "^0x[0-9a-f]{16}$"}
+      ]
+    },
+    "positiveU64Json": {
+      "anyOf": [
+        {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        {"type": "string", "pattern": "^0x[0-9a-f]{16}$"}
+      ]
+    },
+    "hex64": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "arenaObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "user_id",
+        "task_seq",
+        "repair_round_or_ffff",
+        "command_kind",
+        "arena_kind",
+        "per_user_command_seq",
+        "request_id",
+        "base",
+        "allocation_bytes",
+        "initial_valid_bytes",
+        "alignment"
+      ],
+      "properties": {
+        "user_id": {"$ref": "#/$defs/u32"},
+        "task_seq": {"$ref": "#/$defs/u32"},
+        "repair_round_or_ffff": {"$ref": "#/$defs/u16"},
+        "command_kind": {"enum": ["GENERATE", "RELEASE_SESSION", "CANCEL"]},
+        "arena_kind": {"enum": ["INPUT", "PARAMETER", "OUTPUT", "METADATA"]},
+        "per_user_command_seq": {"$ref": "#/$defs/positiveU32"},
+        "request_id": {"$ref": "#/$defs/u64Json"},
+        "base": {"$ref": "#/$defs/u64Json"},
+        "allocation_bytes": {"$ref": "#/$defs/positiveU64Json"},
+        "initial_valid_bytes": {"$ref": "#/$defs/u64Json"},
+        "alignment": {"$ref": "#/$defs/positiveU32"}
+      }
+    }
+  }
+}

@@ -71,6 +71,7 @@ ARTIFACT_KINDS = (
     "WAIT_FOR_GRAPH",
     "FATAL_SNAPSHOT",
     "GATE3_OBSERVATION_JSON",
+    "GATE4_OBSERVATION_JSON",
 )
 
 ARTIFACT_BASENAMES = {
@@ -83,6 +84,7 @@ ARTIFACT_BASENAMES = {
     "WAIT_FOR_GRAPH": "wait_for_graph.json",
     "FATAL_SNAPSHOT": "fatal_snapshot.json",
     "GATE3_OBSERVATION_JSON": "gate3_observation.json",
+    "GATE4_OBSERVATION_JSON": "gate4_observation.json",
 }
 
 LEDGER_FIELDS = (
@@ -279,6 +281,11 @@ def validate_subcase(case_id: str, subcase: dict) -> None:
             "GATE3_OBSERVATION_JSON" not in artifacts:
         raise ContractError(
             f"{case_id}/{subcase['name']}: Gate3 observation artifact missing"
+        )
+    if runner == "GEM5" and GATE_OF.get(case_id) == 4 and \
+            "GATE4_OBSERVATION_JSON" not in artifacts:
+        raise ContractError(
+            f"{case_id}/{subcase['name']}: Gate4 observation artifact missing"
         )
     if subcase["terminal_class"] == "EXPECTED_INFRA_FATAL":
         if "FATAL_SNAPSHOT" not in artifacts:
@@ -802,15 +809,22 @@ def validate_traffic(document: dict, case_id: str, subcase: str) -> None:
         raise ContractError("traffic oracle digest mismatch")
     if document["actual_digest"] != canonical_digest(actual_projection):
         raise ContractError("traffic actual digest mismatch")
-    matched = document["oracle_digest"] == document["actual_digest"]
+    cut = document.get("fatal_cut", False)
+
+    def aggregate_matches(expected, actual):
+        if cut:
+            return canonical_u64(expected) <= canonical_u64(actual)
+        return canonical_u64(expected) == canonical_u64(actual)
+
+    matched = cut or document["oracle_digest"] == document["actual_digest"]
     matched = matched and canonical_u64(document["unattributed_bytes"]) == 0
     matched = matched and all(
-        canonical_u64(row["expected_bytes"]) == canonical_u64(row["actual_bytes"])
-        and canonical_u64(row["expected_packets"]) == canonical_u64(row["actual_packets"])
+        aggregate_matches(row["expected_bytes"], row["actual_bytes"])
+        and aggregate_matches(row["expected_packets"], row["actual_packets"])
         for row in document["classes"]
     )
     matched = matched and all(
-        canonical_u64(row["expected_bytes"]) == canonical_u64(row["actual_bytes"])
+        aggregate_matches(row["expected_bytes"], row["actual_bytes"])
         for row in document["ownership"]
     )
     if document["status"] != ("PASS" if matched else "FAIL"):

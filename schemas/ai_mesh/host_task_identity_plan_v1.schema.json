@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "host_task_identity_plan_v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "workload_plan_digest",
+    "records",
+    "host_task_identity_digest"
+  ],
+  "properties": {
+    "schema": {"const": "host_task_identity_plan_v1"},
+    "version": {"const": 1},
+    "workload_plan_digest": {"$ref": "#/$defs/hex64"},
+    "records": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/hostTaskRecord"}},
+    "host_task_identity_digest": {"$ref": "#/$defs/hex64"}
+  },
+  "$defs": {
+    "u32": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+    "u16": {"type": "integer", "minimum": 0, "maximum": 65535},
+    "positiveU64Json": {
+      "anyOf": [
+        {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        {"type": "string", "pattern": "^0x[0-9a-f]{16}$"}
+      ]
+    },
+    "hex64": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "hostTaskRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["user_id", "task_seq", "repair_round", "stage_kind", "host_task_id"],
+      "properties": {
+        "user_id": {"$ref": "#/$defs/u32"},
+        "task_seq": {"$ref": "#/$defs/u32"},
+        "repair_round": {"$ref": "#/$defs/u16"},
+        "stage_kind": {"enum": ["COMPILE", "TEST", "LOG_PARSE"]},
+        "host_task_id": {"$ref": "#/$defs/positiveU64Json"}
+      }
+    }
+  }
+}

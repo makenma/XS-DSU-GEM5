@@ -66,12 +66,16 @@ bool
 gate3MetadataHeaderValid(const agent_abi::OutputMetadata &header,
                          const Gate3MetadataExpectation &expected)
 {
-    constexpr uint32_t allowedFlags = 1;
     const bool extended = expected.cqFlags &
         agent_abi::kCqFlagsOUTPUT_BYTES_EXTENDED;
     const bool outputMatches = extended ?
         expected.cqValue == UINT32_MAX && header.output_bytes > UINT32_MAX :
         header.output_bytes == expected.cqValue;
+    const bool surrogateMatches = !expected.checkSurrogate ||
+        (header.output_tokens == expected.outputTokens &&
+         header.completed_instance_count ==
+             expected.completedInstanceCount &&
+         header.semantic_content_digest == expected.semanticDigest);
     return header.magic == 0x4f4e4741 &&
         header.abi_major == agent_abi::kAbiMajor &&
         header.abi_minor <= agent_abi::kAbiMinor &&
@@ -79,14 +83,15 @@ gate3MetadataHeaderValid(const agent_abi::OutputMetadata &header,
         header.total_bytes >= agent_abi::kOutputMetadataBytes &&
         header.total_bytes % 8 == 0 &&
         header.total_bytes <= expected.capacity &&
-        (header.flags & ~allowedFlags) == 0 &&
+        header.flags == expected.metadataFlags &&
         header.terminal_status == expected.cqStatus &&
         header.request_id == expected.requestId &&
         header.session_id == expected.sessionId &&
         header.user_id == expected.userId &&
         header.task_seq == expected.taskSequence &&
         header.repair_round == expected.repairRound &&
-        header.reserved == 0 && header.reserved2 == 0 && outputMatches;
+        header.reserved == 0 && header.reserved2 == 0 && outputMatches &&
+        surrogateMatches;
 }
 
 bool

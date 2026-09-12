@@ -1,0 +1,66 @@
+{
+  "schema": "agent_workload_plan_v1",
+  "version": 1,
+  "plan_id": "gate4_su_first_pass_v1",
+  "max_repair_rounds": 0,
+  "users": [
+    {
+      "user_id": 0,
+      "tasks": [
+        {
+          "task_seq": 0,
+          "task_class": "coding",
+          "think_time_ns": 1000000,
+          "session_id": 1,
+          "kv_handle": 1,
+          "initial_kv_generation": 1,
+          "rounds": [
+            {
+              "workload_plan_item_id": 1,
+              "repair_round": 0,
+              "batch_replay": false,
+              "logical_source_rank": 0,
+              "prompt_tokens": 256,
+              "prompt_bytes": 4096,
+              "full_context_tokens": 256,
+              "full_context_bytes": 4096,
+              "expected_cached_tokens": 0,
+              "expected_cached_context_bytes": 0,
+              "input_content_digest": "f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1",
+              "output_tokens": 16,
+              "generated_code_bytes": 512,
+              "output_capacity_bytes": 1024,
+              "output_metadata_capacity_bytes": 512,
+              "kv_required_tokens_after_round": 272,
+              "kv_policy": "INITIAL",
+              "program_id": 1,
+              "profile_id": 1,
+              "requested_profile_key": 4097,
+              "qos": 4,
+              "compile": {
+                "kind": "COMPILE",
+                "nominal_ns": 1000000,
+                "host_tokens_required": 2,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 512,
+                  "write_bytes": 256
+                }
+              },
+              "test": {
+                "kind": "TEST",
+                "nominal_ns": 2000000,
+                "host_tokens_required": 1,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 2048,
+                  "write_bytes": 1024
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

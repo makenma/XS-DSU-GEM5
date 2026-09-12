@@ -1,0 +1,28 @@
+{
+  "schema": "agent_surrogate_profiles_v1",
+  "version": 1,
+  "profiles": [
+    {
+      "program_id": 1,
+      "profile_id": 1,
+      "profile_key": 4097,
+      "input_tokens": 2048,
+      "input_bytes": 32768,
+      "output_tokens": 640,
+      "output_bytes": 24576,
+      "service_ns": 5000000,
+      "publish_chunk_bytes": 4096
+    },
+    {
+      "program_id": 1,
+      "profile_id": 2,
+      "profile_key": 4098,
+      "input_tokens": 4992,
+      "input_bytes": 49152,
+      "output_tokens": 320,
+      "output_bytes": 12288,
+      "service_ns": 4500000,
+      "publish_chunk_bytes": 4096
+    }
+  ]
+}

@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT / "util" / "mesh_ir"))
 sys.path.insert(0, str(ROOT / "configs" / "example" / "ai_mesh"))
 
 from mesh_ir.gate3_contract import GATE3_CASES
+from mesh_ir.gate4_contract import GATE4_CASES
 from gate3_profiles import profile_for
 
 
@@ -16,6 +17,7 @@ class Backend(Enum):
     MOCK = "MOCK"
     GARNET = "GARNET"
     GATE3 = "GATE3"
+    GATE4 = "GATE4"
 
 
 @dataclass(frozen=True)
@@ -115,6 +117,19 @@ for _requirements in GATE3_CASES.values():
         GATE3_PROFILES[_requirement.backend_case] = profile_for(_requirement.name).name
 
 
+GATE4_ARGS = {}
+for _requirements in GATE4_CASES.values():
+    for _requirement in _requirements:
+        if _requirement.runner != "GEM5":
+            continue
+        CASES[_requirement.backend_case] = CaseDefinition(
+            Backend.GATE4,
+            _requirement.backend_case,
+            _requirement.invariants,
+        )
+        GATE4_ARGS[_requirement.backend_case] = _requirement.manifest_args
+
+
 MOCK_BASE_INVARIANTS = (
     "exit_reason",
     "traffic_conservation",
@@ -149,7 +164,7 @@ def _option_values(arguments, name):
 
 def invariant_registry(case_name, arguments):
     definition = CASES[case_name]
-    if definition.backend in (Backend.GARNET, Backend.GATE3):
+    if definition.backend in (Backend.GARNET, Backend.GATE3, Backend.GATE4):
         return definition.invariants
     names = list(MOCK_BASE_INVARIANTS)
     for option, name, enabled in MOCK_VALUE_INVARIANTS:
@@ -196,6 +211,14 @@ def invocation(case_name: str, arguments: list[str], sim_ticks: str) -> tuple[Pa
             "--case",
             definition.backend_case,
             "--axi-max-sim-ticks",
+            sim_ticks,
+        ]
+    elif definition.backend is Backend.GATE4:
+        script = ROOT / "configs/example/ai_mesh/run_gate4_agent.py"
+        argv = [
+            str(script),
+            *GATE4_ARGS[case_name],
+            "--sim-tick-limit",
             sim_ticks,
         ]
     else:

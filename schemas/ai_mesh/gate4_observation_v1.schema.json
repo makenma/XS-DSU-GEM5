@@ -1,0 +1,555 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "u32": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "u64Json": {
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "string",
+          "pattern": "^0x[0-9a-f]{16}$"
+        }
+      ]
+    },
+    "nullableU32": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/u32"
+        }
+      ]
+    },
+    "nullableU64Json": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/u64Json"
+        }
+      ]
+    },
+    "event": {
+      "type": "object",
+      "properties": {
+        "ordinal": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "tick": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "phase": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4
+        },
+        "kind": {
+          "enum": [
+            "LOCAL_VISIBLE",
+            "RELEASE_FENCE_DONE",
+            "AXI_ACCEPT",
+            "DOORBELL_TARGET_COMMIT",
+            "MSI_TARGET_COMMIT",
+            "PUBLICATION_COMMIT",
+            "PUBLICATION_ROLLBACK",
+            "LOCAL_READ",
+            "SQ_CONSUME",
+            "CQ_OBLIGATION_RESERVE",
+            "TERMINAL_READY",
+            "GENERATE_TERMINAL_LATCHED",
+            "CAPACITY_ACCEPT",
+            "CORE_START",
+            "CQ_ASSIGN",
+            "IRQ_DELIVER",
+            "CQ_CONSUME",
+            "CQ_ACK_TARGET_COMMIT",
+            "CQ_OBLIGATION_RETIRE",
+            "SLOT_REUSE",
+            "FAULT_INJECT",
+            "CQ_REJECT",
+            "PARAMETER_REJECT",
+            "CQ_DETAIL",
+            "FATAL",
+            "HOST_STAGE_ENQUEUE",
+            "HOST_STAGE_START",
+            "HOST_STAGE_DONE",
+            "TASK_THINK_READY",
+            "TASK_TERMINAL",
+            "TASK_SUPPRESSED",
+            "HOST_FAULT",
+            "CONTROL_READY",
+            "CONTROL_SUBMIT",
+            "CONTROL_RESOLVE",
+            "CONTROL_TERMINAL",
+            "CANCEL_JOIN_RESOLVED",
+            "OUTPUT_FAULT"
+          ]
+        },
+        "object": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "PROMPT",
+                "PARAMETER",
+                "SQ_ENTRY",
+                "DOORBELL",
+                "SQ_HEAD",
+                "OUTPUT",
+                "METADATA",
+                "CQ_ENTRY",
+                "CQ_ENTRY_READ",
+                "METADATA_READ",
+                "CQ_TAIL",
+                "MSI",
+                "CQ_ACK",
+                "CONTEXT",
+                "LOCAL_READ",
+                "COMPILE",
+                "TEST",
+                "LOG_PARSE",
+                "TASK",
+                "OBJECT_PRODUCE",
+                "OBJECT_READ",
+                "CONTROL_WAITER",
+                "CQ_TAIL",
+                "SQ_HEAD"
+              ]
+            }
+          ]
+        },
+        "absolute_seq": {
+          "$ref": "#/$defs/nullableU64Json"
+        },
+        "request_id": {
+          "$ref": "#/$defs/nullableU64Json"
+        },
+        "cookie": {
+          "$ref": "#/$defs/nullableU64Json"
+        },
+        "slot": {
+          "$ref": "#/$defs/nullableU32"
+        },
+        "generation": {
+          "$ref": "#/$defs/nullableU64Json"
+        },
+        "txn": {
+          "$ref": "#/$defs/nullableU64Json"
+        },
+        "channel": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "AW",
+                "W",
+                "B",
+                "AR",
+                "R"
+              ]
+            }
+          ]
+        },
+        "direction": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "DRIVER_TO_NPU",
+                "NPU_TO_DRIVER",
+                "LOCAL",
+                "LOCAL"
+              ]
+            }
+          ]
+        },
+        "control": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "SQ_DOORBELL",
+                "SQ_ENTRY",
+                "PARAMETER",
+                "PROMPT",
+                "SQ_HEAD_UPDATE",
+                "OUTPUT",
+                "METADATA",
+                "CQ_ENTRY",
+                "CQ_ENTRY_READ",
+                "METADATA_READ",
+                "CQ_TAIL_UPDATE",
+                "MSI",
+                "CQ_HEAD_ACK"
+              ]
+            }
+          ]
+        },
+        "axi_id": {
+          "$ref": "#/$defs/nullableU32"
+        },
+        "address": {
+          "$ref": "#/$defs/nullableU64Json"
+        },
+        "size": {
+          "$ref": "#/$defs/nullableU32"
+        },
+        "response": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "OKAY",
+                "SLVERR",
+                "DECERR",
+                "AMBIGUOUS"
+              ]
+            }
+          ]
+        },
+        "bytes": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "wstrb": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]+$"
+            }
+          ]
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "SUCCESS",
+                "ERROR",
+                "SQ_SEQ_ONLY_ERROR",
+                "SQ_IDENTITY_ERROR",
+                "E_PARAMETER_LENGTH_MISMATCH",
+                "E_REQUEST_BINDING",
+                "E_SQ_MALFORMED",
+                "E_RESERVED_FIELD",
+                "HEADER",
+                "TAIL",
+                "BUSINESS_DONE",
+                "BUSINESS_FAILED",
+                "INFRA_FAILED",
+                "CANCELLED",
+                "CANCEL_WINS",
+                "TARGET_SUCCESS_WINS",
+                "TARGET_ERROR_WINS",
+                "ALREADY_TERMINAL",
+                "NOT_FOUND",
+                "LOCAL_SUBMIT_FAILED",
+                "FAIL",
+                "NONE"
+              ]
+            },
+            {
+              "type": "string",
+              "pattern": "^E_[A-Z0-9_]+$"
+            }
+          ]
+        }
+      },
+      "required": [
+        "ordinal",
+        "tick",
+        "phase",
+        "kind",
+        "object",
+        "absolute_seq",
+        "request_id",
+        "cookie",
+        "slot",
+        "generation",
+        "txn",
+        "channel",
+        "direction",
+        "control",
+        "axi_id",
+        "address",
+        "size",
+        "response",
+        "bytes",
+        "wstrb",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "final": {
+      "type": "object",
+      "properties": {
+        "sq_tentative_producer_seq": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "sq_committed_producer_seq": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "sq_observed_head_seq": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "sq_reusable_head_seq": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "npu_sq_consumer_seq": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "npu_cq_producer_seq": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "cq_msi_issued_seq": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "cq_notified_seq": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "driver_cq_consumer_seq": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "npu_cq_ack_seq": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "live_submissions": {
+          "$ref": "#/$defs/u32"
+        },
+        "live_contexts": {
+          "$ref": "#/$defs/u32"
+        },
+        "live_cq_obligations": {
+          "$ref": "#/$defs/u32"
+        },
+        "fatal_cq_obligations": {
+          "$ref": "#/$defs/u32"
+        },
+        "msi_rob_entries": {
+          "$ref": "#/$defs/u32"
+        },
+        "ack_wait_b": {
+          "$ref": "#/$defs/u32"
+        },
+        "fatal": {
+          "type": "boolean"
+        },
+        "core_starts": {
+          "$ref": "#/$defs/u32"
+        },
+        "cq_assignments": {
+          "$ref": "#/$defs/u32"
+        },
+        "irq_deliveries": {
+          "$ref": "#/$defs/u32"
+        }
+      },
+      "required": [
+        "sq_tentative_producer_seq",
+        "sq_committed_producer_seq",
+        "sq_observed_head_seq",
+        "sq_reusable_head_seq",
+        "npu_sq_consumer_seq",
+        "npu_cq_producer_seq",
+        "cq_msi_issued_seq",
+        "cq_notified_seq",
+        "driver_cq_consumer_seq",
+        "npu_cq_ack_seq",
+        "live_submissions",
+        "live_contexts",
+        "live_cq_obligations",
+        "fatal_cq_obligations",
+        "msi_rob_entries",
+        "ack_wait_b",
+        "fatal",
+        "core_starts",
+        "cq_assignments",
+        "irq_deliveries"
+      ],
+      "additionalProperties": false
+    },
+    "plans": {
+      "type": "object",
+      "properties": {
+        "runtime_config": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "workload_plan": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "control_plan": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "command_identity": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "host_task_identity": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "host_arena_object_plan": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "capacity_plan": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "surrogate_profiles": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "plan_image": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "runtime_config",
+        "workload_plan",
+        "control_plan",
+        "command_identity",
+        "host_task_identity",
+        "host_arena_object_plan",
+        "capacity_plan",
+        "surrogate_profiles",
+        "plan_image"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "schema": {
+      "const": "ai_mesh_gate4_observation_v1"
+    },
+    "version": {
+      "const": 1
+    },
+    "id": {
+      "type": "string"
+    },
+    "subcase": {
+      "type": "string"
+    },
+    "configuration": {
+      "type": "object",
+      "properties": {
+        "sq_depth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "cq_depth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295
+        },
+        "control_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "data_bus_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "non_msi_axi_ids": {
+          "type": "object",
+          "properties": {
+            "SQ_DOORBELL": {
+              "$ref": "#/$defs/u32"
+            },
+            "SQ_HEAD_UPDATE": {
+              "$ref": "#/$defs/u32"
+            },
+            "CQ_TAIL_UPDATE": {
+              "$ref": "#/$defs/u32"
+            },
+            "CQ_HEAD_ACK": {
+              "$ref": "#/$defs/u32"
+            }
+          },
+          "required": [
+            "SQ_DOORBELL",
+            "SQ_HEAD_UPDATE",
+            "CQ_TAIL_UPDATE",
+            "CQ_HEAD_ACK"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "sq_depth",
+        "cq_depth",
+        "control_bytes",
+        "data_bus_bytes",
+        "non_msi_axi_ids"
+      ],
+      "additionalProperties": false
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/event"
+      }
+    },
+    "final": {
+      "$ref": "#/$defs/final"
+    },
+    "facts_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/u64Json"
+      }
+    },
+    "plans": {
+      "$ref": "#/$defs/plans"
+    }
+  },
+  "required": [
+    "schema",
+    "version",
+    "id",
+    "subcase",
+    "configuration",
+    "events",
+    "final",
+    "facts_digest",
+    "metrics",
+    "plans"
+  ],
+  "additionalProperties": false
+}

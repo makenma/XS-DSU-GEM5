@@ -4175,6 +4175,8 @@ Codex先只读：
 
 ### Gate 4：Agent FSM和 Host pools
 
+实施入口：[Gate 4 Coding Spec](DUMMY_AI_CORE_GATE4_CODING_SPEC.md)。
+
 - WorkloadPlan/schema/keyed draws；
 - closed-loop状态机、compile/test/parse pools和global Host tokens；
 - analytic Host local-I/O timer与actual_done耦合，且验证零Host-local AXI/Garnet traffic；

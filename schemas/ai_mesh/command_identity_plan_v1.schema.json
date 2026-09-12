@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "command_identity_plan_v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "workload_plan_digest",
+    "control_plan_digest",
+    "release_policy",
+    "records",
+    "command_identity_digest"
+  ],
+  "properties": {
+    "schema": {"const": "command_identity_plan_v1"},
+    "version": {"const": 1},
+    "workload_plan_digest": {"$ref": "#/$defs/hex64"},
+    "control_plan_digest": {"$ref": "#/$defs/hex64"},
+    "release_policy": {"enum": ["AUTO_PER_TASK", "EXPLICIT_ONLY"]},
+    "records": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/identityRecord"}},
+    "command_identity_digest": {"$ref": "#/$defs/hex64"}
+  },
+  "$defs": {
+    "u32": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+    "u16": {"type": "integer", "minimum": 0, "maximum": 65535},
+    "u64Json": {
+      "anyOf": [
+        {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        {"type": "string", "pattern": "^0x[0-9a-f]{16}$"}
+      ]
+    },
+    "hex64": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "identityRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "user_id",
+        "per_user_command_seq",
+        "request_id",
+        "command_kind",
+        "task_seq",
+        "repair_round_or_ffff",
+        "control_ordinal_or_zero",
+        "target_request_id_or_zero",
+        "session_id_or_zero",
+        "kv_handle_or_zero",
+        "generation_or_zero"
+      ],
+      "properties": {
+        "user_id": {"$ref": "#/$defs/u32"},
+        "per_user_command_seq": {"type": "integer", "minimum": 1, "maximum": 4294967295},
+        "request_id": {"$ref": "#/$defs/u64Json"},
+        "command_kind": {"enum": ["GENERATE", "RELEASE_SESSION", "CANCEL"]},
+        "task_seq": {"$ref": "#/$defs/u32"},
+        "repair_round_or_ffff": {"$ref": "#/$defs/u16"},
+        "control_ordinal_or_zero": {"$ref": "#/$defs/u32"},
+        "target_request_id_or_zero": {"$ref": "#/$defs/u64Json"},
+        "session_id_or_zero": {"$ref": "#/$defs/u64Json"},
+        "kv_handle_or_zero": {"$ref": "#/$defs/u64Json"},
+        "generation_or_zero": {"$ref": "#/$defs/u32"}
+      }
+    }
+  }
+}

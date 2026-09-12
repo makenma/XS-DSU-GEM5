@@ -8,20 +8,19 @@
 #include <vector>
 
 #include "base/logging.hh"
-#include "dev/ai_mesh/gate3_protocol_runtime.hh"
+#include "dev/ai_mesh/agent_axi_work.hh"
+#include "dev/ai_mesh/gate3_fatal_reducer.hh"
+#include "dev/ai_mesh/gate3_observation_recorder.hh"
 
 namespace gem5
 {
 namespace ai_mesh
 {
 
-inline constexpr uint64_t HostSqBase = 0x1000;
 inline constexpr uint64_t HostParameterBase = 0x10000;
 inline constexpr uint64_t HostPromptBase = 0x20000;
 inline constexpr uint64_t HostOutputBase = 0x30000;
 inline constexpr uint64_t HostMetadataBase = 0x40000;
-inline constexpr uint64_t HostCqBase = 0x50000;
-inline constexpr uint64_t HostMsiBase = 0x60000;
 inline constexpr uint64_t NpuDoorbellOffset = 0x0000;
 inline constexpr uint64_t NpuCqHeadAckOffset = 0x0008;
 inline constexpr uint64_t AgentProxySqHeadOffset = 0x0000;
@@ -120,13 +119,6 @@ readLe(const std::vector<uint8_t> &data, size_t offset)
     return value;
 }
 
-template <size_t N>
-std::vector<uint8_t>
-toVector(const std::array<uint8_t, N> &data)
-{
-    return std::vector<uint8_t>(data.begin(), data.end());
-}
-
 inline std::string
 objectForControl(const std::string &control)
 {
@@ -176,6 +168,46 @@ inline bool
 isSuccessStatus(uint16_t status)
 {
     return status == static_cast<uint16_t>(agent_abi::CqStatus::SUCCESS);
+}
+
+inline const char *
+controlStatusName(uint16_t status)
+{
+    switch (status) {
+      case agent_abi::kCqStatusSUCCESS:
+        return "SUCCESS";
+      case agent_abi::kCqStatusCANCELLED:
+        return "CANCELLED";
+      case agent_abi::kCqStatusNOT_FOUND:
+        return "NOT_FOUND";
+      case agent_abi::kCqStatusALREADY_TERMINAL:
+        return "ALREADY_TERMINAL";
+      case agent_abi::kCqStatusBUSY:
+        return "BUSY";
+      case agent_abi::kCqStatusSTALE_GENERATION:
+        return "STALE_GENERATION";
+      case agent_abi::kCqStatusPARAM_ERROR:
+        return "PARAM_ERROR";
+    }
+    return nullptr;
+}
+
+inline const char *
+cqConsumeStatusName(uint16_t status)
+{
+    switch (status) {
+      case agent_abi::kCqStatusSUCCESS:
+        return "SUCCESS";
+      case agent_abi::kCqStatusCANCELLED:
+        return "CANCELLED";
+      case agent_abi::kCqStatusNOT_FOUND:
+        return "NOT_FOUND";
+      case agent_abi::kCqStatusALREADY_TERMINAL:
+        return "ALREADY_TERMINAL";
+      case agent_abi::kCqStatusSTALE_GENERATION:
+        return "STALE_GENERATION";
+    }
+    return "ERROR";
 }
 
 inline uint64_t

@@ -45,6 +45,8 @@ class SubmissionLedger
                                    bool provenNoSideEffect = false);
 
     bool hasPending() const { return _pending.has_value(); }
+    bool pendingCompletionEvidence() const
+    { return _pending && _pending->completionEvidence; }
     const PendingSqPublication *pending() const
     { return _pending ? &*_pending : nullptr; }
 

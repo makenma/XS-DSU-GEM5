@@ -34,8 +34,22 @@ Source('axi_tensor_dma_engine.cc')
 Source('peer_sram_aperture.cc')
 Source('npu_memory_endpoint.cc')
 Source('gate3_observation_recorder.cc')
-Source('gate3_protocol_runtime.cc')
-Source('gate3_protocol_frontend.cc')
+Source('agent_axi_driver.cc')
+Source('agent_axi_driver_plan.cc')
+Source('agent_request_source.cc')
+Source('agent_workload_manager.cc')
+Source('agent_object_table.cc')
+Source('host_resource_manager.cc')
+Source('agent_sha256.cc')
+Source('agent_plan_image.cc')
+Source('agent_surrogate_codec.cc')
+Source('agent_plan_codec.cc')
+Source('control_trigger_coordinator.cc')
+Source('session_record_table.cc')
+Source('npu_request_executor.cc')
+Source('npu_serving_frontend.cc')
+Source('npu_serving_frontend_control.cc')
+Source('npu_serving_frontend_plan.cc')
 Source('gate3_axi_transfer.cc')
 Source('gate3_completion_ledger.cc')
 Source('gate3_fatal_reducer.cc')
@@ -108,3 +122,65 @@ GTest('agent_submission.test',
       'agent_runtime_types.cc',
       'agent_ring_state.cc',
       'agent_submission_ledger.cc')
+GTest('agent_request_source.test',
+      'agent_request_source.test.cc',
+      'agent_request_source.cc',
+      'agent_plan_image.cc',
+      'agent_surrogate_codec.cc',
+      'agent_sha256.cc')
+GTest('agent_workload_manager.test',
+      'agent_workload_manager.test.cc',
+      'acceptance_gtest_reporter.cc',
+      'agent_workload_manager.cc',
+      'agent_request_source.cc',
+      'agent_plan_image.cc',
+      'agent_surrogate_codec.cc',
+      'agent_sha256.cc',
+      'agent_object_table.cc',
+      'host_resource_manager.cc',
+      'agent_runtime_types.cc')
+GTest('npu_request_executor.test',
+      'npu_request_executor.test.cc',
+      'npu_request_executor.cc',
+      'agent_surrogate_codec.cc',
+      'agent_sha256.cc')
+GTest('agent_object_table.test',
+      'agent_object_table.test.cc',
+      'acceptance_gtest_reporter.cc',
+      'agent_object_table.cc',
+      'agent_runtime_types.cc')
+GTest('host_resource_manager.test',
+      'host_resource_manager.test.cc',
+      'acceptance_gtest_reporter.cc',
+      'host_resource_manager.cc',
+      'agent_runtime_types.cc')
+GTest('agent_sha256.test',
+      'agent_sha256.test.cc',
+      'agent_sha256.cc')
+GTest('agent_plan_image.test',
+      'agent_plan_image.test.cc',
+      'agent_plan_image.cc',
+      'agent_surrogate_codec.cc',
+      'agent_sha256.cc')
+GTest('agent_surrogate_codec.test',
+      'agent_surrogate_codec.test.cc',
+      'agent_surrogate_codec.cc',
+      'agent_sha256.cc')
+GTest('agent_plan_codec.test',
+      'agent_plan_codec.test.cc',
+      'agent_plan_codec.cc',
+      'agent_plan_image.cc',
+      'agent_surrogate_codec.cc',
+      'agent_sha256.cc',
+      'agent_crc32c.cc')
+GTest('control_trigger_coordinator.test',
+      'control_trigger_coordinator.test.cc',
+      'control_trigger_coordinator.cc',
+      'agent_plan_image.cc',
+      'agent_surrogate_codec.cc',
+      'agent_sha256.cc')
+GTest('session_record_table.test',
+      'session_record_table.test.cc',
+      'session_record_table.cc')
+GTest('npu_execution_selector.test',
+      'npu_execution_selector.test.cc')

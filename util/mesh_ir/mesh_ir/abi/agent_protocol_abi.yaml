@@ -40,6 +40,8 @@ enums:
     PROGRAM_ERROR: 0x0201
     AXI_ERROR: 0x0202
     INTERNAL_ERROR: 0x02ff
+  metadata_flags:
+    SESSION_ADMITTED: 0x00000001
   semantic_phase:
     PREFILL: 0x01
     DECODE: 0x02
@@ -115,6 +117,9 @@ enums:
     MSI_TARGET_OR_B: 14
     AGENT_PROXY_DRAIN: 15
     RESERVED_16: 16
+  host_local_fault_site_v1:
+    OBJECT_PRODUCE: 0
+    OBJECT_READ: 1
   invariant_site_v1:
     DCORE_STATE: 0
     LEDGER_OWNERSHIP: 1
@@ -248,6 +253,7 @@ detail_code_registry:
   E_RAW_LOG_ENTERED_NPU_FABRIC: 0x00060003
   E_RELEASE_WAITER_STATUS: 0x00060004
   E_RELEASE_SUBMIT_ROLLBACK: 0x00060005
+  E_HOST_LOCAL_OBJECT: 0x00060006
   E_ADDRESS_PLAN: 0x00070001
   E_CAPABILITY_MISMATCH: 0x00070002
   E_CAPACITY_PLAN: 0x00070003
@@ -306,6 +312,7 @@ detail_dispositions_v1:
   E_CAPABILITY_MISMATCH: *config_fatal
   E_CAPACITY_PLAN: *config_fatal
   E_AGENT_ROUND_LIMIT: {severity: BUSINESS_TERMINAL, cq_status: null, run_exit_reason: null}
+  E_HOST_LOCAL_OBJECT: {severity: BUSINESS_TERMINAL, cq_status: null, run_exit_reason: null}
   E_WORKLOAD_CHANGED_BY_TIMING: &test_assertion {severity: TEST_ASSERTION, cq_status: null, run_exit_reason: TEST_ASSERTION_FAILED}
   E_RAW_LOG_ENTERED_NPU_FABRIC: *test_assertion
   E_TRAFFIC_MISMATCH: *test_assertion

@@ -11,7 +11,8 @@ GEM5 = REPO / "build" / "AXI_MESH" / "gem5.opt"
 CONFIG = REPO / "configs" / "example" / "ai_mesh" / "run_gate3_protocol.py"
 sys.path.insert(0, str(CONFIG.parent))
 
-from gate3_acceptance import _fatal_error, _fatal_snapshot, _ledger, parse_gate3_facts
+from gate3_acceptance import _fatal_error, _fatal_snapshot, _ledger
+from mesh_ir.gate3_oracle import parse_facts_tsv as parse_gate3_facts
 
 
 def _run(profile, output, expected_exit=0, sim_tick_limit=5000000, config=CONFIG):

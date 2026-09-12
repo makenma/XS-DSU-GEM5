@@ -126,7 +126,8 @@
         "TRACE_MIN",
         "WAIT_FOR_GRAPH",
         "FATAL_SNAPSHOT",
-        "GATE3_OBSERVATION_JSON"
+        "GATE3_OBSERVATION_JSON",
+        "GATE4_OBSERVATION_JSON"
       ]
     },
     "unitTimeout": {
@@ -212,7 +213,8 @@
         "config_script": {
           "enum": [
             "configs/example/ai_mesh/run_dummy_core_agent.py",
-            "configs/example/ai_mesh/run_gate3_protocol.py"
+            "configs/example/ai_mesh/run_gate3_protocol.py",
+            "configs/example/ai_mesh/run_gate4_agent.py"
           ]
         },
         "case_name": {
@@ -1488,6 +1490,9 @@
         },
         "unattributed_bytes": {
           "$ref": "#/$defs/u64Json"
+        },
+        "fatal_cut": {
+          "type": "boolean"
         }
       },
       "required": [

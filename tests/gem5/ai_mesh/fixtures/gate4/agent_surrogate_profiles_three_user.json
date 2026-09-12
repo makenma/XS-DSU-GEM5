@@ -1,0 +1,61 @@
+{
+  "schema": "agent_surrogate_profiles_v1",
+  "version": 1,
+  "profiles": [
+    {
+      "program_id": 1,
+      "profile_id": 1,
+      "profile_key": 4097,
+      "input_tokens": 256,
+      "input_bytes": 4096,
+      "output_tokens": 16,
+      "output_bytes": 512,
+      "service_ns": 1000000,
+      "publish_chunk_bytes": 4096
+    },
+    {
+      "program_id": 1,
+      "profile_id": 2,
+      "profile_key": 4098,
+      "input_tokens": 336,
+      "input_bytes": 5120,
+      "output_tokens": 8,
+      "output_bytes": 256,
+      "service_ns": 1000000,
+      "publish_chunk_bytes": 4096
+    },
+    {
+      "program_id": 1,
+      "profile_id": 3,
+      "profile_key": 4099,
+      "input_tokens": 128,
+      "input_bytes": 2048,
+      "output_tokens": 8,
+      "output_bytes": 256,
+      "service_ns": 50000000,
+      "publish_chunk_bytes": 4096
+    },
+    {
+      "program_id": 1,
+      "profile_id": 4,
+      "profile_key": 4100,
+      "input_tokens": 192,
+      "input_bytes": 3072,
+      "output_tokens": 12,
+      "output_bytes": 384,
+      "service_ns": 1000000,
+      "publish_chunk_bytes": 4096
+    },
+    {
+      "program_id": 1,
+      "profile_id": 5,
+      "profile_key": 4101,
+      "input_tokens": 252,
+      "input_bytes": 3840,
+      "output_tokens": 6,
+      "output_bytes": 192,
+      "service_ns": 1000000,
+      "publish_chunk_bytes": 4096
+    }
+  ]
+}

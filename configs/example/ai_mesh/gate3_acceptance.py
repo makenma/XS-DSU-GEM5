@@ -21,33 +21,15 @@ from mesh_ir.acceptance import (
     validate_schema,
 )
 from mesh_ir.gate3_contract import GATE3_CASES
-from mesh_ir.gate3_oracle import Gate3OracleError, validate_observation
+from mesh_ir.gate3_oracle import (
+    Gate3OracleError,
+    parse_facts_tsv,
+    validate_observation,
+)
 from mesh_ir.generated import agent_abi as ABI
 
 from gate3_profiles import Gate3Profile, is_expected_fatal
 
-
-FINAL_FIELDS = (
-    "sq_tentative_producer_seq",
-    "sq_committed_producer_seq",
-    "sq_observed_head_seq",
-    "sq_reusable_head_seq",
-    "npu_sq_consumer_seq",
-    "npu_cq_producer_seq",
-    "cq_msi_issued_seq",
-    "cq_notified_seq",
-    "driver_cq_consumer_seq",
-    "npu_cq_ack_seq",
-    "live_submissions",
-    "live_contexts",
-    "live_cq_obligations",
-    "msi_rob_entries",
-    "ack_wait_b",
-    "fatal",
-    "core_starts",
-    "cq_assignments",
-    "irq_deliveries",
-)
 
 TRAFFIC_CLASSES = (
     "AGENT_TO_NPU_CONTROL",
@@ -81,205 +63,6 @@ CQ_IDENTITY_FAULT_PROFILES = frozenset({
     "CQ_REQUEST_MISMATCH",
     "CQ_COOKIE_MISMATCH",
 })
-
-
-def _optional(value):
-    return None if value == "-" else int(value)
-
-
-def parse_gate3_facts(path: Path):
-    events = []
-    metrics = {}
-    fatal = None
-    final = None
-    fatal_sq_intakes = []
-    fatal_cq_obligations = []
-    fatal_ack_records = []
-    fatal_msi_records = []
-    fatal_publications = []
-    fatal_state = None
-    fatal_candidates = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        fields = line.split("|")
-        if not fields or fields[0] == "":
-            continue
-        if fields[0] == "EVENT":
-            if len(fields) != 21:
-                raise ContractError("Gate3 facts EVENT field count mismatch")
-            events.append(
-                {
-                    "source_ordinal": len(events),
-                    "tick": int(fields[1]),
-                    "phase": int(fields[2]),
-                    "kind": fields[3],
-                    "object": None if fields[4] == "-" else fields[4],
-                    "absolute_seq": _optional(fields[5]),
-                    "request_id": _optional(fields[6]),
-                    "cookie": _optional(fields[7]),
-                    "slot": _optional(fields[8]),
-                    "generation": _optional(fields[9]),
-                    "txn": _optional(fields[10]),
-                    "channel": None if fields[11] == "-" else fields[11],
-                    "direction": None if fields[12] == "-" else fields[12],
-                    "control": None if fields[13] == "-" else fields[13],
-                    "axi_id": _optional(fields[14]),
-                    "address": _optional(fields[15]),
-                    "size": _optional(fields[16]),
-                    "response": None if fields[17] == "-" else fields[17],
-                    "bytes": int(fields[18]),
-                    "wstrb": None if fields[19] == "-" else fields[19],
-                    "status": None if fields[20] == "-" else fields[20],
-                }
-            )
-        elif fields[0] == "FINAL":
-            if len(fields) != 20:
-                raise ContractError("Gate3 facts FINAL field count mismatch")
-            values = [int(value) for value in fields[1:]]
-            final = dict(zip(FINAL_FIELDS, values))
-            final["fatal"] = bool(final["fatal"])
-        elif fields[0] == "METRIC":
-            if len(fields) != 3:
-                raise ContractError("Gate3 facts METRIC field count mismatch")
-            metrics[fields[1]] = int(fields[2])
-        elif fields[0] == "FATAL":
-            if len(fields) != 3:
-                raise ContractError("Gate3 facts FATAL field count mismatch")
-            fatal = {"symbol": fields[1], "value": int(fields[2])}
-        elif fields[0] == "SQ_INTAKE":
-            if len(fields) != 7:
-                raise ContractError("Gate3 facts SQ_INTAKE field count mismatch")
-            fatal_sq_intakes.append(
-                {
-                    "intake_id": int(fields[1]),
-                    "expected_sq_seq": int(fields[2]),
-                    "read_tag": int(fields[3]),
-                    "first_error": fields[4],
-                    "state_at_cut": fields[5],
-                    "terminal_evidence": fields[6],
-                }
-            )
-        elif fields[0] == "FATAL_CQ":
-            if len(fields) != 7:
-                raise ContractError("Gate3 facts FATAL_CQ field count mismatch")
-            fatal_cq_obligations.append({
-                "cq_obligation_id": int(fields[1]),
-                "absolute_sq_seq": int(fields[2]),
-                "request_id": int(fields[3]),
-                "cq_seq": _optional(fields[4]),
-                "slot_id": _optional(fields[5]),
-                "state_at_cut": fields[6],
-            })
-        elif fields[0] in {"FATAL_ACK", "FATAL_MSI"}:
-            if len(fields) != 9:
-                raise ContractError(
-                    f"Gate3 facts {fields[0]} field count mismatch"
-                )
-            record = {
-                "issue_ordinal": int(fields[1]),
-                "ack_seq" if fields[0] == "FATAL_ACK" else "tail":
-                    int(fields[2]),
-                "axi_id": int(fields[3]),
-                "state_at_cut": fields[4],
-                "terminal_evidence": fields[5],
-                "target_commit_evidence": fields[6],
-                "transaction_token_wire": fields[7],
-                "response_token_wire": None if fields[8] == "-" else
-                    fields[8],
-            }
-            target = fatal_ack_records if fields[0] == "FATAL_ACK" else \
-                fatal_msi_records
-            target.append(record)
-        elif fields[0] == "FATAL_PUBLICATION":
-            if len(fields) != 12:
-                raise ContractError(
-                    "Gate3 facts FATAL_PUBLICATION field count mismatch"
-                )
-            fatal_publications.append({
-                "publication_id": int(fields[1]),
-                "doorbell_issue_ordinal": int(fields[2]),
-                "base_seq": int(fields[3]),
-                "pending_tail": int(fields[4]),
-                "request_ids": [
-                    int(value) for value in fields[5].split(",") if value
-                ],
-                "state_at_cut": fields[6],
-                "terminal_evidence": fields[7],
-                "target_commit_evidence": fields[8],
-                "ambiguous": bool(int(fields[9])),
-                "transaction_token_wire": fields[10],
-                "response_token_wire": fields[11],
-            })
-        elif fields[0] == "FATAL_STATE":
-            if len(fields) != 14:
-                raise ContractError("Gate3 facts FATAL_STATE field count mismatch")
-            fatal_state = {
-                "candidate_count": int(fields[1]),
-                "observed_tick": int(fields[2]),
-                "source_class": int(fields[3]),
-                "site_domain": int(fields[4]),
-                "site_id": int(fields[5]),
-                "component_kind": int(fields[6]),
-                "component_local_id": int(fields[7]),
-                "endpoint_id": int(fields[8]),
-                "object_kind": int(fields[9]),
-                "issue_ordinal": int(fields[10]),
-                "error_code": int(fields[11]),
-                "candidate_key_wire": fields[12],
-                "physical_source_token_wire": fields[13],
-            }
-        elif fields[0] == "FATAL_CANDIDATE":
-            if len(fields) != 2:
-                raise ContractError(
-                    "Gate3 facts FATAL_CANDIDATE field count mismatch"
-                )
-            fatal_candidates.append(fields[1])
-        else:
-            raise ContractError(f"unknown Gate3 facts record {fields[0]}")
-    if final is None:
-        raise ContractError("Gate3 facts have no final state")
-    if final["fatal"] != (fatal is not None):
-        raise ContractError("Gate3 facts fatal state is inconsistent")
-    if fatal is not None:
-        if fatal_state is None or not fatal_candidates:
-            raise ContractError("Gate3 facts have no authoritative fatal state")
-        if fatal_state["error_code"] != fatal["value"]:
-            raise ContractError("Gate3 fatal state detail code mismatch")
-        if fatal_state["candidate_count"] != len(fatal_candidates):
-            raise ContractError("Gate3 fatal candidate count mismatch")
-        if fatal_state["candidate_key_wire"] not in fatal_candidates:
-            raise ContractError("Gate3 first fatal is absent from candidates")
-        if metrics.get("fatal_cq_obligations", 0) != len(
-            fatal_cq_obligations
-        ):
-            raise ContractError("Gate3 fatal CQ ownership count mismatch")
-        if metrics.get("fatal_publications", 0) != len(
-            fatal_publications
-        ):
-            raise ContractError("Gate3 fatal publication count mismatch")
-        if metrics.get("ambiguous_publications", 0) != sum(
-            record["ambiguous"] for record in fatal_publications
-        ):
-            raise ContractError("Gate3 ambiguous publication count mismatch")
-        for record in fatal_ack_records + fatal_msi_records:
-            if (record["terminal_evidence"] == "NONE") != (
-                record["response_token_wire"] is None
-            ):
-                raise ContractError(
-                    "Gate3 fatal control terminal/token mismatch"
-                )
-        metrics["_fatal_state"] = fatal_state
-        metrics["_fatal_candidates"] = fatal_candidates
-        metrics["_fatal_cq_obligations"] = fatal_cq_obligations
-        metrics["_fatal_ack_records"] = fatal_ack_records
-        metrics["_fatal_msi_records"] = fatal_msi_records
-        metrics["_fatal_publications"] = fatal_publications
-        metrics["_fatal_sq_intakes"] = fatal_sq_intakes
-    final["fatal_cq_obligations"] = len(fatal_cq_obligations)
-    events.sort(key=lambda row: (row["tick"], row["phase"], row["source_ordinal"]))
-    for ordinal, event in enumerate(events):
-        event.pop("source_ordinal")
-        event["ordinal"] = ordinal
-    return events, final, metrics, fatal
 
 
 def _events(events, **fields):
@@ -1337,7 +1120,7 @@ def _load_scenario(artifact_dir):
 
 def write_gate3_artifacts(profile: Gate3Profile, exit_code: int, facts_path: Path,
                           artifact_dir: Path, case_id: str, subcase: str):
-    events, final, metrics, fatal = parse_gate3_facts(facts_path)
+    events, final, metrics, fatal = parse_facts_tsv(facts_path)
     if exit_code not in (0, 20):
         raise ContractError(f"unexpected Gate3 exit code {exit_code}")
     if final["fatal"] != (exit_code == 20):

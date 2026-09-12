@@ -1,0 +1,22 @@
+{
+  "schema": "agent_control_plan_v1",
+  "version": 1,
+  "workload_plan_digest": "034ad9e6f1a4b7726bb9e60aa7d091cbad2b06c827c2415ea3b3b756517f496e",
+  "actions": [
+    {
+      "control_ordinal": 1,
+      "opcode": "CANCEL",
+      "issuer_user_id": 0,
+      "issuer_task_seq": 0,
+      "target_user_id": 0,
+      "target_task_seq": 0,
+      "target_repair_round": 0,
+      "trigger": {
+        "kind": "AFTER_FIRST_OUTPUT_CHUNK",
+        "event_user_id": 0,
+        "event_task_seq": 0,
+        "event_repair_round": 0
+      }
+    }
+  ]
+}

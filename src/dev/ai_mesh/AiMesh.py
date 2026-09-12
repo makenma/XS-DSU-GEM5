@@ -127,7 +127,7 @@ class Gate3ObservationRecorder(SimObject):
 
 class AgentAxiDriver(ClockedObject):
     type = "AgentAxiDriver"
-    cxx_header = "dev/ai_mesh/gate3_protocol_runtime.hh"
+    cxx_header = "dev/ai_mesh/agent_axi_driver.hh"
     cxx_class = "gem5::ai_mesh::AgentAxiDriver"
 
     master = Param.AxiInitiatorAdapter("Driver AXI initiator")
@@ -139,6 +139,9 @@ class AgentAxiDriver(ClockedObject):
     control_bytes = Param.UInt32(8, "Control window transfer bytes")
     max_burst_beats = Param.UInt16(256, "Maximum AXI burst beats")
     host_base = Param.UInt64(0x10000000, "Host memory base")
+    sq_ring_base = Param.UInt64(0x10001000, "Submission queue ring base")
+    cq_ring_base = Param.UInt64(0x10050000, "Completion queue ring base")
+    msi_base = Param.UInt64(0x10060000, "MSI register bank base")
     npu_control_base = Param.UInt64(0x30000000, "NPU control base")
     agent_proxy_control_base = Param.UInt64(0x30100000, "Agent proxy control base")
     profile = Param.String("NORMAL", "Gate3 runtime profile")
@@ -148,22 +151,96 @@ class AgentAxiDriver(ClockedObject):
     drain_cycles = Param.Cycles(8, "Drain interval before exit")
     doorbell_axi_id = Param.UInt32(16, "Fixed SQ doorbell AXI ID")
     ack_axi_id = Param.UInt32(17, "Fixed CQ ACK AXI ID")
+    request_source = Param.String(
+        "protocol_profile", "protocol_profile or replay_plan"
+    )
+    plan_image = Param.String("", "agent plan image path")
+    host_compute_tokens = Param.UInt32(24, "Synthetic host compute tokens")
+    host_available_fraction_q16 = Param.UInt32(
+        65536, "Q16 fraction of host tokens available to the plan"
+    )
+    host_compile_slots = Param.UInt32(4, "Compile service slots")
+    host_test_slots = Param.UInt32(6, "Test service slots")
+    cancel_join_entries = Param.UInt32(4,
+                     "bounded concurrent cancel join records")
+    host_log_parse_slots = Param.UInt32(4, "Log-parse service slots")
+    host_service_queue_depth = Param.UInt32(
+        64, "Per-kind host service queue depth"
+    )
+    host_weight_compile = Param.UInt32(4, "SWRR weight for compile")
+    host_weight_test = Param.UInt32(3, "SWRR weight for test")
+    host_weight_log_parse = Param.UInt32(2, "SWRR weight for log parse")
+    host_aging_threshold_ns = Param.UInt64(
+        0, "Host queue aging threshold in ns, 0 disables aging"
+    )
+    host_local_io_enabled = Param.Bool(True, "Analytic host local-I/O model")
+    host_local_io_fixed_ns = Param.UInt64(
+        1000, "Fixed host local-I/O latency in ns"
+    )
+    host_local_io_bytes_per_ns = Param.UInt32(
+        64, "Host local-I/O analytic bandwidth in bytes per ns"
+    )
+    agent_object_table_entries = Param.UInt32(
+        4096, "Bounded agent object table entries"
+    )
+    stop_after_completed_tasks = Param.UInt32(
+        0, "Stop admitting tasks after this many lifecycle finals, 0 disables"
+    )
+    stop_accepting_enabled = Param.Bool(
+        False, "Whether the stop-accepting tick cutoff is active"
+    )
+    stop_accepting_at_tick = Param.UInt64(
+        0, "Suppress think arrivals from this tick when enabled"
+    )
+    host_fault_site = Param.String(
+        "", "Host local fault site: empty|object_produce|object_read"
+    )
+    host_fault_task = Param.UInt32(
+        0, "Task sequence the host local fault applies to"
+    )
+    host_fault_round = Param.UInt32(
+        0, "Repair round the host local fault applies to"
+    )
+    control_doorbell_error_ordinal = Param.UInt32(
+        0, "Fail the control doorbell B of this control ordinal, 0 disables"
+    )
+    mutate_cancel_command_ordinal = Param.UInt32(
+        0, "Rewrite the cancel command CQ status of this ordinal, 0 disables"
+    )
+    mutate_cancel_command_status = Param.UInt32(
+        0, "Forged CQ status word for the cancel command mutation"
+    )
+    control_doorbell_b_hold_ns = Param.UInt64(
+        0, "Hold the control doorbell B response for this many ns"
+    )
+    cq_read_delay_ns = Param.UInt64(
+        0, "Delay before each driver CQ local read in ns"
+    )
+    metadata_read_delay_ns = Param.UInt64(
+        0, "Delay before each driver metadata local read in ns"
+    )
 
 
 class NpuServingFrontend(ClockedObject):
     type = "NpuServingFrontend"
-    cxx_header = "dev/ai_mesh/gate3_protocol_runtime.hh"
+    cxx_header = "dev/ai_mesh/npu_serving_frontend.hh"
     cxx_class = "gem5::ai_mesh::NpuServingFrontend"
 
     master = Param.AxiInitiatorAdapter("NPU serving AXI initiator")
     control_target = Param.AxiTargetAdapter("NPU control target")
     recorder = Param.Gate3ObservationRecorder("Gate3 observation recorder")
+    driver = Param.AgentAxiDriver(
+        NULL, "Owning plan-mode driver for control trigger notifications"
+    )
     data_bus_bytes = Param.UInt32(64, "AXI data bus width in bytes")
     sq_depth = Param.UInt32(2, "Submission queue depth")
     cq_depth = Param.UInt32(2, "Completion queue depth")
     control_bytes = Param.UInt32(8, "Control window transfer bytes")
     max_burst_beats = Param.UInt16(256, "Maximum AXI burst beats")
     host_base = Param.UInt64(0x10000000, "Host memory base")
+    sq_ring_base = Param.UInt64(0x10001000, "Submission queue ring base")
+    cq_ring_base = Param.UInt64(0x10050000, "Completion queue ring base")
+    msi_base = Param.UInt64(0x10060000, "MSI register bank base")
     npu_control_base = Param.UInt64(0x30000000, "NPU control base")
     agent_proxy_control_base = Param.UInt64(0x30100000, "Agent proxy control base")
     profile = Param.String("NORMAL", "Gate3 runtime profile")
@@ -175,6 +252,25 @@ class NpuServingFrontend(ClockedObject):
     cq_entry_axi_id = Param.UInt32(20, "CQ entry AXI ID")
     msi_axi_id = Param.UInt32(32, "MSI AXI ID pool base")
     msi_axi_id_count = Param.UInt32(4, "MSI AXI ID pool size")
+    executor = Param.String(
+        "protocol_probe", "protocol_probe or full_context_surrogate"
+    )
+    plan_image = Param.String("", "agent plan image path")
+    kv_session_record_entries = Param.UInt32(
+        64, "Bounded plan-mode session record table entries"
+    )
+    accepted_queue_entries = Param.UInt32(
+        64, "Bounded plan-mode accepted generate queue entries"
+    )
+    output_b_error_request = Param.UInt64(
+        0, "Fail the first OUTPUT write B of this request id, 0 disables"
+    )
+    output_b_error_segment = Param.UInt32(
+        0, "Output segment whose B fails, counting committed segments"
+    )
+    control_cq_first = Param.Bool(
+        False, "Publish the cancel command CQ before the target CQ"
+    )
 
 
 class MeshDummyCore(ClockedObject):

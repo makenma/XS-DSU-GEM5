@@ -1,0 +1,1022 @@
+{
+  "schema": "agent_workload_plan_v1",
+  "version": 1,
+  "plan_id": "gate4_twelve_user_v1",
+  "max_repair_rounds": 1,
+  "users": [
+    {
+      "user_id": 0,
+      "tasks": [
+        {
+          "task_seq": 0,
+          "task_class": "coding",
+          "think_time_ns": 100000,
+          "session_id": 1,
+          "kv_handle": 1,
+          "initial_kv_generation": 1,
+          "max_repair_rounds": 0,
+          "rounds": [
+            {
+              "workload_plan_item_id": 1,
+              "repair_round": 0,
+              "batch_replay": false,
+              "logical_source_rank": 0,
+              "prompt_tokens": 256,
+              "prompt_bytes": 4096,
+              "full_context_tokens": 256,
+              "full_context_bytes": 4096,
+              "expected_cached_tokens": 0,
+              "expected_cached_context_bytes": 0,
+              "input_content_digest": "0101010101010101010101010101010101010101010101010101010101010101",
+              "output_tokens": 8,
+              "generated_code_bytes": 256,
+              "output_capacity_bytes": 512,
+              "output_metadata_capacity_bytes": 512,
+              "kv_required_tokens_after_round": 264,
+              "kv_policy": "INITIAL",
+              "program_id": 1,
+              "profile_id": 1,
+              "requested_profile_key": 4097,
+              "qos": 2,
+              "compile": {
+                "kind": "COMPILE",
+                "nominal_ns": 10000000,
+                "host_tokens_required": 6,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 512,
+                  "write_bytes": 256
+                }
+              },
+              "test": {
+                "kind": "TEST",
+                "nominal_ns": 2000000,
+                "host_tokens_required": 1,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 2048,
+                  "write_bytes": 1024
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "user_id": 1,
+      "tasks": [
+        {
+          "task_seq": 0,
+          "task_class": "coding",
+          "think_time_ns": 200000,
+          "session_id": 2,
+          "kv_handle": 2,
+          "initial_kv_generation": 1,
+          "max_repair_rounds": 0,
+          "rounds": [
+            {
+              "workload_plan_item_id": 2,
+              "repair_round": 0,
+              "batch_replay": false,
+              "logical_source_rank": 0,
+              "prompt_tokens": 272,
+              "prompt_bytes": 4160,
+              "full_context_tokens": 272,
+              "full_context_bytes": 4160,
+              "expected_cached_tokens": 0,
+              "expected_cached_context_bytes": 0,
+              "input_content_digest": "0202020202020202020202020202020202020202020202020202020202020202",
+              "output_tokens": 10,
+              "generated_code_bytes": 288,
+              "output_capacity_bytes": 576,
+              "output_metadata_capacity_bytes": 512,
+              "kv_required_tokens_after_round": 282,
+              "kv_policy": "INITIAL",
+              "program_id": 1,
+              "profile_id": 2,
+              "requested_profile_key": 4098,
+              "qos": 3,
+              "compile": {
+                "kind": "COMPILE",
+                "nominal_ns": 1000000,
+                "host_tokens_required": 2,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 512,
+                  "write_bytes": 256
+                }
+              },
+              "test": {
+                "kind": "TEST",
+                "nominal_ns": 2000000,
+                "host_tokens_required": 1,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 2048,
+                  "write_bytes": 1024
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "user_id": 2,
+      "tasks": [
+        {
+          "task_seq": 0,
+          "task_class": "coding",
+          "think_time_ns": 300000,
+          "session_id": 3,
+          "kv_handle": 3,
+          "initial_kv_generation": 1,
+          "max_repair_rounds": 0,
+          "rounds": [
+            {
+              "workload_plan_item_id": 3,
+              "repair_round": 0,
+              "batch_replay": false,
+              "logical_source_rank": 0,
+              "prompt_tokens": 288,
+              "prompt_bytes": 4224,
+              "full_context_tokens": 288,
+              "full_context_bytes": 4224,
+              "expected_cached_tokens": 0,
+              "expected_cached_context_bytes": 0,
+              "input_content_digest": "0303030303030303030303030303030303030303030303030303030303030303",
+              "output_tokens": 12,
+              "generated_code_bytes": 320,
+              "output_capacity_bytes": 640,
+              "output_metadata_capacity_bytes": 512,
+              "kv_required_tokens_after_round": 300,
+              "kv_policy": "INITIAL",
+              "program_id": 1,
+              "profile_id": 3,
+              "requested_profile_key": 4099,
+              "qos": 4,
+              "compile": {
+                "kind": "COMPILE",
+                "nominal_ns": 1000000,
+                "host_tokens_required": 2,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 512,
+                  "write_bytes": 256
+                }
+              },
+              "test": {
+                "kind": "TEST",
+                "nominal_ns": 2000000,
+                "host_tokens_required": 1,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 2048,
+                  "write_bytes": 1024
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "user_id": 3,
+      "tasks": [
+        {
+          "task_seq": 0,
+          "task_class": "coding",
+          "think_time_ns": 400000,
+          "session_id": 4,
+          "kv_handle": 4,
+          "initial_kv_generation": 1,
+          "max_repair_rounds": 0,
+          "rounds": [
+            {
+              "workload_plan_item_id": 4,
+              "repair_round": 0,
+              "batch_replay": false,
+              "logical_source_rank": 0,
+              "prompt_tokens": 304,
+              "prompt_bytes": 4288,
+              "full_context_tokens": 304,
+              "full_context_bytes": 4288,
+              "expected_cached_tokens": 0,
+              "expected_cached_context_bytes": 0,
+              "input_content_digest": "0404040404040404040404040404040404040404040404040404040404040404",
+              "output_tokens": 14,
+              "generated_code_bytes": 352,
+              "output_capacity_bytes": 704,
+              "output_metadata_capacity_bytes": 512,
+              "kv_required_tokens_after_round": 318,
+              "kv_policy": "INITIAL",
+              "program_id": 1,
+              "profile_id": 4,
+              "requested_profile_key": 4100,
+              "qos": 2,
+              "compile": {
+                "kind": "COMPILE",
+                "nominal_ns": 1000000,
+                "host_tokens_required": 2,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 512,
+                  "write_bytes": 256
+                }
+              },
+              "test": {
+                "kind": "TEST",
+                "nominal_ns": 2000000,
+                "host_tokens_required": 1,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 2048,
+                  "write_bytes": 1024
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "user_id": 4,
+      "tasks": [
+        {
+          "task_seq": 0,
+          "task_class": "coding",
+          "think_time_ns": 500000,
+          "session_id": 5,
+          "kv_handle": 5,
+          "initial_kv_generation": 1,
+          "max_repair_rounds": 0,
+          "rounds": [
+            {
+              "workload_plan_item_id": 5,
+              "repair_round": 0,
+              "batch_replay": false,
+              "logical_source_rank": 0,
+              "prompt_tokens": 320,
+              "prompt_bytes": 4352,
+              "full_context_tokens": 320,
+              "full_context_bytes": 4352,
+              "expected_cached_tokens": 0,
+              "expected_cached_context_bytes": 0,
+              "input_content_digest": "0505050505050505050505050505050505050505050505050505050505050505",
+              "output_tokens": 16,
+              "generated_code_bytes": 384,
+              "output_capacity_bytes": 768,
+              "output_metadata_capacity_bytes": 512,
+              "kv_required_tokens_after_round": 336,
+              "kv_policy": "INITIAL",
+              "program_id": 1,
+              "profile_id": 5,
+              "requested_profile_key": 4101,
+              "qos": 3,
+              "compile": {
+                "kind": "COMPILE",
+                "nominal_ns": 1000000,
+                "host_tokens_required": 2,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 512,
+                  "write_bytes": 256
+                }
+              },
+              "test": {
+                "kind": "TEST",
+                "nominal_ns": 2000000,
+                "host_tokens_required": 1,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 2048,
+                  "write_bytes": 1024
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "user_id": 5,
+      "tasks": [
+        {
+          "task_seq": 0,
+          "task_class": "coding",
+          "think_time_ns": 600000,
+          "session_id": 6,
+          "kv_handle": 6,
+          "initial_kv_generation": 1,
+          "max_repair_rounds": 0,
+          "rounds": [
+            {
+              "workload_plan_item_id": 6,
+              "repair_round": 0,
+              "batch_replay": false,
+              "logical_source_rank": 0,
+              "prompt_tokens": 336,
+              "prompt_bytes": 4416,
+              "full_context_tokens": 336,
+              "full_context_bytes": 4416,
+              "expected_cached_tokens": 0,
+              "expected_cached_context_bytes": 0,
+              "input_content_digest": "0606060606060606060606060606060606060606060606060606060606060606",
+              "output_tokens": 18,
+              "generated_code_bytes": 416,
+              "output_capacity_bytes": 832,
+              "output_metadata_capacity_bytes": 512,
+              "kv_required_tokens_after_round": 354,
+              "kv_policy": "INITIAL",
+              "program_id": 1,
+              "profile_id": 6,
+              "requested_profile_key": 4102,
+              "qos": 4,
+              "compile": {
+                "kind": "COMPILE",
+                "nominal_ns": 1000000,
+                "host_tokens_required": 2,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 512,
+                  "write_bytes": 256
+                }
+              },
+              "test": {
+                "kind": "TEST",
+                "nominal_ns": 2000000,
+                "host_tokens_required": 1,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 2048,
+                  "write_bytes": 1024
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "user_id": 6,
+      "tasks": [
+        {
+          "task_seq": 0,
+          "task_class": "coding",
+          "think_time_ns": 700000,
+          "session_id": 7,
+          "kv_handle": 7,
+          "initial_kv_generation": 1,
+          "rounds": [
+            {
+              "workload_plan_item_id": 7,
+              "repair_round": 0,
+              "batch_replay": false,
+              "logical_source_rank": 0,
+              "prompt_tokens": 352,
+              "prompt_bytes": 4480,
+              "full_context_tokens": 352,
+              "full_context_bytes": 4480,
+              "expected_cached_tokens": 0,
+              "expected_cached_context_bytes": 0,
+              "input_content_digest": "0707070707070707070707070707070707070707070707070707070707070707",
+              "output_tokens": 20,
+              "generated_code_bytes": 448,
+              "output_capacity_bytes": 896,
+              "output_metadata_capacity_bytes": 512,
+              "kv_required_tokens_after_round": 372,
+              "kv_policy": "INITIAL",
+              "program_id": 1,
+              "profile_id": 7,
+              "requested_profile_key": 4103,
+              "qos": 2,
+              "compile": {
+                "kind": "COMPILE",
+                "nominal_ns": 1000000,
+                "host_tokens_required": 2,
+                "outcome": "FAIL",
+                "local_io": {
+                  "read_bytes": 512,
+                  "write_bytes": 32768
+                },
+                "raw_log_bytes": 32768
+              },
+              "log_parse": {
+                "kind": "LOG_PARSE",
+                "nominal_ns": 500000,
+                "host_tokens_required": 1,
+                "outcome": "NONE",
+                "local_io": {
+                  "read_bytes": 32768,
+                  "write_bytes": 4096
+                },
+                "raw_log_bytes": 32768,
+                "excerpt_bytes": 4096,
+                "excerpt_tokens": 512
+              }
+            },
+            {
+              "workload_plan_item_id": 8,
+              "repair_round": 1,
+              "batch_replay": false,
+              "logical_source_rank": 1,
+              "delta_prompt_tokens": 32,
+              "delta_prompt_bytes": 512,
+              "full_context_tokens": 404,
+              "full_context_bytes": 4992,
+              "expected_cached_tokens": 372,
+              "expected_cached_context_bytes": 4480,
+              "input_content_digest": "0808080808080808080808080808080808080808080808080808080808080808",
+              "output_tokens": 8,
+              "generated_code_bytes": 256,
+              "output_capacity_bytes": 512,
+              "output_metadata_capacity_bytes": 512,
+              "kv_required_tokens_after_round": 412,
+              "kv_policy": "ALLOW_REPREFILL",
+              "program_id": 1,
+              "profile_id": 8,
+              "requested_profile_key": 4104,
+              "qos": 2,
+              "compile": {
+                "kind": "COMPILE",
+                "nominal_ns": 1000000,
+                "host_tokens_required": 2,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 512,
+                  "write_bytes": 256
+                }
+              },
+              "test": {
+                "kind": "TEST",
+                "nominal_ns": 2000000,
+                "host_tokens_required": 1,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 2048,
+                  "write_bytes": 1024
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "user_id": 7,
+      "tasks": [
+        {
+          "task_seq": 0,
+          "task_class": "coding",
+          "think_time_ns": 800000,
+          "session_id": 8,
+          "kv_handle": 8,
+          "initial_kv_generation": 1,
+          "rounds": [
+            {
+              "workload_plan_item_id": 9,
+              "repair_round": 0,
+              "batch_replay": false,
+              "logical_source_rank": 0,
+              "prompt_tokens": 368,
+              "prompt_bytes": 4544,
+              "full_context_tokens": 368,
+              "full_context_bytes": 4544,
+              "expected_cached_tokens": 0,
+              "expected_cached_context_bytes": 0,
+              "input_content_digest": "0909090909090909090909090909090909090909090909090909090909090909",
+              "output_tokens": 22,
+              "generated_code_bytes": 480,
+              "output_capacity_bytes": 960,
+              "output_metadata_capacity_bytes": 512,
+              "kv_required_tokens_after_round": 390,
+              "kv_policy": "INITIAL",
+              "program_id": 1,
+              "profile_id": 9,
+              "requested_profile_key": 4105,
+              "qos": 3,
+              "compile": {
+                "kind": "COMPILE",
+                "nominal_ns": 1000000,
+                "host_tokens_required": 2,
+                "outcome": "FAIL",
+                "local_io": {
+                  "read_bytes": 512,
+                  "write_bytes": 32768
+                },
+                "raw_log_bytes": 32768
+              },
+              "log_parse": {
+                "kind": "LOG_PARSE",
+                "nominal_ns": 500000,
+                "host_tokens_required": 1,
+                "outcome": "NONE",
+                "local_io": {
+                  "read_bytes": 32768,
+                  "write_bytes": 4096
+                },
+                "raw_log_bytes": 32768,
+                "excerpt_bytes": 4096,
+                "excerpt_tokens": 512
+              }
+            },
+            {
+              "workload_plan_item_id": 10,
+              "repair_round": 1,
+              "batch_replay": false,
+              "logical_source_rank": 1,
+              "delta_prompt_tokens": 40,
+              "delta_prompt_bytes": 576,
+              "full_context_tokens": 430,
+              "full_context_bytes": 5120,
+              "expected_cached_tokens": 390,
+              "expected_cached_context_bytes": 4544,
+              "input_content_digest": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+              "output_tokens": 8,
+              "generated_code_bytes": 256,
+              "output_capacity_bytes": 512,
+              "output_metadata_capacity_bytes": 512,
+              "kv_required_tokens_after_round": 438,
+              "kv_policy": "ALLOW_REPREFILL",
+              "program_id": 1,
+              "profile_id": 10,
+              "requested_profile_key": 4106,
+              "qos": 3,
+              "compile": {
+                "kind": "COMPILE",
+                "nominal_ns": 1000000,
+                "host_tokens_required": 2,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 512,
+                  "write_bytes": 256
+                }
+              },
+              "test": {
+                "kind": "TEST",
+                "nominal_ns": 2000000,
+                "host_tokens_required": 1,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 2048,
+                  "write_bytes": 1024
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "user_id": 8,
+      "tasks": [
+        {
+          "task_seq": 0,
+          "task_class": "coding",
+          "think_time_ns": 900000,
+          "session_id": 9,
+          "kv_handle": 9,
+          "initial_kv_generation": 1,
+          "rounds": [
+            {
+              "workload_plan_item_id": 11,
+              "repair_round": 0,
+              "batch_replay": false,
+              "logical_source_rank": 0,
+              "prompt_tokens": 384,
+              "prompt_bytes": 4608,
+              "full_context_tokens": 384,
+              "full_context_bytes": 4608,
+              "expected_cached_tokens": 0,
+              "expected_cached_context_bytes": 0,
+              "input_content_digest": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+              "output_tokens": 24,
+              "generated_code_bytes": 512,
+              "output_capacity_bytes": 1024,
+              "output_metadata_capacity_bytes": 512,
+              "kv_required_tokens_after_round": 408,
+              "kv_policy": "INITIAL",
+              "program_id": 1,
+              "profile_id": 11,
+              "requested_profile_key": 4107,
+              "qos": 4,
+              "compile": {
+                "kind": "COMPILE",
+                "nominal_ns": 1000000,
+                "host_tokens_required": 2,
+                "outcome": "FAIL",
+                "local_io": {
+                  "read_bytes": 512,
+                  "write_bytes": 32768
+                },
+                "raw_log_bytes": 32768
+              },
+              "log_parse": {
+                "kind": "LOG_PARSE",
+                "nominal_ns": 500000,
+                "host_tokens_required": 1,
+                "outcome": "NONE",
+                "local_io": {
+                  "read_bytes": 32768,
+                  "write_bytes": 4096
+                },
+                "raw_log_bytes": 32768,
+                "excerpt_bytes": 4096,
+                "excerpt_tokens": 512
+              }
+            },
+            {
+              "workload_plan_item_id": 12,
+              "repair_round": 1,
+              "batch_replay": false,
+              "logical_source_rank": 1,
+              "delta_prompt_tokens": 48,
+              "delta_prompt_bytes": 640,
+              "full_context_tokens": 456,
+              "full_context_bytes": 5248,
+              "expected_cached_tokens": 408,
+              "expected_cached_context_bytes": 4608,
+              "input_content_digest": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+              "output_tokens": 8,
+              "generated_code_bytes": 256,
+              "output_capacity_bytes": 512,
+              "output_metadata_capacity_bytes": 512,
+              "kv_required_tokens_after_round": 464,
+              "kv_policy": "ALLOW_REPREFILL",
+              "program_id": 1,
+              "profile_id": 12,
+              "requested_profile_key": 4108,
+              "qos": 4,
+              "compile": {
+                "kind": "COMPILE",
+                "nominal_ns": 1000000,
+                "host_tokens_required": 2,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 512,
+                  "write_bytes": 256
+                }
+              },
+              "test": {
+                "kind": "TEST",
+                "nominal_ns": 2000000,
+                "host_tokens_required": 1,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 2048,
+                  "write_bytes": 1024
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "user_id": 9,
+      "tasks": [
+        {
+          "task_seq": 0,
+          "task_class": "coding",
+          "think_time_ns": 1000000,
+          "session_id": 10,
+          "kv_handle": 10,
+          "initial_kv_generation": 1,
+          "rounds": [
+            {
+              "workload_plan_item_id": 13,
+              "repair_round": 0,
+              "batch_replay": false,
+              "logical_source_rank": 0,
+              "prompt_tokens": 400,
+              "prompt_bytes": 4672,
+              "full_context_tokens": 400,
+              "full_context_bytes": 4672,
+              "expected_cached_tokens": 0,
+              "expected_cached_context_bytes": 0,
+              "input_content_digest": "0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d",
+              "output_tokens": 26,
+              "generated_code_bytes": 544,
+              "output_capacity_bytes": 1088,
+              "output_metadata_capacity_bytes": 512,
+              "kv_required_tokens_after_round": 426,
+              "kv_policy": "INITIAL",
+              "program_id": 1,
+              "profile_id": 13,
+              "requested_profile_key": 4109,
+              "qos": 2,
+              "compile": {
+                "kind": "COMPILE",
+                "nominal_ns": 1000000,
+                "host_tokens_required": 2,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 544,
+                  "write_bytes": 256
+                }
+              },
+              "log_parse": {
+                "kind": "LOG_PARSE",
+                "nominal_ns": 500000,
+                "host_tokens_required": 1,
+                "outcome": "NONE",
+                "local_io": {
+                  "read_bytes": 32768,
+                  "write_bytes": 4096
+                },
+                "raw_log_bytes": 32768,
+                "excerpt_bytes": 4096,
+                "excerpt_tokens": 512
+              },
+              "test": {
+                "kind": "TEST",
+                "nominal_ns": 2000000,
+                "host_tokens_required": 1,
+                "outcome": "FAIL",
+                "local_io": {
+                  "read_bytes": 2048,
+                  "write_bytes": 32768
+                },
+                "raw_log_bytes": 32768
+              }
+            },
+            {
+              "workload_plan_item_id": 14,
+              "repair_round": 1,
+              "batch_replay": false,
+              "logical_source_rank": 1,
+              "delta_prompt_tokens": 32,
+              "delta_prompt_bytes": 512,
+              "full_context_tokens": 458,
+              "full_context_bytes": 5184,
+              "expected_cached_tokens": 426,
+              "expected_cached_context_bytes": 4672,
+              "input_content_digest": "0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e",
+              "output_tokens": 8,
+              "generated_code_bytes": 256,
+              "output_capacity_bytes": 512,
+              "output_metadata_capacity_bytes": 512,
+              "kv_required_tokens_after_round": 466,
+              "kv_policy": "ALLOW_REPREFILL",
+              "program_id": 1,
+              "profile_id": 14,
+              "requested_profile_key": 4110,
+              "qos": 2,
+              "compile": {
+                "kind": "COMPILE",
+                "nominal_ns": 1000000,
+                "host_tokens_required": 2,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 512,
+                  "write_bytes": 256
+                }
+              },
+              "test": {
+                "kind": "TEST",
+                "nominal_ns": 2000000,
+                "host_tokens_required": 1,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 2048,
+                  "write_bytes": 1024
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "user_id": 10,
+      "tasks": [
+        {
+          "task_seq": 0,
+          "task_class": "coding",
+          "think_time_ns": 1100000,
+          "session_id": 11,
+          "kv_handle": 11,
+          "initial_kv_generation": 1,
+          "rounds": [
+            {
+              "workload_plan_item_id": 15,
+              "repair_round": 0,
+              "batch_replay": false,
+              "logical_source_rank": 0,
+              "prompt_tokens": 416,
+              "prompt_bytes": 4736,
+              "full_context_tokens": 416,
+              "full_context_bytes": 4736,
+              "expected_cached_tokens": 0,
+              "expected_cached_context_bytes": 0,
+              "input_content_digest": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
+              "output_tokens": 28,
+              "generated_code_bytes": 576,
+              "output_capacity_bytes": 1152,
+              "output_metadata_capacity_bytes": 512,
+              "kv_required_tokens_after_round": 444,
+              "kv_policy": "INITIAL",
+              "program_id": 1,
+              "profile_id": 15,
+              "requested_profile_key": 4111,
+              "qos": 3,
+              "compile": {
+                "kind": "COMPILE",
+                "nominal_ns": 1000000,
+                "host_tokens_required": 2,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 576,
+                  "write_bytes": 256
+                }
+              },
+              "log_parse": {
+                "kind": "LOG_PARSE",
+                "nominal_ns": 500000,
+                "host_tokens_required": 1,
+                "outcome": "NONE",
+                "local_io": {
+                  "read_bytes": 32768,
+                  "write_bytes": 4096
+                },
+                "raw_log_bytes": 32768,
+                "excerpt_bytes": 4096,
+                "excerpt_tokens": 512
+              },
+              "test": {
+                "kind": "TEST",
+                "nominal_ns": 2000000,
+                "host_tokens_required": 1,
+                "outcome": "FAIL",
+                "local_io": {
+                  "read_bytes": 2048,
+                  "write_bytes": 32768
+                },
+                "raw_log_bytes": 32768
+              }
+            },
+            {
+              "workload_plan_item_id": 16,
+              "repair_round": 1,
+              "batch_replay": false,
+              "logical_source_rank": 1,
+              "delta_prompt_tokens": 40,
+              "delta_prompt_bytes": 576,
+              "full_context_tokens": 484,
+              "full_context_bytes": 5312,
+              "expected_cached_tokens": 444,
+              "expected_cached_context_bytes": 4736,
+              "input_content_digest": "1010101010101010101010101010101010101010101010101010101010101010",
+              "output_tokens": 8,
+              "generated_code_bytes": 256,
+              "output_capacity_bytes": 512,
+              "output_metadata_capacity_bytes": 512,
+              "kv_required_tokens_after_round": 492,
+              "kv_policy": "ALLOW_REPREFILL",
+              "program_id": 1,
+              "profile_id": 16,
+              "requested_profile_key": 4112,
+              "qos": 3,
+              "compile": {
+                "kind": "COMPILE",
+                "nominal_ns": 1000000,
+                "host_tokens_required": 2,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 512,
+                  "write_bytes": 256
+                }
+              },
+              "test": {
+                "kind": "TEST",
+                "nominal_ns": 2000000,
+                "host_tokens_required": 1,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 2048,
+                  "write_bytes": 1024
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "user_id": 11,
+      "tasks": [
+        {
+          "task_seq": 0,
+          "task_class": "coding",
+          "think_time_ns": 1200000,
+          "session_id": 12,
+          "kv_handle": 12,
+          "initial_kv_generation": 1,
+          "rounds": [
+            {
+              "workload_plan_item_id": 17,
+              "repair_round": 0,
+              "batch_replay": false,
+              "logical_source_rank": 0,
+              "prompt_tokens": 432,
+              "prompt_bytes": 4800,
+              "full_context_tokens": 432,
+              "full_context_bytes": 4800,
+              "expected_cached_tokens": 0,
+              "expected_cached_context_bytes": 0,
+              "input_content_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+              "output_tokens": 30,
+              "generated_code_bytes": 608,
+              "output_capacity_bytes": 1216,
+              "output_metadata_capacity_bytes": 512,
+              "kv_required_tokens_after_round": 462,
+              "kv_policy": "INITIAL",
+              "program_id": 1,
+              "profile_id": 17,
+              "requested_profile_key": 4113,
+              "qos": 4,
+              "compile": {
+                "kind": "COMPILE",
+                "nominal_ns": 1000000,
+                "host_tokens_required": 2,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 608,
+                  "write_bytes": 256
+                }
+              },
+              "log_parse": {
+                "kind": "LOG_PARSE",
+                "nominal_ns": 500000,
+                "host_tokens_required": 1,
+                "outcome": "NONE",
+                "local_io": {
+                  "read_bytes": 32768,
+                  "write_bytes": 4096
+                },
+                "raw_log_bytes": 32768,
+                "excerpt_bytes": 4096,
+                "excerpt_tokens": 512
+              },
+              "test": {
+                "kind": "TEST",
+                "nominal_ns": 2000000,
+                "host_tokens_required": 1,
+                "outcome": "FAIL",
+                "local_io": {
+                  "read_bytes": 2048,
+                  "write_bytes": 32768
+                },
+                "raw_log_bytes": 32768
+              }
+            },
+            {
+              "workload_plan_item_id": 18,
+              "repair_round": 1,
+              "batch_replay": false,
+              "logical_source_rank": 1,
+              "delta_prompt_tokens": 48,
+              "delta_prompt_bytes": 640,
+              "full_context_tokens": 510,
+              "full_context_bytes": 5440,
+              "expected_cached_tokens": 462,
+              "expected_cached_context_bytes": 4800,
+              "input_content_digest": "1212121212121212121212121212121212121212121212121212121212121212",
+              "output_tokens": 8,
+              "generated_code_bytes": 256,
+              "output_capacity_bytes": 512,
+              "output_metadata_capacity_bytes": 512,
+              "kv_required_tokens_after_round": 518,
+              "kv_policy": "ALLOW_REPREFILL",
+              "program_id": 1,
+              "profile_id": 18,
+              "requested_profile_key": 4114,
+              "qos": 4,
+              "compile": {
+                "kind": "COMPILE",
+                "nominal_ns": 1000000,
+                "host_tokens_required": 2,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 512,
+                  "write_bytes": 256
+                }
+              },
+              "test": {
+                "kind": "TEST",
+                "nominal_ns": 2000000,
+                "host_tokens_required": 1,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 2048,
+                  "write_bytes": 1024
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

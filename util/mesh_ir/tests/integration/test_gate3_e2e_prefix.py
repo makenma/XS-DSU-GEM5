@@ -13,7 +13,8 @@ CONFIG = CONFIG_ROOT / "run_gate3_protocol.py"
 sys.path.insert(0, str(MESH_IR_ROOT))
 sys.path.insert(0, str(CONFIG_ROOT))
 
-from gate3_acceptance import CONTROL_IDS, parse_gate3_facts
+from gate3_acceptance import CONTROL_IDS
+from mesh_ir.gate3_oracle import parse_facts_tsv as parse_gate3_facts
 from gate3_profiles import e2e_d_prefix_steps, profile_named
 from mesh_ir.gate3_oracle import validate_observation
 

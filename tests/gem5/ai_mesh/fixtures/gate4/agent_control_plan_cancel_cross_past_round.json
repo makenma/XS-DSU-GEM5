@@ -1,0 +1,22 @@
+{
+  "schema": "agent_control_plan_v1",
+  "version": 1,
+  "workload_plan_digest": "8c17689a09bdad646487322ea38e0c87328065c9687b408f07094312c9533040",
+  "actions": [
+    {
+      "control_ordinal": 1,
+      "opcode": "CANCEL",
+      "issuer_user_id": 0,
+      "issuer_task_seq": 0,
+      "target_user_id": 0,
+      "target_task_seq": 0,
+      "target_repair_round": 0,
+      "trigger": {
+        "kind": "AFTER_SQ_ACCEPT",
+        "event_user_id": 2,
+        "event_task_seq": 0,
+        "event_repair_round": 1
+      }
+    }
+  ]
+}

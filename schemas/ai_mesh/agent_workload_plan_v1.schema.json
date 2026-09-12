@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent_workload_plan_v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "version", "plan_id", "max_repair_rounds", "users"],
+  "properties": {
+    "schema": {"const": "agent_workload_plan_v1"},
+    "version": {"const": 1},
+    "plan_id": {"type": "string", "minLength": 1},
+    "max_repair_rounds": {"$ref": "#/$defs/u16"},
+    "users": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/userPlan"}}
+  },
+  "$defs": {
+    "u16": {"type": "integer", "minimum": 0, "maximum": 65535},
+    "u32": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+    "positiveU32": {"type": "integer", "minimum": 1, "maximum": 4294967295},
+    "u64Json": {
+      "anyOf": [
+        {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        {"type": "string", "pattern": "^0x[0-9a-f]{16}$"}
+      ]
+    },
+    "positiveU64Json": {
+      "anyOf": [
+        {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+        {"type": "string", "pattern": "^0x[0-9a-f]{16}$"}
+      ]
+    },
+    "hex64": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "hostLocalIoPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["read_bytes", "write_bytes"],
+      "properties": {
+        "read_bytes": {"$ref": "#/$defs/u64Json"},
+        "write_bytes": {"$ref": "#/$defs/u64Json"}
+      }
+    },
+    "compileStage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "nominal_ns", "host_tokens_required", "outcome", "local_io"],
+      "properties": {
+        "kind": {"const": "COMPILE"},
+        "nominal_ns": {"$ref": "#/$defs/positiveU64Json"},
+        "host_tokens_required": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "outcome": {"enum": ["SUCCESS", "FAIL"]},
+        "local_io": {"$ref": "#/$defs/hostLocalIoPlan"},
+        "raw_log_bytes": {"$ref": "#/$defs/positiveU64Json"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"outcome": {"const": "FAIL"}}},
+          "then": {"required": ["raw_log_bytes"]}
+        },
+        {
+          "if": {"properties": {"outcome": {"const": "SUCCESS"}}},
+          "then": {"not": {"required": ["raw_log_bytes"]}}
+        }
+      ]
+    },
+    "testStage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "nominal_ns", "host_tokens_required", "outcome", "local_io"],
+      "properties": {
+        "kind": {"const": "TEST"},
+        "nominal_ns": {"$ref": "#/$defs/positiveU64Json"},
+        "host_tokens_required": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "outcome": {"enum": ["SUCCESS", "FAIL"]},
+        "local_io": {"$ref": "#/$defs/hostLocalIoPlan"},
+        "raw_log_bytes": {"$ref": "#/$defs/positiveU64Json"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"outcome": {"const": "FAIL"}}},
+          "then": {"required": ["raw_log_bytes"]}
+        },
+        {
+          "if": {"properties": {"outcome": {"const": "SUCCESS"}}},
+          "then": {"not": {"required": ["raw_log_bytes"]}}
+        }
+      ]
+    },
+    "logParseStage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "nominal_ns",
+        "host_tokens_required",
+        "outcome",
+        "local_io",
+        "raw_log_bytes",
+        "excerpt_bytes",
+        "excerpt_tokens"
+      ],
+      "properties": {
+        "kind": {"const": "LOG_PARSE"},
+        "nominal_ns": {"$ref": "#/$defs/positiveU64Json"},
+        "host_tokens_required": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "outcome": {"const": "NONE"},
+        "local_io": {"$ref": "#/$defs/hostLocalIoPlan"},
+        "raw_log_bytes": {"$ref": "#/$defs/positiveU64Json"},
+        "excerpt_bytes": {"$ref": "#/$defs/positiveU64Json"},
+        "excerpt_tokens": {"$ref": "#/$defs/positiveU32"}
+      }
+    },
+    "roundPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workload_plan_item_id",
+        "repair_round",
+        "batch_replay",
+        "logical_source_rank",
+        "full_context_tokens",
+        "full_context_bytes",
+        "expected_cached_tokens",
+        "expected_cached_context_bytes",
+        "input_content_digest",
+        "output_tokens",
+        "generated_code_bytes",
+        "output_capacity_bytes",
+        "output_metadata_capacity_bytes",
+        "kv_required_tokens_after_round",
+        "kv_policy",
+        "program_id",
+        "profile_id",
+        "requested_profile_key",
+        "qos",
+        "compile"
+      ],
+      "properties": {
+        "workload_plan_item_id": {"$ref": "#/$defs/positiveU32"},
+        "repair_round": {"$ref": "#/$defs/u16"},
+        "batch_replay": {"type": "boolean"},
+        "logical_source_rank": {"$ref": "#/$defs/u32"},
+        "full_context_tokens": {"$ref": "#/$defs/positiveU32"},
+        "full_context_bytes": {"$ref": "#/$defs/positiveU64Json"},
+        "expected_cached_tokens": {"$ref": "#/$defs/u32"},
+        "expected_cached_context_bytes": {"$ref": "#/$defs/u64Json"},
+        "input_content_digest": {"$ref": "#/$defs/hex64"},
+        "output_tokens": {"$ref": "#/$defs/positiveU32"},
+        "generated_code_bytes": {"$ref": "#/$defs/positiveU64Json"},
+        "output_capacity_bytes": {"$ref": "#/$defs/u64Json"},
+        "output_metadata_capacity_bytes": {"$ref": "#/$defs/u32"},
+        "kv_required_tokens_after_round": {"$ref": "#/$defs/u32"},
+        "kv_policy": {"enum": ["INITIAL", "REQUIRE_REUSE", "ALLOW_REPREFILL"]},
+        "program_id": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "profile_id": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "requested_profile_key": {"$ref": "#/$defs/positiveU64Json"},
+        "qos": {"type": "integer", "minimum": 0, "maximum": 255},
+        "deadline_tick": {"$ref": "#/$defs/u64Json"},
+        "compile": {"$ref": "#/$defs/compileStage"},
+        "test": {"$ref": "#/$defs/testStage"},
+        "log_parse": {"$ref": "#/$defs/logParseStage"},
+        "prompt_tokens": {"$ref": "#/$defs/positiveU32"},
+        "prompt_bytes": {"$ref": "#/$defs/positiveU64Json"},
+        "delta_prompt_tokens": {"$ref": "#/$defs/positiveU32"},
+        "delta_prompt_bytes": {"$ref": "#/$defs/positiveU64Json"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"repair_round": {"const": 0}}, "required": ["repair_round"]},
+          "then": {
+            "required": ["prompt_tokens", "prompt_bytes"],
+            "not": {
+              "anyOf": [
+                {"required": ["delta_prompt_tokens"]},
+                {"required": ["delta_prompt_bytes"]}
+              ]
+            }
+          }
+        },
+        {
+          "if": {"properties": {"repair_round": {"minimum": 1}}, "required": ["repair_round"]},
+          "then": {
+            "required": ["delta_prompt_tokens", "delta_prompt_bytes"],
+            "not": {
+              "anyOf": [
+                {"required": ["prompt_tokens"]},
+                {"required": ["prompt_bytes"]}
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "taskPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "task_seq",
+        "task_class",
+        "think_time_ns",
+        "session_id",
+        "kv_handle",
+        "initial_kv_generation",
+        "rounds"
+      ],
+      "properties": {
+        "task_seq": {"$ref": "#/$defs/u32"},
+        "task_class": {"type": "string", "minLength": 1},
+        "think_time_ns": {"$ref": "#/$defs/u64Json"},
+        "session_id": {"$ref": "#/$defs/u64Json"},
+        "kv_handle": {"$ref": "#/$defs/u64Json"},
+        "initial_kv_generation": {"const": 1},
+        "max_repair_rounds": {"$ref": "#/$defs/u16"},
+        "rounds": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/roundPlan"}}
+      }
+    },
+    "userPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["user_id", "tasks"],
+      "properties": {
+        "user_id": {"$ref": "#/$defs/u32"},
+        "tasks": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/taskPlan"}}
+      }
+    }
+  }
+}

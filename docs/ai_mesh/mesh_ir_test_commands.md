@@ -65,6 +65,130 @@ Fatal cut timing and ACK watermark regressions are indexed by
 ledger lifecycle coverage is in
 `src/dev/ai_mesh/gate3_completion_ledger.test.cc`.
 
+## Gate 4 replay-plan business loop
+
+```bash
+scons build/AXI_MESH/dev/ai_mesh/agent_workload_manager.test.opt -j8
+./build/AXI_MESH/dev/ai_mesh/agent_workload_manager.test.opt --gtest_color=no
+./build/AXI_MESH/dev/ai_mesh/agent_request_source.test.opt --gtest_color=no
+./build/AXI_MESH/dev/ai_mesh/agent_plan_image.test.opt --gtest_color=no
+./build/AXI_MESH/dev/ai_mesh/agent_plan_codec.test.opt --gtest_color=no
+./build/AXI_MESH/dev/ai_mesh/control_trigger_coordinator.test.opt --gtest_color=no
+PYTHONPATH=util/mesh_ir python3 -m pytest -q \
+    util/mesh_ir/tests/unit/test_gate4_single_user_fixtures.py
+python3 -m pytest -q \
+    util/mesh_ir/tests/integration/test_gate4_plan_mode.py \
+    util/mesh_ir/tests/integration/test_gate4_single_user.py \
+    util/mesh_ir/tests/integration/test_gate4_control.py \
+    util/mesh_ir/tests/integration/test_gate4_matrix.py \
+    util/mesh_ir/tests/integration/test_gate4_determinism.py \
+    util/mesh_ir/tests/integration/test_gate4_oracle_tamper.py \
+    util/mesh_ir/tests/integration/test_gate4_config_effect.py
+PYTHONPATH=util/mesh_ir python3 -m pytest -q \
+    util/mesh_ir/tests/unit/test_gate4_oracle.py
+python3 tests/gem5/ai_mesh/gate4/runtime_contract.py
+python3 tests/gem5/ai_mesh/run_manifest_selector.py --gate 4 \
+    --workdir "$(mktemp -d /tmp/ai-mesh-gate4-XXXXXX)"
+```
+
+Single-user first-pass/compile-repair/test-repair/repair-limit fixtures live in
+`tests/gem5/ai_mesh/fixtures/gate4/`; rebuild the checked-in `.bin` images with
+`PYTHONPATH=util/mesh_ir python3
+tests/gem5/ai_mesh/fixtures/gate4/build_gate4_single_user_images.py`. The
+business FSM, host resource scheduling and object lifecycle are owned by
+[src/dev/ai_mesh/agent_workload_manager.hh](../../src/dev/ai_mesh/agent_workload_manager.hh);
+plan-mode wiring into the real AXI protocol pump is in
+[src/dev/ai_mesh/agent_axi_driver.cc](../../src/dev/ai_mesh/agent_axi_driver.cc)
+and [src/dev/ai_mesh/agent_axi_driver_plan.cc](../../src/dev/ai_mesh/agent_axi_driver_plan.cc).
+
+The step-5 matrix suite `test_gate4_matrix.py` covers the 12-user scale run
+(`agent_plan_image_twelve_user.bin`, 6 first-pass + 3 compile-repair +
+3 test-repair users, token/slot/queue pressure, aging reservation, determinism
+x3), the agent-runner regression for the HOST-9/HOST-19 argv
+(`run_gate4_agent.py` + twelve-user runtime config with
+`--host-compute-tokens 6 --host-aging-threshold-ns 5000000`: completes
+QUIESCENT with 12 terminals under a 120 s wall bound), token pools below the
+plan requirement failing fast at the capacity plan (agent runner) and at
+`AgentWorkloadManager` construction (protocol runner), task-count and tick
+cutoffs (`--stop-after-completed-tasks`,
+`--stop-accepting-at-tick`), the recoverable NPU output fault
+(`--inject-output-b-error`, single `AXI_ERROR` CQ with
+`DETAIL_IN_CQ|E_AXI_RESPONSE` and the committed prefix in the
+`output_b_error_prefix_bytes` metric), and the injectable host local fault
+(`--host-fault-site object_produce|object_read` with task/round selection,
+`INFRA_FAILED` terminal, `infra_failed_tasks` metric, HOST_FAULT facts).
+Host-local fault sites and dispositions are frozen in
+`util/mesh_ir/mesh_ir/abi/agent_protocol_abi.yaml`
+(`host_local_fault_site_v1`, `E_HOST_LOCAL_OBJECT`,
+`metadata_flags.SESSION_ADMITTED`).
+
+The config-integrity suite `test_gate4_config_effect.py` proves the validated
+`agent_runtime_config_*.yaml` is the single effective configuration: SimObject
+params (ring depths/bases, MSI/NPU/proxy bases, host window, clock domain,
+service slots/tokens/fraction, local-I/O, kv/MSI capacities, stop knobs) are
+derived from it in `gate4_runtime.config_hardware`/`assemble`, config edits
+change facts, the surrogate registry is plan-validated at load
+(`validate_surrogate_profiles`) and per wire request at frontend admission
+(`FullContextSurrogateExecutor::accept`, `E_WORKLOAD_PLAN_MISMATCH`/
+`E_OUTPUT_CAPACITY`), cutoff `stop_accepting_new_tasks_at_tick` keeps null vs
+0 distinct via `stop_accepting_enabled`, and arena allocation accounts for
+alignment padding (`ArenaAllocator.allocate`). CLI synthetic-host-service
+knobs (`--host-compute-tokens`, `--host-service-queue-depth`,
+`--host-aging-threshold-ns`) override the effective document before any
+derivation (`run_gate4_agent._apply_service_overrides`); a token knob names
+the effective pool (availability fraction reset to 1.0), so the agent and
+protocol runners agree on knob semantics and the capacity preflight sees the
+pool that will actually run.
+
+The acceptance harness is the gate-4 analogue of Gate 3's: subcases are
+declared in `mesh_ir.gate4_contract.GATE4_CASES` (with
+`gate4_coverage_gaps()` listing the not-yet-implementable sub-verifications),
+the independent Python oracle over facts TSV plus immutable plan fixtures is
+`mesh_ir.gate4_oracle.Gate4RunOracle`, the total config entry writing real
+child artifacts (gate4_observation/traffic/invariants/child_report) is
+[run_gate4_agent.py](../../configs/example/ai_mesh/run_gate4_agent.py) over a
+generated `agent_runtime_config_*.yaml`, and `runtime_contract.py` is the
+implementation exit criterion. The facts TSV parser is
+`mesh_ir.gate3_oracle.parse_facts_tsv`.
+
+Gate 4 control-plane coverage: the `agent_plan_image_ctrl_*.bin`
+scenarios pair the three-user workload with a control plan (live CANCEL via
+CancelJoin, late CANCEL resolving standalone ALREADY_TERMINAL, a late-anchor
+CANCEL whose join resolves TARGET_SUCCESS_WINS/TARGET_ERROR_WINS, and a
+SCENARIO_START RELEASE_SESSION resolving NOT_FOUND). The single-user
+`agent_plan_image_su_output_cancel.bin` scenario pairs the 80 KiB output
+workload with a 4 KiB publish chunk and an `AFTER_FIRST_OUTPUT_CHUNK` CANCEL
+(registered subcase `PROTO-22/cancel_output_chunk`): output publication is
+chunk-bounded, the in-flight request parks for control intake between output
+segment completions, issued chunks drain while un-issued chunks are
+suppressed, and the CANCELLED CQ carries `PARTIAL_OUTPUT` with the committed
+prefix in `output_cancel_prefix_bytes`; CancelJoin advances business only at
+join resolution. Trigger scheduling is owned by
+[src/dev/ai_mesh/control_trigger_coordinator.hh](../../src/dev/ai_mesh/control_trigger_coordinator.hh);
+the control command wire codec is `buildControlParameter` in
+[src/dev/ai_mesh/agent_plan_codec.hh](../../src/dev/ai_mesh/agent_plan_codec.hh);
+CancelJoin leg caching/resolution lives in `src/dev/ai_mesh/cancel_join.hh`
+plus `AgentAxiDriver::resolveCancelJoin`.
+
+The CANCEL lifecycle oracle (`Gate4RunOracle`) recomputes both legs from plan
+identity plus independent facts instead of trigger anchors: the join decision
+is `PUBLICATION_COMMIT(target) ≤ LOCAL_VISIBLE(command) < CQ_CONSUME(target)`
+(the driver's `acceptedGenerateRequests`/`consumedGenerateRequests` window),
+and the command leg is `SQ_CONSUME` order plus the NPU terminal latch
+(`GENERATE_TERMINAL_LATCHED`, emitted by
+`NpuServingFrontend::latchGenerateTerminal` in
+[src/dev/ai_mesh/npu_serving_frontend.cc](../../src/dev/ai_mesh/npu_serving_frontend.cc))
+relative to the CANCEL's own `SQ_CONSUME`. `TERMINAL_READY`/`CQ_ASSIGN` are
+publication-lagged and must not be used as that boundary. Every planned
+GENERATE is checked stage by stage (`PlannedWalk._require_generate_lifetimes`):
+a CQ assignment requires the terminal latch at or before it, a CQ consume
+requires the assignment at or before it, and a request with neither fact is a
+legal cutoff prefix.
+`test_gate4_control.py` drives the real-join scenarios
+(`PROTO-21/target_success_wins_late_anchor`, `.../target_error_wins_late_anchor`)
+and `test_gate4_oracle_tamper.py` rejects tampered leg status, winner,
+join/standalone classification and latch facts.
+
 ## Python unit / negative / golden / integration
 
 ```bash

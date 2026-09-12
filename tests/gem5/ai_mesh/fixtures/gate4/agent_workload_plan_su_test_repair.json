@@ -1,0 +1,123 @@
+{
+  "schema": "agent_workload_plan_v1",
+  "version": 1,
+  "plan_id": "gate4_su_test_repair_v1",
+  "max_repair_rounds": 1,
+  "users": [
+    {
+      "user_id": 0,
+      "tasks": [
+        {
+          "task_seq": 0,
+          "task_class": "coding",
+          "think_time_ns": 1000000,
+          "session_id": 1,
+          "kv_handle": 1,
+          "initial_kv_generation": 1,
+          "rounds": [
+            {
+              "workload_plan_item_id": 1,
+              "repair_round": 0,
+              "batch_replay": false,
+              "logical_source_rank": 0,
+              "prompt_tokens": 256,
+              "prompt_bytes": 4096,
+              "full_context_tokens": 256,
+              "full_context_bytes": 4096,
+              "expected_cached_tokens": 0,
+              "expected_cached_context_bytes": 0,
+              "input_content_digest": "f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1",
+              "output_tokens": 16,
+              "generated_code_bytes": 512,
+              "output_capacity_bytes": 1024,
+              "output_metadata_capacity_bytes": 512,
+              "kv_required_tokens_after_round": 272,
+              "kv_policy": "INITIAL",
+              "program_id": 1,
+              "profile_id": 1,
+              "requested_profile_key": 4097,
+              "qos": 4,
+              "compile": {
+                "kind": "COMPILE",
+                "nominal_ns": 1000000,
+                "host_tokens_required": 2,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 512,
+                  "write_bytes": 256
+                }
+              },
+              "test": {
+                "kind": "TEST",
+                "nominal_ns": 2000000,
+                "host_tokens_required": 1,
+                "outcome": "FAIL",
+                "local_io": {
+                  "read_bytes": 2048,
+                  "write_bytes": 32768
+                },
+                "raw_log_bytes": 32768
+              },
+              "log_parse": {
+                "kind": "LOG_PARSE",
+                "nominal_ns": 500000,
+                "host_tokens_required": 1,
+                "outcome": "NONE",
+                "local_io": {
+                  "read_bytes": 32768,
+                  "write_bytes": 4096
+                },
+                "raw_log_bytes": 32768,
+                "excerpt_bytes": 4096,
+                "excerpt_tokens": 512
+              }
+            },
+            {
+              "workload_plan_item_id": 2,
+              "repair_round": 1,
+              "batch_replay": false,
+              "logical_source_rank": 0,
+              "delta_prompt_tokens": 32,
+              "delta_prompt_bytes": 512,
+              "full_context_tokens": 304,
+              "full_context_bytes": 4608,
+              "expected_cached_tokens": 272,
+              "expected_cached_context_bytes": 4096,
+              "input_content_digest": "e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2",
+              "output_tokens": 8,
+              "generated_code_bytes": 256,
+              "output_capacity_bytes": 512,
+              "output_metadata_capacity_bytes": 512,
+              "kv_required_tokens_after_round": 312,
+              "kv_policy": "ALLOW_REPREFILL",
+              "program_id": 1,
+              "profile_id": 2,
+              "requested_profile_key": 4098,
+              "qos": 4,
+              "compile": {
+                "kind": "COMPILE",
+                "nominal_ns": 1000000,
+                "host_tokens_required": 2,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 512,
+                  "write_bytes": 256
+                }
+              },
+              "test": {
+                "kind": "TEST",
+                "nominal_ns": 2000000,
+                "host_tokens_required": 1,
+                "outcome": "SUCCESS",
+                "local_io": {
+                  "read_bytes": 2048,
+                  "write_bytes": 1024
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
