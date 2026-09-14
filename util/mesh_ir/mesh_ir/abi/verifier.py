@@ -7,6 +7,8 @@ the Python and C++ sides must stay behaviourally identical.
 
 from __future__ import annotations
 
+from mesh_ir.abi.dependency import command_prerequisites, stream_commands
+from mesh_ir.abi.moe_verifier import verify_moe_v1
 from mesh_ir.abi.rules import check_payload_rules, check_record_rules
 from mesh_ir.abi.spans import checked_span, span_fits
 from mesh_ir.burst_splitter import checked_mul, plan_descriptor
@@ -50,6 +52,7 @@ def verify_program(program: Program, arch: ArchManifest) -> VerifiedProgram:
     _verify_expected_traffic(program, arch)
     _verify_lifecycle(program)
     _verify_acyclic(program)
+    verify_moe_v1(program, arch)
     return VerifiedProgram(program, arch)
 
 
@@ -146,14 +149,6 @@ def _verify_ids_and_references(program: Program) -> None:
         symbol_names.add(name)
 
 
-def _stream_commands(program: Program, stream) -> list:
-    span = checked_span(
-        stream.command_begin, stream.command_count, len(program.commands),
-        "stream range out of table",
-    )
-    return program.commands[span]
-
-
 def _verify_streams(program: Program, arch: ArchManifest) -> None:
     keys = set()
     per_core_streams = {}
@@ -170,7 +165,8 @@ def _verify_streams(program: Program, arch: ArchManifest) -> None:
         control = [s for s in streams if s.flags & A.STREAM_FLAGS.IS_LOCAL_CONTROL]
         if len(control) != 1:
             raise MeshIrError("E_STREAM_CONTRACT", "core must have exactly one local control stream", core=core)
-        halts = [c for c in _stream_commands(program, control[0]) if c.opcode == A.OPCODE.HALT]
+        halts = [c for c in stream_commands(program, control[0])
+                 if c.opcode == A.OPCODE.HALT]
         if len(halts) != 1:
             raise MeshIrError(
                 "E_STREAM_CONTRACT",
@@ -179,7 +175,7 @@ def _verify_streams(program: Program, arch: ArchManifest) -> None:
                 halts=len(halts),
             )
         for stream in streams:
-            for command in _stream_commands(program, stream):
+            for command in stream_commands(program, stream):
                 if command.core_id != core:
                     raise MeshIrError("E_STREAM_CONTRACT", "command core mismatch", command=command.command_id)
                 if command.stream_id != stream.stream_id:
@@ -194,7 +190,7 @@ def _verify_streams(program: Program, arch: ArchManifest) -> None:
     covered = sorted(
         c.command_id
         for stream in program.streams
-        for c in _stream_commands(program, stream)
+        for c in stream_commands(program, stream)
     )
     if covered != sorted(c.command_id for c in program.commands):
         raise MeshIrError("E_STREAM_CONTRACT", "stream ranges must partition the command table")
@@ -295,7 +291,7 @@ def _verify_attrs(program: Program, arch) -> None:
                 s for s in program.streams
                 if s.core_id == command.core_id and s.stream_id == command.stream_id
             )
-            commands = _stream_commands(program, stream)
+            commands = stream_commands(program, stream)
             ordinal = next(
                 i for i, c in enumerate(commands) if c.command_id == command.command_id
             )
@@ -983,7 +979,7 @@ def _verify_lifecycle(program: Program) -> None:
         stream = next((s for s in program.streams if (s.core_id, s.stream_id) == key), None)
         if stream is None:
             raise MeshIrError("E_LIFECYCLE", "lifecycle stream missing", entrypoint=entrypoint.entrypoint_id)
-        commands = _stream_commands(program, stream)
+        commands = stream_commands(program, stream)
         begins = [c for c in commands if c.opcode == A.OPCODE.REQUEST_BEGIN]
         ends = [c for c in commands if c.opcode == A.OPCODE.REQUEST_END]
         if len(begins) != 1 or len(ends) != 1:
@@ -1004,34 +1000,8 @@ def _verify_lifecycle(program: Program) -> None:
             raise MeshIrError("E_LIFECYCLE", "REQUEST_BEGIN must signal an event")
 
 
-def _wait_closure(program: Program) -> dict:
-    waits_by_command = {}
-    for command in program.commands:
-        span = checked_span(
-            command.wait_begin, command.wait_count,
-            len(program.command_waits), "wait range out of table",
-        )
-        waits_by_command[command.command_id] = [
-            w.event_id for w in program.command_waits[span]
-        ]
-    return waits_by_command
-
-
 def _verify_acyclic(program: Program) -> None:
-    producers = {}
-    for command in program.commands:
-        if command.signal_event:
-            producers.setdefault(command.signal_event, []).append(command.command_id)
-    for descriptor in program.dma_descriptors:
-        producers.setdefault(descriptor.completion_event, []).append(descriptor.command_id)
-
-    waits_by_command = _wait_closure(program)
-    edges = {}
-    for command in program.commands:
-        targets = set()
-        for event_id in waits_by_command[command.command_id]:
-            targets.update(producers.get(event_id, ()))
-        edges[command.command_id] = targets
+    edges = command_prerequisites(program)
 
     state = {}
 

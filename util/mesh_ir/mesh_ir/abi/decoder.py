@@ -18,12 +18,17 @@ from mesh_ir.model import (
     Command,
     CommandOperand,
     CommandWait,
+    ContentDigest,
     DmaDescriptor,
     DmaEndpoint,
     Entrypoint,
     Event,
     ExpectedTrafficRow,
     MeshIrError,
+    MoeDynamicRegion,
+    MoeExpertSpec,
+    MoeKernelSpec,
+    MoeLayerSpec,
     OpAttr,
     Profile,
     Program,
@@ -41,8 +46,15 @@ SECTION_RECORD_BYTES = {
     for name in ("ENTRYPOINTS", "PROFILES", "TENSORS", "SHARDS", "ALLOCATIONS",
                  "STREAMS", "COMMANDS", "COMMAND_WAITS", "COMMAND_OPERANDS",
                  "EVENTS", "DMA_DESCRIPTORS", "OP_ATTRS", "RELOCATIONS",
-                 "EXPECTED_TRAFFIC", "SOURCE_MAP", "CONTENT_DIGESTS")
+                 "EXPECTED_TRAFFIC", "SOURCE_MAP", "CONTENT_DIGESTS",
+                 "MOE_LAYER_SPECS", "MOE_EXPERT_SPECS", "MOE_DYNAMIC_REGIONS",
+                 "MOE_KERNEL_SPECS")
 }
+
+
+def known_section_types() -> set:
+    return {value for value in vars(A.SECTION_TYPE).values()
+            if isinstance(value, int)}
 
 
 class _Reader:
@@ -76,8 +88,14 @@ def decode_header(data: bytes) -> dict:
         raise MeshIrError("E_ABI_SECTION_RANGE", "header_bytes mismatch")
     if header["flags"] != 0:
         raise MeshIrError("E_ABI_RESERVED", "header flags must be zero")
-    if header["required_features"] != 0:
-        raise MeshIrError("E_ABI_VERSION", "unknown required feature bits", features=hex(header["required_features"]))
+    features = header["required_features"]
+    if features & ~A.KNOWN_FEATURE_MASK:
+        raise MeshIrError("E_ABI_VERSION", "unknown required feature bits",
+                          features=hex(features))
+    if (header["abi_minor"] < A.FEATURE_MIN_WRITER_MINOR["DYNAMIC_MOE_V1"]
+            and features & A.DYNAMIC_MOE_V1):
+        raise MeshIrError("E_ABI_VERSION", "feature bit below writer minor",
+                          minor=header["abi_minor"])
     if header["reserved"] != bytes(16):
         raise MeshIrError("E_ABI_RESERVED", "header reserved bytes must be zero")
     if header["file_bytes"] != len(data):
@@ -104,13 +122,12 @@ def decode_section_dir(data: bytes, header: dict) -> list:
         values = A.SECTION_DIR_FORMAT.unpack(raw)
         names = [f["name"] for f in A.SECTION_DIR_FIELDS]
         raw_entries.append(dict(zip(names, values)))
-    # Required sections plus any of the three known optional sections.
-    if count < len(A.REQUIRED_SECTIONS) or count > len(A.REQUIRED_SECTIONS) + 3:
+    if count < len(A.REQUIRED_SECTIONS) or count > len(known_section_types()):
         raise MeshIrError("E_ABI_SECTION_RANGE", "unexpected section count", count=count)
 
     last_type = 0
     last_end = header["section_dir_offset"] + expected_dir_span
-    known_types = set(vars(A.SECTION_TYPE).values())
+    known_types = known_section_types()
     payloads = {}
     for entry in raw_entries:
         stype = entry["section_type"]
@@ -198,6 +215,18 @@ def decode_section_dir(data: bytes, header: dict) -> list:
         stype = getattr(A.SECTION_TYPE, required)
         if stype not in payloads:
             raise MeshIrError("E_ABI_SECTION_RANGE", "missing required section", section=required)
+    for stype in A.conditional_required_sections(header["required_features"]):
+        if stype not in payloads:
+            raise MeshIrError("E_ABI_SECTION_RANGE",
+                              "missing feature-required section",
+                              section_type=stype)
+    for stype in payloads:
+        required_feature = A.SECTION_REQUIRED_FEATURES.get(stype, 0)
+        features = header["required_features"]
+        if required_feature and not features & required_feature:
+            raise MeshIrError("E_ABI_FEATURE",
+                              "section present without its feature bit",
+                              section_type=stype)
     return payloads
 
 
@@ -348,6 +377,20 @@ def decode_program(data: bytes) -> Program:
     entry, payload = records_of("OP_ATTRS")
     attrs = _decode_attrs(payload, entry["count"])
 
+    if header["required_features"] & A.DYNAMIC_MOE_V1:
+        feature_sections = {
+            "CONTENT_DIGESTS": ContentDigest,
+            "MOE_LAYER_SPECS": MoeLayerSpec,
+            "MOE_EXPERT_SPECS": MoeExpertSpec,
+            "MOE_DYNAMIC_REGIONS": MoeDynamicRegion,
+            "MOE_KERNEL_SPECS": MoeKernelSpec,
+        }
+        for name, cls in feature_sections.items():
+            entry, payload = records_of(name)
+            table = _unpack_table(name, payload, entry["count"], cls)
+            check_record_rules(name, table)
+            decoded[name] = table
+
     return Program(
         abi_major=header["abi_major"],
         abi_minor=header["abi_minor"],
@@ -367,4 +410,10 @@ def decode_program(data: bytes) -> Program:
         op_attrs=attrs,
         relocations=decoded["RELOCATIONS"],
         expected_traffic=decoded["EXPECTED_TRAFFIC"],
+        required_features=header["required_features"],
+        content_digests=decoded.get("CONTENT_DIGESTS", []),
+        moe_layer_specs=decoded.get("MOE_LAYER_SPECS", []),
+        moe_expert_specs=decoded.get("MOE_EXPERT_SPECS", []),
+        moe_dynamic_regions=decoded.get("MOE_DYNAMIC_REGIONS", []),
+        moe_kernel_specs=decoded.get("MOE_KERNEL_SPECS", []),
     )

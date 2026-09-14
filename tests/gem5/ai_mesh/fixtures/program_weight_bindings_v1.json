@@ -1,0 +1,82 @@
+{
+  "model_weight_image_digest": "d3c1ec48f8238e96c579ad087d218b8510ca81c9c15f9b05d97b99111fd789b2",
+  "program_weight_registry_digest": "2ef41fb4d4c0d800eb540cc2ff293bc73fc4a9c85eccb3e145e012be5bdcf524",
+  "programs": [
+    {
+      "program_id": 1,
+      "program_semantic_digest": "da9108b33d9d31cb1f8f6f426021d009f323f6e8e04d3b88029285c03cf2e022",
+      "symbols": [
+        {
+          "bytes": 8192,
+          "flags": 0,
+          "home_offset": "0x0000000000000000",
+          "read_only_alias_group": 1,
+          "regions": [
+            {
+              "bytes": 4096,
+              "region_offset": "0x0000000000000000",
+              "resolved_content_digest": "bba4f0c01e9406408ac99a865a9165cc6bdfe2b0a67d1937ddc81c0092d5c9ed"
+            },
+            {
+              "bytes": 4096,
+              "region_offset": "0x0000000000001000",
+              "resolved_content_digest": "60a1392f6a62c7e90f65ede8d9097f5b61966ed90a78e4491a6b5b25ccc77b38"
+            }
+          ],
+          "resolved_content_digest": "e7f7ced9baff09a6d74bb49d292008fe5011d359c75ba68d8a7bff402794a770",
+          "symbol_id": 4,
+          "weight_home_id": 1
+        }
+      ]
+    },
+    {
+      "program_id": 2,
+      "program_semantic_digest": "82de66d61f993f62b58a3e2caa9bd63ecabae7b109832e519a12f5868b4b5392",
+      "symbols": [
+        {
+          "bytes": 8192,
+          "flags": 0,
+          "home_offset": "0x0000000000000000",
+          "read_only_alias_group": 1,
+          "regions": [
+            {
+              "bytes": 2048,
+              "region_offset": "0x0000000000000000",
+              "resolved_content_digest": "b1b7e9a04fb9f25b0b8023f7df34017b4654d6a1fdb9bdf10796b3eb5f1272b5"
+            },
+            {
+              "bytes": 4096,
+              "region_offset": "0x0000000000000000",
+              "resolved_content_digest": "bba4f0c01e9406408ac99a865a9165cc6bdfe2b0a67d1937ddc81c0092d5c9ed"
+            },
+            {
+              "bytes": 2048,
+              "region_offset": "0x0000000000000800",
+              "resolved_content_digest": "080a70401cad9bb0c63a033b745c822a8f85e4d60ef846fd74f87224fcf35cc6"
+            },
+            {
+              "bytes": 2048,
+              "region_offset": "0x0000000000001000",
+              "resolved_content_digest": "57d80bf983b188ee13e76841f6b3dda838ee4466c7e6c2b3596bd3a9aeaee328"
+            },
+            {
+              "bytes": 4096,
+              "region_offset": "0x0000000000001000",
+              "resolved_content_digest": "60a1392f6a62c7e90f65ede8d9097f5b61966ed90a78e4491a6b5b25ccc77b38"
+            },
+            {
+              "bytes": 2048,
+              "region_offset": "0x0000000000001800",
+              "resolved_content_digest": "7e1c9e0703abaf440400ee2b87395ed5eaf4004a21fec0a0a03c9024e0804017"
+            }
+          ],
+          "resolved_content_digest": "e7f7ced9baff09a6d74bb49d292008fe5011d359c75ba68d8a7bff402794a770",
+          "symbol_id": 4,
+          "weight_home_id": 1
+        }
+      ]
+    }
+  ],
+  "schema": "program_weight_bindings_v1",
+  "version": 1
+}

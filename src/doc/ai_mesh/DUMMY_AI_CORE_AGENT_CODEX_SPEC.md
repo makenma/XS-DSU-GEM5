@@ -4187,6 +4187,8 @@ Codex先只读：
 
 ### Gate 5：Dynamic MoE V1
 
+实施入口：[Gate 5 Coding Spec](DUMMY_AI_CORE_GATE5_CODING_SPEC.md)。
+
 - ABI minor/required feature和 sections；
 - replay/histogram/correlated/uniform providers；
 - versioned keyed RNG和 stable semantic token UID；
@@ -4197,6 +4199,8 @@ Codex先只读：
 退出条件：manifest selector运行所有 `earliest_gate<=5`项目并通过，dispatch/combine/weight traffic逐 route精确对账；依赖完整 shared serving batch的 `MOE-24`保留到Gate6。
 
 ### Gate 6：Serving、batch和 KV
+
+实施入口：[Gate 6 Coding Spec](DUMMY_AI_CORE_GATE6_CODING_SPEC.md)。
 
 - prefill/decode program instances；
 - continuous batch、output chunk、KV reuse/eviction/re-prefill；

@@ -1793,7 +1793,7 @@ cases:
 - id: MOE-1
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: uid_wire_and_comparator
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -1808,18 +1808,58 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_1
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_identity.py::test_gate5_uid_wire_is_frozen_little_endian"
+  - name: uid_numeric_order
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_identity.py::test_gate5_uid_comparator_is_numeric_not_memcmp"
+  - name: uid_illegal_input
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_identity.py::test_gate5_uid_rejects_reserved_and_ordinal_violations"
 - id: MOE-2
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: rng_keyed_golden
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -1834,18 +1874,37 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_2
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_identity.py::test_gate5_rng_key_and_draws_match_the_checked_in_golden"
+  - name: splitmix_reference
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_identity.py::test_gate5_splitmix_matches_published_reference_sequence"
 - id: MOE-3
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: timing_buffer_ab
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -1866,12 +1925,60 @@ cases:
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_3
-      args: []
+      case_name: moe_dual_timing
+      args:
+      - "--mesh-program-dir"
+      - "$GOLDEN/moe_dual"
+      - "--arch"
+      - "configs/example/ai_mesh/arch/mesh_1x2_moe.yaml"
+      - "--overlay-image"
+      - "tests/gem5/ai_mesh/fixtures/gate5/moe_dual_overlay_objects.bin"
+  - name: member_rank_timing_ab
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_providers.py::test_gate5_token_local_member_rank_projection_ab"
+  - name: comparable_digest_scope
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_providers.py::test_gate5_selection_digest_scope_is_token_and_rank_only"
 - id: MOE-4
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: two_layer_shared_tag_cold_single_fill
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -1886,18 +1993,247 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_4
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_strict_replay.py::test_gate5_strict_replay_cold_arm_shares_one_fill_across_layers"
+  - name: two_layer_shared_tag_warm_hit
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_strict_replay.py::test_gate5_strict_replay_warm_snapshot_hits_every_layer_occurrence"
+  - name: fast_slow_fill_same_projection
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_strict_replay.py::test_gate5_strict_replay_fast_and_slow_fill_agree_on_the_projection"
+  - name: strict_capacity_tick_zero
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_strict_replay.py::test_gate5_strict_replay_proves_the_worst_case_cold_union_at_tick_zero"
+  - name: strict_serializes_batches
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_strict_replay.py::test_gate5_strict_replay_serializes_batches"
+  - name: normal_mode_timing_attribution
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_strict_replay.py::test_gate5_normal_mode_timing_changes_the_outcome_with_attribution"
+  - name: materialization_digest_carries_bindings
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_strict_replay.py::test_gate5_strict_replay_bindings_enter_the_materialization_digest"
+  - name: binding_consistency_rejected
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_strict_replay.py::test_gate5_weight_bindings_reject_inconsistent_fill_references"
+  - name: selection_digest_ignores_cache
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_strict_replay.py::test_gate5_selection_digest_ignores_the_cache_outcome"
+  - name: cache_state_replay_installs_decision_state
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_strict_replay.py::test_gate5_cache_state_replay_installs_the_same_decision_state"
+  - name: cache_state_replay_carries_tombstones
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_strict_replay.py::test_gate5_cache_state_replay_carries_failure_tombstones"
+  - name: cache_state_replay_rejects_foreign_snapshot
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_strict_replay.py::test_gate5_cache_state_replay_rejects_foreign_snapshots"
 - id: MOE-5
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: uniform_token_local
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -1912,18 +2248,58 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_5
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_providers.py::test_gate5_uniform_provider_is_token_local_and_frozen"
+  - name: replay_projection
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_providers.py::test_gate5_route_replay_provider_projects_the_population"
+  - name: replay_negative
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_providers.py::test_gate5_route_replay_rejects_digest_and_layer_mismatch"
 - id: MOE-6
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: histogram_exact_counts
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -1938,18 +2314,58 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_6
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_providers.py::test_gate5_histogram_provider_matches_counts_exactly"
+  - name: histogram_minimal_assignment
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_providers.py::test_gate5_histogram_uses_lexicographically_minimal_assignment"
+  - name: histogram_negative
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_providers.py::test_gate5_histogram_rejects_unreachable_and_mismatched_tables"
 - id: MOE-7
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: correlated_windowed
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -1964,18 +2380,58 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_7
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_providers.py::test_gate5_correlated_provider_is_token_local_and_windowed"
+  - name: correlated_table_validation
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_providers.py::test_gate5_correlated_provider_validates_its_tables"
+  - name: freeze_validator_rejects_duplicates
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_providers.py::test_gate5_freeze_validator_rejects_duplicate_expert"
 - id: MOE-8
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: without_replacement_golden
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -1990,18 +2446,37 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_8
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_identity.py::test_gate5_uniform_without_replacement_matches_the_golden"
+  - name: without_replacement_negative
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_identity.py::test_gate5_without_replacement_rejects_topk_above_expert_count"
 - id: MOE-9
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: q16_capacity_ceiling
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2016,18 +2491,37 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_9
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_capacity.py::test_gate5_expert_capacity_uses_checked_q16_ceiling"
+  - name: layer_view_bounds_formula
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_capacity.py::test_gate5_layer_view_bounds_follow_the_frozen_formula"
 - id: MOE-10
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: instance_bounds_sum
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2042,18 +2536,37 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_10
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_capacity.py::test_gate5_instance_bounds_sum_every_active_region"
+  - name: capacity_requirements_match
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_capacity.py::test_gate5_capacity_requirements_match_arch_and_registry"
 - id: MOE-11
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: pad_fill_deterministic
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2068,18 +2581,121 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_11
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_materializer.py::test_gate5_pad_fill_pattern_is_deterministic_and_tail_exact"
+  - name: expert_rows_pad_after_real
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_materializer.py::test_gate5_expert_rows_put_padding_after_real_rows"
 - id: MOE-12
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: overflow_policy_follows
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_providers.py::test_gate5_capacity_application_follows_the_overflow_policy"
+  - name: data_plane_drop_fill
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_materializer.py::test_gate5_drop_fill_binds_the_drop_projection"
+  - name: fill_modes_agree
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_materializer.py::test_gate5_fill_modes_agree_on_shape_and_bytes"
+  - name: member_rows_match_layer
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_materializer.py::test_gate5_member_rows_must_match_the_layer_token_rows"
+  - name: dual_dropped_token_fill
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2100,12 +2716,18 @@ cases:
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_12
-      args: []
+      case_name: moe_dual_drop
+      args:
+      - "--mesh-program-dir"
+      - "$GOLDEN/moe_dual_drop"
+      - "--arch"
+      - "configs/example/ai_mesh/arch/mesh_1x2_moe.yaml"
+      - "--overlay-image"
+      - "tests/gem5/ai_mesh/fixtures/gate5/moe_dual_drop_overlay_objects.bin"
 - id: MOE-13
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: local_rows_no_transfer
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2120,18 +2742,37 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_13
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_materializer.py::test_gate5_local_rows_produce_no_transfer"
+  - name: local_only_placement
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay_runtime.py::test_gate5_local_only_placement_has_no_transfers"
 - id: MOE-14
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: copy_through_fan_in_one
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2152,12 +2793,81 @@ cases:
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_14
-      args: []
+      case_name: moe_dual_copy
+      args:
+      - "--mesh-program-dir"
+      - "$GOLDEN/moe_dual_copy"
+      - "--arch"
+      - "configs/example/ai_mesh/arch/mesh_1x2_moe.yaml"
+      - "--overlay-image"
+      - "tests/gem5/ai_mesh/fixtures/gate5/moe_dual_copy_overlay_objects.bin"
+  - name: dispatch_chunks_capped
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_materializer.py::test_gate5_dispatch_chunks_are_contiguous_and_capped"
+  - name: fan_in_decides_combine
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_materializer.py::test_gate5_fan_in_decides_the_combine_command"
+  - name: group_transfers_in_region_zero
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay.py::test_gate5_group_transfers_live_in_region_zero"
 - id: MOE-15
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: zero_token_population
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2172,18 +2882,37 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_15
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_providers.py::test_gate5_zero_token_population_stays_empty"
+  - name: data_plane_empty_population
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_materializer.py::test_gate5_data_plane_handles_empty_population"
 - id: MOE-16
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: feature_bits_and_sections
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2198,18 +2927,79 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_16
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_abi.py::test_gate5_fixture_header_and_feature_bits"
+  - name: conditional_sections_required
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_abi.py::test_gate5_feature_requires_every_conditional_section"
+  - name: sections_without_bit
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_abi.py::test_gate5_sections_are_rejected_without_the_feature_bit"
+  - name: writer_rejects_sections_without_bit
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_abi.py::test_gate5_writer_rejects_feature_sections_without_the_bit"
 - id: MOE-17
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: missing_policy_fallback
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2224,18 +3014,37 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_17
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_providers.py::test_gate5_missing_policy_fails_or_falls_back"
+  - name: selection_digest_membership
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_providers.py::test_gate5_selection_digests_are_membership_sensitive"
 - id: MOE-18
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: every_dma_descriptor_resolves
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2250,18 +3059,37 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_18
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay_runtime.py::test_gate5_every_dma_descriptor_resolves_both_endpoints"
+  - name: materialization_digest_placement
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay_runtime.py::test_gate5_materialization_digest_is_stable_and_placement_sensitive"
 - id: MOE-19
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: cached_cold_fill
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2282,12 +3110,125 @@ cases:
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_19
-      args: []
+      case_name: moe_dual_cached
+      args:
+      - "--mesh-program-dir"
+      - "$GOLDEN/moe_dual"
+      - "--arch"
+      - "configs/example/ai_mesh/arch/mesh_1x2_moe.yaml"
+      - "--overlay-image"
+      - "tests/gem5/ai_mesh/fixtures/gate5/moe_dual_overlay_cached.bin"
+      - "--weight-policy"
+      - "cached"
+  - name: cold_fill_then_hit
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_weight_cache.py::test_gate5_cold_fill_then_hit_reuses_the_same_slot"
+  - name: attach_shares_one_fill
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_weight_cache.py::test_gate5_attach_shares_one_physical_fill"
+  - name: ab_eviction_new_incarnation
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_weight_cache.py::test_gate5_ab_eviction_allocates_a_new_incarnation"
+  - name: transition_golden
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_weight_cache.py::test_gate5_cache_scenario_matches_the_frozen_transition_golden"
+  - name: drain_state_persistent_line
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_weight_cache.py::test_gate5_cache_drain_state_keeps_the_persistent_line"
 - id: MOE-20
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: exact_configuration_accepted
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2302,18 +3243,58 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_20
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_capacity.py::test_gate5_capacity_exact_configuration_is_accepted"
+  - name: capacity_minus_one_no_side_effect
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_capacity.py::test_gate5_capacity_minus_one_has_no_side_effect"
+  - name: capacity_needs_partitioned_arch
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_capacity.py::test_gate5_capacity_needs_a_partitioned_architecture"
 - id: MOE-21
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: rng_keyed_golden
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2328,18 +3309,37 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_21
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_identity.py::test_gate5_rng_key_and_draws_match_the_checked_in_golden"
+  - name: q16_rounding_and_profiles
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_identity.py::test_gate5_q16_rounding_and_profile_digests"
 - id: MOE-22
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: uid_semantic_ordinals
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2354,18 +3354,37 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_22
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_identity.py::test_gate5_uid_semantic_and_route_ordinals_follow_phase"
+  - name: without_replacement_negative
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_identity.py::test_gate5_without_replacement_rejects_topk_above_expert_count"
 - id: MOE-23
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: ordinals_dense_per_region
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2380,14 +3399,96 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_23
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay.py::test_gate5_ordinals_are_dense_per_region_and_kind"
+  - name: canonical_key_collision
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay.py::test_gate5_ordinals_reject_identical_canonical_keys"
+  - name: overlay_enums_frozen
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay.py::test_gate5_overlay_enums_are_frozen_by_the_contract"
+  - name: oracle_fixture_projection_parity
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_oracle.py::test_gate5_oracle_accepts_every_materialized_fixture_projection"
+  - name: oracle_recomputes_dual_traffic
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_oracle.py::test_gate5_oracle_recomputes_the_dual_fixture_traffic"
 - id: MOE-24
   earliest_gate: 6
   subcases:
@@ -2417,7 +3518,7 @@ cases:
 - id: MOE-25
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: batch_composition_token_local
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2432,18 +3533,58 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_25
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_providers.py::test_gate5_token_local_selection_survives_batch_split"
+  - name: histogram_population_equality
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_providers.py::test_gate5_histogram_population_equality_is_assignment_stable"
+  - name: histogram_reassignment_exact
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_providers.py::test_gate5_histogram_reassignment_stays_exact"
 - id: MOE-26
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: structural_verifier_accepts
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2458,18 +3599,121 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_26
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay.py::test_gate5_structural_verifier_accepts_a_minimal_overlay"
+  - name: duplicate_producer_rejected
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay.py::test_gate5_structural_verifier_rejects_duplicate_producers"
+  - name: missing_producer_and_cycles
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay.py::test_gate5_structural_verifier_rejects_missing_producer_and_cycles"
+  - name: region_gate_inside_lifecycle
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_abi.py::test_gate5_region_gate_must_sit_inside_the_request_body"
+  - name: cross_core_gate_prerequisite
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_abi.py::test_gate5_dual_core_region_gate_needs_a_cross_core_prerequisite"
+  - name: independent_core_rejected
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_abi.py::test_gate5_dual_core_region_gate_rejects_an_independent_core"
 - id: MOE-27
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: scratch_allocates_in_kind_order
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2484,18 +3728,163 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_27
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay.py::test_gate5_scratch_bump_allocates_in_kind_order"
+  - name: scratch_exhaustion
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay.py::test_gate5_scratch_rejects_exhaustion_and_unknown_region"
+  - name: views_reject_escape
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay.py::test_gate5_views_reject_unknown_backing_and_escape"
+  - name: overlay_bounds_enforced
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay_runtime.py::test_gate5_overlay_bounds_are_enforced"
+  - name: member_slice_shard_binding
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay_runtime.py::test_gate5_member_slice_binds_only_a_fitting_output_shard"
+  - name: member_view_owner_core
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay_runtime.py::test_gate5_member_view_must_stay_on_its_own_core"
+  - name: overlay_image_view_refs_bound
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay_runtime.py::test_gate5_overlay_image_rejects_too_many_view_refs"
+  - name: bitmap_validity
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay.py::test_gate5_row_bitmap_validity_is_exact"
 - id: MOE-28
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: cached_reuse_prestart_failure
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2516,12 +3905,439 @@ cases:
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_28
-      args: []
+      case_name: moe_dual_cached_reuse_fault
+      args:
+      - "--mesh-program-dir"
+      - "$GOLDEN/moe_dual"
+      - "--arch"
+      - "configs/example/ai_mesh/arch/mesh_1x2_moe.yaml"
+      - "--overlay-image"
+      - "tests/gem5/ai_mesh/fixtures/gate5/moe_dual_overlay_cached.bin"
+      - "--weight-policy"
+      - "cached"
+  - name: cache_line_reuse_across_instances
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 20000000
+      wall_seconds: 240
+    artifacts: *id002
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
+      case_name: moe_dual_cached_reuse
+      args:
+      - "--mesh-program-dir"
+      - "$GOLDEN/moe_dual"
+      - "--arch"
+      - "configs/example/ai_mesh/arch/mesh_1x2_moe.yaml"
+      - "--overlay-image"
+      - "tests/gem5/ai_mesh/fixtures/gate5/moe_dual_overlay_cached.bin"
+      - "--weight-policy"
+      - "cached"
+  - name: same_core_multi_layer_reservation
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 20000000
+      wall_seconds: 240
+    artifacts: *id002
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
+      case_name: moe_multi_cached
+      args:
+      - "--mesh-program-dir"
+      - "$GOLDEN/moe_multi"
+      - "--arch"
+      - "configs/example/ai_mesh/arch/mesh_1x2_moe.yaml"
+      - "--overlay-image"
+      - "tests/gem5/ai_mesh/fixtures/gate5/moe_multi_l1_overlay_cached.bin,tests/gem5/ai_mesh/fixtures/gate5/moe_multi_l2_overlay_cached.bin"
+      - "--weight-policy"
+      - "cached"
+  - name: cross_core_all_or_none
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_failure_fanout.py::test_gate5_batch_cross_cores_commits_all_or_none"
+  - name: cross_core_tombstone_no_side_effect
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_failure_fanout.py::test_gate5_batch_cross_cores_reports_a_tombstone_without_side_effects"
+  - name: full_cache_hit_protected_from_batch_miss
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_failure_fanout.py::test_gate5_full_cache_protects_a_hit_from_the_same_batch_miss"
+  - name: exact_alias_single_subscriber
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_failure_fanout.py::test_gate5_exact_alias_shares_one_subscriber_until_the_last_drain"
+  - name: cross_layer_alias_occurrences
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_failure_fanout.py::test_gate5_cross_layer_alias_keeps_one_fill_per_occurrence"
+  - name: ab_eviction_new_incarnation
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_failure_fanout.py::test_gate5_ab_eviction_spends_two_incarnations_and_two_fills"
+  - name: member_cancel_keeps_batch_subscriber
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_failure_fanout.py::test_gate5_member_cancel_keeps_the_batch_subscriber_woken"
+  - name: instance_fault_tombstones_own_subscriber
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_failure_fanout.py::test_gate5_instance_fault_tombstones_only_its_own_subscriber"
+  - name: abort_releases_only_its_own_occurrence
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_failure_fanout.py::test_gate5_mixed_batch_survives_another_batch_fault"
+  - name: fill_error_fans_out_once
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_failure_fanout.py::test_gate5_fill_error_fans_out_once_and_leaves_one_tombstone"
+  - name: no_retry_in_the_same_generation
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_failure_fanout.py::test_gate5_failed_fill_never_retries_in_the_same_generation"
+  - name: cancel_loses_to_error_on_the_same_edge
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_failure_fanout.py::test_gate5_cancel_and_error_on_the_same_edge_keep_the_first_error"
+  - name: background_fill_settles_tombstoned_subscriber
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_failure_fanout.py::test_gate5_background_fill_settles_a_tombstoned_subscriber"
+  - name: batch_set_abort_releases_every_core
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_failure_fanout.py::test_gate5_batch_set_abort_releases_every_core"
+  - name: batch_set_cancel_and_release
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_failure_fanout.py::test_gate5_batch_set_cancel_and_release_all_members"
+  - name: unknown_core_demand_rejected
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_failure_fanout.py::test_gate5_batch_set_rejects_an_unknown_core_demand"
+  - name: drain_state_persistent_tombstone
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_weight_cache.py::test_gate5_cache_drain_state_keeps_the_failure_tombstone"
 - id: MOE-29
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: checksum_mutation_layer_policy
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2536,18 +4352,247 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_29
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_abi.py::test_gate5_recomputed_checksum_mutations_are_rejected[layer_overflow_policy]"
+  - name: checksum_mutation_expert_reserved
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_abi.py::test_gate5_recomputed_checksum_mutations_are_rejected[expert_reserved_core]"
+  - name: checksum_mutation_region_reserved
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_abi.py::test_gate5_recomputed_checksum_mutations_are_rejected[region_reserved]"
+  - name: semantic_violation_gate_adjacency
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_abi.py::test_gate5_verifier_rejects_semantic_violations[region_gate_adjacency]"
+  - name: semantic_violation_kernel_opcode
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_abi.py::test_gate5_verifier_rejects_semantic_violations[kernel_opcode]"
+  - name: semantic_violation_digest_object
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_abi.py::test_gate5_verifier_rejects_semantic_violations[digest_object]"
+  - name: reencode_byte_identical
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_abi.py::test_gate5_fixture_reencodes_byte_identically"
+  - name: oracle_runtime_trace_parity
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/integration/test_gate5_e2e_determinism.py::test_gate5_oracle_verifies_a_real_cached_runtime_trace"
+  - name: oracle_rejects_every_tamper_class
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_oracle.py::test_gate5_oracle_rejects_every_tamper_class"
+  - name: oracle_unknown_tamper_rejected
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_oracle.py::test_gate5_oracle_rejects_an_unknown_worker_tamper"
+  - name: oracle_duplicate_fill_rejected
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_oracle.py::test_gate5_oracle_reports_duplicate_fill_identities"
+  - name: oracle_short_core_rejected
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_oracle.py::test_gate5_oracle_command_comparison_flags_a_short_core"
 - id: MOE-30
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: image_scratch_addresses
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -2562,14 +4607,138 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
+      sim_ticks: null
       wall_seconds: 240
-    artifacts: *id002
+    artifacts: *id001
     execution:
-      runner: GEM5
-      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_moe_30
-      args: []
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay_runtime.py::test_gate5_overlay_image_carries_resolved_scratch_addresses"
+  - name: view_backing_bounds
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay_runtime.py::test_gate5_every_view_resolves_inside_its_backing_allocation"
+  - name: member_output_static_backing
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay_runtime.py::test_gate5_dropped_tokens_fill_a_bound_member_output"
+  - name: unbound_member_output_rejected
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay_runtime.py::test_gate5_unbound_member_output_rejects_a_dropped_fill"
+  - name: overlay_image_carries_views
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay_runtime.py::test_gate5_overlay_image_carries_the_command_views"
+  - name: fill_modes_service_geometry
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_overlay_runtime.py::test_gate5_fill_modes_share_the_service_geometry"
+  - name: route_buffer_canonical
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/unit/test_gate5_moe_materializer.py::test_gate5_route_buffer_records_are_64b_and_canonical"
 - id: PROTO-1
   earliest_gate: 3
   subcases:
@@ -7510,7 +9679,7 @@ cases:
 - id: E2E-C
   earliest_gate: 5
   subcases:
-  - name: default
+  - name: dual_baseline
     terminal_class: QUIESCENT_SUCCESS
     expected_exit_reason: QUIESCENT_SUCCESS
     expected_first_fatal: null
@@ -7531,8 +9700,122 @@ cases:
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_e2e_c
-      args: []
+      case_name: moe_dual_basic
+      args:
+      - "--mesh-program-dir"
+      - "$GOLDEN/moe_dual"
+      - "--arch"
+      - "configs/example/ai_mesh/arch/mesh_1x2_moe.yaml"
+      - "--overlay-image"
+      - "tests/gem5/ai_mesh/fixtures/gate5/moe_dual_overlay_objects.bin"
+  - name: balanced_4x4
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 20000000
+      wall_seconds: 240
+    artifacts: *id002
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
+      case_name: moe_quad
+      args:
+      - "--mesh-program-dir"
+      - "$GOLDEN/moe_quad"
+      - "--arch"
+      - "configs/example/ai_mesh/arch/mesh_4x4_moe.yaml"
+      - "--overlay-image"
+      - "tests/gem5/ai_mesh/fixtures/gate5/moe_quad_overlay_objects.bin"
+  - name: replay_4x4
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 20000000
+      wall_seconds: 240
+    artifacts: *id002
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
+      case_name: moe_quad
+      args:
+      - "--mesh-program-dir"
+      - "$GOLDEN/moe_quad"
+      - "--arch"
+      - "configs/example/ai_mesh/arch/mesh_4x4_moe.yaml"
+      - "--overlay-image"
+      - "tests/gem5/ai_mesh/fixtures/gate5/moe_quad_replay_overlay_objects.bin"
+  - name: hotspot_4x4
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: 20000000
+      wall_seconds: 240
+    artifacts: *id002
+    execution:
+      runner: GEM5
+      config_script: configs/example/ai_mesh/run_dummy_core_agent.py
+      case_name: moe_quad_hotspot
+      args:
+      - "--mesh-program-dir"
+      - "$GOLDEN/moe_quad"
+      - "--arch"
+      - "configs/example/ai_mesh/arch/mesh_4x4_moe.yaml"
+      - "--overlay-image"
+      - "tests/gem5/ai_mesh/fixtures/gate5/moe_quad_hotspot_overlay_objects.bin"
+  - name: determinism_three_repeat
+    terminal_class: QUIESCENT_SUCCESS
+    expected_exit_reason: QUIESCENT_SUCCESS
+    expected_first_fatal: null
+    expected_ledgers:
+      live_cq_obligations: 0
+      fatal_cq_obligations: 0
+      fatal_sq_intakes: 0
+      fatal_publications: 0
+      ambiguous_publications: 0
+      host_ack_wait_b: 0
+      host_ack_b_error: 0
+      msi_rob_entries: 0
+      fatal_records: 0
+    timeout:
+      sim_ticks: null
+      wall_seconds: 240
+    artifacts: *id001
+    execution:
+      runner: PYTEST
+      node_id: "util/mesh_ir/tests/integration/test_gate5_e2e_determinism.py::test_gate5_e2e_c_four_by_four_is_deterministic"
 - id: E2E-D
   earliest_gate: 6
   subcases:

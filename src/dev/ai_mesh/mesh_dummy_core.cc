@@ -6,6 +6,7 @@
 #include "base/trace.hh"
 #include "debug/AiMesh.hh"
 #include "dev/ai_mesh/generated/mesh_ir_abi.hh"
+#include "dev/ai_mesh/mesh_compute_timing.hh"
 #include "dev/ai_mesh/mesh_dispatcher.hh"
 #include "dev/ai_mesh/mesh_program_loader.hh"
 #include "params/MeshDummyCore.hh"
@@ -77,13 +78,14 @@ void MeshDummyCore::installProgram(const std::shared_ptr<const DecodedProgram> &
     sram.allocations.clear();
     if (!program)
         return;
+    weight_tag_sites = weightTagSitesOf(*program, core_id_value);
     for (const auto &allocation : program->allocations)
-        if (allocation.owner_core == core_id_value) {
-            TensorSram::AllocationState state;
-            state.offset = allocation.offset_bytes;
-            state.size = allocation.size_bytes;
-            sram.allocations[allocation.allocation_id] = state;
-        }
+        if (allocation.owner_core == core_id_value)
+            fatal_if(!sram.registerAllocation(allocation.allocation_id,
+                                              allocation.offset_bytes,
+                                              allocation.size_bytes),
+                     "core %u allocation %u rejected by SRAM metadata",
+                     core_id_value, allocation.allocation_id);
 }
 
 bool MeshDummyCore::readsResultOperand(const DecodedCommand &command) const
@@ -169,12 +171,12 @@ uint64_t MeshDummyCore::reserveOperandReads(const DecodedCommand &command)
     return worst_stall;
 }
 
-Tick MeshDummyCore::serviceResultWrite(uint32_t command_id)
+Tick MeshDummyCore::serviceResultWrite(RuntimeObjectKey key)
 {
     // Serial phase 3: the result operand's SRAM write service happens after
     // the engine timer; the command completes only once it is done.
     for (const auto &command : program->commands) {
-        if (command.command_id != command_id || command.operand_count == 0)
+        if (command.command_id != key.ordinal || command.operand_count == 0)
             continue;
         const DecodedOperand &dst =
             program->operands[command.operand_begin + command.operand_count - 1];
@@ -196,13 +198,13 @@ void MeshDummyCore::CompletionEvent::process()
 {
     if (result_write && !result_serviced) {
         result_serviced = true;
-        const Tick ready = core->serviceResultWrite(command_id);
+        const Tick ready = core->serviceResultWrite(command);
         if (ready > curTick()) {
             core->schedule(this, ready);
             return;
         }
     }
-    core->completeCommand(command_id, signal_event, curTick(), error_terminal);
+    core->completeCommand(command, signal_event, curTick(), error_terminal);
 }
 
 bool MeshDummyCore::dmaSramAdmissible(const DecodedDmaDescriptor &descriptor)
@@ -249,22 +251,22 @@ uint64_t MeshDummyCore::reserveDmaSram(const DecodedDmaDescriptor &descriptor,
     return result.stall_ticks;
 }
 
-void MeshDummyCore::checkDmaSourceValidity(uint32_t command_id)
+void MeshDummyCore::checkDmaSourceValidity(RuntimeObjectKey key)
 {
     for (const auto &command : program->commands) {
-        if (command.command_id != command_id || command.operand_count == 0)
+        if (command.command_id != key.ordinal || command.operand_count == 0)
             continue;
         const DecodedOperand &source =
             program->operands[command.operand_begin];
         auto it = sram.allocations.find(source.allocation_id);
         if (it == sram.allocations.end())
             fatal("E_ABI_BOUNDS: DMA command %u references unknown allocation %u",
-                  command_id, source.allocation_id);
+                  key.ordinal, source.allocation_id);
         if (!it->second.valid) {
             poisonReadFaults++;
             fatal("E_TENSOR_NOT_RESIDENT: DMA command %u reads allocation %u "
                   "before any producer committed",
-                  command_id, source.allocation_id);
+                  key.ordinal, source.allocation_id);
         }
         return;
     }
@@ -293,14 +295,19 @@ MeshDummyCore::InstanceLedger MeshDummyCore::takeInstanceLedger()
     return ledger;
 }
 
-void MeshDummyCore::dispatchInstance(uint32_t instance_id)
+void MeshDummyCore::dispatchInstance(InstanceGeneration instance)
+{
+    armRequest(instance);
+    startRequest();
+}
+
+void MeshDummyCore::armRequest(InstanceGeneration instance)
 {
     fatal_if(!program, "core %u dispatched without an installed program", core_id_value);
-    fatal_if(instance_active, "core %u already running an instance", core_id_value);
-    instance_active = true;
-    core_halted = false;
-    instance_error = false;
-    error_drained = false;
+    fatal_if(instanceActive(), "core %u already running an instance",
+             core_id_value);
+    instance_generation = instance;
+    instance_state = mesh_abi::MeshCoreInstanceState::REQUEST_ARMED;
     error_latch_tick = 0;
     work_drained_tick = 0;
     live_dma_tags.clear();
@@ -312,6 +319,11 @@ void MeshDummyCore::dispatchInstance(uint32_t instance_id)
     instance_completed_ids.clear();
     instance_errored_ids.clear();
     instance_cancelled_ids.clear();
+    overlay_entry_published.clear();
+    overlay_exited.clear();
+    overlay_entry_tick = 0;
+    cache_fills_issued = 0;
+    cache_fills_completed = 0;
     cancelAllPendingVisibility();
     cursors.clear();
     live_per_stream.clear();
@@ -330,13 +342,31 @@ void MeshDummyCore::dispatchInstance(uint32_t instance_id)
         cursors[stream.stream_id] = cursor;
     }
     DPRINTF(AiMesh, "core %u instance %u dispatched with %zu streams\n", core_id_value,
-            instance_id, cursors.size());
+            instance.value(), cursors.size());
+}
+
+void MeshDummyCore::disarmRequest()
+{
+    fatal_if(instance_state != mesh_abi::MeshCoreInstanceState::REQUEST_ARMED,
+             "core %u disarmed without an armed request", core_id_value);
+    cancelAllPendingVisibility();
+    cursors.clear();
+    instance_state = mesh_abi::MeshCoreInstanceState::PROGRAM_READY;
+    DPRINTF(AiMesh, "core %u request disarmed before start\n", core_id_value);
+}
+
+void MeshDummyCore::startRequest()
+{
+    fatal_if(!program, "core %u started without an installed program",
+             core_id_value);
+    fatal_if(instance_state != mesh_abi::MeshCoreInstanceState::REQUEST_ARMED,
+             "core %u started without an armed request", core_id_value);
     if (cursors.empty()) {
-        // A core with no streams does not participate; it halts immediately.
-        core_halted = true;
+        instance_state = mesh_abi::MeshCoreInstanceState::REQUEST_DRAINING;
         finishIfHalted();
         return;
     }
+    instance_state = mesh_abi::MeshCoreInstanceState::REQUEST_RUNNING;
     scheduleTick();
 }
 
@@ -346,23 +376,266 @@ void MeshDummyCore::scheduleTick()
         schedule(&tick_event, clockEdge() + 1);
 }
 
+uint32_t MeshDummyCore::regionGateRegionId(uint32_t layer_id) const
+{
+    for (const auto &region : program->moe_dynamic_regions)
+        if (region.layer_id == layer_id && region.core_id == core_id_value)
+            return region.region_id;
+    fatal("core %u has no MoE region for layer %u", core_id_value, layer_id);
+}
+
+bool MeshDummyCore::submitOverlayDma(const mesh_abi::DmaDescriptor &descriptor,
+                                     const RuntimeObjectKey &descriptor_key,
+                                     const RuntimeObjectKey &command_key,
+                                     uint64_t issue_tick)
+{
+    RuntimeObjectKey completion;
+    return dma->submit(descriptor, descriptor_key, command_key, completion,
+                       Tick(issue_tick));
+}
+
+void MeshDummyCore::bindFillPattern(const RuntimeObjectKey &command,
+                                    uint64_t pattern)
+{
+    dma->bindFillPattern(command, pattern);
+}
+
+void MeshDummyCore::installWeightCache(std::unique_ptr<MoeWeightCache> cache)
+{
+    weight_cache = std::move(cache);
+}
+
+void MeshDummyCore::setDmaGeometry(uint16_t region_id, uint32_t burst_beats)
+{
+    sram_region_id = region_id;
+    dma_max_burst_beats = burst_beats;
+}
+
+void MeshDummyCore::installCacheTokens(
+    const std::vector<MoeCacheToken> &tokens,
+    const std::map<uint32_t, std::map<uint32_t, uint32_t>> &consumers)
+{
+    fatal_if(weight_cache == nullptr, "cache tokens without an installed cache");
+    for (const auto &token : tokens) {
+        const auto layer = consumers.find(token.layer_id);
+        uint32_t count = 0;
+        if (layer != consumers.end()) {
+            const auto tag = layer->second.find(token.base.weight_tag_index);
+            if (tag != layer->second.end())
+                count = tag->second;
+        }
+        weight_cache->setTokenConsumers(token.token_id, count);
+        if (!token.has_fill || token.outcome !=
+                mesh_abi::kCacheResidencyOutcomeNEW_FILL)
+            continue;
+        const mesh_abi::WeightFillKey &key = token.fill;
+        mesh_abi::DmaDescriptor descriptor;
+        descriptor.descriptor_id = key.fill_incarnation;
+        descriptor.command_id = key.fill_incarnation;
+        descriptor.transfer_id = 0;
+        descriptor.owner_core = core_id_value;
+        descriptor.kind = mesh_abi::kDmaKindLOAD;
+        descriptor.src.memory_space = mesh_abi::kMemorySpaceHBM;
+        descriptor.src.region_id = 0;
+        descriptor.src.owner_core = 0;
+        descriptor.src.offset_bytes = cacheFillSource(key.weight_tag_index);
+        descriptor.dst.memory_space = mesh_abi::kMemorySpaceCORE_SRAM;
+        descriptor.dst.region_id = sram_region_id;
+        descriptor.dst.owner_core = core_id_value;
+        descriptor.dst.offset_bytes = weight_cache->slotBase(token.slot_id);
+        const uint64_t bytes = cacheFillBytes(key.weight_tag_index);
+        descriptor.rows = 1;
+        descriptor.row_bytes = bytes;
+        descriptor.src_stride_bytes = bytes;
+        descriptor.dst_stride_bytes = bytes;
+        descriptor.useful_bytes = bytes;
+        descriptor.physical_storage_bytes = bytes;
+        descriptor.axi_id = key.fill_incarnation & 0xFFFF;
+        descriptor.max_burst_beats = dma_max_burst_beats;
+        descriptor.completion_event = 0;
+        RuntimeObjectKey descriptor_key;
+        descriptor_key.instance = instance_generation;
+        descriptor_key.domain = mesh_abi::MeshObjectDomain::WEIGHT_FILL;
+        descriptor_key.regionGroupId =
+            (uint32_t(core_id_value) << 16) | uint16_t(token.layer_id);
+        descriptor_key.regionId = token.slot_id;
+        descriptor_key.kind = mesh_abi::MeshObjectKind::DESCRIPTOR;
+        descriptor_key.ordinal = key.fill_incarnation;
+        DPRINTF(AiMesh, "core %u fill submit tag=%u inc=%u slot=%u bytes=%llu\n",
+                core_id_value, key.weight_tag_index, key.fill_incarnation,
+                token.slot_id, (unsigned long long)bytes);
+        weight_cache->markFilling(key);
+        PendingCacheFill pending;
+        pending.fill = key;
+        pending.bytes = bytes;
+        pending.token_id = token.token_id;
+        if (!submitOverlayDma(descriptor, descriptor_key, descriptor_key,
+                              curTick())) {
+            // Finite descriptor queue: keep the reservation and the token,
+            // and re-submit once the engine accepts work again.
+            QueuedCacheFill queued;
+            queued.descriptor = descriptor;
+            queued.descriptor_key = descriptor_key;
+            queued.fill = key;
+            queued.pending = pending;
+            queued_cache_fills[key.weight_tag_index] = queued;
+            continue;
+        }
+        weight_cache->advanceEngineEdge();
+        weight_cache->markIssued(key);
+        weight_cache->markInFlight(key);
+        pending_cache_fills[key.fill_incarnation] = pending;
+        cache_fills_issued++;
+    }
+}
+
+const WeightTagSiteV1 &MeshDummyCore::weightTagSite(uint32_t tag_index) const
+{
+    for (const auto &site : weight_tag_sites)
+        if (site.weight_tag_index == tag_index)
+            return site;
+    fatal("weight tag %u has no expert on core %u", tag_index, core_id_value);
+}
+
+uint64_t MeshDummyCore::cacheFillSource(uint32_t tag_index) const
+{
+    return weightTagSite(tag_index).weight_region_offset;
+}
+
+uint64_t MeshDummyCore::cacheFillBytes(uint32_t tag_index) const
+{
+    return weightTagSite(tag_index).weight_bytes;
+}
+
+void MeshDummyCore::installOverlay(uint32_t layer_id,
+                                   const MoeOverlayGraph &graph,
+                                   const MoeOverlayAddressSpace *addresses)
+{
+    fatal_if(scoreboard == nullptr,
+             "core %u cannot install an overlay without a scoreboard",
+             core_id_value);
+    MoeOverlayExecutor::Config config;
+    config.core_id = core_id_value;
+    config.dma_bytes_per_cycle = dmaBytesPerCycle;
+    config.ticks_per_cycle = clockPeriod();
+    auto executor = std::make_unique<MoeOverlayExecutor>(
+        config, scoreboard, &sram, overlay_bus, addresses);
+    executor->bindDma(this);
+    executor->bindCompute(this);
+    executor->bindComputeCommit(&computeDigests);
+    for (const auto &layer : program->moe_layer_specs)
+        if (layer.layer_id == layer_id && layer.kernel_spec_index <
+                program->moe_kernel_specs.size())
+            overlay_kernels[layer_id] =
+                &program->moe_kernel_specs[layer.kernel_spec_index];
+    executor->load(layer_id, instance_generation, graph);
+    overlay_executors[layer_id] = std::move(executor);
+}
+
+bool MeshDummyCore::overlayDrained() const
+{
+    for (const auto &kv : overlay_executors)
+        if (!kv.second->drained())
+            return false;
+    return !overlay_executors.empty();
+}
+
+bool MeshDummyCore::overlayGroupExited(uint32_t layer_id) const
+{
+    return overlay_exited.count(layer_id) != 0;
+}
+
 void MeshDummyCore::tick()
 {
     // Late in-flight ticks after the instance finished are harmless.
-    if (!instance_active)
+    if (!instanceActive())
         return;
 
-    if (instance_error && !error_drained)
+    if (owned_work_drain_pending && !halted()) {
+        if (weight_cache != nullptr) {
+            weight_cache->advanceCacheEdge();
+            weight_cache->noteOwnedWorkDrained(cache_batch_id);
+            if (weight_cache->liveTokensOfBatch(cache_batch_id) != 0) {
+                // A cache-owned fill is still draining: its instance-owned
+                // token is released exactly once at that fill terminal, so
+                // ERROR_DRAINED waits for the cache edge that sees it gone.
+                retryQueuedCacheFills();
+                scheduleTick();
+                return;
+            }
+        }
+        instance_state =
+            mesh_abi::MeshCoreInstanceState::INSTANCE_ERROR_DRAINED;
+        DPRINTF(AiMesh, "core %u error-drained at %llu\n", core_id_value,
+                (unsigned long long)curTick());
+        if (dispatcher)
+            dispatcher->notifyCoreHalted(core_id_value);
+        return;
+    }
+
+    if (instanceErrored() && !halted())
         cancelRemainingCommands();
 
+    retryQueuedCacheFills();
+    retryCacheReservations();
+    for (auto &kv : overlay_executors) {
+        MoeOverlayExecutor *executor = kv.second.get();
+        if (executor->started())
+            executor->tick(curTick());
+        if (executor->failed())
+            latchInstanceError(curTick());
+        for (const auto &event : executor->signalled()) {
+            if (event.kind != mesh_abi::MeshObjectKind::EVENT)
+                continue;
+            if (event.regionId == 0 && event.ordinal != 0 &&
+                overlay_exited.insert(kv.first).second) {
+                if (dispatcher != nullptr)
+                    dispatcher->notifyOverlayExit(kv.first);
+            }
+        }
+    }
+
     bool progressed = false;
+    // The overlay entry is published on every core edge that reaches the
+    // insertion point, independent of whether a static command could issue:
+    // a cursor blocked at the gate must not stop the cached fills that the
+    // overlay waits for from being observed.
+    for (auto &kv : overlay_executors) {
+        if (overlay_entry_published.count(kv.first) != 0)
+            continue;
+        if (region_gate.phase(kv.first) !=
+            MoeInsertionGate::RegionPhase::REACHED)
+            continue;
+        if (weight_cache != nullptr &&
+            weight_cache->hasPendingSubscribers()) {
+            progressed = true;
+            continue;
+        }
+        RuntimeObjectKey entry;
+        entry.instance = instance_generation;
+        entry.domain = mesh_abi::MeshObjectDomain::MOE_OVERLAY;
+        entry.regionGroupId = uint16_t(kv.first);
+        entry.regionId = uint16_t(regionGateRegionId(kv.first));
+        entry.kind = mesh_abi::MeshObjectKind::EVENT;
+        entry.ordinal = 0;
+        DPRINTF(AiMesh, "core %u publish overlay entry layer=%u\n",
+                core_id_value, kv.first);
+        kv.second->publishEntry(entry, curTick());
+        overlay_entry_published.insert(kv.first);
+        if (overlay_entry_tick == 0)
+            overlay_entry_tick = curTick();
+        progressed = true;
+    }
     for (auto &kv : cursors) {
         StreamCursor &cursor = kv.second;
         for (uint32_t issued = 0; issued < decode_width_value; issued++) {
-            if (cursor.repeat_gate_command != 0 && !cursor.replay.active)
+            if (cursor.repeat_gate_command.ordinal != 0 &&
+                    !cursor.replay.active)
                 break; // REPEAT drain gate: post-REPEAT cursor stays closed
             if (liveStreamCommands(kv.first) >= admit_window_value)
                 break; // finite admit window: real decode-stage backpressure
+            if (region_gate.blockedIndex(cursor.next_command))
+                break; // MoE insertion gate: overlay group has not exited yet
             if (cursor.next_command >= cursor.end_command)
                 break;
             const uint32_t index = cursor.next_command;
@@ -371,7 +644,8 @@ void MeshDummyCore::tick()
                 break;
             if (!tryIssue(command))
                 break; // backpressure: retry next cycle
-            if (cursor.next_command == index)
+            region_gate.noteIssued(command.command_id);
+            if (cursor.next_command == index)            if (cursor.next_command == index)
                 cursor.next_command = index + 1; // REPEAT may rewind the cursor
             if (cursor.replay.active &&
                 cursor.next_command >= cursor.replay.subrange_end) {
@@ -383,7 +657,8 @@ void MeshDummyCore::tick()
         }
     }
 
-    if (progressed || live_commands > 0 || !core_halted)
+    if (progressed || live_commands > 0 || overlayPending() ||
+        instance_state != mesh_abi::MeshCoreInstanceState::REQUEST_DRAINING)
         scheduleTick();
 
     finishIfHalted();
@@ -393,7 +668,9 @@ bool MeshDummyCore::waitsSatisfied(const DecodedCommand &command) const
 {
     fatal_if(scoreboard == nullptr, "core %u has no scoreboard", core_id_value);
     for (uint16_t w = 0; w < command.wait_count; w++)
-        if (!scoreboard->visible(program->waits[command.wait_begin + w]))
+        if (!scoreboard->visible(staticProgramObject(
+                instance_generation, mesh_abi::MeshObjectKind::EVENT,
+                program->waits[command.wait_begin + w])))
             return false;
     return true;
 }
@@ -425,9 +702,10 @@ bool MeshDummyCore::fenceScopeMatches(const DmaTagInfo &info, uint16_t scope)
     }
 }
 
-void MeshDummyCore::completeFence(uint32_t command_id, uint32_t signal_event)
+void MeshDummyCore::completeFence(RuntimeObjectKey command,
+                                  RuntimeObjectKey signal_event)
 {
-    auto *event = new CompletionEvent(this, command_id, signal_event);
+    auto *event = new CompletionEvent(this, command, signal_event);
     schedule(event, clockEdge() + 1);
 }
 
@@ -465,6 +743,117 @@ bool MeshDummyCore::tryIssue(const DecodedCommand &command)
         issueControl(command);
         return true;
     }
+}
+
+bool MeshDummyCore::weightSlotRange(uint32_t tag_index, uint64_t &offset,
+                                    uint64_t &bytes) const
+{
+    if (weight_cache == nullptr)
+        return false;
+    for (const auto &slot : weight_cache->slots()) {
+        if (slot.state != kCacheSlotValid ||
+            slot.weight_tag_index != tag_index || slot.valid_bytes == 0)
+            continue;
+        offset = weight_cache->slotBase(slot.slot_id);
+        bytes = slot.valid_bytes;
+        return true;
+    }
+    return false;
+}
+
+bool MeshDummyCore::computeAdmissible(uint16_t opcode) const
+{
+    switch (opcode) {
+    case mesh_abi::kOpcodeGEMM:
+    case mesh_abi::kOpcodeBMM:
+        return tensor_queue_used < tensor_queue_depth_value;
+    case mesh_abi::kOpcodeELEMENTWISE:
+    case mesh_abi::kOpcodeSOFTMAX:
+    case mesh_abi::kOpcodeNORM:
+        return vector_queue_used < vector_queue_depth_value;
+    case mesh_abi::kOpcodeLOCAL_REDUCE:
+        return reduce_queue_used < reduce_queue_depth_value;
+    default:
+        return true;
+    }
+}
+
+void MeshDummyCore::noteComputeAdmitted(uint16_t opcode)
+{
+    switch (opcode) {
+    case mesh_abi::kOpcodeGEMM:
+    case mesh_abi::kOpcodeBMM:
+        tensor_queue_used++;
+        break;
+    case mesh_abi::kOpcodeELEMENTWISE:
+    case mesh_abi::kOpcodeSOFTMAX:
+    case mesh_abi::kOpcodeNORM:
+        vector_queue_used++;
+        break;
+    case mesh_abi::kOpcodeLOCAL_REDUCE:
+        reduce_queue_used++;
+        break;
+    default:
+        break;
+    }
+}
+
+void MeshDummyCore::noteComputeFinished(uint16_t opcode, uint64_t cycles)
+{
+    switch (opcode) {
+    case mesh_abi::kOpcodeGEMM:
+    case mesh_abi::kOpcodeBMM:
+        fatal_if(tensor_queue_used == 0, "tensor queue underflow");
+        tensor_queue_used--;
+        gemmCycles += cycles;
+        break;
+    case mesh_abi::kOpcodeELEMENTWISE:
+    case mesh_abi::kOpcodeSOFTMAX:
+    case mesh_abi::kOpcodeNORM:
+        fatal_if(vector_queue_used == 0, "vector queue underflow");
+        vector_queue_used--;
+        break;
+    case mesh_abi::kOpcodeLOCAL_REDUCE:
+        fatal_if(reduce_queue_used == 0, "reduce queue underflow");
+        reduce_queue_used--;
+        reduceCommands++;
+        reduceCycles += cycles;
+        break;
+    default:
+        break;
+    }
+}
+
+uint64_t MeshDummyCore::computeCycles(const MoeComputeShape &shape) const
+{
+    const auto kernel = overlay_kernels.find(shape.layer_id);
+    fatal_if(kernel == overlay_kernels.end() || kernel->second == nullptr,
+             "overlay layer %u has no frozen kernel spec", shape.layer_id);
+    const mesh_abi::MoeKernelSpec &spec = *kernel->second;
+    fatal_if(spec.output_token_bytes == 0 ||
+                 shape.payload_bytes % spec.output_token_bytes != 0,
+             "E_ABI_OVERFLOW: overlay layer %u command payload %u B is not a "
+             "whole number of %u B rows",
+             shape.layer_id, shape.payload_bytes, spec.output_token_bytes);
+    const uint64_t rows = shape.payload_bytes / spec.output_token_bytes;
+    if (shape.role == mesh_abi::kMoeCommandRoleCOPY_THROUGH ||
+        shape.role == mesh_abi::kMoeCommandRoleLOCAL_REDUCE) {
+        const uint64_t ops_per_cycle = throughputFor(
+            spec.accum_dtype, reduce_ops_by_dtype_value,
+            reduce_ops_per_cycle_value);
+        const uint64_t engine = reduceEngineCycles(
+            rows * spec.n, shape.fan_in, ops_per_cycle, "overlay combine");
+        return framedCycles(spec.combine_setup_cycles, engine,
+                            spec.combine_flush_cycles);
+    }
+    const uint64_t macs = throughputFor(
+        spec.input_dtype, tensor_macs_by_dtype_value,
+        tensor_macs_per_cycle_value);
+    const uint64_t engine =
+        tensorEngineCycles(spec.batch, rows, spec.n, spec.k, macs,
+                           spec.efficiency_q16, "overlay expert");
+    return framedCycles(spec.tensor_setup_cycles, engine,
+                        spec.tensor_flush_cycles);
 }
 
 uint64_t MeshDummyCore::throughputFor(uint16_t dtype,
@@ -506,23 +895,14 @@ uint64_t MeshDummyCore::computeCycles(const DecodedCommand &command,
             efficiency = attr->as<mesh_abi::GemmV1>().efficiency_q16;
         else
             efficiency = attr->as<mesh_abi::BmmV1>().efficiency_q16;
-        const __int128 work = __int128(batch) * m * n * k;
         const uint64_t macs = throughputFor(
             dtype, tensor_macs_by_dtype_value, tensor_macs_per_cycle_value);
-        fatal_if(macs == 0,
-                 "E_CAPABILITY_MISMATCH: GEMM dtype has no tensor "
-                 "throughput capability (command %u)",
+        char context[64];
+        snprintf(context, sizeof(context), "GEMM command %u",
                  command.command_id);
-        const __int128 numerator = work * 65536;
-        const __int128 denominator = __int128(macs) * efficiency;
-        fatal_if(denominator == 0 || work >= (__int128(1) << 63) ||
-                     numerator / denominator >= (__int128(1) << 63),
-                 "E_ABI_OVERFLOW: GEMM workload exceeds the schedulable "
-                 "cycle range (command %u)",
-                 command.command_id);
-        const uint64_t engine =
-            uint64_t((numerator + denominator - 1) / denominator);
-        return uint64_t(tensor_setup + Cycles(engine) + tensor_flush);
+        const uint64_t engine = tensorEngineCycles(batch, m, n, k, macs,
+                                                   efficiency, context);
+        return framedCycles(tensor_setup, engine, tensor_flush);
     }
     case mesh_abi::kOpcodeELEMENTWISE: {
         const auto &ew = attr->as<mesh_abi::ElementwiseV1>();
@@ -564,16 +944,16 @@ uint64_t MeshDummyCore::computeCycles(const DecodedCommand &command,
         const uint64_t ops_per_cycle = throughputFor(
             reduce.dtype, reduce_ops_by_dtype_value,
             reduce_ops_per_cycle_value);
-        const __int128 ops =
-            __int128(reduce.element_count) * (reduce.fan_in - 1);
-        fatal_if(reduce.fan_in < 2 || ops <= 0 ||
-                     ops >= (__int128(1) << 63),
+        fatal_if(reduce.fan_in < 2,
                  "E_ABI_OVERFLOW: reduce workload exceeds the schedulable "
                  "cycle range (command %u)",
                  command.command_id);
-        return uint64_t(reduce_setup +
-                        Cycles((ops + ops_per_cycle - 1) / ops_per_cycle) +
-                        reduce_flush);
+        char context[64];
+        snprintf(context, sizeof(context), "LOCAL_REDUCE command %u",
+                 command.command_id);
+        const uint64_t engine = reduceEngineCycles(
+            reduce.element_count, reduce.fan_in, ops_per_cycle, context);
+        return framedCycles(reduce_setup, engine, reduce_flush);
     }
     default:
         return 1;
@@ -583,7 +963,7 @@ uint64_t MeshDummyCore::computeCycles(const DecodedCommand &command,
 void MeshDummyCore::issueCompute(const DecodedCommand &command, const DecodedAttr *attr)
 {
     commandsIssued++;
-    command_issue_ticks[command.command_id] = curTick();
+    command_issue_ticks[commandKey(command.command_id)] = curTick();
     checkOperandValidity(command);
 
     const uint64_t cycles = computeCycles(command, attr);
@@ -598,8 +978,9 @@ void MeshDummyCore::issueCompute(const DecodedCommand &command, const DecodedAtt
     }
     live_commands++;
     live_per_stream[command.stream_id]++;
-    auto *event = new CompletionEvent(this, command.command_id,
-                                      command.signal_event, false, true);
+    auto *event = new CompletionEvent(this, commandKey(command.command_id),
+                                      eventKey(command.signal_event), false,
+                                      true);
     schedule(event, clockEdge(Cycles(cycles)) + read_stall + 1);
     DPRINTF(AiMesh, "core %u compute command %u opcode=%u cycles=%llu stall=%llu\n",
             core_id_value,
@@ -609,7 +990,7 @@ void MeshDummyCore::issueCompute(const DecodedCommand &command, const DecodedAtt
 void MeshDummyCore::issueControl(const DecodedCommand &command)
 {
     commandsIssued++;
-    command_issue_ticks[command.command_id] = curTick();
+    command_issue_ticks[commandKey(command.command_id)] = curTick();
 
     switch (command.opcode) {
     case mesh_abi::kOpcodeEVENT_WAIT:
@@ -639,7 +1020,7 @@ void MeshDummyCore::issueControl(const DecodedCommand &command)
             return; // completed when every captured tag (any core) retires
         }
         if (!waiting.empty()) {
-            fence_waiters[command.command_id] = waiting;
+            fence_waiters[commandKey(command.command_id)] = waiting;
             live_commands++;
             live_per_stream[command.stream_id]++;
             return; // completed when every captured tag retires
@@ -654,26 +1035,28 @@ void MeshDummyCore::issueControl(const DecodedCommand &command)
     case mesh_abi::kOpcodeRECV_WAIT: {
         const DecodedAttr *attr = attrOf(command);
         fatal_if(attr == nullptr, "RECV_WAIT without attr");
-        uint32_t transfer_id = attr->as<mesh_abi::RecvWaitV1>().transfer_id;
+        const RuntimeObjectKey transfer =
+            transferKey(attr->as<mesh_abi::RecvWaitV1>().transfer_id);
         live_commands++;
         live_per_stream[command.stream_id]++;
-        auto done = committed_transfers.find(transfer_id);
+        auto done = committed_transfers.find(transfer);
         if (done != committed_transfers.end() && done->second) {
             // Transfer already committed: complete at the next edge.
-            auto *event =
-                new CompletionEvent(this, command.command_id, command.signal_event);
+            auto *event = new CompletionEvent(
+                this, commandKey(command.command_id),
+                eventKey(command.signal_event));
             schedule(event, clockEdge() + 1);
             return;
         }
-        recv_waiters[transfer_id] = command.command_id;
+        recv_waiters[transfer] = commandKey(command.command_id);
         return;
     }
     case mesh_abi::kOpcodeHALT:
-        core_halted = true;
+        instance_state = mesh_abi::MeshCoreInstanceState::REQUEST_DRAINING;
         haltCommands++;
         commandsCompleted++;
-        completed_command_ids.push_back(command.command_id);
-        instance_completed_ids.push_back(command.command_id);
+        completed_command_ids.push_back(commandKey(command.command_id));
+        instance_completed_ids.push_back(commandKey(command.command_id));
         finishIfHalted();
         return;
     case mesh_abi::kOpcodeREQUEST_BEGIN:
@@ -687,7 +1070,8 @@ void MeshDummyCore::issueControl(const DecodedCommand &command)
     }
     live_commands++;
     live_per_stream[command.stream_id]++;
-    auto *event = new CompletionEvent(this, command.command_id, command.signal_event);
+    auto *event = new CompletionEvent(this, commandKey(command.command_id),
+                                      eventKey(command.signal_event));
     schedule(event, clockEdge() + 1);
 }
 
@@ -742,14 +1126,16 @@ bool MeshDummyCore::issueDma(const DecodedCommand &command)
             fatal_if(attr == nullptr || attr->kind != mesh_abi::kAttrKindFILL_V1,
                      "DMA_FILL command %u missing FILL_V1 attr", command.command_id);
             dma->bindFillPattern(
-                command.command_id,
+                commandKey(command.command_id),
                 attr->as<mesh_abi::FillV1>().pattern);
         }
         if (descriptor.useful_bytes > 0 && !dmaSramAdmissible(descriptor))
             return false; // bank queue full: retry next cycle
         if (!tryPinDmaAllocations(command))
             return false; // pinned by an in-flight DMA: retry next cycle
-        if (!dma->submit(descriptor, curTick())) {
+        if (!dma->submit(descriptor, descriptorKey(descriptor.descriptor_id),
+                         commandKey(command.command_id),
+                         eventKey(descriptor.completion_event), curTick())) {
             unpinDmaAllocations(command);
             return false; // backpressure: retry next cycle, no side effects
         }
@@ -757,7 +1143,7 @@ bool MeshDummyCore::issueDma(const DecodedCommand &command)
             descriptor.useful_bytes > 0 && dispatcher)
             dispatcher->armTransferExpectation(descriptor.transfer_id);
         commandsIssued++;
-        command_issue_ticks[command.command_id] = curTick();
+        command_issue_ticks[commandKey(command.command_id)] = curTick();
         live_commands++;
         live_per_stream[command.stream_id]++;
         outstanding_axi++;
@@ -765,8 +1151,8 @@ bool MeshDummyCore::issueDma(const DecodedCommand &command)
         live_dma_tags.insert(tag);
         dma_tag_info[tag] = DmaTagInfo{descriptor.kind,
                                        descriptor.dst.memory_space};
-        dma_tag_command[tag] = command.command_id;
-        dma_command_tag[command.command_id] = tag;
+        dma_tag_command[tag] = commandKey(command.command_id);
+        dma_command_tag[commandKey(command.command_id)] = tag;
         submitted = true;
     }
     fatal_if(!submitted,
@@ -782,10 +1168,14 @@ void MeshDummyCore::resetSubrangeEvents(uint16_t stream_id)
          index < cursor.replay.subrange_end; index++) {
         const auto &member = program->commands[index];
         if (member.signal_event)
-            cancelPendingVisibility(member.signal_event);
+            cancelPendingVisibility(staticProgramObject(
+                instance_generation, mesh_abi::MeshObjectKind::EVENT,
+                member.signal_event));
         for (const auto &descriptor : program->descriptors)
             if (descriptor.command_id == member.command_id)
-                cancelPendingVisibility(descriptor.completion_event);
+                cancelPendingVisibility(staticProgramObject(
+                    instance_generation, mesh_abi::MeshObjectKind::EVENT,
+                    descriptor.completion_event));
     }
 }
 
@@ -805,10 +1195,10 @@ void MeshDummyCore::cancelAllPendingVisibility()
     pending_visibility.clear();
 }
 
-void MeshDummyCore::cancelPendingVisibility(uint32_t event_id)
+void MeshDummyCore::cancelPendingVisibility(RuntimeObjectKey event)
 {
-    scoreboard->unpublish(event_id);
-    auto pending = pending_visibility.find(event_id);
+    scoreboard->unpublish(event);
+    auto pending = pending_visibility.find(event);
     if (pending == pending_visibility.end())
         return;
     if (pending->second->scheduled())
@@ -826,7 +1216,7 @@ void MeshDummyCore::issueRepeat(const DecodedCommand &command, const DecodedAttr
 
     StreamCursor &cursor = cursors[command.stream_id];
     const uint32_t repeat_index = cursor.next_command; // still at REPEAT
-    cursor.repeat_gate_command = command.command_id;
+    cursor.repeat_gate_command = commandKey(command.command_id);
     cursor.post_repeat_next = repeat_index + 1;
     cursor.replay.repeat_command_index = repeat_index;
     cursor.replay.subrange_begin = repeat_index - count;
@@ -834,7 +1224,7 @@ void MeshDummyCore::issueRepeat(const DecodedCommand &command, const DecodedAttr
     cursor.replay.total_generations = repeat_count;
     cursor.replay.generation = 1;
 
-    command_issue_ticks[command.command_id] = curTick();
+    command_issue_ticks[commandKey(command.command_id)] = curTick();
     live_commands++;
     live_per_stream[command.stream_id]++;
 
@@ -852,7 +1242,8 @@ void MeshDummyCore::issueRepeat(const DecodedCommand &command, const DecodedAttr
         return;
     }
     // repeat_count == 1: nothing to replay, one control cycle and done.
-    auto *event = new CompletionEvent(this, command.command_id, command.signal_event);
+    auto *event = new CompletionEvent(this, commandKey(command.command_id),
+                                      eventKey(command.signal_event));
     schedule(event, clockEdge() + 1);
 }
 
@@ -871,7 +1262,7 @@ uint32_t MeshDummyCore::liveStreamCommands(uint16_t stream_id) const
 void MeshDummyCore::onGenerationDrained(uint16_t stream_id)
 {
     StreamCursor &cursor = cursors[stream_id];
-    if (cursor.repeat_gate_command == 0)
+    if (cursor.repeat_gate_command.ordinal == 0)
         return;
     // The REPEAT itself is the single permitted live command while draining.
     if (liveStreamCommands(stream_id) > 1) {
@@ -883,34 +1274,78 @@ void MeshDummyCore::onGenerationDrained(uint16_t stream_id)
         cursor.replay.active = true;
         cursor.next_command = cursor.replay.subrange_begin;
         DPRINTF(AiMesh, "core %u REPEAT %u: generation %u starts\n", core_id_value,
-                cursor.repeat_gate_command, cursor.replay.generation);
+                cursor.repeat_gate_command.ordinal, cursor.replay.generation);
         cursor.replay.generation++;
         scheduleTick();
         return;
     }
     // Final generation drained; REPEAT itself completes in one control cycle.
-    const uint32_t repeat_id = cursor.repeat_gate_command;
+    const RuntimeObjectKey repeat_id = cursor.repeat_gate_command;
     uint32_t signal = 0;
     for (const auto &command : program->commands)
-        if (command.command_id == repeat_id) {
+        if (commandKey(command.command_id) == repeat_id) {
             signal = command.signal_event;
             break;
         }
-    cursor.repeat_gate_command = 0;
+    cursor.repeat_gate_command = RuntimeObjectKey();
     cursor.next_command = cursor.post_repeat_next;
-    auto *event = new CompletionEvent(this, repeat_id, signal);
+    auto *event = new CompletionEvent(this, repeat_id, eventKey(signal));
     schedule(event, clockEdge() + 1);
 }
 
-void MeshDummyCore::onDmaCompleted(uint32_t command_id, uint32_t completion_event,
+void MeshDummyCore::onDmaCompleted(RuntimeObjectKey command,
+                                   RuntimeObjectKey completion_event,
                                    Tick commit_tick, DmaStatus status)
 {
+    if (command.domain == mesh_abi::MeshObjectDomain::WEIGHT_FILL) {
+        if (weight_cache == nullptr)
+            fatal("cache fill completion without an installed cache");
+        const auto entry = pending_cache_fills.find(command.ordinal);
+        if (entry == pending_cache_fills.end()) {
+            // Error drain already released this fill: a late engine
+            // completion is expected and carries no further work.
+            if (instanceErrored())
+                return;
+            fatal("cache fill completion without a live fill");
+        }
+        const PendingCacheFill pending = entry->second;
+        pending_cache_fills.erase(entry);
+        if (status == DmaStatus::OK) {
+            weight_cache->noteFillSuccess(pending.fill, pending.bytes,
+                                          commit_tick);
+            DPRINTF(AiMesh, "core %u fill done tag=%u bytes=%llu\n",
+                    core_id_value, pending.fill.weight_tag_index,
+                    (unsigned long long)pending.bytes);
+            cache_fills_completed++;
+            // The line stays pinned until the last expert of the batch that
+            // reads it drains, or until the fault join releases it once the
+            // fill terminal, the owned drain and the fanout all happened.
+            if (instanceErrored())
+                weight_cache->releaseBatchTokens(cache_batch_id);
+            return;
+        }
+        weight_cache->noteFillFailure(
+            pending.fill, mesh_abi::kWeightFillFailureSiteCACHE_FILL_AXI_R,
+            commit_tick, weightFillSource(pending.fill));
+        cache_fills_errored++;
+        latchInstanceError(commit_tick);
+        weight_cache->releaseToken(pending.token_id);
+        return;
+    }
+    if (command.domain == mesh_abi::MeshObjectDomain::MOE_OVERLAY) {
+        const auto executor = overlay_executors.find(command.regionGroupId);
+        fatal_if(executor == overlay_executors.end(),
+                 "overlay DMA completion for an unknown layer");
+        executor->second->completeDma(command, uint8_t(status));
+        return;
+    }
     if (outstanding_axi > 0)
         outstanding_axi--;
     {
-        auto tag_it = dma_command_tag.find(command_id);
+        auto tag_it = dma_command_tag.find(command);
         fatal_if(tag_it == dma_command_tag.end(),
-                 "DMA completion without a live tag (command %u)", command_id);
+                 "DMA completion without a live tag (command %u)",
+                 command.ordinal);
         const uint64_t retired_tag = tag_it->second;
         live_dma_tags.erase(retired_tag);
         dma_tag_info.erase(retired_tag);
@@ -919,44 +1354,103 @@ void MeshDummyCore::onDmaCompleted(uint32_t command_id, uint32_t completion_even
         if (dispatcher)
             dispatcher->onDmaTagRetired(core_id_value, retired_tag);
     }
-    for (const auto &command : program->commands)
-        if (command.command_id == command_id) {
-            unpinDmaAllocations(command);
+    for (const auto &candidate : program->commands)
+        if (candidate.command_id == command.ordinal) {
+            unpinDmaAllocations(candidate);
             break;
         }
-    if (status != DmaStatus::OK && !instance_error) {
-        // Instance-global error latch (spec 5.6): the first error fans out
-        // to every participating core; each cancels its undrained work.
-        if (dispatcher)
-            dispatcher->latchInstanceError(this, commit_tick);
-        else {
-            instance_error = true;
-            error_latch_tick = commit_tick;
-        }
-    }
+    if (status != DmaStatus::OK)
+        latchInstanceError(commit_tick);
     if (status == DmaStatus::OK)
-        for (const auto &command : program->commands)
-            if (command.command_id == command_id) {
-                markOperandValid(command);
+        for (const auto &candidate : program->commands)
+            if (candidate.command_id == command.ordinal) {
+                markOperandValid(candidate);
                 break;
             }
     // Publish the descriptor completion at the earliest next core edge.
     // Error completions carry no signal event (no success consumer wake).
     auto *event = new CompletionEvent(
-        this, command_id, status == DmaStatus::OK ? completion_event : 0,
+        this, command,
+        status == DmaStatus::OK ? completion_event : RuntimeObjectKey(),
         status != DmaStatus::OK);
     schedule(event, clockEdge() + 1);
 }
 
+void MeshDummyCore::latchInstanceError(Tick tick)
+{
+    if (instanceErrored())
+        return;
+    // Instance-global error latch (spec 5.6): the first error fans out to
+    // every participating core; each cancels its undrained work.
+    if (dispatcher)
+        dispatcher->latchInstanceError(this, tick);
+    else {
+        instance_state =
+            mesh_abi::MeshCoreInstanceState::INSTANCE_ERROR_DRAINING;
+        error_latch_tick = tick;
+    }
+}
+
 void MeshDummyCore::onInstanceError(Tick tick)
 {
-    if (!instance_error) {
-        instance_error = true;
+    switch (instance_state) {
+      case mesh_abi::MeshCoreInstanceState::PROGRAM_READY:
+      case mesh_abi::MeshCoreInstanceState::REQUEST_ARMED:
+      case mesh_abi::MeshCoreInstanceState::INSTANCE_DONE:
+      case mesh_abi::MeshCoreInstanceState::INSTANCE_ERROR_DRAINED:
+        return;
+      default:
+        break;
+    }
+    if (!instanceErrored()) {
+        instance_state =
+            mesh_abi::MeshCoreInstanceState::INSTANCE_ERROR_DRAINING;
         error_latch_tick = tick;
     }
     cancelRemainingCommands();
+    for (auto &kv : overlay_executors)
+        kv.second->abort();
+    if (weight_cache != nullptr) {
+        weight_cache->noteInstanceFault(cache_batch_id, curTick());
+        weight_cache->noteFailureFanoutDone(cache_batch_id);
+    }
     if (dispatcher)
         dispatcher->cancelFencesOf(core_id_value);
+}
+
+void MeshDummyCore::retryCacheReservations()
+{
+    if (dispatcher != nullptr)
+        dispatcher->retryCacheReservations();
+}
+
+void MeshDummyCore::retryQueuedCacheFills()
+{
+    if (queued_cache_fills.empty() || weight_cache == nullptr)
+        return;
+    for (auto it = queued_cache_fills.begin();
+         it != queued_cache_fills.end();) {
+        QueuedCacheFill &queued = it->second;
+        if (!submitOverlayDma(queued.descriptor, queued.descriptor_key,
+                              queued.descriptor_key, curTick())) {
+            ++it;
+            continue;
+        }
+        weight_cache->advanceEngineEdge();
+        weight_cache->markIssued(queued.fill);
+        weight_cache->markInFlight(queued.fill);
+        pending_cache_fills[queued.fill.fill_incarnation] = queued.pending;
+        cache_fills_issued++;
+        cache_fills_retried++;
+        it = queued_cache_fills.erase(it);
+    }
+}
+
+void MeshDummyCore::noteWeightConsumed(uint32_t layer_id, uint32_t tag_index)
+{
+    if (weight_cache == nullptr)
+        return;
+    weight_cache->noteConsumerDrained(cache_batch_id, layer_id, tag_index);
 }
 
 void MeshDummyCore::cancelRemainingCommands()
@@ -966,7 +1460,7 @@ void MeshDummyCore::cancelRemainingCommands()
     // error.  Already-issued work keeps draining physically.
     for (auto &kv : cursors) {
         StreamCursor &cursor = kv.second;
-        if (cursor.repeat_gate_command != 0) {
+        if (cursor.repeat_gate_command.ordinal != 0) {
             // The REPEAT itself takes the error terminal (spec 4.1): the
             // gate retires cancelled, the post-REPEAT cursor closes.
             commandsCancelled++;
@@ -974,13 +1468,14 @@ void MeshDummyCore::cancelRemainingCommands()
             instance_cancelled_ids.push_back(cursor.repeat_gate_command);
             live_commands--;
             for (const auto &command : program->commands)
-                if (command.command_id == cursor.repeat_gate_command) {
+                if (commandKey(command.command_id) ==
+                    cursor.repeat_gate_command) {
                     auto stream_it = live_per_stream.find(command.stream_id);
                     if (stream_it != live_per_stream.end() && stream_it->second)
                         stream_it->second--;
                     break;
                 }
-            cursor.repeat_gate_command = 0;
+            cursor.repeat_gate_command = RuntimeObjectKey();
             cursor.replay.active = false;
             if (cursor.next_command < cursor.post_repeat_next)
                 cursor.next_command = cursor.post_repeat_next;
@@ -989,8 +1484,8 @@ void MeshDummyCore::cancelRemainingCommands()
              index++) {
             const DecodedCommand &command = program->commands[index];
             commandsCancelled++;
-            cancelled_command_ids.push_back(command.command_id);
-            instance_cancelled_ids.push_back(command.command_id);
+            cancelled_command_ids.push_back(commandKey(command.command_id));
+            instance_cancelled_ids.push_back(commandKey(command.command_id));
         }
         cursor.next_command = cursor.end_command;
     }
@@ -1001,7 +1496,7 @@ void MeshDummyCore::cancelRemainingCommands()
         live_commands--;
         const DecodedCommand *command = nullptr;
         for (const auto &candidate : program->commands)
-            if (candidate.command_id == it->second)
+            if (candidate.command_id == it->second.ordinal)
                 command = &candidate;
         if (command && live_per_stream.count(command->stream_id))
             live_per_stream[command->stream_id]--;
@@ -1014,7 +1509,7 @@ void MeshDummyCore::cancelRemainingCommands()
         live_commands--;
         const DecodedCommand *command = nullptr;
         for (const auto &candidate : program->commands)
-            if (candidate.command_id == it->first)
+            if (candidate.command_id == it->first.ordinal)
                 command = &candidate;
         if (command && live_per_stream.count(command->stream_id))
             live_per_stream[command->stream_id]--;
@@ -1022,24 +1517,26 @@ void MeshDummyCore::cancelRemainingCommands()
     }
 }
 
-void MeshDummyCore::onTransferCommitted(uint32_t transfer_id)
+void MeshDummyCore::onTransferCommitted(RuntimeObjectKey transfer)
 {
-    committed_transfers[transfer_id] = true;
-    auto it = recv_waiters.find(transfer_id);
+    committed_transfers[transfer] = true;
+    auto it = recv_waiters.find(transfer);
     if (it == recv_waiters.end())
         return; // early commit remembered; later RECV_WAIT completes instantly
-    uint32_t command_id = it->second;
+    const RuntimeObjectKey command_key = it->second;
     recv_waiters.erase(it);
-    for (const auto &command : program->commands) {
-        if (command.command_id != command_id)
+    for (const auto &candidate : program->commands) {
+        if (candidate.command_id != command_key.ordinal)
             continue;
-        auto *event = new CompletionEvent(this, command_id, command.signal_event);
+        auto *event = new CompletionEvent(this, command_key,
+                                          eventKey(candidate.signal_event));
         schedule(event, clockEdge() + 1);
         return;
     }
 }
 
-void MeshDummyCore::notifyPeerCommit(uint16_t peer_core, uint32_t transfer_id)
+void MeshDummyCore::notifyPeerCommit(uint16_t peer_core,
+                                     RuntimeObjectKey transfer)
 {
     // The receiver completes its RECV_WAIT when the P2P bytes have committed
     // to its SRAM tile.  The transport routes this through the loader's core
@@ -1048,20 +1545,21 @@ void MeshDummyCore::notifyPeerCommit(uint16_t peer_core, uint32_t transfer_id)
         return;
     // Handled by dispatcher wiring: see MeshDispatcher::notifyPeerCommit.
     if (dispatcher)
-        dispatcher->routePeerCommit(peer_core, transfer_id);
+        dispatcher->routePeerCommit(peer_core, transfer.ordinal);
 }
 
-void MeshDummyCore::completeCommand(uint32_t command_id, uint32_t signal_event,
+void MeshDummyCore::completeCommand(RuntimeObjectKey command_key,
+                                    RuntimeObjectKey signal_event,
                                     Tick done_tick, bool error_terminal)
 {
     if (error_terminal) {
         commandsErrored++;
-        errored_command_ids.push_back(command_id);
-        instance_errored_ids.push_back(command_id);
+        errored_command_ids.push_back(command_key);
+        instance_errored_ids.push_back(command_key);
     }
     bool isCompute = false;
     for (const auto &command : program->commands) {
-        if (command.command_id != command_id)
+        if (command.command_id != command_key.ordinal)
             continue;
         isCompute = command.opcode == mesh_abi::kOpcodeGEMM ||
                     command.opcode == mesh_abi::kOpcodeBMM ||
@@ -1093,26 +1591,13 @@ void MeshDummyCore::completeCommand(uint32_t command_id, uint32_t signal_event,
         }
         if (isCompute) {
             markOperandValid(command);
-            // Timing-only compute annotates the destination with a
-            // deterministic digest: sensitive to opcode/shape/attrs,
-            // insensitive to tick, addresses and queueing (spec 17.2.12/13).
+            // Timing-only compute commits through the shared path: ordered
+            // operand spans -> semantic digest -> FUNCTIONAL_BYTES result.
+            // The designated result operand joins the digest only for
+            // accumulator ops (LOCAL_REDUCE reads dst_old).
             const DecodedAttr *attr = attrOf(command);
-            uint64_t mix =
-                0x9E3779B97F4A7C15ull ^ uint64_t(command.opcode) * 0x100000001B3ull;
-            if (attr) {
-                for (uint8_t byte : attr->payload)
-                    mix = (mix ^ byte) * 0x100000001B3ull;
-            }
-            // Ordered input digests over the operand views' canonical
-            // logical spans (shard offset+span inside the allocation, or the
-            // whole allocation when no shard view exists).  The designated
-            // result operand joins only for accumulator ops (LOCAL_REDUCE
-            // reads dst_old).  Reads/writes are checked against the view
-            // bounds, never silently truncated (spec 17.2.12/13).
-            const bool accumulates = command.opcode == mesh_abi::kOpcodeLOCAL_REDUCE;
             auto view_of = [&](const DecodedOperand &operand,
-                               uint64_t &offset, uint64_t &span)
-                -> bool {
+                               uint64_t &offset, uint64_t &span) -> bool {
                 const DecodedAllocation *allocation = nullptr;
                 for (const auto &candidate : program->allocations)
                     if (candidate.allocation_id == operand.allocation_id)
@@ -1128,18 +1613,25 @@ void MeshDummyCore::completeCommand(uint32_t command_id, uint32_t signal_event,
                         span = shard.span_bytes;
                         return shard.allocation_offset <=
                                    allocation->size_bytes &&
-                               span <=
-                                   allocation->size_bytes -
-                                       shard.allocation_offset;
+                               span <= allocation->size_bytes -
+                                           shard.allocation_offset;
                     }
                 }
                 offset = allocation->offset_bytes;
                 span = allocation->size_bytes;
                 return true;
             };
+            ComputeCommitRequest request;
+            request.command = commandKey(command.command_id);
+            request.opcode = command.opcode;
+            if (attr != nullptr) {
+                request.attributes = attr->payload.data();
+                request.attribute_bytes = attr->payload.size();
+            }
+            const bool accumulates =
+                command.opcode == mesh_abi::kOpcodeLOCAL_REDUCE;
             const uint16_t input_count =
                 command.operand_count - (accumulates ? 0 : 1);
-            uint8_t chunk[512];
             for (uint16_t operand_i = 0; operand_i < input_count; operand_i++) {
                 const DecodedOperand &input =
                     program->operands[command.operand_begin + operand_i];
@@ -1147,83 +1639,52 @@ void MeshDummyCore::completeCommand(uint32_t command_id, uint32_t signal_event,
                 fatal_if(!view_of(input, offset, span),
                          "compute digest view unresolved (command %u operand %u)",
                          command.command_id, operand_i);
-                for (uint64_t done = 0; done < span; done += sizeof(chunk)) {
-                    const uint64_t take =
-                        span - done < sizeof(chunk) ? span - done
-                                                    : sizeof(chunk);
-                    fatal_if(!functionalSramRead(offset + done, take, chunk),
-                             "compute digest read escapes SRAM view "
-                             "(command %u)", command.command_id);
-                    for (uint64_t b = 0; b < take; b++)
-                        mix = (mix ^ chunk[b]) * 0x100000001B3ull;
-                }
+                request.inputs.push_back(ComputeSpan{offset, span});
             }
-            ComputeDigest digest;
-            digest.command_id = command.command_id;
-            uint64_t result_offset = 0, result_span = 0;
             if (command.operand_count > 0) {
-                const DecodedOperand &dst =
-                    program->operands[command.operand_begin + command.operand_count - 1];
-                digest.allocation_id = dst.allocation_id;
-                fatal_if(!view_of(dst, result_offset, result_span),
+                const DecodedOperand &dst = program->operands[
+                    command.operand_begin + command.operand_count - 1];
+                uint64_t offset = 0, span = 0;
+                fatal_if(!view_of(dst, offset, span),
                          "compute result view unresolved (command %u)",
                          command.command_id);
-                digest.offset = result_offset;
+                request.results.push_back(ComputeSpan{offset, span});
+                request.result_allocation_id = dst.allocation_id;
+                request.valid_allocations.push_back(dst.allocation_id);
             }
-            for (int i = 0; i < 4; i++) {
-                mix ^= mix >> 30;
-                mix *= 0xBF58476D1CE4E5B9ull;
-                mix ^= mix >> 27;
-                mix *= 0x94D049BB133111EBull;
-                mix ^= mix >> 31;
-                digest.digest_words[i] = uint32_t(mix >> 32) | uint32_t(mix & 0xFFFFFFFF);
-            }
-            // FUNCTIONAL_BYTES result: a deterministic byte stream derived
-            // from the semantic digest covers exactly the result view span.
-            uint64_t stream = mix;
-            for (uint64_t done = 0; done < result_span; done += sizeof(chunk)) {
-                const uint64_t take =
-                    result_span - done < sizeof(chunk) ? result_span - done
-                                                       : sizeof(chunk);
-                for (uint64_t b = 0; b < take; b++) {
-                    stream = (stream ^ uint64_t(done + b)) * 0x100000001B3ull;
-                    chunk[b] = uint8_t(stream >> 56);
-                }
-                fatal_if(!functionalSramWrite(result_offset + done, take, chunk),
-                         "compute result write escapes SRAM view (command %u)",
-                         command.command_id);
-            }
-            computeDigests.push_back(digest);
+            ComputeCommitter(&sram, &computeDigests).commit(request);
         }
         if (command.opcode == mesh_abi::kOpcodeRECV_WAIT)
             markOperandValid(command);
         break;
     }
     commandsCompleted++;
-    completed_command_ids.push_back(command_id);
-    instance_completed_ids.push_back(command_id);
-    command_done_ticks[command_id] = done_tick;
-    if (signal_event) {
+    completed_command_ids.push_back(command_key);
+    instance_completed_ids.push_back(command_key);
+    command_done_ticks[command_key] = done_tick;
+    if (signal_event.ordinal != 0) {
         uint32_t generation = 0;
         for (const auto &command : program->commands)
-            if (command.command_id == command_id) {
+            if (command.command_id == command_key.ordinal) {
                 auto cursor = cursors.find(command.stream_id);
                 if (cursor != cursors.end())
                     generation = cursor->second.replay.generation;
                 break;
             }
-        publishEvent(signal_event, command_id, generation);
+        publishEvent(signal_event, command_key,
+                     RepeatGeneration(generation));
     }
     live_commands--;
-    auto stream_it = std::find_if(program->commands.begin(), program->commands.end(),
-                                  [&](const DecodedCommand &c) {
-                                      return c.command_id == command_id;
-                                  });
+    auto stream_it = std::find_if(
+        program->commands.begin(), program->commands.end(),
+        [&](const DecodedCommand &c) {
+            return c.command_id == command_key.ordinal;
+        });
     if (stream_it != program->commands.end()) {
         uint16_t stream_id = stream_it->stream_id;
         if (live_per_stream.count(stream_id))
             live_per_stream[stream_id]--;
-        auto fence_it = fence_waiters.find(command_id);
+        auto fence_it = fence_waiters.find(command_key);
         if (fence_it != fence_waiters.end())
             fence_waiters.erase(fence_it); // fences never arrive here (dma-driven)
     }
@@ -1237,7 +1698,7 @@ void MeshDummyCore::completeCommand(uint32_t command_id, uint32_t signal_event,
                 break;
             }
         if (all_retired) {
-            uint32_t fence_command = it->first;
+            const RuntimeObjectKey fence_command = it->first;
             it = fence_waiters.erase(it);
             commandsCompleted++;
             completed_command_ids.push_back(fence_command);
@@ -1245,11 +1706,12 @@ void MeshDummyCore::completeCommand(uint32_t command_id, uint32_t signal_event,
             command_done_ticks[fence_command] = done_tick;
             live_commands--;
             for (const auto &command : program->commands)
-                if (command.command_id == fence_command) {
+                if (command.command_id == fence_command.ordinal) {
                     live_per_stream[command.stream_id]--;
                     if (command.signal_event)
-                        publishEvent(command.signal_event,
-                                     command.command_id, 0);
+                        publishEvent(eventKey(command.signal_event),
+                                     commandKey(command.command_id),
+                                     RepeatGeneration());
                     break;
                 }
         } else {
@@ -1260,15 +1722,16 @@ void MeshDummyCore::completeCommand(uint32_t command_id, uint32_t signal_event,
     finishIfHalted();
 }
 
-void MeshDummyCore::publishEvent(uint32_t event_id, uint32_t participant,
-                                  uint32_t generation)
+void MeshDummyCore::publishEvent(RuntimeObjectKey event,
+                                 RuntimeObjectKey participant,
+                                 RepeatGeneration generation)
 {
-    for (const auto &event : program->events) {
-        if (event.event_id != event_id)
+    for (const auto &program_event : program->events) {
+        if (program_event.event_id != event.ordinal)
             continue;
-        if (event.kind == mesh_abi::kEventKindBARRIER) {
-            if (!scoreboard->arrive(event_id, generation, participant,
-                                    event.expected_arrivals))
+        if (program_event.kind == mesh_abi::kEventKindBARRIER) {
+            if (!scoreboard->arrive(event, generation, participant,
+                                    program_event.expected_arrivals))
                 return;
         }
         break;
@@ -1276,46 +1739,51 @@ void MeshDummyCore::publishEvent(uint32_t event_id, uint32_t participant,
     // Signals become visible to consumers only after the configured event
     // visibility delay (spec 5.8: earliest next core edge after the
     // visibility window).
-    auto pending = pending_visibility.find(event_id);
+    auto pending = pending_visibility.find(event);
     if (pending != pending_visibility.end()) {
         if (pending->second->scheduled())
             deschedule(pending->second);
         pending_visibility.erase(pending);
     }
-    auto *event = new VisibilityEvent(this, event_id);
-    pending_visibility[event_id] = event;
-    schedule(event, clockEdge(event_visibility) + 1);
+    auto *visibility = new VisibilityEvent(this, event);
+    pending_visibility[event] = visibility;
+    schedule(visibility, clockEdge(event_visibility) + 1);
 }
 
-void MeshDummyCore::onEventVisible(uint32_t event_id)
+void MeshDummyCore::onEventVisible(RuntimeObjectKey event)
 {
-    pending_visibility.erase(event_id);
-    scoreboard->set_visible(event_id);
+    pending_visibility.erase(event);
+    scoreboard->set_visible(event);
     eventsPublished++;
     scheduleTick();
 }
 
 void MeshDummyCore::finishIfHalted()
 {
-    if (instance_active && instance_error && live_commands == 0 &&
+    if (instanceErrored() && !halted() && live_commands == 0 &&
         recv_waiters.empty() && fence_waiters.empty() &&
         pending_visibility.empty()) {
-        // INSTANCE_OWNED_WORK_DRAINED -> INSTANCE_ERROR_DRAINED.
-        instance_active = false;
-        error_drained = true;
-        work_drained_tick = curTick();
-        DPRINTF(AiMesh, "core %u error-drained at %llu\n", core_id_value,
-                (unsigned long long)work_drained_tick);
-        if (dispatcher)
-            dispatcher->notifyCoreHalted(core_id_value);
+        // The instance reaches INSTANCE_OWNED_WORK_DRAINED first; the tokens
+        // it owns are released exactly once at the following cache edge, and
+        // only a zero instance-owned token count may latch ERROR_DRAINED.
+        if (!owned_work_drain_pending) {
+            owned_work_drain_pending = true;
+            instance_state =
+                mesh_abi::MeshCoreInstanceState::INSTANCE_OWNED_WORK_DRAINED;
+            work_drained_tick = curTick();
+            DPRINTF(AiMesh, "core %u error work drained at %llu\n",
+                    core_id_value, (unsigned long long)work_drained_tick);
+            scheduleTick();
+        }
         return;
     }
     // HALT waits for the publication drain: a scheduled-but-invisible
     // signal keeps the instance alive (spec: HALT waits for event
     // publication drain).
-    if (core_halted && live_commands == 0 && instance_active &&
-        pending_visibility.empty()) {
-        instance_active = false;
+    if (instance_state == mesh_abi::MeshCoreInstanceState::REQUEST_DRAINING &&
+        live_commands == 0 && pending_visibility.empty() &&
+        !overlayPending()) {
+        instance_state = mesh_abi::MeshCoreInstanceState::INSTANCE_DONE;
         DPRINTF(AiMesh, "core %u halted with %llu commands completed\n", core_id_value,
                 (unsigned long long)commandsCompleted.value());
         if (dispatcher)

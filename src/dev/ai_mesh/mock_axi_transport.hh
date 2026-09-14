@@ -9,6 +9,7 @@
 
 #include "base/statistics.hh"
 #include "dev/ai_mesh/dma_types.hh"
+#include "dev/ai_mesh/runtime_key.hh"
 #include "sim/clocked_object.hh"
 
 namespace gem5
@@ -51,18 +52,26 @@ class MockAxiTransport : public ClockedObject
     Tick transferLatency(uint64_t beats_total, uint32_t bursts) const;
 
     // Per-descriptor accounting (oracle reconciliation).
-    void accountRead(uint32_t descriptor_id, uint64_t bytes, uint32_t bursts);
-    void accountWrite(uint32_t descriptor_id, uint64_t bytes, uint32_t bursts);
-    void accountP2p(uint32_t descriptor_id, uint64_t bytes, uint32_t bursts);
-    void accountFill(uint32_t descriptor_id, uint64_t bytes);
-    void notePayload(uint32_t descriptor_id, const uint8_t *data, uint64_t size);
+    void accountRead(RuntimeObjectKey descriptor, uint64_t bytes,
+                     uint32_t bursts);
+    void accountWrite(RuntimeObjectKey descriptor, uint64_t bytes,
+                      uint32_t bursts);
+    void accountP2p(RuntimeObjectKey descriptor, uint64_t bytes,
+                    uint32_t bursts);
+    void accountFill(RuntimeObjectKey descriptor, uint64_t bytes);
+    void accountKind(RuntimeObjectKey descriptor, uint16_t kind);
+    void notePayload(RuntimeObjectKey descriptor, const uint8_t *data,
+                     uint64_t size);
 
     // Digest state lifecycle: begin at submit, rows accumulate, finish
     // formats and retires the state (spec: descriptor rolling state).
-    void beginPayloadDigest(uint32_t descriptor_id);
-    void finishPayloadDigest(uint32_t descriptor_id);
+    void beginPayloadDigest(RuntimeObjectKey descriptor);
+    void finishPayloadDigest(RuntimeObjectKey descriptor);
 
-    const std::map<uint32_t, ActualTraffic> &actualTraffic() const { return actual; }
+    const std::map<RuntimeObjectKey, ActualTraffic> &actualTraffic() const
+    {
+        return actual;
+    }
 
     uint32_t dataBusBytes() const { return data_bus_bytes; }
     uint64_t burstBaseLatencyCycles() const
@@ -86,8 +95,8 @@ class MockAxiTransport : public ClockedObject
 
     std::map<uint16_t, MeshDummyCore *> cores;
     std::map<uint64_t, std::vector<uint8_t>> hbm_pages;
-    std::map<uint32_t, ActualTraffic> actual;
-    std::map<uint32_t, std::pair<uint64_t, uint64_t>> digest_state;
+    std::map<RuntimeObjectKey, ActualTraffic> actual;
+    std::map<RuntimeObjectKey, std::pair<uint64_t, uint64_t>> digest_state;
 
     std::vector<uint8_t> &page(uint64_t addr);
 };

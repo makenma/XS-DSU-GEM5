@@ -183,8 +183,12 @@ bool decodeMeshBinaryInto(const MeshBytes &image, DecodedProgram &out,
         return fail("E_ABI_SECTION_RANGE", "file_bytes mismatch", error);
     if (rdU32(base + 36) != 0)
         return fail("E_ABI_RESERVED", "header flags must be zero", error);
-    if (rdU64(base + 104) != 0)
+    uint64_t required_features = rdU64(base + 104);
+    if ((required_features & ~kKnownFeatureMask) != 0)
         return fail("E_ABI_VERSION", "unknown required feature bits", error);
+    if (minor < kFeatureDynamicMoeV1MinWriterMinor &&
+        (required_features & kFeatureDynamicMoeV1) != 0)
+        return fail("E_ABI_VERSION", "feature bit below writer minor", error);
     for (int i = 112; i < 128; i++)
         if (base[i] != 0)
             return fail("E_ABI_RESERVED", "header reserved must be zero", error);
@@ -203,6 +207,8 @@ bool decodeMeshBinaryInto(const MeshBytes &image, DecodedProgram &out,
     }
     out.abi_major = rdU16(base + 8);
     out.abi_minor = minor;
+    out.required_features = required_features;
+    out.has_moe_v1 = (required_features & kFeatureDynamicMoeV1) != 0;
 
     uint64_t dir_offset = rdU64(base + 24);
     uint32_t section_count = rdU32(base + 32);
@@ -211,8 +217,8 @@ bool decodeMeshBinaryInto(const MeshBytes &image, DecodedProgram &out,
     // Bound the directory itself before any entry is dereferenced.
     if (uint64_t(section_count) * kSectionDirBytes > image.size() - kHeaderBytes)
         return fail("E_ABI_SECTION_RANGE", "section directory exceeds file", error);
-    constexpr uint32_t kSectionCountMax = 15 + 3; // required + optional set
-    if (section_count < 15 || section_count > kSectionCountMax)
+    if (section_count < kRequiredSectionCount ||
+        section_count > kKnownSectionTypeCount)
         return fail("E_ABI_SECTION_RANGE", "unexpected section count", error);
 
     SectionEntry strings_entry;
@@ -227,13 +233,9 @@ bool decodeMeshBinaryInto(const MeshBytes &image, DecodedProgram &out,
         if (rdU16(e + 2) != 0 || rdU32(e + 36) != 0)
             return fail("E_ABI_RESERVED", "section dir flags/reserved", error);
         {
-            static const uint16_t known[] = {
-                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-                101, 102, 103,
-            };
             bool type_known = false;
-            for (uint16_t value : known)
-                if (entry.type == value)
+            for (size_t i = 0; i < kKnownSectionTypeCount; i++)
+                if (entry.type == kKnownSectionTypes[i])
                     type_known = true;
             if (!type_known)
                 return fail("E_ABI_ENUM", "unknown section type", error);
@@ -408,6 +410,10 @@ bool decodeMeshBinaryInto(const MeshBytes &image, DecodedProgram &out,
         {kSectionTypeRELOCATIONS, kRelocationsBytes},
         {kSectionTypeSOURCE_MAP, kSourceMapBytes},
         {kSectionTypeCONTENT_DIGESTS, kContentDigestsBytes},
+        {kSectionTypeMOE_LAYER_SPECS, kMoeLayerSpecsBytes},
+        {kSectionTypeMOE_EXPERT_SPECS, kMoeExpertSpecsBytes},
+        {kSectionTypeMOE_DYNAMIC_REGIONS, kMoeDynamicRegionsBytes},
+        {kSectionTypeMOE_KERNEL_SPECS, kMoeKernelSpecsBytes},
     };
     for (const auto &fixed : fixed_sections) {
         SectionEntry entry;
@@ -417,11 +423,24 @@ bool decodeMeshBinaryInto(const MeshBytes &image, DecodedProgram &out,
             return fail("E_ABI_SECTION_RANGE",
                         "fixed-record section has wrong record size", error);
     }
-    for (uint16_t required : {kSectionTypePROFILES, kSectionTypeTENSORS, kSectionTypeSHARDS,
-                              kSectionTypeRELOCATIONS}) {
+    for (size_t i = 0; i < kRequiredSectionCount; i++) {
         SectionEntry entry;
-        if (!find_section(required, entry))
+        if (!find_section(kRequiredSections[i], entry))
             return fail("E_ABI_SECTION_RANGE", "missing required section", error);
+    }
+    for (size_t i = 0; i < kKnownSectionTypeCount; i++) {
+        const uint16_t type = kKnownSectionTypes[i];
+        const uint64_t feature = sectionRequiredFeature(type);
+        if (feature == 0)
+            continue;
+        SectionEntry entry;
+        const bool present = find_section(type, entry);
+        if (present && (required_features & feature) == 0)
+            return fail("E_ABI_FEATURE",
+                        "section present without its feature bit", error);
+        if (!present && (required_features & feature) != 0)
+            return fail("E_ABI_SECTION_RANGE",
+                        "missing feature-required section", error);
     }
 
     for (const auto &entry : entries) {
@@ -551,6 +570,33 @@ bool decodeMeshBinaryInto(const MeshBytes &image, DecodedProgram &out,
             case kSectionTypeCONTENT_DIGESTS: {
                 out.content_digests.emplace_back();
                 ok = mesh_abi::decodeContentDigest(r, out.content_digests.back(),
+                                                   abi_error);
+                break;
+            }
+            case kSectionTypeMOE_LAYER_SPECS: {
+                out.moe_layer_specs.emplace_back();
+                ok = mesh_abi::decodeMoeLayerSpec(r,
+                                                  out.moe_layer_specs.back(),
+                                                  abi_error);
+                break;
+            }
+            case kSectionTypeMOE_EXPERT_SPECS: {
+                out.moe_expert_specs.emplace_back();
+                ok = mesh_abi::decodeMoeExpertSpec(r,
+                                                   out.moe_expert_specs.back(),
+                                                   abi_error);
+                break;
+            }
+            case kSectionTypeMOE_DYNAMIC_REGIONS: {
+                out.moe_dynamic_regions.emplace_back();
+                ok = mesh_abi::decodeMoeDynamicRegion(
+                    r, out.moe_dynamic_regions.back(), abi_error);
+                break;
+            }
+            case kSectionTypeMOE_KERNEL_SPECS: {
+                out.moe_kernel_specs.emplace_back();
+                ok = mesh_abi::decodeMoeKernelSpec(r,
+                                                   out.moe_kernel_specs.back(),
                                                    abi_error);
                 break;
             }

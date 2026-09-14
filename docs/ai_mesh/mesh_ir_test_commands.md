@@ -367,6 +367,307 @@ Runtime evidence comes from `MeshDispatcher::writeConservationJson` and
 `util/mesh_ir/tests/unit/test_read_outstanding_config.py`, and
 `util/mesh_ir/tests/integration/test_axi_outstanding_runtime.py`.
 
+## Gate 5 Dynamic MoE V1
+
+ABI surface（feature bit、四个 conditional-required section、record 布局）由
+[mesh_ir_abi.yaml](../../util/mesh_ir/mesh_ir/abi/mesh_ir_abi.yaml) 单点定义，
+见上文 "ABI schema SSOT"；跨语言 golden 与 fail-closed 用例：
+
+```bash
+python3 util/mesh_ir/mesh_ir/abi/generate_abi.py --check
+python3 -m pytest util/mesh_ir/tests/unit/test_abi.py \
+    util/mesh_ir/tests/unit/test_gate5_moe_abi.py -q
+scons build/AXI_MESH/dev/ai_mesh/mesh_binary.test.opt -j8
+./build/AXI_MESH/dev/ai_mesh/mesh_binary.test.opt --gtest_color=no
+python3 tests/gem5/ai_mesh/fixtures/gate5/build_gate5_moe_images.py
+cd util/mesh_ir && python3 -m mesh_ir.cli emit-gate5-weight-golden \
+    --arch ../../configs/example/ai_mesh/arch/mesh_1x2_moe.yaml \
+    --program ../../tests/gem5/ai_mesh/fixtures/gate5/moe_min.mshb \
+    --image ../../tests/gem5/ai_mesh/fixtures/model_weight_image_v1.json \
+    --registry ../../tests/gem5/ai_mesh/fixtures/program_weight_bindings_v1.json \
+    --out ../../src/dev/ai_mesh/generated/gate5_weight_golden.inc
+python3 -m mesh_ir.cli emit-gate5-rng-golden \
+    --golden ../../tests/gem5/ai_mesh/golden/rng_golden.json \
+    --out ../../src/dev/ai_mesh/generated/gate5_rng_golden.inc
+python3 -m mesh_ir.cli emit-gate5-overlay-golden \
+    --fixtures ../../tests/gem5/ai_mesh/fixtures/gate5 \
+    --json-out ../../tests/gem5/ai_mesh/fixtures/gate5/moe_overlay_objects.json \
+    --out ../../src/dev/ai_mesh/generated/gate5_overlay_golden.inc
+python3 -m pytest util/mesh_ir/tests/unit/test_gate5_weight_registry.py \
+    util/mesh_ir/tests/unit/test_gate5_arch_partitions.py \
+    util/mesh_ir/tests/unit/test_gate5_moe_capacity.py \
+    util/mesh_ir/tests/unit/test_gate5_moe_identity.py \
+    util/mesh_ir/tests/unit/test_gate5_moe_providers.py \
+    util/mesh_ir/tests/unit/test_gate5_moe_overlay.py \
+    util/mesh_ir/tests/unit/test_gate5_moe_materializer.py \
+    util/mesh_ir/tests/unit/test_gate5_moe_overlay_runtime.py -q
+```
+
+跨语言 golden 为 `tests/gem5/ai_mesh/fixtures/gate5/moe_min.mshb` 与其
+`moe_min_expected.json`；多 layer/不同 E/K 的 fixture 为 `moe_multi.mshb`
+（layer1 E=2/K=2、layer2 E=4/K=2，两个不同 insertion site）；route buffer wire record（64 B `MOE_RUNTIME_ROUTE_ENTRY`）与确定性
+pad/drop fill 派生由 [moe_fill.py](../../util/mesh_ir/mesh_ir/moe_fill.py)
+唯一实现；数据面（row move/chunk 合并/expert 行/fan-in）由
+[moe_materializer.py](../../util/mesh_ir/mesh_ir/moe_materializer.py) 展开，
+运行期接线：`MeshProgramLoader` 通过 `overlay_image` 参数装载镜像并按 core 调用
+`MeshDummyCore::installOverlay()`；core 在 static 解码到达 `insert_after` 时发布
+overlay entry event，并在 `tick()` 中推进 executor；executor 发布 group exit 后
+`MeshDispatcher::notifyOverlayExit()` 释放 insertion gate。Gate 1–4 场景不提供
+overlay image，因此该路径完全惰性。
+
+运行期 overlay 镜像（固定宽度记录，免 JSON 解析）由
+[MoeOverlayImage](../../src/dev/ai_mesh/mesh_moe_overlay.hh) 编解码：每条记录为
+canonical 122 B + 描述符 src/dst view（16 B）+ 三份引用表（wait、signal、
+对象自身 view，各 `kRefsPerObject` 槽；view 引用让运行期按视图而非 opcode
+估计来服务 SRAM），fixture 产出
+`tests/gem5/ai_mesh/fixtures/gate5/moe_overlay_objects.bin`，C++ GTest 解码后必须
+得到与 Python golden 相同的 canonical graph、view 引用与 digest（`encode()`
+再编码必须逐字节相同）。
+
+overlay 执行器（typed wait/signal、按视图的 SRAM 端口/字节服务、跨核事件总线、
+region/group drain）由
+[mesh_moe_runtime.cc](../../src/dev/ai_mesh/mesh_moe_runtime.cc) 实现：DMA 命令的
+端点由描述符的 view 解析（端口服务仍由共享引擎拥有，descriptor queue 满时命令
+保持未 armed 并在后续 tick 重试提交，不会提前完成）；core 在每个 edge 传入绝对
+tick（`publishEntry(event, core_tick)`/`tick(core_tick)`，执行器不再自累加时钟），
+compute 命令按 `READS → ENGINE → WRITES → RETIRE` 推进，engine 窗口从 operand
+read 服务完成时刻起算、结果只在 output write 服务完成后提交（
+[mesh_compute_timing.hh](../../src/dev/ai_mesh/mesh_compute_timing.hh) 的公式由
+静态与 overlay 两条路径共用；[mesh_compute_commit.hh](../../src/dev/ai_mesh/mesh_compute_commit.hh)
+是两侧唯一的 digest/结果字节/validity 提交入口）。operand 方向与计费跨度按
+command 角色解析（combine 每个 contributor 只计一行），SRAM 服务字节按 region
+与 view kind 记账并写入 `moe.regions[].sram_read_bytes/sram_write_bytes`、
+`sram_read_by_kind/sram_write_by_kind`，另暴露
+`sram_service_cycles`/`sram_bank_conflicts`/`compute_cycles`/`compute_commits`/
+`uncommitted_views`；fixture 冻结的 oracle lane 与 `compute_geometry` 由
+`moe_oracle_recompute` 逐项核对（见下）。已发布但未 drain 的 overlay 属于
+未完成工作：[mesh_dummy_core.hh](../../src/dev/ai_mesh/mesh_dummy_core.hh) 的
+`overlayPending()` 阻止 `REQUEST_DRAINING → INSTANCE_DONE`、维持 core tick 并让
+`quiescent()` 为假，watchdog 的进度计数改为 `workProgress()`（static 与 overlay
+完成数之和）。GTest 直接消费真实 golden overlay 直至 drain，并覆盖背压重试、
+view 服务与 image 往返。
+
+insertion gate（`insert_after` 之后停住、`OVERLAY_EXIT` 之后才在 `resume_before`
+恢复解码）由 [mesh_moe_gate.cc](../../src/dev/ai_mesh/mesh_moe_gate.cc) 实现，
+`MeshDispatcher::armOverlayGates()` 在 dispatch 时按 region record 逐核 arm，
+overlay 组退出后以 `overlayGroupExited(layer_id)` 释放。
+
+overlay 对象图与 DAG 由
+[moe_overlay_runtime.py](../../util/mesh_ir/mesh_ir/moe_overlay_runtime.py)
+两阶段安装（handle → ordinal）；C++ 侧
+[mesh_moe_overlay.cc](../../src/dev/ai_mesh/mesh_moe_overlay.cc) 从同一 golden
+重建对象表、重跑 canonical ordinal 与结构校验，并对逐字段 little-endian 编码
+求 SHA-256，必须与 Python digest 相同。
+overlay 对象身份/ordinal/scratch/结构校验的唯一实现是
+[moe_overlay.py](../../util/mesh_ir/mesh_ir/moe_overlay.py)（枚举来自同一 ABI
+registry）；provider
+artifact 的 exact schema 为 `schemas/ai_mesh/moe_{route_replay,histogram_replay,
+correlated_profile}.schema.json`，四个 provider 与 freeze/capacity/digest 的
+唯一实现是 [moe_provider.py](../../util/mesh_ir/mesh_ir/moe_provider.py)；两侧语义校验实现分别在
+[moe_verifier.py](../../util/mesh_ir/mesh_ir/abi/moe_verifier.py) 与
+[mesh_moe_verifier.cc](../../src/dev/ai_mesh/mesh_moe_verifier.cc)，规则同源。
+
+`SemanticTokenUidV1` 与 keyed RNG（80 B key、SHA-256 seed、单次 SplitMix64、
+Q32 threshold sampler）分别由 [moe_uid.py](../../util/mesh_ir/mesh_ir/moe_uid.py)
+与 [moe_rng.py](../../util/mesh_ir/mesh_ir/moe_rng.py) 唯一实现，跨语言 golden 为
+`tests/gem5/ai_mesh/golden/rng_golden.json` 与 C++ 侧
+[mesh_moe_rng.cc](../../src/dev/ai_mesh/mesh_moe_rng.cc)；
+`src/dev/ai_mesh/generated/gate5_rng_golden.inc` 由同一 JSON 生成，禁止两侧各写
+一套常量。
+
+Gate 5 使用带 SRAM partition 的 architecture
+`configs/example/ai_mesh/arch/mesh_1x2_moe.yaml`（四分区互斥、`WEIGHT_CACHE`
+等大 slot、`metadata_entries == slot 数`），legacy arch 不声明 partition 时其
+digest 逐字节不变；派生容量（`C_e`、view record/ref bound、cache slot 与
+failure table 需求）由 [moe_capacity.py](../../util/mesh_ir/mesh_ir/moe_capacity.py)
+唯一计算，capacity−1 在构造阶段即以 `E_CAPACITY_PLAN` 拒绝且无副作用。
+
+权重域的唯一所有者是 [weight_registry.py](../../util/mesh_ir/mesh_ir/weight_registry.py)：
+`tests/gem5/ai_mesh/fixtures/model_weight_image_v1.json`（immutable 内容身份）
+与 `program_weight_bindings_v1.json`（program 符号 → image 投影）按其 schema
+校验，`program_weight_registry_image_cycle_golden.json` 固定无环投影顺序与各
+阶段 digest；84 B `WeightFillTagTupleV1` manifest 由 Python 与
+[mesh_weight_tags.cc](../../src/dev/ai_mesh/mesh_weight_tags.cc) 独立生成并逐字节对照
+（`src/dev/ai_mesh/generated/gate5_weight_golden.inc`）。`weight_tag_index`
+索引空间是 program-wide 的 region 顺序（`weight_region_order`）：每个 core
+的 `weightTagSitesOf()` 只滤出本核 expert，因此同一 region 在不同核共享同一
+tag index 而各自持有 slot/pin，`cacheable_tags` 与 `cache_fills` 均使用该索引。
+
+E2E-C 的四个 4×4 子例共用 GEM5 case `moe_quad`（hotspot 用 `moe_quad_hotspot`
+以追加 `moe_hotspot_load`）：`balanced_4x4`（uniform）、`replay_4x4`
+（checked-in `moe_quad_route_replay.json`，热点 expert 0..3）、`hotspot_4x4`
+（checked-in `moe_quad_hotspot_profile.json`，hotset {0,1}）与
+`determinism_three_repeat`（[test_gate5_e2e_determinism.py](../../util/mesh_ir/tests/integration/test_gate5_e2e_determinism.py)
+连续跑 3 次 gem5 并逐字段比较 canonical result，仅剔除 host 字段）。
+`moe_hotspot_load` 以 hotspot 与 balanced 两个投影对比：峰值 region 的 P2P
+必须超过 balanced 均值的 2 倍，且每个热点 region 的实际 P2P 字节与其投影逐项
+相等。三者共用 4×4 arch 与真实
+4×4 Garnet（16 router，`axi_shared_router_endpoints`）与 arch-aware scenario：
+`base_scenario(options, core_count)` 为每 core 生成一个 initiator 与一个
+SRAM aperture target（node id 从 `NODE_SRAM_FIRST` 稠密分配，HBM/ERR 紧随），
+router 数取 `max(6, rows*cols)`，target 的 context/beat 容量随 core 数放大以
+容纳全部 source 配额；2-core 时逐字段等价于既有 endpoint map（Gate 1 归档
+494/494 逐字节一致）。overlay 镜像为 `moe_quad_overlay_objects.bin`
+（16 region、841 objects、DIGEST_ONLY）。
+
+4×4 E2E-C 的静态 program 由
+[moe_programs.py](../../util/mesh_ir/mesh_ir/moe_programs.py) 的
+`moe_quad_program()` 生成：16 个 core 各持一个 region 与 expert（`top_k=2`），
+每对 core 互为 reducer/sender（`quad_reducer/quad_sender`），唯一
+`REQUEST_BEGIN/REQUEST_END` 在 core 0，16 个 local HALT；core 0 的
+`EVENT_SIGNAL` join 等待全部 16 个 store/push completion event，使 lifecycle
+END 支配每个 region 的 `resume_before`；architecture 为
+[mesh_4x4_moe.yaml](../../configs/example/ai_mesh/arch/mesh_4x4_moe.yaml)
+（4×4 die、16 core、四 SRAM 分区）。runner 的 AXI mesh router 数仍由 scenario
+endpoint map（2 initiator + SRAM/HBM/error target）决定，并显式校验 arch 的
+core 数不超过 router 数；GATE5 case 允许 `--arch` 改变 layout（program+镜像+arch
+成组给出），其余 case 仍只允许 tuning 字段差异。
+
+drain 状态（主合同 §10.6、coding spec 退出条件 7）由 `moe_drain_state` 检查：
+所有 core 的 `live_commands==0`、`commands_issued==completed+errored+cancelled`、
+`dma_idle==1`、`instance_error==0`，所有 region `drained` 且 `issued==completed`，
+bridge/aperture 无 pending AXI 与 error-drained 字节，cache 的
+`live_tokens/live_obligations/pending_fills/pending_subscribers` 全为 0 且
+MSHR/eviction/obligation/subscriber 的 free 计数等于 slot 数；同时**持久状态
+单独核对**：无 tombstone 的 core 必须仍有 `valid_lines`（`valid_bytes>0`），
+即 drain 归零不能把合法 resident line 清掉。模型侧对应
+`test_gate5_cache_drain_state_keeps_the_persistent_line` 与
+`..._keeps_the_failure_tombstone`（后者验证 failure tombstone 在 slot 释放后
+仍保留且同 generation 不重试）。
+
+canonical 对账：`moe_canonical_projection` 直接以 materialized overlay 投影
+（`--overlay-image` 同目录的 `.json`）为期望，逐 descriptor 核对 dma kind、
+payload bytes 与 burst 数（`LOCAL_FILL` 无 AXI burst，`LOAD`/`P2P_PUSH` 按
+`axi_data_bytes × axi_max_burst_beats` 切分），并按 `owner_core` 核对每核执行的
+materialized command 数；`moe_dual_basic`（E2E-C）与 `moe_dual_timing`
+（MOE-3 的 timing/buffer 深度 A/B，`dma_read_outstanding=2`、
+`dma_write_outstanding=2`、`dma_descriptor_queue_depth=2`）都跑同一检查，
+因此两条 timing 不同的臂必须给出同一 canonical projection。
+
+fan-in 0（整 token 全 DROP）的运行期证据由 `moe_dual_drop`（MOE-12
+`dual_dropped_token_fill`）给出：fixture 把 dual layer 的 `capacity_factor_q16`
+降到 0.5，使 m1 占满两个 expert 容量、m2 的两条 route 全部 DROP，materializer
+因此产出 `DROPPED_TOKEN_FILL` 命令/描述符（目标为该 member 的 STATIC-backed
+`MEMBER_OUTPUT` 视图，core1 的 program allocation 7）。runner 的 `moe_drop_fill`
+检查对齐 fixture 与运行结果：投影里 fill 命令与描述符一一对应、目标视图是
+`MEMBER_OUTPUT` + `STATIC_ALLOCATION` 且字节等于 fill 的 `valid_bytes`，执行该
+fill 的 core 真正 drain（`issued==completed`）并服务了非零 SRAM 写字节；
+`moe_canonical_projection` 同时逐 descriptor 核对这条 `DMA_FILL` 的实际 payload
+与 burst，`moe_drain_state` 覆盖其收尾。
+
+weight residency 两种策略由 `--weight-policy` 选择，并由 overlay 镜像内容交叉
+校验（[mesh_program_loader.cc](../../src/dev/ai_mesh/mesh_program_loader.cc)
+装载镜像时按 WEIGHT view 的 backing kind 与 STREAMED_WEIGHT descriptor
+fail-closed）：`streamed` 由 batch-owned `DMA_LOAD` 写入 `RUNTIME_SCRATCH` 的
+`STREAMED_WEIGHT` allocation；`cached` 不产生任何 batch-owned weight load 或
+allocation，WEIGHT view 以 `WEIGHT_CACHE_SLOT` backing 指向 program-wide tag，
+真实流量由 cache fill 拥有并落在 `WEIGHT_CACHE` 分区，因此
+`moe.cache_fills[].address == partition_base + slot_id * slot_bytes` 且
+overlay domain 不再出现 weight LOAD。镜像 fixture 由
+[build_gate5_overlay.py](../../tests/gem5/ai_mesh/fixtures/gate5/build_gate5_overlay.py)
+为两种策略分别产出：`moe_dual_overlay_objects.bin`（streamed，E2E-C 使用，
+经 `emit-gate5-overlay-golden` 冻结为 `gate5_overlay_golden.inc`）与
+`moe_dual_overlay_cached.bin`（cached，MOE-19 使用，由 C++ GTest 解码并逐
+WEIGHT view 核对 runtime tag index 与 backing kind）。
+
+member slice 几何不手写：`moe_materializer.member_slice()` 由
+`Program.shard_of(tensor_role, owner_core)`（[model.py](../../util/mesh_ir/mesh_ir/model.py)，
+同一 (role, core) 多 shard 时 fail-closed）派生 INPUT/OUTPUT allocation 与行宽
+（`layer.token_bytes`/`output_token_bytes`），OUTPUT shard 容不下整行时留 0，
+由运行期 instance binding 解析。materialize 阶段另有两条 fail-closed 不变式：
+member 行宽必须等于 layer 行宽（[moe_materializer.py](../../util/mesh_ir/mesh_ir/moe_materializer.py)
+的 `member rows must match the layer token rows`，否则 pad 行偏移会与 real 行
+重叠），STATIC backing view 必须落在**同 owner core** 的 program allocation 内
+（[moe_overlay.py](../../util/mesh_ir/mesh_ir/moe_overlay.py) 的
+`view crosses the program allocation owner` / `view escapes its program
+allocation`）。全 DROP 的 token（`fan_in==0`）必须绑定 member output，否则
+`a dropped-token fill needs a bound member output`。
+
+reservation 走两阶段：[mesh_weight_cache.cc](../../src/dev/ai_mesh/mesh_weight_cache.cc)
+的 `prepare()` 只读 live 状态并返回影子计划、`commit()` 是唯一原子入口；
+[mesh_dispatcher.cc](../../src/dev/ai_mesh/mesh_dispatcher.cc)
+`resolveCacheReservations()` 覆盖全部 core/layer demand——全 COMMITTED 才逐核
+commit，任一 RESOURCE_WAIT 整批入有界稳定队列（request_id 冻结、容量=demand
+item 数）并在资源释放后重试，任一 FAILED 整批走 `abortBeforeStart` + 一次
+fanout。token 记录该 batch 引用该 weight view 的 consumer 数，
+`noteConsumerDrained()` 递减到 0 才释放 pin（HIT/ATTACH 同样持有）；instance
+fault 由统一 join 释放——`noteInstanceFault` 把 pending subscriber 转
+`TERMINAL_TOMBSTONED`，`noteFailureFanoutDone`/`noteOwnedWorkDrained` 作为 join
+输入，started fault 需 `fanout && fill terminal && owned drain`（两种先后顺序
+等价），prestart abort 只需 fanout + fill terminal；core 端先到
+`INSTANCE_OWNED_WORK_DRAINED`，在随后的 cache edge 释放且
+`liveTokensOfBatch()==0` 时才锁存 `INSTANCE_ERROR_DRAINED`。每次释放/异动计入
+`moe.cache_state[]` 的 `tokens_created/token_releases/tombstoned_subscribers/
+woken_subscribers/faulted_fill_terminals`，`moe_drain_state` 断言
+`token_releases == tokens_created`。
+
+资源/错误反例（主合同 §17.3-28）由
+[test_gate5_moe_failure_fanout.py](../../util/mesh_ir/tests/unit/test_gate5_moe_failure_fanout.py)
+与 [test_gate5_weight_cache.py](../../util/mesh_ir/tests/unit/test_gate5_weight_cache.py)
+覆盖：跨核 batch all-or-none（升序 probe 后一次 commit，失败零 partial token）、
+满 cache 同 batch HIT+miss 保护、exact alias 单 subscriber、A→B→A 新
+incarnation、member cancel 不改变 batch subscriber、instance fault 只 tombstone
+自身、started fault 的两种 join 顺序与 fanout gate、故障 batch 不被 WOKEN、
+最后 consumer drain、`prepare` 零可见副作用、fill error 单次 fanout + 单条
+tombstone、failure retire 原子释放、同 generation 不重试、cancel 与 error
+同 edge 时 error 胜、background fill 收尾 tombstone subscriber。生产路径证据为
+`moe_dual_cached_reuse`（`--weight-policy cached`、`instances=2`）：两个 instance
+各核 ledger 完全一致且 0 errored/cancelled，而 `moe.cache_fills` 只有每核一次
+`fill_incarnation=1`、WEIGHT_FILL domain 只搬 2×4096 B，即第二个 instance 命中
+resident line，检查为 `moe_cache_reuse`。
+
+独立 MoE oracle（主合同 §7.10、coding spec §9/§9.2）由
+[moe_oracle.py](../../util/mesh_ir/mesh_ir/moe_oracle.py) 实现：`moe_traffic_lanes()`
+从 frozen route plan/capacity/member slice/placement/weight binding 重算
+§7.10 的全部 lane（dispatch/combine 的 all/local/remote、padding slot 与 fill、
+expert in/out SRAM、全 DROP fill、gather/output SRAM、COPY_THROUGH/LOCAL_REDUCE
+计数与 reduce ops、weight read、route metadata fill），并按 `Packetization`
+（AXI data/burst/header/flit）与 `MeshTopology`（XY hop）展开 `per-peer`
+logical 与 `per-link` wire bytes；`descriptor_expectations()` 从 materialized
+投影推导逐 descriptor 的 dma kind/payload/burst，`verify_result()` 对实际
+result JSON 逐项对账（含 cache fill ledger 的 unique 身份、`fill_traffic_id`
+自哈希、key/扁平字段一致性与 `address == partition_base + slot*slot_bytes`）；
+`verify_overlay_document()` 独立校验投影（dense ordinal、引用可解析、event 单
+生产者、region terminal drain join、group exit 覆盖全部 region terminal、view
+validity/越界、以及从 region entry 出发的 DAG 可达性）。`tamper()` 覆盖 12 类
+真实产物篡改（route record / descriptor bytes / dma kind / typed owner / DAG
+edge / view validity / peer actual / terminal record / fill id / slot id /
+subscriber / latch-commit），逐一被上述校验拒绝。
+
+strict serial replay（主合同 §7.5、§17.3-4）由
+[moe_strict_replay.py](../../util/mesh_ir/mesh_ir/moe_strict_replay.py) 实现：
+`run_strict_replay()` 先在 tick 0 用 `prove_strict_capacity()` 证明该 batch 的
+最坏 cold union（line/MSHR/obligation 按 dedup 后 key 数、subscriber/token/pin
+按全部 layer occurrence 数），再按 `batch_ordinal` 串行 `reserve_batch_wide()`
+（`strict_batch_barrier()` 拒绝对仍有 live token/obligation 的 cache 开新
+batch），每个 `{batch,layer,base_key}` occurrence 各得 subscriber/token/pin 而
+物理 fill 只发一次；`decision_digest` 不含 tick，因此快/慢 fill 两臂必须给出
+同一 decision/fill 投影与同一 `materialization_digest`。cache 初态可用
+`cache_state_replay_document()` 序列化并由
+`apply_cache_state_replay()` 装回（只接受 INVALID/VALID、dense LRU rank、
+同 core/同 generation、无重复 VALID、VALID 与 tombstone 互斥）。
+materialization `weight_bindings`（`hit|attach|new_fill` + slot + fill ref）
+进入 [moe_overlay_runtime.py](../../util/mesh_ir/mesh_ir/moe_overlay_runtime.py)
+的 materialization projection/digest。
+
+实施顺序、接缝与每轮证据见
+[Gate 5 Coding Spec](../../src/doc/ai_mesh/DUMMY_AI_CORE_GATE5_CODING_SPEC.md)；
+已登记集合为 `mesh_ir.gate5_contract.GATE5_CASES` 加 `E2E-C`，占位 ID 补齐前
+按 ID 定向选择（每个 `--id` 一个 logical ID）：
+
+```bash
+python3 tests/gem5/ai_mesh/run_manifest_selector.py --gate 5 \
+    --id MOE-1 --id MOE-2 --id MOE-3 --id MOE-5 --id MOE-6 --id MOE-7 \
+    --id MOE-8 --id MOE-9 --id MOE-10 --id MOE-11 --id MOE-12 \
+    --id MOE-13 --id MOE-14 --id MOE-15 --id MOE-16 --id MOE-17 \
+    --id MOE-18 --id MOE-19 --id MOE-20 --id MOE-21 --id MOE-22 \
+    --id MOE-23 --id MOE-25 --id MOE-26 --id MOE-27 --id MOE-29 \
+    --id MOE-30 --id E2E-C \
+    --workdir "$(mktemp -d /tmp/ai-mesh-gate5.XXXXXX)"
+python3 configs/example/ai_mesh/gate5_acceptance.py
+python3 tests/gem5/ai_mesh/gate5/runtime_contract.py
+```
+
 ## Mandatory manifest selector (Dummy Core Gates)
 
 ```bash
@@ -389,7 +690,7 @@ a new or empty workdir and validates §17.9 typed execution, exact child
 environment, child report, RunManifest, invariant/traffic artifacts,
 post-write summary availability, JUnit bijection, and result-to-summary
 replay. Gate 1 selects 21 logical IDs and 45 subcases; Gate 2 selects 37
-logical IDs and 71 subcases.
+logical IDs and 72 subcases.
 
 ## AXI Garnet regression (must not regress)
 

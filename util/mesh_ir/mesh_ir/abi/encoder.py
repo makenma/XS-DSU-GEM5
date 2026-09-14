@@ -42,6 +42,37 @@ SECTION_ORDER = (
 )
 
 
+SECTION_NAME_BY_TYPE = {
+    value: name for name, value in vars(A.SECTION_TYPE).items()
+    if isinstance(value, int)
+}
+
+
+def section_order(program: Program) -> tuple:
+    if not program.required_features:
+        if any((program.content_digests, program.moe_layer_specs,
+                program.moe_expert_specs, program.moe_dynamic_regions,
+                program.moe_kernel_specs)):
+            raise MeshIrError("E_ABI_FEATURE",
+                              "feature sections need the feature bit")
+        return SECTION_ORDER
+    unknown = program.required_features & ~A.KNOWN_FEATURE_MASK
+    if unknown:
+        raise MeshIrError("E_ABI_FEATURE", "unknown required feature bits",
+                          features=hex(unknown))
+    minor = max(A.FEATURE_MIN_WRITER_MINOR[name]
+                for name, bit in A.FEATURE_BITS.items()
+                if program.required_features & bit)
+    if program.abi_minor < minor:
+        raise MeshIrError("E_ABI_VERSION", "feature needs a higher abi minor",
+                          minor=program.abi_minor)
+    feature_types = sorted(
+        A.conditional_required_sections(program.required_features))
+    feature_names = tuple(SECTION_NAME_BY_TYPE[value]
+                          for value in feature_types)
+    return SECTION_ORDER + feature_names
+
+
 def _align8(value: int) -> int:
     return (value + 7) & ~7
 
@@ -124,6 +155,11 @@ def encode_program(program: Program) -> bytes:
         "EVENTS": program.events,
         "RELOCATIONS": program.relocations,
         "EXPECTED_TRAFFIC": program.expected_traffic,
+        "CONTENT_DIGESTS": program.content_digests,
+        "MOE_LAYER_SPECS": program.moe_layer_specs,
+        "MOE_EXPERT_SPECS": program.moe_expert_specs,
+        "MOE_DYNAMIC_REGIONS": program.moe_dynamic_regions,
+        "MOE_KERNEL_SPECS": program.moe_kernel_specs,
     }
     for name, records in tables.items():
         sections[name] = b"".join(_pack_record(rec) for rec in records)
@@ -132,11 +168,12 @@ def encode_program(program: Program) -> bytes:
     )
     sections["OP_ATTRS"] = b"".join(_pack_attr(attr) for attr in program.op_attrs)
 
+    order = section_order(program)
     section_dir_offset = A.HEADER_BYTES
-    section_dir_size = len(SECTION_ORDER) * A.SECTION_DIR_BYTES
+    section_dir_size = len(order) * A.SECTION_DIR_BYTES
     cursor = _align8(section_dir_offset + section_dir_size)
     entries = []
-    for name in SECTION_ORDER:
+    for name in order:
         payload = sections[name]
         while cursor % 8:
             cursor += 1
@@ -154,7 +191,7 @@ def encode_program(program: Program) -> bytes:
     file_bytes = cursor
 
     directory_bytes = bytearray()
-    for entry, name in zip(entries, SECTION_ORDER):
+    for entry, name in zip(entries, order):
         record_bytes = _record_bytes_for(name)
         directory_bytes += A.SECTION_DIR_FORMAT.pack(
             entry["type"],
@@ -169,7 +206,7 @@ def encode_program(program: Program) -> bytes:
 
     body = bytearray()
     body += directory_bytes
-    for entry, name in zip(entries, SECTION_ORDER):
+    for entry, name in zip(entries, order):
         pad = entry["offset"] - (A.HEADER_BYTES + len(body))
         body += b"\x00" * pad
         body += sections[name]
@@ -183,11 +220,11 @@ def encode_program(program: Program) -> bytes:
         A.HEADER_BYTES,
         file_bytes,
         section_dir_offset,
-        len(SECTION_ORDER),
+        len(order),
         0,
         program.arch_digest,
         payload_sha,
-        0,
+        program.required_features,
         bytes(16),
     )
     return header + payload_bytes
@@ -218,5 +255,10 @@ def _section_count(name: str, program: Program) -> int:
         "OP_ATTRS": len(program.op_attrs),
         "RELOCATIONS": len(program.relocations),
         "EXPECTED_TRAFFIC": len(program.expected_traffic),
+        "CONTENT_DIGESTS": len(program.content_digests),
+        "MOE_LAYER_SPECS": len(program.moe_layer_specs),
+        "MOE_EXPERT_SPECS": len(program.moe_expert_specs),
+        "MOE_DYNAMIC_REGIONS": len(program.moe_dynamic_regions),
+        "MOE_KERNEL_SPECS": len(program.moe_kernel_specs),
     }
     return sizes[name]

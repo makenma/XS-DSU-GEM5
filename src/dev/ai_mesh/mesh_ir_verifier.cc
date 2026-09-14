@@ -1,5 +1,7 @@
 #include "dev/ai_mesh/mesh_ir_verifier.hh"
 
+#include "dev/ai_mesh/mesh_moe_verifier.hh"
+
 #include "dev/ai_mesh/mesh_splitter.hh"
 
 #include <algorithm>
@@ -46,6 +48,14 @@ uint64_t endpointSpan(const DecodedDmaDescriptor &descriptor, bool src_side)
 bool RuntimeArch::hasCore(uint16_t core_id) const
 {
     return std::find(core_ids.begin(), core_ids.end(), core_id) != core_ids.end();
+}
+
+const RuntimeArch::Partition *RuntimeArch::partition(uint16_t kind) const
+{
+    for (const auto &candidate : partitions)
+        if (candidate.kind == kind)
+            return &candidate;
+    return nullptr;
 }
 
 const RuntimeArch::Region *RuntimeArch::region(uint16_t region_id) const
@@ -1062,7 +1072,7 @@ bool verifyDecodedProgram(const DecodedProgram &program, const RuntimeArch &arch
         if (!visit(kv.first))
             return fail("E_DEPENDENCY_CYCLE", "command dependency cycle", error);
 
-    return true;
+    return verifyMoeV1(program, arch, error);
 }
 
 } // namespace ai_mesh

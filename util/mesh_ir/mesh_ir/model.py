@@ -22,6 +22,7 @@ ERROR_CODES = (
     "E_ABI_SECTION_RANGE",
     "E_ABI_ENUM",
     "E_ABI_RESERVED",
+    "E_ABI_FEATURE",
     "E_ABI_DUPLICATE",
     "E_ABI_ORDER",
     "E_ABI_BOUNDS",
@@ -40,6 +41,24 @@ ERROR_CODES = (
     "E_TRAFFIC_MISMATCH",
     "E_SRAM_OOM",
     "E_CAPABILITY_MISMATCH",
+    "E_ARCH_PARTITION",
+    "E_CAPACITY_PLAN",
+    "E_MOE_UID",
+    "E_MOE_RNG",
+    "E_MOE_PROVIDER",
+    "E_MOE_ROUTE_REPLAY",
+    "E_MOE_TOPK_DUP",
+    "E_MOE_PROFILE",
+    "E_MOE_KEY_COLLISION",
+    "E_MOE_CACHE",
+    "E_MOE_TRAFFIC",
+    "E_MOE_CAPACITY",
+    "E_MOE_ROUTE_DIGEST",
+    "E_MOE_SELECTION_V",
+    "E_MOE_MATERIALIZATION_V",
+    "E_MOE_MATERIALIZE_CAPACITY",
+    "E_MOE_DISPATCH_BYTES",
+    "E_MOE_COMBINE_BYTES",
 )
 
 
@@ -60,6 +79,17 @@ class ArchRegion:
     bytes: int
     tile_stride: int = 0
     tile_bytes: int = 0
+
+
+@dataclass
+class ArchPartition:
+    kind: int
+    base: int
+    bytes: int
+    alignment: int
+    metadata_entries: int
+    max_pinned_entries: int = 0
+    replacement: str = "LRU"
 
 
 @dataclass
@@ -110,12 +140,24 @@ class ArchManifest:
     axi_enforce_4k_boundary: bool
     axi_qos_default: int
     regions: tuple
+    sram_partitions: tuple = ()
+    sram_weight_cache_slot_bytes: int = 0
 
     def region_by_id(self, region_id: int) -> ArchRegion:
         return self.regions[region_id]
 
+    def partition(self, kind: int) -> Optional[ArchPartition]:
+        for candidate in self.sram_partitions:
+            if candidate.kind == kind:
+                return candidate
+        return None
+
     def canonical_dict(self) -> dict:
-        return dataclasses.asdict(self)
+        document = dataclasses.asdict(self)
+        if not self.sram_partitions:
+            document.pop("sram_partitions")
+            document.pop("sram_weight_cache_slot_bytes")
+        return document
 
     def digest(self) -> bytes:
         return hashlib.sha256(
@@ -329,6 +371,103 @@ class ExpectedTrafficRow:
 
 
 @dataclass
+class ContentDigest:
+    object_kind: int
+    reserved: int
+    object_id: int
+    digest: bytes
+
+
+@dataclass
+class MoeLayerSpec:
+    layer_id: int
+    kernel_spec_index: int
+    expert_first: int
+    expert_count: int
+    top_k: int
+    token_bytes: int
+    output_token_bytes: int
+    capacity_factor_q16: int
+    overflow_policy: int
+    transport_mode: int
+    dynamic_region_first: int
+    dynamic_region_count: int
+    max_tokens_per_frozen_batch: int
+    max_requests_per_batch: int
+    max_routes: int
+    max_materialized_commands: int
+    max_materialized_descriptors: int
+    max_materialized_transfers: int
+    max_dynamic_allocations: int
+    flags: int
+    max_materialized_events: int
+    reserved1: int = 0
+
+
+@dataclass
+class MoeExpertSpec:
+    layer_id: int
+    expert_id: int
+    flags: int
+    core_id: int
+    reserved_core: int
+    weight_symbol_id: int
+    weight_region_offset: int
+    weight_bytes: int
+    weight_digest_index: int
+    reserved: int = 0
+
+
+@dataclass
+class MoeDynamicRegion:
+    region_id: int
+    layer_id: int
+    core_id: int
+    stream_id: int
+    insert_after_command_id: int
+    resume_before_command_id: int
+    entry_event_id: int
+    scratch_offset: int
+    scratch_bytes: int
+    scratch_alignment: int
+    max_overlay_commands: int
+    max_overlay_events: int
+    max_overlay_descriptors: int
+    max_overlay_transfers: int
+    max_overlay_allocations: int
+    flags: int
+    reserved: int = 0
+
+
+@dataclass
+class MoeKernelSpec:
+    layer_id: int
+    expert_opcode: int
+    input_dtype: int
+    accum_dtype: int
+    output_dtype: int
+    batch: int
+    n: int
+    k: int
+    transpose_flags: int
+    combine_kind: int
+    algorithm_id: int
+    efficiency_q16: int
+    tensor_setup_cycles: int
+    tensor_flush_cycles: int
+    input_token_bytes: int
+    output_token_bytes: int
+    reserved0: int
+    weight_operand_bytes: int
+    expert_result_alignment: int
+    max_m: int
+    combine_setup_cycles: int
+    combine_flush_cycles: int
+    flags: int
+    reserved1: int = 0
+
+
+@dataclass
 class Program:
     abi_major: int
     abi_minor: int
@@ -348,12 +487,16 @@ class Program:
     op_attrs: list
     relocations: list
     expected_traffic: list
+    required_features: int = 0
+    moe_layer_specs: list = field(default_factory=list)
+    moe_expert_specs: list = field(default_factory=list)
+    moe_dynamic_regions: list = field(default_factory=list)
+    moe_kernel_specs: list = field(default_factory=list)
+    content_digests: list = field(default_factory=list)
 
     def canonical_dict(self) -> dict:
-        return {
-            "abi": {"major": self.abi_major, "minor": self.abi_minor},
-            "arch_digest": self.arch_digest.hex(),
-            "sections": {
+        abi = {"major": self.abi_major, "minor": self.abi_minor}
+        sections = {
                 "STRINGS": [s.value for s in self.strings],
                 "ENTRYPOINTS": [canonical(rec) for rec in self.entrypoints],
                 "PROFILES": [canonical(rec) for rec in self.profiles],
@@ -369,8 +512,21 @@ class Program:
                 "OP_ATTRS": [self._attr_dict(rec) for rec in self.op_attrs],
                 "RELOCATIONS": [canonical(rec) for rec in self.relocations],
                 "EXPECTED_TRAFFIC": [canonical(rec) for rec in self.expected_traffic],
-            },
         }
+        if self.required_features:
+            abi["required_features"] = self.required_features
+            sections["CONTENT_DIGESTS"] = [
+                canonical(rec) for rec in self.content_digests]
+            sections["MOE_LAYER_SPECS"] = [
+                canonical(rec) for rec in self.moe_layer_specs]
+            sections["MOE_EXPERT_SPECS"] = [
+                canonical(rec) for rec in self.moe_expert_specs]
+            sections["MOE_DYNAMIC_REGIONS"] = [
+                canonical(rec) for rec in self.moe_dynamic_regions]
+            sections["MOE_KERNEL_SPECS"] = [
+                canonical(rec) for rec in self.moe_kernel_specs]
+        return {"abi": abi, "arch_digest": self.arch_digest.hex(),
+                "sections": sections}
 
     @staticmethod
     def _attr_dict(attr: OpAttr) -> dict:
@@ -378,6 +534,17 @@ class Program:
 
     def semantic_sha256(self) -> str:
         return hashlib.sha256(canonical_json_bytes(self.canonical_dict())).hexdigest()
+
+    def shard_of(self, tensor_role: int, owner_core: int) -> Optional[Shard]:
+        roles = {tensor.tensor_id: tensor.role for tensor in self.tensors}
+        matches = [shard for shard in self.shards
+                   if shard.owner_core == owner_core and
+                   roles.get(shard.tensor_id) == tensor_role]
+        if len(matches) > 1:
+            raise MeshIrError("E_ABI_DUPLICATE",
+                              "several shards carry one tensor role",
+                              tensor_role=tensor_role, owner_core=owner_core)
+        return matches[0] if matches else None
 
 
 def _plain(value):
@@ -417,6 +584,11 @@ RECORD_CLASSES = {
     "DMA_DESCRIPTORS": DmaDescriptor,
     "RELOCATIONS": Relocation,
     "EXPECTED_TRAFFIC": ExpectedTrafficRow,
+    "CONTENT_DIGESTS": ContentDigest,
+    "MOE_LAYER_SPECS": MoeLayerSpec,
+    "MOE_EXPERT_SPECS": MoeExpertSpec,
+    "MOE_DYNAMIC_REGIONS": MoeDynamicRegion,
+    "MOE_KERNEL_SPECS": MoeKernelSpec,
 }
 
 

@@ -73,9 +73,20 @@ AxiTensorDmaEngine::bindOwner(MeshDummyCore *core, const RuntimeArch *a)
 }
 
 void
-AxiTensorDmaEngine::bindFillPattern(uint32_t command_id, uint64_t pattern)
+AxiTensorDmaEngine::bindFillPattern(RuntimeObjectKey command, uint64_t pattern)
 {
-    fill_patterns[command_id] = pattern;
+    fill_patterns[command] = pattern;
+}
+
+void
+AxiTensorDmaEngine::bindFillContent(RuntimeObjectKey command,
+                                    const std::vector<uint8_t> &content,
+                                    bool install_bytes)
+{
+    FillContent entry;
+    entry.bytes = content;
+    entry.install_bytes = install_bytes;
+    fill_contents[command] = std::move(entry);
 }
 
 bool
@@ -106,6 +117,9 @@ AxiTensorDmaEngine::scheduledReadCommits() const
 
 bool
 AxiTensorDmaEngine::submit(const DecodedDmaDescriptor &descriptor,
+                           const RuntimeObjectKey &descriptor_key,
+                           const RuntimeObjectKey &command_key,
+                           const RuntimeObjectKey &completion_event,
                            Tick issue_tick)
 {
     const bool is_fill = descriptor.kind == mesh_abi::kDmaKindLOCAL_FILL;
@@ -117,14 +131,18 @@ AxiTensorDmaEngine::submit(const DecodedDmaDescriptor &descriptor,
     if (queue.size() >= descriptor_queue_depth)
         return false;
 
+    rowOf(descriptor_key).dma_kind = descriptor.kind;
     DescriptorState state;
     state.descriptor = descriptor;
+    state.descriptor_key = descriptor_key;
+    state.command_key = command_key;
+    state.completion_event = completion_event;
     state.ready_tick =
         issue_tick + Cycles(setup_cycles) * clockPeriod();
     // Payload digests and timing records are per-completion; byte counters
     // accumulate across program instances, per-descriptor state must not.
-    payload_state.erase(descriptor.descriptor_id);
-    timings.erase(descriptor.descriptor_id);
+    payload_state.erase(descriptor_key);
+    timings.erase(descriptor_key);
     if (descriptor.useful_bytes == 0)
         state.bursts_total = 0;  // zero-length: every kind, no SRAM service
     else if (is_fill)
@@ -166,16 +184,16 @@ AxiTensorDmaEngine::planOf(const DecodedDmaDescriptor &descriptor) const
 }
 
 ActualTraffic &
-AxiTensorDmaEngine::rowOf(uint32_t descriptor_id)
+AxiTensorDmaEngine::rowOf(RuntimeObjectKey descriptor)
 {
-    return actual[descriptor_id];
+    return actual[descriptor];
 }
 
 void
-AxiTensorDmaEngine::notePayload(uint32_t descriptor_id, const uint8_t *data,
-                                uint64_t size)
+AxiTensorDmaEngine::notePayload(RuntimeObjectKey descriptor,
+                                const uint8_t *data, uint64_t size)
 {
-    auto &state = payload_state[descriptor_id];
+    auto &state = payload_state[descriptor];
     if (state.first == 0 && state.second == 0) {
         state.first = 0xCBF29CE484222325ull;
         state.second = 0x9E3779B97F4A7C15ull;
@@ -233,6 +251,7 @@ AxiTensorDmaEngine::driveReadDescriptor()
 
     // Destination: local SRAM offset of this burst's logical interval.
     const DecodedDmaDescriptor &descriptor = state.descriptor;
+    const RuntimeObjectKey &descriptor_key = state.descriptor_key;
     const RuntimeArch::Region *src_region =
         arch->region(descriptor.src.region_id);
     uint64_t dst_base = 0;
@@ -265,6 +284,7 @@ AxiTensorDmaEngine::driveReadDescriptor()
         return;
     }
     ReadBurst burst;
+    burst.descriptor_key = descriptor_key;
     burst.plan = burst_plan;
     burst.dst_base = dst_base;
     burst.descriptor_id = descriptor.descriptor_id;
@@ -279,7 +299,7 @@ AxiTensorDmaEngine::driveReadDescriptor()
         read_ar_accepted - read_rlast_consumed);
     if (window > peak_read_window)
         peak_read_window = window;
-    DescriptorTiming &timing = timings[descriptor.descriptor_id];
+    DescriptorTiming &timing = timings[descriptor_key];
     if (timing.first_ar_tick == 0)
         timing.first_ar_tick = curTick();
 }
@@ -291,6 +311,7 @@ AxiTensorDmaEngine::driveWriteDescriptor()
     if (state.terminal || curTick() < state.ready_tick)
         return;
     const DecodedDmaDescriptor &descriptor = state.descriptor;
+    const RuntimeObjectKey &descriptor_key = state.descriptor_key;
     if (state.bursts_total == 0) {
         // Zero-length descriptor of every write kind (FILL included):
         // legal, zero traffic, completes at the normal completion point.
@@ -348,7 +369,8 @@ AxiTensorDmaEngine::driveWriteDescriptor()
         state.prepare_pending = true;
         pending_local_events++;
         auto *event = new WritePrepareEvent(
-            this, descriptor.descriptor_id, burst_index, row_src_local);
+            this, descriptor_key, burst_index,
+            row_src_local);
         schedule(event, ready > clockEdge(Cycles(1)) ? ready
                                                      : clockEdge(Cycles(1)));
         return;
@@ -367,6 +389,7 @@ AxiTensorDmaEngine::driveWriteDescriptor()
     state.prepared_beats.reset();
 
     WriteBurst burst;
+    burst.descriptor_key = descriptor_key;
     burst.plan = burst_plan;
     burst.descriptor_id = descriptor.descriptor_id;
     burst.kind = descriptor.kind;
@@ -374,12 +397,12 @@ AxiTensorDmaEngine::driveWriteDescriptor()
     live_write_bursts.emplace(ordinal, burst);
     state.burst_ordinals.push_back(ordinal);
     write_bursts_submitted++;
-    DescriptorTiming &timing = timings[descriptor.descriptor_id];
+    DescriptorTiming &timing = timings[descriptor_key];
     if (timing.first_aw_tick == 0)
         timing.first_aw_tick = curTick();
     if (timing.first_w_tick == 0)
         timing.first_w_tick = curTick();
-    ActualTraffic &submit_row = rowOf(descriptor.descriptor_id);
+    ActualTraffic &submit_row = rowOf(descriptor_key);
     if (descriptor.kind == mesh_abi::kDmaKindSTORE)
         submit_row.write_bursts++;
     else
@@ -387,14 +410,16 @@ AxiTensorDmaEngine::driveWriteDescriptor()
 }
 
 void
-AxiTensorDmaEngine::prepareWriteBurst(uint32_t descriptor_id,
+AxiTensorDmaEngine::prepareWriteBurst(RuntimeObjectKey descriptor_key,
                                       uint32_t burst_index,
                                       uint64_t row_src_local)
 {
     pending_local_events--;
-    fatal_if(write_queue.empty() ||
-                 write_queue.front().descriptor.descriptor_id != descriptor_id,
-             "write prepare for non-head descriptor %u", descriptor_id);
+    fatal_if(
+        write_queue.empty() ||
+            write_queue.front().descriptor.descriptor_id !=
+                descriptor_key.ordinal,
+        "write prepare for non-head descriptor %u", descriptor_key.ordinal);
     DescriptorState &state = write_queue.front();
     fatal_if(!state.prepare_pending, "unexpected write prepare event");
     state.prepare_pending = false;
@@ -407,9 +432,9 @@ AxiTensorDmaEngine::prepareWriteBurst(uint32_t descriptor_id,
                                         burst_plan.useful_bytes,
                                         logical.data()),
              "write burst source read escapes SRAM");
-    notePayload(descriptor_id, logical.data(), logical.size());
-    if (curTick() >= timings[descriptor_id].local_commit_tick)
-        timings[descriptor_id].local_commit_tick = curTick();
+    notePayload(descriptor_key, logical.data(), logical.size());
+    if (curTick() >= timings[descriptor_key].local_commit_tick)
+        timings[descriptor_key].local_commit_tick = curTick();
 
     std::vector<axi::AxiWBeat> beats(burst_plan.beats);
     uint64_t consumed = 0;
@@ -441,6 +466,7 @@ void
 AxiTensorDmaEngine::driveFill(DescriptorState &state)
 {
     const DecodedDmaDescriptor &descriptor = state.descriptor;
+    const RuntimeObjectKey &descriptor_key = state.descriptor_key;
     if (state.prepare_pending)
         return; // a row's SRAM write service is in flight
     if (state.bursts_done >= state.bursts_total)
@@ -455,40 +481,57 @@ AxiTensorDmaEngine::driveFill(DescriptorState &state)
     const Tick ready = curTick() + service->stall_ticks;
     state.prepare_pending = true;
     pending_local_events++;
-    auto *event = new FillRowEvent(this, descriptor.descriptor_id, next_row);
+    auto *event =
+        new FillRowEvent(this, descriptor_key, next_row);
     schedule(event, ready > clockEdge(Cycles(1)) ? ready
                                                  : clockEdge(Cycles(1)));
 }
 
 void
-AxiTensorDmaEngine::commitFillRow(uint32_t descriptor_id, uint32_t row)
+AxiTensorDmaEngine::commitFillRow(RuntimeObjectKey descriptor_key,
+                                  uint32_t row)
 {
     pending_local_events--;
     fatal_if(write_queue.empty() ||
-                 write_queue.front().descriptor.descriptor_id != descriptor_id,
-             "fill commit for non-head descriptor %u", descriptor_id);
+                 write_queue.front().descriptor_key != descriptor_key,
+             "fill commit for non-head descriptor %u", descriptor_key.ordinal);
     DescriptorState &state = write_queue.front();
     fatal_if(!state.prepare_pending, "unexpected fill row event");
     state.prepare_pending = false;
     const DecodedDmaDescriptor &descriptor = state.descriptor;
 
-    auto it = fill_patterns.find(descriptor.command_id);
-    fatal_if(it == fill_patterns.end(),
-             "fill pattern not bound for command %u", descriptor.command_id);
-    const uint64_t pattern = it->second;
+    const auto content_it = fill_contents.find(state.command_key);
     std::vector<uint8_t> bytes(descriptor.row_bytes);
-    for (uint64_t i = 0; i < descriptor.row_bytes; i++)
-        bytes[i] = static_cast<uint8_t>((pattern >> (8 * (i % 8))) & 0xFF);
+    std::vector<uint8_t> installed(descriptor.row_bytes, 0);
+    if (content_it != fill_contents.end()) {
+        const FillContent &content = content_it->second;
+        const uint64_t row_off = uint64_t(row) * descriptor.row_bytes;
+        fatal_if(row_off + descriptor.row_bytes > content.bytes.size(),
+                 "fill content is shorter than the descriptor rows");
+        bytes.assign(content.bytes.begin() + row_off,
+                     content.bytes.begin() + row_off + descriptor.row_bytes);
+        if (content.install_bytes)
+            installed = bytes;
+    } else {
+        auto it = fill_patterns.find(state.command_key);
+        fatal_if(it == fill_patterns.end(),
+                 "fill content not bound for command %u",
+                 descriptor.command_id);
+        const uint64_t pattern = it->second;
+        for (uint64_t i = 0; i < descriptor.row_bytes; i++)
+            bytes[i] = static_cast<uint8_t>((pattern >> (8 * (i % 8))) & 0xFF);
+        installed = bytes;
+    }
     const uint64_t dst_off = descriptor.dst.offset_bytes +
                              uint64_t(row) * descriptor.dst_stride_bytes;
     fatal_if(!owner->functionalSramWrite(dst_off, descriptor.row_bytes,
-                                         bytes.data()),
+                                         installed.data()),
              "fill destination write out of bounds");
-    notePayload(descriptor_id, bytes.data(), bytes.size());
-    ActualTraffic &row_stats = rowOf(descriptor_id);
+    notePayload(descriptor_key, bytes.data(), bytes.size());
+    ActualTraffic &row_stats = rowOf(descriptor_key);
     row_stats.fill_bytes += descriptor.row_bytes;
-    if (curTick() >= timings[descriptor_id].local_commit_tick)
-        timings[descriptor_id].local_commit_tick = curTick();
+    if (curTick() >= timings[descriptor_key].local_commit_tick)
+        timings[descriptor_key].local_commit_tick = curTick();
 
     state.bursts_done++;
     if (state.bursts_done >= state.bursts_total)
@@ -565,7 +608,7 @@ AxiTensorDmaEngine::onReadBeat(uint64_t burst_ordinal, uint16_t beat_index,
     if (first_rlast_tick == 0)
         first_rlast_tick = curTick();
     burst.last_r_tick = curTick();
-    timings[burst.descriptor_id].last_r_tick = curTick();
+    timings[burst.descriptor_key].last_r_tick = curTick();
 
     // The AXI read transaction ends at RLAST: the AXI ID returns to the
     // pool here for both the normal and the error path, so a new AR can be
@@ -578,7 +621,7 @@ AxiTensorDmaEngine::onReadBeat(uint64_t burst_ordinal, uint16_t beat_index,
         // Error bursts drain every beat (delivered above) and commit zero
         // bytes; retire immediately, no SRAM service is scheduled.
         read_bursts_errored++;
-        ActualTraffic &row = rowOf(burst.descriptor_id);
+        ActualTraffic &row = rowOf(burst.descriptor_key);
         row.read_discarded_bytes += plan.useful_bytes;
         row.read_bursts++;
         read_bursts_completed++;
@@ -631,17 +674,17 @@ AxiTensorDmaEngine::commitReadBurst(uint64_t burst_ordinal)
              "read beat commit escapes SRAM");
     read_commit_ticks.emplace(burst_ordinal, curTick());
     read_valid_bytes += burst.packed.size();
-    notePayload(burst.descriptor_id, burst.packed.data(),
+    notePayload(burst.descriptor_key, burst.packed.data(),
                 burst.packed.size());
-    ActualTraffic &row = rowOf(burst.descriptor_id);
+    ActualTraffic &row = rowOf(burst.descriptor_key);
     row.read_bytes += burst.packed.size();
     row.read_bursts++;
     read_bursts_completed++;
     // Keep the RLAST of the burst whose local commit is the latest, so the
     // exported pair satisfies rlast <= commit <= done exactly.
-    if (curTick() >= timings[burst.descriptor_id].local_commit_tick) {
-        timings[burst.descriptor_id].local_commit_tick = curTick();
-        timings[burst.descriptor_id].last_r_tick = burst.last_r_tick;
+    if (curTick() >= timings[burst.descriptor_key].local_commit_tick) {
+        timings[burst.descriptor_key].local_commit_tick = curTick();
+        timings[burst.descriptor_key].last_r_tick = burst.last_r_tick;
     }
     live_read_bursts.erase(burst_ordinal);
     retireBurst(true, burst_ordinal, false);
@@ -688,7 +731,7 @@ AxiTensorDmaEngine::onWriteDone(uint64_t burst_ordinal, axi::AxiResp resp)
     }
     const WriteBurst &burst = it->second;
     const bool errored = resp != axi::AxiResp::Okay;
-    ActualTraffic &row = rowOf(burst.descriptor_id);
+    ActualTraffic &row = rowOf(burst.descriptor_key);
     if (errored) {
         write_bursts_errored++;
         row.write_drained_uncommitted_bytes += burst.plan.useful_bytes;
@@ -702,7 +745,7 @@ AxiTensorDmaEngine::onWriteDone(uint64_t burst_ordinal, axi::AxiResp resp)
             row.p2p_bytes += burst.plan.useful_bytes;
     }
     write_bursts_completed++;
-    DescriptorTiming &timing = timings[burst.descriptor_id];
+    DescriptorTiming &timing = timings[burst.descriptor_key];
     if (timing.first_b_tick == 0)
         timing.first_b_tick = curTick();
     free_write_ids.push_back(burst.axi_id);
@@ -743,15 +786,15 @@ AxiTensorDmaEngine::finishDescriptor(bool read, DmaStatus status)
     // destroyed; every later use reads the local copy.
     const std::vector<uint64_t> burst_ordinals = queue.front().burst_ordinals;
     const DecodedDmaDescriptor descriptor = queue.front().descriptor;
-    const uint32_t descriptor_id = descriptor.descriptor_id;
-    const uint32_t command_id = descriptor.command_id;
-    const uint32_t completion_event = descriptor.completion_event;
+    const RuntimeObjectKey descriptor_key = queue.front().descriptor_key;
+    const RuntimeObjectKey command = queue.front().command_key;
+    const RuntimeObjectKey completion_event = queue.front().completion_event;
     queue.pop_front();
 
-    ActualTraffic &row = rowOf(descriptor_id);
+    ActualTraffic &row = rowOf(descriptor_key);
     row.error_code = status == DmaStatus::AXI_READ_ERROR ? 1
                   : status == DmaStatus::AXI_WRITE_ERROR ? 2 : 0;
-    DescriptorTiming &timing = timings[descriptor_id];
+    DescriptorTiming &timing = timings[descriptor_key];
     timing.done_tick = curTick();
     if (descriptor.useful_bytes == 0) {
         // Zero-length: no AXI and no SRAM service tick is exported.
@@ -802,27 +845,29 @@ AxiTensorDmaEngine::finishDescriptor(bool read, DmaStatus status)
         }
     }
     if (descriptor.kind == mesh_abi::kDmaKindP2P_PUSH &&
-        descriptor.useful_bytes == 0 && owner)
+        descriptor.useful_bytes == 0 && owner &&
+        descriptor_key.domain == mesh_abi::MeshObjectDomain::STATIC)
         owner->notifyPeerCommit(descriptor.dst.owner_core,
-                                descriptor.transfer_id);
-    notifyOwner(descriptor_id, command_id, completion_event, status);
+                                owner->transferKey(descriptor.transfer_id));
+    notifyOwner(descriptor_key, command, completion_event, status);
 }
 
 void
-AxiTensorDmaEngine::notifyOwner(uint32_t descriptor_id, uint32_t command_id,
-                                uint32_t completion_event, DmaStatus status)
+AxiTensorDmaEngine::notifyOwner(RuntimeObjectKey descriptor,
+                                RuntimeObjectKey command,
+                                RuntimeObjectKey completion_event,
+                                DmaStatus status)
 {
-    auto it = payload_state.find(descriptor_id);
+    auto it = payload_state.find(descriptor);
     if (it != payload_state.end()) {
         char digest[40];
         snprintf(digest, sizeof(digest), "%016llx-%016llx",
                  (unsigned long long)it->second.first,
                  (unsigned long long)it->second.second);
-        rowOf(descriptor_id).payload_digest = digest;
+        rowOf(descriptor).payload_digest = digest;
     }
     if (owner)
-        owner->onDmaCompleted(command_id, completion_event, curTick(),
-                              status);
+        owner->onDmaCompleted(command, completion_event, curTick(), status);
 }
 
 } // namespace ai_mesh

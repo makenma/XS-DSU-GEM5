@@ -16,6 +16,10 @@ class MeshProgramLoader(SimObject):
     cxx_class = "gem5::ai_mesh::MeshProgramLoader"
 
     program_file = Param.String("", "Path to the scheduled .mshb binary")
+    overlay_image = Param.String(
+        "", "Optional MoE overlay image produced by the materializer")
+    weight_policy = Param.String(
+        "streamed", "MoE weight policy: streamed or cached")
     cores = VectorParam.MeshDummyCore([], "Participating dummy cores")
     transport = Param.MockAxiTransport(
         NULL, "Mock AXI transport (mock runtime only)"
@@ -29,6 +33,20 @@ class MeshProgramLoader(SimObject):
     sram_bytes = Param.UInt64(0, "Per-core SRAM capacity in bytes")
     sram_banks = Param.UInt32(0, "SRAM bank count")
     sram_alignment = Param.UInt32(0, "SRAM base alignment in bytes")
+    sram_partition_kinds = VectorParam.UInt32(
+        [], "SRAM partition kind per partition")
+    sram_partition_bases = VectorParam.UInt64(
+        [], "SRAM partition base address")
+    sram_partition_bytes = VectorParam.UInt64(
+        [], "SRAM partition size in bytes")
+    sram_partition_alignments = VectorParam.UInt32(
+        [], "SRAM partition alignment")
+    sram_partition_metadata_entries = VectorParam.UInt32(
+        [], "SRAM partition allocation metadata entries")
+    sram_partition_max_pinned = VectorParam.UInt32(
+        [], "SRAM partition maximum pinned entries")
+    weight_cache_slot_bytes = Param.UInt32(
+        0, "WEIGHT_CACHE equal slot size in bytes")
     axi_data_bytes = Param.UInt32(0, "AXI data bus width in bytes")
     axi_max_burst_beats = Param.UInt32(0, "Maximum AXI burst beats")
     region_ids = VectorParam.UInt32([], "Memory region index per region")

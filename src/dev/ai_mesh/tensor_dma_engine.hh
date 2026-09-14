@@ -31,34 +31,56 @@ class TensorDmaEngine : public DmaEngineBase
 
     TensorDmaEngine(const Params &p);
 
-    bool submit(const DecodedDmaDescriptor &descriptor, Tick issue_tick) override;
-    void bindFillPattern(uint32_t command_id, uint64_t pattern) override
+    bool submit(const DecodedDmaDescriptor &descriptor,
+                const RuntimeObjectKey &descriptor_key,
+                const RuntimeObjectKey &command_key,
+                const RuntimeObjectKey &completion_event,
+                Tick issue_tick) override;
+    void bindFillPattern(RuntimeObjectKey command, uint64_t pattern) override
     {
-        fill_patterns[command_id] = pattern;
+        fill_patterns[command] = pattern;
     }
 
     bool idle() const override { return outstanding == 0; }
     void bindOwner(MeshDummyCore *core, const RuntimeArch *arch) override;
-    const std::map<uint32_t, ActualTraffic> &actualTraffic() const override;
+    const std::map<RuntimeObjectKey, ActualTraffic> &
+    actualTraffic() const override;
     uint32_t liveDescriptors() const override { return outstanding; }
 
   private:
-    void completeDescriptor(const DecodedDmaDescriptor &descriptor, Tick commit_tick);
+    void completeDescriptor(const DecodedDmaDescriptor &descriptor,
+                            const RuntimeObjectKey &descriptor_key,
+                            const RuntimeObjectKey &command_key,
+                            const RuntimeObjectKey &completion_event,
+                            Tick commit_tick);
 
     struct EngineEvent : public Event
     {
         TensorDmaEngine *engine;
         DecodedDmaDescriptor descriptor;
+        RuntimeObjectKey descriptor_key;
+        RuntimeObjectKey command_key;
+        RuntimeObjectKey completion_event;
         Tick commit_tick;
 
-        EngineEvent(TensorDmaEngine *engine_, const DecodedDmaDescriptor &descriptor_,
+        EngineEvent(TensorDmaEngine *engine_,
+                    const DecodedDmaDescriptor &descriptor_,
+                    const RuntimeObjectKey &descriptor_key_,
+                    const RuntimeObjectKey &command_key_,
+                    const RuntimeObjectKey &completion_event_,
                     Tick commit_tick_)
-            : Event(), engine(engine_), descriptor(descriptor_), commit_tick(commit_tick_)
+            : Event(), engine(engine_), descriptor(descriptor_),
+              descriptor_key(descriptor_key_), command_key(command_key_),
+              completion_event(completion_event_), commit_tick(commit_tick_)
         {
             setFlags(AutoDelete);
         }
 
-        void process() override { engine->completeDescriptor(descriptor, commit_tick); }
+        void process() override
+        {
+            engine->completeDescriptor(descriptor, descriptor_key, command_key,
+                                       completion_event, commit_tick);
+        }
         const char *description() const override { return "ai_mesh.dma.complete"; }
     };
 
@@ -70,7 +92,7 @@ class TensorDmaEngine : public DmaEngineBase
     MeshDummyCore *owner = nullptr;
     const RuntimeArch *arch = nullptr;
     uint32_t outstanding = 0;
-    std::map<uint32_t, uint64_t> fill_patterns;
+    std::map<RuntimeObjectKey, uint64_t> fill_patterns;
 };
 
 } // namespace ai_mesh

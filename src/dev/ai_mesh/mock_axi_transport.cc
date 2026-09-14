@@ -123,61 +123,70 @@ Tick MockAxiTransport::transferLatency(uint64_t beats_total, uint32_t bursts) co
     return clockPeriod() * Cycles(cycles);
 }
 
-void MockAxiTransport::accountRead(uint32_t descriptor_id, uint64_t bytes, uint32_t bursts)
+void MockAxiTransport::accountRead(RuntimeObjectKey descriptor,
+                                   uint64_t bytes, uint32_t bursts)
 {
-    auto &row = actual[descriptor_id];
+    auto &row = actual[descriptor];
     row.read_bytes += bytes;
     row.read_bursts += bursts;
     readBytes += bytes;
     readBursts += bursts;
 
-    finishPayloadDigest(descriptor_id);}
+    finishPayloadDigest(descriptor);}
 
-void MockAxiTransport::accountWrite(uint32_t descriptor_id, uint64_t bytes, uint32_t bursts)
+void MockAxiTransport::accountWrite(RuntimeObjectKey descriptor,
+                                    uint64_t bytes, uint32_t bursts)
 {
-    auto &row = actual[descriptor_id];
+    auto &row = actual[descriptor];
     row.write_bytes += bytes;
     row.write_bursts += bursts;
     writeBytes += bytes;
     writeBursts += bursts;
 
-    finishPayloadDigest(descriptor_id);}
+    finishPayloadDigest(descriptor);}
 
-void MockAxiTransport::accountP2p(uint32_t descriptor_id, uint64_t bytes, uint32_t bursts)
+void MockAxiTransport::accountP2p(RuntimeObjectKey descriptor,
+                                  uint64_t bytes, uint32_t bursts)
 {
-    auto &row = actual[descriptor_id];
+    auto &row = actual[descriptor];
     row.p2p_bytes += bytes;
     row.p2p_bursts += bursts;
     p2pBytes += bytes;
     p2pBursts += bursts;
 
-    finishPayloadDigest(descriptor_id);}
+    finishPayloadDigest(descriptor);}
 
-void MockAxiTransport::accountFill(uint32_t descriptor_id, uint64_t bytes)
+void MockAxiTransport::accountKind(RuntimeObjectKey descriptor, uint16_t kind)
 {
-    auto &row = actual[descriptor_id];
+    actual[descriptor].dma_kind = kind;
+}
+
+void MockAxiTransport::accountFill(RuntimeObjectKey descriptor,
+                                   uint64_t bytes)
+{
+    auto &row = actual[descriptor];
     row.fill_bytes += bytes;
     fillBytes += bytes;
 
-    finishPayloadDigest(descriptor_id);}
+    finishPayloadDigest(descriptor);}
 
-void MockAxiTransport::beginPayloadDigest(uint32_t descriptor_id)
+void MockAxiTransport::beginPayloadDigest(RuntimeObjectKey descriptor)
 {
-    digest_state[descriptor_id] = {0xcbf29ce484222325ull,
+    digest_state[descriptor] = {0xcbf29ce484222325ull,
                                    0x9E3779B97F4A7C15ull};
 }
 
-void MockAxiTransport::notePayload(uint32_t descriptor_id, const uint8_t *data,
-                                   uint64_t size)
+void MockAxiTransport::notePayload(RuntimeObjectKey descriptor,
+                                   const uint8_t *data, uint64_t size)
 {
     // Rolling digest over the functionally moved bytes; deterministic and
     // reported in the result JSON for content-flow reconciliation.  The
     // state is created at submit and rolls across every row until the
     // descriptor finishes.
-    auto it = digest_state.find(descriptor_id);
+    auto it = digest_state.find(descriptor);
     if (it == digest_state.end())
         it = digest_state.emplace(
-            descriptor_id,
+            descriptor,
             std::make_pair(0xcbf29ce484222325ull,
                            0x9E3779B97F4A7C15ull)).first;
     uint64_t &h0 = it->second.first;
@@ -188,9 +197,9 @@ void MockAxiTransport::notePayload(uint32_t descriptor_id, const uint8_t *data,
     }
 }
 
-void MockAxiTransport::finishPayloadDigest(uint32_t descriptor_id)
+void MockAxiTransport::finishPayloadDigest(RuntimeObjectKey descriptor)
 {
-    auto it = digest_state.find(descriptor_id);
+    auto it = digest_state.find(descriptor);
     if (it == digest_state.end())
         return;
     static const char *hex = "0123456789abcdef";
@@ -200,7 +209,7 @@ void MockAxiTransport::finishPayloadDigest(uint32_t descriptor_id)
     out += '-';
     for (int shift = 60; shift >= 0; shift -= 4)
         out += hex[(it->second.second >> shift) & 0xF];
-    actual[descriptor_id].payload_digest = out;
+    actual[descriptor].payload_digest = out;
     digest_state.erase(it);
 }
 

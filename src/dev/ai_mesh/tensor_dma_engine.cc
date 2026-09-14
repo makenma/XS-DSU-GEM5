@@ -35,14 +35,19 @@ TensorDmaEngine::bindOwner(MeshDummyCore *core, const RuntimeArch *arch_)
     arch = arch_;
 }
 
-const std::map<uint32_t, ActualTraffic> &
+const std::map<RuntimeObjectKey, ActualTraffic> &
 TensorDmaEngine::actualTraffic() const
 {
     return transport->actualTraffic();
 }
 
-bool TensorDmaEngine::submit(const DecodedDmaDescriptor &descriptor, Tick issue_tick)
+bool TensorDmaEngine::submit(const DecodedDmaDescriptor &descriptor,
+                             const RuntimeObjectKey &descriptor_key,
+                             const RuntimeObjectKey &command_key,
+                             const RuntimeObjectKey &completion_event,
+                             Tick issue_tick)
 {
+    transport->accountKind(descriptor_key, descriptor.kind);
     if (outstanding >= max_outstanding || outstanding >= descriptor_queue_depth)
         return false;
 
@@ -64,7 +69,7 @@ bool TensorDmaEngine::submit(const DecodedDmaDescriptor &descriptor, Tick issue_
             descriptor.kind == mesh_abi::kDmaKindLOCAL_FILL;
         if (descriptor.kind == mesh_abi::kDmaKindSTORE ||
             descriptor.kind == mesh_abi::kDmaKindP2P_PUSH)
-            owner->checkDmaSourceValidity(descriptor.command_id);
+            owner->checkDmaSourceValidity(command_key);
         sram_stall = owner->reserveDmaSram(descriptor, local_write);
     }
     if (descriptor.kind == mesh_abi::kDmaKindLOCAL_FILL) {
@@ -85,8 +90,9 @@ bool TensorDmaEngine::submit(const DecodedDmaDescriptor &descriptor, Tick issue_
     }
 
     if (transport)
-        transport->beginPayloadDigest(descriptor.descriptor_id);
-    auto *event = new EngineEvent(this, descriptor, commit_tick);
+        transport->beginPayloadDigest(descriptor_key);
+    auto *event = new EngineEvent(this, descriptor, descriptor_key, command_key,
+                                  completion_event, commit_tick);
     schedule(event, commit_tick);
     outstanding++;
     DPRINTF(AiMesh,
@@ -105,8 +111,11 @@ uint64_t tileStrideOf(const RuntimeArch::Region &region)
 }
 } // anonymous namespace
 
-void TensorDmaEngine::completeDescriptor(const DecodedDmaDescriptor &descriptor,
-                                         Tick commit_tick)
+void TensorDmaEngine::completeDescriptor(
+    const DecodedDmaDescriptor &descriptor,
+    const RuntimeObjectKey &descriptor_key,
+    const RuntimeObjectKey &command_key,
+    const RuntimeObjectKey &completion_event, Tick commit_tick)
 {
     outstanding--;
 
@@ -116,7 +125,7 @@ void TensorDmaEngine::completeDescriptor(const DecodedDmaDescriptor &descriptor,
         const RuntimeArch::Region *dst_region = arch->region(descriptor.dst.region_id);
         fatal_if(!dst_region, "fill destination region unresolved");
         uint64_t pattern = 0;
-        auto it = fill_patterns.find(descriptor.command_id);
+        auto it = fill_patterns.find(command_key);
         fatal_if(it == fill_patterns.end(), "fill pattern not bound for command %u",
                  descriptor.command_id);
         pattern = it->second;
@@ -135,8 +144,8 @@ void TensorDmaEngine::completeDescriptor(const DecodedDmaDescriptor &descriptor,
                 descriptor.row_bytes, bytes.data());
             fatal_if(!ok, "fill destination write out of bounds");
         }
-        transport->notePayload(descriptor.descriptor_id, bytes.data(), bytes.size());
-        transport->accountFill(descriptor.descriptor_id, descriptor.useful_bytes);
+        transport->notePayload(descriptor_key, bytes.data(), bytes.size());
+        transport->accountFill(descriptor_key, descriptor.useful_bytes);
     }
 
     if (descriptor.kind != mesh_abi::kDmaKindLOCAL_FILL) {
@@ -163,8 +172,9 @@ void TensorDmaEngine::completeDescriptor(const DecodedDmaDescriptor &descriptor,
                 ok = transport->readHbm(src_region->base + src_off, descriptor.row_bytes,
                                         buffer.data());
             fatal_if(!ok, "dma source read out of bounds");
-            transport->notePayload(descriptor.descriptor_id, buffer.data(),
-                                   descriptor.row_bytes);
+            transport->notePayload(owner->descriptorKey(
+                                       descriptor.descriptor_id),
+                                   buffer.data(), descriptor.row_bytes);
 
             if (descriptor.dst.memory_space == mesh_abi::kMemorySpaceCORE_SRAM ||
                 descriptor.dst.memory_space == mesh_abi::kMemorySpacePEER_SRAM)
@@ -182,21 +192,24 @@ void TensorDmaEngine::completeDescriptor(const DecodedDmaDescriptor &descriptor,
             plan.bursts = 0;
         if (descriptor.kind == mesh_abi::kDmaKindLOAD ||
             descriptor.kind == mesh_abi::kDmaKindPREFETCH)
-            transport->accountRead(descriptor.descriptor_id, descriptor.useful_bytes,
-                                   plan.bursts);
+            transport->accountRead(owner->descriptorKey(
+                                       descriptor.descriptor_id),
+                                   descriptor.useful_bytes, plan.bursts);
         else if (descriptor.kind == mesh_abi::kDmaKindSTORE)
-            transport->accountWrite(descriptor.descriptor_id, descriptor.useful_bytes,
-                                    plan.bursts);
+            transport->accountWrite(owner->descriptorKey(
+                                        descriptor.descriptor_id),
+                                    descriptor.useful_bytes, plan.bursts);
         else if (descriptor.kind == mesh_abi::kDmaKindP2P_PUSH)
-            transport->accountP2p(descriptor.descriptor_id, descriptor.useful_bytes,
-                                  plan.bursts);
+            transport->accountP2p(descriptor_key,
+                                  descriptor.useful_bytes, plan.bursts);
     }
 
     if (owner)
-        owner->onDmaCompleted(descriptor.command_id, descriptor.completion_event,
-                              commit_tick, DmaStatus::OK);
+        owner->onDmaCompleted(command_key, completion_event, commit_tick,
+                              DmaStatus::OK);
     if (descriptor.kind == mesh_abi::kDmaKindP2P_PUSH && owner)
-        owner->notifyPeerCommit(descriptor.dst.owner_core, descriptor.transfer_id);
+        owner->notifyPeerCommit(descriptor.dst.owner_core,
+                                owner->transferKey(descriptor.transfer_id));
 }
 
 } // namespace ai_mesh

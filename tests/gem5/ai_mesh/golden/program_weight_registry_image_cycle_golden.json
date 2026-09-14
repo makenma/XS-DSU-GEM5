@@ -1,0 +1,47 @@
+{
+  "cycle_breaks": {
+    "model_weight_image_digest": [],
+    "program_weight_registry_digest": [
+      "program_semantic_digest",
+      "model_weight_image_digest"
+    ],
+    "weight_tag_manifest_digest": [
+      "program_semantic_digest",
+      "program_weight_registry_digest"
+    ]
+  },
+  "item": "tests/gem5/ai_mesh/fixtures/gate5/moe_min.mshb",
+  "model_weight_image_digest": "d3c1ec48f8238e96c579ad087d218b8510ca81c9c15f9b05d97b99111fd789b2",
+  "program_semantic_digest": "da9108b33d9d31cb1f8f6f426021d009f323f6e8e04d3b88029285c03cf2e022",
+  "program_weight_registry_digest": "2ef41fb4d4c0d800eb540cc2ff293bc73fc4a9c85eccb3e145e012be5bdcf524",
+  "projection_order": [
+    "item",
+    "program_semantic_digest",
+    "model_weight_image_digest",
+    "program_weight_registry_digest",
+    "weight_tag_manifest_digest"
+  ],
+  "schema": "gate5_weight_projection_cycle_golden_v1",
+  "version": 1,
+  "weight_tag_count": 2,
+  "weight_tag_manifest_digest": "ebdddd7ab7fc2af4f1a1ad139c6ab271a730b6e62286a15bfbc05b8372efa438",
+  "weight_tag_tuple_bytes": 84,
+  "weight_tags": [
+    {
+      "resolved_content_digest": "bba4f0c01e9406408ac99a865a9165cc6bdfe2b0a67d1937ddc81c0092d5c9ed",
+      "tuple_hex": "da9108b33d9d31cb1f8f6f426021d009f323f6e8e04d3b88029285c03cf2e0220400000000000000000000000010000000000000bba4f0c01e9406408ac99a865a9165cc6bdfe2b0a67d1937ddc81c0092d5c9ed",
+      "weight_bytes": 4096,
+      "weight_region_offset": 0,
+      "weight_symbol_id": 4,
+      "weight_tag_index": 0
+    },
+    {
+      "resolved_content_digest": "60a1392f6a62c7e90f65ede8d9097f5b61966ed90a78e4491a6b5b25ccc77b38",
+      "tuple_hex": "da9108b33d9d31cb1f8f6f426021d009f323f6e8e04d3b88029285c03cf2e022040000000010000000000000001000000000000060a1392f6a62c7e90f65ede8d9097f5b61966ed90a78e4491a6b5b25ccc77b38",
+      "weight_bytes": 4096,
+      "weight_region_offset": 4096,
+      "weight_symbol_id": 4,
+      "weight_tag_index": 1
+    }
+  ]
+}

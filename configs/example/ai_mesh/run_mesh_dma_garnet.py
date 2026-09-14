@@ -29,7 +29,12 @@ from m5.objects import (
 )
 from m5.util import addToPath, fatal
 
-from dummy_core_case_registry import Backend, backend_cases, invariant_registry
+from dummy_core_case_registry import (
+    CASES,
+    Backend,
+    garnet_scenario_cases,
+    invariant_registry,
+)
 
 
 def fatal_if(condition, fmt, *args):
@@ -50,6 +55,11 @@ from mesh_ir.effective import (  # noqa: E402
     apply_cli_dma_overrides,
 )
 from mesh_ir.generated import abi as A  # noqa: E402
+from mesh_ir.gate5_contract import prestart_terminal_gaps  # noqa: E402
+from mesh_ir.moe_overlay_runtime import (  # noqa: E402
+    overlay_service_expectations,
+    payload_digest,
+)
 
 ARCH_YAML = Path(__file__).resolve().parent / "arch/mesh_1x2.yaml"
 
@@ -95,6 +105,12 @@ NODE_SRAM0 = 10
 NODE_SRAM1 = 11
 NODE_HBM = 12
 NODE_ERR = 13
+NODE_SRAM_FIRST = 10
+
+
+def scenario_node_ids(core_count):
+    sram = [NODE_SRAM_FIRST + index for index in range(core_count)]
+    return sram, NODE_SRAM_FIRST + core_count, NODE_SRAM_FIRST + core_count + 1
 
 
 
@@ -113,7 +129,7 @@ SCENARIOS = {}
 
 def case(name):
     def register(fn):
-        if name not in backend_cases(Backend.GARNET):
+        if name not in garnet_scenario_cases():
             raise RuntimeError(f"unregistered Garnet case {name}")
         SCENARIOS[name] = fn
         return fn
@@ -187,50 +203,59 @@ def _expected_digest(rows, addr, size):
 
 # ------------------------------------------------------------- scenarios ----
 
-def base_scenario(options):
+def base_scenario(options, core_count):
     wc, wb = options.quota_write_contexts, options.quota_write_beats
     rc, rb = options.quota_read_contexts, options.quota_read_beats
+    routers = options.axi_mesh_routers
+    sram_nodes, hbm_node, err_node = scenario_node_ids(core_count)
     initiators = [
-        {"src_node": 0, "src_port": 0, "router_id": 0, "default_target": NODE_ERR},
-        {"src_node": 1, "src_port": 0, "router_id": 1, "default_target": NODE_ERR},
+        {"src_node": index, "src_port": 0, "router_id": index % routers,
+         "default_target": err_node}
+        for index in range(core_count)
     ]
     targets = [
-        {"dst_node": NODE_SRAM0, "router_id": 2},
-        {"dst_node": NODE_SRAM1, "router_id": 3},
-        {"dst_node": NODE_HBM, "router_id": 4},
-        {"dst_node": NODE_ERR, "router_id": 5},
+        {"dst_node": sram_nodes[index],
+         "router_id": (core_count + index) % routers}
+        for index in range(core_count)
+    ] + [
+        {"dst_node": hbm_node, "router_id": (2 * core_count) % routers},
+        {"dst_node": err_node, "router_id": (2 * core_count + 1) % routers},
     ]
     quotas = [
-        {"src_node": s, "src_port": 0, "dst_node": t,
+        {"src_node": source, "src_port": 0, "dst_node": target,
          "write_contexts": wc, "write_beats": wb,
          "read_contexts": rc, "read_beats": rb}
-        for s in (0, 1)
-        for t in (NODE_SRAM0, NODE_SRAM1, NODE_HBM, NODE_ERR)
+        for source in range(core_count)
+        for target in (*sram_nodes, hbm_node, err_node)
+    ]
+    target_ranges = [
+        {"dst_node": sram_nodes[index], "start": SRAM_BASE + index * SRAM_STRIDE,
+         "end": SRAM_BASE + index * SRAM_STRIDE + SRAM_TILE}
+        for index in range(core_count)
+    ] + [
+        {"dst_node": hbm_node, "start": HBM_BASE, "end": HBM_BASE + HBM_WINDOW},
+        {"dst_node": hbm_node, "start": HOST_SHARED_BASE,
+         "end": HOST_SHARED_BASE + 0x100000},
     ]
     return {
         "schema_version": 1,
         "name": "mesh_program",
         "driver_mode": "mesh_program",
         "endpoint_to_router": {"initiators": initiators, "targets": targets},
-        "default_error_target": NODE_ERR,
-        "target_ranges": [
-            {"dst_node": NODE_SRAM0, "start": SRAM_BASE,
-             "end": SRAM_BASE + SRAM_TILE},
-            {"dst_node": NODE_SRAM1, "start": SRAM_BASE + SRAM_STRIDE,
-             "end": SRAM_BASE + SRAM_STRIDE + SRAM_TILE},
-            {"dst_node": NODE_HBM, "start": HBM_BASE,
-             "end": HBM_BASE + HBM_WINDOW},
-            {"dst_node": NODE_HBM, "start": HOST_SHARED_BASE,
-             "end": HOST_SHARED_BASE + 0x100000},
-        ],
+        "default_error_target": err_node,
+        "target_ranges": target_ranges,
         "quotas": quotas,
         "mesh_planned_extra_latency": [],
         "mesh_planned_faults": [],
     }
 
 
+def source_nodes(core_ids):
+    return {core_id: index for index, core_id in enumerate(core_ids)}
+
+
 def write_uids(program_dir, arch, core_id, count):
-    src_nodes = {0: 0, 1: 1}
+    src_nodes = source_nodes(sorted(arch["core_ids"]))
     uids = predict(program_dir, arch, src_nodes)[core_id]["write"]
     fatal_if(len(uids) < count, "predicted %d write uids, need %d", len(uids), count)
     return uids
@@ -254,6 +279,121 @@ def case_p2p_basic(ctx):
     ctx.seeds = DUAL_SEEDS
     ctx.verify = DUAL_VERIFY
     ctx.instances = ctx.options.instances
+
+
+MOE_DUAL_SEEDS = [
+    (HBM_BASE + 0x000000, 8192, 0x77),
+    (HBM_BASE + 0x100000, 64, 0x3C),
+]
+MOE_DUAL_VERIFY = [(HBM_BASE + 0x200000, 128)]
+
+MOE_QUAD_SEEDS = [
+    (HBM_BASE + core * 4096, 4096, 0x30 + core) for core in range(16)
+] + [
+    (HBM_BASE + 0x100000 + core * 64, 64, 0x60 + core) for core in range(16)
+]
+MOE_QUAD_VERIFY = [
+    (HBM_BASE + 0x200000 + core * 128, 128) for core in range(16)
+]
+
+
+@case("moe_dual_drop")
+def case_moe_dual_drop(ctx):
+    """MOE-12: the dual program with a capacity that drops one member."""
+    ctx.program = "moe_dual_drop"
+    ctx.seeds = MOE_DUAL_SEEDS
+    ctx.verify = MOE_DUAL_VERIFY
+    ctx.instances = ctx.options.instances
+
+
+@case("moe_dual_copy")
+def case_moe_dual_copy(ctx):
+    """MOE-14: single-expert selection, so every token takes COPY_THROUGH."""
+    ctx.program = "moe_dual_copy"
+    ctx.seeds = MOE_DUAL_SEEDS
+    ctx.verify = MOE_DUAL_VERIFY
+    ctx.instances = ctx.options.instances
+
+
+@case("moe_dual_basic")
+def case_moe_dual_basic(ctx):
+    """E2E-C basic form: two MoE regions over real Garnet/AXI/SRAM/Core."""
+    ctx.program = "moe_dual"
+    ctx.seeds = MOE_DUAL_SEEDS
+    ctx.verify = MOE_DUAL_VERIFY
+    ctx.instances = ctx.options.instances
+
+
+@case("moe_quad")
+def case_moe_quad(ctx):
+    """E2E-C 4x4: the 16-core MoE program over the real 4x4 Garnet mesh."""
+    ctx.program = "moe_quad"
+    ctx.seeds = MOE_QUAD_SEEDS
+    ctx.verify = MOE_QUAD_VERIFY
+    ctx.instances = ctx.options.instances
+
+
+@case("moe_quad_hotspot")
+def case_moe_quad_hotspot(ctx):
+    """E2E-C 4x4: the hotspot profile loads a few expert cores harder."""
+    ctx.program = "moe_quad"
+    ctx.seeds = MOE_QUAD_SEEDS
+    ctx.verify = MOE_QUAD_VERIFY
+    ctx.instances = ctx.options.instances
+
+
+@case("moe_dual_cached")
+def case_moe_dual_cached(ctx):
+    """MOE-19: the same dual MoE program under the cached weight policy."""
+    ctx.program = "moe_dual"
+    ctx.seeds = MOE_DUAL_SEEDS
+    ctx.verify = MOE_DUAL_VERIFY
+    ctx.instances = ctx.options.instances
+
+
+@case("moe_dual_cached_reuse")
+def case_moe_dual_cached_reuse(ctx):
+    """MOE-28: a second instance reuses the resident cache lines."""
+    ctx.program = "moe_dual"
+    ctx.seeds = MOE_DUAL_SEEDS
+    ctx.verify = MOE_DUAL_VERIFY
+    ctx.instances = 2
+
+
+@case("moe_dual_cached_reuse_fault")
+def case_moe_dual_cached_reuse_fault(ctx):
+    """MOE-28: the second instance arms against a tombstoned reservation."""
+    ctx.program = "moe_dual"
+    ctx.seeds = MOE_DUAL_SEEDS
+    ctx.verify = MOE_DUAL_VERIFY
+    ctx.instances = 2
+    ctx.expected_terminal = "MESH_PROGRAM_PRESTART_FAILED"
+    ctx.scenario["mesh_planned_faults"].append({
+        "target": NODE_HBM,
+        "uid": (1 << 48) | (1 << 39),
+        "resp": "slverr",
+    })
+
+
+@case("moe_multi_cached")
+def case_moe_multi_cached(ctx):
+    """MOE-28: one batch reserves every reachable layer of one core."""
+    ctx.program = "moe_multi"
+    ctx.seeds = MOE_DUAL_SEEDS
+    ctx.verify = MOE_DUAL_VERIFY
+    ctx.instances = 1
+
+
+@case("moe_dual_timing")
+def case_moe_dual_timing(ctx):
+    """MOE-3: the dual MoE program under a different AXI/DMA timing setup."""
+    ctx.program = "moe_dual"
+    ctx.seeds = MOE_DUAL_SEEDS
+    ctx.verify = MOE_DUAL_VERIFY
+    ctx.instances = ctx.options.instances
+    EFFECTIVE_ARCH.override("dma_read_outstanding", 2)
+    EFFECTIVE_ARCH.override("dma_write_outstanding", 2)
+    EFFECTIVE_ARCH.override("dma_descriptor_queue_depth", 2)
 
 
 @case("dma_edge")
@@ -685,6 +825,8 @@ def check_completion_timing(ctx, result, expected_rows, out):
     loads = [r for r in expected_rows.values() if r["kind"] == 1]
     stores = [r for r in expected_rows.values() if r["kind"] == 2]
     for row in result.get("dma_timings", []):
+        if row.get("domain", 0) != 0:
+            continue
         descriptor = by_descriptor.get(row["descriptor_id"])
         if descriptor is None:
             continue
@@ -723,6 +865,8 @@ def check_completion_timing(ctx, result, expected_rows, out):
                     % (row["descriptor_id"], row["first_ar_tick"],
                        row["last_r_tick"], row["done_tick"]),
                 )
+                continue
+            if row.get("domain", 0) != 0:
                 continue
             fatal_if(
                 row["first_aw_tick"] != 0 or row["first_w_tick"] != 0
@@ -1273,6 +1417,774 @@ def check_cross_core_order(ctx, result, expected_rows, out):
     out.append("cross-core order: PASS")
 
 
+def check_moe_overlay_traffic(ctx, result, expected_rows, out):
+    overlay_rows = [row for row in result["transport"]
+                    if row.get("domain", 0) == 1]
+    static_rows = [row for row in result["transport"]
+                   if row.get("domain", 0) == 0]
+    fatal_if(not overlay_rows, "no overlay descriptor reached the DMA engine")
+    kinds = {}
+    for row in overlay_rows:
+        kinds.setdefault(row["object_kind"], []).append(row)
+    fatal_if(sorted(kinds) != [2],
+             "overlay traffic must carry DESCRIPTOR identity, got %s"
+             % sorted(kinds))
+    installed = {document["layer_id"] for document in overlay_projections(ctx)}
+    for row in overlay_rows:
+        fatal_if(row["region_group_id"] not in installed,
+                 "overlay traffic from layer %d outside the installed %s",
+                 row["region_group_id"], sorted(installed))
+        fatal_if(row["read_bytes"] + row["write_bytes"] +
+                 row["fill_bytes"] + row["p2p_bytes"] == 0,
+                 "overlay descriptor %d moved no bytes" % row["descriptor_id"])
+    expected_static = {row["descriptor_id"] for row in expected_rows.values()
+                       if row["useful_bytes"] > 0}
+    actual_static = {row["descriptor_id"] for row in static_rows}
+    fatal_if(not actual_static <= expected_static,
+             "static traffic outside the oracle: %s"
+             % sorted(actual_static - expected_static))
+    cached_policy = getattr(ctx.options, "weight_policy", "streamed") == \
+        "cached"
+    fatal_if(not cached_policy and
+             any(row.get("domain", 0) == 2 for row in result["transport"]),
+             "the streamed weight policy must not produce cache fills")
+    fatal_if(not cached_policy and
+             not [row for row in overlay_rows if row.get("dma_kind") == 1],
+             "the streamed weight policy must load weights through the "
+             "batch-owned overlay")
+    fatal_if(cached_policy and
+             [row for row in overlay_rows if row.get("dma_kind") == 1],
+             "the cached weight policy forbids a batch-owned weight load")
+    out.append("moe_overlay_traffic")
+
+
+MOE_DMA_KIND = {
+    A.MOE_DESCRIPTOR_KIND.ROUTE_FILL: A.DMA_KIND.LOCAL_FILL,
+    A.MOE_DESCRIPTOR_KIND.STREAMED_WEIGHT: A.DMA_KIND.LOAD,
+    A.MOE_DESCRIPTOR_KIND.PAD_FILL: A.DMA_KIND.LOCAL_FILL,
+    A.MOE_DESCRIPTOR_KIND.DISPATCH: A.DMA_KIND.P2P_PUSH,
+    A.MOE_DESCRIPTOR_KIND.COMBINE: A.DMA_KIND.P2P_PUSH,
+    A.MOE_DESCRIPTOR_KIND.DROPPED_TOKEN_FILL: A.DMA_KIND.LOCAL_FILL,
+}
+
+MOE_DMA_PAYLOAD = {
+    A.DMA_KIND.LOCAL_FILL: "fill_bytes",
+    A.DMA_KIND.LOAD: "read_bytes",
+    A.DMA_KIND.P2P_PUSH: "p2p_bytes",
+}
+
+MOE_DMA_BURSTS = {
+    A.DMA_KIND.LOCAL_FILL: "write_bursts",
+    A.DMA_KIND.LOAD: "read_bursts",
+    A.DMA_KIND.P2P_PUSH: "p2p_bursts",
+}
+
+
+
+def overlay_projections(ctx):
+    """Every installed layer's canonical projection, in image order."""
+    documents = []
+    for image in str(ctx.options.overlay_image).split(","):
+        fixture = Path(image).with_suffix(".json")
+        fatal_if(not fixture.exists(),
+                 "no materialized overlay projection beside %s", image)
+        documents.append(json.loads(fixture.read_text(encoding="utf-8")))
+    return documents
+
+
+def overlay_projection(ctx):
+    return overlay_projections(ctx)[0]
+
+
+def per_region_link_bytes(objects):
+    totals = {}
+    for row in objects:
+        if row["kind"] != A.MESH_OBJECT_KIND.DESCRIPTOR:
+            continue
+        if row["secondary_kind"] not in (A.MOE_DESCRIPTOR_KIND.DISPATCH,
+                                         A.MOE_DESCRIPTOR_KIND.COMBINE):
+            continue
+        if row["src_view_ordinal"] == 0:
+            continue
+        totals[row["region_id"]] = totals.get(row["region_id"], 0) + \
+            row["bytes"]
+    return totals
+
+
+def check_moe_canonical_projection(ctx, result, expected_rows, out):
+    moe = result.get("moe")
+    fatal_if(not moe, "result JSON has no moe section")
+    documents = overlay_projections(ctx)
+    commands = {}
+    for document in documents:
+        for row in document["objects"]:
+            if row["kind"] == A.MESH_OBJECT_KIND.COMMAND:
+                key = (document["layer_id"], row["owner_core"])
+                commands[key] = commands.get(key, 0) + 1
+    for region in moe["regions"]:
+        fatal_if(region["issued"] != region["completed"],
+                 "region %d issued %d but completed %d", region["region_id"],
+                 region["issued"], region["completed"])
+        materialized = commands.get((region["layer_id"], region["core_id"]), 0)
+        fatal_if(region["issued"] != materialized,
+                 "core %d layer %d executed %d of its %d materialized overlay "
+                 "commands", region["core_id"], region["layer_id"],
+                 region["issued"], materialized)
+    burst_bytes = (ARCH_MANIFEST.axi_data_bytes *
+                   ARCH_MANIFEST.axi_max_burst_beats)
+    fatal_if(burst_bytes == 0, "the architecture has no AXI burst geometry")
+    instances = max(1, ctx.instances)
+    expected = {}
+    for document in documents:
+        for row in document["objects"]:
+            if row["kind"] != A.MESH_OBJECT_KIND.DESCRIPTOR:
+                continue
+            if row["secondary_kind"] in (A.MOE_DESCRIPTOR_KIND.DISPATCH,
+                                         A.MOE_DESCRIPTOR_KIND.COMBINE) and \
+                    row["src_view_ordinal"] == 0:
+                continue
+            expected[(document["layer_id"], row["region_id"],
+                      row["ordinal"])] = row
+    fatal_if(not expected, "the overlay projection moves no data")
+    actual = {}
+    layers = {document["layer_id"] for document in documents}
+    for row in result["transport"]:
+        if row.get("domain", 0) != 1:
+            continue
+        fatal_if(row.get("object_kind") != A.MESH_OBJECT_KIND.DESCRIPTOR,
+                 "overlay traffic must carry DESCRIPTOR identity")
+        layer_id = row.get("region_group_id")
+        fatal_if(layer_id not in layers,
+                 "overlay traffic carries layer %s outside the installed %s",
+                 layer_id, sorted(layers))
+        actual[(layer_id, row["region_id"], row["descriptor_id"])] = row
+    fatal_if(set(actual) != set(expected),
+             "materialized descriptors and overlay traffic differ: "
+             "missing %s extra %s"
+             % (sorted(set(expected) - set(actual)),
+                sorted(set(actual) - set(expected))))
+    for key in sorted(expected):
+        descriptor = expected[key]
+        row = actual[key]
+        kind = MOE_DMA_KIND[descriptor["secondary_kind"]]
+        fatal_if(row["dma_kind"] != kind,
+                 "descriptor %s moved as dma kind %d instead of %d",
+                 key, row["dma_kind"], kind)
+        payload = MOE_DMA_PAYLOAD[kind]
+        expected_bytes = descriptor["bytes"] * instances
+        fatal_if(row[payload] != expected_bytes,
+                 "descriptor %s moved %d of its %d materialized bytes",
+                 key, row[payload], expected_bytes)
+        bursts = (0 if kind == A.DMA_KIND.LOCAL_FILL
+                  else -(-descriptor["bytes"] // burst_bytes)) * instances
+        fatal_if(row[MOE_DMA_BURSTS[kind]] != bursts,
+                 "descriptor %s used %d bursts instead of %d",
+                 key, row[MOE_DMA_BURSTS[kind]], bursts)
+        fatal_if(row["error_code"] != 0,
+                 "descriptor %s drained with error %d", key,
+                 row["error_code"])
+    out.append("moe_canonical_projection")
+
+
+def check_moe_cache_fill_traffic(ctx, result, expected_rows, out):
+    moe = result.get("moe")
+    fatal_if(not moe, "result JSON has no moe section")
+    fills = moe.get("cache_fills", [])
+    fatal_if(not fills, "cached policy produced no weight fill")
+    partition = ARCH_MANIFEST.partition(
+        A.SRAM_PARTITION_KIND.WEIGHT_CACHE)
+    slot_bytes = ARCH_MANIFEST.sram_weight_cache_slot_bytes
+    fatal_if(partition is None or slot_bytes == 0,
+             "cached policy needs a WEIGHT_CACHE partition")
+    slots = partition.bytes // slot_bytes
+    for row in fills:
+        fatal_if(row["slot_id"] >= slots,
+                 "fill landed in slot %d of %d", row["slot_id"], slots)
+        fatal_if(row["bytes"] > slot_bytes,
+                 "fill of %d bytes exceeds the %d byte slot", row["bytes"],
+                 slot_bytes)
+        expected = partition.base + row["slot_id"] * slot_bytes
+        fatal_if(row["address"] != expected,
+                 "fill of slot %d landed at %#x instead of %#x",
+                 row["slot_id"], row["address"], expected)
+    seen = set()
+    for row in fills:
+        key = (row["core_id"], row["weight_tag_index"],
+               row["fill_incarnation"])
+        fatal_if(key in seen, "duplicate full fill identity")
+        seen.add(key)
+        fatal_if(row["bytes"] != row["committed_bytes"],
+                 "cache fill of tag %d moved %d of %d bytes",
+                 row["weight_tag_index"], row["committed_bytes"],
+                 row["bytes"])
+    fatal_if(any(row.get("domain", 0) == 1 and row.get("dma_kind") == 1
+                 for row in result["transport"]),
+             "the cached weight policy must not issue a batch-owned weight "
+             "load")
+    rows = [row for row in result["transport"]
+            if row.get("domain", 0) == 2]
+    fatal_if(not rows, "cache fills produced no DMA traffic")
+    logged = sum(row["bytes"] for row in fills)
+    moved = sum(row["read_bytes"] for row in rows)
+    fatal_if(moved != logged,
+             "cache fill traffic moved %d of %d logged bytes",
+             moved, logged)
+    for row in rows:
+        fatal_if(row["read_bytes"] == 0, "cache fill read no bytes")
+        fatal_if(row.get("dma_kind") != 1,
+                 "cache fill must be a LOAD descriptor")
+        fatal_if(row["read_bursts"] == 0, "cache fill read no bursts")
+    # Every core that owns a cacheable weight view must have filled it, and
+    # no cache may fill a view it does not own.
+    owners = {row["owner_core"] for document in overlay_projections(ctx)
+              for row in document["objects"]
+              if row["kind"] == A.MESH_OBJECT_KIND.VIEW and
+              row["secondary_kind"] == A.MOE_VIEW_KIND.WEIGHT and
+              row["backing_kind"] == A.MOE_VIEW_BACKING.WEIGHT_CACHE_SLOT}
+    fatal_if(not owners, "the cached projection carries no cacheable weight")
+    cores = {row["core_id"] for row in fills}
+    fatal_if(cores != owners,
+             "cached policy filled cores %s but owns weights on %s"
+             % (sorted(cores), sorted(owners)))
+    # The reservation ledger is the SSOT for the arm gate: a completed run
+    # committed each core demand once, started each instance once and never
+    # re-keyed a waiting request.
+    instances = int(getattr(ctx, "instances", 0) or
+                    getattr(ctx.options, "instances", 1) or 1)
+    instances = max(1, instances)
+    reservation = result.get("cache_reservation")
+    fatal_if(reservation is None,
+             "cached policy produced no reservation ledger")
+    fatal_if(reservation["identity_reassignments"] != 0,
+             "reservation identities were reassigned %d times",
+             reservation["identity_reassignments"])
+    fatal_if(reservation["waiting"] != 0 or reservation["pending"],
+             "a completed run still waits for cache resources: %s",
+             reservation)
+    fatal_if(reservation["starts"] != instances,
+             "started %d of %d instances", reservation["starts"], instances)
+    fatal_if(reservation["commits"] != len(owners) * instances,
+             "committed %d of %d core demands",
+             reservation["commits"], len(owners) * instances)
+    last_fill = max(row["done_tick"] for row in fills)
+    for region in moe["regions"]:
+        fatal_if(region["entry_tick"] == 0,
+                 "cached region %d never released its entry",
+                 region["region_id"])
+        fatal_if(region["entry_tick"] < last_fill,
+                 "region %d entered before its weights were resident "
+                 "(entry %d < fill %d)", region["region_id"],
+                 region["entry_tick"], last_fill)
+    out.append("moe_cache_fill_traffic")
+
+
+def check_moe_cache_reuse(ctx, result, expected_rows, out):
+    moe = result.get("moe")
+    fatal_if(not moe, "result JSON has no MoE section")
+    records = result.get("instances", [])
+    fatal_if(len(records) != ctx.instances,
+             "instance ledger count %d != %d" % (len(records), ctx.instances))
+    for record in records:
+        for core_id, ledger in record["cores"].items():
+            fatal_if(ledger["errored"] or ledger["cancelled"],
+                     "instance %d core %s is not clean: %s"
+                     % (record["instance"], core_id, ledger))
+            fatal_if(ledger["completed"] == 0,
+                     "instance %d core %s completed nothing"
+                     % (record["instance"], core_id))
+    first = records[0]["cores"]
+    for record in records[1:]:
+        fatal_if(record["cores"] != first,
+                 "instance %d repeated a different command ledger"
+                 % record["instance"])
+    fills = moe.get("cache_fills", [])
+    cores = {row["core_id"] for row in fills}
+    fatal_if(len(fills) != len(cores),
+             "%d cache fills served %d cores across %d instances"
+             % (len(fills), len(cores), ctx.instances))
+    for row in fills:
+        fatal_if(row["fill_incarnation"] != 1,
+                 "core %d refilled tag %d as incarnation %d"
+                 % (row["core_id"], row["weight_tag_index"],
+                    row["fill_incarnation"]))
+        fatal_if(row["bytes"] != row["committed_bytes"],
+                 "cache fill of tag %d moved %d of %d bytes"
+                 % (row["weight_tag_index"], row["committed_bytes"],
+                    row["bytes"]))
+    rows = [row for row in result["transport"] if row.get("domain", 0) == 2]
+    moved = sum(row["read_bytes"] for row in rows)
+    fatal_if(moved != sum(row["bytes"] for row in fills),
+             "cache fill traffic moved %d of %d logged bytes"
+             % (moved, sum(row["bytes"] for row in fills)))
+    out.append("moe_cache_reuse")
+
+
+def check_moe_prestart_terminal(ctx, result, expected_rows, out):
+    # The expected identities are frozen when the case loads (not derived from
+    # the artifact under test); a harness without them still gets the required
+    # field/type/internal-identity checks.
+    gaps = prestart_terminal_gaps(
+        result, getattr(ctx, "expected_cache_cores", ()),
+        getattr(ctx, "expected_regions", ()),
+        int(getattr(ctx, "instances", 0) or 0))
+    fatal_if(gaps, "prestart terminal artifacts disagree: %s"
+             % "; ".join(gaps))
+    out.append("moe_prestart_terminal")
+
+
+def check_moe_drain_state(ctx, result, expected_rows, out):
+    moe = result.get("moe")
+    fatal_if(not moe, "result JSON has no MoE section")
+    for core in result["cores"]:
+        fatal_if(core["live_commands"] != 0,
+                 "core %d still holds %d live commands", core["core_id"],
+                 core["live_commands"])
+        fatal_if(core["commands_issued"] != core["commands_completed"] +
+                 core["commands_errored"] + core["commands_cancelled"],
+                 "core %d issued %d but settled %d/%d/%d", core["core_id"],
+                 core["commands_issued"], core["commands_completed"],
+                 core["commands_errored"], core["commands_cancelled"])
+        fatal_if(core["dma_idle"] != 1,
+                 "core %d DMA engine is not idle", core["core_id"])
+        fatal_if(core["instance_error"] != 0,
+                 "core %d latched an instance error", core["core_id"])
+    for region in moe["regions"]:
+        fatal_if(not region["drained"],
+                 "region %d overlay is not drained", region["region_id"])
+        fatal_if(region["issued"] != region["completed"],
+                 "region %d issued %d but completed %d", region["region_id"],
+                 region["issued"], region["completed"])
+    fatal_if(moe["groups_exited"] != len(overlay_projections(ctx)),
+             "overlay group exit count is %d for %d installed layers",
+             moe["groups_exited"], len(overlay_projections(ctx)))
+    for bridge in result["bridges"]:
+        fatal_if(bridge["pending_ar"] or bridge["pending_aw"],
+                 "bridge %d holds pending AXI work", bridge["core_id"])
+    for aperture in result["apertures"]:
+        fatal_if(aperture["error_drained_bytes"] != 0,
+                 "aperture %d drained error bytes", aperture["core_id"])
+    for state in moe.get("cache_state", []):
+        fatal_if(state["live_tokens"] or state["live_obligations"] or
+                 state["pending_fills"] or state["pending_subscribers"],
+                 "core %d cache still holds live work: %s"
+                 % (state["core_id"], state))
+        fatal_if(state["token_releases"] != state["tokens_created"],
+                 "core %d released %d of %d cache tokens"
+                 % (state["core_id"], state["token_releases"],
+                    state["tokens_created"]))
+        fatal_if(state["tombstoned_subscribers"] != 0,
+                 "core %d tombstoned %d subscribers without an instance fault"
+                 % (state["core_id"], state["tombstoned_subscribers"]))
+        for field in ("mshr", "eviction", "obligation", "subscriber"):
+            fatal_if(state[field + "_free"] != state[field + "_slots"],
+                     "core %d cache %s slots are %d of %d"
+                     % (state["core_id"], field, state[field + "_free"],
+                        state[field + "_slots"]))
+        if state["tombstones"] == 0:
+            fatal_if(not state["valid_lines"],
+                     "core %d drained without a persistent cache line"
+                     % state["core_id"])
+            for line in state["valid_lines"]:
+                fatal_if(line["valid_bytes"] == 0,
+                         "core %d slot %d is VALID with no bytes"
+                         % (state["core_id"], line["slot_id"]))
+    out.append("moe_drain_state")
+
+
+def check_moe_hotspot_load(ctx, result, expected_rows, out):
+    primary_image = str(ctx.options.overlay_image).split(",")[0]
+    fatal_if("hotspot" not in Path(primary_image).name,
+             "the hotspot check needs the hotspot overlay image")
+    hot = per_region_link_bytes(overlay_projection(ctx)["objects"])
+    balanced_path = Path(primary_image).with_name(
+        "moe_quad_overlay_objects.json")
+    fatal_if(not balanced_path.exists(),
+             "missing the balanced quad overlay projection")
+    balanced = per_region_link_bytes(json.loads(
+        balanced_path.read_text(encoding="utf-8"))["objects"])
+    fatal_if(not hot or not balanced, "hotspot comparison needs p2p descriptors")
+    peak = max(hot.values())
+    mean = sum(balanced.values()) / len(balanced)
+    fatal_if(peak < 2 * mean,
+             "hotspot peak %d does not exceed twice the balanced mean %d"
+             % (peak, mean))
+    actual = {}
+    for row in result["transport"]:
+        if row.get("domain", 0) == 1 and row.get("dma_kind") == 3:
+            actual[row["region_id"]] = actual.get(row["region_id"], 0) + \
+                row["p2p_bytes"]
+    for region_id, expected in hot.items():
+        fatal_if(actual.get(region_id, 0) != expected,
+                 "hot region %d moved %d of its %d projected bytes"
+                 % (region_id, actual.get(region_id, 0), expected))
+    out.append("moe_hotspot_load")
+
+
+def expected_compute_cycles(geometry):
+    macs = EFFECTIVE_ARCH.dtype_vector(
+        ARCH_MANIFEST.tensor_macs_per_cycle, "tensor macs")[
+            geometry["input_dtype"] - 1]
+    ops_per_cycle = EFFECTIVE_ARCH.dtype_vector(
+        ARCH_MANIFEST.reduce_ops_per_cycle, "reduce ops")[
+            geometry["accum_dtype"] - 1]
+    fatal_if(macs == 0 or ops_per_cycle == 0,
+             "the effective architecture has no engine capability for the "
+             "frozen kernel dtypes")
+    total = 0
+    for expert in geometry["experts"]:
+        work = expert["rows"] * geometry["n"] * geometry["k"]
+        engine = -(-(work * 65536) // (macs * geometry["efficiency_q16"]))
+        total += geometry["tensor_setup_cycles"] + engine + \
+            geometry["tensor_flush_cycles"]
+    for token in geometry["tokens"]:
+        ops = geometry["n"] * (token["fan_in"] - 1)
+        engine = -(-ops // ops_per_cycle)
+        total += geometry["combine_setup_cycles"] + engine + \
+            geometry["combine_flush_cycles"]
+    return total
+
+
+def check_moe_oracle_recompute(ctx, result, expected_rows, out):
+    for document in overlay_projections(ctx):
+        check_moe_oracle_layer(ctx, result, document)
+    out.append("moe_oracle_recompute")
+
+
+def check_moe_oracle_layer(ctx, result, document):
+    expected = document.get("oracle_expectations")
+    fatal_if(not expected,
+             "the overlay fixture carries no independent oracle expectations")
+    objects = document["objects"]
+    geometry = expected.get("compute_geometry")
+    fatal_if(not geometry,
+             "the overlay fixture carries no frozen compute geometry")
+    layer_id = document["layer_id"]
+    instances = int(getattr(ctx, "instances", 0) or
+                    getattr(ctx.options, "instances", 1) or 1)
+    instances = max(1, instances)
+    model = overlay_service_expectations(objects)
+    weight_from_cache = any(
+        row["kind"] == A.MESH_OBJECT_KIND.VIEW and
+        row["secondary_kind"] == A.MOE_VIEW_KIND.WEIGHT and
+        row["backing_kind"] == A.MOE_VIEW_BACKING.WEIGHT_CACHE_SLOT
+        for row in objects)
+
+    def model_total(kind, index):
+        return sum(levels.get(kind, (0, 0))[index]
+                   for regions in model.values()
+                   for levels in regions.values())
+
+    lane = lambda name: expected.get(name, 0)
+    fatal_if(model_total(A.MOE_VIEW_KIND.ROUTE_METADATA, 1) !=
+             lane("route_metadata_fill_sram_bytes"),
+             "route metadata service %d disagrees with the frozen %d",
+             model_total(A.MOE_VIEW_KIND.ROUTE_METADATA, 1),
+             lane("route_metadata_fill_sram_bytes"))
+    fatal_if(model_total(A.MOE_VIEW_KIND.MEMBER_INPUT, 0) !=
+             lane("dispatch_all_route_bytes"),
+             "member input reads %d disagree with the frozen %d",
+             model_total(A.MOE_VIEW_KIND.MEMBER_INPUT, 0),
+             lane("dispatch_all_route_bytes"))
+    fatal_if(model_total(A.MOE_VIEW_KIND.DISPATCH_BUFFER, 0) !=
+             lane("dispatch_remote_dma_bytes"),
+             "dispatch buffer reads %d disagree with the frozen %d",
+             model_total(A.MOE_VIEW_KIND.DISPATCH_BUFFER, 0),
+             lane("dispatch_remote_dma_bytes"))
+    fatal_if(model_total(A.MOE_VIEW_KIND.DISPATCH_BUFFER, 1) !=
+             lane("dispatch_remote_dma_bytes"),
+             "dispatch buffer writes %d disagree with the frozen %d",
+             model_total(A.MOE_VIEW_KIND.DISPATCH_BUFFER, 1),
+             lane("dispatch_remote_dma_bytes"))
+    fatal_if(model_total(A.MOE_VIEW_KIND.PAD_BUFFER, 0) !=
+             lane("padding_fill_sram_wbytes"),
+             "padding reads %d disagree with the frozen %d",
+             model_total(A.MOE_VIEW_KIND.PAD_BUFFER, 0),
+             lane("padding_fill_sram_wbytes"))
+    fatal_if(model_total(A.MOE_VIEW_KIND.PAD_BUFFER, 1) !=
+             lane("padding_fill_sram_wbytes"),
+             "padding writes %d disagree with the frozen %d",
+             model_total(A.MOE_VIEW_KIND.PAD_BUFFER, 1),
+             lane("padding_fill_sram_wbytes"))
+    # The expert reads its resident weight line in both policies; only the
+    # streamed policy also writes it through a batch-owned load.
+    expected_weight_read = lane("weight_sram_read_bytes")
+    expected_weight_write = 0 if weight_from_cache else expected_weight_read
+    fatal_if(model_total(A.MOE_VIEW_KIND.WEIGHT, 0) != expected_weight_read,
+             "weight reads %d disagree with the frozen %d",
+             model_total(A.MOE_VIEW_KIND.WEIGHT, 0), expected_weight_read)
+    fatal_if(model_total(A.MOE_VIEW_KIND.WEIGHT, 1) != expected_weight_write,
+             "weight writes %d disagree with the frozen %d",
+             model_total(A.MOE_VIEW_KIND.WEIGHT, 1), expected_weight_write)
+    fatal_if(model_total(A.MOE_VIEW_KIND.EXPERT_OUTPUT, 1) !=
+             lane("expert_output_sram_wbytes"),
+             "expert output writes %d disagree with the frozen %d",
+             model_total(A.MOE_VIEW_KIND.EXPERT_OUTPUT, 1),
+             lane("expert_output_sram_wbytes"))
+    fatal_if(model_total(A.MOE_VIEW_KIND.EXPERT_OUTPUT, 0) !=
+             lane("combine_gather_sram_rbytes"),
+             "combine gather reads %d disagree with the frozen %d",
+             model_total(A.MOE_VIEW_KIND.EXPERT_OUTPUT, 0),
+             lane("combine_gather_sram_rbytes"))
+    # A copy-through only writes its reduce output; a local reduce also reads
+    # the running accumulator.
+    copy_rows = sum(row["bytes"] for row in objects
+                    if row["kind"] == A.MESH_OBJECT_KIND.COMMAND and
+                    row["role"] == A.MOE_COMMAND_ROLE.COPY_THROUGH)
+    fatal_if(model_total(A.MOE_VIEW_KIND.REDUCE_ACCUMULATOR, 0) !=
+             lane("combine_output_sram_wbytes") - copy_rows,
+             "accumulator reads %d disagree with the frozen %d",
+             model_total(A.MOE_VIEW_KIND.REDUCE_ACCUMULATOR, 0),
+             lane("combine_output_sram_wbytes") - copy_rows)
+    fatal_if(model_total(A.MOE_VIEW_KIND.REDUCE_ACCUMULATOR, 1) !=
+             lane("combine_output_sram_wbytes"),
+             "accumulator writes %d disagree with the frozen %d",
+             model_total(A.MOE_VIEW_KIND.REDUCE_ACCUMULATOR, 1),
+             lane("combine_output_sram_wbytes"))
+    fatal_if(model_total(A.MOE_VIEW_KIND.MEMBER_OUTPUT, 1) !=
+             lane("combine_output_sram_wbytes") +
+             lane("fully_dropped_fill_sram_wbytes"),
+             "member output writes %d disagree with the frozen %d",
+             model_total(A.MOE_VIEW_KIND.MEMBER_OUTPUT, 1),
+             lane("combine_output_sram_wbytes") +
+             lane("fully_dropped_fill_sram_wbytes"))
+    fatal_if(model_total(A.MOE_VIEW_KIND.MEMBER_OUTPUT, 0) != 0,
+             "member outputs are read %d bytes but nothing consumes them",
+             model_total(A.MOE_VIEW_KIND.MEMBER_OUTPUT, 0))
+
+    moe = result.get("moe")
+    fatal_if(not moe, "result JSON has no moe section")
+    regions = [row for row in moe["regions"] if row["layer_id"] == layer_id]
+    fatal_if(not regions,
+             "no runtime region executed overlay layer %d", layer_id)
+    seen = {}
+    for region in regions:
+        key = (region["core_id"], region["region_id"])
+        fatal_if(key in seen, "region %s executed twice", key)
+        seen[key] = region
+        want = model.get(region["core_id"], {}).get(region["region_id"], {})
+        for kind, counts in sorted(want.items()):
+            actual_read = region["sram_read_by_kind"].get(str(kind), 0)
+            actual_write = region["sram_write_by_kind"].get(str(kind), 0)
+            fatal_if(actual_read != counts[0] or actual_write != counts[1],
+                     "region %s view kind %d served %d/%d but the frozen "
+                     "graph needs %d/%d", key, kind, actual_read,
+                     actual_write, counts[0], counts[1])
+        fatal_if(region["uncommitted_views"] != 0,
+                 "region %s left %d produced views uncommitted", key,
+                 region["uncommitted_views"])
+        expected_commits = sum(
+            1 for row in objects
+            if row["kind"] == A.MESH_OBJECT_KIND.COMMAND and
+            row["owner_core"] == region["core_id"] and
+            row["region_id"] == region["region_id"] and
+            row["role"] in (A.MOE_COMMAND_ROLE.EXPERT_COMPUTE,
+                            A.MOE_COMMAND_ROLE.COPY_THROUGH,
+                            A.MOE_COMMAND_ROLE.LOCAL_REDUCE))
+        fatal_if(region["compute_commits"] != expected_commits,
+                 "region %s committed %d compute outputs but the frozen graph "
+                 "carries %d", key, region["compute_commits"],
+                 expected_commits)
+    fatal_if(len(seen) != len(model),
+             "the runtime executed %d regions of layer %d but the frozen "
+             "graph needs %d", len(seen), layer_id, len(model))
+
+    actual_copies = sum(row["copy_through_commands"] for row in regions)
+    fatal_if(actual_copies != lane("copy_through_commands"),
+             "runtime ran %d COPY_THROUGH but the frozen plan needs %d",
+             actual_copies, lane("copy_through_commands"))
+    actual_reduces = sum(row["local_reduce_commands"] for row in regions)
+    fatal_if(actual_reduces != lane("local_reduce_commands"),
+             "runtime ran %d LOCAL_REDUCE but the frozen plan needs %d",
+             actual_reduces, lane("local_reduce_commands"))
+    actual_cycles = sum(row["compute_cycles"] for row in regions)
+    want_cycles = expected_compute_cycles(geometry)
+    fatal_if(actual_cycles != want_cycles,
+             "the overlay charged %d compute cycles but the frozen kernel "
+             "geometry needs %d", actual_cycles, want_cycles)
+
+    descriptors = {(row["owner_core"], row["region_id"], row["ordinal"]): row
+                   for row in objects
+                   if row["kind"] == A.MESH_OBJECT_KIND.DESCRIPTOR}
+    # A receive-side descriptor is served by the sender's push, so only the
+    # descriptors of commands that really submit to the engine must appear.
+    referenced = {(row["owner_core"], row["region_id"], row["ref_ordinal"])
+                  for row in objects
+                  if row["kind"] == A.MESH_OBJECT_KIND.COMMAND and
+                  row.get("ref_ordinal", 0) != 0 and
+                  row["secondary_kind"] != A.OPCODE.RECV_WAIT}
+    fill_kinds = {A.MOE_DESCRIPTOR_KIND.ROUTE_FILL: "fill",
+                  A.MOE_DESCRIPTOR_KIND.PAD_FILL: "fill",
+                  A.MOE_DESCRIPTOR_KIND.DROPPED_TOKEN_FILL: "fill",
+                  A.MOE_DESCRIPTOR_KIND.STREAMED_WEIGHT: "read",
+                  A.MOE_DESCRIPTOR_KIND.DISPATCH: "p2p",
+                  A.MOE_DESCRIPTOR_KIND.COMBINE: "p2p"}
+    seen_rows = set()
+    for row in result.get("transport", []):
+        if row.get("domain") != 1 or row.get("object_kind") != 2:
+            continue
+        if row.get("region_group_id") != layer_id:
+            continue
+        key = (row.get("core_id"), row.get("region_id"),
+               row.get("descriptor_id"))
+        descriptor = descriptors.get(key)
+        fatal_if(descriptor is None,
+                 "overlay transport row %s has no frozen descriptor", key)
+        seen_rows.add(key)
+        direction = fill_kinds.get(descriptor["secondary_kind"])
+        fatal_if(direction is None,
+                 "descriptor %s has no contract traffic direction", key)
+        moved = {"fill": row["fill_bytes"], "read": row["read_bytes"],
+                 "p2p": row["p2p_bytes"]}[direction]
+        # A descriptor reused by later instances keeps accumulating bytes,
+        # while its payload digest is the per-instance content digest.
+        fatal_if(descriptor["bytes"] == 0 or
+                 moved % descriptor["bytes"] != 0 or moved == 0,
+                 "descriptor %s moved %d %s bytes for a %d byte transfer",
+                 key, moved, direction, descriptor["bytes"])
+        if direction == "fill":
+            content = bytes.fromhex(descriptor["fill_content_hex"])
+            fatal_if(len(content) != descriptor["bytes"],
+                     "descriptor %s frozen content is %d B for %d B",
+                     key, len(content), descriptor["bytes"])
+            fatal_if(row["payload_digest"] != payload_digest(content),
+                     "descriptor %s installed content %s but the frozen "
+                     "row needs %s", key, row["payload_digest"],
+                     payload_digest(content))
+    for key in sorted(referenced):
+        fatal_if(key not in seen_rows,
+                 "the command-referenced descriptor %s never reached the "
+                 "engine", key)
+    fatal_if(not referenced,
+             "no frozen command references an overlay descriptor")
+
+    expected_remote = instances * (
+        expected.get("dispatch_remote_dma_bytes", 0) +
+        expected.get("combine_remote_dma_bytes", 0))
+    actual_remote = 0
+    for row in result.get("transport", []):
+        if row.get("domain") == 1 and row.get("dma_kind") == 3:
+            actual_remote += row.get("p2p_bytes", 0)
+    fatal_if(actual_remote != expected_remote,
+             "overlay moved %d remote bytes but the frozen plan needs %d",
+             actual_remote, expected_remote)
+
+
+def check_moe_drop_fill(ctx, result, expected_rows, out):
+    document = overlay_projection(ctx)
+    objects = document["objects"]
+    views = {(row["region_id"], row["ordinal"]): row for row in objects
+             if row["kind"] == A.MESH_OBJECT_KIND.VIEW}
+    fills = [row for row in objects
+             if row["kind"] == A.MESH_OBJECT_KIND.DESCRIPTOR and
+             row["secondary_kind"] == A.MOE_DESCRIPTOR_KIND.DROPPED_TOKEN_FILL]
+    fatal_if(not fills, "the drop overlay carries no dropped-token fill")
+    commands = [row for row in objects
+                if row["kind"] == A.MESH_OBJECT_KIND.COMMAND and
+                row["role"] == A.MOE_COMMAND_ROLE.DROPPED_TOKEN_FILL]
+    fatal_if(len(commands) != len(fills),
+             "dropped-token fill commands and descriptors differ")
+    for fill in fills:
+        view = views.get((fill["dst_view_region"], fill["dst_view_ordinal"]))
+        fatal_if(view is None, "dropped fill has no destination view")
+        fatal_if(view["secondary_kind"] != A.MOE_VIEW_KIND.MEMBER_OUTPUT,
+                 "dropped fill target is view kind %d",
+                 view["secondary_kind"])
+        fatal_if(view["backing_kind"] != A.MOE_VIEW_BACKING.STATIC_ALLOCATION,
+                 "dropped fill target backing is %d", view["backing_kind"])
+        fatal_if(view["bytes"] != fill["bytes"],
+                 "dropped fill serves %d bytes into a %d byte view",
+                 fill["bytes"], view["bytes"])
+    moe = result.get("moe")
+    fatal_if(not moe, "result JSON has no moe section")
+    fills_on_core = {fill["owner_core"] for fill in fills}
+    seen = 0
+    for region in moe["regions"]:
+        if region["core_id"] not in fills_on_core:
+            continue
+        seen += 1
+        fatal_if(region["issued"] != region["completed"],
+                 "region %d issued %d but completed %d", region["region_id"],
+                 region["issued"], region["completed"])
+        fatal_if(region["sram_write_bytes"] == 0,
+                 "region %d served no SRAM write for its dropped fill",
+                 region["region_id"])
+    fatal_if(seen == 0, "no region executed a dropped-token fill")
+    out.append("moe_drop_fill")
+
+
+def check_moe_copy_through(ctx, result, expected_rows, out):
+    document = overlay_projection(ctx)
+    objects = document["objects"]
+    copies = [row for row in objects
+              if row["kind"] == A.MESH_OBJECT_KIND.COMMAND and
+              row["role"] == A.MOE_COMMAND_ROLE.COPY_THROUGH]
+    fatal_if(not copies, "the copy overlay carries no COPY_THROUGH command")
+    regions = {row["region_id"] for row in copies}
+    fatal_if(len(copies) != 2 or len(regions) != 2,
+             "expected one COPY_THROUGH per token on distinct cores")
+    moe = result.get("moe")
+    fatal_if(not moe, "result JSON has no moe section")
+    seen = 0
+    for region in moe["regions"]:
+        if region["region_id"] not in regions:
+            continue
+        seen += 1
+        fatal_if(region["issued"] != region["completed"],
+                 "region %d issued %d but completed %d", region["region_id"],
+                 region["issued"], region["completed"])
+        fatal_if(region["sram_read_bytes"] == 0 or
+                 region["sram_write_bytes"] == 0,
+                 "region %d served no SRAM traffic for its copy-through",
+                 region["region_id"])
+    fatal_if(seen == 0, "no region executed a copy-through")
+    out.append("moe_copy_through")
+
+
+def check_moe_gate_release(ctx, result, expected_rows, out):
+    moe = result.get("moe")
+    fatal_if(not moe, "result JSON has no moe section")
+    documents = overlay_projections(ctx)
+    expected = sorted({(document["layer_id"], row["region_id"])
+                       for document in documents
+                       for row in document["objects"]
+                       if row["region_id"] != 0})
+    regions = sorted((region["layer_id"], region["region_id"])
+                     for region in moe["regions"])
+    fatal_if(regions != expected,
+             "MoE (layer, region) pairs are %s, expected %s"
+             % (regions, expected))
+    fatal_if(moe["groups_exited"] != len(documents),
+             "overlay group exit count is %d for %d installed layers",
+             moe["groups_exited"], len(documents))
+    fatal_if(sorted(moe["overlay_exits"]) !=
+             sorted(document["layer_id"] for document in documents),
+             "overlay exits are %s", moe["overlay_exits"])
+    for region in moe["regions"]:
+        fatal_if(region["phase"] != 3,
+                 "region %d gate phase is %d", region["region_id"],
+                 region["phase"])
+        fatal_if(not region["armed"],
+                 "region %d was never armed", region["region_id"])
+        fatal_if(not region["drained"],
+                 "region %d overlay did not drain", region["region_id"])
+    out.append("moe_gate_release")
+
+
+def check_moe_overlay_execution(ctx, result, expected_rows, out):
+    moe = result.get("moe")
+    fatal_if(not moe, "result JSON has no moe section")
+    for region in moe["regions"]:
+        fatal_if(region["issued"] == 0,
+                 "region %d issued no overlay command", region["region_id"])
+        fatal_if(region["issued"] != region["completed"],
+                 "region %d issued %d but completed %d", region["region_id"],
+                 region["issued"], region["completed"])
+        fatal_if(
+            region["sram_read_bytes"] + region["sram_write_bytes"] == 0,
+            "region %d served no SRAM bytes", region["region_id"])
+    out.append("moe_overlay_execution")
+
+
 CHECKS = {
     "conservation": check_conservation,
     "completion_timing": check_completion_timing,
@@ -1296,6 +2208,18 @@ CHECKS = {
     "shapes_content": check_shapes_content,
     "cross_core_order": check_cross_core_order,
     "instance_ledgers": check_instance_ledgers,
+    "moe_overlay_traffic": check_moe_overlay_traffic,
+    "moe_canonical_projection": check_moe_canonical_projection,
+    "moe_cache_fill_traffic": check_moe_cache_fill_traffic,
+    "moe_cache_reuse": check_moe_cache_reuse,
+    "moe_hotspot_load": check_moe_hotspot_load,
+    "moe_drop_fill": check_moe_drop_fill,
+    "moe_oracle_recompute": check_moe_oracle_recompute,
+    "moe_copy_through": check_moe_copy_through,
+    "moe_drain_state": check_moe_drain_state,
+    "moe_prestart_terminal": check_moe_prestart_terminal,
+    "moe_gate_release": check_moe_gate_release,
+    "moe_overlay_execution": check_moe_overlay_execution,
 }
 
 
@@ -1319,8 +2243,15 @@ def main():
         garnet_vnet_classes="ctrl,data,ctrl,ctrl,data",
         garnet_buffers_per_vnet="4,8,4,4,8",
     )
-    parser.add_argument("--case", choices=backend_cases(Backend.GARNET), required=True)
+    parser.add_argument("--case", choices=garnet_scenario_cases(), required=True)
     parser.add_argument("--mesh-program-dir", required=True)
+    parser.add_argument("--weight-policy", default="streamed",
+                        choices=("streamed", "cached"),
+                        help="MoE weight policy; cached installs a per-core "
+                             "weight cache and issues real fill DMA")
+    parser.add_argument("--overlay-image", default="",
+                        help="Optional MoE overlay image installed by the "
+                             "loader for Dynamic MoE programs")
     parser.add_argument("--arch", default=str(ARCH_YAML),
                         help="Architecture manifest; may vary dma/axi tuning "
                              "fields only (regions/clock/topology are pinned)")
@@ -1345,7 +2276,9 @@ def main():
     args = parser.parse_args()
 
     # Mesh-program topology defaults (AXI options come from
-    # AXI_MESH.define_options with tester-oriented defaults).
+    # AXI_MESH.define_options with tester-oriented defaults).  The scenario
+    # endpoint map owns the router count: two initiator endpoints plus the
+    # SRAM/HBM/error targets.
     args.axi_mesh_routers = 6
     args.axi_data_width_bits = 256
     args.axi_user_width_bits = 0
@@ -1361,14 +2294,36 @@ def main():
     fatal_if(buildEnv["PROTOCOL"] != "AXI_MESH",
              "run_mesh_dma_garnet.py requires the AXI_MESH protocol")
 
-    args.num_cpus = args.axi_mesh_routers
     if Path(args.arch).resolve() != ARCH_YAML.resolve():
         requested = load_arch(args.arch)
-        fatal_if(_layout_key(requested) != _layout_key(ARCH_MANIFEST),
+        fatal_if(CASES[args.case].backend is not Backend.GATE5 and
+                 _layout_key(requested) != _layout_key(ARCH_MANIFEST),
                  "--arch may only vary dma/axi tuning fields")
         ARCH_MANIFEST = requested
         EFFECTIVE_ARCH = EffectiveArchitecture(ARCH_MANIFEST)
     arch_manifest = ARCH_MANIFEST
+    arch_routers = arch_manifest.mesh_rows * arch_manifest.mesh_cols
+    args.axi_mesh_routers = max(args.axi_mesh_routers, arch_routers)
+    if args.axi_mesh_routers == arch_routers:
+        args.mesh_rows = arch_manifest.mesh_rows
+    args.num_cpus = args.axi_mesh_routers
+    fatal_if(len(arch_manifest.core_ids) > args.axi_mesh_routers,
+             "the AXI mesh has %d routers for %d arch cores"
+             % (args.axi_mesh_routers, len(arch_manifest.core_ids)))
+    core_count = len(arch_manifest.core_ids)
+    endpoints = 2 * core_count + 2
+    if endpoints > args.axi_mesh_routers:
+        args.axi_shared_router_endpoints = True
+    args.axi_target_write_contexts = max(
+        args.axi_target_write_contexts, args.quota_write_contexts * core_count)
+    args.axi_target_read_contexts = max(
+        args.axi_target_read_contexts, args.quota_read_contexts * core_count)
+    args.axi_target_write_assembly_beats = max(
+        args.axi_target_write_assembly_beats,
+        args.quota_write_beats * core_count)
+    args.axi_target_read_response_beats = max(
+        args.axi_target_read_response_beats,
+        args.quota_read_beats * core_count)
     arch = {
         "core_ids": list(arch_manifest.core_ids),
         "sram_bytes": arch_manifest.sram_bytes,
@@ -1393,17 +2348,32 @@ def main():
     ctx = CaseContext()
     ctx.options = args
     ctx.arch = arch
+    if getattr(args, "overlay_image", ""):
+        documents = overlay_projections(ctx)
+        ctx.expected_cache_cores = sorted({
+            row["owner_core"] for document in documents
+            for row in document["objects"]
+            if row["kind"] == A.MESH_OBJECT_KIND.VIEW and
+            row["secondary_kind"] == A.MOE_VIEW_KIND.WEIGHT and
+            row["backing_kind"] == A.MOE_VIEW_BACKING.WEIGHT_CACHE_SLOT})
+        ctx.expected_regions = sorted({
+            (document["layer_id"], row["region_id"])
+            for document in documents for row in document["objects"]
+            if row["region_id"] != 0})
     ctx.program_dir = program_dir
     ctx.schedule = json.loads((program_dir / "schedule.mesh.json").read_text())
     ctx.expected = {
         row["descriptor_id"]: row
         for row in json.loads((program_dir / "expected_traffic.json").read_text())
     }
-    ctx.scenario = base_scenario(args)
+    ctx.scenario = base_scenario(args, len(arch["core_ids"]))
     ctx.instances = args.instances
 
-    if set(SCENARIOS) != set(backend_cases(Backend.GARNET)):
-        fatal("Garnet case registry and scenario implementations differ")
+    if set(SCENARIOS) != set(garnet_scenario_cases()):
+        fatal("Garnet case registry and scenario implementations differ: "
+              "missing %s extra %s",
+              sorted(set(garnet_scenario_cases()) - set(SCENARIOS)),
+              sorted(set(SCENARIOS) - set(garnet_scenario_cases())))
     SCENARIOS[args.case](ctx)
     apply_cli_dma_overrides(EFFECTIVE_ARCH, args)
     arch_manifest = EFFECTIVE_ARCH
@@ -1439,7 +2409,7 @@ def main():
     verify_path = _verify_file(run_dir / "hbm_verify.txt", ctx.verify)
 
     endpoint = NpuMemoryEndpoint(
-        adapter=ruby.axi_target_adapter2,
+        adapter=getattr(ruby, "axi_target_adapter%d" % len(arch["core_ids"])),
         seed_json=seed_path,
         verify_json=verify_path,
     )
@@ -1546,6 +2516,29 @@ def main():
         region_tile_bytes=[
             r.tile_bytes if r.tile_bytes else 0 for r in arch_manifest.regions
         ],
+        overlay_image=args.overlay_image,
+        weight_policy=args.weight_policy,
+        sram_partition_kinds=[
+            partition.kind for partition in arch_manifest.sram_partitions
+        ],
+        sram_partition_bases=[
+            partition.base for partition in arch_manifest.sram_partitions
+        ],
+        sram_partition_bytes=[
+            partition.bytes for partition in arch_manifest.sram_partitions
+        ],
+        sram_partition_alignments=[
+            partition.alignment for partition in arch_manifest.sram_partitions
+        ],
+        sram_partition_metadata_entries=[
+            partition.metadata_entries
+            for partition in arch_manifest.sram_partitions
+        ],
+        sram_partition_max_pinned=[
+            partition.max_pinned_entries
+            for partition in arch_manifest.sram_partitions
+        ],
+        weight_cache_slot_bytes=arch_manifest.sram_weight_cache_slot_bytes,
     )
     system.mesh_loader = loader
 
@@ -1575,7 +2568,10 @@ def main():
         c in ("read_error_drain", "write_error_drain",
               "cross_error_drain", "repeat_error_drain") for c in ctx.checks
     )
-    want = "MESH_PROGRAM_ERROR_DRAINED" if expect_error else "MESH_PROGRAM_DONE"
+    want = getattr(ctx, "expected_terminal", None)
+    if want is None:
+        want = "MESH_PROGRAM_ERROR_DRAINED" if expect_error else \
+            "MESH_PROGRAM_DONE"
     if not cause.startswith(want):
         fatal("unexpected exit cause: %s (wanted %s)" % (cause, want))
 
@@ -1594,12 +2590,18 @@ def main():
                 row for row in expected_for_traffic
                 if row["descriptor_id"] in actual_ids
             ]
+        # The traffic oracle scales by the batches that really started: a run
+        # that ended in a prestart failure has one instance less traffic.
+        started_instances = ctx.instances
+        reservation = result.get("cache_reservation")
+        if isinstance(reservation, dict) and reservation.get("starts"):
+            started_instances = int(reservation["starts"])
         traffic = build_dma_traffic(
             os.environ["AI_MESH_CASE_ID"],
             os.environ["AI_MESH_SUBCASE"],
             expected_for_traffic,
             result["transport"],
-            ctx.instances,
+            started_instances,
         )
         write_success_artifacts(ctx.checks, traffic)
 

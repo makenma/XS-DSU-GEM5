@@ -2,10 +2,12 @@
 #define DEV_AI_MESH_DMA_TYPES_HH
 
 #include <cstdint>
+#include <vector>
 #include <map>
 #include <string>
 
 #include "dev/ai_mesh/mesh_binary.hh"
+#include "dev/ai_mesh/runtime_key.hh"
 #include "sim/clocked_object.hh"
 
 namespace gem5
@@ -29,6 +31,7 @@ struct ActualTraffic
     uint64_t read_discarded_bytes = 0;
     uint64_t write_drained_uncommitted_bytes = 0;
     uint32_t error_code = 0;
+    uint16_t dma_kind = 0;
     std::string payload_digest;
 };
 
@@ -48,11 +51,30 @@ class DmaEngineBase : public ClockedObject
   public:
     DmaEngineBase(const ClockedObjectParams &p) : ClockedObject(p) {}
 
-    virtual bool submit(const DecodedDmaDescriptor &descriptor, Tick issue_tick) = 0;
-    virtual void bindFillPattern(uint32_t command_id, uint64_t pattern) = 0;
+    // Identity is derived by the core (the owner of wire ids) and passed in:
+    // the engine only carries typed keys, so overlay descriptors are not
+    // forced back through static wire-id lookups.
+    virtual bool submit(const DecodedDmaDescriptor &descriptor,
+                        const RuntimeObjectKey &descriptor_key,
+                        const RuntimeObjectKey &command_key,
+                        const RuntimeObjectKey &completion_event,
+                        Tick issue_tick) = 0;
+    virtual void bindFillPattern(RuntimeObjectKey command,
+                                 uint64_t pattern) = 0;
+    // Exact contract content of a fill; engines that install fill rows must
+    // honour it (see MoeOverlayDmaPort).
+    virtual void bindFillContent(RuntimeObjectKey command,
+                                 const std::vector<uint8_t> &content,
+                                 bool install_bytes)
+    {
+        (void)command;
+        (void)content;
+        (void)install_bytes;
+    }
     virtual bool idle() const = 0;
     virtual void bindOwner(MeshDummyCore *core, const struct RuntimeArch *arch) = 0;
-    virtual const std::map<uint32_t, ActualTraffic> &actualTraffic() const = 0;
+    virtual const std::map<RuntimeObjectKey, ActualTraffic> &
+    actualTraffic() const = 0;
     // Live (not yet terminal) descriptor count across both directions.
     virtual uint32_t liveDescriptors() const = 0;
 };

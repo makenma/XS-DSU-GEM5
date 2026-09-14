@@ -19,7 +19,8 @@ import yaml
 
 SCALAR_FORMATS = {"u8": "B", "u16": "H", "u32": "I", "u64": "Q"}
 SCALAR_BYTES = {"u8": 1, "u16": 2, "u32": 4, "u64": 8}
-VECTOR_TYPES = {"bytes16": 16, "bytes28": 28, "bytes32": 32, "u64x8": 64}
+VECTOR_TYPES = {"bytes7": 7, "bytes16": 16, "bytes28": 28, "bytes32": 32,
+                "u64x8": 64}
 CPP_TYPES = {"u8": "uint8_t", "u16": "uint16_t", "u32": "uint32_t", "u64": "uint64_t"}
 ENUM_VALUE_BIT_LIMIT = 32
 CONTAINER_ONLY_ENUMS = {"section_type"}
@@ -31,6 +32,10 @@ def singular(name: str) -> str:
 
 def cpp_name(record_name: str) -> str:
     return singular("".join(part.capitalize() for part in record_name.split("_")))
+
+
+def feature_cpp_name(feature_name: str) -> str:
+    return "".join(part.capitalize() for part in feature_name.split("_"))
 
 
 def enum_masks(schema: dict) -> dict:
@@ -113,6 +118,25 @@ def load_schema(path: Path) -> dict:
             if "enum" in field and field["enum"] not in schema["enums"]:
                 raise ValueError(f"{payload_name}.{field['name']}: unknown enum {field['enum']}")
         check_layout(payload_name, payload["fields"], payload["bytes"])
+    features = schema.get("features", {})
+    for feature_name, spec in features.items():
+        if not isinstance(spec.get("bit"), int) or not 0 <= spec["bit"] < 64:
+            raise ValueError(f"feature {feature_name}: bit must be 0..63")
+        if spec.get("min_writer_minor") != 1:
+            raise ValueError(
+                f"feature {feature_name}: min_writer_minor must be 1")
+    if len({spec["bit"] for spec in features.values()}) != len(features):
+        raise ValueError("feature bits must be unique")
+    section_types = schema["enums"]["section_type"]
+    conditional = schema.get("conditional_required_sections", {})
+    for feature_name, sections in conditional.items():
+        if feature_name not in features:
+            raise ValueError(
+                f"conditional sections for unknown feature {feature_name}")
+        for section in sections:
+            if section not in section_types:
+                raise ValueError(
+                    f"conditional section {section} is not a section type")
     header = schema["header"]
     check_layout("header", header["fields"], header["bytes"])
     check_layout("section_dir", schema["section_dir"]["fields"], schema["section_dir"]["bytes"])
@@ -164,6 +188,38 @@ def render_python(schema: dict, sha: str) -> str:
     lines.append(f"MAGIC = {magic_le}")
     lines.append(f"HEADER_BYTES = {schema['header']['bytes']}")
     lines.append(f"SECTION_DIR_BYTES = {schema['section_dir']['bytes']}")
+    lines.append("")
+    features = schema.get("features", {})
+    conditional_sections = schema.get("conditional_required_sections", {})
+    for feature_name, spec in features.items():
+        lines.append(f"{feature_name} = {1 << spec['bit']}")
+    feature_bits = {name: 1 << spec["bit"] for name, spec in features.items()}
+    lines.append(f"FEATURE_BITS = {feature_bits!r}")
+    lines.append(f"KNOWN_FEATURE_MASK = {sum(feature_bits.values()):#x}")
+    writer_minors = {name: spec["min_writer_minor"]
+                     for name, spec in features.items()}
+    lines.append(f"FEATURE_MIN_WRITER_MINOR = {writer_minors!r}")
+    section_types = schema["enums"]["section_type"]
+    conditional = {
+        name: tuple(section_types[section] for section in sections)
+        for name, sections in conditional_sections.items()
+    }
+    lines.append(f"CONDITIONAL_REQUIRED_SECTIONS = {conditional!r}")
+    by_section = {}
+    for feature_name, sections in conditional.items():
+        for section_type in sections:
+            by_section[section_type] = feature_bits[feature_name]
+    lines.append(f"SECTION_REQUIRED_FEATURES = {by_section!r}")
+    lines.append("")
+    lines.append("")
+    lines.append("def conditional_required_sections(features):")
+    lines.append("    required = []")
+    lines.append("    pairs = CONDITIONAL_REQUIRED_SECTIONS.items()")
+    lines.append("    for name, sections in pairs:")
+    lines.append("        if features & FEATURE_BITS[name]:")
+    lines.append("            required.extend(sections)")
+    lines.append("    return tuple(required)")
+    lines.append("")
     lines.append("")
     for enum_name, values in schema["enums"].items():
         if enum_name == "opcode_engine_map":
@@ -263,6 +319,22 @@ def render_cpp(schema: dict, sha: str) -> str:
     out.append(f"constexpr uint32_t kHeaderBytes = {schema['header']['bytes']};")
     out.append(f"constexpr uint32_t kSectionDirBytes = {schema['section_dir']['bytes']};")
     out.append("")
+    out.append("enum class Feature : uint64_t")
+    out.append("{")
+    for feature_name, spec in schema.get("features", {}).items():
+        out.append(f"    {feature_name} = {1 << spec['bit']}ull,")
+    out.append("};")
+    out.append("")
+    feature_specs = schema.get("features", {})
+    for feature_name, spec in feature_specs.items():
+        cpp_feature = feature_cpp_name(feature_name)
+        out.append(f"constexpr uint64_t kFeature{cpp_feature} = "
+                   f"{1 << spec['bit']}ull;")
+        out.append(f"constexpr uint16_t kFeature{cpp_feature}"
+                   f"MinWriterMinor = {spec['min_writer_minor']};")
+    known_mask = sum(1 << spec["bit"] for spec in feature_specs.values())
+    out.append(f"constexpr uint64_t kKnownFeatureMask = {known_mask:#x}ull;")
+    out.append("")
     for enum_name, values in schema["enums"].items():
         if enum_name == "opcode_engine_map":
             continue
@@ -280,6 +352,41 @@ def render_cpp(schema: dict, sha: str) -> str:
         for key, value in values.items():
             out.append(f"constexpr uint16_t k{cpp_enum}{key} = {value};")
         out.append("")
+    section_types = schema["enums"]["section_type"]
+    required = schema["enums"]["required_sections"]
+    out.append("constexpr uint16_t kRequiredSections[] = {")
+    for section in required:
+        out.append(f"    kSectionType{section},")
+    out.append("};")
+    out.append(f"constexpr size_t kRequiredSectionCount = {len(required)};")
+    out.append("")
+    out.append("constexpr uint16_t kKnownSectionTypes[] = {")
+    for section in section_types:
+        out.append(f"    kSectionType{section},")
+    out.append("};")
+    out.append("constexpr size_t kKnownSectionTypeCount = "
+               f"{len(section_types)};")
+    out.append("")
+    feature_sections = schema.get("conditional_required_sections", {})
+    out.append("inline uint64_t sectionRequiredFeature(uint16_t type)")
+    out.append("{")
+    out.append("    switch (type) {")
+    for feature_name, sections in feature_sections.items():
+        cpp_feature = feature_cpp_name(feature_name)
+        for section in sections:
+            out.append(f"    case kSectionType{section}:")
+        out.append(f"        return kFeature{cpp_feature};")
+    out.append("    default:")
+    out.append("        return 0;")
+    out.append("    }")
+    out.append("}")
+    out.append("")
+    out.append("inline bool featureRequiresSection(uint64_t features,")
+    out.append("                                   uint16_t type)")
+    out.append("{")
+    out.append("    return (features & sectionRequiredFeature(type)) != 0;")
+    out.append("}")
+    out.append("")
     out.append("// opcode -> engine mapping (closed set)")
     out.append("constexpr uint16_t opcodeEngine(uint16_t opcode)")
     out.append("{")
@@ -507,6 +614,16 @@ def render_cpp(schema: dict, sha: str) -> str:
             "static_assert(kHeaderBytes == 128, \"header size fixed by spec\");",
             "static_assert(kSectionDirBytes == 40, \"section dir size fixed by spec\");",
             "static_assert(kCommandsBytes == 40, \"COMMANDS record fixed by spec\");",
+        ]
+    )
+    for moe_record in ("MOE_LAYER_SPECS", "MOE_EXPERT_SPECS",
+                       "MOE_DYNAMIC_REGIONS", "MOE_KERNEL_SPECS"):
+        const = "k" + feature_cpp_name(moe_record) + "Bytes"
+        out.append(f"static_assert({const} == "
+                   f"{schema['records'][moe_record]['bytes']}, "
+                   f"\"{moe_record} record fixed by spec\");")
+    out.extend(
+        [
             "",
             "} // namespace mesh_abi",
             "} // namespace ai_mesh",

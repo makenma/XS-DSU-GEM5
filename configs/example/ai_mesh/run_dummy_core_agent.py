@@ -23,7 +23,7 @@ except SystemExit as error:
         raise
 
 definition = CASES[arguments.case]
-if definition.backend.name not in ("MOCK", "GARNET"):
+if definition.backend.name not in ("MOCK", "GARNET", "GATE5"):
     raise SystemExit(0)
 
 report_path = os.environ.get("AI_MESH_CHILD_REPORT")

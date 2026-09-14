@@ -2,6 +2,7 @@
 #define DEV_AI_MESH_TENSOR_SRAM_HH
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <map>
@@ -9,6 +10,7 @@
 #include <vector>
 
 #include "base/logging.hh"
+#include "dev/ai_mesh/generated/mesh_ir_abi.hh"
 
 namespace gem5
 {
@@ -221,6 +223,12 @@ class TensorSram
             entries.push_back(request_done[bank]);
         }
         result.stall_ticks = done_at > tick ? done_at - tick : 0;
+        if (const auto owner = partitionOf(offset, size)) {
+            if (is_write)
+                partitions.at(*owner).writeBytes += size;
+            else
+                partitions.at(*owner).readBytes += size;
+        }
         return result;
     }
 
@@ -241,8 +249,191 @@ class TensorSram
         uint64_t size = 0;
         bool valid = false;
         int pins = 0;
+        uint32_t refcount = 0;
+        std::optional<mesh_abi::SramPartitionKind> partition;
     };
+
+    struct PartitionState
+    {
+        uint64_t base = 0;
+        uint64_t bytes = 0;
+        uint32_t alignment = 0;
+        uint32_t metadataEntries = 0;
+        uint64_t readBytes = 0;
+        uint64_t writeBytes = 0;
+    };
+
+    static constexpr uint8_t MAX_VIEW_RANK = 8;
+
+    struct ViewSlice
+    {
+        uint64_t offset = 0;
+        uint64_t extent = 0;
+    };
+
+    struct ViewState
+    {
+        uint32_t allocationId = 0;
+        uint8_t rank = 0;
+        std::array<ViewSlice, MAX_VIEW_RANK> slices{};
+    };
+
+    void addPartition(mesh_abi::SramPartitionKind kind, uint64_t base,
+                      uint64_t bytes, uint32_t alignment,
+                      uint32_t metadataEntries)
+    {
+        fatal_if(bytes == 0 || alignment == 0,
+                 "TensorSram: partition geometry must be nonzero");
+        fatal_if(base > capacity() || bytes > capacity() - base,
+                 "TensorSram: partition escapes SRAM");
+        fatal_if(base % alignment != 0 || bytes % alignment != 0,
+                 "TensorSram: partition is not aligned");
+        for (const auto &entry : partitions)
+            fatal_if(base < entry.second.base + entry.second.bytes &&
+                         entry.second.base < base + bytes,
+                     "TensorSram: partitions overlap");
+        partitions.emplace(kind, PartitionState{base, bytes, alignment,
+                                                metadataEntries, 0, 0});
+    }
+
+    bool hasPartition(mesh_abi::SramPartitionKind kind) const
+    {
+        return partitions.count(kind) != 0;
+    }
+
+    const PartitionState &partition(mesh_abi::SramPartitionKind kind) const
+    {
+        auto it = partitions.find(kind);
+        fatal_if(it == partitions.end(), "TensorSram: partition is absent");
+        return it->second;
+    }
+
+    std::optional<mesh_abi::SramPartitionKind> partitionOf(uint64_t offset,
+                                                           uint64_t size) const
+    {
+        for (const auto &entry : partitions) {
+            if (offset < entry.second.base)
+                continue;
+            const uint64_t delta = offset - entry.second.base;
+            const uint64_t room = entry.second.bytes - delta;
+            if (delta <= entry.second.bytes && size <= room)
+                return entry.first;
+        }
+        return std::nullopt;
+    }
+
+    uint32_t partitionAllocationCount(mesh_abi::SramPartitionKind kind) const
+    {
+        uint32_t count = 0;
+        for (const auto &entry : allocations)
+            if (entry.second.partition && *entry.second.partition == kind)
+                ++count;
+        return count;
+    }
+
+    bool registerAllocation(uint32_t allocation_id, uint64_t offset,
+                            uint64_t bytes)
+    {
+        if (!fits(offset, bytes) || allocations.count(allocation_id) != 0)
+            return false;
+        AllocationState state;
+        state.offset = offset;
+        state.size = bytes;
+        state.partition = partitionOf(offset, bytes);
+        if (!partitions.empty() && !state.partition)
+            return false;
+        if (state.partition) {
+            const PartitionState &owner = partition(*state.partition);
+            if (owner.metadataEntries != 0 &&
+                partitionAllocationCount(*state.partition) >=
+                    owner.metadataEntries)
+                return false;
+        }
+        allocations.emplace(allocation_id, state);
+        return true;
+    }
+
+    bool acquireRef(uint32_t allocation_id)
+    {
+        auto it = allocations.find(allocation_id);
+        if (it == allocations.end())
+            return false;
+        ++it->second.refcount;
+        return true;
+    }
+
+    bool releaseRef(uint32_t allocation_id)
+    {
+        auto it = allocations.find(allocation_id);
+        if (it == allocations.end() || it->second.refcount == 0)
+            return false;
+        --it->second.refcount;
+        return true;
+    }
+
+    bool reclaimable(uint32_t allocation_id) const
+    {
+        auto it = allocations.find(allocation_id);
+        return it != allocations.end() && it->second.pins == 0 &&
+               it->second.refcount == 0;
+    }
+
+    bool freeAllocation(uint32_t allocation_id)
+    {
+        if (!reclaimable(allocation_id))
+            return false;
+        allocations.erase(allocation_id);
+        return true;
+    }
+
+    bool createView(uint32_t view_id, uint32_t allocation_id, uint8_t rank,
+                    const ViewSlice *slices)
+    {
+        if (viewEntries != 0 && views.size() >= viewEntries)
+            return false;
+        if (views.count(view_id) != 0 || rank > MAX_VIEW_RANK)
+            return false;
+        auto it = allocations.find(allocation_id);
+        if (it == allocations.end())
+            return false;
+        ViewState state;
+        state.allocationId = allocation_id;
+        state.rank = rank;
+        for (uint8_t index = 0; index < rank; ++index) {
+            if (slices[index].extent == 0 ||
+                slices[index].offset > it->second.size ||
+                slices[index].extent >
+                    it->second.size - slices[index].offset)
+                return false;
+            state.slices[index] = slices[index];
+        }
+        if (!acquireRef(allocation_id))
+            return false;
+        views.emplace(view_id, state);
+        return true;
+    }
+
+    bool releaseView(uint32_t view_id)
+    {
+        auto it = views.find(view_id);
+        if (it == views.end())
+            return false;
+        const uint32_t allocation_id = it->second.allocationId;
+        views.erase(it);
+        return releaseRef(allocation_id);
+    }
+
+    const ViewState &view(uint32_t view_id) const
+    {
+        auto it = views.find(view_id);
+        fatal_if(it == views.end(), "TensorSram: view is absent");
+        return it->second;
+    }
+
     std::map<uint32_t, AllocationState> allocations;
+    std::map<mesh_abi::SramPartitionKind, PartitionState> partitions;
+    std::map<uint32_t, ViewState> views;
+    uint32_t viewEntries = 0;
 
     std::vector<uint8_t> storage;
 

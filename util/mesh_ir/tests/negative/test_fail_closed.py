@@ -60,11 +60,8 @@ def test_abi_major_bump_rejected(blob, arch):
 
 
 def test_unknown_required_feature_bits_rejected(blob, arch):
-    # Header offset 104 holds required_features; any nonzero bit is an
-    # unknown feature for the ABI 1.0 reader and must fail closed.  The
-    # payload SHA only covers [128, file), so this flip bypasses it.
     corrupt = bytearray(blob)
-    corrupt[104] = 0x01
+    corrupt[111] = 0x80
     with pytest.raises(MeshIrError) as err:
         decode_program(bytes(corrupt))
     assert err.value.code == "E_ABI_VERSION"
@@ -451,7 +448,7 @@ def test_dma_command_duplicate_descriptors_rejected(arch):
 def test_descriptor_completion_pointing_at_barrier_rejected(arch):
     from mesh_ir.builder import ProgramBuilder
     from mesh_ir.golden_programs import (
-        RO, _hbm, _sram,
+        RO, hbm_endpoint, sram_endpoint,
     )
     from mesh_ir.generated import abi as _A
 
@@ -473,7 +470,8 @@ def test_descriptor_completion_pointing_at_barrier_rejected(arch):
         operands=((t_in, shard, alloc, RO),))
     descriptor = builder.dma(
         load, _A.DTYPE and _A.DMA_KIND.LOAD,
-        src=_hbm(t_in, shard, 0x100000), dst=_sram(t_in, shard, 0, 0),
+        src=hbm_endpoint(t_in, shard, 0x100000),
+        dst=sram_endpoint(t_in, shard, 0, 0),
         rows=1, row_bytes=64, src_stride=64, dst_stride=64,
         completion_event=barrier)
     builder.oracle(entrypoint, 1, descriptor, load.command_id,

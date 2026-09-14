@@ -250,6 +250,155 @@ TEST(TensorSramTest, RejectionAttemptsAreDirectionalAndQueriesArePassive)
     EXPECT_EQ(sram.reservationRejectionAttempts(true), 2);
 }
 
+TensorSram
+makePartitionedSram(uint32_t metadata_entries)
+{
+    TensorSram sram = makeSram(1);
+    sram.addPartition(mesh_abi::SramPartitionKind::STATIC_PROGRAM, 0x00000,
+                      0x40000, 64, metadata_entries);
+    sram.addPartition(mesh_abi::SramPartitionKind::WEIGHT_CACHE, 0x40000,
+                      0x40000, 64, 0);
+    sram.addPartition(mesh_abi::SramPartitionKind::RUNTIME_SCRATCH, 0x80000,
+                      0x40000, 64, 0);
+    return sram;
+}
+
+TEST(TensorSramPartitionTest, PartitionsAreDisjointAndInsideSram)
+{
+    auto sram = makePartitionedSram(4);
+    EXPECT_TRUE(
+        sram.hasPartition(mesh_abi::SramPartitionKind::STATIC_PROGRAM));
+    EXPECT_EQ(sram.partition(mesh_abi::SramPartitionKind::WEIGHT_CACHE).base,
+              0x40000u);
+    EXPECT_ANY_THROW(sram.addPartition(
+        mesh_abi::SramPartitionKind::KV_STAGING_CACHE, 0x20000, 0x40000, 64,
+        0));
+    EXPECT_ANY_THROW(sram.addPartition(
+        mesh_abi::SramPartitionKind::KV_STAGING_CACHE, 0x1FF000, 0x2000, 64,
+        0));
+    EXPECT_ANY_THROW(sram.addPartition(
+        mesh_abi::SramPartitionKind::KV_STAGING_CACHE, 0x100, 0x100, 0, 0));
+}
+
+TEST(TensorSramPartitionTest, LookupResolvesExactlyOnePartition)
+{
+    auto sram = makePartitionedSram(4);
+    EXPECT_EQ(*sram.partitionOf(0x0, 64),
+              mesh_abi::SramPartitionKind::STATIC_PROGRAM);
+    EXPECT_EQ(*sram.partitionOf(0x7FFF0, 16),
+              mesh_abi::SramPartitionKind::WEIGHT_CACHE);
+    EXPECT_EQ(*sram.partitionOf(0x80000, 16),
+              mesh_abi::SramPartitionKind::RUNTIME_SCRATCH);
+    EXPECT_EQ(*sram.partitionOf(0xBFFF0, 16),
+              mesh_abi::SramPartitionKind::RUNTIME_SCRATCH);
+    EXPECT_FALSE(sram.partitionOf(0xC0000, 64).has_value());
+    EXPECT_FALSE(sram.partitionOf(0x3FFF0, 64).has_value());
+    EXPECT_FALSE(sram.partitionOf(0xBFFF0, 32).has_value());
+}
+
+TEST(TensorSramPartitionTest, AllocationMetadataIsBoundedPerPartition)
+{
+    auto sram = makePartitionedSram(2);
+    EXPECT_TRUE(sram.registerAllocation(1, 0x00000, 0x1000));
+    EXPECT_TRUE(sram.registerAllocation(2, 0x01000, 0x1000));
+    EXPECT_FALSE(sram.registerAllocation(3, 0x02000, 0x1000));
+    EXPECT_FALSE(sram.registerAllocation(1, 0x03000, 0x1000));
+    EXPECT_EQ(sram.partitionAllocationCount(
+                  mesh_abi::SramPartitionKind::STATIC_PROGRAM), 2u);
+    EXPECT_TRUE(sram.registerAllocation(4, 0x40000, 0x1000));
+    EXPECT_TRUE(sram.freeAllocation(1));
+    EXPECT_TRUE(sram.registerAllocation(3, 0x02000, 0x1000));
+}
+
+TEST(TensorSramPartitionTest, AllocationOutsideAnyPartitionIsRejected)
+{
+    auto sram = makePartitionedSram(4);
+    EXPECT_FALSE(sram.registerAllocation(1, 0xC0000, 0x1000));
+    EXPECT_FALSE(sram.registerAllocation(2, 0x3FFF0, 0x100));
+    EXPECT_FALSE(sram.registerAllocation(3, 0xBFFF0, 0x20));
+    EXPECT_TRUE(sram.allocations.empty());
+}
+
+TEST(TensorSramPartitionTest, UnpartitionedSramKeepsLegacyRegistration)
+{
+    TensorSram sram = makeSram(1);
+    EXPECT_TRUE(sram.registerAllocation(1, 0x1000, 0x1000));
+    EXPECT_FALSE(sram.registerAllocation(1, 0x2000, 0x1000));
+    EXPECT_FALSE(sram.registerAllocation(2, 0x1FFFF0, 0x20));
+}
+
+TEST(TensorSramPartitionTest, ReclaimRequiresNoPinAndNoRef)
+{
+    auto sram = makePartitionedSram(4);
+    ASSERT_TRUE(sram.registerAllocation(1, 0x00000, 0x1000));
+    EXPECT_TRUE(sram.reclaimable(1));
+    ASSERT_TRUE(sram.acquireRef(1));
+    EXPECT_FALSE(sram.reclaimable(1));
+    EXPECT_FALSE(sram.freeAllocation(1));
+    sram.allocations.at(1).pins = 1;
+    ASSERT_TRUE(sram.releaseRef(1));
+    EXPECT_FALSE(sram.reclaimable(1));
+    sram.allocations.at(1).pins = 0;
+    EXPECT_TRUE(sram.freeAllocation(1));
+    EXPECT_FALSE(sram.releaseRef(1));
+}
+
+TEST(TensorSramPartitionTest, ViewsPinTheirBackingAllocation)
+{
+    auto sram = makePartitionedSram(4);
+    ASSERT_TRUE(sram.registerAllocation(1, 0x00000, 0x1000));
+    const TensorSram::ViewSlice rows[2] = {{0x0, 0x100}, {0x200, 0x100}};
+    EXPECT_TRUE(sram.createView(7, 1, 2, rows));
+    EXPECT_EQ(sram.view(7).rank, 2u);
+    EXPECT_EQ(sram.view(7).slices[1].offset, 0x200u);
+    EXPECT_EQ(sram.allocations.at(1).refcount, 1u);
+    EXPECT_FALSE(sram.reclaimable(1));
+    EXPECT_TRUE(sram.releaseView(7));
+    EXPECT_TRUE(sram.reclaimable(1));
+    EXPECT_FALSE(sram.releaseView(7));
+}
+
+TEST(TensorSramPartitionTest, ViewsRejectEscapesAndMalformedSlices)
+{
+    auto sram = makePartitionedSram(4);
+    ASSERT_TRUE(sram.registerAllocation(1, 0x00000, 0x1000));
+    const TensorSram::ViewSlice escape[1] = {{0x800, 0x900}};
+    const TensorSram::ViewSlice zero_extent[1] = {{0x100, 0}};
+    const TensorSram::ViewSlice ok[1] = {{0x100, 0x100}};
+    EXPECT_FALSE(sram.createView(1, 1, 1, escape));
+    EXPECT_FALSE(sram.createView(2, 1, 1, zero_extent));
+    EXPECT_FALSE(sram.createView(3, 99, 1, ok));
+    TensorSram::ViewSlice too_many[TensorSram::MAX_VIEW_RANK + 1];
+    for (auto &slice : too_many)
+        slice = {0x0, 0x10};
+    EXPECT_FALSE(
+        sram.createView(4, 1, TensorSram::MAX_VIEW_RANK + 1, too_many));
+    EXPECT_EQ(sram.allocations.at(1).refcount, 0u);
+    EXPECT_TRUE(sram.createView(5, 1, 1, ok));
+    EXPECT_EQ(sram.allocations.at(1).refcount, 1u);
+}
+
+TEST(TensorSramPartitionTest, ViewTableIsBounded)
+{
+    auto sram = makePartitionedSram(4);
+    sram.viewEntries = 1;
+    ASSERT_TRUE(sram.registerAllocation(1, 0x00000, 0x1000));
+    const TensorSram::ViewSlice ok[1] = {{0x0, 0x10}};
+    EXPECT_TRUE(sram.createView(1, 1, 1, ok));
+    EXPECT_FALSE(sram.createView(2, 1, 1, ok));
+}
+
+TEST(TensorSramPartitionTest, PartitionServiceBytesAreAccounted)
+{
+    auto sram = makePartitionedSram(4);
+    sram.reserve(1000, 0x40000, 64, false);
+    sram.reserve(1000, 0x40020, 32, true);
+    EXPECT_EQ(sram.partition(mesh_abi::SramPartitionKind::WEIGHT_CACHE)
+                  .readBytes, 64u);
+    EXPECT_EQ(sram.partition(mesh_abi::SramPartitionKind::WEIGHT_CACHE)
+                  .writeBytes, 32u);
+}
+
 } // anonymous namespace
 } // namespace ai_mesh
 } // namespace gem5

@@ -1,0 +1,19 @@
+{
+  "arena_base": "0x0000000200000000",
+  "arena_bytes": "0x0000000400000000",
+  "homes": [
+    {
+      "arena_offset": "0x0000000000000000",
+      "bytes": 8192,
+      "content_sha256": "e7f7ced9baff09a6d74bb49d292008fe5011d359c75ba68d8a7bff402794a770",
+      "read_only_alias_group": 1,
+      "synthetic_fill": {
+        "seed_utf8": "AI_MESH_GATE5_SYNTHETIC_WEIGHT_V1"
+      },
+      "weight_home_id": 1
+    }
+  ],
+  "model_weight_image_digest": "d3c1ec48f8238e96c579ad087d218b8510ca81c9c15f9b05d97b99111fd789b2",
+  "schema": "model_weight_image_v1",
+  "version": 1
+}

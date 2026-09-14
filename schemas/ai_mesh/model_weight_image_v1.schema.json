@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "model_weight_image_v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "arena_base",
+    "arena_bytes",
+    "homes",
+    "model_weight_image_digest"
+  ],
+  "properties": {
+    "schema": {"const": "model_weight_image_v1"},
+    "version": {"const": 1},
+    "arena_base": {"$ref": "#/$defs/u64Json"},
+    "arena_bytes": {"$ref": "#/$defs/u64Json"},
+    "homes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/home"}
+    },
+    "model_weight_image_digest": {"$ref": "#/$defs/hex64"}
+  },
+  "$defs": {
+    "u64Json": {
+      "anyOf": [
+        {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        {"type": "string", "pattern": "^0x[0-9a-f]{16}$"}
+      ]
+    },
+    "hex64": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "home": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "weight_home_id",
+        "arena_offset",
+        "bytes",
+        "content_sha256",
+        "read_only_alias_group",
+        "synthetic_fill"
+      ],
+      "properties": {
+        "weight_home_id": {"type": "integer", "minimum": 1},
+        "arena_offset": {"$ref": "#/$defs/u64Json"},
+        "bytes": {"type": "integer", "minimum": 1},
+        "content_sha256": {"$ref": "#/$defs/hex64"},
+        "read_only_alias_group": {"type": "integer", "minimum": 1},
+        "synthetic_fill": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["seed_utf8"],
+          "properties": {
+            "seed_utf8": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    }
+  }
+}

@@ -45,11 +45,18 @@ class AxiTensorDmaEngine : public DmaEngineBase
     void regStats() override;
 
     bool submit(const DecodedDmaDescriptor &descriptor,
+                const RuntimeObjectKey &descriptor_key,
+                const RuntimeObjectKey &command_key,
+                const RuntimeObjectKey &completion_event,
                 Tick issue_tick) override;
-    void bindFillPattern(uint32_t command_id, uint64_t pattern) override;
+    void bindFillPattern(RuntimeObjectKey command, uint64_t pattern) override;
+    void bindFillContent(RuntimeObjectKey command,
+                         const std::vector<uint8_t> &content,
+                         bool install_bytes) override;
     bool idle() const override;
     void bindOwner(MeshDummyCore *core, const RuntimeArch *arch) override;
-    const std::map<uint32_t, ActualTraffic> &actualTraffic() const override
+    const std::map<RuntimeObjectKey, ActualTraffic> &
+    actualTraffic() const override
     {
         return actual;
     }
@@ -76,7 +83,8 @@ class AxiTensorDmaEngine : public DmaEngineBase
         Tick local_commit_tick = 0;
         Tick done_tick = 0;
     };
-    const std::map<uint32_t, DescriptorTiming> &descriptorTimings() const
+    const std::map<RuntimeObjectKey, DescriptorTiming> &
+    descriptorTimings() const
     {
         return timings;
     }
@@ -117,6 +125,7 @@ class AxiTensorDmaEngine : public DmaEngineBase
         AxiBurst plan;
         uint64_t dst_base = 0;
         uint32_t descriptor_id = 0;
+        RuntimeObjectKey descriptor_key;
         uint16_t axi_id = 0;
         bool errored = false;      // latched on ANY error beat (spec 7.4)
         bool seen_error_beat = false;
@@ -132,6 +141,7 @@ class AxiTensorDmaEngine : public DmaEngineBase
     {
         AxiBurst plan;
         uint32_t descriptor_id = 0;
+        RuntimeObjectKey descriptor_key;
         uint16_t kind = 0;
         uint16_t axi_id = 0;
         bool errored = false;
@@ -139,6 +149,9 @@ class AxiTensorDmaEngine : public DmaEngineBase
     struct DescriptorState
     {
         DecodedDmaDescriptor descriptor;
+        RuntimeObjectKey descriptor_key;
+        RuntimeObjectKey command_key;
+        RuntimeObjectKey completion_event;
         uint32_t bursts_total = 0;
         uint32_t bursts_done = 0;
         uint32_t bursts_errored = 0;
@@ -183,20 +196,19 @@ class AxiTensorDmaEngine : public DmaEngineBase
     struct WritePrepareEvent : public Event
     {
         AxiTensorDmaEngine *engine;
-        uint32_t descriptor_id;
+        RuntimeObjectKey descriptor;
         uint32_t burst_index;
         uint64_t row_src_local;
-        WritePrepareEvent(AxiTensorDmaEngine *e, uint32_t desc, uint32_t index,
-                          uint64_t local)
-            : Event(), engine(e), descriptor_id(desc), burst_index(index),
+        WritePrepareEvent(AxiTensorDmaEngine *e, RuntimeObjectKey desc,
+                          uint32_t index, uint64_t local)
+            : Event(), engine(e), descriptor(desc), burst_index(index),
               row_src_local(local)
         {
             setFlags(AutoDelete);
         }
         void process() override
         {
-            engine->prepareWriteBurst(descriptor_id, burst_index,
-                                      row_src_local);
+            engine->prepareWriteBurst(descriptor, burst_index, row_src_local);
         }
         const char *description() const override
         {
@@ -207,14 +219,15 @@ class AxiTensorDmaEngine : public DmaEngineBase
     struct FillRowEvent : public Event
     {
         AxiTensorDmaEngine *engine;
-        uint32_t descriptor_id;
+        RuntimeObjectKey descriptor;
         uint32_t row;
-        FillRowEvent(AxiTensorDmaEngine *e, uint32_t desc, uint32_t row_)
-            : Event(), engine(e), descriptor_id(desc), row(row_)
+        FillRowEvent(AxiTensorDmaEngine *e, RuntimeObjectKey desc,
+                     uint32_t row_)
+            : Event(), engine(e), descriptor(desc), row(row_)
         {
             setFlags(AutoDelete);
         }
-        void process() override { engine->commitFillRow(descriptor_id, row); }
+        void process() override { engine->commitFillRow(descriptor, row); }
         const char *description() const override
         {
             return "ai_mesh.axi_dma.fill_row";
@@ -228,16 +241,16 @@ class AxiTensorDmaEngine : public DmaEngineBase
     void driveFill(DescriptorState &state);
     void commitReadBurst(uint64_t burst_ordinal);
     void tryScheduleReadCommit(uint64_t burst_ordinal, ReadBurst &burst);
-    void prepareWriteBurst(uint32_t descriptor_id, uint32_t burst_index,
+    void prepareWriteBurst(RuntimeObjectKey descriptor, uint32_t burst_index,
                            uint64_t row_src_local);
-    void commitFillRow(uint32_t descriptor_id, uint32_t row);
+    void commitFillRow(RuntimeObjectKey descriptor, uint32_t row);
     void finishDescriptor(bool read, DmaStatus status);
-    void notifyOwner(uint32_t descriptor_id, uint32_t command_id,
-                     uint32_t completion_event, DmaStatus status);
+    void notifyOwner(RuntimeObjectKey descriptor, RuntimeObjectKey command,
+                     RuntimeObjectKey completion_event, DmaStatus status);
     void retireBurst(bool read, uint64_t burst_ordinal, bool errored);
-    void notePayload(uint32_t descriptor_id, const uint8_t *data,
+    void notePayload(RuntimeObjectKey descriptor, const uint8_t *data,
                      uint64_t size);
-    ActualTraffic &rowOf(uint32_t descriptor_id);
+    ActualTraffic &rowOf(RuntimeObjectKey descriptor);
     std::vector<AxiBurst> planOf(const DecodedDmaDescriptor &descriptor) const;
 
     AxiGarnetBridge *const bridge;
@@ -259,10 +272,16 @@ class AxiTensorDmaEngine : public DmaEngineBase
     std::map<uint64_t, ReadBurst> live_read_bursts;
     std::map<uint64_t, Tick> read_commit_ticks;
     std::map<uint64_t, WriteBurst> live_write_bursts;
-    std::map<uint32_t, std::pair<uint64_t, uint64_t>> payload_state;
-    std::map<uint32_t, ActualTraffic> actual;
-    std::map<uint32_t, DescriptorTiming> timings;
-    std::map<uint32_t, uint64_t> fill_patterns;
+    std::map<RuntimeObjectKey, std::pair<uint64_t, uint64_t>> payload_state;
+    std::map<RuntimeObjectKey, ActualTraffic> actual;
+    std::map<RuntimeObjectKey, DescriptorTiming> timings;
+    std::map<RuntimeObjectKey, uint64_t> fill_patterns;
+    struct FillContent
+    {
+        std::vector<uint8_t> bytes;
+        bool install_bytes = true;
+    };
+    std::map<RuntimeObjectKey, FillContent> fill_contents;
     // Finite per-direction AXI ID pools: an ID returns to its pool only
     // after its burst's response completed, so the same ID is never live
     // twice (arch axi.max_outstanding_per_id).

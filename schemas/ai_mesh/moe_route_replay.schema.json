@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "moe_route_replay.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "workload_plan_digest",
+    "mesh_program_digest",
+    "layers",
+    "entries",
+    "route_profile_digest"
+  ],
+  "properties": {
+    "schema": {"const": "moe_route_replay_v1"},
+    "version": {"const": 1},
+    "workload_plan_digest": {"$ref": "#/$defs/hex64"},
+    "mesh_program_digest": {"$ref": "#/$defs/hex64"},
+    "layers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/layerRegistry"}
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/entry"}
+    },
+    "route_profile_digest": {"$ref": "#/$defs/hex64"}
+  },
+  "$defs": {
+    "hex64": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "u64Json": {
+      "anyOf": [
+        {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        {"type": "string", "pattern": "^0x[0-9a-f]{16}$"}
+      ]
+    },
+    "layerRegistry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layer_id", "expert_count", "top_k"],
+      "properties": {
+        "layer_id": {"type": "integer", "minimum": 1},
+        "expert_count": {"type": "integer", "minimum": 1},
+        "top_k": {"type": "integer", "minimum": 1}
+      }
+    },
+    "uidFields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workload_plan_item_id",
+        "user_id",
+        "task_seq",
+        "repair_round",
+        "phase",
+        "sequence_ordinal",
+        "token_ordinal"
+      ],
+      "properties": {
+        "workload_plan_item_id": {"$ref": "#/$defs/u64Json"},
+        "user_id": {"$ref": "#/$defs/u64Json"},
+        "task_seq": {"$ref": "#/$defs/u64Json"},
+        "repair_round": {"type": "integer", "minimum": 0, "maximum": 65535},
+        "phase": {"type": "integer", "minimum": 1, "maximum": 3},
+        "sequence_ordinal": {"$ref": "#/$defs/u64Json"},
+        "token_ordinal": {"$ref": "#/$defs/u64Json"}
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "layer_id",
+        "uid",
+        "logical_source_rank",
+        "topk_slot",
+        "selected_expert_id"
+      ],
+      "properties": {
+        "layer_id": {"type": "integer", "minimum": 1},
+        "uid": {"$ref": "#/$defs/uidFields"},
+        "logical_source_rank": {"$ref": "#/$defs/u64Json"},
+        "topk_slot": {"type": "integer", "minimum": 0, "maximum": 65535},
+        "selected_expert_id": {"type": "integer", "minimum": 0,
+                               "maximum": 65535}
+      }
+    }
+  }
+}

@@ -1,120 +1,44 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://gem5.org/schemas/ai_mesh/acceptance_contract_v1.schema.json",
   "$defs": {
-    "u16": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 65535
-    },
-    "u32": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 4294967295
-    },
-    "i32": {
-      "type": "integer",
-      "minimum": -2147483648,
-      "maximum": 2147483647
-    },
-    "u64Json": {
-      "oneOf": [
-        {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        {
-          "type": "string",
-          "pattern": "^0x[0-9a-f]{16}$"
-        }
-      ]
-    },
-    "positiveU64Json": {
-      "oneOf": [
-        {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 9007199254740991
-        },
-        {
-          "type": "string",
-          "pattern": "^0x[0-9a-f]{16}$"
-        }
-      ]
-    },
-    "lowerHex": {
-      "type": "string",
-      "pattern": "^[0-9a-f]+$"
-    },
-    "lowerHex40": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{40}$"
-    },
-    "lowerHex64": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
-    },
-    "detailCode": {
-      "type": "object",
+    "approximation": {
+      "additionalProperties": false,
       "properties": {
-        "symbol": {
-          "type": "string",
-          "pattern": "^E_[A-Z0-9_]+$"
+        "cpu_instruction_simulation": {
+          "const": false
         },
-        "value": {
-          "$ref": "#/$defs/u32"
+        "cpu_mesh_simulation": {
+          "const": false
+        },
+        "numeric_compute": {
+          "const": false
+        },
+        "reference_compute": {
+          "const": false
+        },
+        "remote_link_is_analytic_proxy": {
+          "const": true
+        },
+        "synthetic_output_bytes": {
+          "const": true
+        },
+        "synthetic_weight_bytes": {
+          "const": true
+        },
+        "ucie_protocol_simulation": {
+          "const": false
         }
       },
       "required": [
-        "symbol",
-        "value"
+        "reference_compute",
+        "numeric_compute",
+        "cpu_instruction_simulation",
+        "cpu_mesh_simulation",
+        "ucie_protocol_simulation",
+        "remote_link_is_analytic_proxy",
+        "synthetic_weight_bytes",
+        "synthetic_output_bytes"
       ],
-      "additionalProperties": false
-    },
-    "ledgers": {
-      "type": "object",
-      "properties": {
-        "live_cq_obligations": {
-          "$ref": "#/$defs/u32"
-        },
-        "fatal_cq_obligations": {
-          "$ref": "#/$defs/u32"
-        },
-        "fatal_sq_intakes": {
-          "$ref": "#/$defs/u32"
-        },
-        "fatal_publications": {
-          "$ref": "#/$defs/u32"
-        },
-        "ambiguous_publications": {
-          "$ref": "#/$defs/u32"
-        },
-        "host_ack_wait_b": {
-          "$ref": "#/$defs/u32"
-        },
-        "host_ack_b_error": {
-          "$ref": "#/$defs/u32"
-        },
-        "msi_rob_entries": {
-          "$ref": "#/$defs/u32"
-        },
-        "fatal_records": {
-          "$ref": "#/$defs/u32"
-        }
-      },
-      "required": [
-        "live_cq_obligations",
-        "fatal_cq_obligations",
-        "fatal_sq_intakes",
-        "fatal_publications",
-        "ambiguous_publications",
-        "host_ack_wait_b",
-        "host_ack_b_error",
-        "msi_rob_entries",
-        "fatal_records"
-      ],
-      "additionalProperties": false
+      "type": "object"
     },
     "artifactKind": {
       "enum": [
@@ -130,111 +54,496 @@
         "GATE4_OBSERVATION_JSON"
       ]
     },
-    "unitTimeout": {
-      "type": "object",
+    "artifactPath": {
+      "additionalProperties": false,
       "properties": {
-        "sim_ticks": {
-          "type": "null"
+        "kind": {
+          "$ref": "#/$defs/artifactKind"
         },
-        "wall_seconds": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 4294967295
-        }
-      },
-      "required": [
-        "sim_ticks",
-        "wall_seconds"
-      ],
-      "additionalProperties": false
-    },
-    "gem5Timeout": {
-      "type": "object",
-      "properties": {
-        "sim_ticks": {
-          "$ref": "#/$defs/positiveU64Json"
-        },
-        "wall_seconds": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 4294967295
-        }
-      },
-      "required": [
-        "sim_ticks",
-        "wall_seconds"
-      ],
-      "additionalProperties": false
-    },
-    "gtestExecution": {
-      "type": "object",
-      "properties": {
-        "runner": {
-          "const": "GTEST"
-        },
-        "binary_target": {
-          "const": "UNITTESTS_OPT"
-        },
-        "gtest_filter": {
-          "type": "string",
-          "pattern": "^[A-Za-z_][A-Za-z0-9_]*(/[0-9]+)?\\.[A-Za-z_][A-Za-z0-9_]*(/[0-9]+)?$"
-        }
-      },
-      "required": [
-        "runner",
-        "binary_target",
-        "gtest_filter"
-      ],
-      "additionalProperties": false
-    },
-    "pytestExecution": {
-      "type": "object",
-      "properties": {
-        "runner": {
-          "const": "PYTEST"
-        },
-        "node_id": {
-          "type": "string",
-          "pattern": "^[^\\s:]+::[^\\s:]+$"
-        }
-      },
-      "required": [
-        "runner",
-        "node_id"
-      ],
-      "additionalProperties": false
-    },
-    "gem5Execution": {
-      "type": "object",
-      "properties": {
-        "runner": {
-          "const": "GEM5"
-        },
-        "config_script": {
-          "enum": [
-            "configs/example/ai_mesh/run_dummy_core_agent.py",
-            "configs/example/ai_mesh/run_gate3_protocol.py",
-            "configs/example/ai_mesh/run_gate4_agent.py"
+        "path": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "minLength": 1,
+              "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+$",
+              "type": "string"
+            }
           ]
         },
-        "case_name": {
-          "type": "string",
-          "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
-        },
-        "args": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
+        "state": {
+          "enum": [
+            "AVAILABLE",
+            "MISSING"
+          ]
         }
       },
       "required": [
-        "runner",
-        "config_script",
-        "case_name",
-        "args"
+        "kind",
+        "state",
+        "path"
       ],
-      "additionalProperties": false
+      "type": "object"
+    },
+    "cacheFillTraffic": {
+      "additionalProperties": false,
+      "properties": {
+        "effective_architecture_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "fills": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "actual_read_bytes": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "actual_sram_commit_bytes": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "descriptor_key": {
+                "pattern": "^[0-9a-f]{40}$",
+                "type": "string"
+              },
+              "destination_addr": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "discarded_error_bytes": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "expected_bursts": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "fill_traffic_id": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              "key_fields": {
+                "additionalProperties": false,
+                "properties": {
+                  "cache_generation": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "cache_partition_id": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "core_id": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "fill_incarnation": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "weight_tag_index": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "core_id",
+                  "cache_partition_id",
+                  "weight_tag_index",
+                  "cache_generation",
+                  "fill_incarnation"
+                ],
+                "type": "object"
+              },
+              "outcome": {
+                "enum": [
+                  1,
+                  2
+                ]
+              },
+              "slot_id": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "source_addr": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "subscriber_semantic_ids": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "valid_bytes": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "key_fields",
+              "fill_traffic_id",
+              "slot_id",
+              "source_addr",
+              "destination_addr",
+              "valid_bytes",
+              "descriptor_key",
+              "expected_bursts",
+              "subscriber_semantic_ids",
+              "outcome",
+              "actual_read_bytes",
+              "actual_sram_commit_bytes",
+              "discarded_error_bytes"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "model_weight_image_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "program_weight_registry_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "schema": {
+          "const": "cache_fill_traffic_report_v1"
+        },
+        "version": {
+          "const": 1
+        },
+        "weight_tag_manifest_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema",
+        "version",
+        "effective_architecture_digest",
+        "program_weight_registry_digest",
+        "model_weight_image_digest",
+        "weight_tag_manifest_digest",
+        "fills"
+      ],
+      "type": "object"
+    },
+    "cacheStateReplay": {
+      "additionalProperties": false,
+      "properties": {
+        "cores": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "cache_generation": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "core_id": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "failure_tombstones": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "first_error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "error_code": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "source_key_wire": {
+                          "pattern": "^[0-9a-f]{80}$",
+                          "type": "string"
+                        },
+                        "tick": {
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "tick",
+                        "source_key_wire",
+                        "error_code"
+                      ],
+                      "type": "object"
+                    },
+                    "weight_tag_index": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "weight_tag_index",
+                    "first_error"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "next_fill_incarnation": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "slots": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "lru_rank": {
+                      "minimum": 0,
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "slot_id": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "state": {
+                      "enum": [
+                        0,
+                        1
+                      ]
+                    },
+                    "valid_bytes": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "weight_tag_index": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "slot_id",
+                    "state",
+                    "weight_tag_index",
+                    "valid_bytes",
+                    "lru_rank"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "core_id",
+              "cache_generation",
+              "next_fill_incarnation",
+              "slots",
+              "failure_tombstones"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "effective_architecture_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "model_weight_image_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "program_weight_registry_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "schema": {
+          "const": "cache_state_replay_v1"
+        },
+        "version": {
+          "const": 1
+        },
+        "weight_tag_manifest_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema",
+        "version",
+        "effective_architecture_digest",
+        "program_weight_registry_digest",
+        "model_weight_image_digest",
+        "weight_tag_manifest_digest",
+        "cores"
+      ],
+      "type": "object"
+    },
+    "childReport": {
+      "additionalProperties": false,
+      "properties": {
+        "first_fatal": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/detailCode"
+            }
+          ]
+        },
+        "global_quiescence": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "ledger_summary": {
+          "$ref": "#/$defs/ledgers"
+        },
+        "run_exit_reason": {
+          "enum": [
+            "QUIESCENT_SUCCESS",
+            "INFRA_FATAL",
+            "WATCHDOG",
+            "TEST_ASSERTION_FAILED",
+            "CONFIG_ERROR",
+            "INTERNAL_ABORT"
+          ]
+        },
+        "run_manifest_digest": {
+          "$ref": "#/$defs/lowerHex64"
+        },
+        "schema": {
+          "const": "ai_mesh_child_scenario_report_v1"
+        },
+        "subcase": {
+          "type": "string"
+        },
+        "version": {
+          "const": 1
+        },
+        "watchdog_fired": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schema",
+        "version",
+        "id",
+        "subcase",
+        "run_exit_reason",
+        "first_fatal",
+        "watchdog_fired",
+        "ledger_summary",
+        "global_quiescence",
+        "run_manifest_digest"
+      ],
+      "type": "object"
+    },
+    "childTermination": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "exit_code": {
+              "$ref": "#/$defs/i32"
+            },
+            "kind": {
+              "const": "EXIT"
+            },
+            "signal": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "kind",
+            "exit_code",
+            "signal"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "exit_code": {
+              "type": "null"
+            },
+            "kind": {
+              "const": "SIGNAL"
+            },
+            "signal": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "exit_code",
+            "signal"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "exit_code": {
+              "type": "null"
+            },
+            "kind": {
+              "enum": [
+                "SPAWN_ERROR",
+                "WALL_TIMEOUT"
+              ]
+            },
+            "signal": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "kind",
+            "exit_code",
+            "signal"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "detailCode": {
+      "additionalProperties": false,
+      "properties": {
+        "symbol": {
+          "pattern": "^E_[A-Z0-9_]+$",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/u32"
+        }
+      },
+      "required": [
+        "symbol",
+        "value"
+      ],
+      "type": "object"
+    },
+    "environmentEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "type": "object"
     },
     "execution": {
       "oneOf": [
@@ -249,26 +558,1424 @@
         }
       ]
     },
-    "subcase": {
-      "type": "object",
+    "fatalAckRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "ack_seq": {
+          "$ref": "#/$defs/positiveU64Json"
+        },
+        "axi_id": {
+          "$ref": "#/$defs/u32"
+        },
+        "issue_ordinal": {
+          "$ref": "#/$defs/positiveU64Json"
+        },
+        "response_token_wire": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/lowerHex64"
+            }
+          ]
+        },
+        "state_at_cut": {
+          "const": "WAIT_B"
+        },
+        "target_commit_evidence": {
+          "enum": [
+            "UNKNOWN",
+            "NO",
+            "YES"
+          ]
+        },
+        "terminal_evidence": {
+          "enum": [
+            "NONE",
+            "B_OK",
+            "B_ERROR"
+          ]
+        },
+        "transaction_token_wire": {
+          "$ref": "#/$defs/lowerHex64"
+        }
+      },
+      "required": [
+        "issue_ordinal",
+        "ack_seq",
+        "axi_id",
+        "state_at_cut",
+        "terminal_evidence",
+        "target_commit_evidence",
+        "transaction_token_wire",
+        "response_token_wire"
+      ],
+      "type": "object"
+    },
+    "fatalCqObligation": {
+      "additionalProperties": false,
+      "properties": {
+        "absolute_sq_seq": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "cq_obligation_id": {
+          "$ref": "#/$defs/positiveU64Json"
+        },
+        "cq_seq": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/u64Json"
+            }
+          ]
+        },
+        "request_id": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "slot_id": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/u32"
+            }
+          ]
+        },
+        "state_at_cut": {
+          "enum": [
+            "PRETERMINAL",
+            "TERMINAL_PENDING",
+            "POSTED_UNACKED",
+            "EARLY_ACK_WAIT_MSI_B"
+          ]
+        }
+      },
+      "required": [
+        "cq_obligation_id",
+        "absolute_sq_seq",
+        "request_id",
+        "cq_seq",
+        "slot_id",
+        "state_at_cut"
+      ],
+      "type": "object"
+    },
+    "fatalError": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_count": {
+          "$ref": "#/$defs/positiveU64Json"
+        },
+        "candidate_key_wire": {
+          "$ref": "#/$defs/lowerHex"
+        },
+        "candidate_multiset_digest": {
+          "$ref": "#/$defs/lowerHex64"
+        },
+        "component_kind": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "component_local_id": {
+          "$ref": "#/$defs/u32"
+        },
+        "endpoint_id": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/u32"
+            }
+          ]
+        },
+        "error": {
+          "$ref": "#/$defs/detailCode"
+        },
+        "fatal_id": {
+          "const": 1
+        },
+        "observed_tick": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "physical_source_token_wire": {
+          "$ref": "#/$defs/lowerHex64"
+        },
+        "site_domain": {
+          "enum": [
+            "FAULT",
+            "INVARIANT"
+          ]
+        },
+        "site_id": {
+          "$ref": "#/$defs/u16"
+        }
+      },
+      "required": [
+        "fatal_id",
+        "error",
+        "observed_tick",
+        "site_domain",
+        "site_id",
+        "component_kind",
+        "component_local_id",
+        "endpoint_id",
+        "candidate_key_wire",
+        "candidate_count",
+        "candidate_multiset_digest",
+        "physical_source_token_wire"
+      ],
+      "type": "object"
+    },
+    "fatalMsiRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "axi_id": {
+          "$ref": "#/$defs/u32"
+        },
+        "issue_ordinal": {
+          "$ref": "#/$defs/positiveU64Json"
+        },
+        "response_token_wire": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/lowerHex64"
+            }
+          ]
+        },
+        "state_at_cut": {
+          "const": "ISSUED"
+        },
+        "tail": {
+          "$ref": "#/$defs/positiveU64Json"
+        },
+        "target_commit_evidence": {
+          "enum": [
+            "UNKNOWN",
+            "NO",
+            "YES"
+          ]
+        },
+        "terminal_evidence": {
+          "enum": [
+            "NONE",
+            "B_OK",
+            "B_ERROR"
+          ]
+        },
+        "transaction_token_wire": {
+          "$ref": "#/$defs/lowerHex64"
+        }
+      },
+      "required": [
+        "issue_ordinal",
+        "tail",
+        "axi_id",
+        "state_at_cut",
+        "terminal_evidence",
+        "target_commit_evidence",
+        "transaction_token_wire",
+        "response_token_wire"
+      ],
+      "type": "object"
+    },
+    "fatalPublication": {
+      "additionalProperties": false,
+      "properties": {
+        "ambiguous": {
+          "type": "boolean"
+        },
+        "base_seq": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "doorbell_issue_ordinal": {
+          "$ref": "#/$defs/positiveU64Json"
+        },
+        "pending_tail": {
+          "$ref": "#/$defs/positiveU64Json"
+        },
+        "publication_id": {
+          "$ref": "#/$defs/positiveU64Json"
+        },
+        "request_ids": {
+          "items": {
+            "$ref": "#/$defs/positiveU64Json"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "response_token_wire": {
+          "$ref": "#/$defs/lowerHex64"
+        },
+        "state_at_cut": {
+          "const": "AW_W_ACCEPTED"
+        },
+        "target_commit_evidence": {
+          "enum": [
+            "NO",
+            "YES"
+          ]
+        },
+        "terminal_evidence": {
+          "enum": [
+            "B_OK",
+            "B_ERROR"
+          ]
+        },
+        "transaction_token_wire": {
+          "$ref": "#/$defs/lowerHex64"
+        }
+      },
+      "required": [
+        "publication_id",
+        "doorbell_issue_ordinal",
+        "base_seq",
+        "pending_tail",
+        "request_ids",
+        "state_at_cut",
+        "terminal_evidence",
+        "target_commit_evidence",
+        "ambiguous",
+        "transaction_token_wire",
+        "response_token_wire"
+      ],
+      "type": "object"
+    },
+    "fatalSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "fatal_cq_obligations": {
+          "items": {
+            "$ref": "#/$defs/fatalCqObligation"
+          },
+          "type": "array"
+        },
+        "fatal_publications": {
+          "items": {
+            "$ref": "#/$defs/fatalPublication"
+          },
+          "type": "array"
+        },
+        "fatal_sq_intakes": {
+          "items": {
+            "$ref": "#/$defs/fatalSqIntake"
+          },
+          "type": "array"
+        },
+        "first_fatal": {
+          "$ref": "#/$defs/fatalError"
+        },
+        "host_ack_records": {
+          "items": {
+            "$ref": "#/$defs/fatalAckRecord"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "ledger_summary": {
+          "$ref": "#/$defs/ledgers"
+        },
+        "msi_records": {
+          "items": {
+            "$ref": "#/$defs/fatalMsiRecord"
+          },
+          "type": "array"
+        },
+        "retained_sequence_slot_snapshot": {
+          "$ref": "#/$defs/retainedSequenceSlotSnapshot"
+        },
+        "run_manifest_digest": {
+          "$ref": "#/$defs/lowerHex64"
+        },
+        "schema": {
+          "const": "ai_mesh_fatal_snapshot_v1"
+        },
+        "secondary": {
+          "additionalProperties": false,
+          "properties": {
+            "candidate_count": {
+              "$ref": "#/$defs/u64Json"
+            },
+            "multiset_digest": {
+              "$ref": "#/$defs/lowerHex64"
+            }
+          },
+          "required": [
+            "candidate_count",
+            "multiset_digest"
+          ],
+          "type": "object"
+        },
+        "subcase": {
+          "type": "string"
+        },
+        "version": {
+          "const": 1
+        }
+      },
+      "required": [
+        "schema",
+        "version",
+        "id",
+        "subcase",
+        "run_manifest_digest",
+        "first_fatal",
+        "secondary",
+        "ledger_summary",
+        "fatal_cq_obligations",
+        "fatal_sq_intakes",
+        "fatal_publications",
+        "host_ack_records",
+        "msi_records",
+        "retained_sequence_slot_snapshot"
+      ],
+      "type": "object"
+    },
+    "fatalSqIntake": {
+      "additionalProperties": false,
+      "properties": {
+        "expected_sq_seq": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "first_error": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "intake_id": {
+          "$ref": "#/$defs/positiveU64Json"
+        },
+        "read_tag": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "state_at_cut": {
+          "enum": [
+            "PRE_AR",
+            "WAIT_R"
+          ]
+        },
+        "terminal_evidence": {
+          "enum": [
+            "NONE",
+            "R_OK",
+            "R_ERROR"
+          ]
+        }
+      },
+      "required": [
+        "intake_id",
+        "expected_sq_seq",
+        "read_tag",
+        "first_error",
+        "state_at_cut",
+        "terminal_evidence"
+      ],
+      "type": "object"
+    },
+    "gem5Digests": {
+      "additionalProperties": false,
+      "properties": {
+        "base_architecture": {
+          "$ref": "#/$defs/lowerHex64"
+        },
+        "capacity_plan": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "command_identity": {
+          "$ref": "#/$defs/lowerHex64"
+        },
+        "configuration": {
+          "$ref": "#/$defs/lowerHex64"
+        },
+        "control_plan": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "effective_architecture": {
+          "$ref": "#/$defs/lowerHex64"
+        },
+        "endpoint_map": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "host_arena_object_plan": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "host_task_identity": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "model_weight_image": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "program_weight_registry": {
+          "$ref": "#/$defs/nullableDigest"
+        },
+        "workload_plan": {
+          "$ref": "#/$defs/nullableDigest"
+        }
+      },
+      "required": [
+        "configuration",
+        "base_architecture",
+        "effective_architecture",
+        "program_weight_registry",
+        "model_weight_image",
+        "workload_plan",
+        "control_plan",
+        "command_identity",
+        "host_arena_object_plan",
+        "capacity_plan",
+        "endpoint_map",
+        "host_task_identity"
+      ],
+      "type": "object"
+    },
+    "gem5Execution": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "case_name": {
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
+          "type": "string"
+        },
+        "config_script": {
+          "enum": [
+            "configs/example/ai_mesh/run_dummy_core_agent.py",
+            "configs/example/ai_mesh/run_gate3_protocol.py",
+            "configs/example/ai_mesh/run_gate4_agent.py"
+          ]
+        },
+        "runner": {
+          "const": "GEM5"
+        }
+      },
+      "required": [
+        "runner",
+        "config_script",
+        "case_name",
+        "args"
+      ],
+      "type": "object"
+    },
+    "gem5Scenario": {
+      "additionalProperties": false,
+      "properties": {
+        "approximation": {
+          "$ref": "#/$defs/approximation"
+        },
+        "capacity_plan": {
+          "type": "null"
+        },
+        "data_mode": {
+          "enum": [
+            "DIGEST_ONLY",
+            "FUNCTIONAL_BYTES",
+            "VALIDITY_ONLY"
+          ]
+        },
+        "digests": {
+          "$ref": "#/$defs/gem5Digests"
+        },
+        "endpoint_map": {
+          "type": "null"
+        },
+        "host_arena_object_plan": {
+          "type": "null"
+        },
+        "host_task_identity_plan": {
+          "type": "null"
+        },
+        "identity_counters": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/identityCounters"
+            }
+          ]
+        },
+        "kind": {
+          "const": "GEM5"
+        },
+        "master_seed": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "mesh_programs": {
+          "items": {
+            "$ref": "#/$defs/programIdentity"
+          },
+          "type": "array"
+        },
+        "physical_source_counters": {
+          "items": {
+            "$ref": "#/$defs/physicalSourceCounter"
+          },
+          "type": "array"
+        },
+        "provider_profiles": {
+          "maxItems": 0,
+          "type": "array"
+        },
+        "strict_replay_serial_batches": {
+          "type": "boolean"
+        },
+        "tick_projection": {
+          "$ref": "#/$defs/tickProjection"
+        }
+      },
+      "required": [
+        "kind",
+        "master_seed",
+        "data_mode",
+        "strict_replay_serial_batches",
+        "digests",
+        "mesh_programs",
+        "provider_profiles",
+        "identity_counters",
+        "physical_source_counters",
+        "tick_projection",
+        "endpoint_map",
+        "host_arena_object_plan",
+        "capacity_plan",
+        "host_task_identity_plan",
+        "approximation"
+      ],
+      "type": "object"
+    },
+    "gem5Timeout": {
+      "additionalProperties": false,
+      "properties": {
+        "sim_ticks": {
+          "$ref": "#/$defs/positiveU64Json"
+        },
+        "wall_seconds": {
+          "maximum": 4294967295,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sim_ticks",
+        "wall_seconds"
+      ],
+      "type": "object"
+    },
+    "gtestExecution": {
+      "additionalProperties": false,
+      "properties": {
+        "binary_target": {
+          "const": "UNITTESTS_OPT"
+        },
+        "gtest_filter": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*(/[0-9]+)?\\.[A-Za-z_][A-Za-z0-9_]*(/[0-9]+)?$",
+          "type": "string"
+        },
+        "runner": {
+          "const": "GTEST"
+        }
+      },
+      "required": [
+        "runner",
+        "binary_target",
+        "gtest_filter"
+      ],
+      "type": "object"
+    },
+    "hostTaskTick": {
+      "additionalProperties": false,
+      "properties": {
+        "host_task_id": {
+          "$ref": "#/$defs/u32"
+        },
+        "local_io_ticks": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "nominal_ticks": {
+          "$ref": "#/$defs/u64Json"
+        }
+      },
+      "required": [
+        "host_task_id",
+        "nominal_ticks",
+        "local_io_ticks"
+      ],
+      "type": "object"
+    },
+    "i32": {
+      "maximum": 2147483647,
+      "minimum": -2147483648,
+      "type": "integer"
+    },
+    "identityCounters": {
+      "additionalProperties": false,
+      "properties": {
+        "next_cache_reservation_token_id": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "next_intake_id": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "next_program_instance_id": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "next_publication_id": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "next_serving_batch_id": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "next_sq_ar_issue_ordinal": {
+          "$ref": "#/$defs/u64Json"
+        }
+      },
+      "required": [
+        "next_serving_batch_id",
+        "next_program_instance_id",
+        "next_cache_reservation_token_id",
+        "next_intake_id",
+        "next_publication_id",
+        "next_sq_ar_issue_ordinal"
+      ],
+      "type": "object"
+    },
+    "inheritedEnvironmentEntry": {
+      "additionalProperties": false,
       "properties": {
         "name": {
-          "type": "string",
-          "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"
+          "minLength": 1,
+          "type": "string"
         },
-        "terminal_class": {
+        "sha256_of_value": {
+          "$ref": "#/$defs/lowerHex64"
+        }
+      },
+      "required": [
+        "name",
+        "sha256_of_value"
+      ],
+      "type": "object"
+    },
+    "invariantCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "expected": {
+          "$ref": "#/$defs/invariantValue"
+        },
+        "name": {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "type": "string"
+        },
+        "observed": {
+          "$ref": "#/$defs/invariantValue"
+        },
+        "status": {
           "enum": [
-            "QUIESCENT_SUCCESS",
-            "EXPECTED_INFRA_FATAL"
+            "PASS",
+            "FAIL"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "status",
+        "expected",
+        "observed"
+      ],
+      "type": "object"
+    },
+    "invariantValue": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "U64"
+            },
+            "value": {
+              "$ref": "#/$defs/u64Json"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "BOOL"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "DIGEST"
+            },
+            "value": {
+              "$ref": "#/$defs/lowerHex64"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "STRING"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "invariants": {
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "items": {
+            "$ref": "#/$defs/invariantCheck"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "first_failure": {
+          "type": [
+            "string",
+            "null"
           ]
         },
-        "expected_exit_reason": {
+        "id": {
+          "type": "string"
+        },
+        "registry_digest": {
+          "$ref": "#/$defs/lowerHex64"
+        },
+        "schema": {
+          "const": "ai_mesh_invariants_v1"
+        },
+        "status": {
           "enum": [
-            "QUIESCENT_SUCCESS",
-            "INFRA_FATAL"
+            "PASS",
+            "FAIL"
           ]
         },
-        "expected_first_fatal": {
+        "subcase": {
+          "type": "string"
+        },
+        "version": {
+          "const": 1
+        }
+      },
+      "required": [
+        "schema",
+        "version",
+        "id",
+        "subcase",
+        "status",
+        "registry_digest",
+        "checks",
+        "first_failure"
+      ],
+      "type": "object"
+    },
+    "ledgers": {
+      "additionalProperties": false,
+      "properties": {
+        "ambiguous_publications": {
+          "$ref": "#/$defs/u32"
+        },
+        "fatal_cq_obligations": {
+          "$ref": "#/$defs/u32"
+        },
+        "fatal_publications": {
+          "$ref": "#/$defs/u32"
+        },
+        "fatal_records": {
+          "$ref": "#/$defs/u32"
+        },
+        "fatal_sq_intakes": {
+          "$ref": "#/$defs/u32"
+        },
+        "host_ack_b_error": {
+          "$ref": "#/$defs/u32"
+        },
+        "host_ack_wait_b": {
+          "$ref": "#/$defs/u32"
+        },
+        "live_cq_obligations": {
+          "$ref": "#/$defs/u32"
+        },
+        "msi_rob_entries": {
+          "$ref": "#/$defs/u32"
+        }
+      },
+      "required": [
+        "live_cq_obligations",
+        "fatal_cq_obligations",
+        "fatal_sq_intakes",
+        "fatal_publications",
+        "ambiguous_publications",
+        "host_ack_wait_b",
+        "host_ack_b_error",
+        "msi_rob_entries",
+        "fatal_records"
+      ],
+      "type": "object"
+    },
+    "lowerHex": {
+      "pattern": "^[0-9a-f]+$",
+      "type": "string"
+    },
+    "lowerHex40": {
+      "pattern": "^[0-9a-f]{40}$",
+      "type": "string"
+    },
+    "lowerHex64": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "mandatoryManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "cases": {
+          "items": {
+            "$ref": "#/$defs/manifestCase"
+          },
+          "maxItems": 150,
+          "minItems": 150,
+          "type": "array"
+        },
+        "schema": {
+          "const": "ai_mesh_mandatory_manifest_v1"
+        },
+        "version": {
+          "const": 1
+        }
+      },
+      "required": [
+        "schema",
+        "version",
+        "cases"
+      ],
+      "type": "object"
+    },
+    "mandatoryResults": {
+      "additionalProperties": false,
+      "properties": {
+        "cases": {
+          "items": {
+            "$ref": "#/$defs/resultCase"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "gate": {
+          "maximum": 7,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "junit_path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "logical_fail_count": {
+          "$ref": "#/$defs/u32"
+        },
+        "logical_pass_count": {
+          "$ref": "#/$defs/u32"
+        },
+        "manifest_digest": {
+          "$ref": "#/$defs/lowerHex64"
+        },
+        "schema": {
+          "const": "ai_mesh_mandatory_results_v1"
+        },
+        "selected_logical_count": {
+          "$ref": "#/$defs/u32"
+        },
+        "selected_subcase_count": {
+          "$ref": "#/$defs/u32"
+        },
+        "selection": {
+          "additionalProperties": false,
+          "properties": {
+            "ids": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "mode": {
+              "enum": [
+                "GATE_PREFIX",
+                "EXPLICIT_IDS"
+              ]
+            }
+          },
+          "required": [
+            "mode",
+            "ids"
+          ],
+          "type": "object"
+        },
+        "subcase_fail_count": {
+          "$ref": "#/$defs/u32"
+        },
+        "subcase_pass_count": {
+          "$ref": "#/$defs/u32"
+        },
+        "version": {
+          "const": 1
+        }
+      },
+      "required": [
+        "schema",
+        "version",
+        "manifest_digest",
+        "gate",
+        "selection",
+        "selected_logical_count",
+        "selected_subcase_count",
+        "cases",
+        "logical_pass_count",
+        "logical_fail_count",
+        "subcase_pass_count",
+        "subcase_fail_count",
+        "junit_path"
+      ],
+      "type": "object"
+    },
+    "manifestCase": {
+      "additionalProperties": false,
+      "properties": {
+        "earliest_gate": {
+          "maximum": 7,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "id": {
+          "pattern": "^(DC-([1-9]|[12][0-9]|3[0-5])|MOE-([1-9]|[12][0-9]|30)|PROTO-([1-9]|[12][0-9]|30)|HOST-([1-9]|1[0-9]|2[0-6])|SERV-([1-9]|1[0-9]|2[01])|E2E-[A-H])$",
+          "type": "string"
+        },
+        "subcases": {
+          "items": {
+            "$ref": "#/$defs/subcase"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "earliest_gate",
+        "subcases"
+      ],
+      "type": "object"
+    },
+    "nullableDigest": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/lowerHex64"
+        }
+      ]
+    },
+    "physicalSourceCounter": {
+      "additionalProperties": false,
+      "properties": {
+        "component_kind": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "component_local_id": {
+          "$ref": "#/$defs/u32"
+        },
+        "endpoint_id": {
+          "$ref": "#/$defs/u32"
+        },
+        "kind": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "next_ordinal": {
+          "$ref": "#/$defs/u64Json"
+        }
+      },
+      "required": [
+        "kind",
+        "component_kind",
+        "component_local_id",
+        "endpoint_id",
+        "next_ordinal"
+      ],
+      "type": "object"
+    },
+    "positiveU64Json": {
+      "oneOf": [
+        {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "pattern": "^0x[0-9a-f]{16}$",
+          "type": "string"
+        }
+      ]
+    },
+    "programIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "file_sha256": {
+          "$ref": "#/$defs/lowerHex64"
+        },
+        "program_id": {
+          "$ref": "#/$defs/u16"
+        },
+        "semantic_digest": {
+          "$ref": "#/$defs/lowerHex64"
+        }
+      },
+      "required": [
+        "program_id",
+        "semantic_digest",
+        "file_sha256"
+      ],
+      "type": "object"
+    },
+    "pytestExecution": {
+      "additionalProperties": false,
+      "properties": {
+        "node_id": {
+          "pattern": "^[^\\s:]+::[^\\s:]+$",
+          "type": "string"
+        },
+        "runner": {
+          "const": "PYTEST"
+        }
+      },
+      "required": [
+        "runner",
+        "node_id"
+      ],
+      "type": "object"
+    },
+    "resultCase": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "PASS",
+            "FAIL"
+          ]
+        },
+        "subcases": {
+          "items": {
+            "$ref": "#/$defs/resultSubcase"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "subcases"
+      ],
+      "type": "object"
+    },
+    "resultSubcase": {
+      "additionalProperties": false,
+      "properties": {
+        "junit_testcase_name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "PASS",
+            "FAIL"
+          ]
+        },
+        "summary_path": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "status",
+        "summary_path",
+        "junit_testcase_name"
+      ],
+      "type": "object"
+    },
+    "retainedSequenceSlotSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "cq_ack_received_seq": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "cq_consumer_seq": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "cq_msi_issued_seq": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "cq_notified_seq": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "cq_producer_seq": {
+          "$ref": "#/$defs/u64Json"
+        },
+        "early_ack_records": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "ack_seq": {
+                "$ref": "#/$defs/positiveU64Json"
+              },
+              "axi_id": {
+                "$ref": "#/$defs/u32"
+              }
+            },
+            "required": [
+              "ack_seq",
+              "axi_id"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "occupied_cq_slots": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "cq_obligation_id": {
+                "$ref": "#/$defs/positiveU64Json"
+              },
+              "slot_id": {
+                "$ref": "#/$defs/u32"
+              }
+            },
+            "required": [
+              "slot_id",
+              "cq_obligation_id"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "sq_consumer_seq": {
+          "$ref": "#/$defs/u64Json"
+        }
+      },
+      "required": [
+        "sq_consumer_seq",
+        "cq_producer_seq",
+        "cq_consumer_seq",
+        "cq_notified_seq",
+        "cq_ack_received_seq",
+        "cq_msi_issued_seq",
+        "occupied_cq_slots",
+        "early_ack_records"
+      ],
+      "type": "object"
+    },
+    "runManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "execution": {
+          "additionalProperties": false,
+          "properties": {
+            "absolute_output_dir": {
+              "pattern": "^/",
+              "type": "string"
+            },
+            "child_environment": {
+              "items": {
+                "$ref": "#/$defs/environmentEntry"
+              },
+              "maxItems": 8,
+              "minItems": 8,
+              "type": "array"
+            },
+            "final_argv": {
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "normalized_execution_digest": {
+              "$ref": "#/$defs/lowerHex64"
+            },
+            "runner": {
+              "enum": [
+                "GTEST",
+                "PYTEST",
+                "GEM5"
+              ]
+            }
+          },
+          "required": [
+            "runner",
+            "normalized_execution_digest",
+            "final_argv",
+            "child_environment",
+            "absolute_output_dir"
+          ],
+          "type": "object"
+        },
+        "git": {
+          "additionalProperties": false,
+          "properties": {
+            "base_sha": {
+              "$ref": "#/$defs/lowerHex40"
+            },
+            "dirty": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "base_sha",
+            "dirty"
+          ],
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "manifest_digest": {
+          "$ref": "#/$defs/lowerHex64"
+        },
+        "provenance": {
+          "additionalProperties": false,
+          "properties": {
+            "build_mode": {
+              "enum": [
+                "OPT",
+                "DEBUG"
+              ]
+            },
+            "config_or_test_registry_sha256": {
+              "$ref": "#/$defs/lowerHex64"
+            },
+            "harness_sha256": {
+              "$ref": "#/$defs/lowerHex64"
+            },
+            "inherited_environment": {
+              "items": {
+                "$ref": "#/$defs/inheritedEnvironmentEntry"
+              },
+              "type": "array"
+            },
+            "resolved_executable_sha256": {
+              "$ref": "#/$defs/lowerHex64"
+            }
+          },
+          "required": [
+            "resolved_executable_sha256",
+            "config_or_test_registry_sha256",
+            "harness_sha256",
+            "build_mode",
+            "inherited_environment"
+          ],
+          "type": "object"
+        },
+        "scenario": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/unitScenario"
+            },
+            {
+              "$ref": "#/$defs/gem5Scenario"
+            }
+          ]
+        },
+        "schema": {
+          "const": "ai_mesh_run_manifest_v1"
+        },
+        "subcase": {
+          "type": "string"
+        },
+        "version": {
+          "const": 1
+        }
+      },
+      "required": [
+        "schema",
+        "version",
+        "id",
+        "subcase",
+        "manifest_digest",
+        "git",
+        "execution",
+        "provenance",
+        "scenario"
+      ],
+      "type": "object"
+    },
+    "runSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_paths": {
+          "items": {
+            "$ref": "#/$defs/artifactPath"
+          },
+          "minItems": 4,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "child_termination": {
+          "$ref": "#/$defs/childTermination"
+        },
+        "first_fatal": {
           "oneOf": [
             {
               "type": "null"
@@ -278,44 +1985,140 @@
             }
           ]
         },
-        "expected_ledgers": {
-          "$ref": "#/$defs/ledgers"
+        "global_quiescence": {
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
-        "timeout": {
+        "harness_failure_kind": {
           "oneOf": [
             {
-              "$ref": "#/$defs/unitTimeout"
+              "type": "null"
             },
             {
-              "$ref": "#/$defs/gem5Timeout"
+              "enum": [
+                "SPAWN_ERROR",
+                "SIGNAL",
+                "WALL_TIMEOUT",
+                "MISSING_CHILD_REPORT",
+                "INVALID_CHILD_REPORT",
+                "EXIT_REPORT_MISMATCH",
+                "ARTIFACT_ERROR"
+              ]
             }
           ]
         },
-        "artifacts": {
-          "type": "array",
-          "minItems": 4,
-          "uniqueItems": true,
-          "items": {
-            "$ref": "#/$defs/artifactKind"
-          }
+        "id": {
+          "type": "string"
         },
-        "execution": {
-          "$ref": "#/$defs/execution"
+        "ledger_summary": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/ledgers"
+            }
+          ]
+        },
+        "normalized_execution_digest": {
+          "$ref": "#/$defs/lowerHex64"
+        },
+        "process_exit_code": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/i32"
+            }
+          ]
+        },
+        "run_exit_reason": {
+          "enum": [
+            "QUIESCENT_SUCCESS",
+            "INFRA_FATAL",
+            "WATCHDOG",
+            "TEST_ASSERTION_FAILED",
+            "CONFIG_ERROR",
+            "INTERNAL_ABORT",
+            "HARNESS_FAILURE"
+          ]
+        },
+        "run_manifest_digest": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/lowerHex64"
+            }
+          ]
+        },
+        "schema": {
+          "const": "ai_mesh_run_summary_v1"
+        },
+        "status": {
+          "enum": [
+            "PASS",
+            "FAIL"
+          ]
+        },
+        "subcase": {
+          "type": "string"
+        },
+        "terminal_class": {
+          "enum": [
+            "QUIESCENT_SUCCESS",
+            "EXPECTED_INFRA_FATAL"
+          ]
+        },
+        "version": {
+          "const": 1
+        },
+        "watchdog_fired": {
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       },
       "required": [
-        "name",
+        "schema",
+        "version",
+        "id",
+        "subcase",
+        "status",
         "terminal_class",
-        "expected_exit_reason",
-        "expected_first_fatal",
-        "expected_ledgers",
-        "timeout",
-        "artifacts",
-        "execution"
+        "run_exit_reason",
+        "process_exit_code",
+        "child_termination",
+        "harness_failure_kind",
+        "first_fatal",
+        "watchdog_fired",
+        "ledger_summary",
+        "global_quiescence",
+        "run_manifest_digest",
+        "normalized_execution_digest",
+        "artifact_paths"
       ],
+      "type": "object"
+    },
+    "subcase": {
       "additionalProperties": false,
       "allOf": [
         {
+          "else": {
+            "properties": {
+              "expected_exit_reason": {
+                "const": "INFRA_FATAL"
+              },
+              "expected_first_fatal": {
+                "$ref": "#/$defs/detailCode"
+              }
+            }
+          },
           "if": {
             "properties": {
               "terminal_class": {
@@ -335,19 +2138,16 @@
                 "type": "null"
               }
             }
-          },
-          "else": {
-            "properties": {
-              "expected_exit_reason": {
-                "const": "INFRA_FATAL"
-              },
-              "expected_first_fatal": {
-                "$ref": "#/$defs/detailCode"
-              }
-            }
           }
         },
         {
+          "else": {
+            "properties": {
+              "timeout": {
+                "$ref": "#/$defs/unitTimeout"
+              }
+            }
+          },
           "if": {
             "properties": {
               "execution": {
@@ -371,95 +2171,28 @@
                 "$ref": "#/$defs/gem5Timeout"
               }
             }
+          }
+        }
+      ],
+      "properties": {
+        "artifacts": {
+          "items": {
+            "$ref": "#/$defs/artifactKind"
           },
-          "else": {
-            "properties": {
-              "timeout": {
-                "$ref": "#/$defs/unitTimeout"
-              }
-            }
-          }
-        }
-      ]
-    },
-    "manifestCase": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string",
-          "pattern": "^(DC-([1-9]|[12][0-9]|3[0-5])|MOE-([1-9]|[12][0-9]|30)|PROTO-([1-9]|[12][0-9]|30)|HOST-([1-9]|1[0-9]|2[0-6])|SERV-([1-9]|1[0-9]|2[01])|E2E-[A-H])$"
-        },
-        "earliest_gate": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 7
-        },
-        "subcases": {
+          "minItems": 4,
           "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/subcase"
-          }
-        }
-      },
-      "required": [
-        "id",
-        "earliest_gate",
-        "subcases"
-      ],
-      "additionalProperties": false
-    },
-    "mandatoryManifest": {
-      "type": "object",
-      "properties": {
-        "schema": {
-          "const": "ai_mesh_mandatory_manifest_v1"
+          "uniqueItems": true
         },
-        "version": {
-          "const": 1
+        "execution": {
+          "$ref": "#/$defs/execution"
         },
-        "cases": {
-          "type": "array",
-          "minItems": 150,
-          "maxItems": 150,
-          "items": {
-            "$ref": "#/$defs/manifestCase"
-          }
-        }
-      },
-      "required": [
-        "schema",
-        "version",
-        "cases"
-      ],
-      "additionalProperties": false
-    },
-    "childReport": {
-      "type": "object",
-      "properties": {
-        "schema": {
-          "const": "ai_mesh_child_scenario_report_v1"
-        },
-        "version": {
-          "const": 1
-        },
-        "id": {
-          "type": "string"
-        },
-        "subcase": {
-          "type": "string"
-        },
-        "run_exit_reason": {
+        "expected_exit_reason": {
           "enum": [
             "QUIESCENT_SUCCESS",
-            "INFRA_FATAL",
-            "WATCHDOG",
-            "TEST_ASSERTION_FAILED",
-            "CONFIG_ERROR",
-            "INTERNAL_ABORT"
+            "INFRA_FATAL"
           ]
         },
-        "first_fatal": {
+        "expected_first_fatal": {
           "oneOf": [
             {
               "type": "null"
@@ -469,153 +2202,12 @@
             }
           ]
         },
-        "watchdog_fired": {
-          "type": "boolean"
-        },
-        "ledger_summary": {
+        "expected_ledgers": {
           "$ref": "#/$defs/ledgers"
         },
-        "global_quiescence": {
-          "type": "boolean"
-        },
-        "run_manifest_digest": {
-          "$ref": "#/$defs/lowerHex64"
-        }
-      },
-      "required": [
-        "schema",
-        "version",
-        "id",
-        "subcase",
-        "run_exit_reason",
-        "first_fatal",
-        "watchdog_fired",
-        "ledger_summary",
-        "global_quiescence",
-        "run_manifest_digest"
-      ],
-      "additionalProperties": false
-    },
-    "childTermination": {
-      "oneOf": [
-        {
-          "type": "object",
-          "properties": {
-            "kind": {
-              "const": "EXIT"
-            },
-            "exit_code": {
-              "$ref": "#/$defs/i32"
-            },
-            "signal": {
-              "type": "null"
-            }
-          },
-          "required": [
-            "kind",
-            "exit_code",
-            "signal"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "kind": {
-              "const": "SIGNAL"
-            },
-            "exit_code": {
-              "type": "null"
-            },
-            "signal": {
-              "type": "integer",
-              "minimum": 1
-            }
-          },
-          "required": [
-            "kind",
-            "exit_code",
-            "signal"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "kind": {
-              "enum": [
-                "SPAWN_ERROR",
-                "WALL_TIMEOUT"
-              ]
-            },
-            "exit_code": {
-              "type": "null"
-            },
-            "signal": {
-              "type": "null"
-            }
-          },
-          "required": [
-            "kind",
-            "exit_code",
-            "signal"
-          ],
-          "additionalProperties": false
-        }
-      ]
-    },
-    "artifactPath": {
-      "type": "object",
-      "properties": {
-        "kind": {
-          "$ref": "#/$defs/artifactKind"
-        },
-        "state": {
-          "enum": [
-            "AVAILABLE",
-            "MISSING"
-          ]
-        },
-        "path": {
-          "oneOf": [
-            {
-              "type": "null"
-            },
-            {
-              "type": "string",
-              "minLength": 1,
-              "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+$"
-            }
-          ]
-        }
-      },
-      "required": [
-        "kind",
-        "state",
-        "path"
-      ],
-      "additionalProperties": false
-    },
-    "runSummary": {
-      "type": "object",
-      "properties": {
-        "schema": {
-          "const": "ai_mesh_run_summary_v1"
-        },
-        "version": {
-          "const": 1
-        },
-        "id": {
+        "name": {
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$",
           "type": "string"
-        },
-        "subcase": {
-          "type": "string"
-        },
-        "status": {
-          "enum": [
-            "PASS",
-            "FAIL"
-          ]
         },
         "terminal_class": {
           "enum": [
@@ -623,358 +2215,46 @@
             "EXPECTED_INFRA_FATAL"
           ]
         },
-        "run_exit_reason": {
-          "enum": [
-            "QUIESCENT_SUCCESS",
-            "INFRA_FATAL",
-            "WATCHDOG",
-            "TEST_ASSERTION_FAILED",
-            "CONFIG_ERROR",
-            "INTERNAL_ABORT",
-            "HARNESS_FAILURE"
-          ]
-        },
-        "process_exit_code": {
+        "timeout": {
           "oneOf": [
             {
-              "type": "null"
+              "$ref": "#/$defs/unitTimeout"
             },
             {
-              "$ref": "#/$defs/i32"
+              "$ref": "#/$defs/gem5Timeout"
             }
           ]
-        },
-        "child_termination": {
-          "$ref": "#/$defs/childTermination"
-        },
-        "harness_failure_kind": {
-          "oneOf": [
-            {
-              "type": "null"
-            },
-            {
-              "enum": [
-                "SPAWN_ERROR",
-                "SIGNAL",
-                "WALL_TIMEOUT",
-                "MISSING_CHILD_REPORT",
-                "INVALID_CHILD_REPORT",
-                "EXIT_REPORT_MISMATCH",
-                "ARTIFACT_ERROR"
-              ]
-            }
-          ]
-        },
-        "first_fatal": {
-          "oneOf": [
-            {
-              "type": "null"
-            },
-            {
-              "$ref": "#/$defs/detailCode"
-            }
-          ]
-        },
-        "watchdog_fired": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "ledger_summary": {
-          "oneOf": [
-            {
-              "type": "null"
-            },
-            {
-              "$ref": "#/$defs/ledgers"
-            }
-          ]
-        },
-        "global_quiescence": {
-          "type": [
-            "boolean",
-            "null"
-          ]
-        },
-        "run_manifest_digest": {
-          "oneOf": [
-            {
-              "type": "null"
-            },
-            {
-              "$ref": "#/$defs/lowerHex64"
-            }
-          ]
-        },
-        "normalized_execution_digest": {
-          "$ref": "#/$defs/lowerHex64"
-        },
-        "artifact_paths": {
-          "type": "array",
-          "minItems": 4,
-          "uniqueItems": true,
-          "items": {
-            "$ref": "#/$defs/artifactPath"
-          }
         }
       },
       "required": [
-        "schema",
-        "version",
-        "id",
-        "subcase",
-        "status",
+        "name",
         "terminal_class",
-        "run_exit_reason",
-        "process_exit_code",
-        "child_termination",
-        "harness_failure_kind",
-        "first_fatal",
-        "watchdog_fired",
-        "ledger_summary",
-        "global_quiescence",
-        "run_manifest_digest",
-        "normalized_execution_digest",
-        "artifact_paths"
+        "expected_exit_reason",
+        "expected_first_fatal",
+        "expected_ledgers",
+        "timeout",
+        "artifacts",
+        "execution"
       ],
-      "additionalProperties": false
-    },
-    "environmentEntry": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string",
-          "minLength": 1
-        },
-        "value": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "name",
-        "value"
-      ],
-      "additionalProperties": false
-    },
-    "inheritedEnvironmentEntry": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string",
-          "minLength": 1
-        },
-        "sha256_of_value": {
-          "$ref": "#/$defs/lowerHex64"
-        }
-      },
-      "required": [
-        "name",
-        "sha256_of_value"
-      ],
-      "additionalProperties": false
-    },
-    "unitScenario": {
-      "type": "object",
-      "properties": {
-        "kind": {
-          "const": "UNIT"
-        },
-        "unit_registry_digest": {
-          "$ref": "#/$defs/lowerHex64"
-        }
-      },
-      "required": [
-        "kind",
-        "unit_registry_digest"
-      ],
-      "additionalProperties": false
-    },
-    "nullableDigest": {
-      "oneOf": [
-        {
-          "type": "null"
-        },
-        {
-          "$ref": "#/$defs/lowerHex64"
-        }
-      ]
-    },
-    "gem5Digests": {
-      "type": "object",
-      "properties": {
-        "configuration": {
-          "$ref": "#/$defs/lowerHex64"
-        },
-        "base_architecture": {
-          "$ref": "#/$defs/lowerHex64"
-        },
-        "effective_architecture": {
-          "$ref": "#/$defs/lowerHex64"
-        },
-        "program_weight_registry": {
-          "$ref": "#/$defs/nullableDigest"
-        },
-        "model_weight_image": {
-          "$ref": "#/$defs/nullableDigest"
-        },
-        "workload_plan": {
-          "$ref": "#/$defs/nullableDigest"
-        },
-        "control_plan": {
-          "$ref": "#/$defs/nullableDigest"
-        },
-        "command_identity": {
-          "$ref": "#/$defs/lowerHex64"
-        },
-        "host_arena_object_plan": {
-          "$ref": "#/$defs/nullableDigest"
-        },
-        "capacity_plan": {
-          "$ref": "#/$defs/nullableDigest"
-        },
-        "endpoint_map": {
-          "$ref": "#/$defs/nullableDigest"
-        },
-        "host_task_identity": {
-          "$ref": "#/$defs/nullableDigest"
-        }
-      },
-      "required": [
-        "configuration",
-        "base_architecture",
-        "effective_architecture",
-        "program_weight_registry",
-        "model_weight_image",
-        "workload_plan",
-        "control_plan",
-        "command_identity",
-        "host_arena_object_plan",
-        "capacity_plan",
-        "endpoint_map",
-        "host_task_identity"
-      ],
-      "additionalProperties": false
-    },
-    "programIdentity": {
-      "type": "object",
-      "properties": {
-        "program_id": {
-          "$ref": "#/$defs/u16"
-        },
-        "semantic_digest": {
-          "$ref": "#/$defs/lowerHex64"
-        },
-        "file_sha256": {
-          "$ref": "#/$defs/lowerHex64"
-        }
-      },
-      "required": [
-        "program_id",
-        "semantic_digest",
-        "file_sha256"
-      ],
-      "additionalProperties": false
-    },
-    "identityCounters": {
-      "type": "object",
-      "properties": {
-        "next_serving_batch_id": {
-          "$ref": "#/$defs/u64Json"
-        },
-        "next_program_instance_id": {
-          "$ref": "#/$defs/u64Json"
-        },
-        "next_cache_reservation_token_id": {
-          "$ref": "#/$defs/u64Json"
-        },
-        "next_intake_id": {
-          "$ref": "#/$defs/u64Json"
-        },
-        "next_publication_id": {
-          "$ref": "#/$defs/u64Json"
-        },
-        "next_sq_ar_issue_ordinal": {
-          "$ref": "#/$defs/u64Json"
-        }
-      },
-      "required": [
-        "next_serving_batch_id",
-        "next_program_instance_id",
-        "next_cache_reservation_token_id",
-        "next_intake_id",
-        "next_publication_id",
-        "next_sq_ar_issue_ordinal"
-      ],
-      "additionalProperties": false
-    },
-    "physicalSourceCounter": {
-      "type": "object",
-      "properties": {
-        "kind": {
-          "type": "string",
-          "minLength": 1
-        },
-        "component_kind": {
-          "type": "string",
-          "minLength": 1
-        },
-        "component_local_id": {
-          "$ref": "#/$defs/u32"
-        },
-        "endpoint_id": {
-          "$ref": "#/$defs/u32"
-        },
-        "next_ordinal": {
-          "$ref": "#/$defs/u64Json"
-        }
-      },
-      "required": [
-        "kind",
-        "component_kind",
-        "component_local_id",
-        "endpoint_id",
-        "next_ordinal"
-      ],
-      "additionalProperties": false
-    },
-    "hostTaskTick": {
-      "type": "object",
-      "properties": {
-        "host_task_id": {
-          "$ref": "#/$defs/u32"
-        },
-        "nominal_ticks": {
-          "$ref": "#/$defs/u64Json"
-        },
-        "local_io_ticks": {
-          "$ref": "#/$defs/u64Json"
-        }
-      },
-      "required": [
-        "host_task_id",
-        "nominal_ticks",
-        "local_io_ticks"
-      ],
-      "additionalProperties": false
+      "type": "object"
     },
     "tickProjection": {
-      "type": "object",
+      "additionalProperties": false,
       "properties": {
-        "host_clock_period_ticks": {
-          "$ref": "#/$defs/u64Json"
-        },
-        "npu_clock_period_ticks": {
-          "$ref": "#/$defs/u64Json"
-        },
         "core_clock_period_ticks": {
           "$ref": "#/$defs/u64Json"
         },
+        "host_clock_period_ticks": {
+          "$ref": "#/$defs/u64Json"
+        },
         "host_tasks": {
-          "type": "array",
           "items": {
             "$ref": "#/$defs/hostTaskTick"
-          }
+          },
+          "type": "array"
+        },
+        "npu_clock_period_ticks": {
+          "$ref": "#/$defs/u64Json"
         }
       },
       "required": [
@@ -983,516 +2263,78 @@
         "core_clock_period_ticks",
         "host_tasks"
       ],
-      "additionalProperties": false
-    },
-    "approximation": {
-      "type": "object",
-      "properties": {
-        "reference_compute": {
-          "const": false
-        },
-        "numeric_compute": {
-          "const": false
-        },
-        "cpu_instruction_simulation": {
-          "const": false
-        },
-        "cpu_mesh_simulation": {
-          "const": false
-        },
-        "ucie_protocol_simulation": {
-          "const": false
-        },
-        "remote_link_is_analytic_proxy": {
-          "const": true
-        },
-        "synthetic_weight_bytes": {
-          "const": true
-        },
-        "synthetic_output_bytes": {
-          "const": true
-        }
-      },
-      "required": [
-        "reference_compute",
-        "numeric_compute",
-        "cpu_instruction_simulation",
-        "cpu_mesh_simulation",
-        "ucie_protocol_simulation",
-        "remote_link_is_analytic_proxy",
-        "synthetic_weight_bytes",
-        "synthetic_output_bytes"
-      ],
-      "additionalProperties": false
-    },
-    "gem5Scenario": {
-      "type": "object",
-      "properties": {
-        "kind": {
-          "const": "GEM5"
-        },
-        "master_seed": {
-          "$ref": "#/$defs/u64Json"
-        },
-        "data_mode": {
-          "enum": [
-            "DIGEST_ONLY",
-            "FUNCTIONAL_BYTES",
-            "VALIDITY_ONLY"
-          ]
-        },
-        "strict_replay_serial_batches": {
-          "type": "boolean"
-        },
-        "digests": {
-          "$ref": "#/$defs/gem5Digests"
-        },
-        "mesh_programs": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/programIdentity"
-          }
-        },
-        "provider_profiles": {
-          "type": "array",
-          "maxItems": 0
-        },
-        "identity_counters": {
-          "oneOf": [
-            {
-              "type": "null"
-            },
-            {
-              "$ref": "#/$defs/identityCounters"
-            }
-          ]
-        },
-        "physical_source_counters": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/physicalSourceCounter"
-          }
-        },
-        "tick_projection": {
-          "$ref": "#/$defs/tickProjection"
-        },
-        "endpoint_map": {
-          "type": "null"
-        },
-        "host_arena_object_plan": {
-          "type": "null"
-        },
-        "capacity_plan": {
-          "type": "null"
-        },
-        "host_task_identity_plan": {
-          "type": "null"
-        },
-        "approximation": {
-          "$ref": "#/$defs/approximation"
-        }
-      },
-      "required": [
-        "kind",
-        "master_seed",
-        "data_mode",
-        "strict_replay_serial_batches",
-        "digests",
-        "mesh_programs",
-        "provider_profiles",
-        "identity_counters",
-        "physical_source_counters",
-        "tick_projection",
-        "endpoint_map",
-        "host_arena_object_plan",
-        "capacity_plan",
-        "host_task_identity_plan",
-        "approximation"
-      ],
-      "additionalProperties": false
-    },
-    "runManifest": {
-      "type": "object",
-      "properties": {
-        "schema": {
-          "const": "ai_mesh_run_manifest_v1"
-        },
-        "version": {
-          "const": 1
-        },
-        "id": {
-          "type": "string"
-        },
-        "subcase": {
-          "type": "string"
-        },
-        "manifest_digest": {
-          "$ref": "#/$defs/lowerHex64"
-        },
-        "git": {
-          "type": "object",
-          "properties": {
-            "base_sha": {
-              "$ref": "#/$defs/lowerHex40"
-            },
-            "dirty": {
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "base_sha",
-            "dirty"
-          ],
-          "additionalProperties": false
-        },
-        "execution": {
-          "type": "object",
-          "properties": {
-            "runner": {
-              "enum": [
-                "GTEST",
-                "PYTEST",
-                "GEM5"
-              ]
-            },
-            "normalized_execution_digest": {
-              "$ref": "#/$defs/lowerHex64"
-            },
-            "final_argv": {
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "type": "string"
-              }
-            },
-            "child_environment": {
-              "type": "array",
-              "minItems": 8,
-              "maxItems": 8,
-              "items": {
-                "$ref": "#/$defs/environmentEntry"
-              }
-            },
-            "absolute_output_dir": {
-              "type": "string",
-              "pattern": "^/"
-            }
-          },
-          "required": [
-            "runner",
-            "normalized_execution_digest",
-            "final_argv",
-            "child_environment",
-            "absolute_output_dir"
-          ],
-          "additionalProperties": false
-        },
-        "provenance": {
-          "type": "object",
-          "properties": {
-            "resolved_executable_sha256": {
-              "$ref": "#/$defs/lowerHex64"
-            },
-            "config_or_test_registry_sha256": {
-              "$ref": "#/$defs/lowerHex64"
-            },
-            "harness_sha256": {
-              "$ref": "#/$defs/lowerHex64"
-            },
-            "build_mode": {
-              "enum": [
-                "OPT",
-                "DEBUG"
-              ]
-            },
-            "inherited_environment": {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/inheritedEnvironmentEntry"
-              }
-            }
-          },
-          "required": [
-            "resolved_executable_sha256",
-            "config_or_test_registry_sha256",
-            "harness_sha256",
-            "build_mode",
-            "inherited_environment"
-          ],
-          "additionalProperties": false
-        },
-        "scenario": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/unitScenario"
-            },
-            {
-              "$ref": "#/$defs/gem5Scenario"
-            }
-          ]
-        }
-      },
-      "required": [
-        "schema",
-        "version",
-        "id",
-        "subcase",
-        "manifest_digest",
-        "git",
-        "execution",
-        "provenance",
-        "scenario"
-      ],
-      "additionalProperties": false
-    },
-    "invariantValue": {
-      "oneOf": [
-        {
-          "type": "object",
-          "properties": {
-            "kind": {
-              "const": "U64"
-            },
-            "value": {
-              "$ref": "#/$defs/u64Json"
-            }
-          },
-          "required": [
-            "kind",
-            "value"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "kind": {
-              "const": "BOOL"
-            },
-            "value": {
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "kind",
-            "value"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "kind": {
-              "const": "DIGEST"
-            },
-            "value": {
-              "$ref": "#/$defs/lowerHex64"
-            }
-          },
-          "required": [
-            "kind",
-            "value"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "kind": {
-              "const": "STRING"
-            },
-            "value": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "kind",
-            "value"
-          ],
-          "additionalProperties": false
-        }
-      ]
-    },
-    "invariantCheck": {
-      "type": "object",
-      "properties": {
-        "name": {
-          "type": "string",
-          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$"
-        },
-        "status": {
-          "enum": [
-            "PASS",
-            "FAIL"
-          ]
-        },
-        "expected": {
-          "$ref": "#/$defs/invariantValue"
-        },
-        "observed": {
-          "$ref": "#/$defs/invariantValue"
-        }
-      },
-      "required": [
-        "name",
-        "status",
-        "expected",
-        "observed"
-      ],
-      "additionalProperties": false
-    },
-    "invariants": {
-      "type": "object",
-      "properties": {
-        "schema": {
-          "const": "ai_mesh_invariants_v1"
-        },
-        "version": {
-          "const": 1
-        },
-        "id": {
-          "type": "string"
-        },
-        "subcase": {
-          "type": "string"
-        },
-        "status": {
-          "enum": [
-            "PASS",
-            "FAIL"
-          ]
-        },
-        "registry_digest": {
-          "$ref": "#/$defs/lowerHex64"
-        },
-        "checks": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/invariantCheck"
-          }
-        },
-        "first_failure": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
-      },
-      "required": [
-        "schema",
-        "version",
-        "id",
-        "subcase",
-        "status",
-        "registry_digest",
-        "checks",
-        "first_failure"
-      ],
-      "additionalProperties": false
-    },
-    "trafficClass": {
-      "enum": [
-        "AGENT_TO_NPU_CONTROL",
-        "NPU_TO_AGENT_CONTROL",
-        "NPU_READ_AGENT_MEMORY",
-        "NPU_WRITE_AGENT_MEMORY",
-        "NPU_LOCAL_MEMORY",
-        "NPU_P2P"
-      ]
-    },
-    "trafficClassRow": {
-      "type": "object",
-      "properties": {
-        "traffic_class": {
-          "$ref": "#/$defs/trafficClass"
-        },
-        "expected_bytes": {
-          "$ref": "#/$defs/u64Json"
-        },
-        "actual_bytes": {
-          "$ref": "#/$defs/u64Json"
-        },
-        "expected_packets": {
-          "$ref": "#/$defs/u64Json"
-        },
-        "actual_packets": {
-          "$ref": "#/$defs/u64Json"
-        }
-      },
-      "required": [
-        "traffic_class",
-        "expected_bytes",
-        "actual_bytes",
-        "expected_packets",
-        "actual_packets"
-      ],
-      "additionalProperties": false
-    },
-    "trafficOwnership": {
-      "type": "object",
-      "properties": {
-        "owner_key_wire": {
-          "$ref": "#/$defs/lowerHex"
-        },
-        "expected_bytes": {
-          "$ref": "#/$defs/u64Json"
-        },
-        "actual_bytes": {
-          "$ref": "#/$defs/u64Json"
-        }
-      },
-      "required": [
-        "owner_key_wire",
-        "expected_bytes",
-        "actual_bytes"
-      ],
-      "additionalProperties": false
+      "type": "object"
     },
     "traffic": {
-      "type": "object",
+      "additionalProperties": false,
       "properties": {
-        "schema": {
-          "const": "ai_mesh_traffic_v1"
-        },
-        "version": {
-          "const": 1
-        },
-        "id": {
-          "type": "string"
-        },
-        "subcase": {
-          "type": "string"
-        },
-        "status": {
-          "enum": [
-            "PASS",
-            "FAIL"
-          ]
-        },
-        "oracle_digest": {
-          "$ref": "#/$defs/lowerHex64"
-        },
         "actual_digest": {
           "$ref": "#/$defs/lowerHex64"
         },
         "classes": {
-          "type": "array",
           "items": {
             "$ref": "#/$defs/trafficClassRow"
-          }
+          },
+          "type": "array"
+        },
+        "fatal_cut": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "oracle_digest": {
+          "$ref": "#/$defs/lowerHex64"
+        },
+        "overlay_ownership": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "actual_bytes": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "dma_kind": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "owner_key_wire": {
+                "pattern": "^[0-9a-f]+$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "owner_key_wire",
+              "dma_kind",
+              "actual_bytes"
+            ],
+            "type": "object"
+          },
+          "type": "array"
         },
         "ownership": {
-          "type": "array",
           "items": {
             "$ref": "#/$defs/trafficOwnership"
-          }
+          },
+          "type": "array"
+        },
+        "schema": {
+          "const": "ai_mesh_traffic_v1"
+        },
+        "status": {
+          "enum": [
+            "PASS",
+            "FAIL"
+          ]
+        },
+        "subcase": {
+          "type": "string"
         },
         "unattributed_bytes": {
           "$ref": "#/$defs/u64Json"
         },
-        "fatal_cut": {
-          "type": "boolean"
+        "version": {
+          "const": 1
         }
       },
       "required": [
@@ -1507,495 +2349,124 @@
         "ownership",
         "unattributed_bytes"
       ],
-      "additionalProperties": false
+      "type": "object"
     },
-    "fatalError": {
-      "type": "object",
+    "trafficClass": {
+      "enum": [
+        "AGENT_TO_NPU_CONTROL",
+        "NPU_TO_AGENT_CONTROL",
+        "NPU_READ_AGENT_MEMORY",
+        "NPU_WRITE_AGENT_MEMORY",
+        "NPU_LOCAL_MEMORY",
+        "NPU_P2P"
+      ]
+    },
+    "trafficClassRow": {
+      "additionalProperties": false,
       "properties": {
-        "fatal_id": {
-          "const": 1
-        },
-        "error": {
-          "$ref": "#/$defs/detailCode"
-        },
-        "observed_tick": {
+        "actual_bytes": {
           "$ref": "#/$defs/u64Json"
         },
-        "site_domain": {
-          "enum": [
-            "FAULT",
-            "INVARIANT"
-          ]
+        "actual_packets": {
+          "$ref": "#/$defs/u64Json"
         },
-        "site_id": {
-          "$ref": "#/$defs/u16"
+        "expected_bytes": {
+          "$ref": "#/$defs/u64Json"
         },
-        "component_kind": {
-          "type": "string",
-          "minLength": 1
+        "expected_packets": {
+          "$ref": "#/$defs/u64Json"
         },
-        "component_local_id": {
-          "$ref": "#/$defs/u32"
+        "traffic_class": {
+          "$ref": "#/$defs/trafficClass"
+        }
+      },
+      "required": [
+        "traffic_class",
+        "expected_bytes",
+        "actual_bytes",
+        "expected_packets",
+        "actual_packets"
+      ],
+      "type": "object"
+    },
+    "trafficOwnership": {
+      "additionalProperties": false,
+      "properties": {
+        "actual_bytes": {
+          "$ref": "#/$defs/u64Json"
         },
-        "endpoint_id": {
-          "oneOf": [
-            {
-              "type": "null"
-            },
-            {
-              "$ref": "#/$defs/u32"
-            }
-          ]
+        "expected_bytes": {
+          "$ref": "#/$defs/u64Json"
         },
-        "candidate_key_wire": {
+        "owner_key_wire": {
           "$ref": "#/$defs/lowerHex"
-        },
-        "candidate_count": {
-          "$ref": "#/$defs/positiveU64Json"
-        },
-        "candidate_multiset_digest": {
-          "$ref": "#/$defs/lowerHex64"
-        },
-        "physical_source_token_wire": {
-          "$ref": "#/$defs/lowerHex64"
         }
       },
       "required": [
-        "fatal_id",
-        "error",
-        "observed_tick",
-        "site_domain",
-        "site_id",
-        "component_kind",
-        "component_local_id",
-        "endpoint_id",
-        "candidate_key_wire",
-        "candidate_count",
-        "candidate_multiset_digest",
-        "physical_source_token_wire"
+        "owner_key_wire",
+        "expected_bytes",
+        "actual_bytes"
       ],
-      "additionalProperties": false
+      "type": "object"
     },
-    "fatalCqObligation": {
-      "type": "object",
-      "properties": {
-        "cq_obligation_id": {"$ref": "#/$defs/positiveU64Json"},
-        "absolute_sq_seq": {"$ref": "#/$defs/u64Json"},
-        "request_id": {"$ref": "#/$defs/u64Json"},
-        "cq_seq": {
-          "oneOf": [
-            {"type": "null"},
-            {"$ref": "#/$defs/u64Json"}
-          ]
+    "u16": {
+      "maximum": 65535,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "u32": {
+      "maximum": 4294967295,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "u64Json": {
+      "oneOf": [
+        {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
         },
-        "slot_id": {
-          "oneOf": [
-            {"type": "null"},
-            {"$ref": "#/$defs/u32"}
-          ]
-        },
-        "state_at_cut": {
-          "enum": [
-            "PRETERMINAL",
-            "TERMINAL_PENDING",
-            "POSTED_UNACKED",
-            "EARLY_ACK_WAIT_MSI_B"
-          ]
-        }
-      },
-      "required": [
-        "cq_obligation_id",
-        "absolute_sq_seq",
-        "request_id",
-        "cq_seq",
-        "slot_id",
-        "state_at_cut"
-      ],
-      "additionalProperties": false
-    },
-    "fatalSqIntake": {
-      "type": "object",
-      "properties": {
-        "intake_id": {"$ref": "#/$defs/positiveU64Json"},
-        "expected_sq_seq": {"$ref": "#/$defs/u64Json"},
-        "read_tag": {"$ref": "#/$defs/u64Json"},
-        "first_error": {"type": "string", "minLength": 1},
-        "state_at_cut": {"enum": ["PRE_AR", "WAIT_R"]},
-        "terminal_evidence": {"enum": ["NONE", "R_OK", "R_ERROR"]}
-      },
-      "required": [
-        "intake_id",
-        "expected_sq_seq",
-        "read_tag",
-        "first_error",
-        "state_at_cut",
-        "terminal_evidence"
-      ],
-      "additionalProperties": false
-    },
-    "fatalPublication": {
-      "type": "object",
-      "properties": {
-        "publication_id": {"$ref": "#/$defs/positiveU64Json"},
-        "doorbell_issue_ordinal": {"$ref": "#/$defs/positiveU64Json"},
-        "base_seq": {"$ref": "#/$defs/u64Json"},
-        "pending_tail": {"$ref": "#/$defs/positiveU64Json"},
-        "request_ids": {
-          "type": "array",
-          "minItems": 1,
-          "items": {"$ref": "#/$defs/positiveU64Json"}
-        },
-        "state_at_cut": {"const": "AW_W_ACCEPTED"},
-        "terminal_evidence": {"enum": ["B_OK", "B_ERROR"]},
-        "target_commit_evidence": {"enum": ["NO", "YES"]},
-        "ambiguous": {"type": "boolean"},
-        "transaction_token_wire": {"$ref": "#/$defs/lowerHex64"},
-        "response_token_wire": {"$ref": "#/$defs/lowerHex64"}
-      },
-      "required": [
-        "publication_id",
-        "doorbell_issue_ordinal",
-        "base_seq",
-        "pending_tail",
-        "request_ids",
-        "state_at_cut",
-        "terminal_evidence",
-        "target_commit_evidence",
-        "ambiguous",
-        "transaction_token_wire",
-        "response_token_wire"
-      ],
-      "additionalProperties": false
-    },
-    "fatalAckRecord": {
-      "type": "object",
-      "properties": {
-        "issue_ordinal": {"$ref": "#/$defs/positiveU64Json"},
-        "ack_seq": {"$ref": "#/$defs/positiveU64Json"},
-        "axi_id": {"$ref": "#/$defs/u32"},
-        "state_at_cut": {"const": "WAIT_B"},
-        "terminal_evidence": {"enum": ["NONE", "B_OK", "B_ERROR"]},
-        "target_commit_evidence": {"enum": ["UNKNOWN", "NO", "YES"]},
-        "transaction_token_wire": {"$ref": "#/$defs/lowerHex64"},
-        "response_token_wire": {
-          "oneOf": [
-            {"type": "null"},
-            {"$ref": "#/$defs/lowerHex64"}
-          ]
-        }
-      },
-      "required": [
-        "issue_ordinal",
-        "ack_seq",
-        "axi_id",
-        "state_at_cut",
-        "terminal_evidence",
-        "target_commit_evidence",
-        "transaction_token_wire",
-        "response_token_wire"
-      ],
-      "additionalProperties": false
-    },
-    "fatalMsiRecord": {
-      "type": "object",
-      "properties": {
-        "issue_ordinal": {"$ref": "#/$defs/positiveU64Json"},
-        "tail": {"$ref": "#/$defs/positiveU64Json"},
-        "axi_id": {"$ref": "#/$defs/u32"},
-        "state_at_cut": {"const": "ISSUED"},
-        "terminal_evidence": {"enum": ["NONE", "B_OK", "B_ERROR"]},
-        "target_commit_evidence": {"enum": ["UNKNOWN", "NO", "YES"]},
-        "transaction_token_wire": {"$ref": "#/$defs/lowerHex64"},
-        "response_token_wire": {
-          "oneOf": [
-            {"type": "null"},
-            {"$ref": "#/$defs/lowerHex64"}
-          ]
-        }
-      },
-      "required": [
-        "issue_ordinal",
-        "tail",
-        "axi_id",
-        "state_at_cut",
-        "terminal_evidence",
-        "target_commit_evidence",
-        "transaction_token_wire",
-        "response_token_wire"
-      ],
-      "additionalProperties": false
-    },
-    "retainedSequenceSlotSnapshot": {
-      "type": "object",
-      "properties": {
-        "sq_consumer_seq": {"$ref": "#/$defs/u64Json"},
-        "cq_producer_seq": {"$ref": "#/$defs/u64Json"},
-        "cq_consumer_seq": {"$ref": "#/$defs/u64Json"},
-        "cq_notified_seq": {"$ref": "#/$defs/u64Json"},
-        "cq_ack_received_seq": {"$ref": "#/$defs/u64Json"},
-        "cq_msi_issued_seq": {"$ref": "#/$defs/u64Json"},
-        "occupied_cq_slots": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "slot_id": {"$ref": "#/$defs/u32"},
-              "cq_obligation_id": {"$ref": "#/$defs/positiveU64Json"}
-            },
-            "required": ["slot_id", "cq_obligation_id"],
-            "additionalProperties": false
-          }
-        },
-        "early_ack_records": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "ack_seq": {"$ref": "#/$defs/positiveU64Json"},
-              "axi_id": {"$ref": "#/$defs/u32"}
-            },
-            "required": ["ack_seq", "axi_id"],
-            "additionalProperties": false
-          }
-        }
-      },
-      "required": [
-        "sq_consumer_seq",
-        "cq_producer_seq",
-        "cq_consumer_seq",
-        "cq_notified_seq",
-        "cq_ack_received_seq",
-        "cq_msi_issued_seq",
-        "occupied_cq_slots",
-        "early_ack_records"
-      ],
-      "additionalProperties": false
-    },
-    "fatalSnapshot": {
-      "type": "object",
-      "properties": {
-        "schema": {
-          "const": "ai_mesh_fatal_snapshot_v1"
-        },
-        "version": {
-          "const": 1
-        },
-        "id": {
+        {
+          "pattern": "^0x[0-9a-f]{16}$",
           "type": "string"
+        }
+      ]
+    },
+    "unitScenario": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "UNIT"
         },
-        "subcase": {
-          "type": "string"
-        },
-        "run_manifest_digest": {
+        "unit_registry_digest": {
           "$ref": "#/$defs/lowerHex64"
-        },
-        "first_fatal": {
-          "$ref": "#/$defs/fatalError"
-        },
-        "secondary": {
-          "type": "object",
-          "properties": {
-            "candidate_count": {
-              "$ref": "#/$defs/u64Json"
-            },
-            "multiset_digest": {
-              "$ref": "#/$defs/lowerHex64"
-            }
-          },
-          "required": [
-            "candidate_count",
-            "multiset_digest"
-          ],
-          "additionalProperties": false
-        },
-        "ledger_summary": {
-          "$ref": "#/$defs/ledgers"
-        },
-        "fatal_cq_obligations": {
-          "type": "array",
-          "items": {"$ref": "#/$defs/fatalCqObligation"}
-        },
-        "fatal_sq_intakes": {
-          "type": "array",
-          "items": {"$ref": "#/$defs/fatalSqIntake"}
-        },
-        "fatal_publications": {
-          "type": "array",
-          "items": {"$ref": "#/$defs/fatalPublication"}
-        },
-        "host_ack_records": {
-          "type": "array",
-          "items": {"$ref": "#/$defs/fatalAckRecord"}
-        },
-        "msi_records": {
-          "type": "array",
-          "items": {"$ref": "#/$defs/fatalMsiRecord"}
-        },
-        "retained_sequence_slot_snapshot": {
-          "$ref": "#/$defs/retainedSequenceSlotSnapshot"
         }
       },
       "required": [
-        "schema",
-        "version",
-        "id",
-        "subcase",
-        "run_manifest_digest",
-        "first_fatal",
-        "secondary",
-        "ledger_summary",
-        "fatal_cq_obligations",
-        "fatal_sq_intakes",
-        "fatal_publications",
-        "host_ack_records",
-        "msi_records",
-        "retained_sequence_slot_snapshot"
+        "kind",
+        "unit_registry_digest"
       ],
-      "additionalProperties": false
+      "type": "object"
     },
-    "resultSubcase": {
-      "type": "object",
+    "unitTimeout": {
+      "additionalProperties": false,
       "properties": {
-        "name": {
-          "type": "string"
+        "sim_ticks": {
+          "type": "null"
         },
-        "status": {
-          "enum": [
-            "PASS",
-            "FAIL"
-          ]
-        },
-        "summary_path": {
-          "type": "string",
-          "minLength": 1
-        },
-        "junit_testcase_name": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "required": [
-        "name",
-        "status",
-        "summary_path",
-        "junit_testcase_name"
-      ],
-      "additionalProperties": false
-    },
-    "resultCase": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "status": {
-          "enum": [
-            "PASS",
-            "FAIL"
-          ]
-        },
-        "subcases": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/resultSubcase"
-          }
-        }
-      },
-      "required": [
-        "id",
-        "status",
-        "subcases"
-      ],
-      "additionalProperties": false
-    },
-    "mandatoryResults": {
-      "type": "object",
-      "properties": {
-        "schema": {
-          "const": "ai_mesh_mandatory_results_v1"
-        },
-        "version": {
-          "const": 1
-        },
-        "manifest_digest": {
-          "$ref": "#/$defs/lowerHex64"
-        },
-        "gate": {
-          "type": "integer",
+        "wall_seconds": {
+          "maximum": 4294967295,
           "minimum": 1,
-          "maximum": 7
-        },
-        "selection": {
-          "type": "object",
-          "properties": {
-            "mode": {
-              "enum": [
-                "GATE_PREFIX",
-                "EXPLICIT_IDS"
-              ]
-            },
-            "ids": {
-              "type": "array",
-              "minItems": 1,
-              "uniqueItems": true,
-              "items": {
-                "type": "string"
-              }
-            }
-          },
-          "required": [
-            "mode",
-            "ids"
-          ],
-          "additionalProperties": false
-        },
-        "selected_logical_count": {
-          "$ref": "#/$defs/u32"
-        },
-        "selected_subcase_count": {
-          "$ref": "#/$defs/u32"
-        },
-        "cases": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/resultCase"
-          }
-        },
-        "logical_pass_count": {
-          "$ref": "#/$defs/u32"
-        },
-        "logical_fail_count": {
-          "$ref": "#/$defs/u32"
-        },
-        "subcase_pass_count": {
-          "$ref": "#/$defs/u32"
-        },
-        "subcase_fail_count": {
-          "$ref": "#/$defs/u32"
-        },
-        "junit_path": {
-          "type": "string",
-          "minLength": 1
+          "type": "integer"
         }
       },
       "required": [
-        "schema",
-        "version",
-        "manifest_digest",
-        "gate",
-        "selection",
-        "selected_logical_count",
-        "selected_subcase_count",
-        "cases",
-        "logical_pass_count",
-        "logical_fail_count",
-        "subcase_pass_count",
-        "subcase_fail_count",
-        "junit_path"
+        "sim_ticks",
+        "wall_seconds"
       ],
-      "additionalProperties": false
+      "type": "object"
     }
-  }
+  },
+  "$id": "https://gem5.org/schemas/ai_mesh/acceptance_contract_v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
 }

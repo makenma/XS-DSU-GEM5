@@ -11,6 +11,12 @@
 
 #include "dev/ai_mesh/dma_types.hh"
 #include "dev/ai_mesh/mesh_binary.hh"
+#include "dev/ai_mesh/mesh_compute_commit.hh"
+#include "dev/ai_mesh/mesh_moe_gate.hh"
+#include "dev/ai_mesh/mesh_moe_runtime.hh"
+#include "dev/ai_mesh/mesh_weight_cache.hh"
+#include "dev/ai_mesh/mesh_weight_tags.hh"
+#include "dev/ai_mesh/runtime_key.hh"
 #include "dev/ai_mesh/tensor_sram.hh"
 #include "base/statistics.hh"
 #include "sim/clocked_object.hh"
@@ -33,7 +39,9 @@ class SramBacking;
 // Dummy Core: interprets the base Scheduled Mesh IR closed set.  Compute is
 // timing-only (analytic cycles + validity/digest annotation); tensor data
 // moves are real bytes through the DMA engine and mock transport.
-class MeshDummyCore : public ClockedObject
+class MeshDummyCore : public ClockedObject, public MoeOverlayComputePort
+,
+                       public MoeOverlayDmaPort
 {
   public:
     using Params = MeshDummyCoreParams;
@@ -47,15 +55,83 @@ class MeshDummyCore : public ClockedObject
     void installProgram(const std::shared_ptr<const DecodedProgram> &program);
 
     // Dispatcher interface.
-    void dispatchInstance(uint32_t instance_id);
-    bool halted() const { return core_halted || error_drained; }
+    void dispatchInstance(InstanceGeneration instance);
+    void armRequest(InstanceGeneration instance);
+    void startRequest();
+    void disarmRequest();
+    mesh_abi::MeshCoreInstanceState instanceState() const
+    {
+        return instance_state;
+    }
+    bool instanceActive() const
+    {
+        switch (instance_state) {
+          case mesh_abi::MeshCoreInstanceState::REQUEST_ARMED:
+          case mesh_abi::MeshCoreInstanceState::REQUEST_RUNNING:
+          case mesh_abi::MeshCoreInstanceState::REQUEST_DRAINING:
+          case mesh_abi::MeshCoreInstanceState::INSTANCE_ERROR_DRAINING:
+          case mesh_abi::MeshCoreInstanceState::INSTANCE_OWNED_WORK_DRAINED:
+            return true;
+          default:
+            return false;
+        }
+    }
+    bool instanceErrored() const
+    {
+        switch (instance_state) {
+          case mesh_abi::MeshCoreInstanceState::INSTANCE_ERROR_DRAINING:
+          case mesh_abi::MeshCoreInstanceState::INSTANCE_OWNED_WORK_DRAINED:
+          case mesh_abi::MeshCoreInstanceState::INSTANCE_ERROR_DRAINED:
+            return true;
+          default:
+            return false;
+        }
+    }
+    bool halted() const
+    {
+        return instance_state ==
+                   mesh_abi::MeshCoreInstanceState::INSTANCE_DONE ||
+               instance_state ==
+                   mesh_abi::MeshCoreInstanceState::INSTANCE_ERROR_DRAINED;
+    }
     // Quiescence includes the publication drain: a halted core with a
     // scheduled-but-invisible signal is not quiet (spec: HALT waits for
     // event publication drain).
     bool quiescent() const
     {
+        // A core whose arm was undone legitimately holds no work: PROGRAM_READY
+        // means no instance was ever started, not that work is outstanding.
         return live_commands == 0 && pending_visibility.empty() &&
-               (core_halted || error_drained);
+               !overlayPending() &&
+               (instance_state ==
+                    mesh_abi::MeshCoreInstanceState::PROGRAM_READY ||
+                instance_state ==
+                    mesh_abi::MeshCoreInstanceState::REQUEST_DRAINING ||
+                halted());
+    }
+
+    // A published overlay that has not drained is outstanding work: the
+    // instance cannot finish, and the core keeps ticking its executor until
+    // the group exit is published (contract 7.9.2).
+    bool tickScheduled() const { return tick_event.scheduled(); }
+
+    // Monotonic work counter for the progress watchdog: static and overlay
+    // command completions both count, so a gated stream waiting on its
+    // overlay is not mistaken for a hang.
+    uint64_t workProgress() const
+    {
+        uint64_t progress = commandsCompleted.value() + cache_fills_completed;
+        for (const auto &kv : overlay_executors)
+            progress += kv.second->completedCommands();
+        return progress;
+    }
+
+    bool overlayPending() const
+    {
+        for (const auto &kv : overlay_executors)
+            if (kv.second->started() && !kv.second->drained())
+                return true;
+        return false;
     }
 
     // DMA engine callbacks.
@@ -65,9 +141,12 @@ class MeshDummyCore : public ClockedObject
         uint16_t dst_space;
     };
 
-    void completeFence(uint32_t command_id, uint32_t signal_event);
+    void completeFence(RuntimeObjectKey command,
+                       RuntimeObjectKey signal_event);
     void onInstanceError(Tick tick);
-    void onDmaCompleted(uint32_t command_id, uint32_t completion_event,
+    void latchInstanceError(Tick tick);
+    void onDmaCompleted(RuntimeObjectKey command,
+                        RuntimeObjectKey completion_event,
                         Tick commit_tick, DmaStatus status);
     std::map<uint64_t, DmaTagInfo> liveDmaTagSnapshot() const
     {
@@ -79,15 +158,15 @@ class MeshDummyCore : public ClockedObject
         }
         return snapshot;
     }
-    void onTransferCommitted(uint32_t transfer_id);
-    void notifyPeerCommit(uint16_t peer_core, uint32_t transfer_id);
+    void onTransferCommitted(RuntimeObjectKey transfer);
+    void notifyPeerCommit(uint16_t peer_core, RuntimeObjectKey transfer);
 
     // Functional SRAM accessors used by the transports.
     bool functionalSramRead(uint64_t offset, uint64_t size, uint8_t *out);
     bool functionalSramWrite(uint64_t offset, uint64_t size, const uint8_t *in);
 
     // DMA engines validate the local source operand before reading SRAM.
-    void checkDmaSourceValidity(uint32_t command_id);
+    void checkDmaSourceValidity(RuntimeObjectKey command);
 
     // SRAM bank/port reservation (timing + accounting) for callers outside
     // the core (DMA engines folding service stalls into commit ticks).
@@ -107,17 +186,131 @@ class MeshDummyCore : public ClockedObject
     void setSramBacking(SramBacking *backing) { sram.setBacking(backing); }
 
     void setDispatcher(MeshDispatcher *dispatcher);
+    InstanceGeneration instanceGeneration() const
+    {
+        return instance_generation;
+    }
+    RuntimeObjectKey commandKey(uint32_t wire_id) const
+    {
+        return staticProgramObject(
+            instance_generation, mesh_abi::MeshObjectKind::COMMAND, wire_id);
+    }
+    RuntimeObjectKey eventKey(uint32_t wire_id) const
+    {
+        return staticProgramObject(
+            instance_generation, mesh_abi::MeshObjectKind::EVENT, wire_id);
+    }
+    RuntimeObjectKey transferKey(uint32_t wire_id) const
+    {
+        return staticProgramObject(
+            instance_generation, mesh_abi::MeshObjectKind::TRANSFER, wire_id);
+    }
+    RuntimeObjectKey descriptorKey(uint32_t wire_id) const
+    {
+        return staticProgramObject(instance_generation,
+                                   mesh_abi::MeshObjectKind::DESCRIPTOR,
+                                   wire_id);
+    }
+    RuntimeObjectKey allocationKey(uint32_t wire_id) const
+    {
+        return staticProgramObject(instance_generation,
+                                   mesh_abi::MeshObjectKind::ALLOCATION,
+                                   wire_id);
+    }
+    // MoE insertion gate (contract 7.2.2): arm the layer's region before the
+    // instance starts, release it when the overlay group exit is published.
+    void armRegionGate(const MoeInsertionGate::RegionSpec &spec)
+    {
+        region_gate.arm(spec);
+    }
+    void releaseOverlayGroup(uint32_t layer_id)
+    {
+        region_gate.release(layer_id);
+    }
+    bool overlayGateArmed(uint32_t layer_id) const
+    {
+        return region_gate.layerArmed(layer_id);
+    }
+    MoeInsertionGate::RegionPhase overlayGatePhase(uint32_t layer_id) const
+    {
+        return region_gate.phase(layer_id);
+    }
+    std::string overlayGateState() const { return region_gate.describe(); }
+    void clearRegionGates() { region_gate = MoeInsertionGate(); }
+
+    // Table index of a static command id, used to place a region's resume
+    // point in the decode cursor's own coordinate space.
+    uint32_t commandIndex(uint32_t command_id) const
+    {
+        for (uint32_t index = 0; index < program->commands.size(); index++)
+            if (program->commands[index].command_id == command_id)
+                return index;
+        fatal("core %u has no command %u", core_id_value, command_id);
+    }
+
+    // Overlay execution (contract 7.9.2): the core owns one executor per
+    // layer, ticks it next to the static decode loop, and reports the group
+    // exit so the dispatcher can release the insertion gate.
+    // Runtime weight cache (main contract 7.8): installed by the loader under
+    // the cached policy; fills leave through the same DMA engine the overlay
+    // uses, so they share the finite descriptor queues and the arbiter.
+    void installWeightCache(std::unique_ptr<MoeWeightCache> cache);
+    MoeWeightCache *weightCache() const { return weight_cache.get(); }
+    void installCacheTokens(
+        const std::vector<MoeCacheToken> &tokens,
+        const std::map<uint32_t, std::map<uint32_t, uint32_t>> &consumers);
+    void retryCacheReservations();
+    uint64_t cacheBatchId() const { return cache_batch_id; }
+    uint64_t cacheFillSource(uint32_t tag_index) const;
+    void setDmaGeometry(uint16_t sram_region_id, uint32_t max_burst_beats);
+    uint64_t cacheFillBytes(uint32_t tag_index) const;
+    uint32_t cacheFillsIssued() const { return cache_fills_issued; }
+    uint64_t overlayEntryTick() const { return overlay_entry_tick; }
+    uint32_t cacheFillsCompleted() const { return cache_fills_completed; }
+    uint32_t cacheFillsErrored() const { return cache_fills_errored; }
+    uint32_t cacheFillsRetried() const { return cache_fills_retried; }
+
+    bool submitOverlayDma(const mesh_abi::DmaDescriptor &descriptor,
+                          const RuntimeObjectKey &descriptor_key,
+                          const RuntimeObjectKey &command_key,
+                          uint64_t issue_tick) override;
+    void bindFillContent(const RuntimeObjectKey &command,
+                         const std::vector<uint8_t> &content,
+                         bool install_bytes)
+    {
+        dma->bindFillContent(command, content, install_bytes);
+    }
+
+    void bindFillPattern(const RuntimeObjectKey &command,
+                         uint64_t pattern) override;
+    const WeightTagSiteV1 &weightTagSite(uint32_t tag_index) const;
+
+    void installOverlay(uint32_t layer_id, const MoeOverlayGraph &graph,
+                        const MoeOverlayAddressSpace *addresses = nullptr);
+    void setOverlayBus(MoeOverlayEventBus *event_bus)
+    {
+        overlay_bus = event_bus;
+        for (auto &kv : overlay_executors)
+            kv.second->setBus(event_bus);
+    }
+    bool overlayDrained() const;
+    bool overlayGroupExited(uint32_t layer_id) const;
+    const MoeOverlayExecutor *overlayExecutor(uint32_t layer_id) const
+    {
+        auto it = overlay_executors.find(layer_id);
+        return it == overlay_executors.end() ? nullptr : it->second.get();
+    }
+
     void setScoreboard(ProgramScoreboard *board) { scoreboard = board; }
     uint16_t archCoreId() const { return core_id_value; }
     DmaEngineBase *dmaEngine() const { return dma; }
-    bool instanceErrored() const { return instance_error; }
     Tick errorLatchTick() const { return error_latch_tick; }
     Tick workDrainedTick() const { return work_drained_tick; }
-    const std::map<uint32_t, Tick> &commandDoneTicks() const
+    const std::map<RuntimeObjectKey, Tick> &commandDoneTicks() const
     {
         return command_done_ticks;
     }
-    const std::map<uint32_t, Tick> &commandIssueTicks() const
+    const std::map<RuntimeObjectKey, Tick> &commandIssueTicks() const
     {
         return command_issue_ticks;
     }
@@ -142,42 +335,35 @@ class MeshDummyCore : public ClockedObject
     statistics::Scalar sramBankConflicts;
     statistics::Scalar sramServiceCycles;
     statistics::Scalar poisonReadFaults;
-    struct ComputeDigest
-    {
-        uint32_t command_id = 0;
-        uint32_t allocation_id = 0;
-        uint64_t offset = 0;
-        uint32_t digest_words[4] = {0, 0, 0, 0};
-    };
     std::vector<ComputeDigest> computeDigests;
-    std::vector<uint32_t> completed_command_ids;
+    std::vector<RuntimeObjectKey> completed_command_ids;
     struct InstanceLedger
     {
-        std::vector<uint32_t> completed;
-        std::vector<uint32_t> errored;
-        std::vector<uint32_t> cancelled;
+        std::vector<RuntimeObjectKey> completed;
+        std::vector<RuntimeObjectKey> errored;
+        std::vector<RuntimeObjectKey> cancelled;
     };
     InstanceLedger takeInstanceLedger();
 
-    std::vector<uint32_t> instance_completed_ids;
-    std::vector<uint32_t> instance_errored_ids;
-    std::vector<uint32_t> instance_cancelled_ids;
-    std::vector<uint32_t> errored_command_ids;
-    std::vector<uint32_t> cancelled_command_ids;
-    std::map<uint32_t, Tick> command_done_ticks;
-    std::map<uint32_t, Tick> command_issue_ticks;
+    std::vector<RuntimeObjectKey> instance_completed_ids;
+    std::vector<RuntimeObjectKey> instance_errored_ids;
+    std::vector<RuntimeObjectKey> instance_cancelled_ids;
+    std::vector<RuntimeObjectKey> errored_command_ids;
+    std::vector<RuntimeObjectKey> cancelled_command_ids;
+    std::map<RuntimeObjectKey, Tick> command_done_ticks;
+    std::map<RuntimeObjectKey, Tick> command_issue_ticks;
 
   private:
     struct VisibilityEvent : public Event
     {
         MeshDummyCore *core;
-        uint32_t event_id;
-        VisibilityEvent(MeshDummyCore *core_, uint32_t event_)
-            : Event(), core(core_), event_id(event_)
+        RuntimeObjectKey event;
+        VisibilityEvent(MeshDummyCore *core_, RuntimeObjectKey event_)
+            : Event(), core(core_), event(event_)
         {
             setFlags(AutoDelete);
         }
-        void process() override { core->onEventVisible(event_id); }
+        void process() override { core->onEventVisible(event); }
         const char *description() const override
         {
             return "ai_mesh.core.visibility";
@@ -200,16 +386,17 @@ class MeshDummyCore : public ClockedObject
     struct CompletionEvent : public Event
     {
         MeshDummyCore *core;
-        uint32_t command_id;
-        uint32_t signal_event;
+        RuntimeObjectKey command;
+        RuntimeObjectKey signal_event;
         bool error_terminal;
         bool result_write;
         bool result_serviced = false;
 
-        CompletionEvent(MeshDummyCore *core_, uint32_t command_id_,
-                        uint32_t signal_event_, bool error_terminal_ = false,
+        CompletionEvent(MeshDummyCore *core_, RuntimeObjectKey command_,
+                        RuntimeObjectKey signal_event_,
+                        bool error_terminal_ = false,
                         bool result_write_ = false)
-            : Event(), core(core_), command_id(command_id_),
+            : Event(), core(core_), command(command_),
               signal_event(signal_event_), error_terminal(error_terminal_),
               result_write(result_write_)
         {
@@ -243,19 +430,31 @@ class MeshDummyCore : public ClockedObject
     uint64_t reserveOperandReads(const DecodedCommand &command);
     uint64_t operandView(const DecodedOperand &operand, uint64_t &offset,
                          uint64_t &span) const;
-    Tick serviceResultWrite(uint32_t command_id);
+    Tick serviceResultWrite(RuntimeObjectKey command);
     void issueControl(const DecodedCommand &command);
     bool issueDma(const DecodedCommand &command);
+    // MoeOverlayComputePort: contract cycles for one overlay engine command
+    // resolved from the frozen kernel spec of the layer.
+    uint64_t computeCycles(const MoeComputeShape &shape) const override;
+    bool weightSlotRange(uint32_t tag_index, uint64_t &offset,
+                         uint64_t &bytes) const override;
+    bool computeAdmissible(uint16_t opcode) const override;
+    void noteComputeAdmitted(uint16_t opcode) override;
+    void noteComputeFinished(uint16_t opcode, uint64_t cycles) override;
+    void noteWeightConsumed(uint32_t layer_id, uint32_t tag_index) override;
+
     uint64_t throughputFor(uint16_t dtype, const std::vector<uint64_t> &by_dtype,
                           uint64_t fallback) const;
         uint64_t computeCycles(const DecodedCommand &command, const DecodedAttr *attr) const;
-    void completeCommand(uint32_t command_id, uint32_t signal_event, Tick done_tick,
+    void completeCommand(RuntimeObjectKey command_key,
+                         RuntimeObjectKey signal_event, Tick done_tick,
                          bool error_terminal = false);
-    void publishEvent(uint32_t event_id, uint32_t participant = 0,
-                       uint32_t generation = 0);
+    void publishEvent(RuntimeObjectKey event,
+                      RuntimeObjectKey participant = RuntimeObjectKey(),
+                      RepeatGeneration generation = RepeatGeneration());
     void cancelAllPendingVisibility();
-    void onEventVisible(uint32_t event_id);
-    void cancelPendingVisibility(uint32_t event_id);
+    void onEventVisible(RuntimeObjectKey event);
+    void cancelPendingVisibility(RuntimeObjectKey event);
     void finishIfHalted();
     void cancelRemainingCommands();
     bool tryPinDmaAllocations(const DecodedCommand &command);
@@ -268,6 +467,42 @@ class MeshDummyCore : public ClockedObject
     const DecodedAttr *attrOf(const DecodedCommand &command) const;
 
     uint16_t core_id_value;
+    MoeInsertionGate region_gate;
+    MoeOverlayEventBus *overlay_bus = nullptr;
+    std::map<uint32_t, std::unique_ptr<MoeOverlayExecutor>> overlay_executors;
+    std::map<uint32_t, const mesh_abi::MoeKernelSpec *> overlay_kernels;
+    std::set<uint32_t> overlay_exited;
+    std::set<uint32_t> overlay_entry_published;
+    uint32_t dmaBytesPerCycle = 32;
+    std::unique_ptr<MoeWeightCache> weight_cache;
+    std::vector<WeightTagSiteV1> weight_tag_sites;
+    uint32_t cache_fills_issued = 0;
+    uint64_t overlay_entry_tick = 0;
+    uint32_t cache_fills_completed = 0;
+    uint32_t cache_fills_errored = 0;
+    uint32_t cache_fills_retried = 0;
+    uint16_t sram_region_id = 0;
+    uint32_t dma_max_burst_beats = 0;
+    struct PendingCacheFill
+    {
+        mesh_abi::WeightFillKey fill;
+        uint64_t bytes = 0;
+        uint64_t token_id = 0;
+    };
+    std::map<uint32_t, PendingCacheFill> pending_cache_fills;
+    struct QueuedCacheFill
+    {
+        mesh_abi::DmaDescriptor descriptor;
+        RuntimeObjectKey descriptor_key;
+        mesh_abi::WeightFillKey fill;
+        PendingCacheFill pending;
+    };
+    std::map<uint32_t, QueuedCacheFill> queued_cache_fills;
+    void retryQueuedCacheFills();
+    uint64_t cache_batch_id = 1;
+    bool owned_work_drain_pending = false;
+
+    uint32_t regionGateRegionId(uint32_t layer_id) const;
     uint32_t decode_width_value;
     uint32_t admit_window_value;
     Cycles event_visibility;
@@ -299,7 +534,7 @@ class MeshDummyCore : public ClockedObject
         uint32_t end_command = 0;
         // REPEAT admit gate: while a REPEAT is draining its generations the
         // cursor must not decode post-REPEAT commands (spec 4.1).
-        uint32_t repeat_gate_command = 0; // 0 = open
+        RuntimeObjectKey repeat_gate_command; // ordinal 0 = open
         uint32_t post_repeat_next = 0; // cursor resume point after REPEAT
         struct ReplayCursor
         {
@@ -314,25 +549,24 @@ class MeshDummyCore : public ClockedObject
     std::map<uint16_t, StreamCursor> cursors; // stream_id -> cursor
     std::map<uint32_t, bool> signaled;         // event visibility snapshot
     std::map<uint32_t, uint32_t> barrier_arrivals;
-    std::map<uint32_t, uint32_t> recv_waiters; // transfer_id -> pending command
-    std::map<uint32_t, bool> committed_transfers;
-    std::map<uint32_t, Event *> pending_visibility;
+    std::map<RuntimeObjectKey, RuntimeObjectKey> recv_waiters;
+    std::map<RuntimeObjectKey, bool> committed_transfers;
+    std::map<RuntimeObjectKey, Event *> pending_visibility;
     uint32_t live_commands = 0;
     ProgramScoreboard *scoreboard = nullptr;
     std::map<uint16_t, uint32_t> live_per_stream;
     uint32_t outstanding_axi = 0;
     // AXI_FENCE waits on the exact tag set of DMA commands accepted before
     // the fence (spec 5.6); post-fence submissions never extend the wait.
-    std::map<uint32_t, std::set<uint64_t>> fence_waiters;
+    std::map<RuntimeObjectKey, std::set<uint64_t>> fence_waiters;
     std::set<uint64_t> live_dma_tags;
     std::map<uint64_t, DmaTagInfo> dma_tag_info;
-    std::map<uint64_t, uint32_t> dma_tag_command;
-    std::map<uint32_t, uint64_t> dma_command_tag;
+    std::map<uint64_t, RuntimeObjectKey> dma_tag_command;
+    std::map<RuntimeObjectKey, uint64_t> dma_command_tag;
     uint64_t next_dma_tag = 1;
-    bool core_halted = false;
-    bool instance_active = false;
-    bool instance_error = false;
-    bool error_drained = false;
+    InstanceGeneration instance_generation;
+    mesh_abi::MeshCoreInstanceState instance_state =
+        mesh_abi::MeshCoreInstanceState::PROGRAM_READY;
     Tick error_latch_tick = 0;
     Tick work_drained_tick = 0;
     std::map<uint32_t, uint32_t> allocation_pins;

@@ -150,7 +150,7 @@ PeerSramAperture::onAxiWriteCommitted(
         transfer_commit_ticks[transfer_id] = curTick();
         expectations.erase(transfer_id);
         if (owner)
-            owner->onTransferCommitted(transfer_id);
+            owner->onTransferCommitted(owner->transferKey(transfer_id));
     }
 }
 

@@ -35,6 +35,10 @@ using DecodedTrafficRow = mesh_abi::ExpectedTraffic;
 using DecodedProfile = mesh_abi::Profile;
 using DecodedRelocation = mesh_abi::Relocation;
 using DecodedEntrypoint = mesh_abi::Entrypoint;
+using DecodedMoeLayerSpec = mesh_abi::MoeLayerSpec;
+using DecodedMoeExpertSpec = mesh_abi::MoeExpertSpec;
+using DecodedMoeDynamicRegion = mesh_abi::MoeDynamicRegion;
+using DecodedMoeKernelSpec = mesh_abi::MoeKernelSpec;
 
 struct DecodedAttr
 {
@@ -68,6 +72,8 @@ struct DecodedProgram
 {
     uint16_t abi_major = 0;
     uint16_t abi_minor = 0;
+    uint64_t required_features = 0;
+    bool has_moe_v1 = false;
     std::string arch_digest_hex;
     std::vector<std::string> strings;
     std::vector<DecodedEntrypoint> entrypoints;
@@ -86,6 +92,10 @@ struct DecodedProgram
     std::vector<DecodedTrafficRow> traffic;
     std::vector<mesh_abi::SourceMap> source_map;
     std::vector<mesh_abi::ContentDigest> content_digests;
+    std::vector<DecodedMoeLayerSpec> moe_layer_specs;
+    std::vector<DecodedMoeExpertSpec> moe_expert_specs;
+    std::vector<DecodedMoeDynamicRegion> moe_dynamic_regions;
+    std::vector<DecodedMoeKernelSpec> moe_kernel_specs;
 };
 
 // Parse and integrity-check a .mshb image.  Throws nothing; returns false

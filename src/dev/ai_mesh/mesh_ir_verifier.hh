@@ -38,6 +38,20 @@ struct RuntimeArch
         bool is_sram_aperture = false;
     };
 
+    struct Partition
+    {
+        uint16_t kind = 0;
+        uint64_t base = 0;
+        uint64_t bytes = 0;
+        uint32_t alignment = 0;
+        uint32_t metadata_entries = 0;
+        uint32_t max_pinned_entries = 0;
+    };
+    std::vector<Partition> partitions;
+    uint32_t weight_cache_slot_bytes = 0;
+
+    const Partition *partition(uint16_t kind) const;
+
     // Dtype capability bitmasks (bit n-1 = dtype enum value n, 1..5).
     uint32_t tensor_dtype_mask = 0x1F;
     uint32_t vector_dtype_mask = 0x1F;

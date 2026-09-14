@@ -1,4 +1,5 @@
 import dataclasses
+import hashlib
 import json
 import subprocess
 import sys
@@ -105,6 +106,108 @@ def test_required_sections_present_in_enum():
     assert len(required) == 15
     for name in required:
         assert hasattr(A.SECTION_TYPE, name)
+
+
+MOE_FIELD_BYTES = {"u8": 1, "u16": 2, "u32": 4, "u64": 8}
+
+MOE_RECORDS = {
+    "MOE_LAYER_SPECS": 80,
+    "MOE_EXPERT_SPECS": 40,
+    "MOE_DYNAMIC_REGIONS": 72,
+    "MOE_KERNEL_SPECS": 88,
+}
+
+
+def test_dynamic_moe_abi_surface_is_frozen_by_contract():
+    assert A.DYNAMIC_MOE_V1 == 0x1
+    assert A.KNOWN_FEATURE_MASK == 0x1
+    assert A.FEATURE_MIN_WRITER_MINOR == {"DYNAMIC_MOE_V1": 1}
+    assert A.SECTION_TYPE.MOE_LAYER_SPECS == 0x4000
+    assert A.SECTION_TYPE.MOE_EXPERT_SPECS == 0x4001
+    assert A.SECTION_TYPE.MOE_DYNAMIC_REGIONS == 0x4002
+    assert A.SECTION_TYPE.MOE_KERNEL_SPECS == 0x4003
+    for name, size in MOE_RECORDS.items():
+        assert getattr(A, f"{name}_BYTES") == size, name
+    assert A.conditional_required_sections(0) == ()
+    assert A.conditional_required_sections(A.DYNAMIC_MOE_V1) == (
+        A.SECTION_TYPE.MOE_LAYER_SPECS,
+        A.SECTION_TYPE.MOE_EXPERT_SPECS,
+        A.SECTION_TYPE.MOE_DYNAMIC_REGIONS,
+        A.SECTION_TYPE.MOE_KERNEL_SPECS,
+        A.SECTION_TYPE.CONTENT_DIGESTS,
+    )
+
+
+def test_moe_record_fields_follow_the_declared_wire_order():
+    expected = {
+        "MOE_LAYER_SPECS": ["layer_id", "kernel_spec_index", "expert_first",
+                            "expert_count", "top_k", "token_bytes",
+                            "output_token_bytes", "capacity_factor_q16",
+                            "overflow_policy", "transport_mode",
+                            "dynamic_region_first", "dynamic_region_count",
+                            "max_tokens_per_frozen_batch",
+                            "max_requests_per_batch", "max_routes",
+                            "max_materialized_commands",
+                            "max_materialized_descriptors",
+                            "max_materialized_transfers",
+                            "max_dynamic_allocations", "flags",
+                            "max_materialized_events", "reserved1"],
+        "MOE_EXPERT_SPECS": ["layer_id", "expert_id", "flags", "core_id",
+                             "reserved_core", "weight_symbol_id",
+                             "weight_region_offset", "weight_bytes",
+                             "weight_digest_index", "reserved"],
+        "MOE_DYNAMIC_REGIONS": ["region_id", "layer_id", "core_id",
+                                "stream_id", "insert_after_command_id",
+                                "resume_before_command_id", "entry_event_id",
+                                "scratch_offset", "scratch_bytes",
+                                "scratch_alignment", "max_overlay_commands",
+                                "max_overlay_events",
+                                "max_overlay_descriptors",
+                                "max_overlay_transfers",
+                                "max_overlay_allocations", "flags",
+                                "reserved"],
+        "MOE_KERNEL_SPECS": ["layer_id", "expert_opcode", "input_dtype",
+                             "accum_dtype", "output_dtype", "batch", "n", "k",
+                             "transpose_flags", "combine_kind", "algorithm_id",
+                             "efficiency_q16", "tensor_setup_cycles",
+                             "tensor_flush_cycles", "input_token_bytes",
+                             "output_token_bytes", "reserved0",
+                             "weight_operand_bytes", "expert_result_alignment",
+                             "max_m", "combine_setup_cycles",
+                             "combine_flush_cycles", "flags", "reserved1"],
+    }
+    for name, fields in expected.items():
+        specs = getattr(A, f"{name}_FIELDS")
+        assert [spec["name"] for spec in specs] == fields, name
+        cursor = 0
+        for spec in specs:
+            assert spec["offset"] == cursor, f"{name}.{spec['name']}"
+            cursor += MOE_FIELD_BYTES[spec["type"]]
+        assert cursor == getattr(A, f"{name}_BYTES"), name
+
+
+def _with_header(data: bytes, minor: int, features: int) -> bytes:
+    image = bytearray(data)
+    image[10:12] = minor.to_bytes(2, "little")
+    image[104:112] = features.to_bytes(8, "little")
+    image[72:104] = hashlib.sha256(bytes(image[128:])).digest()
+    return bytes(image)
+
+
+def test_reader_feature_gating_matches_the_shared_contract(programs):
+    golden = encode_program(programs["single"])
+    assert decode_program(golden).abi_minor == programs["single"].abi_minor
+    accepted = _with_header(golden, 1, 0)
+    assert decode_program(accepted).abi_minor == 1
+    with pytest.raises(MeshIrError) as unknown:
+        decode_program(_with_header(golden, 1, 1 << 63))
+    assert unknown.value.code == "E_ABI_VERSION"
+    with pytest.raises(MeshIrError) as premature:
+        decode_program(_with_header(golden, 0, A.DYNAMIC_MOE_V1))
+    assert premature.value.code == "E_ABI_VERSION"
+    with pytest.raises(MeshIrError) as missing:
+        decode_program(_with_header(golden, 1, A.DYNAMIC_MOE_V1))
+    assert missing.value.code == "E_ABI_SECTION_RANGE"
 
 
 def test_model_matches_generated_schema_exactly():
@@ -214,6 +317,17 @@ def test_generated_enum_closed_sets_cover_every_enum():
         "storage_class", "access_kind", "layout_kind", "dma_kind",
         "event_kind", "attr_kind", "relocation_kind", "stream_flags",
         "tensor_flags", "fence_scope", "vector_algorithm",
+        "mesh_object_domain", "mesh_object_kind",
+        "mesh_core_instance_state", "mesh_batch_state",
+        "sram_partition_kind", "moe_overflow_policy", "moe_transport_mode",
+        "moe_combine_kind", "moe_allocation_kind", "moe_view_kind",
+        "moe_view_access", "moe_view_backing", "moe_semantic_owner",
+        "moe_validity_kind", "moe_transfer_phase", "moe_descriptor_kind",
+        "moe_event_phase", "moe_command_phase", "moe_event_role",
+        "moe_command_role", "route_disposition", "moe_fill_mode",
+        "moe_traffic_class", "moe_error_class", "weight_fill_failure_site",
+        "cache_slot_state", "cache_residency_outcome",
+        "cache_subscriber_state", "cache_obligation_state",
     }
     for enum_name, values in A.ENUM_CLOSED_SETS.items():
         mask = A.ENUM_MASKS[enum_name]

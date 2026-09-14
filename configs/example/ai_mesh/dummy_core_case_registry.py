@@ -18,6 +18,7 @@ class Backend(Enum):
     GARNET = "GARNET"
     GATE3 = "GATE3"
     GATE4 = "GATE4"
+    GATE5 = "GATE5"
 
 
 @dataclass(frozen=True)
@@ -104,6 +105,148 @@ CASES = {
 }
 
 
+GATE5_CASES = {
+    "moe_dual_cached": CaseDefinition(
+        Backend.GATE5,
+        "moe_dual_cached",
+        (
+            "quiescence",
+            "completion_timing",
+            "moe_cache_fill_traffic",
+            "moe_canonical_projection",
+            "moe_oracle_recompute",
+            "moe_drain_state",
+            "moe_gate_release",
+            "moe_overlay_execution",
+        ),
+    ),
+    "moe_dual_basic": CaseDefinition(
+        Backend.GATE5,
+        "moe_dual_basic",
+        (
+            "quiescence",
+            "completion_timing",
+            "moe_overlay_traffic",
+            "moe_canonical_projection",
+            "moe_oracle_recompute",
+            "moe_drain_state",
+            "moe_gate_release",
+            "moe_overlay_execution",
+        ),
+    ),
+    "moe_dual_drop": CaseDefinition(
+        Backend.GATE5,
+        "moe_dual_drop",
+        (
+            "quiescence",
+            "completion_timing",
+            "moe_overlay_traffic",
+            "moe_canonical_projection",
+            "moe_oracle_recompute",
+            "moe_drop_fill",
+            "moe_drain_state",
+            "moe_gate_release",
+            "moe_overlay_execution",
+        ),
+    ),
+    "moe_dual_copy": CaseDefinition(
+        Backend.GATE5,
+        "moe_dual_copy",
+        (
+            "quiescence",
+            "completion_timing",
+            "moe_overlay_traffic",
+            "moe_canonical_projection",
+            "moe_oracle_recompute",
+            "moe_copy_through",
+            "moe_drain_state",
+            "moe_gate_release",
+            "moe_overlay_execution",
+        ),
+    ),
+    "moe_dual_cached_reuse_fault": CaseDefinition(
+        Backend.GATE5,
+        "moe_dual_cached_reuse_fault",
+        (
+            "quiescence",
+            "moe_prestart_terminal",
+        ),
+    ),
+    "moe_multi_cached": CaseDefinition(
+        Backend.GATE5,
+        "moe_multi_cached",
+        (
+            "quiescence",
+            "completion_timing",
+            "moe_cache_fill_traffic",
+            "moe_canonical_projection",
+            "moe_oracle_recompute",
+            "moe_drain_state",
+            "moe_gate_release",
+            "moe_overlay_execution",
+        ),
+    ),
+    "moe_quad": CaseDefinition(
+        Backend.GATE5,
+        "moe_quad",
+        (
+            "quiescence",
+            "completion_timing",
+            "moe_overlay_traffic",
+            "moe_canonical_projection",
+            "moe_oracle_recompute",
+            "moe_drain_state",
+            "moe_gate_release",
+            "moe_overlay_execution",
+        ),
+    ),
+    "moe_quad_hotspot": CaseDefinition(
+        Backend.GATE5,
+        "moe_quad_hotspot",
+        (
+            "quiescence",
+            "completion_timing",
+            "moe_overlay_traffic",
+            "moe_canonical_projection",
+            "moe_oracle_recompute",
+            "moe_drain_state",
+            "moe_hotspot_load",
+            "moe_gate_release",
+            "moe_overlay_execution",
+        ),
+    ),
+    "moe_dual_cached_reuse": CaseDefinition(
+        Backend.GATE5,
+        "moe_dual_cached_reuse",
+        (
+            "quiescence",
+            "completion_timing",
+            "moe_cache_reuse",
+            "moe_canonical_projection",
+            "moe_oracle_recompute",
+            "moe_drain_state",
+            "moe_gate_release",
+            "moe_overlay_execution",
+        ),
+    ),
+    "moe_dual_timing": CaseDefinition(
+        Backend.GATE5,
+        "moe_dual_timing",
+        (
+            "quiescence",
+            "completion_timing",
+            "moe_overlay_traffic",
+            "moe_canonical_projection",
+            "moe_oracle_recompute",
+            "moe_drain_state",
+            "moe_gate_release",
+            "moe_overlay_execution",
+        ),
+    ),
+}
+CASES.update(GATE5_CASES)
+
+
 GATE3_PROFILES = {}
 for _requirements in GATE3_CASES.values():
     for _requirement in _requirements:
@@ -164,7 +307,8 @@ def _option_values(arguments, name):
 
 def invariant_registry(case_name, arguments):
     definition = CASES[case_name]
-    if definition.backend in (Backend.GARNET, Backend.GATE3, Backend.GATE4):
+    if definition.backend in (Backend.GARNET, Backend.GATE3, Backend.GATE4,
+                              Backend.GATE5):
         return definition.invariants
     names = list(MOCK_BASE_INVARIANTS)
     for option, name, enabled in MOCK_VALUE_INVARIANTS:
@@ -177,6 +321,13 @@ def invariant_registry(case_name, arguments):
     if _option_values(arguments, "--expect-command-latency"):
         names.append("command_latency")
     return tuple(names)
+
+
+def garnet_scenario_cases():
+    return (
+        *backend_cases(Backend.GARNET),
+        *backend_cases(Backend.GATE5),
+    )
 
 
 def backend_cases(backend):
@@ -204,7 +355,7 @@ def invocation(case_name: str, arguments: list[str], sim_ticks: str) -> tuple[Pa
             "--sim-tick-limit",
             sim_ticks,
         ]
-    elif definition.backend is Backend.GARNET:
+    elif definition.backend in (Backend.GARNET, Backend.GATE5):
         script = ROOT / "configs/example/ai_mesh/run_mesh_dma_garnet.py"
         argv = [
             str(script),

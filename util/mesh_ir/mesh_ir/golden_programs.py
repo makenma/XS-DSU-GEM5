@@ -39,7 +39,7 @@ A_SHARD_BYTES = M * TP_K * ELEM
 W_SHARD_BYTES = TP_K * N * ELEM
 
 
-def _hbm(tensor_id, shard_id, offset) -> DmaEndpoint:
+def hbm_endpoint(tensor_id, shard_id, offset) -> DmaEndpoint:
     return DmaEndpoint(
         memory_space=A.MEMORY_SPACE.HBM,
         region_id=HBM_REGION,
@@ -51,7 +51,7 @@ def _hbm(tensor_id, shard_id, offset) -> DmaEndpoint:
     )
 
 
-def _sram(tensor_id, shard_id, core, offset) -> DmaEndpoint:
+def sram_endpoint(tensor_id, shard_id, core, offset) -> DmaEndpoint:
     return DmaEndpoint(
         memory_space=A.MEMORY_SPACE.CORE_SRAM,
         region_id=SRAM_REGION,
@@ -63,7 +63,7 @@ def _sram(tensor_id, shard_id, core, offset) -> DmaEndpoint:
     )
 
 
-def _peer(tensor_id, shard_id, core, offset) -> DmaEndpoint:
+def peer_endpoint(tensor_id, shard_id, core, offset) -> DmaEndpoint:
     return DmaEndpoint(
         memory_space=A.MEMORY_SPACE.PEER_SRAM,
         region_id=SRAM_REGION,
@@ -115,8 +115,8 @@ def build_single_core_program(arch):
     d_lin = builder.dma(
         cmd_lin,
         A.DMA_KIND.LOAD,
-        src=_hbm(t_in, s_in, 0x100000),
-        dst=_sram(t_in, s_in, 0, 0x0000),
+        src=hbm_endpoint(t_in, s_in, 0x100000),
+        dst=sram_endpoint(t_in, s_in, 0, 0x0000),
         rows=1,
         row_bytes=IN_BYTES,
         src_stride=IN_BYTES,
@@ -134,8 +134,8 @@ def build_single_core_program(arch):
     d_lw = builder.dma(
         cmd_lw,
         A.DMA_KIND.LOAD,
-        src=_hbm(t_w, s_w, 0x200000),
-        dst=_sram(t_w, s_w, 0, 0x2000),
+        src=hbm_endpoint(t_w, s_w, 0x200000),
+        dst=sram_endpoint(t_w, s_w, 0, 0x2000),
         rows=1,
         row_bytes=W_BYTES,
         src_stride=W_BYTES,
@@ -162,8 +162,8 @@ def build_single_core_program(arch):
     d_store = builder.dma(
         cmd_store,
         A.DMA_KIND.STORE,
-        src=_sram(t_out, s_out, 0, 0x4000),
-        dst=_hbm(t_out, s_out, 0x300000),
+        src=sram_endpoint(t_out, s_out, 0, 0x4000),
+        dst=hbm_endpoint(t_out, s_out, 0x300000),
         rows=1,
         row_bytes=OUT_BYTES,
         src_stride=OUT_BYTES,
@@ -249,8 +249,8 @@ def build_compute_timing_program(arch):
         descriptor = builder.dma(
             command,
             A.DMA_KIND.LOCAL_FILL,
-            src=_sram(tensor, shard, 0, offset),
-            dst=_sram(tensor, shard, 0, offset),
+            src=sram_endpoint(tensor, shard, 0, offset),
+            dst=sram_endpoint(tensor, shard, 0, offset),
             rows=1,
             row_bytes=64,
             src_stride=64,
@@ -370,7 +370,7 @@ def build_dual_core_program(arch):
     cmd_la0 = stream0.command(A.OPCODE.DMA_LOAD, waits=(e_begin,), operands=((t_a, s_a0, core0_a, RO),))
     d_la0 = builder.dma(
         cmd_la0, A.DMA_KIND.LOAD,
-        src=_hbm(t_a, s_a0, 0x100000), dst=_sram(t_a, s_a0, 0, 0x0000),
+        src=hbm_endpoint(t_a, s_a0, 0x100000), dst=sram_endpoint(t_a, s_a0, 0, 0x0000),
         rows=1, row_bytes=A_SHARD_BYTES, src_stride=A_SHARD_BYTES, dst_stride=A_SHARD_BYTES,
         completion_event=e_la0,
     )
@@ -379,7 +379,7 @@ def build_dual_core_program(arch):
     cmd_lw0 = stream0.command(A.OPCODE.DMA_LOAD, waits=(e_begin,), operands=((t_w, s_w0, core0_w, RO),))
     d_lw0 = builder.dma(
         cmd_lw0, A.DMA_KIND.LOAD,
-        src=_hbm(t_w, s_w0, 0x200000), dst=_sram(t_w, s_w0, 0, 0x2000),
+        src=hbm_endpoint(t_w, s_w0, 0x200000), dst=sram_endpoint(t_w, s_w0, 0, 0x2000),
         rows=1, row_bytes=W_SHARD_BYTES, src_stride=W_SHARD_BYTES, dst_stride=W_SHARD_BYTES,
         completion_event=e_lw0,
     )
@@ -395,7 +395,7 @@ def build_dual_core_program(arch):
     cmd_p2p = stream0.command(A.OPCODE.DMA_P2P_PUSH, waits=(e_g0,), operands=((t_partial, s_c0, core0_c, RO),))
     d_p2p = builder.dma(
         cmd_p2p, A.DMA_KIND.P2P_PUSH,
-        src=_sram(t_partial, s_c0, 0, 0x4000), dst=_peer(t_partial, s_peer, 1, 0x4000),
+        src=sram_endpoint(t_partial, s_c0, 0, 0x4000), dst=peer_endpoint(t_partial, s_peer, 1, 0x4000),
         rows=1, row_bytes=PARTIAL_BYTES, src_stride=PARTIAL_BYTES, dst_stride=PARTIAL_BYTES,
         transfer_id=1,
         completion_event=e_p2p,
@@ -408,7 +408,7 @@ def build_dual_core_program(arch):
     cmd_la1 = stream1.command(A.OPCODE.DMA_LOAD, operands=((t_a, s_a1, core1_a, RO),))
     d_la1 = builder.dma(
         cmd_la1, A.DMA_KIND.LOAD,
-        src=_hbm(t_a, s_a1, 0x100000 + A_SHARD_BYTES), dst=_sram(t_a, s_a1, 1, 0x0000),
+        src=hbm_endpoint(t_a, s_a1, 0x100000 + A_SHARD_BYTES), dst=sram_endpoint(t_a, s_a1, 1, 0x0000),
         rows=1, row_bytes=A_SHARD_BYTES, src_stride=A_SHARD_BYTES, dst_stride=A_SHARD_BYTES,
         completion_event=e_la1,
     )
@@ -417,7 +417,7 @@ def build_dual_core_program(arch):
     cmd_lw1 = stream1.command(A.OPCODE.DMA_LOAD, operands=((t_w, s_w1, core1_w, RO),))
     d_lw1 = builder.dma(
         cmd_lw1, A.DMA_KIND.LOAD,
-        src=_hbm(t_w, s_w1, 0x200000 + W_SHARD_BYTES), dst=_sram(t_w, s_w1, 1, 0x2000),
+        src=hbm_endpoint(t_w, s_w1, 0x200000 + W_SHARD_BYTES), dst=sram_endpoint(t_w, s_w1, 1, 0x2000),
         rows=1, row_bytes=W_SHARD_BYTES, src_stride=W_SHARD_BYTES, dst_stride=W_SHARD_BYTES,
         completion_event=e_lw1,
     )
@@ -452,7 +452,7 @@ def build_dual_core_program(arch):
     cmd_store = stream1.command(A.OPCODE.DMA_STORE, waits=(e_red,), operands=((t_final, s_final, core1_c, RW),))
     d_store = builder.dma(
         cmd_store, A.DMA_KIND.STORE,
-        src=_sram(t_final, s_final, 1, 0x6000), dst=_hbm(t_final, 0, 0x300000),
+        src=sram_endpoint(t_final, s_final, 1, 0x6000), dst=hbm_endpoint(t_final, 0, 0x300000),
         rows=1, row_bytes=PARTIAL_BYTES, src_stride=PARTIAL_BYTES, dst_stride=PARTIAL_BYTES,
         completion_event=e_store,
     )
@@ -501,8 +501,8 @@ def build_fill_program(arch):
     d_fill = builder.dma(
         cmd_fill,
         A.DMA_KIND.LOCAL_FILL,
-        src=_sram(t_in, s_in, 0, 0x0000),
-        dst=_sram(t_in, s_in, 0, 0x0000),
+        src=sram_endpoint(t_in, s_in, 0, 0x0000),
+        dst=sram_endpoint(t_in, s_in, 0, 0x0000),
         rows=1,
         row_bytes=128,
         src_stride=128,
@@ -519,8 +519,8 @@ def build_fill_program(arch):
     d_zero = builder.dma(
         cmd_zero,
         A.DMA_KIND.LOAD,
-        src=_hbm(t_in, s_in, 0x100000),
-        dst=_sram(t_in, s_in, 0, 0x0000),
+        src=hbm_endpoint(t_in, s_in, 0x100000),
+        dst=sram_endpoint(t_in, s_in, 0, 0x0000),
         rows=1,
         row_bytes=0,
         src_stride=0,
@@ -542,8 +542,8 @@ def build_fill_program(arch):
     d_store = builder.dma(
         cmd_store,
         A.DMA_KIND.STORE,
-        src=_sram(t_out, s_out, 0, 0x2000),
-        dst=_hbm(t_out, s_out, 0x300000),
+        src=sram_endpoint(t_out, s_out, 0, 0x2000),
+        dst=hbm_endpoint(t_out, s_out, 0x300000),
         rows=1,
         row_bytes=128,
         src_stride=128,
@@ -597,7 +597,7 @@ def build_repeat_program(arch):
     cmd_load = stream.command(A.OPCODE.DMA_LOAD, waits=(e_begin,), operands=((t_in, s_in, a_buf, RO),))
     d_load = builder.dma(
         cmd_load, A.DMA_KIND.LOAD,
-        src=_hbm(t_in, s_in, 0x100000), dst=_sram(t_in, s_in, 0, 0x0000),
+        src=hbm_endpoint(t_in, s_in, 0x100000), dst=sram_endpoint(t_in, s_in, 0, 0x0000),
         rows=1, row_bytes=128, src_stride=128, dst_stride=128,
         completion_event=e_load,
     )
@@ -714,7 +714,7 @@ def build_dma_edge_program(arch):
         )
         d_load = builder.dma(
             cmd_load, A.DMA_KIND.LOAD,
-            src=_hbm(t_in, 0, src_off), dst=_sram(t_in, s_in, 0, sram_offset),
+            src=hbm_endpoint(t_in, 0, src_off), dst=sram_endpoint(t_in, s_in, 0, sram_offset),
             rows=1, row_bytes=size, src_stride=size, dst_stride=size,
             completion_event=e_load,
         )
@@ -727,8 +727,8 @@ def build_dma_edge_program(arch):
         )
         d_store = builder.dma(
             cmd_store, A.DMA_KIND.STORE,
-            src=_sram(t_out, s_out, 0, sram_offset),
-            dst=_hbm(t_out, 0, dst_off),
+            src=sram_endpoint(t_out, s_out, 0, sram_offset),
+            dst=hbm_endpoint(t_out, 0, dst_off),
             rows=1, row_bytes=size, src_stride=size, dst_stride=size,
             completion_event=e_store,
         )
@@ -776,7 +776,7 @@ def build_dma_error_program(arch):
     )
     d_load = builder.dma(
         cmd_load, A.DMA_KIND.LOAD,
-        src=_hbm(t_in, 0, 0x800000), dst=_sram(t_in, s_in, 0, 0x0000),
+        src=hbm_endpoint(t_in, 0, 0x800000), dst=sram_endpoint(t_in, s_in, 0, 0x0000),
         rows=1, row_bytes=128, src_stride=128, dst_stride=128,
         completion_event=e_load,
     )
@@ -793,7 +793,7 @@ def build_dma_error_program(arch):
     )
     d_store = builder.dma(
         cmd_store, A.DMA_KIND.STORE,
-        src=_sram(t_out, s_out, 0, 0x2000), dst=_hbm(t_out, 0, 0x200000),
+        src=sram_endpoint(t_out, s_out, 0, 0x2000), dst=hbm_endpoint(t_out, 0, 0x200000),
         rows=1, row_bytes=128, src_stride=128, dst_stride=128,
         completion_event=e_store,
     )
@@ -834,7 +834,7 @@ def build_dma_write_error_program(arch):
     )
     d_load = builder.dma(
         cmd_load, A.DMA_KIND.LOAD,
-        src=_hbm(t_in, 0, 0x100000), dst=_sram(t_in, s_in, 0, 0x0000),
+        src=hbm_endpoint(t_in, 0, 0x100000), dst=sram_endpoint(t_in, s_in, 0, 0x0000),
         rows=1, row_bytes=size, src_stride=size, dst_stride=size,
         completion_event=e_load,
     )
@@ -845,7 +845,7 @@ def build_dma_write_error_program(arch):
     )
     d_store = builder.dma(
         cmd_store, A.DMA_KIND.STORE,
-        src=_sram(t_out, s_out, 0, 0x0000), dst=_hbm(t_out, 0, 0x200000),
+        src=sram_endpoint(t_out, s_out, 0, 0x0000), dst=hbm_endpoint(t_out, 0, 0x200000),
         rows=1, row_bytes=size, src_stride=size, dst_stride=size,
         completion_event=e_store,
     )
@@ -892,7 +892,7 @@ def build_dma_fence_program(arch):
     )
     d_load = builder.dma(
         cmd_load, A.DMA_KIND.LOAD,
-        src=_hbm(t_in, 0, 0x100000), dst=_sram(t_in, s_small, 0, 0x0000),
+        src=hbm_endpoint(t_in, 0, 0x100000), dst=sram_endpoint(t_in, s_small, 0, 0x0000),
         rows=1, row_bytes=small, src_stride=small, dst_stride=small,
         completion_event=e_load,
     )
@@ -911,7 +911,7 @@ def build_dma_fence_program(arch):
     )
     d_fill = builder.dma(
         cmd_fill, A.DMA_KIND.LOCAL_FILL,
-        src=_sram(t_out, s_big, 0, 0x2000), dst=_sram(t_out, s_big, 0, 0x2000),
+        src=sram_endpoint(t_out, s_big, 0, 0x2000), dst=sram_endpoint(t_out, s_big, 0, 0x2000),
         rows=1, row_bytes=big, src_stride=big, dst_stride=big,
         completion_event=e_fill_done,
     )
@@ -927,7 +927,7 @@ def build_dma_fence_program(arch):
     )
     d_store = builder.dma(
         cmd_store, A.DMA_KIND.STORE,
-        src=_sram(t_out, s_big, 0, 0x2000), dst=_hbm(t_out, 0, 0x200000),
+        src=sram_endpoint(t_out, s_big, 0, 0x2000), dst=hbm_endpoint(t_out, 0, 0x200000),
         rows=1, row_bytes=big, src_stride=big, dst_stride=big,
         completion_event=e_store,
     )
@@ -965,7 +965,7 @@ def build_dma_pin_program(arch):
     )
     d_load1 = builder.dma(
         cmd_load1, A.DMA_KIND.LOAD,
-        src=_hbm(t_in, 0, 0x100000), dst=_sram(t_in, s_in, 0, 0x0000),
+        src=hbm_endpoint(t_in, 0, 0x100000), dst=sram_endpoint(t_in, s_in, 0, 0x0000),
         rows=1, row_bytes=size, src_stride=size, dst_stride=size,
         completion_event=e_load1,
     )
@@ -976,7 +976,7 @@ def build_dma_pin_program(arch):
     )
     d_load2 = builder.dma(
         cmd_load2, A.DMA_KIND.LOAD,
-        src=_hbm(t_in, 0, 0x100040), dst=_sram(t_in, s_in, 0, 0x0000),
+        src=hbm_endpoint(t_in, 0, 0x100040), dst=sram_endpoint(t_in, s_in, 0, 0x0000),
         rows=1, row_bytes=size, src_stride=size, dst_stride=size,
         completion_event=e_load2,
     )
@@ -987,7 +987,7 @@ def build_dma_pin_program(arch):
     )
     d_store = builder.dma(
         cmd_store, A.DMA_KIND.STORE,
-        src=_sram(t_out, s_out, 0, 0x0000), dst=_hbm(t_out, 0, 0x200000),
+        src=sram_endpoint(t_out, s_out, 0, 0x0000), dst=hbm_endpoint(t_out, 0, 0x200000),
         rows=1, row_bytes=size, src_stride=size, dst_stride=size,
         completion_event=e_store,
     )
@@ -1030,14 +1030,14 @@ def _build_sram_placement_program(arch, placement, name):
     stream.command(A.OPCODE.REQUEST_BEGIN, signal_event=e_begin)
 
     cmd_l0 = stream.command(A.OPCODE.DMA_LOAD, waits=(e_begin,), operands=((t_in, s0, a0, RO),))
-    d0 = builder.dma(cmd_l0, A.DMA_KIND.LOAD, src=_hbm(t_in, s0, 0x100000),
-                     dst=_sram(t_in, s0, 0, placement[0]), rows=1, row_bytes=128,
+    d0 = builder.dma(cmd_l0, A.DMA_KIND.LOAD, src=hbm_endpoint(t_in, s0, 0x100000),
+                     dst=sram_endpoint(t_in, s0, 0, placement[0]), rows=1, row_bytes=128,
                      src_stride=128, dst_stride=128, completion_event=e_l0)
     builder.oracle(entrypoint_id, 1, d0, cmd_l0.command_id, A.DMA_KIND.LOAD, 0x100000, 1, 128, 128)
 
     cmd_l1 = stream.command(A.OPCODE.DMA_LOAD, waits=(e_begin,), operands=((t_in, s1, a1, RO),))
-    d1 = builder.dma(cmd_l1, A.DMA_KIND.LOAD, src=_hbm(t_in, s1, 0x100080),
-                     dst=_sram(t_in, s1, 0, placement[1]), rows=1, row_bytes=128,
+    d1 = builder.dma(cmd_l1, A.DMA_KIND.LOAD, src=hbm_endpoint(t_in, s1, 0x100080),
+                     dst=sram_endpoint(t_in, s1, 0, placement[1]), rows=1, row_bytes=128,
                      src_stride=128, dst_stride=128, completion_event=e_l1)
     builder.oracle(entrypoint_id, 1, d1, cmd_l1.command_id, A.DMA_KIND.LOAD, 0x100080, 1, 128, 128)
 
@@ -1047,8 +1047,8 @@ def _build_sram_placement_program(arch, placement, name):
                    attr_index=builder.gemm_attr(1, 8, 8, 8, FP16, A.DTYPE.FP32))
 
     cmd_store = stream.command(A.OPCODE.DMA_STORE, waits=(e_gemm,), operands=((t_out, s_out, a_out, RW),))
-    ds = builder.dma(cmd_store, A.DMA_KIND.STORE, src=_sram(t_out, s_out, 0, placement[2]),
-                     dst=_hbm(t_out, s_out, 0x300000), rows=1, row_bytes=128,
+    ds = builder.dma(cmd_store, A.DMA_KIND.STORE, src=sram_endpoint(t_out, s_out, 0, placement[2]),
+                     dst=hbm_endpoint(t_out, s_out, 0x300000), rows=1, row_bytes=128,
                      src_stride=128, dst_stride=128, completion_event=e_store)
     builder.oracle(entrypoint_id, 1, ds, cmd_store.command_id, A.DMA_KIND.STORE, 0x300000, 1, 128, 128)
 
@@ -1110,8 +1110,8 @@ def build_poison_store_program(arch):
     stream.command(A.OPCODE.REQUEST_BEGIN, signal_event=e_begin)
     cmd_store = stream.command(A.OPCODE.DMA_STORE, waits=(e_begin,),
                                operands=((t_out, s, a, RW),))
-    ds = builder.dma(cmd_store, A.DMA_KIND.STORE, src=_sram(t_out, s, 0, 0x0000),
-                     dst=_hbm(t_out, s, 0x300000), rows=1, row_bytes=128,
+    ds = builder.dma(cmd_store, A.DMA_KIND.STORE, src=sram_endpoint(t_out, s, 0, 0x0000),
+                     dst=hbm_endpoint(t_out, s, 0x300000), rows=1, row_bytes=128,
                      src_stride=128, dst_stride=128, completion_event=e_store)
     builder.oracle(1, 1, ds, cmd_store.command_id, A.DMA_KIND.STORE, 0x300000, 1, 128, 128)
     stream.command(A.OPCODE.REQUEST_END, waits=(e_store,), signal_event=e_end)
@@ -1193,7 +1193,7 @@ def build_dma_shapes_program(arch):
     )
     d_pf = builder.dma(
         cmd_pf, A.DMA_KIND.PREFETCH,
-        src=_hbm(t_in, 0, 0x100000), dst=_sram(t_in, s_pf, 0, 0x0000),
+        src=hbm_endpoint(t_in, 0, 0x100000), dst=sram_endpoint(t_in, s_pf, 0, 0x0000),
         rows=1, row_bytes=64, src_stride=64, dst_stride=64,
         completion_event=e_pf,
     )
@@ -1206,7 +1206,7 @@ def build_dma_shapes_program(arch):
     )
     d_fill = builder.dma(
         cmd_fill, A.DMA_KIND.LOCAL_FILL,
-        src=_sram(t_partial, s_f, 0, 0x0080), dst=_sram(t_partial, s_f, 0, 0x0080),
+        src=sram_endpoint(t_partial, s_f, 0, 0x0080), dst=sram_endpoint(t_partial, s_f, 0, 0x0080),
         rows=1, row_bytes=128, src_stride=128, dst_stride=128,
         completion_event=e_go,
     )
@@ -1218,8 +1218,8 @@ def build_dma_shapes_program(arch):
     )
     d_p2p = builder.dma(
         cmd_p2p, A.DMA_KIND.P2P_PUSH,
-        src=_sram(t_partial, s_f, 0, 0x0080),
-        dst=_peer(t_partial, s_peer, 1, 0x0000),
+        src=sram_endpoint(t_partial, s_f, 0, 0x0080),
+        dst=peer_endpoint(t_partial, s_peer, 1, 0x0000),
         rows=2, row_bytes=64, src_stride=64, dst_stride=128,
         transfer_id=7, completion_event=e_p2p,
     )
@@ -1238,8 +1238,8 @@ def build_dma_shapes_program(arch):
     )
     d_c1f = builder.dma(
         cmd_c1f, A.DMA_KIND.LOCAL_FILL,
-        src=_sram(t_partial, s_c1, 1, 0x0200),
-        dst=_sram(t_partial, s_c1, 1, 0x0200),
+        src=sram_endpoint(t_partial, s_c1, 1, 0x0200),
+        dst=sram_endpoint(t_partial, s_c1, 1, 0x0200),
         rows=1, row_bytes=128, src_stride=128, dst_stride=128,
         completion_event=e_c1f,
     )
@@ -1261,7 +1261,7 @@ def build_dma_shapes_program(arch):
     )
     d_store = builder.dma(
         cmd_store, A.DMA_KIND.STORE,
-        src=_sram(t_out, s_out, 1, 0x0200), dst=_hbm(t_out, 0, 0x300000),
+        src=sram_endpoint(t_out, s_out, 1, 0x0200), dst=hbm_endpoint(t_out, 0, 0x300000),
         rows=2, row_bytes=64, src_stride=64, dst_stride=256,
         completion_event=e_store,
     )
@@ -1308,7 +1308,7 @@ def build_zero_dma_program(arch):
     )
     d_load_rows = builder.dma(
         cmd_load_rows, A.DMA_KIND.LOAD,
-        src=_hbm(t_a, 0, 0x100000), dst=_sram(t_a, s_input, 0, 0x0000),
+        src=hbm_endpoint(t_a, 0, 0x100000), dst=sram_endpoint(t_a, s_input, 0, 0x0000),
         rows=0, row_bytes=64, src_stride=64, dst_stride=64,
         completion_event=e_load_rows,
     )
@@ -1321,7 +1321,7 @@ def build_zero_dma_program(arch):
     )
     d_load_bytes = builder.dma(
         cmd_load_bytes, A.DMA_KIND.LOAD,
-        src=_hbm(t_a, 0, 0x100040), dst=_sram(t_a, s_input, 0, 0x0000),
+        src=hbm_endpoint(t_a, 0, 0x100040), dst=sram_endpoint(t_a, s_input, 0, 0x0000),
         rows=1, row_bytes=0, src_stride=0, dst_stride=0,
         completion_event=e_load_bytes,
     )
@@ -1336,7 +1336,7 @@ def build_zero_dma_program(arch):
     )
     d_fill = builder.dma(
         cmd_fill, A.DMA_KIND.LOCAL_FILL,
-        src=_sram(t_c, s_scratch, 0, 0x0000), dst=_sram(t_c, s_scratch, 0, 0x0000),
+        src=sram_endpoint(t_c, s_scratch, 0, 0x0000), dst=sram_endpoint(t_c, s_scratch, 0, 0x0000),
         rows=0, row_bytes=64, src_stride=64, dst_stride=64,
         completion_event=e_fill,
     )
@@ -1352,7 +1352,7 @@ def build_zero_dma_program(arch):
     )
     d_fill0 = builder.dma(
         cmd_fill0, A.DMA_KIND.LOCAL_FILL,
-        src=_sram(t_c, s_scratch, 0, 0x0000), dst=_sram(t_c, s_scratch, 0, 0x0000),
+        src=sram_endpoint(t_c, s_scratch, 0, 0x0000), dst=sram_endpoint(t_c, s_scratch, 0, 0x0000),
         rows=1, row_bytes=0, src_stride=0, dst_stride=0,
         completion_event=e_fill0,
     )
@@ -1365,7 +1365,7 @@ def build_zero_dma_program(arch):
     )
     d_p2p = builder.dma(
         cmd_p2p, A.DMA_KIND.P2P_PUSH,
-        src=_sram(t_c, s_scratch, 0, 0x0000), dst=_peer(t_c, s_peer, 1, 0x0000),
+        src=sram_endpoint(t_c, s_scratch, 0, 0x0000), dst=peer_endpoint(t_c, s_peer, 1, 0x0000),
         rows=0, row_bytes=64, src_stride=64, dst_stride=64,
         transfer_id=1,
         completion_event=e_p2p,
@@ -1444,7 +1444,7 @@ def build_fence_scopes_program(arch):
         A.OPCODE.DMA_LOAD, waits=(e_begin,), operands=((t_in, s_in, core0_buf, RO),))
     d_load = builder.dma(
         cmd_load, A.DMA_KIND.LOAD,
-        src=_hbm(t_in, s_in, 0x100000), dst=_sram(t_in, s_in, 0, 0x0000),
+        src=hbm_endpoint(t_in, s_in, 0x100000), dst=sram_endpoint(t_in, s_in, 0, 0x0000),
         rows=1, row_bytes=16, src_stride=16, dst_stride=16,
         completion_event=e_load)
     builder.oracle(entrypoint_id, 1, d_load, cmd_load.command_id,
@@ -1458,7 +1458,7 @@ def build_fence_scopes_program(arch):
         operands=((t_out, s_out, core0_buf, RW),))
     d_store = builder.dma(
         cmd_store, A.DMA_KIND.STORE,
-        src=_sram(t_out, s_out, 0, 0x0000), dst=_hbm(t_out, s_out, 0x200000),
+        src=sram_endpoint(t_out, s_out, 0, 0x0000), dst=hbm_endpoint(t_out, s_out, 0x200000),
         rows=1, row_bytes=16, src_stride=16, dst_stride=16,
         completion_event=e_store)
     builder.oracle(entrypoint_id, 1, d_store, cmd_store.command_id,
@@ -1472,7 +1472,7 @@ def build_fence_scopes_program(arch):
         operands=((t_c, s_scratch, core0_buf, RO),))
     d_p2p = builder.dma(
         cmd_p2p, A.DMA_KIND.P2P_PUSH,
-        src=_sram(t_c, s_scratch, 0, 0x0000), dst=_peer(t_c, s_peer, 1, 0x0000),
+        src=sram_endpoint(t_c, s_scratch, 0, 0x0000), dst=peer_endpoint(t_c, s_peer, 1, 0x0000),
         rows=1, row_bytes=16, src_stride=16, dst_stride=16,
         transfer_id=7, completion_event=e_p2p)
     builder.oracle(entrypoint_id, 1, d_p2p, cmd_p2p.command_id,
@@ -1498,7 +1498,7 @@ def build_fence_scopes_program(arch):
         operands=((t_shared, s_shared, core1_buf, RW),))
     d_hs = builder.dma(
         cmd_hs, A.DMA_KIND.STORE,
-        src=_sram(t_shared, s_shared, 1, 0x1000),
+        src=sram_endpoint(t_shared, s_shared, 1, 0x1000),
         dst=shared_ep(t_shared, 0x10000),
         rows=1, row_bytes=16, src_stride=16, dst_stride=16,
         completion_event=e_hs)
@@ -1545,7 +1545,7 @@ def build_cross_error_program(arch):
         operands=((t_in, s_in, a_buf, RO),))
     d_load = builder.dma(
         cmd_load, A.DMA_KIND.LOAD,
-        src=_hbm(t_in, 0, 0x800000), dst=_sram(t_in, s_in, 0, 0x0000),
+        src=hbm_endpoint(t_in, 0, 0x800000), dst=sram_endpoint(t_in, s_in, 0, 0x0000),
         rows=1, row_bytes=128, src_stride=128, dst_stride=128,
         completion_event=e_load)
     builder.oracle(entrypoint_id, 1, d_load, cmd_load.command_id,
@@ -1555,7 +1555,7 @@ def build_cross_error_program(arch):
         operands=((t_w, s_w, a_buf, RO),))
     d_lw = builder.dma(
         cmd_lw, A.DMA_KIND.LOAD,
-        src=_hbm(t_w, 0, 0x100000), dst=_sram(t_w, s_w, 0, 0x0000),
+        src=hbm_endpoint(t_w, 0, 0x100000), dst=sram_endpoint(t_w, s_w, 0, 0x0000),
         rows=1, row_bytes=128, src_stride=128, dst_stride=128,
         completion_event=e_lw)
     builder.oracle(entrypoint_id, 1, d_lw, cmd_lw.command_id,
@@ -1605,7 +1605,7 @@ def build_repeat_error_program(arch):
         operands=((t_in, s_in, a_buf, RO),))
     d_load = builder.dma(
         cmd_load, A.DMA_KIND.LOAD,
-        src=_hbm(t_in, 0, 0x100000), dst=_sram(t_in, s_in, 0, 0x0000),
+        src=hbm_endpoint(t_in, 0, 0x100000), dst=sram_endpoint(t_in, s_in, 0, 0x0000),
         rows=1, row_bytes=128, src_stride=128, dst_stride=128,
         completion_event=e_load)
     builder.oracle(entrypoint_id, 1, d_load, cmd_load.command_id,
@@ -1615,7 +1615,7 @@ def build_repeat_error_program(arch):
         operands=((t_out, s_out, a_out, RW),))
     d_store = builder.dma(
         cmd_store, A.DMA_KIND.STORE,
-        src=_sram(t_out, s_out, 0, 0x2000), dst=_hbm(t_out, 0, 0x200000),
+        src=sram_endpoint(t_out, s_out, 0, 0x2000), dst=hbm_endpoint(t_out, 0, 0x200000),
         rows=1, row_bytes=128, src_stride=128, dst_stride=128,
         completion_event=e_store)
     builder.oracle(entrypoint_id, 1, d_store, cmd_store.command_id,
@@ -1659,7 +1659,7 @@ def build_p2p_reuse_program(arch):
         operands=((t_c, s_src, core0_buf, RO),))
     d1 = builder.dma(
         cmd1, A.DMA_KIND.P2P_PUSH,
-        src=_sram(t_c, s_src, 0, 0x0000), dst=_peer(t_c, s_dst, 1, 0x0000),
+        src=sram_endpoint(t_c, s_src, 0, 0x0000), dst=peer_endpoint(t_c, s_dst, 1, 0x0000),
         rows=1, row_bytes=32, src_stride=32, dst_stride=32,
         transfer_id=21, completion_event=e_p2p1)
     builder.oracle(entrypoint_id, 1, d1, cmd1.command_id,
@@ -1669,7 +1669,7 @@ def build_p2p_reuse_program(arch):
         operands=((t_c, s_src, core0_buf, RO),))
     d2 = builder.dma(
         cmd2, A.DMA_KIND.P2P_PUSH,
-        src=_sram(t_c, s_src, 0, 0x0000), dst=_peer(t_c, s_dst, 1, 0x0000),
+        src=sram_endpoint(t_c, s_src, 0, 0x0000), dst=peer_endpoint(t_c, s_dst, 1, 0x0000),
         rows=1, row_bytes=32, src_stride=32, dst_stride=32,
         transfer_id=22, completion_event=e_p2p2)
     builder.oracle(entrypoint_id, 1, d2, cmd2.command_id,
@@ -1758,7 +1758,7 @@ def build_cross_fault_program(arch):
         operands=((t_in, s_in, a_buf, RO),))
     d_load = builder.dma(
         cmd_load, A.DMA_KIND.LOAD,
-        src=_hbm(t_in, 0, 0x100080), dst=_sram(t_in, s_in, 0, 0x0000),
+        src=hbm_endpoint(t_in, 0, 0x100080), dst=sram_endpoint(t_in, s_in, 0, 0x0000),
         rows=1, row_bytes=128, src_stride=128, dst_stride=128,
         completion_event=e_load)
     builder.oracle(entrypoint_id, 1, d_load, cmd_load.command_id,
@@ -1768,7 +1768,7 @@ def build_cross_fault_program(arch):
         operands=((t_w, s_w, a_buf, RO),))
     d_lw = builder.dma(
         cmd_lw, A.DMA_KIND.LOAD,
-        src=_hbm(t_w, 0, 0x100000), dst=_sram(t_w, s_w, 0, 0x0000),
+        src=hbm_endpoint(t_w, 0, 0x100000), dst=sram_endpoint(t_w, s_w, 0, 0x0000),
         rows=1, row_bytes=128, src_stride=128, dst_stride=128,
         completion_event=e_lw)
     builder.oracle(entrypoint_id, 1, d_lw, cmd_lw.command_id,
@@ -1815,7 +1815,7 @@ def build_read_window_program(arch):
         operands=((t_in, s_in, a_buf, RO),))
     d_load = builder.dma(
         cmd_load, A.DMA_KIND.LOAD,
-        src=_hbm(t_in, 0, 0x100000), dst=_sram(t_in, s_in, 0, 0x0000),
+        src=hbm_endpoint(t_in, 0, 0x100000), dst=sram_endpoint(t_in, s_in, 0, 0x0000),
         rows=1, row_bytes=size, src_stride=size, dst_stride=size,
         max_burst_beats=8,
         completion_event=e_load)
@@ -1892,8 +1892,8 @@ def _build_load_saturation_program(arch, shape):
                 operands=((tensor, shard, allocation, RO),))
             descriptor = builder.dma(
                 command, A.DMA_KIND.LOAD,
-                src=_hbm(tensor, shard, offset),
-                dst=_sram(tensor, shard, core, index * 0x20000),
+                src=hbm_endpoint(tensor, shard, offset),
+                dst=sram_endpoint(tensor, shard, core, index * 0x20000),
                 rows=rows, row_bytes=row_bytes,
                 src_stride=stride, dst_stride=row_bytes,
                 completion_event=completion)

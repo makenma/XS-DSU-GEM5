@@ -26,6 +26,14 @@ SimObject('AiMesh.py', sim_objects=[
 Source('mesh_binary.cc')
 Source('mesh_splitter.cc')
 Source('mesh_ir_verifier.cc')
+Source('mesh_moe_verifier.cc')
+Source('mesh_weight_tags.cc')
+Source('mesh_moe_rng.cc')
+Source('mesh_moe_overlay.cc')
+Source('mesh_moe_gate.cc')
+Source('mesh_moe_runtime.cc')
+Source('mesh_compute_commit.cc')
+Source('mesh_weight_cache.cc')
 Source('mesh_program_loader.cc')
 Source('mock_axi_transport.cc')
 Source('tensor_dma_engine.cc')
@@ -72,6 +80,15 @@ GTest('mesh_binary.test',
       'acceptance_gtest_reporter.cc',
       'mesh_binary.cc',
       'mesh_ir_verifier.cc',
+      'mesh_moe_verifier.cc',
+      'mesh_weight_tags.cc',
+      'mesh_moe_rng.cc',
+      'mesh_moe_overlay.cc',
+      'mesh_moe_gate.cc',
+      'mesh_moe_runtime.cc',
+      'mesh_compute_commit.cc',
+      'mesh_weight_cache.cc',
+      'agent_sha256.cc',
       'mesh_splitter.cc')
 GTest('tensor_sram.test',
       'tensor_sram.test.cc',
@@ -84,6 +101,9 @@ GTest('mesh_splitter.test',
       'mesh_splitter.cc', 'mesh_binary.cc')
 GTest('program_scoreboard.test',
       'program_scoreboard.test.cc')
+GTest('runtime_key.test',
+      'runtime_key.test.cc',
+      'acceptance_gtest_reporter.cc')
 GTest('agent_protocol.test',
       'agent_protocol.test.cc',
       'acceptance_gtest_reporter.cc',

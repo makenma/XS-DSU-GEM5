@@ -439,6 +439,7 @@ def driver(tmp_path_factory):
         str(DRIVER_SRC),
         str(REPO / "src/dev/ai_mesh/mesh_binary.cc"),
         str(REPO / "src/dev/ai_mesh/mesh_ir_verifier.cc"),
+        str(REPO / "src/dev/ai_mesh/mesh_moe_verifier.cc"),
         str(REPO / "src/dev/ai_mesh/mesh_splitter.cc"),
         "-o", str(binary),
     ]

@@ -36,6 +36,51 @@ from mesh_ir.model import (
 )
 
 
+def _validate_partitions(manifest: ArchManifest) -> None:
+    from mesh_ir.generated import abi as A
+    from mesh_ir.model import MeshIrError
+
+    def _require(condition, message):
+        if not condition:
+            raise MeshIrError("E_ARCH_PARTITION", message)
+
+    if not manifest.sram_partitions:
+        _require(manifest.sram_weight_cache_slot_bytes == 0,
+                 "weight cache slot size needs WEIGHT_CACHE partition")
+        return
+    for partition in manifest.sram_partitions:
+        _require(partition.bytes > 0, "partition size must be positive")
+        _require(partition.alignment > 0 and
+                 partition.alignment & (partition.alignment - 1) == 0,
+                 "partition alignment must be a power of two")
+        _require(partition.base % partition.alignment == 0,
+                 "partition base must satisfy its alignment")
+        _require(partition.metadata_entries > 0,
+                 "partition metadata entries must be positive")
+        _require(partition.base + partition.bytes <= manifest.sram_bytes,
+                 "partition escapes SRAM")
+    for first in manifest.sram_partitions:
+        for second in manifest.sram_partitions:
+            if first.kind >= second.kind:
+                continue
+            _require(first.base + first.bytes <= second.base or
+                     second.base + second.bytes <= first.base,
+                     "SRAM partitions must not overlap")
+    cache = manifest.partition(A.SRAM_PARTITION_KIND.WEIGHT_CACHE)
+    slot_bytes = manifest.sram_weight_cache_slot_bytes
+    if cache is None:
+        _require(slot_bytes == 0,
+                 "weight cache slot size without a WEIGHT_CACHE partition")
+        return
+    _require(slot_bytes > 0, "WEIGHT_CACHE needs a slot size")
+    _require(slot_bytes % cache.alignment == 0,
+             "weight cache slot must satisfy partition alignment")
+    _require(cache.bytes % slot_bytes == 0,
+             "weight cache partition must divide into equal slots")
+    _require(cache.metadata_entries == cache.bytes // slot_bytes,
+             "weight cache metadata entries must equal its slot count")
+
+
 def _validate_arch(manifest: ArchManifest) -> None:
     from mesh_ir.model import MeshIrError
 
@@ -55,6 +100,7 @@ def _validate_arch(manifest: ArchManifest) -> None:
              manifest.sram_base_alignment_bytes &
              (manifest.sram_base_alignment_bytes - 1) == 0,
              "SRAM alignment must be a power of two")
+    _validate_partitions(manifest)
     _require(manifest.sram_read_ports_per_bank > 0 and
              manifest.sram_write_ports_per_bank > 0,
              "SRAM read/write ports must be positive")
@@ -187,9 +233,40 @@ def load_arch(path) -> ArchManifest:
         axi_enforce_4k_boundary=axi["enforce_4k_boundary"],
         axi_qos_default=axi["qos_default"],
         regions=regions,
+        sram_partitions=_load_partitions(sram, _int),
+        sram_weight_cache_slot_bytes=_int(sram.get("weight_cache_slot_bytes")),
     )
     _validate_arch(manifest)
     return manifest
+
+
+def _load_partitions(sram, _int) -> tuple:
+    from mesh_ir.generated import abi as A
+    from mesh_ir.model import ArchPartition, MeshIrError
+
+    declared = sram.get("partitions") or []
+    partitions = []
+    kinds = []
+    for entry in declared:
+        kind_name = entry["kind"]
+        if kind_name not in vars(A.SRAM_PARTITION_KIND):
+            raise MeshIrError("E_ARCH_PARTITION",
+                              f"unknown SRAM partition kind {kind_name}")
+        kind = getattr(A.SRAM_PARTITION_KIND, kind_name)
+        if kind in kinds:
+            raise MeshIrError("E_ARCH_PARTITION",
+                              f"duplicate SRAM partition {kind_name}")
+        kinds.append(kind)
+        partitions.append(ArchPartition(
+            kind=kind,
+            base=_int(entry["base"]),
+            bytes=_int(entry["bytes"]),
+            alignment=_int(entry.get("alignment")),
+            metadata_entries=_int(entry.get("metadata_entries")),
+            max_pinned_entries=_int(entry.get("max_pinned_entries")),
+            replacement=entry.get("replacement", "LRU"),
+        ))
+    return tuple(partitions)
 
 
 class ProgramBuilder:

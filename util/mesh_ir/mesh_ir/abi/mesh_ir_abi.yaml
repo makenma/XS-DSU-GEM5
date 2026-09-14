@@ -13,6 +13,19 @@ abi:
   min_reader_minor: 0
 magic_hex: "4d53484200000001"
 
+features:
+  DYNAMIC_MOE_V1:
+    bit: 0
+    min_writer_minor: 1
+
+conditional_required_sections:
+  DYNAMIC_MOE_V1:
+    - MOE_LAYER_SPECS
+    - MOE_EXPERT_SPECS
+    - MOE_DYNAMIC_REGIONS
+    - MOE_KERNEL_SPECS
+    - CONTENT_DIGESTS
+
 enums:
   section_type:
     STRINGS: 1
@@ -33,6 +46,10 @@ enums:
     SOURCE_MAP: 101
     PROFILE_HINTS: 102
     CONTENT_DIGESTS: 103
+    MOE_LAYER_SPECS: 16384
+    MOE_EXPERT_SPECS: 16385
+    MOE_DYNAMIC_REGIONS: 16386
+    MOE_KERNEL_SPECS: 16387
   required_sections:
     - STRINGS
     - ENTRYPOINTS
@@ -162,6 +179,200 @@ enums:
     P2P: 3
     HOST_SHARED_WRITE: 4
     ALL_INSTANCE: 5
+  mesh_object_domain:
+    STATIC: 0
+    MOE_OVERLAY: 1
+    WEIGHT_FILL: 2
+    COORDINATOR: 3
+    KV_RUNTIME: 4
+    INTERNAL: 5
+  mesh_object_kind:
+    COMMAND: 0
+    EVENT: 1
+    DESCRIPTOR: 2
+    TRANSFER: 3
+    ALLOCATION: 4
+    VIEW: 5
+    WEIGHT_FILL_OBLIGATION: 6
+    CACHE_RESERVATION: 7
+    MATERIALIZER_CHECK: 8
+    KV_APPEND: 9
+    INTERNAL_CHECK: 10
+  moe_error_class:
+    WEIGHT_FILL: 0
+    CACHE_RESERVATION: 1
+    DMA_AXI: 2
+    SRAM: 3
+    COMMAND: 4
+    EVENT: 5
+    MATERIALIZE: 6
+    INTERNAL: 7
+  weight_fill_failure_site:
+    CACHE_FILL_AXI_R: 0
+    CACHE_FILL_SRAM_BOUNDS: 1
+    CACHE_FILL_SRAM_COMMIT: 2
+    CACHE_FILL_SOURCE_VALIDITY: 3
+  cache_slot_state:
+    INVALID: 0
+    VALID: 1
+  cache_residency_outcome:
+    HIT: 0
+    ATTACH: 1
+    NEW_FILL: 2
+    STREAMED: 3
+  cache_subscriber_state:
+    WAITING: 0
+    WOKEN: 1
+    FAIL_NOTIFIED: 2
+    TERMINAL_TOMBSTONED: 3
+    CANCELLED: 4
+    RELEASED: 5
+  cache_obligation_state:
+    RESERVED: 0
+    ISSUING: 1
+    IN_FLIGHT: 2
+    FAILED_DRAINING: 3
+    FAILED_RETIRED: 4
+    RETIRED: 5
+  mesh_core_instance_state:
+    PROGRAM_READY: 0
+    REQUEST_ARMED: 1
+    REQUEST_RUNNING: 2
+    REQUEST_DRAINING: 3
+    INSTANCE_DONE: 4
+    INSTANCE_ERROR_DRAINING: 5
+    INSTANCE_OWNED_WORK_DRAINED: 6
+    INSTANCE_ERROR_DRAINED: 7
+  mesh_batch_state:
+    PROGRAM_READY: 0
+    REQUEST_ARMED: 1
+    REQUEST_RUNNING: 2
+    BATCH_PRESTART_ABORTING: 3
+    BATCH_PRESTART_DRAINED: 4
+    FINAL_DRAINING: 5
+    GLOBAL_QUIESCENT: 6
+  sram_partition_kind:
+    STATIC_PROGRAM: 0
+    WEIGHT_CACHE: 1
+    KV_STAGING_CACHE: 2
+    RUNTIME_SCRATCH: 3
+  moe_allocation_kind:
+    ROUTE_BUFFER: 0
+    STREAMED_WEIGHT: 1
+    DISPATCH_REMOTE: 2
+    PAD_INPUT: 3
+    EXPERT_OUTPUT: 4
+    COMBINE_REMOTE: 5
+    REDUCE_OUTPUT: 6
+  moe_view_kind:
+    ROUTE_METADATA: 0
+    MEMBER_INPUT: 1
+    DISPATCH_BUFFER: 2
+    PAD_BUFFER: 3
+    WEIGHT: 4
+    EXPERT_OUTPUT: 5
+    COMBINE_BUFFER: 6
+    REDUCE_ACCUMULATOR: 7
+    MEMBER_OUTPUT: 8
+  moe_view_access:
+    READ: 0
+    WRITE: 1
+    READ_WRITE: 2
+  moe_view_backing:
+    OVERLAY_ALLOCATION: 0
+    STATIC_ALLOCATION: 1
+    INSTANCE_MEMBER_BINDING: 2
+    WEIGHT_CACHE_SLOT: 3
+    KV_RUNTIME_VIEW: 4
+  moe_semantic_owner:
+    MEMBER: 0
+    EXPERT: 1
+    TOKEN: 2
+    REGION: 3
+  moe_validity_kind:
+    FULL_PREFIX: 0
+    ROW_BITMAP: 1
+  moe_traffic_class:
+    ACTIVATION: 0
+    WEIGHT: 1
+    MOE_DISPATCH: 2
+    MOE_COMBINE: 3
+    PARTIAL_RESULT: 4
+  moe_transfer_phase:
+    DISPATCH: 0
+    COMBINE: 1
+  moe_descriptor_kind:
+    ROUTE_FILL: 0
+    STREAMED_WEIGHT: 1
+    PAD_FILL: 2
+    DISPATCH: 3
+    COMBINE: 4
+    DROPPED_TOKEN_FILL: 5
+  moe_event_phase:
+    ENTRY: 0
+    FILL: 1
+    DISPATCH: 2
+    WEIGHT: 3
+    EXPERT: 4
+    COMBINE: 5
+    REDUCE: 6
+    EXIT: 7
+  moe_command_phase:
+    ROUTE_FILL: 0
+    STREAMED_WEIGHT_LOAD: 1
+    DISPATCH_PUSH: 2
+    DISPATCH_WAIT: 3
+    PAD_FILL: 4
+    EXPERT_COMPUTE: 5
+    COMBINE_PUSH: 6
+    COMBINE_WAIT: 7
+    DROPPED_TOKEN_FILL: 8
+    COPY_THROUGH: 9
+    LOCAL_REDUCE: 10
+    EXIT_SIGNAL: 11
+  moe_event_role:
+    ENTRY_GATE: 0
+    ROUTE_FILL_DONE: 1
+    DISPATCH_READY: 2
+    WEIGHT_READY: 3
+    EXPERT_RESULT: 4
+    COMBINE_READY: 5
+    TOKEN_OUTPUT_READY: 6
+    REGION_TERMINAL: 7
+    EMPTY_REGION_TERMINAL: 8
+    OVERLAY_EXIT: 9
+    PAD_FILL_DONE: 10
+  moe_command_role:
+    ROUTE_FILL: 0
+    STREAMED_WEIGHT_LOAD: 1
+    DISPATCH_SENDER: 2
+    DISPATCH_RECEIVER: 3
+    PAD_FILL: 4
+    EXPERT_COMPUTE: 5
+    COMBINE_SENDER: 6
+    COMBINE_RECEIVER: 7
+    DROPPED_TOKEN_FILL: 8
+    COPY_THROUGH: 9
+    LOCAL_REDUCE: 10
+    REGION_TERMINAL: 11
+    EMPTY_REGION_TERMINAL: 12
+    GROUP_EXIT: 13
+  route_disposition:
+    ACCEPT: 0
+    DROP: 1
+  moe_fill_mode:
+    FUNCTIONAL_BYTES: 0
+    DIGEST_ONLY: 1
+    VALIDITY_ONLY: 2
+  moe_overflow_policy:
+    DROP: 0
+    PAD_TO_CAPACITY: 1
+    FAIL: 2
+  moe_transport_mode:
+    VARIABLE_ALL_TO_ALL_V: 0
+  moe_combine_kind:
+    NONE: 0
+    LOCAL_REDUCE: 1
   stream_flags:
     IS_LIFECYCLE: 1
     IS_LOCAL_CONTROL: 2
@@ -184,7 +395,7 @@ header:
     # Spec 9.2 amendment: offset 104..111 carries required_features under
     # ABI 1.1; an ABI 1.0 writer must keep 104..127 all zero and a 1.0-only
     # reader rejects any nonzero bit here (unknown feature -> fail closed).
-    - {name: required_features, type: u64, offset: 104, const: 0}
+    - {name: required_features, type: u64, offset: 104, features: true}
     - {name: reserved, type: bytes16, offset: 112, const_zero: true}
 
 section_dir:
@@ -200,6 +411,39 @@ section_dir:
     - {name: reserved, type: u32, offset: 36, const_zero: true}
 
 records:
+  WEIGHT_CACHE_BASE_KEYS:
+    bytes: 12
+    fields:
+      - {name: core_id, type: u16, offset: 0}
+      - {name: cache_partition_id, type: u16, offset: 2}
+      - {name: weight_tag_index, type: u32, offset: 4}
+      - {name: cache_generation, type: u32, offset: 8}
+  WEIGHT_FILL_KEYS:
+    bytes: 16
+    fields:
+      - {name: core_id, type: u16, offset: 0}
+      - {name: cache_partition_id, type: u16, offset: 2}
+      - {name: weight_tag_index, type: u32, offset: 4}
+      - {name: cache_generation, type: u32, offset: 8}
+      - {name: fill_incarnation, type: u32, offset: 12}
+  CACHE_DMA_DESCRIPTOR_KEYS:
+    bytes: 20
+    fields:
+      - {name: weight_fill_key, type: bytes16, offset: 0}
+      - {name: segment_ordinal, type: u32, offset: 16}
+  ERROR_SOURCE_KEYS:
+    bytes: 40
+    fields:
+      - {name: error_class, type: u16, offset: 0, enum: moe_error_class}
+      - {name: core_id_or_ffff, type: u16, offset: 2}
+      - {name: domain, type: u8, offset: 4, enum: mesh_object_domain}
+      - {name: object_kind, type: u8, offset: 5, enum: mesh_object_kind}
+      - {name: reserved, type: u16, offset: 6, const_zero: true}
+      - {name: region_group_id, type: u32, offset: 8}
+      - {name: region_id, type: u32, offset: 12}
+      - {name: ordinal, type: u32, offset: 16}
+      - {name: generation, type: u32, offset: 20}
+      - {name: aux_key, type: bytes16, offset: 24}
   ENTRYPOINTS:
     bytes: 24
     fields:
@@ -391,11 +635,110 @@ records:
   CONTENT_DIGESTS:
     bytes: 40
     fields:
-      - {name: object_kind, type: u16, offset: 0}
+      - {name: object_kind, type: u16, offset: 0, enum: tensor_role}
       - {name: reserved, type: u16, offset: 2, const_zero: true}
       - {name: object_id, type: u32, offset: 4}
       - {name: digest, type: bytes32, offset: 8}
 
+  MOE_RUNTIME_ROUTE_ENTRY:
+    bytes: 64
+    fields:
+      - {name: semantic_token_uid, type: bytes32, offset: 0}
+      - {name: member_request_id, type: u64, offset: 32}
+      - {name: source_rank, type: u32, offset: 40}
+      - {name: token_ordinal, type: u32, offset: 44}
+      - {name: topk_slot, type: u16, offset: 48}
+      - {name: selected_expert_id, type: u16, offset: 50}
+      - {name: assigned_expert_id, type: u16, offset: 52}
+      - {name: destination_core, type: u16, offset: 54}
+      - {name: disposition, type: u8, offset: 56}
+      - {name: reserved, type: bytes7, offset: 57, const_zero: true}
+  MOE_LAYER_SPECS:
+    bytes: 80
+    fields:
+      - {name: layer_id, type: u32, offset: 0}
+      - {name: kernel_spec_index, type: u32, offset: 4}
+      - {name: expert_first, type: u32, offset: 8}
+      - {name: expert_count, type: u16, offset: 12}
+      - {name: top_k, type: u16, offset: 14}
+      - {name: token_bytes, type: u32, offset: 16}
+      - {name: output_token_bytes, type: u32, offset: 20}
+      - {name: capacity_factor_q16, type: u32, offset: 24}
+      - {name: overflow_policy, type: u16, offset: 28,
+         enum: moe_overflow_policy}
+      - {name: transport_mode, type: u16, offset: 30, enum: moe_transport_mode}
+      - {name: dynamic_region_first, type: u32, offset: 32}
+      - {name: dynamic_region_count, type: u32, offset: 36}
+      - {name: max_tokens_per_frozen_batch, type: u32, offset: 40}
+      - {name: max_requests_per_batch, type: u32, offset: 44}
+      - {name: max_routes, type: u32, offset: 48}
+      - {name: max_materialized_commands, type: u32, offset: 52}
+      - {name: max_materialized_descriptors, type: u32, offset: 56}
+      - {name: max_materialized_transfers, type: u32, offset: 60}
+      - {name: max_dynamic_allocations, type: u32, offset: 64}
+      - {name: flags, type: u32, offset: 68}
+      - {name: max_materialized_events, type: u32, offset: 72}
+      - {name: reserved1, type: u32, offset: 76, const_zero: true}
+  MOE_EXPERT_SPECS:
+    bytes: 40
+    fields:
+      - {name: layer_id, type: u32, offset: 0}
+      - {name: expert_id, type: u16, offset: 4}
+      - {name: flags, type: u16, offset: 6}
+      - {name: core_id, type: u16, offset: 8}
+      - {name: reserved_core, type: u16, offset: 10, const_zero: true}
+      - {name: weight_symbol_id, type: u32, offset: 12}
+      - {name: weight_region_offset, type: u64, offset: 16}
+      - {name: weight_bytes, type: u64, offset: 24}
+      - {name: weight_digest_index, type: u32, offset: 32}
+      - {name: reserved, type: u32, offset: 36, const_zero: true}
+  MOE_DYNAMIC_REGIONS:
+    bytes: 72
+    fields:
+      - {name: region_id, type: u32, offset: 0}
+      - {name: layer_id, type: u32, offset: 4}
+      - {name: core_id, type: u16, offset: 8}
+      - {name: stream_id, type: u16, offset: 10}
+      - {name: insert_after_command_id, type: u32, offset: 12}
+      - {name: resume_before_command_id, type: u32, offset: 16}
+      - {name: entry_event_id, type: u32, offset: 20}
+      - {name: scratch_offset, type: u64, offset: 24}
+      - {name: scratch_bytes, type: u64, offset: 32}
+      - {name: scratch_alignment, type: u32, offset: 40}
+      - {name: max_overlay_commands, type: u32, offset: 44}
+      - {name: max_overlay_events, type: u32, offset: 48}
+      - {name: max_overlay_descriptors, type: u32, offset: 52}
+      - {name: max_overlay_transfers, type: u32, offset: 56}
+      - {name: max_overlay_allocations, type: u32, offset: 60}
+      - {name: flags, type: u32, offset: 64}
+      - {name: reserved, type: u32, offset: 68, const_zero: true}
+  MOE_KERNEL_SPECS:
+    bytes: 88
+    fields:
+      - {name: layer_id, type: u32, offset: 0}
+      - {name: expert_opcode, type: u16, offset: 4, enum: opcode}
+      - {name: input_dtype, type: u16, offset: 6, enum: dtype}
+      - {name: accum_dtype, type: u16, offset: 8, enum: dtype}
+      - {name: output_dtype, type: u16, offset: 10, enum: dtype}
+      - {name: batch, type: u32, offset: 12}
+      - {name: n, type: u32, offset: 16}
+      - {name: k, type: u32, offset: 20}
+      - {name: transpose_flags, type: u16, offset: 24}
+      - {name: combine_kind, type: u16, offset: 26, enum: moe_combine_kind}
+      - {name: algorithm_id, type: u32, offset: 28}
+      - {name: efficiency_q16, type: u32, offset: 32}
+      - {name: tensor_setup_cycles, type: u32, offset: 36}
+      - {name: tensor_flush_cycles, type: u32, offset: 40}
+      - {name: input_token_bytes, type: u32, offset: 44}
+      - {name: output_token_bytes, type: u32, offset: 48}
+      - {name: reserved0, type: u32, offset: 52, const_zero: true}
+      - {name: weight_operand_bytes, type: u64, offset: 56}
+      - {name: expert_result_alignment, type: u32, offset: 64}
+      - {name: max_m, type: u32, offset: 68}
+      - {name: combine_setup_cycles, type: u32, offset: 72}
+      - {name: combine_flush_cycles, type: u32, offset: 76}
+      - {name: flags, type: u32, offset: 80}
+      - {name: reserved1, type: u32, offset: 84, const_zero: true}
 blob_sections:
   STRINGS:
     directory_record_bytes: 8

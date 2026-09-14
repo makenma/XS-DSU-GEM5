@@ -227,10 +227,18 @@ MeshExperimentObserver::dumpSnapshot(const std::string &path) const
             "r_beats_consumed"_a=counters.rBeatsConsumed,
             "b_errors"_a=counters.bErrorCount,
             "r_error_beats"_a=counters.rErrorBeats,
-            "command_issue_ticks"_a=core->commandIssueTicks(),
-            "command_done_ticks"_a=core->commandDoneTicks(),
             "sram_bank_conflicts"_a=core->sramBankConflicts.value(),
             "sram_service_cycles"_a=core->sramServiceCycles.value());
+        py::dict issue_ticks;
+        for (const auto &entry : core->commandIssueTicks())
+            issue_ticks[py::int_(entry.first.ordinal)] =
+                py::int_(entry.second);
+        py::dict done_ticks;
+        for (const auto &entry : core->commandDoneTicks())
+            done_ticks[py::int_(entry.first.ordinal)] =
+                py::int_(entry.second);
+        row["command_issue_ticks"] = issue_ticks;
+        row["command_done_ticks"] = done_ticks;
         const auto progress = bridge->initiatorProgress().core;
         const auto resources = bridge->initiatorResourceOccupancy();
         row["axi_initiator_progress"] = py::dict(
@@ -286,8 +294,8 @@ MeshExperimentObserver::dumpSnapshot(const std::string &path) const
         }
         row["burst_timings"] = bursts;
         py::list descriptors;
-        for (const auto &[id, timing] : engine->descriptorTimings()) {
-            descriptors.append(py::dict("descriptor_id"_a=id,
+        for (const auto &[key, timing] : engine->descriptorTimings()) {
+            descriptors.append(py::dict("descriptor_id"_a=key.ordinal,
                 "first_ar_tick"_a=timing.first_ar_tick,
                 "first_aw_tick"_a=timing.first_aw_tick,
                 "first_w_tick"_a=timing.first_w_tick,

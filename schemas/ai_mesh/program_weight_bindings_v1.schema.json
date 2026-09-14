@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "program_weight_bindings_v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "model_weight_image_digest",
+    "programs",
+    "program_weight_registry_digest"
+  ],
+  "properties": {
+    "schema": {"const": "program_weight_bindings_v1"},
+    "version": {"const": 1},
+    "model_weight_image_digest": {"$ref": "#/$defs/hex64"},
+    "programs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/program"}
+    },
+    "program_weight_registry_digest": {"$ref": "#/$defs/hex64"}
+  },
+  "$defs": {
+    "hex64": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "u64Json": {
+      "anyOf": [
+        {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        {"type": "string", "pattern": "^0x[0-9a-f]{16}$"}
+      ]
+    },
+    "region": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["region_offset", "bytes", "resolved_content_digest"],
+      "properties": {
+        "region_offset": {"$ref": "#/$defs/u64Json"},
+        "bytes": {"type": "integer", "minimum": 1},
+        "resolved_content_digest": {"$ref": "#/$defs/hex64"}
+      }
+    },
+    "symbol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "symbol_id",
+        "weight_home_id",
+        "home_offset",
+        "bytes",
+        "flags",
+        "resolved_content_digest",
+        "read_only_alias_group",
+        "regions"
+      ],
+      "properties": {
+        "symbol_id": {"type": "integer", "minimum": 1},
+        "weight_home_id": {"type": "integer", "minimum": 1},
+        "home_offset": {"$ref": "#/$defs/u64Json"},
+        "bytes": {"type": "integer", "minimum": 1},
+        "flags": {"const": 0},
+        "resolved_content_digest": {"$ref": "#/$defs/hex64"},
+        "read_only_alias_group": {"type": "integer", "minimum": 1},
+        "regions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/region"}
+        }
+      }
+    },
+    "program": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "program_id",
+        "program_semantic_digest",
+        "symbols"
+      ],
+      "properties": {
+        "program_id": {"type": "integer", "minimum": 1},
+        "program_semantic_digest": {"$ref": "#/$defs/hex64"},
+        "symbols": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/symbol"}
+        }
+      }
+    }
+  }
+}

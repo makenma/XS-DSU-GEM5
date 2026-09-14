@@ -1,0 +1,496 @@
+{
+  "entries": [
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 0,
+      "topk_slot": 0,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 1,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 1
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 1,
+      "topk_slot": 1,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 1,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 1
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 2,
+      "topk_slot": 0,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 2,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 2
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 3,
+      "topk_slot": 1,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 2,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 2
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 0,
+      "topk_slot": 0,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 3,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 3
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 1,
+      "topk_slot": 1,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 3,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 3
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 2,
+      "topk_slot": 0,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 4,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 4
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 3,
+      "topk_slot": 1,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 4,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 4
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 0,
+      "topk_slot": 0,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 5,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 5
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 1,
+      "topk_slot": 1,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 5,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 5
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 2,
+      "topk_slot": 0,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 6,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 6
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 3,
+      "topk_slot": 1,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 6,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 6
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 0,
+      "topk_slot": 0,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 7,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 7
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 1,
+      "topk_slot": 1,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 7,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 7
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 2,
+      "topk_slot": 0,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 8,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 8
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 3,
+      "topk_slot": 1,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 8,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 8
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 0,
+      "topk_slot": 0,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 9,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 9
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 1,
+      "topk_slot": 1,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 9,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 9
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 2,
+      "topk_slot": 0,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 10,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 10
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 3,
+      "topk_slot": 1,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 10,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 10
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 0,
+      "topk_slot": 0,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 11,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 11
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 1,
+      "topk_slot": 1,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 11,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 11
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 2,
+      "topk_slot": 0,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 12,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 12
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 3,
+      "topk_slot": 1,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 12,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 12
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 0,
+      "topk_slot": 0,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 13,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 13
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 1,
+      "topk_slot": 1,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 13,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 13
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 2,
+      "topk_slot": 0,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 14,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 14
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 3,
+      "topk_slot": 1,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 14,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 14
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 0,
+      "topk_slot": 0,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 15,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 15
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 1,
+      "topk_slot": 1,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 15,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 15
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 2,
+      "topk_slot": 0,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 16,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 16
+      }
+    },
+    {
+      "layer_id": 1,
+      "logical_source_rank": 0,
+      "selected_expert_id": 3,
+      "topk_slot": 1,
+      "uid": {
+        "phase": 2,
+        "repair_round": 0,
+        "sequence_ordinal": 0,
+        "task_seq": 16,
+        "token_ordinal": 0,
+        "user_id": 1,
+        "workload_plan_item_id": 16
+      }
+    }
+  ],
+  "layers": [
+    {
+      "expert_count": 16,
+      "layer_id": 1,
+      "top_k": 2
+    }
+  ],
+  "mesh_program_digest": "129d34d57dca7917c08eb5e48c0294945165cd698c7296c5c4b31e54b942edc2",
+  "route_profile_digest": "a2ef36e4c24c89713529e56546a850cc6e3d1408cf28e0d0e9c98e3f529df009",
+  "schema": "moe_route_replay_v1",
+  "version": 1,
+  "workload_plan_digest": "0303030303030303030303030303030303030303030303030303030303030303"
+}

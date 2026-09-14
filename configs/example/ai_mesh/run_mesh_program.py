@@ -190,6 +190,27 @@ loader = MeshProgramLoader(
         for r in arch_manifest.regions
     ],
     region_tile_bytes=[region.get("tile_bytes", 0) for region in arch["regions"]],
+    sram_partition_kinds=[
+        partition.kind for partition in arch_manifest.sram_partitions
+    ],
+    sram_partition_bases=[
+        partition.base for partition in arch_manifest.sram_partitions
+    ],
+    sram_partition_bytes=[
+        partition.bytes for partition in arch_manifest.sram_partitions
+    ],
+    sram_partition_alignments=[
+        partition.alignment for partition in arch_manifest.sram_partitions
+    ],
+    sram_partition_metadata_entries=[
+        partition.metadata_entries
+        for partition in arch_manifest.sram_partitions
+    ],
+    sram_partition_max_pinned=[
+        partition.max_pinned_entries
+        for partition in arch_manifest.sram_partitions
+    ],
+    weight_cache_slot_bytes=arch_manifest.sram_weight_cache_slot_bytes,
 )
 
 dispatcher = MeshDispatcher(

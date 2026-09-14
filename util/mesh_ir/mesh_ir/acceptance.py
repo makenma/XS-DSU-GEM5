@@ -59,6 +59,8 @@ SCHEMA_DEFINITIONS = {
     "traffic_v1.schema.json": "traffic",
     "fatal_snapshot_v1.schema.json": "fatalSnapshot",
     "mandatory_results_v1.schema.json": "mandatoryResults",
+    "cache_state_replay.schema.json": "cacheStateReplay",
+    "cache_fill_traffic_report.schema.json": "cacheFillTraffic",
 }
 
 ARTIFACT_KINDS = (
@@ -925,12 +927,26 @@ def build_dma_traffic(
 ) -> dict:
     if isinstance(scale, bool) or not isinstance(scale, int) or scale <= 0:
         raise ContractError("traffic scale must be a positive integer")
-    expected_by_id = {row["descriptor_id"]: row for row in expected_rows}
-    actual_by_id = {row["descriptor_id"]: row for row in actual_rows}
+    def traffic_key(row):
+        return (
+            int(row.get("domain", 0)),
+            int(row.get("region_group_id", 0)),
+            int(row.get("region_id", 0)),
+            int(row["descriptor_id"]),
+        )
+
+    expected_by_id = {traffic_key(row): row for row in expected_rows}
+    actual_by_id = {traffic_key(row): row for row in actual_rows}
     if len(expected_by_id) != len(expected_rows):
         raise ContractError("duplicate expected traffic descriptor")
     if len(actual_by_id) != len(actual_rows):
         raise ContractError("duplicate actual traffic descriptor")
+    # Overlay-owned descriptors are reconciled against their materialized
+    # image by the Gate 5 runtime checks, not against the static program
+    # oracle; they stay in the artifact as a separate evidence block.
+    overlay_rows = [row for key, row in actual_by_id.items() if key[0] != 0]
+    actual_by_id = {key: row for key, row in actual_by_id.items()
+                    if key[0] == 0}
     ownership = []
     aggregates = {
         "NPU_LOCAL_MEMORY": [0, 0, 0, 0],
@@ -940,7 +956,7 @@ def build_dma_traffic(
     for descriptor_id in sorted(set(expected_by_id) | set(actual_by_id)):
         expected = expected_by_id.get(descriptor_id, {})
         actual = actual_by_id.get(descriptor_id, {})
-        kind = expected.get("kind")
+        kind = expected.get("kind", actual.get("dma_kind"))
         expected_bytes = int(expected.get("useful_bytes", 0)) * scale
         expected_packets = int(expected.get("bursts", 0)) * scale
         if kind in (mesh_abi.DMA_KIND.LOAD, mesh_abi.DMA_KIND.PREFETCH):
@@ -982,7 +998,10 @@ def build_dma_traffic(
         totals[3] += actual_packets
         ownership.append(
             {
-                "owner_key_wire": f"{descriptor_id:08x}",
+                "owner_key_wire": (
+                    f"{descriptor_id[0]:04x}{descriptor_id[1]:04x}"
+                    f"{descriptor_id[2]:04x}{descriptor_id[3]:08x}"
+                ),
                 "expected_bytes": expected_bytes,
                 "actual_bytes": actual_bytes,
             }
@@ -1002,6 +1021,20 @@ def build_dma_traffic(
                     "actual_packets": actual_packets,
                 }
             )
+    overlay_owners = [
+        {
+            "owner_key_wire": (
+                f"{traffic_key(row)[0]:04x}{traffic_key(row)[1]:04x}"
+                f"{traffic_key(row)[2]:04x}{traffic_key(row)[3]:08x}"
+            ),
+            "dma_kind": int(row.get("dma_kind", 0)),
+            "actual_bytes": int(row.get("read_bytes", 0))
+            + int(row.get("write_bytes", 0))
+            + int(row.get("p2p_bytes", 0))
+            + int(row.get("fill_bytes", 0)),
+        }
+        for row in overlay_rows
+    ]
     expected_projection, actual_projection = _traffic_projections(classes, ownership)
     oracle_digest = canonical_digest(expected_projection)
     actual_digest = canonical_digest(actual_projection)
@@ -1016,5 +1049,6 @@ def build_dma_traffic(
         "actual_digest": actual_digest,
         "classes": classes,
         "ownership": ownership,
+        "overlay_ownership": overlay_owners,
         "unattributed_bytes": 0,
     }
