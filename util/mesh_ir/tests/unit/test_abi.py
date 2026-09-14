@@ -120,8 +120,9 @@ MOE_RECORDS = {
 
 def test_dynamic_moe_abi_surface_is_frozen_by_contract():
     assert A.DYNAMIC_MOE_V1 == 0x1
-    assert A.KNOWN_FEATURE_MASK == 0x1
-    assert A.FEATURE_MIN_WRITER_MINOR == {"DYNAMIC_MOE_V1": 1}
+    assert A.KNOWN_FEATURE_MASK == (A.DYNAMIC_MOE_V1 | A.AGENT_SERVING_V1)
+    assert A.FEATURE_MIN_WRITER_MINOR == {
+        "DYNAMIC_MOE_V1": 1, "AGENT_SERVING_V1": 1}
     assert A.SECTION_TYPE.MOE_LAYER_SPECS == 0x4000
     assert A.SECTION_TYPE.MOE_EXPERT_SPECS == 0x4001
     assert A.SECTION_TYPE.MOE_DYNAMIC_REGIONS == 0x4002
@@ -328,6 +329,8 @@ def test_generated_enum_closed_sets_cover_every_enum():
         "moe_traffic_class", "moe_error_class", "weight_fill_failure_site",
         "cache_slot_state", "cache_residency_outcome",
         "cache_subscriber_state", "cache_obligation_state",
+        "agent_request_flags", "path_kind", "phase", "dma_fill_kind",
+        "agent_allocation_role", "agent_digest_source",
     }
     for enum_name, values in A.ENUM_CLOSED_SETS.items():
         mask = A.ENUM_MASKS[enum_name]

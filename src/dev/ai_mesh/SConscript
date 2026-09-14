@@ -27,6 +27,8 @@ Source('mesh_binary.cc')
 Source('mesh_splitter.cc')
 Source('mesh_ir_verifier.cc')
 Source('mesh_moe_verifier.cc')
+Source('mesh_serving_verifier.cc')
+Source('mesh_serving_projection.cc')
 Source('mesh_weight_tags.cc')
 Source('mesh_moe_rng.cc')
 Source('mesh_moe_overlay.cc')
@@ -81,6 +83,8 @@ GTest('mesh_binary.test',
       'mesh_binary.cc',
       'mesh_ir_verifier.cc',
       'mesh_moe_verifier.cc',
+      'mesh_serving_verifier.cc',
+      'mesh_serving_projection.cc',
       'mesh_weight_tags.cc',
       'mesh_moe_rng.cc',
       'mesh_moe_overlay.cc',

@@ -186,9 +186,12 @@ bool decodeMeshBinaryInto(const MeshBytes &image, DecodedProgram &out,
     uint64_t required_features = rdU64(base + 104);
     if ((required_features & ~kKnownFeatureMask) != 0)
         return fail("E_ABI_VERSION", "unknown required feature bits", error);
-    if (minor < kFeatureDynamicMoeV1MinWriterMinor &&
-        (required_features & kFeatureDynamicMoeV1) != 0)
-        return fail("E_ABI_VERSION", "feature bit below writer minor", error);
+    for (size_t i = 0; i < kFeatureCount; i++) {
+        const FeatureSpec &spec = kFeatureSpecs[i];
+        if (minor < spec.min_writer_minor && (required_features & spec.bit))
+            return fail("E_ABI_VERSION", "feature bit below writer minor",
+                        error);
+    }
     for (int i = 112; i < 128; i++)
         if (base[i] != 0)
             return fail("E_ABI_RESERVED", "header reserved must be zero", error);
@@ -209,6 +212,7 @@ bool decodeMeshBinaryInto(const MeshBytes &image, DecodedProgram &out,
     out.abi_minor = minor;
     out.required_features = required_features;
     out.has_moe_v1 = (required_features & kFeatureDynamicMoeV1) != 0;
+    out.has_serving_v1 = (required_features & kFeatureAgentServingV1) != 0;
 
     uint64_t dir_offset = rdU64(base + 24);
     uint32_t section_count = rdU32(base + 32);
@@ -414,6 +418,15 @@ bool decodeMeshBinaryInto(const MeshBytes &image, DecodedProgram &out,
         {kSectionTypeMOE_EXPERT_SPECS, kMoeExpertSpecsBytes},
         {kSectionTypeMOE_DYNAMIC_REGIONS, kMoeDynamicRegionsBytes},
         {kSectionTypeMOE_KERNEL_SPECS, kMoeKernelSpecsBytes},
+        {kSectionTypeAGENT_REQUEST_PROFILES, kAgentRequestProfilesBytes},
+        {kSectionTypeAGENT_INSTANCE_PROFILES, kAgentInstanceProfilesBytes},
+        {kSectionTypeAGENT_SOURCE_CORE_MAP, kAgentSourceCoreMapBytes},
+        {kSectionTypeAGENT_INSTANCE_MEMBER_BINDINGS,
+         kAgentInstanceMemberBindingsBytes},
+        {kSectionTypeAGENT_REQUEST_BINDING_REQUIREMENTS,
+         kAgentRequestBindingRequirementsBytes},
+        {kSectionTypeAGENT_PUBLISH_SURROGATE_BINDINGS,
+         kAgentPublishSurrogateBindingsBytes},
     };
     for (const auto &fixed : fixed_sections) {
         SectionEntry entry;
@@ -598,6 +611,44 @@ bool decodeMeshBinaryInto(const MeshBytes &image, DecodedProgram &out,
                 ok = mesh_abi::decodeMoeKernelSpec(r,
                                                    out.moe_kernel_specs.back(),
                                                    abi_error);
+                break;
+            }
+            case kSectionTypeAGENT_REQUEST_PROFILES: {
+                out.agent_request_profiles.emplace_back();
+                ok = mesh_abi::decodeAgentRequestProfile(
+                    r, out.agent_request_profiles.back(), abi_error);
+                break;
+            }
+            case kSectionTypeAGENT_INSTANCE_PROFILES: {
+                out.agent_instance_profiles.emplace_back();
+                ok = mesh_abi::decodeAgentInstanceProfile(
+                    r, out.agent_instance_profiles.back(), abi_error);
+                break;
+            }
+            case kSectionTypeAGENT_SOURCE_CORE_MAP: {
+                out.agent_source_core_map.emplace_back();
+                ok = mesh_abi::decodeAgentSourceCoreMap(
+                    r, out.agent_source_core_map.back(), abi_error);
+                break;
+            }
+            case kSectionTypeAGENT_INSTANCE_MEMBER_BINDINGS: {
+                out.agent_instance_member_bindings.emplace_back();
+                ok = mesh_abi::decodeAgentInstanceMemberBinding(
+                    r, out.agent_instance_member_bindings.back(), abi_error);
+                break;
+            }
+            case kSectionTypeAGENT_REQUEST_BINDING_REQUIREMENTS: {
+                out.agent_request_binding_requirements.emplace_back();
+                ok = mesh_abi::decodeAgentRequestBindingRequirement(
+                    r, out.agent_request_binding_requirements.back(),
+                    abi_error);
+                break;
+            }
+            case kSectionTypeAGENT_PUBLISH_SURROGATE_BINDINGS: {
+                out.agent_publish_surrogate_bindings.emplace_back();
+                ok = mesh_abi::decodeAgentPublishSurrogateBinding(
+                    r, out.agent_publish_surrogate_bindings.back(),
+                    abi_error);
                 break;
             }
             default:

@@ -17,6 +17,9 @@ features:
   DYNAMIC_MOE_V1:
     bit: 0
     min_writer_minor: 1
+  AGENT_SERVING_V1:
+    bit: 1
+    min_writer_minor: 1
 
 conditional_required_sections:
   DYNAMIC_MOE_V1:
@@ -25,6 +28,16 @@ conditional_required_sections:
     - MOE_DYNAMIC_REGIONS
     - MOE_KERNEL_SPECS
     - CONTENT_DIGESTS
+  AGENT_SERVING_V1:
+    - AGENT_REQUEST_PROFILES
+    - AGENT_INSTANCE_PROFILES
+    - AGENT_SOURCE_CORE_MAP
+    - AGENT_INSTANCE_MEMBER_BINDINGS
+    - AGENT_REQUEST_BINDING_REQUIREMENTS
+    - AGENT_PUBLISH_SURROGATE_BINDINGS
+
+constants:
+  DMA_FILL_RUNTIME_BOUND_SENTINEL: 0x52554e54494d4531
 
 enums:
   section_type:
@@ -50,6 +63,12 @@ enums:
     MOE_EXPERT_SPECS: 16385
     MOE_DYNAMIC_REGIONS: 16386
     MOE_KERNEL_SPECS: 16387
+    AGENT_REQUEST_PROFILES: 16388
+    AGENT_INSTANCE_PROFILES: 16389
+    AGENT_SOURCE_CORE_MAP: 16390
+    AGENT_INSTANCE_MEMBER_BINDINGS: 16391
+    AGENT_REQUEST_BINDING_REQUIREMENTS: 16392
+    AGENT_PUBLISH_SURROGATE_BINDINGS: 16393
   required_sections:
     - STRINGS
     - ENTRYPOINTS
@@ -378,6 +397,24 @@ enums:
     IS_LOCAL_CONTROL: 2
   tensor_flags:
     HAS_CONTENT_SHA256: 1
+  agent_request_flags:
+    HAS_KV: 1
+  path_kind:
+    INITIAL_PREFILL: 0
+    KV_REUSE: 1
+    REPREFILL: 2
+  phase:
+    PREFILL: 1
+    DECODE: 2
+    PUBLISH: 3
+  dma_fill_kind:
+    CONSTANT_PATTERN: 0
+    AGENT_OUTPUT_SURROGATE: 1
+  agent_allocation_role:
+    NONE: 0
+    PUBLISH_SURROGATE_SOURCE: 1
+  agent_digest_source:
+    REQUEST_SEMANTIC_OUTPUT_DIGEST: 0
 
 header:
   bytes: 128
@@ -739,6 +776,93 @@ records:
       - {name: combine_flush_cycles, type: u32, offset: 76}
       - {name: flags, type: u32, offset: 80}
       - {name: reserved1, type: u32, offset: 84, const_zero: true}
+  AGENT_REQUEST_PROFILES:
+    bytes: 96
+    fields:
+      - {name: program_id, type: u16, offset: 0}
+      - {name: profile_id, type: u16, offset: 2}
+      - {name: flags, type: u16, offset: 4, enum: agent_request_flags, flags: true}
+      - {name: reserved0, type: u16, offset: 6, const_zero: true}
+      - {name: requested_profile_key, type: u64, offset: 8}
+      - {name: delta_input_tokens, type: u32, offset: 16}
+      - {name: full_input_tokens, type: u32, offset: 20}
+      - {name: expected_cached_tokens, type: u32, offset: 24}
+      - {name: output_tokens, type: u32, offset: 28}
+      - {name: input_binding_bytes, type: u64, offset: 32}
+      - {name: delta_input_dma_bytes, type: u64, offset: 40}
+      - {name: full_input_dma_bytes, type: u64, offset: 48}
+      - {name: host_output_bytes, type: u64, offset: 56}
+      - {name: primary_input_symbol_id, type: u32, offset: 64}
+      - {name: primary_output_symbol_id, type: u32, offset: 68}
+      - {name: primary_kv_symbol_id, type: u32, offset: 72}
+      - {name: source_rank_count, type: u32, offset: 76}
+      - {name: source_core_map_begin, type: u32, offset: 80}
+      - {name: path_mask, type: u32, offset: 84}
+      - {name: kv_bytes_per_token, type: u32, offset: 88}
+      - {name: publish_chunk_bytes, type: u32, offset: 92}
+  AGENT_INSTANCE_PROFILES:
+    bytes: 96
+    fields:
+      - {name: instance_profile_id, type: u32, offset: 0}
+      - {name: request_program_id, type: u16, offset: 4}
+      - {name: request_profile_id, type: u16, offset: 6}
+      - {name: path_kind, type: u16, offset: 8, enum: path_kind}
+      - {name: phase, type: u16, offset: 10, enum: phase}
+      - {name: member_count, type: u16, offset: 12}
+      - {name: decode_chunk_tokens, type: u16, offset: 14}
+      - {name: mesh_entrypoint_id, type: u32, offset: 16}
+      - {name: mesh_profile_id, type: u32, offset: 20}
+      - {name: valid_tokens_per_member, type: u32, offset: 24}
+      - {name: kv_tokens_before, type: u32, offset: 28}
+      - {name: local_padded_members, type: u32, offset: 32}
+      - {name: local_padded_tokens_per_member, type: u32, offset: 36}
+      - {name: primary_input_symbol_id, type: u32, offset: 40}
+      - {name: primary_output_symbol_id, type: u32, offset: 44}
+      - {name: primary_kv_symbol_id, type: u32, offset: 48}
+      - {name: flags, type: u32, offset: 52, const: 0}
+      - {name: member_binding_first, type: u32, offset: 56}
+      - {name: member_binding_count, type: u32, offset: 60}
+      - {name: host_input_dma_bytes_per_member, type: u64, offset: 64}
+      - {name: host_output_dma_bytes_per_member, type: u64, offset: 72}
+      - {name: kv_read_bytes_per_member, type: u64, offset: 80}
+      - {name: kv_write_bytes_per_member, type: u64, offset: 88}
+  AGENT_SOURCE_CORE_MAP:
+    bytes: 4
+    fields:
+      - {name: core_id, type: u16, offset: 0}
+      - {name: reserved, type: u16, offset: 2, const_zero: true}
+  AGENT_INSTANCE_MEMBER_BINDINGS:
+    bytes: 24
+    fields:
+      - {name: instance_profile_id, type: u32, offset: 0}
+      - {name: member_ordinal, type: u16, offset: 4}
+      - {name: reserved0, type: u16, offset: 6, const_zero: true}
+      - {name: static_input_symbol_id, type: u32, offset: 8}
+      - {name: static_output_symbol_id, type: u32, offset: 12}
+      - {name: static_kv_symbol_id, type: u32, offset: 16}
+      - {name: expected_logical_source_rank, type: u32, offset: 20}
+  AGENT_REQUEST_BINDING_REQUIREMENTS:
+    bytes: 16
+    fields:
+      - {name: request_program_id, type: u16, offset: 0}
+      - {name: request_profile_id, type: u16, offset: 2}
+      - {name: binding_kind, type: u16, offset: 4}
+      - {name: binding_flags, type: u16, offset: 6}
+      - {name: symbol_id, type: u32, offset: 8}
+      - {name: reserved, type: u32, offset: 12, const_zero: true}
+  AGENT_PUBLISH_SURROGATE_BINDINGS:
+    bytes: 28
+    fields:
+      - {name: instance_profile_id, type: u32, offset: 0}
+      - {name: member_ordinal, type: u16, offset: 4}
+      - {name: reserved0, type: u16, offset: 6, const_zero: true}
+      - {name: allocation_id, type: u32, offset: 8}
+      - {name: producer_command_id, type: u32, offset: 12}
+      - {name: completion_event_id, type: u32, offset: 16}
+      - {name: fill_kind, type: u16, offset: 20, enum: dma_fill_kind}
+      - {name: allocation_role, type: u16, offset: 22, enum: agent_allocation_role}
+      - {name: digest_source, type: u16, offset: 24, enum: agent_digest_source}
+      - {name: reserved1, type: u16, offset: 26, const_zero: true}
 blob_sections:
   STRINGS:
     directory_record_bytes: 8

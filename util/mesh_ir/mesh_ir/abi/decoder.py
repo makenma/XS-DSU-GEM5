@@ -14,6 +14,12 @@ from mesh_ir.abi.rules import check_payload_rules, check_record_rules
 from mesh_ir.generated import abi as A
 from mesh_ir.model import (
     RECORD_CLASSES,
+    AgentInstanceMemberBinding,
+    AgentInstanceProfile,
+    AgentPublishSurrogateBinding,
+    AgentRequestBindingRequirement,
+    AgentRequestProfile,
+    AgentSourceCoreMap,
     Allocation,
     Command,
     CommandOperand,
@@ -48,7 +54,11 @@ SECTION_RECORD_BYTES = {
                  "EVENTS", "DMA_DESCRIPTORS", "OP_ATTRS", "RELOCATIONS",
                  "EXPECTED_TRAFFIC", "SOURCE_MAP", "CONTENT_DIGESTS",
                  "MOE_LAYER_SPECS", "MOE_EXPERT_SPECS", "MOE_DYNAMIC_REGIONS",
-                 "MOE_KERNEL_SPECS")
+                 "MOE_KERNEL_SPECS", "AGENT_REQUEST_PROFILES",
+                 "AGENT_INSTANCE_PROFILES", "AGENT_SOURCE_CORE_MAP",
+                 "AGENT_INSTANCE_MEMBER_BINDINGS",
+                 "AGENT_REQUEST_BINDING_REQUIREMENTS",
+                 "AGENT_PUBLISH_SURROGATE_BINDINGS")
 }
 
 
@@ -92,10 +102,11 @@ def decode_header(data: bytes) -> dict:
     if features & ~A.KNOWN_FEATURE_MASK:
         raise MeshIrError("E_ABI_VERSION", "unknown required feature bits",
                           features=hex(features))
-    if (header["abi_minor"] < A.FEATURE_MIN_WRITER_MINOR["DYNAMIC_MOE_V1"]
-            and features & A.DYNAMIC_MOE_V1):
-        raise MeshIrError("E_ABI_VERSION", "feature bit below writer minor",
-                          minor=header["abi_minor"])
+    for name, bit in A.FEATURE_BITS.items():
+        if features & bit and header["abi_minor"] < \
+                A.FEATURE_MIN_WRITER_MINOR[name]:
+            raise MeshIrError("E_ABI_VERSION", "feature bit below writer minor",
+                              minor=header["abi_minor"], feature=name)
     if header["reserved"] != bytes(16):
         raise MeshIrError("E_ABI_RESERVED", "header reserved bytes must be zero")
     if header["file_bytes"] != len(data):
@@ -391,6 +402,22 @@ def decode_program(data: bytes) -> Program:
             check_record_rules(name, table)
             decoded[name] = table
 
+    if header["required_features"] & A.AGENT_SERVING_V1:
+        serving_sections = {
+            "AGENT_REQUEST_PROFILES": AgentRequestProfile,
+            "AGENT_INSTANCE_PROFILES": AgentInstanceProfile,
+            "AGENT_SOURCE_CORE_MAP": AgentSourceCoreMap,
+            "AGENT_INSTANCE_MEMBER_BINDINGS": AgentInstanceMemberBinding,
+            "AGENT_REQUEST_BINDING_REQUIREMENTS":
+                AgentRequestBindingRequirement,
+            "AGENT_PUBLISH_SURROGATE_BINDINGS": AgentPublishSurrogateBinding,
+        }
+        for name, cls in serving_sections.items():
+            entry, payload = records_of(name)
+            table = _unpack_table(name, payload, entry["count"], cls)
+            check_record_rules(name, table)
+            decoded[name] = table
+
     return Program(
         abi_major=header["abi_major"],
         abi_minor=header["abi_minor"],
@@ -416,4 +443,13 @@ def decode_program(data: bytes) -> Program:
         moe_expert_specs=decoded.get("MOE_EXPERT_SPECS", []),
         moe_dynamic_regions=decoded.get("MOE_DYNAMIC_REGIONS", []),
         moe_kernel_specs=decoded.get("MOE_KERNEL_SPECS", []),
+        agent_request_profiles=decoded.get("AGENT_REQUEST_PROFILES", []),
+        agent_instance_profiles=decoded.get("AGENT_INSTANCE_PROFILES", []),
+        agent_source_core_map=decoded.get("AGENT_SOURCE_CORE_MAP", []),
+        agent_instance_member_bindings=decoded.get(
+            "AGENT_INSTANCE_MEMBER_BINDINGS", []),
+        agent_request_binding_requirements=decoded.get(
+            "AGENT_REQUEST_BINDING_REQUIREMENTS", []),
+        agent_publish_surrogate_bindings=decoded.get(
+            "AGENT_PUBLISH_SURROGATE_BINDINGS", []),
     )

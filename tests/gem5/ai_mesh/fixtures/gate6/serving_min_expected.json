@@ -1,0 +1,197 @@
+{
+  "abi_major": 1,
+  "abi_minor": 2,
+  "agent_instance_member_bindings": [
+    {
+      "expected_logical_source_rank": 0,
+      "instance_profile_id": 11,
+      "member_ordinal": 0,
+      "reserved0": 0,
+      "static_input_symbol_id": 11,
+      "static_kv_symbol_id": 12,
+      "static_output_symbol_id": 0
+    },
+    {
+      "expected_logical_source_rank": 0,
+      "instance_profile_id": 12,
+      "member_ordinal": 0,
+      "reserved0": 0,
+      "static_input_symbol_id": 0,
+      "static_kv_symbol_id": 12,
+      "static_output_symbol_id": 0
+    },
+    {
+      "expected_logical_source_rank": 0,
+      "instance_profile_id": 13,
+      "member_ordinal": 0,
+      "reserved0": 0,
+      "static_input_symbol_id": 0,
+      "static_kv_symbol_id": 0,
+      "static_output_symbol_id": 13
+    }
+  ],
+  "agent_instance_profiles": [
+    {
+      "decode_chunk_tokens": 0,
+      "flags": 0,
+      "host_input_dma_bytes_per_member": 128,
+      "host_output_dma_bytes_per_member": 0,
+      "instance_profile_id": 11,
+      "kv_read_bytes_per_member": 0,
+      "kv_tokens_before": 0,
+      "kv_write_bytes_per_member": 128,
+      "local_padded_members": 0,
+      "local_padded_tokens_per_member": 0,
+      "member_binding_count": 1,
+      "member_binding_first": 0,
+      "member_count": 1,
+      "mesh_entrypoint_id": 1,
+      "mesh_profile_id": 1,
+      "path_kind": 0,
+      "phase": 1,
+      "primary_input_symbol_id": 5,
+      "primary_kv_symbol_id": 7,
+      "primary_output_symbol_id": 0,
+      "request_profile_id": 1,
+      "request_program_id": 1,
+      "valid_tokens_per_member": 8
+    },
+    {
+      "decode_chunk_tokens": 1,
+      "flags": 0,
+      "host_input_dma_bytes_per_member": 0,
+      "host_output_dma_bytes_per_member": 0,
+      "instance_profile_id": 12,
+      "kv_read_bytes_per_member": 128,
+      "kv_tokens_before": 8,
+      "kv_write_bytes_per_member": 16,
+      "local_padded_members": 0,
+      "local_padded_tokens_per_member": 0,
+      "member_binding_count": 1,
+      "member_binding_first": 1,
+      "member_count": 1,
+      "mesh_entrypoint_id": 1,
+      "mesh_profile_id": 2,
+      "path_kind": 0,
+      "phase": 2,
+      "primary_input_symbol_id": 0,
+      "primary_kv_symbol_id": 7,
+      "primary_output_symbol_id": 0,
+      "request_profile_id": 1,
+      "request_program_id": 1,
+      "valid_tokens_per_member": 1
+    },
+    {
+      "decode_chunk_tokens": 0,
+      "flags": 0,
+      "host_input_dma_bytes_per_member": 0,
+      "host_output_dma_bytes_per_member": 128,
+      "instance_profile_id": 13,
+      "kv_read_bytes_per_member": 0,
+      "kv_tokens_before": 9,
+      "kv_write_bytes_per_member": 0,
+      "local_padded_members": 0,
+      "local_padded_tokens_per_member": 0,
+      "member_binding_count": 1,
+      "member_binding_first": 2,
+      "member_count": 1,
+      "mesh_entrypoint_id": 1,
+      "mesh_profile_id": 3,
+      "path_kind": 0,
+      "phase": 3,
+      "primary_input_symbol_id": 0,
+      "primary_kv_symbol_id": 0,
+      "primary_output_symbol_id": 10,
+      "request_profile_id": 1,
+      "request_program_id": 1,
+      "valid_tokens_per_member": 0
+    }
+  ],
+  "agent_publish_surrogate_bindings": [
+    {
+      "allocation_id": 5,
+      "allocation_role": 1,
+      "completion_event_id": 8,
+      "digest_source": 0,
+      "fill_kind": 1,
+      "instance_profile_id": 13,
+      "member_ordinal": 0,
+      "producer_command_id": 8,
+      "reserved0": 0,
+      "reserved1": 0
+    }
+  ],
+  "agent_request_binding_requirements": [
+    {
+      "binding_flags": 1,
+      "binding_kind": 1,
+      "request_profile_id": 1,
+      "request_program_id": 1,
+      "reserved": 0,
+      "symbol_id": 5
+    },
+    {
+      "binding_flags": 5,
+      "binding_kind": 4,
+      "request_profile_id": 1,
+      "request_program_id": 1,
+      "reserved": 0,
+      "symbol_id": 6
+    },
+    {
+      "binding_flags": 15,
+      "binding_kind": 3,
+      "request_profile_id": 1,
+      "request_program_id": 1,
+      "reserved": 0,
+      "symbol_id": 7
+    },
+    {
+      "binding_flags": 2,
+      "binding_kind": 2,
+      "request_profile_id": 1,
+      "request_program_id": 1,
+      "reserved": 0,
+      "symbol_id": 10
+    }
+  ],
+  "agent_request_profiles": [
+    {
+      "delta_input_dma_bytes": 128,
+      "delta_input_tokens": 8,
+      "expected_cached_tokens": 0,
+      "flags": 1,
+      "full_input_dma_bytes": 128,
+      "full_input_tokens": 8,
+      "host_output_bytes": 128,
+      "input_binding_bytes": 128,
+      "kv_bytes_per_token": 16,
+      "output_tokens": 1,
+      "path_mask": 1,
+      "primary_input_symbol_id": 5,
+      "primary_kv_symbol_id": 7,
+      "primary_output_symbol_id": 10,
+      "profile_id": 1,
+      "program_id": 1,
+      "publish_chunk_bytes": 64,
+      "requested_profile_key": 15411086845258872506,
+      "reserved0": 0,
+      "source_core_map_begin": 0,
+      "source_rank_count": 1
+    }
+  ],
+  "agent_source_core_map": [
+    {
+      "core_id": 0,
+      "reserved": 0
+    }
+  ],
+  "capacity_required": {
+    "batch_interval_entries_per_context": 5,
+    "batch_weight_binding_entries_per_context": 1,
+    "instance_member_binding_entries_per_context": 2
+  },
+  "profile_key_base_digest": "6abbcef487aebebdfe977d712ccdc911c95cb1365a2833686b0dcf1cbf079a67",
+  "required_features": 2,
+  "semantic_sha256": "72d5d7548d44aa96b82dd06c1bfdd941e65dfe527cd6aebcae32345c636104a5"
+}

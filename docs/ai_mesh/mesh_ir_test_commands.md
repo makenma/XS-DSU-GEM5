@@ -367,6 +367,38 @@ Runtime evidence comes from `MeshDispatcher::writeConservationJson` and
 `util/mesh_ir/tests/unit/test_read_outstanding_config.py`, and
 `util/mesh_ir/tests/integration/test_axi_outstanding_runtime.py`.
 
+## Gate 6 Agent serving V1 (R1)
+
+feature bit、六个 conditional-required section 与六个 record 布局由
+[mesh_ir_abi.yaml](../../util/mesh_ir/mesh_ir/abi/mesh_ir_abi.yaml) 单点定义，
+见上文 "ABI schema SSOT"；profile key 双 projection、语义 fixture 与
+PUBLISH surrogate DAG 在 `mesh_ir.serving_profiles` / `mesh_ir.serving_programs`：
+
+```bash
+python3 util/mesh_ir/mesh_ir/abi/generate_abi.py --check
+python3 -m pytest util/mesh_ir/tests/unit/test_serving_abi.py \
+    util/mesh_ir/tests/unit/test_serving_profile.py -q
+python3 tests/gem5/ai_mesh/fixtures/gate6/build_gate6_serving_images.py
+scons build/AXI_MESH/dev/ai_mesh/mesh_binary.test.opt -j8
+./build/AXI_MESH/dev/ai_mesh/mesh_binary.test.opt \
+    --gtest_filter='MeshBinaryServingTest.*:MeshBinaryFullViewTest.*' \
+    --gtest_color=no
+```
+
+仓内跨语言 golden 为 `tests/gem5/ai_mesh/fixtures/gate6/` 下的
+`serving_min.mshb`（三 phase 单成员）与 `serving_fullview.mshb`（同核 `[0,0]`
+独立 view 双成员，含独立 fill allocation 与 wait 链）及各自
+`*_expected.json`；Python reader 与 C++ `MeshBinaryServingTest` /
+`MeshBinaryFullViewTest` 解码同一映像并逐项比对，篡改负例各自断言固定 detail code。exact selector、
+path closure、Host/KV interval oracle 与 serving capacity 派生
+（`mesh_ir.serving_profiles`，C++ 镜像 `verifyPathClosure`/`verifyMemberIo`/
+`servingCapacityRequired`）在两侧同时执行；canonical semantic projection 与
+profile key 由 `mesh_serving_projection.{hh,cc}` 在 C++ 重算（与 Python
+`canonical_json_bytes` 逐 bit 相同）；
+`verify_program(keyed_serving_program(arch), arch)` 是 R1 的 fail-closed 出口；
+负例经 `mesh_ir.serving_profiles.capture_preflight` 记录失败阶段、固定
+detail/disposition、`admitted=False` 与零副作用账本。
+
 ## Gate 5 Dynamic MoE V1
 
 ABI surface（feature bit、四个 conditional-required section、record 布局）由

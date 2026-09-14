@@ -59,6 +59,15 @@ ERROR_CODES = (
     "E_MOE_MATERIALIZE_CAPACITY",
     "E_MOE_DISPATCH_BYTES",
     "E_MOE_COMBINE_BYTES",
+    "E_REQUEST_PROFILE",
+    "E_REQUEST_PROFILE_KEY",
+    "E_BINDING_ROLE",
+    "E_HOST_IO_SIZE_MISMATCH",
+    "E_OUTPUT_CHUNK_MISMATCH",
+    "E_KV_TOKEN_MISMATCH",
+    "E_KV_CONTRACT_MISMATCH",
+    "E_KV_FLAG_COMBINATION",
+    "E_AGENT_PROTOCOL_FATAL",
 )
 
 
@@ -468,6 +477,99 @@ class MoeKernelSpec:
 
 
 @dataclass
+class AgentRequestProfile:
+    program_id: int
+    profile_id: int
+    flags: int
+    reserved0: int
+    requested_profile_key: int
+    delta_input_tokens: int
+    full_input_tokens: int
+    expected_cached_tokens: int
+    output_tokens: int
+    input_binding_bytes: int
+    delta_input_dma_bytes: int
+    full_input_dma_bytes: int
+    host_output_bytes: int
+    primary_input_symbol_id: int
+    primary_output_symbol_id: int
+    primary_kv_symbol_id: int
+    source_rank_count: int
+    source_core_map_begin: int
+    path_mask: int
+    kv_bytes_per_token: int
+    publish_chunk_bytes: int
+
+
+@dataclass
+class AgentInstanceProfile:
+    instance_profile_id: int
+    request_program_id: int
+    request_profile_id: int
+    path_kind: int
+    phase: int
+    member_count: int
+    decode_chunk_tokens: int
+    mesh_entrypoint_id: int
+    mesh_profile_id: int
+    valid_tokens_per_member: int
+    kv_tokens_before: int
+    local_padded_members: int
+    local_padded_tokens_per_member: int
+    primary_input_symbol_id: int
+    primary_output_symbol_id: int
+    primary_kv_symbol_id: int
+    flags: int
+    member_binding_first: int
+    member_binding_count: int
+    host_input_dma_bytes_per_member: int
+    host_output_dma_bytes_per_member: int
+    kv_read_bytes_per_member: int
+    kv_write_bytes_per_member: int
+
+
+@dataclass
+class AgentSourceCoreMap:
+    core_id: int
+    reserved: int = 0
+
+
+@dataclass
+class AgentInstanceMemberBinding:
+    instance_profile_id: int
+    member_ordinal: int
+    reserved0: int
+    static_input_symbol_id: int
+    static_output_symbol_id: int
+    static_kv_symbol_id: int
+    expected_logical_source_rank: int
+
+
+@dataclass
+class AgentRequestBindingRequirement:
+    request_program_id: int
+    request_profile_id: int
+    binding_kind: int
+    binding_flags: int
+    symbol_id: int
+    reserved: int = 0
+
+
+@dataclass
+class AgentPublishSurrogateBinding:
+    instance_profile_id: int
+    member_ordinal: int
+    reserved0: int
+    allocation_id: int
+    producer_command_id: int
+    completion_event_id: int
+    fill_kind: int
+    allocation_role: int
+    digest_source: int
+    reserved1: int = 0
+
+
+@dataclass
 class Program:
     abi_major: int
     abi_minor: int
@@ -493,6 +595,12 @@ class Program:
     moe_dynamic_regions: list = field(default_factory=list)
     moe_kernel_specs: list = field(default_factory=list)
     content_digests: list = field(default_factory=list)
+    agent_request_profiles: list = field(default_factory=list)
+    agent_instance_profiles: list = field(default_factory=list)
+    agent_source_core_map: list = field(default_factory=list)
+    agent_instance_member_bindings: list = field(default_factory=list)
+    agent_request_binding_requirements: list = field(default_factory=list)
+    agent_publish_surrogate_bindings: list = field(default_factory=list)
 
     def canonical_dict(self) -> dict:
         abi = {"major": self.abi_major, "minor": self.abi_minor}
@@ -515,6 +623,7 @@ class Program:
         }
         if self.required_features:
             abi["required_features"] = self.required_features
+        if self.required_features & A.DYNAMIC_MOE_V1:
             sections["CONTENT_DIGESTS"] = [
                 canonical(rec) for rec in self.content_digests]
             sections["MOE_LAYER_SPECS"] = [
@@ -525,6 +634,19 @@ class Program:
                 canonical(rec) for rec in self.moe_dynamic_regions]
             sections["MOE_KERNEL_SPECS"] = [
                 canonical(rec) for rec in self.moe_kernel_specs]
+        if self.required_features & A.AGENT_SERVING_V1:
+            sections["AGENT_REQUEST_PROFILES"] = [
+                canonical(rec) for rec in self.agent_request_profiles]
+            sections["AGENT_INSTANCE_PROFILES"] = [
+                canonical(rec) for rec in self.agent_instance_profiles]
+            sections["AGENT_SOURCE_CORE_MAP"] = [
+                canonical(rec) for rec in self.agent_source_core_map]
+            sections["AGENT_INSTANCE_MEMBER_BINDINGS"] = [
+                canonical(rec) for rec in self.agent_instance_member_bindings]
+            sections["AGENT_REQUEST_BINDING_REQUIREMENTS"] = [
+                canonical(rec) for rec in self.agent_request_binding_requirements]
+            sections["AGENT_PUBLISH_SURROGATE_BINDINGS"] = [
+                canonical(rec) for rec in self.agent_publish_surrogate_bindings]
         return {"abi": abi, "arch_digest": self.arch_digest.hex(),
                 "sections": sections}
 
@@ -589,6 +711,12 @@ RECORD_CLASSES = {
     "MOE_EXPERT_SPECS": MoeExpertSpec,
     "MOE_DYNAMIC_REGIONS": MoeDynamicRegion,
     "MOE_KERNEL_SPECS": MoeKernelSpec,
+    "AGENT_REQUEST_PROFILES": AgentRequestProfile,
+    "AGENT_INSTANCE_PROFILES": AgentInstanceProfile,
+    "AGENT_SOURCE_CORE_MAP": AgentSourceCoreMap,
+    "AGENT_INSTANCE_MEMBER_BINDINGS": AgentInstanceMemberBinding,
+    "AGENT_REQUEST_BINDING_REQUIREMENTS": AgentRequestBindingRequirement,
+    "AGENT_PUBLISH_SURROGATE_BINDINGS": AgentPublishSurrogateBinding,
 }
 
 

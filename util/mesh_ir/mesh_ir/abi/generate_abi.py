@@ -188,6 +188,10 @@ def render_python(schema: dict, sha: str) -> str:
     lines.append(f"MAGIC = {magic_le}")
     lines.append(f"HEADER_BYTES = {schema['header']['bytes']}")
     lines.append(f"SECTION_DIR_BYTES = {schema['section_dir']['bytes']}")
+    for name, value in schema.get("constants", {}).items():
+        if not isinstance(value, int) or value < 0:
+            raise ValueError(f"constant {name} must be a non-negative integer")
+        lines.append(f"{name} = {value}")
     lines.append("")
     features = schema.get("features", {})
     conditional_sections = schema.get("conditional_required_sections", {})
@@ -285,6 +289,219 @@ def cpp_scalar(field: dict) -> str:
     return CPP_TYPES[field["type"]]
 
 
+
+CPP_JSON_HELPERS = r'''inline void jsonNumber(std::string &out, uint64_t value)
+{
+    out += std::to_string(value);
+}
+inline void jsonNumberArray8(std::string &out, const uint64_t *values)
+{
+    out += '[';
+    for (size_t i = 0; i < 8; i++) {
+        if (i)
+            out += ',';
+        jsonNumber(out, values[i]);
+    }
+    out += ']';
+}
+inline void jsonHex(std::string &out, const uint8_t *data, size_t size)
+{
+    static const char digits[] = "0123456789abcdef";
+    out += '"';
+    for (size_t i = 0; i < size; i++) {
+        out += digits[data[i] >> 4];
+        out += digits[data[i] & 0xF];
+    }
+    out += '"';
+}
+inline void jsonString(std::string &out, const char *data, size_t size)
+{
+    static const char digits[] = "0123456789abcdef";
+    out += '"';
+    size_t i = 0;
+    while (i < size) {
+        const uint8_t byte = static_cast<uint8_t>(data[i]);
+        if (byte == '"') { out += "\\\""; i++; continue; }
+        if (byte == '\\') { out += "\\\\"; i++; continue; }
+        if (byte == 0x08) { out += "\\b"; i++; continue; }
+        if (byte == 0x0c) { out += "\\f"; i++; continue; }
+        if (byte == 0x0a) { out += "\\n"; i++; continue; }
+        if (byte == 0x0d) { out += "\\r"; i++; continue; }
+        if (byte == 0x09) { out += "\\t"; i++; continue; }
+        if (byte < 0x20) {
+            out += "\\u00";
+            out += digits[(byte >> 4) & 0xF];
+            out += digits[byte & 0xF];
+            i++;
+            continue;
+        }
+        if (byte < 0x80) {
+            out += static_cast<char>(byte);
+            i++;
+            continue;
+        }
+        uint32_t code = 0;
+        size_t need = 0;
+        if ((byte & 0xE0) == 0xC0) { code = byte & 0x1F; need = 1; }
+        else if ((byte & 0xF0) == 0xE0) { code = byte & 0x0F; need = 2; }
+        else if ((byte & 0xF8) == 0xF0) { code = byte & 0x07; need = 3; }
+        else { out += "\\ufffd"; i++; continue; }
+        if (i + need >= size) { out += "\\ufffd"; i++; continue; }
+        for (size_t k = 1; k <= need; k++)
+            code = (code << 6) |
+                   (static_cast<uint8_t>(data[i + k]) & 0x3F);
+        i += need + 1;
+        if (code <= 0xFFFF) {
+            out += "\\u";
+            for (int shift = 12; shift >= 0; shift -= 4)
+                out += digits[(code >> shift) & 0xF];
+        } else {
+            const uint32_t value = code - 0x10000;
+            const uint32_t hi = 0xD800 + (value >> 10);
+            const uint32_t lo = 0xDC00 + (value & 0x3FF);
+            out += "\\u";
+            for (int shift = 12; shift >= 0; shift -= 4)
+                out += digits[(hi >> shift) & 0xF];
+            out += "\\u";
+            for (int shift = 12; shift >= 0; shift -= 4)
+                out += digits[(lo >> shift) & 0xF];
+        }
+    }
+    out += '"';
+}
+inline void wrU8(uint8_t *p, uint8_t value) { p[0] = value; }
+inline void wrU16(uint8_t *p, uint16_t value)
+{
+    p[0] = static_cast<uint8_t>(value);
+    p[1] = static_cast<uint8_t>(value >> 8);
+}
+inline void wrU32(uint8_t *p, uint32_t value)
+{
+    for (int i = 0; i < 4; i++)
+        p[i] = static_cast<uint8_t>(value >> (8 * i));
+}
+inline void wrU64(uint8_t *p, uint64_t value)
+{
+    for (int i = 0; i < 8; i++)
+        p[i] = static_cast<uint8_t>(value >> (8 * i));
+}
+'''
+
+
+def _json_expr(field: dict, receiver: str) -> str:
+    name = field["name"]
+    ftype = field["type"]
+    if ftype in SCALAR_BYTES:
+        return f"jsonNumber(out, {receiver}.{name});"
+    if ftype == "u64x8":
+        return f"jsonNumberArray8(out, {receiver}.{name}.data());"
+    if ftype.startswith("bytes"):
+        size = VECTOR_TYPES[ftype]
+        return f"jsonHex(out, {receiver}.{name}.data(), {size});"
+    if ftype == "record_ref":
+        return f"json{cpp_name(field['ref'])}({receiver}.{name}, out);"
+    raise ValueError(ftype)
+
+
+def emit_cpp_json(schema: dict) -> list:
+    out = ["", CPP_JSON_HELPERS, ""]
+    for record_name, record in schema["records"].items():
+        struct = cpp_name(record_name)
+        out.append(f"inline void json{struct}(const {struct} &r, "
+                   "std::string &out);")
+    for payload_name in schema["attr_payloads"]:
+        struct = cpp_name(payload_name)
+        out.append(f"inline void json{struct}(const {struct} &p, "
+                   "uint16_t kind, std::string &out);")
+    for record_name, record in schema["records"].items():
+        struct = cpp_name(record_name)
+        out.append(f"inline void write{struct}(uint8_t *p, "
+                   f"const {struct} &r);")
+    out.append("")
+    for record_name, record in schema["records"].items():
+        struct = cpp_name(record_name)
+        out.append(f"inline void json{struct}(const {struct} &r, "
+                   "std::string &out)")
+        out.append("{")
+        out.append("    out += '{';")
+        fields = sorted(record["fields"], key=lambda field: field["name"])
+        for index, field in enumerate(fields):
+            if index:
+                out.append("    out += ',';")
+            out.append(f"    out += \"\\\"{field['name']}\\\":\";")
+            out.append("    " + _json_expr(field, "r"))
+        out.append("    out += '}';")
+        out.append("}")
+        out.append("")
+    for record_name, record in schema["records"].items():
+        struct = cpp_name(record_name)
+        out.append(f"inline void write{struct}(uint8_t *p, const {struct} &r)")
+        out.append("{")
+        for field in record["fields"]:
+            offset = field["offset"]
+            name = field["name"]
+            ftype = field["type"]
+            if ftype in SCALAR_BYTES:
+                width = ftype[1:].upper()
+                out.append(f"    wrU{width}(p + {offset}, r.{name});")
+            elif ftype == "u64x8":
+                out.append(f"    for (size_t i = 0; i < 8; i++) "
+                           f"wrU64(p + {offset} + i * 8, r.{name}[i]);")
+            elif ftype.startswith("bytes"):
+                out.append(f"    std::memcpy(p + {offset}, r.{name}.data(), "
+                           f"{VECTOR_TYPES[ftype]});")
+            elif ftype == "record_ref":
+                out.append(f"    write{cpp_name(field['ref'])}(p + {offset}, "
+                           f"r.{name});")
+            else:
+                raise ValueError(ftype)
+        out.append("}")
+        out.append("")
+    return out
+
+
+def emit_cpp_payload_json(schema: dict) -> list:
+    out = []
+    for payload_name, payload in schema["attr_payloads"].items():
+        struct = cpp_name(payload_name)
+        entries = [(field["name"], field) for field in payload["fields"]]
+        entries.append(("kind", None))
+        entries.sort(key=lambda item: item[0])
+        out.append(f"inline void json{struct}(const {struct} &p, "
+                   "uint16_t kind, std::string &out)")
+        out.append("{")
+        out.append("    out += '{';")
+        for index, (name, field) in enumerate(entries):
+            if index:
+                out.append("    out += ',';")
+            out.append(f"    out += \"\\\"{name}\\\":\";")
+            if field is None:
+                out.append("    jsonNumber(out, kind);")
+            else:
+                out.append("    " + _json_expr(field, "p"))
+        out.append("    out += '}';")
+        out.append("}")
+        out.append("")
+    out.append("inline void jsonAttrPayload(uint16_t kind,")
+    out.append("                           const AttrPayload &payload,")
+    out.append("                           std::string &out)")
+    out.append("{")
+    out.append("    switch (kind) {")
+    for payload_name in schema["attr_payloads"]:
+        struct = cpp_name(payload_name)
+        out.append(f"    case kAttrKind{payload_name}:")
+        out.append(f"        json{struct}(std::get<{struct}>(payload), kind, "
+                   "out);")
+        out.append("        break;")
+    out.append("    default:")
+    out.append("        out += \"null\";")
+    out.append("        break;")
+    out.append("    }")
+    out.append("}")
+    out.append("")
+    return out
+
+
 def render_cpp(schema: dict, sha: str) -> str:
     guard = "GEM5_DEV_AI_MESH_GENERATED_MESH_IR_ABI_HH"
     out = []
@@ -299,6 +516,7 @@ def render_cpp(schema: dict, sha: str) -> str:
             "#include <array>",
             "#include <cstdint>",
             "#include <cstring>",
+            "#include <string>",
             "#include <variant>",
             "",
             "namespace gem5",
@@ -318,6 +536,11 @@ def render_cpp(schema: dict, sha: str) -> str:
     out.append(f"constexpr uint64_t kMagic = 0x{magic_le:016x}ull;")
     out.append(f"constexpr uint32_t kHeaderBytes = {schema['header']['bytes']};")
     out.append(f"constexpr uint32_t kSectionDirBytes = {schema['section_dir']['bytes']};")
+    for name, value in schema.get("constants", {}).items():
+        if not isinstance(value, int) or value < 0:
+            raise ValueError(f"constant {name} must be a non-negative integer")
+        cpp_const = "k" + "".join(part.capitalize() for part in name.split("_"))
+        out.append(f"constexpr uint64_t {cpp_const} = {value:#x}ull;")
     out.append("")
     out.append("enum class Feature : uint64_t")
     out.append("{")
@@ -334,6 +557,20 @@ def render_cpp(schema: dict, sha: str) -> str:
                    f"MinWriterMinor = {spec['min_writer_minor']};")
     known_mask = sum(1 << spec["bit"] for spec in feature_specs.values())
     out.append(f"constexpr uint64_t kKnownFeatureMask = {known_mask:#x}ull;")
+    out.append("")
+    out.append("struct FeatureSpec")
+    out.append("{")
+    out.append("    uint64_t bit;")
+    out.append("    uint16_t min_writer_minor;")
+    out.append("};")
+    out.append("constexpr FeatureSpec kFeatureSpecs[] = {")
+    for feature_name, spec in feature_specs.items():
+        cpp_feature = feature_cpp_name(feature_name)
+        out.append(f"    {{kFeature{cpp_feature}, "
+                   f"kFeature{cpp_feature}MinWriterMinor}},")
+    out.append("};")
+    out.append("constexpr size_t kFeatureCount = "
+               f"{len(feature_specs)};")
     out.append("")
     for enum_name, values in schema["enums"].items():
         if enum_name == "opcode_engine_map":
@@ -567,6 +804,8 @@ def render_cpp(schema: dict, sha: str) -> str:
         emit_decoder(f"decode{cpp_name(payload_name)}", cpp_name(payload_name),
                      payload_name, payload["fields"], out)
 
+    out.extend(emit_cpp_json(schema))
+
     variant_members = ", ".join(cpp_name(name) for name in schema["attr_payloads"])
     out.extend(
         [
@@ -609,6 +848,7 @@ def render_cpp(schema: dict, sha: str) -> str:
             "",
         ]
     )
+    out.extend(emit_cpp_payload_json(schema))
     out.extend(
         [
             "static_assert(kHeaderBytes == 128, \"header size fixed by spec\");",

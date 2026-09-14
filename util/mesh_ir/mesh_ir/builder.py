@@ -323,6 +323,19 @@ class ProgramBuilder:
         )
         return entrypoint_id
 
+    def profile(self, entrypoint_id: int, name: str, rank: int = 0) -> int:
+        entrypoint = self.entrypoints[entrypoint_id - 1]
+        self.profiles.append(
+            Profile(
+                profile_id=len(self.profiles) + 1,
+                entrypoint_id=entrypoint_id,
+                name_sid=self.string(name),
+                rank=rank,
+            )
+        )
+        entrypoint.profile_count += 1
+        return len(self.profiles)
+
     def tensor(self, name, role, dtype, storage_class, access, dims, placement_id=0, sharding_id=0) -> int:
         rank = len(dims)
         assert 1 <= rank <= 8

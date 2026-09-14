@@ -11,10 +11,13 @@
 #include "dev/ai_mesh/generated/gate5_overlay_golden.inc"
 #include "dev/ai_mesh/generated/gate5_rng_golden.inc"
 #include "dev/ai_mesh/generated/gate5_weight_golden.inc"
+#include "dev/ai_mesh/generated/agent_protocol_abi.hh"
 #include "dev/ai_mesh/generated/golden_mshb.inc"
 #include "dev/ai_mesh/generated/mesh_ir_abi.hh"
 #include "dev/ai_mesh/mesh_binary.hh"
 #include "dev/ai_mesh/mesh_ir_verifier.hh"
+#include "dev/ai_mesh/mesh_serving_projection.hh"
+#include "dev/ai_mesh/mesh_serving_verifier.hh"
 #include "dev/ai_mesh/mesh_moe_gate.hh"
 #include "dev/ai_mesh/mesh_moe_overlay.hh"
 #include "dev/ai_mesh/mesh_weight_cache.hh"
@@ -144,25 +147,54 @@ TEST(MeshBinaryTest, HeaderLayoutMatchesSpec)
     static_assert(kMoeExpertSpecsBytes == 40);
     static_assert(kMoeDynamicRegionsBytes == 72);
     static_assert(kMoeKernelSpecsBytes == 88);
+    static_assert(kAgentRequestProfilesBytes == 96);
+    static_assert(kAgentInstanceProfilesBytes == 96);
+    static_assert(kAgentSourceCoreMapBytes == 4);
+    static_assert(kAgentInstanceMemberBindingsBytes == 24);
+    static_assert(kAgentRequestBindingRequirementsBytes == 16);
+    static_assert(kAgentPublishSurrogateBindingsBytes == 28);
     EXPECT_EQ(kMagic, 0x010000004248534Dull);
     EXPECT_EQ(kFeatureDynamicMoeV1, 0x1ull);
-    EXPECT_EQ(kKnownFeatureMask, 0x1ull);
+    EXPECT_EQ(kFeatureAgentServingV1, 0x2ull);
+    EXPECT_EQ(kKnownFeatureMask, 0x3ull);
     EXPECT_EQ(kFeatureDynamicMoeV1MinWriterMinor, 1);
+    EXPECT_EQ(kFeatureAgentServingV1MinWriterMinor, 1);
+    EXPECT_EQ(kDmaFillRuntimeBoundSentinel, 0x52554e54494d4531ull);
     EXPECT_EQ(kSectionTypeMOE_LAYER_SPECS, 0x4000);
     EXPECT_EQ(kSectionTypeMOE_EXPERT_SPECS, 0x4001);
     EXPECT_EQ(kSectionTypeMOE_DYNAMIC_REGIONS, 0x4002);
     EXPECT_EQ(kSectionTypeMOE_KERNEL_SPECS, 0x4003);
+    EXPECT_EQ(kSectionTypeAGENT_REQUEST_PROFILES, 0x4004);
+    EXPECT_EQ(kSectionTypeAGENT_INSTANCE_PROFILES, 0x4005);
+    EXPECT_EQ(kSectionTypeAGENT_SOURCE_CORE_MAP, 0x4006);
+    EXPECT_EQ(kSectionTypeAGENT_INSTANCE_MEMBER_BINDINGS, 0x4007);
+    EXPECT_EQ(kSectionTypeAGENT_REQUEST_BINDING_REQUIREMENTS, 0x4008);
+    EXPECT_EQ(kSectionTypeAGENT_PUBLISH_SURROGATE_BINDINGS, 0x4009);
+    EXPECT_EQ(kPathKindINITIAL_PREFILL, 0);
+    EXPECT_EQ(kPathKindKV_REUSE, 1);
+    EXPECT_EQ(kPathKindREPREFILL, 2);
+    EXPECT_EQ(kPhasePREFILL, 1);
+    EXPECT_EQ(kPhaseDECODE, 2);
+    EXPECT_EQ(kPhasePUBLISH, 3);
     EXPECT_EQ(sectionRequiredFeature(kSectionTypeMOE_LAYER_SPECS),
               kFeatureDynamicMoeV1);
     EXPECT_EQ(sectionRequiredFeature(kSectionTypeCONTENT_DIGESTS),
               kFeatureDynamicMoeV1);
+    EXPECT_EQ(sectionRequiredFeature(kSectionTypeAGENT_REQUEST_PROFILES),
+              kFeatureAgentServingV1);
+    EXPECT_EQ(sectionRequiredFeature(kSectionTypeAGENT_PUBLISH_SURROGATE_BINDINGS),
+              kFeatureAgentServingV1);
     EXPECT_EQ(sectionRequiredFeature(kSectionTypeCOMMANDS), 0ull);
     EXPECT_FALSE(featureRequiresSection(0, kSectionTypeMOE_LAYER_SPECS));
     EXPECT_FALSE(featureRequiresSection(0, kSectionTypeCONTENT_DIGESTS));
+    EXPECT_FALSE(featureRequiresSection(kFeatureAgentServingV1,
+                                        kSectionTypeMOE_LAYER_SPECS));
     EXPECT_TRUE(featureRequiresSection(kFeatureDynamicMoeV1,
                                        kSectionTypeMOE_LAYER_SPECS));
     EXPECT_TRUE(featureRequiresSection(kFeatureDynamicMoeV1,
                                        kSectionTypeCONTENT_DIGESTS));
+    EXPECT_TRUE(featureRequiresSection(kFeatureAgentServingV1,
+                                       kSectionTypeAGENT_REQUEST_PROFILES));
     EXPECT_FALSE(featureRequiresSection(kFeatureDynamicMoeV1,
                                         kSectionTypeCOMMANDS));
 }
@@ -543,6 +575,29 @@ void writeField(MeshBytes &image, size_t offset, int width, uint64_t value)
         wr64(image, offset, value);
     }
 }
+
+void refreshServingChecksums(MeshBytes &image)
+{
+    using namespace mesh_abi;
+    recomputeMeshChecksums(image);
+    DecodedProgram program;
+    MeshLoadError error;
+    if (!decodeMeshBinary(image, program, error))
+        return;
+    const auto base = programProfileKeyBaseDigest(program);
+    const size_t section =
+        sectionOffset(image, kSectionTypeAGENT_REQUEST_PROFILES);
+    for (size_t i = 0; i < program.agent_request_profiles.size(); i++) {
+        const uint64_t key =
+            requestProfileKey(program.agent_request_profiles[i], base);
+        writeField(image,
+                   section + i * kAgentRequestProfilesBytes +
+                       kAgentRequestProfilesRequestedProfileKeyOffset,
+                   8, key);
+    }
+    recomputeMeshChecksums(image);
+}
+
 
 struct MoeViolation
 {
@@ -2734,6 +2789,421 @@ TEST(MoeOverlayRuntimeTest, ComputeEngineWindowScalesWithKernelCycles)
     EXPECT_EQ(executor.computeCyclesTotal(), 30u);
     EXPECT_EQ(executor.localReduceCommands(), 1u);
 }
+
+TEST(MeshBinaryServingTest, LoadsCrossLanguageServingFixture)
+{
+    using namespace mesh_abi;
+    const MeshBytes image =
+        loadFixture("tests/gem5/ai_mesh/fixtures/gate6/serving_min.mshb");
+    ASSERT_FALSE(image.empty());
+    DecodedProgram program;
+    MeshLoadError error;
+    ASSERT_TRUE(decodeMeshBinary(image, program, error))
+        << error.code << ": " << error.message;
+    EXPECT_EQ(program.abi_major, 1u);
+    EXPECT_EQ(program.abi_minor, 2u);
+    EXPECT_EQ(program.required_features, kFeatureAgentServingV1);
+    EXPECT_TRUE(program.has_serving_v1);
+    EXPECT_FALSE(program.has_moe_v1);
+    ASSERT_EQ(program.agent_request_profiles.size(), 1u);
+    ASSERT_EQ(program.agent_instance_profiles.size(), 3u);
+    ASSERT_EQ(program.agent_source_core_map.size(), 1u);
+    ASSERT_EQ(program.agent_instance_member_bindings.size(), 3u);
+    ASSERT_EQ(program.agent_request_binding_requirements.size(), 4u);
+    ASSERT_EQ(program.agent_publish_surrogate_bindings.size(), 1u);
+    const auto &request = program.agent_request_profiles[0];
+    EXPECT_EQ(request.program_id, 1u);
+    EXPECT_EQ(request.profile_id, 1u);
+    EXPECT_EQ(request.flags, kAgentRequestFlagsHAS_KV);
+    EXPECT_EQ(request.requested_profile_key, 0xd5df2dd59659b6baull);
+    EXPECT_EQ(request.path_mask, 0x1u);
+    EXPECT_EQ(request.publish_chunk_bytes, 64u);
+    const auto &prefill = program.agent_instance_profiles[0];
+    const auto &decode = program.agent_instance_profiles[1];
+    const auto &publish = program.agent_instance_profiles[2];
+    EXPECT_EQ(prefill.phase, kPhasePREFILL);
+    EXPECT_EQ(decode.phase, kPhaseDECODE);
+    EXPECT_EQ(publish.phase, kPhasePUBLISH);
+    EXPECT_EQ(prefill.decode_chunk_tokens, 0u);
+    EXPECT_EQ(decode.decode_chunk_tokens, 1u);
+    EXPECT_EQ(publish.host_input_dma_bytes_per_member, 0ull);
+    EXPECT_EQ(publish.host_output_dma_bytes_per_member, 128ull);
+    EXPECT_EQ(publish.kv_read_bytes_per_member, 0ull);
+    EXPECT_EQ(prefill.kv_write_bytes_per_member, 128ull);
+    const auto &binding = program.agent_publish_surrogate_bindings[0];
+    EXPECT_EQ(binding.fill_kind, kDmaFillKindAGENT_OUTPUT_SURROGATE);
+    EXPECT_EQ(binding.allocation_role,
+              kAgentAllocationRolePUBLISH_SURROGATE_SOURCE);
+    EXPECT_EQ(binding.digest_source,
+              kAgentDigestSourceREQUEST_SEMANTIC_OUTPUT_DIGEST);
+    RuntimeArch arch = testArch();
+    arch.arch_digest_hex = program.arch_digest_hex;
+    EXPECT_TRUE(verifyDecodedProgram(program, arch, error))
+        << error.code << ": " << error.message;
+    ServingCapacityRequirement required;
+    ASSERT_TRUE(servingCapacityRequired(program, required, error))
+        << error.code << ": " << error.message;
+    EXPECT_EQ(required.batch_weight_binding_entries, 1u);
+    EXPECT_EQ(required.instance_member_binding_entries, 2u);
+    EXPECT_EQ(required.batch_interval_entries, 5u);
+}
+
+std::string hexDigest(const std::array<uint8_t, 32> &digest)
+{
+    static const char digits[] = "0123456789abcdef";
+    std::string out;
+    for (uint8_t byte : digest) {
+        out += digits[byte >> 4];
+        out += digits[byte & 0xF];
+    }
+    return out;
+}
+
+TEST(MeshBinaryServingTest, ServingDetailCodesHaveFixedDispositions)
+{
+    using namespace ::gem5::ai_mesh::agent_abi;
+    const auto param = detailDispositionV1(E_BINDING_ROLE);
+    ASSERT_TRUE(param.has_value());
+    EXPECT_EQ(param->severity, DetailSeverityV1::REQUEST_RECOVERABLE);
+    EXPECT_EQ(param->cqStatus, static_cast<int32_t>(CqStatus::PARAM_ERROR));
+    const auto chunk = detailDispositionV1(E_OUTPUT_CHUNK_MISMATCH);
+    ASSERT_TRUE(chunk.has_value());
+    EXPECT_EQ(chunk->cqStatus, static_cast<int32_t>(CqStatus::PARAM_ERROR));
+    const auto profile = detailDispositionV1(E_REQUEST_PROFILE);
+    ASSERT_TRUE(profile.has_value());
+    EXPECT_EQ(profile->cqStatus,
+              static_cast<int32_t>(CqStatus::PROFILE_ERROR));
+    const auto key = detailDispositionV1(E_REQUEST_PROFILE_KEY);
+    ASSERT_TRUE(key.has_value());
+    EXPECT_EQ(key->cqStatus, static_cast<int32_t>(CqStatus::PROFILE_ERROR));
+    const auto host = detailDispositionV1(E_HOST_IO_SIZE_MISMATCH);
+    ASSERT_TRUE(host.has_value());
+    EXPECT_EQ(host->cqStatus, static_cast<int32_t>(CqStatus::PROFILE_ERROR));
+    const auto kv = detailDispositionV1(E_KV_TOKEN_MISMATCH);
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv->cqStatus, static_cast<int32_t>(CqStatus::PROFILE_ERROR));
+    const auto capacity = detailDispositionV1(E_CAPACITY_PLAN);
+    ASSERT_TRUE(capacity.has_value());
+    EXPECT_EQ(capacity->severity, DetailSeverityV1::CONFIG_FATAL);
+}
+
+TEST(MeshBinaryServingTest, JsonEscapingMatchesPython)
+{
+    const std::string raw = "a\"b\\c\n\t\xc3\xa9\xe4\xb8\xad"
+                            "\xf0\x9f\x98\x80\x01";
+    std::string out;
+    mesh_abi::jsonString(out, raw.data(), raw.size());
+    EXPECT_EQ(out,
+              "\"a\\\"b\\\\c\\n\\t\\u00e9\\u4e2d"
+              "\\ud83d\\ude00\\u0001\"");
+}
+
+TEST(MeshBinaryServingTest, MatchesThePythonProfileKeyGolden)
+{
+    using namespace mesh_abi;
+    const MeshBytes image =
+        loadFixture("tests/gem5/ai_mesh/fixtures/gate6/serving_min.mshb");
+    ASSERT_FALSE(image.empty());
+    DecodedProgram program;
+    MeshLoadError error;
+    ASSERT_TRUE(decodeMeshBinary(image, program, error))
+        << error.code << ": " << error.message;
+    EXPECT_EQ(hexDigest(programProfileKeyBaseDigest(program)),
+              "6abbcef487aebebdfe977d712ccdc911"
+              "c95cb1365a2833686b0dcf1cbf079a67");
+    EXPECT_EQ(hexDigest(programSemanticDigest(program)),
+              "72d5d7548d44aa96b82dd06c1bfdd941"
+              "e65dfe527cd6aebcae32345c636104a5");
+    EXPECT_TRUE(verifyRequestProfileKeys(program, error))
+        << error.code << ": " << error.message;
+    EXPECT_EQ(program.agent_request_profiles[0].requested_profile_key,
+              0xd5df2dd59659b6baull);
+}
+
+TEST(MeshBinaryServingTest, RejectsATamperedProfileKey)
+{
+    using namespace mesh_abi;
+    const MeshBytes golden =
+        loadFixture("tests/gem5/ai_mesh/fixtures/gate6/serving_min.mshb");
+    ASSERT_FALSE(golden.empty());
+    MeshBytes image = golden;
+    const size_t request =
+        sectionOffset(golden, kSectionTypeAGENT_REQUEST_PROFILES);
+    writeField(image,
+               request + kAgentRequestProfilesRequestedProfileKeyOffset, 8, 1);
+    recomputeMeshChecksums(image);
+    DecodedProgram program;
+    MeshLoadError error;
+    ASSERT_TRUE(decodeMeshBinary(image, program, error))
+        << error.code << ": " << error.message;
+    RuntimeArch arch = testArch();
+    arch.arch_digest_hex = program.arch_digest_hex;
+    EXPECT_FALSE(verifyDecodedProgram(program, arch, error));
+    EXPECT_EQ(error.code, "E_REQUEST_PROFILE_KEY");
+}
+
+TEST(MeshBinaryFullViewTest, LoadsCrossLanguageFullViewFixture)
+{
+    using namespace mesh_abi;
+    const MeshBytes image =
+        loadFixture("tests/gem5/ai_mesh/fixtures/gate6/serving_fullview.mshb");
+    ASSERT_FALSE(image.empty());
+    DecodedProgram program;
+    MeshLoadError error;
+    ASSERT_TRUE(decodeMeshBinary(image, program, error))
+        << error.code << ": " << error.message;
+    RuntimeArch arch = testArch();
+    arch.arch_digest_hex = program.arch_digest_hex;
+    EXPECT_TRUE(verifyDecodedProgram(program, arch, error))
+        << error.code << ": " << error.message;
+    ASSERT_EQ(program.agent_instance_profiles.size(), 6u);
+    const AgentInstanceProfile *dual = nullptr;
+    for (const auto &instance : program.agent_instance_profiles)
+        if (instance.instance_profile_id == 111)
+            dual = &instance;
+    ASSERT_NE(dual, nullptr);
+    EXPECT_EQ(dual->member_count, 2u);
+    EXPECT_EQ(dual->member_binding_count, 2u);
+    ASSERT_EQ(program.agent_publish_surrogate_bindings.size(), 3u);
+    uint32_t allocations = 0;
+    for (const auto &record : program.agent_publish_surrogate_bindings)
+        if (record.instance_profile_id == 113)
+            allocations++;
+    EXPECT_EQ(allocations, 2u);
+}
+
+TEST(MeshBinaryFullViewTest, RejectsAliasedMemberSlot)
+{
+    using namespace mesh_abi;
+    const MeshBytes golden =
+        loadFixture("tests/gem5/ai_mesh/fixtures/gate6/serving_fullview.mshb");
+    ASSERT_FALSE(golden.empty());
+    const size_t relocations =
+        sectionOffset(golden, kSectionTypeRELOCATIONS);
+    MeshBytes image = golden;
+    writeField(image, relocations + 7 * kRelocationsBytes +
+                  kRelocationsOffsetBytesOffset, 8, 1048576);
+    refreshServingChecksums(image);
+    DecodedProgram program;
+    MeshLoadError error;
+    ASSERT_TRUE(decodeMeshBinary(image, program, error))
+        << error.code << ": " << error.message;
+    RuntimeArch arch = testArch();
+    arch.arch_digest_hex = program.arch_digest_hex;
+    EXPECT_FALSE(verifyDecodedProgram(program, arch, error));
+    EXPECT_EQ(error.code, "E_BINDING_ROLE");
+}
+
+TEST(MeshBinaryFullViewTest, RejectsCrossedPublishBinding)
+{
+    using namespace mesh_abi;
+    const MeshBytes golden =
+        loadFixture("tests/gem5/ai_mesh/fixtures/gate6/serving_fullview.mshb");
+    ASSERT_FALSE(golden.empty());
+    const size_t publish =
+        sectionOffset(golden, kSectionTypeAGENT_PUBLISH_SURROGATE_BINDINGS);
+    MeshBytes image = golden;
+    const size_t second = publish + kAgentPublishSurrogateBindingsBytes;
+    const size_t third = publish + 2 * kAgentPublishSurrogateBindingsBytes;
+    for (const auto &field : {std::make_pair(
+             kAgentPublishSurrogateBindingsAllocationIdOffset, 4u),
+         std::make_pair(
+             kAgentPublishSurrogateBindingsProducerCommandIdOffset, 4u),
+         std::make_pair(
+             kAgentPublishSurrogateBindingsCompletionEventIdOffset, 4u)}) {
+        const uint32_t left = rd32(image, second + field.first);
+        const uint32_t right = rd32(image, third + field.first);
+        writeField(image, second + field.first, field.second, right);
+        writeField(image, third + field.first, field.second, left);
+    }
+    refreshServingChecksums(image);
+    DecodedProgram program;
+    MeshLoadError error;
+    ASSERT_TRUE(decodeMeshBinary(image, program, error))
+        << error.code << ": " << error.message;
+    ASSERT_EQ(program.agent_publish_surrogate_bindings.size(), 3u);
+    const AgentPublishSurrogateBinding &first_record =
+        program.agent_publish_surrogate_bindings[1];
+    const AgentPublishSurrogateBinding &second_record =
+        program.agent_publish_surrogate_bindings[2];
+    EXPECT_EQ(first_record.instance_profile_id, 113u);
+    EXPECT_EQ(second_record.instance_profile_id, 113u);
+    EXPECT_EQ(first_record.member_ordinal, 0u);
+    EXPECT_EQ(second_record.member_ordinal, 1u);
+    EXPECT_NE(first_record.allocation_id, second_record.allocation_id);
+    EXPECT_EQ(first_record.allocation_id,
+              rd32(golden, third +
+                   kAgentPublishSurrogateBindingsAllocationIdOffset));
+    EXPECT_EQ(first_record.producer_command_id,
+              rd32(golden, third +
+                   kAgentPublishSurrogateBindingsProducerCommandIdOffset));
+    EXPECT_EQ(first_record.completion_event_id,
+              rd32(golden, third +
+                   kAgentPublishSurrogateBindingsCompletionEventIdOffset));
+    EXPECT_EQ(second_record.allocation_id,
+              rd32(golden, second +
+                   kAgentPublishSurrogateBindingsAllocationIdOffset));
+    EXPECT_EQ(second_record.producer_command_id,
+              rd32(golden, second +
+                   kAgentPublishSurrogateBindingsProducerCommandIdOffset));
+    EXPECT_EQ(second_record.completion_event_id,
+              rd32(golden, second +
+                   kAgentPublishSurrogateBindingsCompletionEventIdOffset));
+    RuntimeArch arch = testArch();
+    arch.arch_digest_hex = program.arch_digest_hex;
+    EXPECT_FALSE(verifyDecodedProgram(program, arch, error));
+    EXPECT_EQ(error.code, "E_BINDING_ROLE");
+    EXPECT_EQ(error.message,
+              "publish store must read the bound surrogate allocation");
+}
+
+TEST(MeshBinaryServingTest, RejectsServingSectionWithoutTheFeatureBit)
+{
+    using namespace mesh_abi;
+    const MeshBytes golden =
+        loadFixture("tests/gem5/ai_mesh/fixtures/gate6/serving_min.mshb");
+    ASSERT_FALSE(golden.empty());
+    MeshBytes image = golden;
+    writeField(image, 104, 8, 0);
+    recomputeMeshChecksums(image);
+    DecodedProgram program;
+    MeshLoadError error;
+    EXPECT_FALSE(decodeMeshBinary(image, program, error));
+    EXPECT_EQ(error.code, "E_ABI_FEATURE");
+}
+
+TEST(MeshBinaryServingTest, RejectsServingViolationsAfterRecomputedChecksums)
+{
+    using namespace mesh_abi;
+    const MeshBytes golden =
+        loadFixture("tests/gem5/ai_mesh/fixtures/gate6/serving_min.mshb");
+    ASSERT_FALSE(golden.empty());
+    const size_t request =
+        sectionOffset(golden, kSectionTypeAGENT_REQUEST_PROFILES);
+    const size_t instance =
+        sectionOffset(golden, kSectionTypeAGENT_INSTANCE_PROFILES);
+    const size_t members =
+        sectionOffset(golden, kSectionTypeAGENT_INSTANCE_MEMBER_BINDINGS);
+    const size_t requirements =
+        sectionOffset(golden, kSectionTypeAGENT_REQUEST_BINDING_REQUIREMENTS);
+    const size_t publish =
+        sectionOffset(golden, kSectionTypeAGENT_PUBLISH_SURROGATE_BINDINGS);
+    const size_t relocations =
+        sectionOffset(golden, kSectionTypeRELOCATIONS);
+    const size_t commands = sectionOffset(golden, kSectionTypeCOMMANDS);
+    const size_t descriptors =
+        sectionOffset(golden, kSectionTypeDMA_DESCRIPTORS);
+    const size_t prefill_io =
+        instance + kAgentInstanceProfilesHostInputDmaBytesPerMemberOffset;
+    const size_t decode_io =
+        instance + kAgentInstanceProfilesBytes +
+        kAgentInstanceProfilesKvReadBytesPerMemberOffset;
+    const size_t publish_io =
+        instance + 2 * kAgentInstanceProfilesBytes +
+        kAgentInstanceProfilesHostOutputDmaBytesPerMemberOffset;
+    const MoeViolation cases[] = {
+        {"host_load_short", prefill_io, 8, 127,
+         "E_BINDING_ROLE"},
+        {"host_load_long", prefill_io, 8, 129,
+         "E_HOST_IO_SIZE_MISMATCH"},
+        {"kv_read_short", decode_io, 8, 129, "E_KV_TOKEN_MISMATCH"},
+        {"publish_store_short", publish_io, 8, 127,
+         "E_HOST_IO_SIZE_MISMATCH"},
+        {"request_reserved0", request + kAgentRequestProfilesReserved0Offset,
+         2, 1, "E_ABI_RESERVED"},
+        {"request_flags", request + kAgentRequestProfilesFlagsOffset, 2, 0,
+         "E_REQUEST_PROFILE"},
+        {"request_path_mask", request + kAgentRequestProfilesPathMaskOffset, 4,
+         0x8, "E_REQUEST_PROFILE"},
+        {"request_kv_bytes", request + kAgentRequestProfilesKvBytesPerTokenOffset,
+         4, 0, "E_REQUEST_PROFILE"},
+        {"request_chunk", request +
+             kAgentRequestProfilesPublishChunkBytesOffset, 4, 7,
+         "E_OUTPUT_CHUNK_MISMATCH"},
+        {"instance_id_zero",
+         instance + kAgentInstanceProfilesInstanceProfileIdOffset, 4, 0,
+         "E_REQUEST_PROFILE"},
+        {"instance_path_kind",
+         instance + kAgentInstanceProfilesPathKindOffset, 2, 7,
+         "E_ABI_ENUM"},
+        {"instance_phase",
+         instance + kAgentInstanceProfilesPhaseOffset, 2, 7, "E_ABI_ENUM"},
+        {"instance_flags",
+         instance + kAgentInstanceProfilesFlagsOffset, 4, 1,
+         "E_ABI_RESERVED"},
+        {"instance_chunk",
+         instance + kAgentInstanceProfilesBytes +
+             kAgentInstanceProfilesDecodeChunkTokensOffset, 2, 0,
+         "E_REQUEST_PROFILE"},
+        {"instance_kv_bytes",
+         instance + kAgentInstanceProfilesBytes +
+             kAgentInstanceProfilesKvWriteBytesPerMemberOffset, 8, 1,
+         "E_KV_TOKEN_MISMATCH"},
+        {"member_rank",
+         members + kAgentInstanceMemberBindingsExpectedLogicalSourceRankOffset,
+         4, 7, "E_REQUEST_PROFILE"},
+        {"member_reserved",
+         members + kAgentInstanceMemberBindingsReserved0Offset, 2, 1,
+         "E_ABI_RESERVED"},
+        {"requirement_reserved",
+         requirements + kAgentRequestBindingRequirementsReservedOffset, 4, 1,
+         "E_ABI_RESERVED"},
+        {"requirement_kind",
+         requirements + kAgentRequestBindingRequirementsBindingKindOffset, 2,
+         9, "E_BINDING_ROLE"},
+        {"requirement_flags",
+         requirements + kAgentRequestBindingRequirementsBindingFlagsOffset, 2,
+         4, "E_BINDING_ROLE"},
+        {"publish_member_ordinal",
+         publish + kAgentPublishSurrogateBindingsMemberOrdinalOffset, 2, 5,
+         "E_BINDING_ROLE"},
+        {"publish_reserved",
+         publish + kAgentPublishSurrogateBindingsReserved0Offset, 2, 1,
+         "E_ABI_RESERVED"},
+        {"publish_fill_kind",
+         publish + kAgentPublishSurrogateBindingsFillKindOffset, 2,
+         kDmaFillKindCONSTANT_PATTERN, "E_BINDING_ROLE"},
+        {"publish_digest_source",
+         publish + kAgentPublishSurrogateBindingsDigestSourceOffset, 2, 1,
+         "E_ABI_ENUM"},
+        {"kv_requirement_flags",
+         requirements + 2 * kAgentRequestBindingRequirementsBytes +
+             kAgentRequestBindingRequirementsBindingFlagsOffset, 2, 1,
+         "E_BINDING_ROLE"},
+        {"weight_requirement_flags",
+         requirements + kAgentRequestBindingRequirementsBytes +
+             kAgentRequestBindingRequirementsBindingFlagsOffset, 2, 4,
+         "E_BINDING_ROLE"},
+        {"member_slot_tensor",
+         relocations + 4 * kRelocationsBytes + kRelocationsTensorIdOffset, 4,
+         6, "E_BINDING_ROLE"},
+        {"kv_store_offset",
+         descriptors + 4 * kDmaDescriptorsBytes + kDmaDescriptorsDstOffset +
+             kDmaEndpointOffsetBytesOffset, 8, 4194304,
+         "E_BINDING_ROLE"},
+        {"publish_store_wait",
+         commands + 8 * kCommandsBytes + kCommandsWaitCountOffset, 4, 0,
+         "E_DMA_RANGE"},
+    };
+    for (const auto &test : cases) {
+        MeshBytes image = golden;
+        writeField(image, test.offset, test.width, test.value);
+        refreshServingChecksums(image);
+        DecodedProgram program;
+        MeshLoadError error;
+        RuntimeArch arch = testArch();
+        const bool decoded = decodeMeshBinary(image, program, error);
+        if (decoded)
+            arch.arch_digest_hex = program.arch_digest_hex;
+        const bool accepted =
+            decoded && verifyDecodedProgram(program, arch, error);
+        EXPECT_FALSE(accepted) << test.name;
+        if (!accepted) {
+            EXPECT_EQ(error.code, test.code) << test.name;
+        }
+    }
+}
+
 
 } // anonymous namespace
 } // namespace ai_mesh

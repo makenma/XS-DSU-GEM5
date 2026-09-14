@@ -1,6 +1,7 @@
 #include "dev/ai_mesh/mesh_ir_verifier.hh"
 
 #include "dev/ai_mesh/mesh_moe_verifier.hh"
+#include "dev/ai_mesh/mesh_serving_verifier.hh"
 
 #include "dev/ai_mesh/mesh_splitter.hh"
 
@@ -1072,7 +1073,8 @@ bool verifyDecodedProgram(const DecodedProgram &program, const RuntimeArch &arch
         if (!visit(kv.first))
             return fail("E_DEPENDENCY_CYCLE", "command dependency cycle", error);
 
-    return verifyMoeV1(program, arch, error);
+    return verifyMoeV1(program, arch, error) &&
+           verifyServingV1(program, arch, error);
 }
 
 } // namespace ai_mesh

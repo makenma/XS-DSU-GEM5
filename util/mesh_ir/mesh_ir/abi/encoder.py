@@ -52,7 +52,11 @@ def section_order(program: Program) -> tuple:
     if not program.required_features:
         if any((program.content_digests, program.moe_layer_specs,
                 program.moe_expert_specs, program.moe_dynamic_regions,
-                program.moe_kernel_specs)):
+                program.moe_kernel_specs, program.agent_request_profiles,
+                program.agent_instance_profiles, program.agent_source_core_map,
+                program.agent_instance_member_bindings,
+                program.agent_request_binding_requirements,
+                program.agent_publish_surrogate_bindings)):
             raise MeshIrError("E_ABI_FEATURE",
                               "feature sections need the feature bit")
         return SECTION_ORDER
@@ -160,6 +164,15 @@ def encode_program(program: Program) -> bytes:
         "MOE_EXPERT_SPECS": program.moe_expert_specs,
         "MOE_DYNAMIC_REGIONS": program.moe_dynamic_regions,
         "MOE_KERNEL_SPECS": program.moe_kernel_specs,
+        "AGENT_REQUEST_PROFILES": program.agent_request_profiles,
+        "AGENT_INSTANCE_PROFILES": program.agent_instance_profiles,
+        "AGENT_SOURCE_CORE_MAP": program.agent_source_core_map,
+        "AGENT_INSTANCE_MEMBER_BINDINGS":
+            program.agent_instance_member_bindings,
+        "AGENT_REQUEST_BINDING_REQUIREMENTS":
+            program.agent_request_binding_requirements,
+        "AGENT_PUBLISH_SURROGATE_BINDINGS":
+            program.agent_publish_surrogate_bindings,
     }
     for name, records in tables.items():
         sections[name] = b"".join(_pack_record(rec) for rec in records)
@@ -260,5 +273,14 @@ def _section_count(name: str, program: Program) -> int:
         "MOE_EXPERT_SPECS": len(program.moe_expert_specs),
         "MOE_DYNAMIC_REGIONS": len(program.moe_dynamic_regions),
         "MOE_KERNEL_SPECS": len(program.moe_kernel_specs),
+        "AGENT_REQUEST_PROFILES": len(program.agent_request_profiles),
+        "AGENT_INSTANCE_PROFILES": len(program.agent_instance_profiles),
+        "AGENT_SOURCE_CORE_MAP": len(program.agent_source_core_map),
+        "AGENT_INSTANCE_MEMBER_BINDINGS":
+            len(program.agent_instance_member_bindings),
+        "AGENT_REQUEST_BINDING_REQUIREMENTS":
+            len(program.agent_request_binding_requirements),
+        "AGENT_PUBLISH_SURROGATE_BINDINGS":
+            len(program.agent_publish_surrogate_bindings),
     }
     return sizes[name]

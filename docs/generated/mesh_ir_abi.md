@@ -2,13 +2,13 @@
 
 Generated from `util/mesh_ir/mesh_ir/abi/mesh_ir_abi.yaml` -- do not edit.
 
-- schema_sha256: `f97bdaa131c7bf28d3c579f936a1fa6ba128b80b351455a358666ef096c9c7ca`
+- schema_sha256: `148e28f67fa544289c16d559ab8c8e82c6b9270bccb3c8e185b2a240828ed037`
 - ABI: 1.2 (min reader minor 0)
 - magic: `4d53484200000001`
 
 ## Enums
 
-- `section_type`: `STRINGS=1`, `ENTRYPOINTS=2`, `PROFILES=3`, `TENSORS=4`, `SHARDS=5`, `ALLOCATIONS=6`, `STREAMS=7`, `COMMANDS=8`, `COMMAND_WAITS=9`, `COMMAND_OPERANDS=10`, `EVENTS=11`, `DMA_DESCRIPTORS=12`, `OP_ATTRS=13`, `RELOCATIONS=14`, `EXPECTED_TRAFFIC=15`, `SOURCE_MAP=101`, `PROFILE_HINTS=102`, `CONTENT_DIGESTS=103`, `MOE_LAYER_SPECS=16384`, `MOE_EXPERT_SPECS=16385`, `MOE_DYNAMIC_REGIONS=16386`, `MOE_KERNEL_SPECS=16387`
+- `section_type`: `STRINGS=1`, `ENTRYPOINTS=2`, `PROFILES=3`, `TENSORS=4`, `SHARDS=5`, `ALLOCATIONS=6`, `STREAMS=7`, `COMMANDS=8`, `COMMAND_WAITS=9`, `COMMAND_OPERANDS=10`, `EVENTS=11`, `DMA_DESCRIPTORS=12`, `OP_ATTRS=13`, `RELOCATIONS=14`, `EXPECTED_TRAFFIC=15`, `SOURCE_MAP=101`, `PROFILE_HINTS=102`, `CONTENT_DIGESTS=103`, `MOE_LAYER_SPECS=16384`, `MOE_EXPERT_SPECS=16385`, `MOE_DYNAMIC_REGIONS=16386`, `MOE_KERNEL_SPECS=16387`, `AGENT_REQUEST_PROFILES=16388`, `AGENT_INSTANCE_PROFILES=16389`, `AGENT_SOURCE_CORE_MAP=16390`, `AGENT_INSTANCE_MEMBER_BINDINGS=16391`, `AGENT_REQUEST_BINDING_REQUIREMENTS=16392`, `AGENT_PUBLISH_SURROGATE_BINDINGS=16393`
 - `required_sections` (required): STRINGS, ENTRYPOINTS, PROFILES, TENSORS, SHARDS, ALLOCATIONS, STREAMS, COMMANDS, COMMAND_WAITS, COMMAND_OPERANDS, EVENTS, DMA_DESCRIPTORS, OP_ATTRS, RELOCATIONS, EXPECTED_TRAFFIC
 - `opcode`: `REQUEST_BEGIN=1`, `REQUEST_END=2`, `HALT=3`, `DMA_LOAD=4`, `DMA_STORE=5`, `DMA_P2P_PUSH=6`, `DMA_PREFETCH=7`, `DMA_FILL=8`, `AXI_FENCE=9`, `GEMM=10`, `BMM=11`, `ELEMENTWISE=12`, `LOCAL_REDUCE=13`, `SOFTMAX=14`, `NORM=15`, `EVENT_WAIT=16`, `EVENT_SIGNAL=17`, `RECV_WAIT=18`, `BARRIER=19`, `REPEAT=20`
 - `engine`: `CONTROL=1`, `DMA_READ=2`, `DMA_WRITE=3`, `TENSOR=4`, `VECTOR=5`, `REDUCE=6`
@@ -56,6 +56,12 @@ Generated from `util/mesh_ir/mesh_ir/abi/mesh_ir_abi.yaml` -- do not edit.
 - `moe_combine_kind`: `NONE=0`, `LOCAL_REDUCE=1`
 - `stream_flags`: `IS_LIFECYCLE=1`, `IS_LOCAL_CONTROL=2`
 - `tensor_flags`: `HAS_CONTENT_SHA256=1`
+- `agent_request_flags`: `HAS_KV=1`
+- `path_kind`: `INITIAL_PREFILL=0`, `KV_REUSE=1`, `REPREFILL=2`
+- `phase`: `PREFILL=1`, `DECODE=2`, `PUBLISH=3`
+- `dma_fill_kind`: `CONSTANT_PATTERN=0`, `AGENT_OUTPUT_SURROGATE=1`
+- `agent_allocation_role`: `NONE=0`, `PUBLISH_SURROGATE_SOURCE=1`
+- `agent_digest_source`: `REQUEST_SEMANTIC_OUTPUT_DIGEST=0`
 
 ## Records
 
@@ -436,6 +442,105 @@ Generated from `util/mesh_ir/mesh_ir/abi/mesh_ir_abi.yaml` -- do not edit.
 | `combine_flush_cycles` | u32 | 76 |
 | `flags` | u32 | 80 |
 | `reserved1` | u32 | 84 |
+
+### AGENT_REQUEST_PROFILES (96 B)
+
+| field | type | offset |
+|---|---|---:|
+| `program_id` | u16 | 0 |
+| `profile_id` | u16 | 2 |
+| `flags` | u16 | 4 |
+| `reserved0` | u16 | 6 |
+| `requested_profile_key` | u64 | 8 |
+| `delta_input_tokens` | u32 | 16 |
+| `full_input_tokens` | u32 | 20 |
+| `expected_cached_tokens` | u32 | 24 |
+| `output_tokens` | u32 | 28 |
+| `input_binding_bytes` | u64 | 32 |
+| `delta_input_dma_bytes` | u64 | 40 |
+| `full_input_dma_bytes` | u64 | 48 |
+| `host_output_bytes` | u64 | 56 |
+| `primary_input_symbol_id` | u32 | 64 |
+| `primary_output_symbol_id` | u32 | 68 |
+| `primary_kv_symbol_id` | u32 | 72 |
+| `source_rank_count` | u32 | 76 |
+| `source_core_map_begin` | u32 | 80 |
+| `path_mask` | u32 | 84 |
+| `kv_bytes_per_token` | u32 | 88 |
+| `publish_chunk_bytes` | u32 | 92 |
+
+### AGENT_INSTANCE_PROFILES (96 B)
+
+| field | type | offset |
+|---|---|---:|
+| `instance_profile_id` | u32 | 0 |
+| `request_program_id` | u16 | 4 |
+| `request_profile_id` | u16 | 6 |
+| `path_kind` | u16 | 8 |
+| `phase` | u16 | 10 |
+| `member_count` | u16 | 12 |
+| `decode_chunk_tokens` | u16 | 14 |
+| `mesh_entrypoint_id` | u32 | 16 |
+| `mesh_profile_id` | u32 | 20 |
+| `valid_tokens_per_member` | u32 | 24 |
+| `kv_tokens_before` | u32 | 28 |
+| `local_padded_members` | u32 | 32 |
+| `local_padded_tokens_per_member` | u32 | 36 |
+| `primary_input_symbol_id` | u32 | 40 |
+| `primary_output_symbol_id` | u32 | 44 |
+| `primary_kv_symbol_id` | u32 | 48 |
+| `flags` | u32 | 52 |
+| `member_binding_first` | u32 | 56 |
+| `member_binding_count` | u32 | 60 |
+| `host_input_dma_bytes_per_member` | u64 | 64 |
+| `host_output_dma_bytes_per_member` | u64 | 72 |
+| `kv_read_bytes_per_member` | u64 | 80 |
+| `kv_write_bytes_per_member` | u64 | 88 |
+
+### AGENT_SOURCE_CORE_MAP (4 B)
+
+| field | type | offset |
+|---|---|---:|
+| `core_id` | u16 | 0 |
+| `reserved` | u16 | 2 |
+
+### AGENT_INSTANCE_MEMBER_BINDINGS (24 B)
+
+| field | type | offset |
+|---|---|---:|
+| `instance_profile_id` | u32 | 0 |
+| `member_ordinal` | u16 | 4 |
+| `reserved0` | u16 | 6 |
+| `static_input_symbol_id` | u32 | 8 |
+| `static_output_symbol_id` | u32 | 12 |
+| `static_kv_symbol_id` | u32 | 16 |
+| `expected_logical_source_rank` | u32 | 20 |
+
+### AGENT_REQUEST_BINDING_REQUIREMENTS (16 B)
+
+| field | type | offset |
+|---|---|---:|
+| `request_program_id` | u16 | 0 |
+| `request_profile_id` | u16 | 2 |
+| `binding_kind` | u16 | 4 |
+| `binding_flags` | u16 | 6 |
+| `symbol_id` | u32 | 8 |
+| `reserved` | u32 | 12 |
+
+### AGENT_PUBLISH_SURROGATE_BINDINGS (28 B)
+
+| field | type | offset |
+|---|---|---:|
+| `instance_profile_id` | u32 | 0 |
+| `member_ordinal` | u16 | 4 |
+| `reserved0` | u16 | 6 |
+| `allocation_id` | u32 | 8 |
+| `producer_command_id` | u32 | 12 |
+| `completion_event_id` | u32 | 16 |
+| `fill_kind` | u16 | 20 |
+| `allocation_role` | u16 | 22 |
+| `digest_source` | u16 | 24 |
+| `reserved1` | u16 | 26 |
 
 ## Attr payloads
 

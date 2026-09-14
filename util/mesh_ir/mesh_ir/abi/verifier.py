@@ -10,6 +10,7 @@ from __future__ import annotations
 from mesh_ir.abi.dependency import command_prerequisites, stream_commands
 from mesh_ir.abi.moe_verifier import verify_moe_v1
 from mesh_ir.abi.rules import check_payload_rules, check_record_rules
+from mesh_ir.abi.serving_verifier import verify_serving_v1
 from mesh_ir.abi.spans import checked_span, span_fits
 from mesh_ir.burst_splitter import checked_mul, plan_descriptor
 from mesh_ir.generated import abi as A
@@ -53,6 +54,7 @@ def verify_program(program: Program, arch: ArchManifest) -> VerifiedProgram:
     _verify_lifecycle(program)
     _verify_acyclic(program)
     verify_moe_v1(program, arch)
+    verify_serving_v1(program, arch)
     return VerifiedProgram(program, arch)
 
 

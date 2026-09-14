@@ -39,6 +39,14 @@ using DecodedMoeLayerSpec = mesh_abi::MoeLayerSpec;
 using DecodedMoeExpertSpec = mesh_abi::MoeExpertSpec;
 using DecodedMoeDynamicRegion = mesh_abi::MoeDynamicRegion;
 using DecodedMoeKernelSpec = mesh_abi::MoeKernelSpec;
+using DecodedAgentRequestProfile = mesh_abi::AgentRequestProfile;
+using DecodedAgentInstanceProfile = mesh_abi::AgentInstanceProfile;
+using DecodedAgentSourceCore = mesh_abi::AgentSourceCoreMap;
+using DecodedAgentInstanceMemberBinding = mesh_abi::AgentInstanceMemberBinding;
+using DecodedAgentRequestBindingRequirement =
+    mesh_abi::AgentRequestBindingRequirement;
+using DecodedAgentPublishSurrogateBinding =
+    mesh_abi::AgentPublishSurrogateBinding;
 
 struct DecodedAttr
 {
@@ -96,6 +104,16 @@ struct DecodedProgram
     std::vector<DecodedMoeExpertSpec> moe_expert_specs;
     std::vector<DecodedMoeDynamicRegion> moe_dynamic_regions;
     std::vector<DecodedMoeKernelSpec> moe_kernel_specs;
+    bool has_serving_v1 = false;
+    std::vector<DecodedAgentRequestProfile> agent_request_profiles;
+    std::vector<DecodedAgentInstanceProfile> agent_instance_profiles;
+    std::vector<DecodedAgentSourceCore> agent_source_core_map;
+    std::vector<DecodedAgentInstanceMemberBinding>
+        agent_instance_member_bindings;
+    std::vector<DecodedAgentRequestBindingRequirement>
+        agent_request_binding_requirements;
+    std::vector<DecodedAgentPublishSurrogateBinding>
+        agent_publish_surrogate_bindings;
 };
 
 // Parse and integrity-check a .mshb image.  Throws nothing; returns false
