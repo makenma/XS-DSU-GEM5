@@ -19,6 +19,29 @@ namespace gem5
 namespace ai_mesh
 {
 
+KvGeometry
+NpuServingFrontend::buildKvGeometry() const
+{
+    KvGeometry geometry;
+    geometry.region_base = kvRegionBase;
+    geometry.slot_bytes = kvSessionSlotBytes;
+    geometry.slot_alignment = kvSlotAlignment;
+    geometry.max_sessions = kvMaxSessions;
+    geometry.bytes_per_token = kvBytesPerToken;
+    return geometry;
+}
+
+KvCapacity
+NpuServingFrontend::buildKvCapacity() const
+{
+    KvCapacity capacity;
+    capacity.record_entries = kvSessionRecordEntries;
+    capacity.tombstone_entries = kvTombstoneEntries;
+    capacity.admission_wait_entries = kvAdmissionWaitEntries;
+    capacity.release_waiter_entries = kvReleaseWaiterEntries;
+    return capacity;
+}
+
 NpuServingFrontend::NpuServingFrontend(const Params &p)
     : ClockedObject(p),
       master(p.master), controlTarget(p.control_target), recorder(p.recorder),
@@ -31,6 +54,14 @@ NpuServingFrontend::NpuServingFrontend(const Params &p)
       agentProxyControlBase(p.agent_proxy_control_base),
       msiBase(p.msi_base),
       kvSessionRecordEntries(p.kv_session_record_entries),
+      kvTombstoneEntries(p.kv_session_tombstone_entries),
+      kvMaxSessions(p.kv_max_sessions),
+      kvBytesPerToken(p.kv_bytes_per_token),
+      kvRegionBase(p.kv_region_base),
+      kvSessionSlotBytes(p.kv_session_slot_bytes),
+      kvSlotAlignment(p.kv_slot_alignment),
+      kvAdmissionWaitEntries(p.kv_admission_wait_entries),
+      kvReleaseWaiterEntries(p.kv_release_waiter_entries),
       outputBErrorRequest(p.output_b_error_request),
       outputBErrorSegment(p.output_b_error_segment),
       controlCqFirst(p.control_cq_first),
@@ -48,7 +79,7 @@ NpuServingFrontend::NpuServingFrontend(const Params &p)
       retireEvent(this), terminalEvent(this), executionEvent(this),
       tickEvent(this),
       fatalDrainEvent(this),
-      sessionRecords(p.kv_session_record_entries)
+      kvManager(buildKvGeometry(), buildKvCapacity())
 {
     fatal_if(dataBusBytes == 0 || dataBusBytes > 64,
              "%s: invalid AXI data bus width", name());
@@ -88,6 +119,13 @@ NpuServingFrontend::NpuServingFrontend(const Params &p)
                     generateDeadlineTicks[round.requestId] =
                         round.hasDeadline ? round.deadlineTick :
                         kNpuNoDeadline;
+        kvContractDigest = MeshKvManager::contractDigest(
+            image->imageDigest(), image->workloadPlanDigest(),
+            image->controlPlanDigest(), kvBytesPerToken);
+        if (kvManager.fatalReason()) {
+            fatal("%s: invalid KV geometry or capacity: %s", name(),
+                  kvManager.fatalReason()->c_str());
+        }
         requestExecutor = std::make_unique<FullContextSurrogateExecutor>(
             *registry);
         return;
@@ -789,8 +827,10 @@ NpuServingFrontend::stageTerminalResult()
         requestFatal(agent_abi::E_AGENT_PROTOCOL_FATAL);
         return;
     }
-    if (currentControlOpcode == 0)
+    if (currentControlOpcode == 0) {
+        releaseKvPin(currentRequestId, currentCqStatus);
         latchGenerateTerminal(currentRequestId);
+    }
     currentValid = false;
     currentError = false;
     currentObligationId.reset();
@@ -815,6 +855,29 @@ NpuServingFrontend::latchGenerateTerminal(uint64_t requestId)
         return;
     recordSemantic("GENERATE_TERMINAL_LATCHED", "CONTEXT", std::nullopt,
                    requestId, std::nullopt);
+}
+
+void
+NpuServingFrontend::releaseKvPin(uint64_t requestId, uint16_t status)
+{
+    if (!planExecution || requestId == 0)
+        return;
+    if (!kvManager.hasPin(requestId) && !kvManager.hasClaim(requestId))
+        return;
+    KvOwnerTerminal terminal;
+    terminal.request_id = requestId;
+    terminal.status = status == agent_abi::kCqStatusSUCCESS ?
+        KvTerminalStatus::Success :
+        status == agent_abi::kCqStatusCANCELLED ?
+        KvTerminalStatus::Cancelled : KvTerminalStatus::Error;
+    KvEdgeInputs edge;
+    edge.tick = curTick();
+    edge.owner_terminals.push_back(terminal);
+    const KvEdgeResult result = kvManager.commitEdge(edge);
+    fatal_if(result.fatal, "%s: KV pin release is invalid", name());
+    recorder->setMetric("kv_session_records",
+                        static_cast<unsigned>(kvManager.recordCount()));
+    consumeReleaseOutcomes(result);
 }
 
 void

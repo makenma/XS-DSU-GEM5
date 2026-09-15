@@ -1,4 +1,6 @@
 #include "dev/ai_mesh/npu_serving_frontend.hh"
+
+#include "dev/ai_mesh/npu_serving_frontend_kv_map.hh"
 #include "dev/ai_mesh/gate3_protocol_runtime_internal.hh"
 
 #include <algorithm>
@@ -192,42 +194,79 @@ NpuServingFrontend::handleParameterRecord()
     if (workloadDigest.size() == currentWorkloadDigest.size())
         std::copy(workloadDigest.begin(), workloadDigest.end(),
                   currentWorkloadDigest.begin());
-    if (planExecution) {
-        const bool requireReuse = (currentSqFlags &
-            agent_abi::kSqFlagsREQUIRE_KV_REUSE) != 0;
-        const bool allowReprefill = (currentSqFlags &
-            agent_abi::kSqFlagsALLOW_REPREFILL) != 0;
-        const SessionRecord *existing = sessionRecords.find(
-            currentSessionId, value.kv_handle);
-        const bool identityHit = existing != nullptr &&
-            existing->generation == value.kv_generation;
-        if (requireReuse || (allowReprefill && !identityHit)) {
-            recordSemantic("PARAMETER_REJECT", "PARAMETER",
-                           currentSqSequence, currentRequestId,
-                           currentCookie, "E_KV_REUSE_REQUIRED");
-            queueErrorCompletion(static_cast<uint16_t>(
-                agent_abi::CqStatus::PARAM_ERROR),
-                agent_abi::kCqFlagsDETAIL_IN_CQ,
-                agent_abi::E_KV_REUSE_REQUIRED);
-            return;
-        }
-        if (!allowReprefill) {
-            if (existing != nullptr) {
-                requestFatal(agent_abi::E_AGENT_PROTOCOL_FATAL);
-                return;
-            }
-            fatal_if(!sessionRecords.insert(currentSessionId, value.kv_handle,
-                                            value.kv_generation),
-                     "%s: session record admission is invalid", name());
-            currentSessionAdmitted = true;
-            recorder->setMetric("kv_session_records", sessionRecords.size());
-        } else {
-            currentSessionAdmitted = identityHit;
-        }
-    }
+    currentKvHandle = value.kv_handle;
+    currentKvGeneration = value.kv_generation;
+    if (planExecution && !admitKvSession())
+        return;
     startPromptRead();
 }
 
+
+bool
+NpuServingFrontend::admitKvSession()
+{
+    const uint32_t flags = currentSqFlags &
+        (agent_abi::kSqFlagsREQUIRE_KV_REUSE |
+         agent_abi::kSqFlagsALLOW_REPREFILL);
+    const auto deadline = generateDeadlineTicks.find(currentRequestId);
+    KvAdmissionIntent intent;
+    intent.request_id = currentRequestId;
+    intent.session_id = currentSessionId;
+    intent.kv_handle = currentKvHandle;
+    intent.generation = currentKvGeneration;
+    intent.contract_digest = kvContractDigest;
+    intent.deadline_or_max = deadline == generateDeadlineTicks.end() ?
+        kNpuNoDeadline : deadline->second;
+    intent.qos = currentQos;
+    intent.ready_tick = curTick();
+    intent.flags = flags;
+    KvEdgeInputs edge;
+    edge.tick = curTick();
+    edge.admissions.push_back(intent);
+    const KvEdgeResult result = kvManager.commitEdge(edge);
+    recorder->setMetric("kv_session_records",
+                        static_cast<unsigned>(kvManager.recordCount()));
+    recorder->setMetric("kv_session_tombstones",
+                        static_cast<unsigned>(kvManager.tombstoneCount()));
+    if (result.fatal) {
+        requestFatal(agent_abi::E_AGENT_PROTOCOL_FATAL);
+        return false;
+    }
+    const auto outcome = result.admissions.find(currentRequestId);
+    if (outcome == result.admissions.end()) {
+        requestFatal(agent_abi::E_AGENT_PROTOCOL_FATAL);
+        return false;
+    }
+    const auto promotion = result.promotions.find(currentRequestId);
+    const KvAdmissionMapping mapping = mapKvAdmissionOutcome(
+        outcome->second,
+        promotion == result.promotions.end()
+            ? std::nullopt
+            : std::optional<KvPromotionOutcome>(promotion->second));
+    if (mapping.protocol_error) {
+        requestFatal(agent_abi::E_AGENT_PROTOCOL_FATAL);
+        return false;
+    }
+    if (mapping.admitted)
+        currentSessionAdmitted = true;
+    if (mapping.success)
+        return true;
+    const agent_abi::DetailCode code = mapping.detail;
+    const uint32_t detail = static_cast<uint32_t>(code);
+    const std::optional<agent_abi::DetailDispositionV1> disposition =
+        agent_abi::detailDispositionV1(code);
+    if (!disposition) {
+        requestFatal(agent_abi::E_AGENT_PROTOCOL_FATAL);
+        return false;
+    }
+    recordSemantic("PARAMETER_REJECT", "PARAMETER", currentSqSequence,
+                   currentRequestId, currentCookie,
+                   agent_abi::detailCodeNameV1(code));
+    queueErrorCompletion(
+        static_cast<uint16_t>(disposition->cqStatus),
+        agent_abi::kCqFlagsDETAIL_IN_CQ, detail);
+    return false;
+}
 
 void
 NpuServingFrontend::handlePromptRecord()

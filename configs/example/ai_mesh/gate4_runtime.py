@@ -271,6 +271,9 @@ def config_hardware(config_document: dict, accepted_queue_entries=None) -> dict:
         "msi_axi_id": serving["msi_axi_id_base"],
         "msi_axi_id_count": serving["msi_axi_id_count"],
         "kv_session_record_entries": serving["kv_session_record_entries"],
+        "kv_session_tombstone_entries": serving[
+            "kv_session_tombstone_entries"
+        ],
         "host_available_fraction_q16": services[
             "host_available_fraction_q16"
         ],
@@ -375,6 +378,9 @@ def _config_frontend_params(hardware):
         "msi_axi_id": hardware["msi_axi_id"],
         "msi_axi_id_count": hardware["msi_axi_id_count"],
         "kv_session_record_entries": hardware["kv_session_record_entries"],
+        "kv_session_tombstone_entries": hardware[
+            "kv_session_tombstone_entries"
+        ],
     }
     if "accepted_queue_entries" in hardware:
         params["accepted_queue_entries"] = hardware["accepted_queue_entries"]

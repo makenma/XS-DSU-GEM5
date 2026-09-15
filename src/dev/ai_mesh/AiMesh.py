@@ -277,6 +277,24 @@ class NpuServingFrontend(ClockedObject):
     kv_session_record_entries = Param.UInt32(
         64, "Bounded plan-mode session record table entries"
     )
+    kv_session_tombstone_entries = Param.UInt32(
+        64, "Bounded session tombstone entries"
+    )
+    kv_max_sessions = Param.UInt32(
+        64, "Physical KV session slots"
+    )
+    kv_bytes_per_token = Param.UInt32(64, "KV bytes per token")
+    kv_region_base = Param.UInt64(0x40000000, "KV region base")
+    kv_session_slot_bytes = Param.UInt64(
+        4096, "KV bytes per physical session slot"
+    )
+    kv_slot_alignment = Param.UInt64(4096, "KV slot alignment")
+    kv_admission_wait_entries = Param.UInt32(
+        64, "Bounded KV admission waiter entries"
+    )
+    kv_release_waiter_entries = Param.UInt32(
+        16, "Bounded session release waiter entries"
+    )
     accepted_queue_entries = Param.UInt32(
         64, "Bounded plan-mode accepted generate queue entries"
     )

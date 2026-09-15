@@ -130,16 +130,37 @@ class ErrorSourceKey:
     generation: int
     aux_key: bytes = bytes(16)
 
-    def __post_init__(self) -> None:
-        if len(self.aux_key) != 16:
-            raise MeshIrError("E_MOE_CACHE", "aux key must be 16 bytes")
+    def gaps(self) -> tuple:
+        problems = []
+        if not isinstance(self.aux_key, bytes) or len(self.aux_key) != 16:
+            problems.append("aux key must be 16 bytes")
+        for name, value, limit in (
+                ("error class", self.error_class, 0xFFFF),
+                ("core id", self.core_id_or_ffff, 0xFFFF),
+                ("domain", self.domain, 0xFF),
+                ("object kind", self.object_kind, 0xFF),
+                ("region group", self.region_group_id, 0xFFFFFFFF),
+                ("region id", self.region_id, 0xFFFFFFFF),
+                ("ordinal", self.ordinal, 0xFFFFFFFF),
+                ("generation", self.generation, 0xFFFFFFFF)):
+            if not isinstance(value, int) or isinstance(value, bool) or \
+                    not 0 <= value <= limit:
+                problems.append(
+                    f"error source {name} is outside its width")
+        if problems:
+            return tuple(problems)
         if self.error_class not in enum_values(A.MOE_ERROR_CLASS):
-            raise MeshIrError("E_MOE_CACHE", "error class outside the enum")
+            problems.append("error class outside the enum")
         if self.domain not in enum_values(A.MESH_OBJECT_DOMAIN):
-            raise MeshIrError("E_MOE_CACHE", "domain outside the enum")
+            problems.append("domain outside the enum")
         if self.object_kind not in enum_values(A.MESH_OBJECT_KIND):
-            raise MeshIrError("E_MOE_CACHE",
-                              "object kind outside the enum")
+            problems.append("object kind outside the enum")
+        return tuple(problems)
+
+    def __post_init__(self) -> None:
+        problems = self.gaps()
+        if problems:
+            raise MeshIrError("E_MOE_CACHE", problems[0])
 
     def sort_key(self) -> tuple:
         return (self.error_class, self.core_id_or_ffff, self.domain,

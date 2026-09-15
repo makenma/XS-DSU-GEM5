@@ -31,6 +31,7 @@ CONTROL_SCENARIOS = (
     "cancel_late",
     "cancel_same_edge",
     "release_notfound",
+    "release_live",
 )
 
 

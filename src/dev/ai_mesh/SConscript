@@ -28,6 +28,8 @@ Source('mesh_splitter.cc')
 Source('mesh_ir_verifier.cc')
 Source('mesh_moe_verifier.cc')
 Source('mesh_serving_verifier.cc')
+Source('mesh_kv_manager.cc')
+Source('mesh_kv_manager_state.cc')
 Source('mesh_serving_projection.cc')
 Source('mesh_weight_tags.cc')
 Source('mesh_moe_rng.cc')
@@ -55,10 +57,10 @@ Source('agent_plan_image.cc')
 Source('agent_surrogate_codec.cc')
 Source('agent_plan_codec.cc')
 Source('control_trigger_coordinator.cc')
-Source('session_record_table.cc')
 Source('npu_request_executor.cc')
 Source('npu_serving_frontend.cc')
 Source('npu_serving_frontend_control.cc')
+Source('npu_serving_frontend_kv_map.cc')
 Source('npu_serving_frontend_plan.cc')
 Source('gate3_axi_transfer.cc')
 Source('gate3_completion_ledger.cc')
@@ -203,8 +205,23 @@ GTest('control_trigger_coordinator.test',
       'agent_plan_image.cc',
       'agent_surrogate_codec.cc',
       'agent_sha256.cc')
-GTest('session_record_table.test',
-      'session_record_table.test.cc',
-      'session_record_table.cc')
+GTest('npu_serving_frontend_kv_map.test',
+      'npu_serving_frontend_kv_map.test.cc',
+      'npu_serving_frontend_kv_map.cc')
+GTest('mesh_kv_manager.test',
+      'mesh_kv_manager.test.cc',
+      'mesh_kv_manager.cc',
+      'mesh_kv_manager_state.cc',
+      'agent_sha256.cc')
+GTest('mesh_kv_manager_restore.test',
+      'mesh_kv_manager_restore.test.cc',
+      'mesh_kv_manager.cc',
+      'mesh_kv_manager_state.cc',
+      'agent_sha256.cc')
+GTest('mesh_kv_manager_trace.test',
+      'mesh_kv_manager_trace.test.cc',
+      'mesh_kv_manager.cc',
+      'mesh_kv_manager_state.cc',
+      'agent_sha256.cc')
 GTest('npu_execution_selector.test',
       'npu_execution_selector.test.cc')

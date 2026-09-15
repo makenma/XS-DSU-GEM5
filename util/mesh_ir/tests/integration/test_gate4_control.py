@@ -53,6 +53,20 @@ SCENARIOS = {
             USER2_FINAL: "BUSINESS_DONE",
         },
     },
+    "release_live": {
+        "control_request": USER1_CANCEL,
+        "target_request": None,
+        "command_status": "SUCCESS",
+        "target_status": None,
+        "join_winner": None,
+        "completed": 3,
+        "failed": 0,
+        "terminals": {
+            USER0_FINAL: "BUSINESS_DONE",
+            USER1_ROUND0: "BUSINESS_DONE",
+            USER2_FINAL: "BUSINESS_DONE",
+        },
+    },
     "release_notfound": {
         "control_request": USER0_RELEASE,
         "target_request": None,
@@ -603,3 +617,62 @@ def test_gate4_late_anchor_join_lets_target_error_win(tmp_path):
         USER1_ROUND0: "BUSINESS_FAILED",
         USER2_FINAL: "BUSINESS_DONE",
     }
+
+
+def test_gate4_release_live_defers_until_owner_drain(tmp_path):
+    run = run_scenario("release_live", tmp_path / "run")
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert "AI_MESH_GATE3_QUIESCENT_SUCCESS" in run.stdout
+
+    facts_path, events, final, metrics, fatal = parse_facts(tmp_path / "run")
+    assert fatal is None
+    assert not any(event["kind"] == "FATAL" for event in events)
+
+    deferred = events_of(events, "CONTROL_DEFERRED")
+    assert [event["request_id"] for event in deferred] == [USER1_CANCEL]
+    assert deferred[0]["status"] == "PENDING"
+
+    resolved = [
+        event
+        for event in events_of(events, "CONTROL_RESOLVE")
+        if event["request_id"] == USER1_CANCEL
+    ]
+    assert len(resolved) == 1
+    assert resolved[0]["status"] == "SUCCESS"
+    assert deferred[0]["tick"] < resolved[0]["tick"]
+
+    latched = [
+        event
+        for event in events_of(events, "GENERATE_TERMINAL_LATCHED")
+        if event["request_id"] == USER1_ROUND0
+    ]
+    assert len(latched) == 1
+    assert latched[0]["tick"] <= resolved[0]["tick"]
+
+    command = cq_consume(events, USER1_CANCEL)
+    assert command["status"] == "SUCCESS"
+    assert metrics["kv_release_pending"] == 0
+    assert metrics["kv_session_tombstones"] == 1
+    assert metrics["kv_session_records"] == 2
+    assert final is not None
+    assert not final["fatal"]
+
+    sequences = {}
+    for event in events_of(events, "CQ_ASSIGN"):
+        assert event["request_id"] not in sequences, event
+        sequences[event["request_id"]] = event["absolute_seq"]
+    consumed = {}
+    for event in events_of(events, "CQ_CONSUME"):
+        assert event["request_id"] not in consumed, event
+        consumed[event["request_id"]] = event["absolute_seq"]
+    assert set(consumed) == set(sequences)
+    assert sequences[USER1_ROUND0] < sequences[USER1_CANCEL]
+    assert consumed[USER1_ROUND0] < consumed[USER1_CANCEL]
+    assert latched[0]["tick"] <= resolved[0]["tick"]
+
+    repeat = run_scenario("release_live", tmp_path / "repeat")
+    assert repeat.returncode == 0, repeat.stdout + repeat.stderr
+    assert (
+        (tmp_path / "repeat" / "gate4_facts.tsv").read_bytes()
+        == facts_path.read_bytes()
+    )

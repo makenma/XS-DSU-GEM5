@@ -399,6 +399,63 @@ profile key 由 `mesh_serving_projection.{hh,cc}` 在 C++ 重算（与 Python
 负例经 `mesh_ir.serving_profiles.capture_preflight` 记录失败阶段、固定
 detail/disposition、`admitted=False` 与零副作用账本。
 
+## Gate 6 KV admission core (R2)
+
+唯一 session/KV 状态所有者是
+[mesh_kv_manager.hh](../../src/dev/ai_mesh/mesh_kv_manager.hh)（§10.4：record/slot
+bitmap/tuple+generation/contract digest/claim/pin/rollback authority/terminal
+snapshot/append obligation/eviction/release waiter/tombstone/epoch），唯一 edge
+写入口为 `MeshKvManager::commitEdge`。独立 Python oracle 为
+`mesh_ir.kv_oracle`（同输入事件序列、不读 C++ 或 runtime 结果）：
+
+```bash
+python3 -m pytest util/mesh_ir/tests/unit/test_kv_oracle.py -q
+python3 tests/gem5/ai_mesh/fixtures/gate6/build_gate6_kv_traces.py
+scons build/AXI_MESH/dev/ai_mesh/mesh_kv_manager.test.opt \
+      build/AXI_MESH/dev/ai_mesh/mesh_kv_manager_restore.test.opt \
+      build/AXI_MESH/dev/ai_mesh/mesh_kv_manager_trace.test.opt -j8
+./build/AXI_MESH/dev/ai_mesh/mesh_kv_manager.test.opt --gtest_color=no
+./build/AXI_MESH/dev/ai_mesh/mesh_kv_manager_restore.test.opt --gtest_color=no
+./build/AXI_MESH/dev/ai_mesh/mesh_kv_manager_trace.test.opt --gtest_color=no
+```
+
+恢复入口的校验分层（原始字段/容器形状→counter 类型范围→元素标量闭集与宽度→
+集合关系→候选态一次安装）在 `kv_oracle._validate_structure` 与 C++
+`MeshKvManager::validateStructure` 成对实现；WAITING 的路径语义由冻结 flags 派生
+（`kv_types.derived_initial` / `derivedInitial`），序列化字段只是受校验投影。
+flags 合法性（未知 bit 与两个 bit 同时置位）由 `kv_types.legal_flags` /
+`legalFlags` 单一规则同时服务 admission 与恢复；admission 对非法 flags 保留独立
+outcome `FlagCombination`（Python 同名 `FLAG_COMBINATION`），frontend 经单一生产映射
+`mesh_kv_manager` 之外的 `npu_serving_frontend_kv_map.{hh,cc}`
+（`mapKvAdmissionOutcome`）派生 detail/CQ status，双 bit 组合为
+`PARAM_ERROR/E_KV_FLAG_COMBINATION`，ERROR record 仍为 `PROGRAM_ERROR/E_KV_STATE`；已保存 path 必须与纯策略
+`_decide_path`/`decidePath`（输入为冻结 flags、冻结 required_cached_tokens 与 prior）
+在 CLAIMED/PRESTART 两阶段一致。record 身份宽度与嵌套 `first_error`（tick/code 宽度、
+`ErrorSourceKey` 宽度与闭集枚举）在 `KvRecord.gaps` 校验，`ErrorSourceKey.gaps()`
+同时服务构造与恢复。
+
+纯值类型与标量规则（枚举、常量、值对象及其 `gaps()`）单一定义在
+`util/mesh_ir/mesh_ir/kv_types.py`，状态机 `mesh_ir.kv_oracle` 与测试/夹具从该模块取类型；
+C++ 侧测试按 admission/lifecycle、restore 校验、跨语言 golden 重放拆分，
+共享 helper 在 `src/dev/ai_mesh/mesh_kv_manager_test_support.hh`。
+
+仓内真实 GEM5 臂：`agent_control_plan_release_live.json` + `agent_plan_image_ctrl_release_live.bin`
+（`build_gate4_single_user_images.py` 生成）经
+`util/mesh_ir/tests/integration/test_gate4_control.py::test_gate4_release_live_defers_until_owner_drain`
+断言 active owner 下 RELEASE waiter 不发提前终态、owner drain 后消费唯一 release result
+（`CONTROL_DEFERRED` → `CONTROL_RESOLVE SUCCESS`、tombstone 恰一次、determinism 重复逐字节一致）。
+
+跨语言 golden 为 `tests/gem5/ai_mesh/fixtures/gate6/kv_trace.bin`（13 场景，含
+record 容量等待、WAITING→drain、pin PRESTART/STARTED、重复身份 fatal）：每个场景内含
+geometry/capacity、初始 persistent 状态、逐 edge 事件序列与 Python oracle
+算出的逐 edge 标量投影（决定 + 状态，含字段名）及预期 fatal 边数；
+`build_gate6_kv_traces.py` 写盘后重新读回并再跑一次 oracle，保证 wire 布局与模型不分叉。C++
+`MeshKvManager.MatchesTheCrossLanguageTrace` 重放同一事件序列并逐标量比对。原型状态
+投影 schema 版本为 2；版本不符即拒绝，无旧格式回退。
+Gate 3/4 的 surrogate session 状态与 KV record 同表（`MeshKvManager` 是唯一
+可变 session 表，`session_record_table.{hh,cc}` 已删除）；真实
+PREFILL/DECODE/PUBLISH 的 admission/slot/pin/append 生产接线属 R3。
+
 ## Gate 5 Dynamic MoE V1
 
 ABI surface（feature bit、四个 conditional-required section、record 布局）由

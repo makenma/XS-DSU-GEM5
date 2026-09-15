@@ -15,7 +15,7 @@
 #include "dev/ai_mesh/agent_protocol_layout.hh"
 #include "dev/ai_mesh/agent_protocol_validation.hh"
 #include "dev/ai_mesh/gate3_axi_transfer.hh"
-#include "dev/ai_mesh/session_record_table.hh"
+#include "dev/ai_mesh/mesh_kv_manager.hh"
 #include "dev/ai_mesh/gate3_completion_ledger.hh"
 #include "dev/ai_mesh/gate3_msi_id_pool.hh"
 #include "dev/ai_mesh/gate3_observation_recorder.hh"
@@ -37,6 +37,7 @@ namespace ai_mesh
 {
 
 inline constexpr uint32_t kSurrogateTimingBreakdownTlvBytes = 72;
+inline constexpr uint16_t kPendingReleaseStatus = 0xFFFF;
 
 class AgentAxiDriver;
 
@@ -166,6 +167,18 @@ class NpuServingFrontend : public ClockedObject,
         { return "ai_mesh.npu_serving_frontend.execution"; }
     };
 
+    struct ParkedRelease
+    {
+        uint64_t sessionId = 0;
+        uint64_t kvHandle = 0;
+        uint32_t generation = 0;
+        CqObligationId obligationId;
+        uint64_t sqSequence = 0;
+        uint64_t requestId = 0;
+        uint64_t cookie = 0;
+        uint8_t qos = 0;
+    };
+
     struct ParkedBusiness
     {
         uint64_t sqSequence = 0;
@@ -243,6 +256,12 @@ class NpuServingFrontend : public ClockedObject,
     void parkOutputForControlIntake();
     bool resolveSessionRelease(uint64_t sessionId, uint64_t kvHandle,
                                uint32_t generation, uint16_t &status);
+    KvGeometry buildKvGeometry() const;
+    KvCapacity buildKvCapacity() const;
+    bool admitKvSession();
+    void releaseKvPin(uint64_t requestId, uint16_t status);
+    void consumeReleaseOutcomes(const KvEdgeResult &result);
+    uint16_t releaseStatus(KvReleaseOutcome outcome) const;
     void handlePromptRecord();
     void handleWriteResponse(const Gate3WriteWork &work,
                              axi::AxiResp response);
@@ -325,6 +344,14 @@ class NpuServingFrontend : public ClockedObject,
     const uint64_t agentProxyControlBase;
     const uint64_t msiBase;
     const uint32_t kvSessionRecordEntries;
+    const uint32_t kvTombstoneEntries;
+    const uint32_t kvMaxSessions;
+    const uint32_t kvBytesPerToken;
+    const uint64_t kvRegionBase;
+    const uint64_t kvSessionSlotBytes;
+    const uint64_t kvSlotAlignment;
+    const uint32_t kvAdmissionWaitEntries;
+    const uint32_t kvReleaseWaiterEntries;
     const uint64_t outputBErrorRequest;
     const uint32_t outputBErrorSegment;
     const bool controlCqFirst;
@@ -389,6 +416,8 @@ class NpuServingFrontend : public ClockedObject,
     uint16_t currentCqFlags = 0;
     uint32_t currentDetailCode = 0;
     uint64_t currentSessionId = 0;
+    uint64_t currentKvHandle = 0;
+    uint32_t currentKvGeneration = 0;
     uint32_t currentUserId = 0;
     uint32_t currentTaskSeq = 0;
     uint32_t currentMaxOutputTokens = 0;
@@ -401,13 +430,15 @@ class NpuServingFrontend : public ClockedObject,
     std::optional<NpuExecutionRequest> lastExecutionRequest;
     std::optional<ParkedBusiness> parkedBusiness;
     std::map<uint64_t, ParkedBusiness> acceptedQueue;
+    std::map<uint64_t, ParkedRelease> pendingReleases;
     std::map<uint64_t, uint64_t> generateDeadlineTicks;
     bool executingBusiness = false;
     Tick currentAcceptTick = 0;
     uint64_t currentPublishChunkBytes = 0;
     uint64_t outputCommittedBytes = 0;
     bool outputChunkNotified = false;
-    SessionRecordTable sessionRecords;
+    MeshKvManager kvManager;
+    std::array<uint8_t, 32> kvContractDigest{};
     std::set<uint64_t> seenGenerateRequests;
     std::set<uint64_t> terminalGenerateRequests;
     uint16_t currentControlOpcode = 0;

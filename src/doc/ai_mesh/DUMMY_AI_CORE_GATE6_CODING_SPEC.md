@@ -60,7 +60,7 @@ FULL_TIMING 为本 Gate 验收模式，FULL 基线使用主合同规定的 `deco
 |---|---|
 | [NpuRequestExecutor](../../dev/ai_mesh/npu_request_executor.hh)、[Frontend](../../dev/ai_mesh/npu_serving_frontend.hh) | 现有 accept 返回 serviceNs，probe/full-context surrogate 不是 Mesh completion。改成可表达异步接纳、运行、取消和终态的共同生命周期，复用同一 SQ/CQ 前端 |
 | [Frontend control](../../dev/ai_mesh/npu_serving_frontend_control.cc)、[plan output](../../dev/ai_mesh/npu_serving_frontend_plan.cc) | 将 prompt/output payload 的读取写入责任交给所选 Mesh profile；保留 Frontend control/metadata/CQ 顺序，不对同一 payload 再执行 surrogate DMA |
-| [SessionRecordTable](../../dev/ai_mesh/session_record_table.hh) | 当前只有 tuple/generation，不是 KV manager。整合为唯一 session 生命周期所有者，删除重复 session lookup/create/release 路径 |
+| [SessionKvManager](../../dev/ai_mesh/mesh_kv_manager.hh) | 已整合为唯一 session/KV 生命周期所有者；Gate 3/4 surrogate session 状态与 KV record/slot/claim/pin/waiter/tombstone 同表 |
 | [MeshDispatcher](../../dev/ai_mesh/mesh_dispatcher.hh)、[MeshProgramLoader](../../dev/ai_mesh/mesh_program_loader.hh) | 由自启动固定序列扩展为按 concrete profile/bindings 提交并异步通知 terminal；原测试入口成为共同接口调用方 |
 | [MeshDummyCore](../../dev/ai_mesh/mesh_dummy_core.hh)、[scoreboard](../../dev/ai_mesh/program_scoreboard.hh)、[runtime key](../../dev/ai_mesh/runtime_key.hh) | phase/instance 共用 decode、admit、engine、commit、drain；完整 generation/key 防旧事件污染 |
 | [MoE runtime](../../dev/ai_mesh/mesh_moe_runtime.hh)、[cache](../../dev/ai_mesh/mesh_weight_cache.hh) | 使用 serving 冻结的成员与 batch tables；不新增第二套 materializer、cache 或 SRAM 服务模型 |

@@ -1,0 +1,22 @@
+{
+  "schema": "agent_control_plan_v1",
+  "version": 1,
+  "workload_plan_digest": "8c17689a09bdad646487322ea38e0c87328065c9687b408f07094312c9533040",
+  "actions": [
+    {
+      "control_ordinal": 1,
+      "opcode": "RELEASE_SESSION",
+      "trigger": {
+        "kind": "AFTER_SQ_ACCEPT",
+        "event_user_id": 1,
+        "event_task_seq": 0,
+        "event_repair_round": 0
+      },
+      "issuer_user_id": 1,
+      "issuer_task_seq": 0,
+      "target_session_id": 11,
+      "target_kv_handle": 11,
+      "target_generation": 1
+    }
+  ]
+}

@@ -196,6 +196,14 @@ NpuServingFrontend::resolveControlCommand(
         requestFatal(agent_abi::E_AGENT_PROTOCOL_FATAL);
         return;
     }
+    if (status == kPendingReleaseStatus) {
+        recordSemantic("CONTROL_DEFERRED", "CONTROL_WAITER", std::nullopt,
+                       currentRequestId, currentCookie, "PENDING");
+        finishCurrent();
+        if (planExecution)
+            dispatchAcceptedBusiness();
+        return;
+    }
     recordSemantic("CONTROL_RESOLVE", "CONTROL_WAITER", std::nullopt,
                    currentRequestId, currentCookie,
                    controlStatusName(status));
@@ -289,6 +297,7 @@ NpuServingFrontend::cancelParkedTarget(Tick now)
     parkedBusiness.reset();
     if (executionEvent.scheduled())
         deschedule(&executionEvent);
+    releaseKvPin(parked.requestId, agent_abi::kCqStatusCANCELLED);
     latchGenerateTerminal(parked.requestId);
     uint16_t flags = 0;
     std::optional<uint32_t> outputBytes;
@@ -313,6 +322,7 @@ NpuServingFrontend::cancelQueuedTarget(uint64_t requestId, Tick now)
              "%s: queued cancel target is not an accepted request", name());
     const ParkedBusiness parked = found->second;
     acceptedQueue.erase(found);
+    releaseKvPin(parked.requestId, agent_abi::kCqStatusCANCELLED);
     latchGenerateTerminal(parked.requestId);
     recorder->setMetric("queued_cancel_requests", 1);
     stageTerminalRecord(parked.obligationId, now, parked.sqSequence,
@@ -324,22 +334,95 @@ NpuServingFrontend::resolveSessionRelease(uint64_t sessionId, uint64_t kvHandle,
                                           uint32_t generation,
                                           uint16_t &status)
 {
-    const SessionRecord *existing = sessionRecords.find(sessionId, kvHandle);
-    if (existing == nullptr) {
-        status = agent_abi::kCqStatusNOT_FOUND;
+    KvReleaseIntent intent;
+    intent.request_id = currentRequestId;
+    intent.session_id = sessionId;
+    intent.kv_handle = kvHandle;
+    intent.generation = generation;
+    KvEdgeInputs edge;
+    edge.tick = curTick();
+    edge.releases.push_back(intent);
+    const KvEdgeResult result = kvManager.commitEdge(edge);
+    recorder->setMetric("kv_session_records",
+                        static_cast<unsigned>(kvManager.recordCount()));
+    recorder->setMetric("kv_session_tombstones",
+                        static_cast<unsigned>(kvManager.tombstoneCount()));
+    if (result.fatal)
+        return false;
+    consumeReleaseOutcomes(result);
+    const auto outcome = result.releases.find(currentRequestId);
+    if (outcome == result.releases.end()) {
+        if (!kvManager.hasReleaseWaiter(currentRequestId))
+            return false;
+        if (!currentObligationId)
+            return false;
+        ParkedRelease parked;
+        parked.sessionId = sessionId;
+        parked.kvHandle = kvHandle;
+        parked.generation = generation;
+        parked.obligationId = *currentObligationId;
+        parked.sqSequence = currentSqSequence;
+        parked.requestId = currentRequestId;
+        parked.cookie = currentCookie;
+        parked.qos = currentQos;
+        const bool inserted =
+            pendingReleases.emplace(currentRequestId, parked).second;
+        if (!inserted)
+            return false;
+        recorder->setMetric("kv_release_pending", 1);
+        status = kPendingReleaseStatus;
         return true;
     }
-    if (existing->generation != generation) {
-        status = agent_abi::kCqStatusSTALE_GENERATION;
-        return true;
-    }
-    fatal_if(!sessionRecords.erase(sessionId, kvHandle),
-             "%s: session record erase ownership is invalid", name());
-    recorder->setMetric("kv_session_tombstones", sessionRecords.tombstones());
-    recorder->setMetric("kv_session_records", sessionRecords.size());
-    status = agent_abi::kCqStatusSUCCESS;
+    status = releaseStatus(outcome->second);
     return true;
 }
+
+uint16_t
+NpuServingFrontend::releaseStatus(KvReleaseOutcome outcome) const
+{
+    switch (outcome) {
+      case KvReleaseOutcome::Success:
+        return agent_abi::kCqStatusSUCCESS;
+      case KvReleaseOutcome::StaleGeneration:
+        return agent_abi::kCqStatusSTALE_GENERATION;
+      case KvReleaseOutcome::Busy:
+        return agent_abi::kCqStatusBUSY;
+      default:
+        return agent_abi::kCqStatusNOT_FOUND;
+    }
+}
+
+void
+NpuServingFrontend::consumeReleaseOutcomes(const KvEdgeResult &result)
+{
+    if (pendingReleases.empty())
+        return;
+    for (auto entry = pendingReleases.begin();
+         entry != pendingReleases.end();) {
+        const auto outcome = result.releases.find(entry->first);
+        if (outcome == result.releases.end()) {
+            ++entry;
+            continue;
+        }
+        const uint16_t status = releaseStatus(outcome->second);
+        recordSemantic("CONTROL_RESOLVE", "CONTROL_WAITER", std::nullopt,
+                       entry->second.requestId, entry->second.cookie,
+                       controlStatusName(status));
+        stageTerminalRecord(entry->second.obligationId,
+                            result.commit_tick,
+                            entry->second.sqSequence,
+                            entry->second.requestId, entry->second.cookie,
+                            entry->second.qos, status,
+                            agent_abi::kCqFlagsCONTROL_COMMAND, 0,
+                            std::nullopt);
+        entry = pendingReleases.erase(entry);
+        break;
+    }
+    if (pendingReleases.empty())
+        recorder->setMetric("kv_release_pending", 0);
+    scheduleTerminalWake();
+}
+
 void
 NpuServingFrontend::saveParkedBusiness()
 {
