@@ -23,7 +23,9 @@ buildThresholds(const HomeNodeFullParams& p)
 HomeNodeFull::HomeNodeFull(const HomeNodeFullParams& p)
     : BasicChiComponent(p),
     Consumer(this),
-    linklayer( this, buildThresholds(p), p.rnf_num, p.retry_fifo_size),
+    pocq(this, p.pocq_entry_num),
+    linklayer(this, &pocq, buildThresholds(p),
+              p.rnf_num, p.retry_fifo_size),
     rxport(p.name + ".rxport", static_cast<ruby::Consumer*>(this),/*PortID*/ 0)
 {
     std::cout<<"HomeNodeFull constructed with name: "<<p.name<<std::endl;
@@ -42,6 +44,12 @@ HomeNodeFull::wakeup()
 
 
 
+}
+
+void
+HomeNodeFull::releasePocqQos(PoolPriority priority)
+{
+    linklayer.releaseQos(priority);
 }
 
 void

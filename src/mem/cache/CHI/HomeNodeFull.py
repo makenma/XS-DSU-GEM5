@@ -25,3 +25,7 @@ class HomeNodeFull(BasicChiComponent):
 
     # Number of RN-F nodes (used by HomeLinkLayer).
     rnf_num = Param.Int(1, "Number of RN-F nodes")
+
+    # Number of active protocol entries in HomePocq. Retired deque storage is
+    # not counted against this limit.
+    pocq_entry_num = Param.Unsigned(64, "Number of Home POCQ entries")

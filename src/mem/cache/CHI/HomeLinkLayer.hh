@@ -2,9 +2,9 @@
 #define __HOMELINKLAYER__HH__
 
 #include <array>
-#include <deque>
 #include <map>
-#include <type_traits>
+#include <optional>
+#include <vector>
 
 #include "base/logging.hh"
 #include "base/trace.hh"
@@ -12,77 +12,87 @@
 #include "mem/cache/CHI/base/BasicChiComponent.hh"
 #include "mem/cache/CHI/base/ChiChannel.hh"
 #include "mem/cache/CHI/base/ChiCommonPort.hh"
+#include "mem/cache/CHI/base/ChiPipeline.hh"
 #include "mem/ruby/common/Consumer.hh"
 
 namespace gem5::Chi {
 
 class HomeNodeFull;
+class HomePocq;
 
-class HomeLinkLayer :  public ruby::Consumer
+class HomeLinkLayer : public ruby::Consumer,
+                      private ChiPipeline<HomeLinkLayer, 2>
 {
     public:
-        template<typename FlitType>
-        using MemFn = void (HomeLinkLayer::*)(FlitType*);
-
-        HomeLinkLayer(HomeNodeFull *HNF,
+        HomeLinkLayer(HomeNodeFull *HNF, HomePocq *pocq,
             const std::array<int, 4>& thresholds,
             const int RnfNum,
             const int retryfifo_num
         );
-        void wakeup();
-        void print(std::ostream& out) const {};
+        void wakeup() override;
+        void print(std::ostream& out) const override {};
         inline void setRxPort(ChiCommonPort* port) { rxport = port; }
+        void releaseQos(PoolPriority priority);
     private:
+        friend class ChiPipeline<HomeLinkLayer, 2>;
 
         HomeNodeFull *m_homenode;
+        HomePocq *m_HomePocq;
         ChiCommonPort *rxport;
-
-        // 每类型一条在途流水队列: 同类型多个 flit 可同时处于不同阶段
-        // (flit0 在 H3、flit1 在 H1 并行)。索引与 flits 一一对应。
-        // 入流水深度受 rx credit 限制; 出流水受 TX credit 背压。
-        std::array<std::deque<FlitVariant>, 4> in_flight;
-        std::array<FlitVariant, 4> flits = {
-            RawReq{},
-            RawRsp{},
-            RawSnp{},
-            RawDat{}
-        };
-
 
         struct QosPool
         {
             enum PoolDim { QosCount, QosThreshold, PoolDimNum };
-            enum PoolPriority { HighHigh, High, Medium, Low, PoolPriorityNum };
             std::array<std::array<int, PoolDimNum>, PoolPriorityNum> pool = {};
-
-
-            PoolPriority WhichPriority(int qos) const {
-                switch (qos) {
-                    case 15:          return HighHigh;
-                    case 12 ... 14:   return High;
-                    case 8 ... 11:    return Medium;
-                    case 0 ... 7:     return Low;
-                    default:          return Low;
-                }
-            }
 
             // Try to push into the target priority pool, falling back to
             // lower-priority pools if the target one is full. Mutates pool
             // on success.
             bool tryPush(PoolPriority Pri)
             {
-                for (int p = Pri; p < PoolPriorityNum; ++p) {
-                    if (pool[p][QosCount] + 1 <= pool[p][QosThreshold]) {
-                        pool[p][QosCount]++;
-                        return true;
-                    }
-                }
-                return false;
+                const auto selected = selectPool(Pri);
+                return selected && reserve(*selected);
             }
 
+            std::optional<PoolPriority>
+            selectPool(PoolPriority pri) const
+            {
+                for (int p = pri; p < PoolPriorityNum; ++p) {
+                    if (pool[p][QosCount] < pool[p][QosThreshold])
+                        return static_cast<PoolPriority>(p);
+                }
+                return std::nullopt;
+            }
+
+            bool reserve(PoolPriority priority)
+            {
+                if (pool[priority][QosCount] >=
+                    pool[priority][QosThreshold]) {
+                    return false;
+                }
+                ++pool[priority][QosCount];
+                return true;
+            }
+
+            void release(PoolPriority priority)
+            {
+                panic_if(pool[priority][QosCount] == 0,
+                         "releasing an empty QoS pool");
+                --pool[priority][QosCount];
+            }
+
+            bool canPush(PoolPriority pri) const
+            {
+                return selectPool(pri).has_value();
+            }
 
             bool enqueue(int qos) {
                 return tryPush(WhichPriority(qos));
+            }
+
+            bool canEnqueue(int qos) const
+            {
+                return canPush(WhichPriority(qos));
             }
 
             QosPool() = default;
@@ -210,33 +220,6 @@ class HomeLinkLayer :  public ruby::Consumer
         QosPool m_qosPool;
         PendingRetry m_PendingRetry;
         RetryFifo m_RetryFifo;
-        std::array<MemFn<RawReq>, 4> reqFuncs;
-        std::array<MemFn<RawRsp>, 4> rspFuncs;
-        std::array<MemFn<RawSnp>, 4> snpFuncs;
-        std::array<MemFn<RawDat>, 4> datFuncs;
-
-
-        template<typename FlitType>
-        auto& funcsFor();
-
-        void advancePipeline(FlitVariant& fv);
-
-        // flit 类型 → 通道映射 (与 ChannelType 枚举顺序一致)。
-        template <typename FlitType>
-        static ChannelType channelOf()
-        {
-            if constexpr (std::is_same_v<FlitType, RawReq>) {
-                return ChannelType::REQ;
-            } else if constexpr (std::is_same_v<FlitType, RawRsp>) {
-                return ChannelType::RSP;
-            } else if constexpr (std::is_same_v<FlitType, RawSnp>) {
-                return ChannelType::SNP;
-            } else {
-                static_assert(std::is_same_v<FlitType, RawDat>,
-                              "Unsupported CHI flit type");
-                return ChannelType::DAT;
-            }
-        }
 
         void ArbPcrdCredit();
 
@@ -244,38 +227,26 @@ class HomeLinkLayer :  public ruby::Consumer
         // wakeup 据此决定是否调度下一拍 (按需唤醒, 省仿真时间)。
         bool hasPendingWork() const;
 
-        //pipline function
-        void doStageH0_Req(RawReq* Req);
-        void doStageH0_Rsp(RawRsp* Rsp);
-        void doStageH0_Snp(RawSnp* Snp);
-        void doStageH0_Dat(RawDat* Dat);
+        // ChiPipeline 调用的统一 stage 入口。它们再根据
+        // FlitVariant 的实际类型选择下面的重载函数。
+        void dispatchStageH0(FlitVariant &flit);
+        void dispatchStageH1(FlitVariant &flit);
 
-        void doStageH1_Req(RawReq* Req);
-        void doStageH1_Rsp(RawRsp* Rsp);
-        void doStageH1_Snp(RawSnp* Snp);
-        void doStageH1_Dat(RawDat* Dat);
+        // Pipeline functions. std::visit 通过参数类型自动选择重载。
+        void doStageH0(RawReq *req);
+        void doStageH0(RawRsp *rsp);
+        void doStageH0(RawSnp *snp);
+        void doStageH0(RawDat *dat);
+
+        void doStageH1(RawReq *req);
+        void doStageH1(RawRsp *rsp);
+        void doStageH1(RawSnp *snp);
+        void doStageH1(RawDat *dat);
 
 
 
 
 };
-
-template<typename FlitType>
-auto&
-HomeLinkLayer::funcsFor()
-{
-    if constexpr (std::is_same_v<FlitType, RawReq>) {
-        return reqFuncs;
-    } else if constexpr (std::is_same_v<FlitType, RawRsp>) {
-        return rspFuncs;
-    } else if constexpr (std::is_same_v<FlitType, RawSnp>) {
-        return snpFuncs;
-    } else {
-        static_assert(std::is_same_v<FlitType, RawDat>,
-                      "Unsupported CHI flit type");
-        return datFuncs;
-    }
-}
 
 
 }

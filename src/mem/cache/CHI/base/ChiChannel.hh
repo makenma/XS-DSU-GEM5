@@ -20,18 +20,30 @@ namespace Chi
         DAT = 3,
         NUM_CHANNELS
     };
+    enum PoolPriority { HighHigh, High, Medium, Low, PoolPriorityNum };
 
+    constexpr PoolPriority
+    WhichPriority(uint8_t qos) noexcept
+    {
+        if (qos == 15)
+            return HighHigh;
+        if (qos >= 12)
+            return High;
+        if (qos >= 8)
+            return Medium;
+        return Low;
+    }
 
 
     struct BaseFlit
     {
-        uint8_t      qos;
-        uint32_t     srcid;
-        uint32_t     tgtid;
-        uint32_t     txnid;
-        uint8_t      opcode;
+        uint8_t      qos = 0;
+        uint32_t     srcid = 0;
+        uint32_t     tgtid = 0;
+        uint32_t     txnid = 0;
+        uint8_t      opcode = 0;
         //module pipline virtual in rawflit
-        uint32_t     stage;
+        uint32_t     stage = 0;
 
         void next_stage(){
             this->stage++;
@@ -41,7 +53,21 @@ namespace Chi
             return this->stage == stage;
         }
 
+        PoolPriority qosPriority() const noexcept {
+            return WhichPriority(qos);
+        }
+
+        uint32_t srcId() const noexcept {
+            return srcid;
+        }
+
+        uint32_t txnId() const noexcept {
+            return txnid;
+        }
+
     };
+
+
 
     struct RawReq:BaseFlit
     {

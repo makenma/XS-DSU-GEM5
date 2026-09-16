@@ -9,6 +9,7 @@ SimObject('ChiFlitSink.py',sim_objects=['ChiFlitSink'])
 # Base CHI component + a concrete node
 SimObject('base/BasicChiComponent.py', sim_objects=['BasicChiComponent'])
 SimObject('HomeNodeFull.py', sim_objects=['HomeNodeFull'])
+SimObject('SlcSf.py', sim_objects=['SlcSf'])
 
 
 Source('Cache2ChiBridge.cc')
@@ -17,10 +18,17 @@ Source('base/BasicChiComponent.cc')
 
 Source('HomeNodeFull.cc')
 Source('HomeLinkLayer.cc')
+Source('PocqStateGraph.cc')
+Source('HomePocq.cc')
+Source('SlcSf.cc')
+
+GTest('pocq_state_graph.test',
+      'PocqStateGraph.test.cc', 'PocqStateGraph.cc')
 
 DebugFlag('Cache2ChiBridge')
 DebugFlag('ChiFlitSink')
 DebugFlag('BasicChiComponent')
 DebugFlag('HomeNodeFull')
 DebugFlag('HomeLinkLayer')
-
+DebugFlag('HomePocq')
+DebugFlag('SlcSf')

@@ -5,6 +5,7 @@
 #include "mem/cache/CHI/HomeLinkLayer.hh"
 
 #include "mem/cache/CHI/HomeNodeFull.hh"
+#include "mem/cache/CHI/HomePocq.hh"
 #include "mem/cache/CHI/base/ChiChannel.hh"
 
 namespace gem5::Chi {
@@ -12,32 +13,20 @@ namespace gem5::Chi {
 #define IS_THIS_STAGE(t , stage)\
     if (!t->isCurrentStage(stage)) return;
 
-HomeLinkLayer::HomeLinkLayer( HomeNodeFull* hnf,
+HomeLinkLayer::HomeLinkLayer(HomeNodeFull* hnf, HomePocq* pocq,
                           const std::array<int, 4>& thresholds,
                             const int RnfNum, const int retryfifo_num)
   : Consumer(hnf),
+    ChiPipeline({
+        &HomeLinkLayer::dispatchStageH0,
+        &HomeLinkLayer::dispatchStageH1,
+    }),
     m_homenode(hnf),
+    m_HomePocq(pocq),
     RnfNum(RnfNum),
     m_qosPool(thresholds),
     m_RetryFifo(retryfifo_num)
-{
-    reqFuncs = {
-        &HomeLinkLayer::doStageH0_Req,
-        &HomeLinkLayer::doStageH1_Req
-        };
-     rspFuncs = {
-        &HomeLinkLayer::doStageH0_Rsp,
-        &HomeLinkLayer::doStageH1_Rsp
-    };
-    snpFuncs = {
-        &HomeLinkLayer::doStageH0_Snp,
-        &HomeLinkLayer::doStageH1_Snp
-    };
-    datFuncs = {
-        &HomeLinkLayer::doStageH0_Dat,
-        &HomeLinkLayer::doStageH1_Dat
-    };
-}
+{}
 
 bool
 HomeLinkLayer::PendingRetry::enqueue(RawReq req)
@@ -47,7 +36,7 @@ HomeLinkLayer::PendingRetry::enqueue(RawReq req)
     return true;
 }
 
-HomeLinkLayer::PendingRetry::PoolPriority
+PoolPriority
 HomeLinkLayer::PendingRetry::arbQos(SrcId srcid)
 {
     auto it = pendingPool.find(srcid);
@@ -112,6 +101,12 @@ HomeLinkLayer::PendingRetry::arbPend()
     return PendingElement{srcid, pri};
 }
 
+void
+HomeLinkLayer::releaseQos(PoolPriority priority)
+{
+    m_qosPool.release(priority);
+}
+
 
 void
 HomeLinkLayer::wakeup()
@@ -124,35 +119,19 @@ HomeLinkLayer::wakeup()
     //    想给流水优先就挪到循环后面。每拍无条件执行, 不依赖 REQ 到达。
     ArbPcrdCredit();
 
-    for (int i = 0; i < 4; ++i) {
-        std::visit([this, i](auto& f) {
-            using FlitType = std::decay_t<decltype(f)>;
-            auto& q = in_flight[i];
+    for (std::size_t i = 0; i < NUM_CHANNELS; ++i) {
+        const auto channel = static_cast<ChannelType>(i);
 
-            // ① 推进: 每个在途 flit 每周期走一级 (H0 → H1)
-            for (auto& fv : q)
-                advancePipeline(fv);
+        // ①② 公共层推进整条流水并按顺序退休。TX 无
+        // credit 时 callback 返回 false，flit 会恢复到队首。
+        drivePipeline(i, [this, channel](FlitVariant &flit) {
+            return rxport->enqueueTx(channel, flit);
+        });
 
-            // ② 出流水: 走完 H1 的 (stage>=2) 发到 TX。
-            //    正常是固定的 (入流水后第 2 拍), 但 TX 无 credit 时会
-            //    留在队头等待, 所以实际出流水的拍数不固定 ——
-            //    这是背压, 不是 bug。
-            while (!q.empty() &&
-                   std::visit([](auto& x) { return x.stage >= 2; },
-                              q.front())) {
-                FlitVariant done = std::move(q.front());
-                q.pop_front();
-                if (!rxport->enqueueTx(channelOf<FlitType>(), done)) {
-                    q.push_front(done);
-                    break;
-                }
-            }
-
-            // ③ 准入: rx 有新 flit 则入流水 (rx 深度受 credit 限制)
-            auto getFlit = rxport->getRxFlit(typeid(f));
-            if (getFlit)
-                q.push_back(*getFlit);
-        }, flits[i]);
+        // ③ 准入: RX 有新 flit 则放入对应 channel 流水。
+        auto flit = rxport->getRxFlit(channel);
+        if (flit)
+            enqueuePipeline(i, std::move(*flit));
     }
 
     // 按需调度: 有活才排下一拍, 没活就睡 (省仿真时间)。
@@ -166,33 +145,20 @@ bool
 HomeLinkLayer::hasPendingWork() const
 {
     // 流水里还有 flit, 或 retry 池/队列有待发数据
-    for (const auto& q : in_flight) {
-        if (!q.empty())
-            return true;
-    }
-    return !m_RetryFifo.empty() || !m_PendingRetry.empty();
+    return hasPipelineWork() ||
+           !m_RetryFifo.empty() || !m_PendingRetry.empty();
 }
 
 void
-HomeLinkLayer::advancePipeline(FlitVariant& fv)
+HomeLinkLayer::dispatchStageH0(FlitVariant &flit)
 {
-    std::visit([this](auto& flit) {
-        using FlitType = std::decay_t<decltype(flit)>;
-        auto& funcs = funcsFor<FlitType>();
+    std::visit([this](auto &raw) { doStageH0(&raw); }, flit);
+}
 
-        if (flit.stage >= funcs.size()) {
-            DPRINTF(HomeLinkLayer,
-                    "advancePipeline: stage=%d out of range\n",
-                    static_cast<int>(flit.stage));
-            return;
-        }
-
-        for(auto fn=funcs.rbegin(); fn!=funcs.rend(); ++fn) {
-            if (*fn) {
-                (this->**fn)(&flit);
-            }
-        }
-    }, fv);
+void
+HomeLinkLayer::dispatchStageH1(FlitVariant &flit)
+{
+    std::visit([this](auto &raw) { doStageH1(&raw); }, flit);
 }
 
 
@@ -211,51 +177,63 @@ void HomeLinkLayer::ArbPcrdCredit(){
 
 
 // RawReq
-void HomeLinkLayer::doStageH0_Req(RawReq* Req) {
+void HomeLinkLayer::doStageH0(RawReq* Req) {
     IS_THIS_STAGE(Req, 0)
     Req->next_stage();
     DPRINTF(HomeLinkLayer, "HomeLinklayer get req!!!\n");
 }
-void HomeLinkLayer::doStageH1_Req(RawReq* Req) {
+void HomeLinkLayer::doStageH1(RawReq* Req) {
     IS_THIS_STAGE(Req, 1)
-    if (m_qosPool.enqueue(Req->qos)){
-        //TODO: transfer flit to qocq entry then send req credit
+    panic_if(!m_HomePocq, "HomeLinkLayer has no HomePocq");
 
+    // 先做 QoS 容量的无副作用检查，再准入 POCQ。这样
+    // POCQ 失败时不会留下一个已占用的 QoS 计数。
+    const auto qos_pool =
+        m_qosPool.selectPool(WhichPriority(Req->qos));
+    if (qos_pool &&
+        m_HomePocq->allocate(FlitVariant{*Req}, *qos_pool)) {
+        // selectPool() 和 reserve() 之间没有并发修改，因此这里
+        // 必须成功。Entry 保存的也是实际占用的 pool 优先级。
+        panic_if(!m_qosPool.reserve(*qos_pool),
+                 "QoS pool changed during POCQ admission");
     }
-    else{
+    else {
         //fast path
         if (m_RetryFifo.full()){
             //TODO:stall req credit
         }
         else {
             m_RetryFifo.push({static_cast<int>(Req->srcid), Req->qos});
-            //TODO:return req credit
+            m_PendingRetry.enqueue(*Req);
+            PendingElement pcrd_grant;
+            pcrd_grant = m_PendingRetry.arbPend();
+            //TODO:return req credit send Pcrd_grant to RNf
         }
     }
     Req->next_stage();
 }
 
 // RawRsp
-void HomeLinkLayer::doStageH0_Rsp(RawRsp* Rsp) {
+void HomeLinkLayer::doStageH0(RawRsp* Rsp) {
     IS_THIS_STAGE(Rsp, 0) Rsp->next_stage();
 }
-void HomeLinkLayer::doStageH1_Rsp(RawRsp* Rsp) {
+void HomeLinkLayer::doStageH1(RawRsp* Rsp) {
     IS_THIS_STAGE(Rsp, 1) Rsp->next_stage();
 }
 
 // RawSnp
-void HomeLinkLayer::doStageH0_Snp(RawSnp* Snp) {
+void HomeLinkLayer::doStageH0(RawSnp* Snp) {
     IS_THIS_STAGE(Snp, 0) Snp->next_stage();
 }
-void HomeLinkLayer::doStageH1_Snp(RawSnp* Snp) {
+void HomeLinkLayer::doStageH1(RawSnp* Snp) {
     IS_THIS_STAGE(Snp, 1) Snp->next_stage();
 }
 
 // RawDat
-void HomeLinkLayer::doStageH0_Dat(RawDat* Dat) {
+void HomeLinkLayer::doStageH0(RawDat* Dat) {
     IS_THIS_STAGE(Dat, 0) Dat->next_stage();
 }
-void HomeLinkLayer::doStageH1_Dat(RawDat* Dat) {
+void HomeLinkLayer::doStageH1(RawDat* Dat) {
     IS_THIS_STAGE(Dat, 1) Dat->next_stage();
 }
 

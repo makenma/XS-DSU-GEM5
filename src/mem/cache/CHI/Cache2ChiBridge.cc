@@ -84,7 +84,11 @@ Cache2ChiBridge::packetToRawReq(PacketPtr pkt) const
     // 这些接口是 gem5 Packet 常用接口，如果你那份有差异就改这里
     r.addr = pkt->getAddr();
     r.size = static_cast<uint8_t>(pkt->getSize());
-    r.qos  = pkt->qosValue();
+
+    const auto qos = pkt->qosValue();
+    panic_if(qos > 15,
+             "Cache2ChiBridge: invalid CHI QoS %u", qos);
+    r.qos = qos;
 
     r.srcid = static_cast<int>(pkt->requestorId());
     r.tgtid = 0;           // TODO：后续你可以根据地址映射到 HNF/SNF
