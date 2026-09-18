@@ -10,6 +10,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 
+from mesh_ir.execution_view import build_execution_views
 from mesh_ir.generated import abi as A
 from mesh_ir.model import MeshIrError, Program, canonical_json_bytes
 
@@ -209,6 +210,52 @@ def declared_decode_chunk(program: Program, request, path_kind: int,
     return max(sizes) if sizes else 0
 
 
+def planned_instance_sequence(program: Program, request, path_kind: int
+                              ) -> tuple:
+    """Derive the executed instance sequence of one request.
+
+    The frozen plan is walked the way the serving runtime walks it: one PREFILL
+    instance, then DECODE instances advancing a token cursor by the declared
+    decode chunk until the request's output tokens are produced, then one
+    PUBLISH instance.  Candidate records are filtered by request/profile/path;
+    the sequence itself comes from the selector, the cursor and the decode
+    chunk, never from a record count.
+    """
+    index = SelectorIndex(program)
+    prefill = _request_instances(program, request, path_kind, A.PHASE.PREFILL)
+    publish = _request_instances(program, request, path_kind, A.PHASE.PUBLISH)
+    if len(prefill) != 1 or len(publish) != 1:
+        raise PlanError("E_REQUEST_PROFILE", "instances",
+                        "request needs exactly one PREFILL and one PUBLISH")
+    chunk = prefill[0].decode_chunk_tokens
+    if chunk == 0:
+        candidates = [instance.decode_chunk_tokens for instance in
+                      _request_instances(program, request, path_kind,
+                                         A.PHASE.DECODE)]
+        chunk = max(candidates) if candidates else 0
+    if chunk == 0:
+        raise PlanError("E_REQUEST_PROFILE", "decode_chunk_tokens",
+                        "request declares no decode chunk")
+    sequence = [prefill[0]]
+    for size, produced in decode_sequence(request.output_tokens, chunk):
+        selector = expected_selector(
+            request.program_id, request.profile_id, path_kind,
+            A.PHASE.DECODE, size,
+            prefill[0].valid_tokens_per_member + produced, size,
+            member_rank_vector(program, prefill[0]))
+        matched = index.select(selector)
+        if matched is None:
+            raise PlanError("E_REQUEST_PROFILE", "instance selector",
+                            "decode step has no matching instance")
+        sequence.append(matched)
+    sequence.append(publish[0])
+    return tuple(sequence)
+
+
+def planned_instance_count(program: Program, request, path_kind: int) -> int:
+    return len(planned_instance_sequence(program, request, path_kind))
+
+
 def verify_path_closure(program: Program, request) -> None:
     index = SelectorIndex(program)
     for path_kind in _declared_paths(request):
@@ -381,13 +428,15 @@ def _descriptor_rows(endpoint, stride, rows, row_bytes):
             for index in range(rows)]
 
 
-def _profile_descriptors(program: Program, instance):
-    descriptor_ids = {
-        row.descriptor_id for row in program.expected_traffic
-        if row.entrypoint_id == instance.mesh_entrypoint_id and
-        row.profile_id == instance.mesh_profile_id}
+def instance_descriptors(program: Program, instance):
+    view = build_execution_views(program).for_instance(
+        instance.mesh_entrypoint_id, instance.mesh_profile_id)
     return [descriptor for descriptor in program.dma_descriptors
-            if descriptor.descriptor_id in descriptor_ids]
+            if descriptor.descriptor_id in view.descriptor_ids]
+
+
+def _profile_descriptors(program: Program, instance):
+    return instance_descriptors(program, instance)
 
 
 def _rows_fit(endpoint, stride, rows, row_bytes, view) -> bool:

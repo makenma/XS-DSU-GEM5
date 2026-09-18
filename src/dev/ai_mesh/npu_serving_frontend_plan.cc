@@ -15,11 +15,11 @@ namespace ai_mesh
 std::vector<uint8_t>
 NpuServingFrontend::makeOutput(uint64_t sequence) const
 {
-    if (planExecution && lastExecutionRequest) {
-        std::vector<uint8_t> data =
-            requestExecutor->outputPayload(*lastExecutionRequest);
+    if (planExecution && currentCompletion) {
+        const std::vector<uint8_t> data = currentCompletion->outputPayload;
         fatal_if(data.empty(),
-                 "%s: surrogate executor produced no output payload", name());
+                 "%s: execution completion produced no output payload",
+                 name());
         return data;
     }
     std::vector<uint8_t> data(dataBusBytes, 0);
@@ -30,7 +30,7 @@ NpuServingFrontend::makeOutput(uint64_t sequence) const
 std::vector<uint8_t>
 NpuServingFrontend::makeMetadata(uint64_t sequence, uint32_t status) const
 {
-    if (planExecution && lastExecutionRequest) {
+    if (planExecution && currentCompletion) {
         agent_abi::OutputMetadata value;
         value.magic = 0x4f4e4741;
         value.abi_major = agent_abi::kAbiMajor;
@@ -47,14 +47,19 @@ NpuServingFrontend::makeMetadata(uint64_t sequence, uint32_t status) const
         value.task_seq = currentTaskSeq;
         value.repair_round = currentRepairRound;
         value.output_tokens = currentMaxOutputTokens;
-        value.output_bytes =
-            requestExecutor->outputBytes(*lastExecutionRequest);
-        value.semantic_content_digest =
-            requestExecutor->semanticDigest(*lastExecutionRequest);
-        value.completed_instance_count = 0;
-        value.moe_invocation_count = 0;
-        value.request_start_tick = curTick();
-        value.terminal_ready_tick = curTick();
+        value.output_bytes = currentCompletion->outputBytes;
+        value.semantic_content_digest = currentCompletion->semanticDigest;
+        if (currentCompletion->kvTerminal) {
+            value.completed_instance_count =
+                currentCompletion->phaseInstances;
+            value.request_start_tick = currentCompletion->requestStartTick;
+            value.terminal_ready_tick = currentCompletion->terminalTick;
+        } else {
+            value.completed_instance_count = 0;
+            value.moe_invocation_count = 0;
+            value.request_start_tick = curTick();
+            value.terminal_ready_tick = curTick();
+        }
         std::vector<uint8_t> data =
             toVector(agent_abi::encodeOutputMetadata(value));
         const size_t offset = data.size();
@@ -448,6 +453,7 @@ NpuServingFrontend::saveParkedBusiness()
     parked.qos = currentQos;
     parked.sessionAdmitted = currentSessionAdmitted;
     parked.publishChunkBytes = currentPublishChunkBytes;
+    parked.completion = currentCompletion.value_or(NpuExecutionCompletion{});
     if (executionEvent.scheduled())
         parked.executionDeadlineTick = executionEvent.when();
     if (parkingOutput) {
@@ -480,6 +486,10 @@ NpuServingFrontend::loadBusinessContext(const ParkedBusiness &parked)
     currentQos = parked.qos;
     currentSessionAdmitted = parked.sessionAdmitted;
     currentPublishChunkBytes = parked.publishChunkBytes;
+    if (parked.completion.outputBytes != 0 ||
+            !parked.completion.outputPayload.empty() ||
+            parked.completion.coreStarted)
+        currentCompletion = parked.completion;
     currentValid = true;
     currentError = false;
     currentControlOpcode = 0;
@@ -502,6 +512,20 @@ NpuServingFrontend::restoreParkedBusiness()
         return;
     }
     stage = Stage::Execute;
+    if (servingExecution) {
+        if (currentCompletion) {
+            if (currentCompletion->success)
+                startMetadata();
+            else
+                queueErrorCompletion(
+                    static_cast<uint16_t>(
+                        agent_abi::CqStatus::PROGRAM_ERROR),
+                    agent_abi::kCqFlagsDETAIL_IN_CQ,
+                    agent_abi::E_KV_STATE);
+        }
+        scheduleTick();
+        return;
+    }
     scheduleExecutionEvent(
         std::max<Tick>(parked.executionDeadlineTick, clockEdge(Cycles(1))));
 }

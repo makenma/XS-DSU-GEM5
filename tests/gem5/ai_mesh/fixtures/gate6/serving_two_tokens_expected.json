@@ -1,0 +1,231 @@
+{
+  "abi_major": 1,
+  "abi_minor": 3,
+  "agent_instance_member_bindings": [
+    {
+      "expected_logical_source_rank": 0,
+      "instance_profile_id": 11,
+      "member_ordinal": 0,
+      "reserved0": 0,
+      "static_input_symbol_id": 7,
+      "static_kv_symbol_id": 8,
+      "static_output_symbol_id": 0
+    },
+    {
+      "expected_logical_source_rank": 0,
+      "instance_profile_id": 12,
+      "member_ordinal": 0,
+      "reserved0": 0,
+      "static_input_symbol_id": 0,
+      "static_kv_symbol_id": 8,
+      "static_output_symbol_id": 0
+    },
+    {
+      "expected_logical_source_rank": 0,
+      "instance_profile_id": 13,
+      "member_ordinal": 0,
+      "reserved0": 0,
+      "static_input_symbol_id": 0,
+      "static_kv_symbol_id": 8,
+      "static_output_symbol_id": 0
+    },
+    {
+      "expected_logical_source_rank": 0,
+      "instance_profile_id": 14,
+      "member_ordinal": 0,
+      "reserved0": 0,
+      "static_input_symbol_id": 0,
+      "static_kv_symbol_id": 0,
+      "static_output_symbol_id": 9
+    }
+  ],
+  "agent_instance_profiles": [
+    {
+      "decode_chunk_tokens": 0,
+      "flags": 0,
+      "host_input_dma_bytes_per_member": 128,
+      "host_output_dma_bytes_per_member": 0,
+      "instance_profile_id": 11,
+      "kv_read_bytes_per_member": 0,
+      "kv_tokens_before": 0,
+      "kv_write_bytes_per_member": 128,
+      "local_padded_members": 0,
+      "local_padded_tokens_per_member": 0,
+      "member_binding_count": 1,
+      "member_binding_first": 0,
+      "member_count": 1,
+      "mesh_entrypoint_id": 1,
+      "mesh_profile_id": 1,
+      "path_kind": 0,
+      "phase": 1,
+      "primary_input_symbol_id": 1,
+      "primary_kv_symbol_id": 3,
+      "primary_output_symbol_id": 0,
+      "request_profile_id": 1,
+      "request_program_id": 1,
+      "valid_tokens_per_member": 8
+    },
+    {
+      "decode_chunk_tokens": 1,
+      "flags": 0,
+      "host_input_dma_bytes_per_member": 0,
+      "host_output_dma_bytes_per_member": 0,
+      "instance_profile_id": 12,
+      "kv_read_bytes_per_member": 128,
+      "kv_tokens_before": 8,
+      "kv_write_bytes_per_member": 16,
+      "local_padded_members": 0,
+      "local_padded_tokens_per_member": 0,
+      "member_binding_count": 1,
+      "member_binding_first": 1,
+      "member_count": 1,
+      "mesh_entrypoint_id": 2,
+      "mesh_profile_id": 2,
+      "path_kind": 0,
+      "phase": 2,
+      "primary_input_symbol_id": 0,
+      "primary_kv_symbol_id": 3,
+      "primary_output_symbol_id": 0,
+      "request_profile_id": 1,
+      "request_program_id": 1,
+      "valid_tokens_per_member": 1
+    },
+    {
+      "decode_chunk_tokens": 1,
+      "flags": 0,
+      "host_input_dma_bytes_per_member": 0,
+      "host_output_dma_bytes_per_member": 0,
+      "instance_profile_id": 13,
+      "kv_read_bytes_per_member": 144,
+      "kv_tokens_before": 9,
+      "kv_write_bytes_per_member": 16,
+      "local_padded_members": 0,
+      "local_padded_tokens_per_member": 0,
+      "member_binding_count": 1,
+      "member_binding_first": 2,
+      "member_count": 1,
+      "mesh_entrypoint_id": 3,
+      "mesh_profile_id": 3,
+      "path_kind": 0,
+      "phase": 2,
+      "primary_input_symbol_id": 0,
+      "primary_kv_symbol_id": 3,
+      "primary_output_symbol_id": 0,
+      "request_profile_id": 1,
+      "request_program_id": 1,
+      "valid_tokens_per_member": 1
+    },
+    {
+      "decode_chunk_tokens": 0,
+      "flags": 0,
+      "host_input_dma_bytes_per_member": 0,
+      "host_output_dma_bytes_per_member": 256,
+      "instance_profile_id": 14,
+      "kv_read_bytes_per_member": 0,
+      "kv_tokens_before": 10,
+      "kv_write_bytes_per_member": 0,
+      "local_padded_members": 0,
+      "local_padded_tokens_per_member": 0,
+      "member_binding_count": 1,
+      "member_binding_first": 3,
+      "member_count": 1,
+      "mesh_entrypoint_id": 4,
+      "mesh_profile_id": 4,
+      "path_kind": 0,
+      "phase": 3,
+      "primary_input_symbol_id": 0,
+      "primary_kv_symbol_id": 0,
+      "primary_output_symbol_id": 6,
+      "request_profile_id": 1,
+      "request_program_id": 1,
+      "valid_tokens_per_member": 0
+    }
+  ],
+  "agent_publish_surrogate_bindings": [
+    {
+      "allocation_id": 5,
+      "allocation_role": 1,
+      "completion_event_id": 19,
+      "digest_source": 0,
+      "fill_kind": 1,
+      "instance_profile_id": 14,
+      "member_ordinal": 0,
+      "producer_command_id": 22,
+      "reserved0": 0,
+      "reserved1": 0
+    }
+  ],
+  "agent_request_binding_requirements": [
+    {
+      "binding_flags": 1,
+      "binding_kind": 1,
+      "request_profile_id": 1,
+      "request_program_id": 1,
+      "reserved": 0,
+      "symbol_id": 1
+    },
+    {
+      "binding_flags": 5,
+      "binding_kind": 4,
+      "request_profile_id": 1,
+      "request_program_id": 1,
+      "reserved": 0,
+      "symbol_id": 2
+    },
+    {
+      "binding_flags": 15,
+      "binding_kind": 3,
+      "request_profile_id": 1,
+      "request_program_id": 1,
+      "reserved": 0,
+      "symbol_id": 3
+    },
+    {
+      "binding_flags": 2,
+      "binding_kind": 2,
+      "request_profile_id": 1,
+      "request_program_id": 1,
+      "reserved": 0,
+      "symbol_id": 6
+    }
+  ],
+  "agent_request_profiles": [
+    {
+      "delta_input_dma_bytes": 128,
+      "delta_input_tokens": 8,
+      "expected_cached_tokens": 0,
+      "flags": 1,
+      "full_input_dma_bytes": 128,
+      "full_input_tokens": 8,
+      "host_output_bytes": 256,
+      "input_binding_bytes": 128,
+      "kv_bytes_per_token": 16,
+      "output_tokens": 2,
+      "path_mask": 1,
+      "primary_input_symbol_id": 1,
+      "primary_kv_symbol_id": 3,
+      "primary_output_symbol_id": 6,
+      "profile_id": 1,
+      "program_id": 1,
+      "publish_chunk_bytes": 64,
+      "requested_profile_key": 2537423335318638178,
+      "reserved0": 0,
+      "source_core_map_begin": 0,
+      "source_rank_count": 1
+    }
+  ],
+  "agent_source_core_map": [
+    {
+      "core_id": 0,
+      "reserved": 0
+    }
+  ],
+  "capacity_required": {
+    "batch_interval_entries_per_context": 5,
+    "batch_weight_binding_entries_per_context": 1,
+    "instance_member_binding_entries_per_context": 2
+  },
+  "profile_key_base_digest": "3577e35da187c9f31d118775cbbdb60c5d6ceb07fb41a344833f0b5de5f8c1c0",
+  "required_features": 6,
+  "semantic_sha256": "c2d97bdad0ee6a131f33118d0f551a5a7342c5cbe3d7c7744d90a2d9660b7f86"
+}

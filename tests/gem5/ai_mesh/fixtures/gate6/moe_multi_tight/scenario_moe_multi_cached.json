@@ -1,0 +1,138 @@
+{
+ "schema_version": 1,
+ "name": "mesh_program",
+ "driver_mode": "mesh_program",
+ "endpoint_to_router": {
+  "initiators": [
+   {
+    "src_node": 0,
+    "src_port": 0,
+    "router_id": 0,
+    "default_target": 13
+   },
+   {
+    "src_node": 1,
+    "src_port": 0,
+    "router_id": 1,
+    "default_target": 13
+   }
+  ],
+  "targets": [
+   {
+    "dst_node": 10,
+    "router_id": 2
+   },
+   {
+    "dst_node": 11,
+    "router_id": 3
+   },
+   {
+    "dst_node": 12,
+    "router_id": 4
+   },
+   {
+    "dst_node": 13,
+    "router_id": 5
+   }
+  ]
+ },
+ "default_error_target": 13,
+ "target_ranges": [
+  {
+   "dst_node": 10,
+   "start": 17179869184,
+   "end": 17181966336
+  },
+  {
+   "dst_node": 11,
+   "start": 17184063488,
+   "end": 17186160640
+  },
+  {
+   "dst_node": 12,
+   "start": 34359738368,
+   "end": 38654705664
+  },
+  {
+   "dst_node": 12,
+   "start": 4294967296,
+   "end": 4296015872
+  }
+ ],
+ "quotas": [
+  {
+   "src_node": 0,
+   "src_port": 0,
+   "dst_node": 10,
+   "write_contexts": 16,
+   "write_beats": 512,
+   "read_contexts": 16,
+   "read_beats": 512
+  },
+  {
+   "src_node": 0,
+   "src_port": 0,
+   "dst_node": 11,
+   "write_contexts": 16,
+   "write_beats": 512,
+   "read_contexts": 16,
+   "read_beats": 512
+  },
+  {
+   "src_node": 0,
+   "src_port": 0,
+   "dst_node": 12,
+   "write_contexts": 16,
+   "write_beats": 512,
+   "read_contexts": 16,
+   "read_beats": 512
+  },
+  {
+   "src_node": 0,
+   "src_port": 0,
+   "dst_node": 13,
+   "write_contexts": 16,
+   "write_beats": 512,
+   "read_contexts": 16,
+   "read_beats": 512
+  },
+  {
+   "src_node": 1,
+   "src_port": 0,
+   "dst_node": 10,
+   "write_contexts": 16,
+   "write_beats": 512,
+   "read_contexts": 16,
+   "read_beats": 512
+  },
+  {
+   "src_node": 1,
+   "src_port": 0,
+   "dst_node": 11,
+   "write_contexts": 16,
+   "write_beats": 512,
+   "read_contexts": 16,
+   "read_beats": 512
+  },
+  {
+   "src_node": 1,
+   "src_port": 0,
+   "dst_node": 12,
+   "write_contexts": 16,
+   "write_beats": 512,
+   "read_contexts": 16,
+   "read_beats": 512
+  },
+  {
+   "src_node": 1,
+   "src_port": 0,
+   "dst_node": 13,
+   "write_contexts": 16,
+   "write_beats": 512,
+   "read_contexts": 16,
+   "read_beats": 512
+  }
+ ],
+ "mesh_planned_extra_latency": [],
+ "mesh_planned_faults": []
+}

@@ -1,0 +1,13 @@
+{
+  "abi": {
+    "major": 1,
+    "minor": 1
+  },
+  "arch_digest": "06d828e6038d30edc6d4830f8bddf1e2117cb80ebae6e3b2fcd3955912445284",
+  "arch_name": "xs_ai_mesh_1x2_moe_tight",
+  "mshb_bytes": 4440,
+  "mshb_sha256": "6444385c03c7c45c978a5988b97ecaba5022a04e4c00849e863dac1528684573",
+  "program": "moe_multi",
+  "semantic_sha256": "c1a5f65a8f1b7cf4f09fd08309b30ffddf412a173e4c9a15e6aad1c4613f0a2f",
+  "status": "ok"
+}

@@ -56,9 +56,11 @@ def arch():
 
 def test_agent_serving_abi_surface_is_frozen_by_contract():
     assert A.AGENT_SERVING_V1 == 0x2
-    assert A.KNOWN_FEATURE_MASK == 0x3
+    assert A.KNOWN_FEATURE_MASK == 0x7
     assert A.FEATURE_MIN_WRITER_MINOR == {
-        "DYNAMIC_MOE_V1": 1, "AGENT_SERVING_V1": 1}
+        "DYNAMIC_MOE_V1": 1, "AGENT_SERVING_V1": 1,
+        "PROFILE_SCOPED_EXECUTION_V1": 3}
+    assert A.SECTION_TYPE.PROFILE_STREAM_RANGES == 16
     assert A.SECTION_TYPE.AGENT_REQUEST_PROFILES == 0x4004
     assert A.SECTION_TYPE.AGENT_INSTANCE_PROFILES == 0x4005
     assert A.SECTION_TYPE.AGENT_SOURCE_CORE_MAP == 0x4006
@@ -140,7 +142,8 @@ def test_serving_program_round_trips_byte_identically(arch):
     program = serving_program(arch)
     blob = encode_program(program)
     decoded = decode_program(blob)
-    assert decoded.required_features == A.AGENT_SERVING_V1
+    assert decoded.required_features == (
+        A.AGENT_SERVING_V1 | A.PROFILE_SCOPED_EXECUTION_V1)
     assert encode_program(decoded) == blob
     assert decoded.agent_request_profiles == program.agent_request_profiles
     assert decoded.agent_instance_profiles == program.agent_instance_profiles
@@ -226,7 +229,9 @@ def test_feature_bit_below_writer_minor_is_rejected(arch):
 def test_combined_feature_bits_round_trip(arch):
     program = dataclasses.replace(
         serving_program(arch),
-        required_features=A.AGENT_SERVING_V1 | A.DYNAMIC_MOE_V1)
+        required_features=(A.AGENT_SERVING_V1 |
+                           A.PROFILE_SCOPED_EXECUTION_V1 |
+                           A.DYNAMIC_MOE_V1))
     blob = encode_program(program)
     header = decode_header(blob)
     payloads = decode_section_dir(blob, header)
@@ -234,8 +239,9 @@ def test_combined_feature_bits_round_trip(arch):
                  "AGENT_REQUEST_PROFILES"):
         assert getattr(A.SECTION_TYPE, name) in payloads, name
     decoded = decode_program(blob)
-    assert decoded.required_features == \
-        A.AGENT_SERVING_V1 | A.DYNAMIC_MOE_V1
+    assert decoded.required_features == (
+        A.AGENT_SERVING_V1 | A.PROFILE_SCOPED_EXECUTION_V1 |
+        A.DYNAMIC_MOE_V1)
     assert encode_program(decoded) == blob
     serving_only = decode_program(encode_program(serving_program(arch)))
     assert decoded.semantic_sha256() != serving_only.semantic_sha256()
@@ -362,7 +368,8 @@ def test_serving_fixture_matches_the_cross_language_expected():
     assert program.abi_major == expected["abi_major"] == 1
     assert program.abi_minor == expected["abi_minor"]
     assert program.required_features == expected["required_features"]
-    assert program.required_features == A.AGENT_SERVING_V1
+    assert program.required_features == (
+        A.AGENT_SERVING_V1 | A.PROFILE_SCOPED_EXECUTION_V1)
     assert program.semantic_sha256() == expected["semantic_sha256"]
     assert program_profile_key_base_digest(program).hex() == \
         expected["profile_key_base_digest"]
@@ -385,7 +392,8 @@ def test_full_view_fixture_matches_the_cross_language_expected():
         (FIXTURE / "serving_fullview_expected.json").read_text())
     program = decode_program(blob)
     assert encode_program(program) == blob
-    assert program.required_features == A.AGENT_SERVING_V1
+    assert program.required_features == (
+        A.AGENT_SERVING_V1 | A.PROFILE_SCOPED_EXECUTION_V1)
     assert program.semantic_sha256() == expected["semantic_sha256"]
     for name in (
             "agent_request_profiles", "agent_instance_profiles",

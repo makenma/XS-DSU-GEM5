@@ -62,6 +62,65 @@ gate3ParameterStructureError(const agent_abi::ParameterHeader &header,
     return std::nullopt;
 }
 
+std::optional<agent_abi::DetailCode>
+parameterTlvStructureError(const uint8_t *data, uint64_t actualBytes,
+                           const agent_abi::ParameterHeader &header,
+                           ParameterTlvValues &values)
+{
+    if (header.extension_bytes % 8 != 0 ||
+            header.extension_offset + header.extension_bytes > actualBytes)
+        return agent_abi::E_REQUEST_BINDING;
+    size_t offset = header.extension_offset;
+    const size_t end = header.extension_offset + header.extension_bytes;
+    uint32_t previousType = 0;
+    bool sawEntry = false;
+    while (offset < end) {
+        if (end - offset < 8)
+            return agent_abi::E_REQUEST_BINDING;
+        const uint16_t type = agent_abi::rdU16(data + offset);
+        const uint16_t flags = agent_abi::rdU16(data + offset + 2);
+        const uint32_t payloadBytes = agent_abi::rdU32(data + offset + 4);
+        const size_t payload = offset + 8;
+        const size_t entryEnd = payload + payloadBytes;
+        const size_t alignedEnd = (entryEnd + 7) & ~size_t(7);
+        if (entryEnd > end)
+            return agent_abi::E_REQUEST_BINDING;
+        for (size_t pad = entryEnd; pad < alignedEnd; ++pad)
+            if (data[pad] != 0)
+                return agent_abi::E_REQUEST_BINDING;
+        if (sawEntry && type <= previousType)
+            return agent_abi::E_REQUEST_BINDING;
+        const bool required = flags == agent_abi::kTlvFlagsREQUIRED;
+        if (type == agent_abi::kTlvTypeINPUT_DIGEST) {
+            if (!required || payloadBytes != 32)
+                return agent_abi::E_REQUEST_BINDING;
+            values.inputDigest.assign(data + payload, data + payload + 32);
+        } else if (type == agent_abi::kTlvTypeWORKLOAD_ID_DIGEST) {
+            if (!required || payloadBytes != 32)
+                return agent_abi::E_REQUEST_BINDING;
+            values.workloadDigest.assign(data + payload, data + payload + 32);
+        } else if (type == agent_abi::kTlvTypeDEADLINE) {
+            if (!required || payloadBytes != 8)
+                return agent_abi::E_REQUEST_BINDING;
+            values.hasDeadline = true;
+            values.deadlineTick = agent_abi::rdU64(data + payload);
+        } else if (type == agent_abi::kTlvTypeOUTPUT_CHUNK_BYTES) {
+            if (!required || payloadBytes != 8 ||
+                    agent_abi::rdU32(data + payload + 4) != 0)
+                return agent_abi::E_REQUEST_BINDING;
+            values.outputChunkBytes = agent_abi::rdU32(data + payload);
+        } else if (flags != 0) {
+            return agent_abi::E_REQUEST_BINDING;
+        } else {
+            ++values.skippedOptional;
+        }
+        previousType = type;
+        sawEntry = true;
+        offset = alignedEnd;
+    }
+    return std::nullopt;
+}
+
 bool
 gate3MetadataHeaderValid(const agent_abi::OutputMetadata &header,
                          const Gate3MetadataExpectation &expected)

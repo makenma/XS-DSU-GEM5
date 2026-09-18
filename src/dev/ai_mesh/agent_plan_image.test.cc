@@ -8,6 +8,8 @@
 #include <vector>
 
 #include "dev/ai_mesh/agent_plan_image.hh"
+#include "dev/ai_mesh/agent_sha256.hh"
+#include "dev/ai_mesh/generated/agent_protocol_abi.hh"
 
 namespace
 {
@@ -207,4 +209,48 @@ TEST(AgentPlanImage, RejectsTruncatedImage)
                          image.data(), cut).has_value())
             << "cut at " << cut;
     }
+}
+
+TEST(AgentPlanImage, FrozenServingBindingSectionDecodes)
+{
+    std::ifstream stream(
+        "tests/gem5/ai_mesh/fixtures/gate6/"
+        "agent_plan_image_serving_bindings.bin", std::ios::binary);
+    const std::vector<uint8_t> image(
+        (std::istreambuf_iterator<char>(stream)),
+        std::istreambuf_iterator<char>());
+    ASSERT_FALSE(image.empty());
+    const auto parsed = gem5::ai_mesh::AgentPlanImage::parse(
+        image.data(), image.size());
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(parsed->kvSessionSlotBytes(), 4096u);
+    ASSERT_EQ(parsed->hostBindingPlans().size(), 1u);
+    const auto &plan = parsed->hostBindingPlans()[0];
+    EXPECT_EQ(plan.programId, 1u);
+    EXPECT_EQ(plan.profileId, 1u);
+    EXPECT_EQ(plan.primaryInputSymbolId, 1u);
+    EXPECT_EQ(plan.primaryOutputSymbolId, 6u);
+    EXPECT_EQ(plan.primaryKvSymbolId, 3u);
+    EXPECT_EQ(plan.instanceCount, 4u);
+    ASSERT_EQ(plan.requirements.size(), 4u);
+    EXPECT_EQ(plan.requirements[0].symbolId, 1u);
+    EXPECT_EQ(plan.requirements[0].kind,
+              gem5::ai_mesh::agent_abi::kBindingKindHOST_INPUT);
+    EXPECT_EQ(plan.requirements[0].flags,
+              gem5::ai_mesh::agent_abi::kBindingFlagsREAD);
+    EXPECT_EQ(plan.requirements[0].platformAddress, 0u);
+    EXPECT_EQ(plan.requirements[0].platformBytes, 0u);
+    EXPECT_EQ(plan.requirements[1].symbolId, 2u);
+    EXPECT_EQ(plan.requirements[1].kind,
+              gem5::ai_mesh::agent_abi::kBindingKindWEIGHT_EXTERNAL);
+    EXPECT_EQ(plan.requirements[1].platformAddress, 34361835520ull);
+    EXPECT_EQ(plan.requirements[1].platformBytes, 128u);
+    EXPECT_EQ(plan.requirements[2].symbolId, 3u);
+    EXPECT_EQ(plan.requirements[2].kind,
+              gem5::ai_mesh::agent_abi::kBindingKindKV_EXTERNAL);
+    EXPECT_EQ(plan.requirements[2].platformAddress, 0u);
+    EXPECT_EQ(plan.requirements[2].platformBytes, 0u);
+    EXPECT_EQ(plan.requirements[3].symbolId, 6u);
+    EXPECT_EQ(plan.requirements[3].kind,
+              gem5::ai_mesh::agent_abi::kBindingKindHOST_OUTPUT);
 }

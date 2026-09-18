@@ -145,6 +145,26 @@ struct AgentArenaRecord
     uint8_t arenaKind = 0;
 };
 
+struct AgentHostBindingRequirement
+{
+    uint32_t symbolId = 0;
+    uint16_t kind = 0;
+    uint16_t flags = 0;
+    uint64_t platformAddress = 0;
+    uint64_t platformBytes = 0;
+};
+
+struct AgentHostBindingPlan
+{
+    uint16_t programId = 0;
+    uint16_t profileId = 0;
+    uint32_t primaryInputSymbolId = 0;
+    uint32_t primaryOutputSymbolId = 0;
+    uint32_t primaryKvSymbolId = 0;
+    uint32_t instanceCount = 0;
+    std::vector<AgentHostBindingRequirement> requirements;
+};
+
 class AgentPlanImage
 {
   public:
@@ -159,6 +179,9 @@ class AgentPlanImage
     const std::vector<AgentArenaRecord> &arena() const { return arena_; }
     const std::vector<AgentControlAction> &controlActions() const
     { return controlActions_; }
+    const std::vector<AgentHostBindingPlan> &hostBindingPlans() const
+    { return hostBindingPlans_; }
+    uint64_t kvSessionSlotBytes() const { return kvSessionSlotBytes_; }
     const SurrogateProfileRegistry *surrogateRegistry() const
     { return surrogate_.has_value() ? &surrogate_.value() : nullptr; }
     const std::array<uint8_t, 32> &imageDigest() const { return imageDigest_; }
@@ -174,6 +197,8 @@ class AgentPlanImage
     std::vector<AgentHostTaskRecord> hostTasks_;
     std::vector<AgentArenaRecord> arena_;
     std::vector<AgentControlAction> controlActions_;
+    std::vector<AgentHostBindingPlan> hostBindingPlans_;
+    uint64_t kvSessionSlotBytes_ = 0;
     std::optional<SurrogateProfileRegistry> surrogate_;
     std::array<uint8_t, 32> imageDigest_{};
     std::array<uint8_t, 32> workloadPlanDigest_{};

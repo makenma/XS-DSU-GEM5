@@ -96,20 +96,41 @@ def decode_cq(blob: bytes) -> dict:
     return _grouped("CQ_DESCRIPTOR", blob)
 
 
-def encode_parameter(values: dict, tail: bytes = b"") -> bytes:
-    """Encode one complete parameter block (header + bindings + TLVs).
+def encode_parameter(values: dict, tail: bytes = b"", bindings=()) -> bytes:
+    """Faithfully encode one parameter block (header | bindings | TLVs).
 
-    The CRC covers the full total_bytes with the CRC field treated as zero
-    (spec 8.3).  The header total_bytes must equal 160 + len(tail)."""
-    total = A.PARAMETER_HEADER_BYTES + len(tail)
+    The caller owns the layout fields; the canonical GENERATE layout is
+    produced by the upper-layer parameter builder.  This encoder only
+    validates the wire limits and covers the full total_bytes with the CRC
+    field zeroed."""
+    table = b"".join(
+        encode_binding(binding) if isinstance(binding, dict) else bytes(binding)
+        for binding in bindings
+    )
+    if len(table) % A.BINDING_RECORD_BYTES:
+        raise ProtocolError(
+            "E_REQUEST_BINDING", "binding table must hold whole 24 B records")
+    count = len(table) // A.BINDING_RECORD_BYTES
+    if count > 0xFFFF:
+        raise ProtocolError(
+            "E_REQUEST_BINDING", "binding count exceeds the u16 wire field")
+    total = A.PARAMETER_HEADER_BYTES + len(table) + len(tail)
+    if total > 0xFFFFFFFF:
+        raise ProtocolError(
+            "E_PARAMETER_LENGTH_MISMATCH",
+            f"total_bytes {total} exceeds the u32 wire field",
+        )
     values = dict(values)
     if "total_bytes" in values and values["total_bytes"] != total:
         raise ProtocolError(
             "E_PARAMETER_LENGTH_MISMATCH",
-            f"total_bytes {values['total_bytes']} != header+tail {total}",
+            f"total_bytes {values['total_bytes']} != canonical {total}",
         )
     values["total_bytes"] = total
-    blob = bytearray(_pack("PARAMETER_HEADER", values, "crc32") + tail)
+    if values["request_kind"] != A.SQ_OPCODE.GENERATE and (count or tail):
+        raise ProtocolError(
+            "E_REQUEST_BINDING", "control parameters carry no binding or TLV")
+    blob = bytearray(_pack("PARAMETER_HEADER", values, "crc32") + table + tail)
     crc_offset = A.PARAMETER_HEADER_FIELD_OFFSETS["crc32"]
     struct.pack_into("<I", blob, crc_offset, 0)
     crc = crc32c(blob)

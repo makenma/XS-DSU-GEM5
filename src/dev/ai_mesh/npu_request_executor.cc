@@ -9,10 +9,19 @@ namespace gem5
 namespace ai_mesh
 {
 
-NpuExecutionOutcome
-NpuProtocolProbeExecutor::accept(const NpuExecutionRequest &)
+NpuAdmission
+NpuProtocolProbeExecutor::submit(const NpuExecutionRequest &request)
 {
-    return NpuExecutionOutcome{0, true, true};
+    if (sink_ != nullptr)
+        sink_->onCoreStart(request.requestId);
+    return NpuAdmission{true, 0};
+}
+
+NpuExecutionCompletion
+NpuProtocolProbeExecutor::completionFor(
+    const NpuExecutionRequest &) const
+{
+    return NpuExecutionCompletion{};
 }
 
 FullContextSurrogateExecutor::FullContextSurrogateExecutor(
@@ -22,67 +31,67 @@ FullContextSurrogateExecutor::FullContextSurrogateExecutor(
 
 const SurrogateProfile *
 FullContextSurrogateExecutor::profileFor(
-    const NpuExecutionRequest &request) const
+    const SurrogateProfileRegistry &registry,
+    const NpuExecutionRequest &request)
 {
     return registry.find(request.programId, request.profileId);
 }
 
-NpuExecutionOutcome
-FullContextSurrogateExecutor::accept(const NpuExecutionRequest &request)
+NpuAdmission
+FullContextSurrogateExecutor::submit(const NpuExecutionRequest &request)
 {
-    const SurrogateProfile *profile = profileFor(request);
+    const SurrogateProfile *profile = profileFor(registry, request);
     if (profile == nullptr)
-        return NpuExecutionOutcome{0, false, false,
-                                   agent_abi::E_WORKLOAD_PLAN_MISMATCH};
+        return NpuAdmission{false, agent_abi::E_WORKLOAD_PLAN_MISMATCH};
     const bool matches = profile->profileKey == request.requestedProfileKey &&
         profile->inputTokens == request.inputTokens &&
         profile->inputBytes == request.inputBytes &&
         profile->outputTokens == request.maxOutputTokens;
     if (!matches)
-        return NpuExecutionOutcome{0, false, false,
-                                   agent_abi::E_WORKLOAD_PLAN_MISMATCH};
+        return NpuAdmission{false, agent_abi::E_WORKLOAD_PLAN_MISMATCH};
     if (profile->outputBytes > request.outputCapacityBytes)
-        return NpuExecutionOutcome{0, false, false,
-                                   agent_abi::E_OUTPUT_CAPACITY};
-    return NpuExecutionOutcome{profile->serviceNs, false, true, 0};
-}
-
-std::array<uint8_t, 32>
-FullContextSurrogateExecutor::semanticDigest(
-    const NpuExecutionRequest &request) const
-{
-    const SurrogateProfile *profile = profileFor(request);
-    if (profile == nullptr)
-        return {};
-    const std::array<uint8_t, 32> seed = surrogateSeed(
-        request.inputDigest.data(), request.programId, request.profileId,
-        profile->profileKey);
-    std::vector<std::array<uint8_t, 32>> tokenDigests;
-    tokenDigests.reserve(profile->outputTokens);
-    for (uint32_t ordinal = 0; ordinal < profile->outputTokens; ++ordinal)
-        tokenDigests.push_back(surrogateTokenDigest(seed.data(), ordinal));
-    return surrogateOutputPrefixDigest(
-        request.workloadDigest.data(), request.workloadPlanItemId,
-        profile->outputTokens, tokenDigests);
-}
-
-std::vector<uint8_t>
-FullContextSurrogateExecutor::outputPayload(
-    const NpuExecutionRequest &request) const
-{
-    const SurrogateProfile *profile = profileFor(request);
-    if (profile == nullptr)
-        return {};
-    const std::array<uint8_t, 32> digest = semanticDigest(request);
-    return surrogateOutputBytes(digest.data(), profile->outputBytes);
+        return NpuAdmission{false, agent_abi::E_OUTPUT_CAPACITY};
+    return NpuAdmission{true, 0};
 }
 
 uint64_t
-FullContextSurrogateExecutor::outputBytes(
+FullContextSurrogateExecutor::modeledServiceNs(
     const NpuExecutionRequest &request) const
 {
-    const SurrogateProfile *profile = profileFor(request);
-    return profile == nullptr ? 0 : profile->outputBytes;
+    const SurrogateProfile *profile = profileFor(registry, request);
+    return profile == nullptr ? 0 : profile->serviceNs;
+}
+
+NpuExecutionCompletion
+FullContextSurrogateExecutor::completionFor(
+    const NpuExecutionRequest &request) const
+{
+    NpuExecutionCompletion completion;
+    const SurrogateProfile *profile = profileFor(registry, request);
+    if (profile == nullptr)
+        return completion;
+    completion.success = true;
+    completion.outputBytes = profile->outputBytes;
+    completion.semanticDigest = semanticDigestFor(request, *profile);
+    completion.outputPayload = surrogateOutputBytes(
+        completion.semanticDigest.data(), profile->outputBytes);
+    return completion;
+}
+
+std::array<uint8_t, 32>
+FullContextSurrogateExecutor::semanticDigestFor(
+    const NpuExecutionRequest &request, const SurrogateProfile &profile)
+{
+    const std::array<uint8_t, 32> seed = surrogateSeed(
+        request.inputDigest.data(), request.programId, request.profileId,
+        profile.profileKey);
+    std::vector<std::array<uint8_t, 32>> tokenDigests;
+    tokenDigests.reserve(profile.outputTokens);
+    for (uint32_t ordinal = 0; ordinal < profile.outputTokens; ++ordinal)
+        tokenDigests.push_back(surrogateTokenDigest(seed.data(), ordinal));
+    return surrogateOutputPrefixDigest(
+        request.workloadDigest.data(), request.workloadPlanItemId,
+        profile.outputTokens, tokenDigests);
 }
 
 }

@@ -91,7 +91,7 @@ KvGeometry::valid(std::string &reason) const
         reason = "kv_region_bytes overflow";
         return false;
     }
-    const uint64_t region_bytes = slot_bytes * max_sessions;
+    const uint64_t region_bytes = regionBytes();
     if (region_bytes > UINT64_MAX - region_base) {
         reason = "kv_region_end overflow";
         return false;
@@ -257,6 +257,16 @@ MeshKvManager::liveAppend(uint64_t session_id, uint64_t kv_handle) const
                 obligation.kv_handle == kv_handle)
             return true;
     return false;
+}
+
+bool
+MeshKvManager::kvWorkDrained(uint64_t session_id, uint64_t kv_handle) const
+{
+    const KvRecord *record = findRecord(session_id, kv_handle);
+    if (record == nullptr)
+        return false;
+    return record->outstanding_kv_dma == 0 &&
+        !liveAppend(session_id, kv_handle);
 }
 
 bool
@@ -881,8 +891,7 @@ MeshKvManager::releasePin(uint64_t request_id, KvTerminalStatus status,
         fail("pin release with a mismatched owner set");
         return;
     }
-    if (record->outstanding_kv_dma ||
-            liveAppend(record->session_id, record->kv_handle)) {
+    if (!kvWorkDrained(record->session_id, record->kv_handle)) {
         fail("pin release with live KV work");
         return;
     }

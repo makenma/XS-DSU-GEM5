@@ -1,5 +1,8 @@
+import dataclasses
 import hashlib
 from pathlib import Path
+
+import pytest
 
 from mesh_ir.agent_planning import ArenaRegion
 from mesh_ir.agent_plan_image import MAGIC, build_agent_plan_image
@@ -119,3 +122,231 @@ def test_checked_in_fixture_matches_rebuild():
 def test_null_control_plan_digest_matches_image_header():
     workload = load_workload_plan(FIXTURES / "agent_workload_plan_two_user.json")
     assert null_control_plan_digest(workload.digest) == CONTROL_DIGEST
+
+
+SERVING_FIXTURES = (
+    Path(__file__).resolve().parents[4] / "tests/gem5/ai_mesh/fixtures/gate6")
+
+
+def serving_binding_plans():
+    from mesh_ir.abi.decoder import decode_program
+    from mesh_ir.builder import load_arch
+    from mesh_ir.host_bindings import build_host_binding_plans
+
+    program = decode_program(
+        (SERVING_FIXTURES / "serving_two_tokens.mshb").read_bytes())
+    manifest = load_arch(
+        Path(__file__).resolve().parents[4] / "configs/example/ai_mesh"
+        / "arch/mesh_1x2.yaml")
+    return program, manifest, build_host_binding_plans(
+        program, [region.base for region in manifest.regions])
+
+
+def serving_image():
+    from mesh_ir.agent_config import (load_agent_runtime_config,
+                                      release_policy_of)
+    from mesh_ir.agent_surrogate import load_surrogate_profiles
+    from mesh_ir.agent_workload import load_workload_plan
+    from mesh_ir.agent_plan_image import _SECTION_REQUEST_BINDINGS
+    from mesh_ir.gate4_oracle import arena_regions
+
+    _program, manifest, plans = serving_binding_plans()
+    workload = load_workload_plan(
+        SERVING_FIXTURES / "serving_workload_plan.json")
+    registry = load_surrogate_profiles(
+        SERVING_FIXTURES / "serving_surrogate_profiles.json")
+    config = load_agent_runtime_config(
+        SERVING_FIXTURES / "serving_runtime_config.yaml")
+    regions = arena_regions(config.document["serving"]["address_map"])
+    image, _ = build_agent_plan_image(
+        workload, None, release_policy_of(config), regions, registry, plans,
+        4096)
+    return _SECTION_REQUEST_BINDINGS, manifest, plans, image
+
+
+def _binding_payload(image, section_type):
+    offset = 12 + 32 + 32
+    section_count = int.from_bytes(image[8:12], "little")
+    payload = None
+    for _ in range(section_count):
+        kind = int.from_bytes(image[offset:offset + 2], "little")
+        length = int.from_bytes(image[offset + 2:offset + 10], "little")
+        if kind == section_type:
+            payload = image[offset + 10:offset + 10 + length]
+        offset += 10 + length
+    return payload
+
+
+def test_request_binding_section_round_trips_the_frozen_plans():
+    from mesh_ir.agent_plan_image import decode_request_binding_section
+
+    section_type, _manifest, plans, image = serving_image()
+    decoded = decode_request_binding_section(
+        _binding_payload(image, section_type))
+    assert decoded["kv_session_slot_bytes"] == 4096
+    assert len(decoded["plans"]) == len(plans)
+    for record, plan in zip(decoded["plans"], plans):
+        assert record["program_id"] == plan.program_id
+        assert record["profile_id"] == plan.profile_id
+        assert record["instance_count"] == plan.instance_count == 4
+        assert record["primary_input_symbol_id"] == plan.primary_input_symbol_id
+        assert record["primary_output_symbol_id"] == plan.primary_output_symbol_id
+        assert record["primary_kv_symbol_id"] == plan.primary_kv_symbol_id
+        assert [(row["symbol_id"], row["kind"], row["flags"])
+                for row in record["requirements"]] == [
+            (row.symbol_id, row.kind, row.flags)
+            for row in plan.requirements]
+
+
+def test_request_binding_section_record_is_twenty_four_bytes():
+    from mesh_ir.agent_plan_image import decode_request_binding_section
+
+    section_type, _manifest, plans, image = serving_image()
+    payload = _binding_payload(image, section_type)
+    assert payload[:12] == (4096).to_bytes(8, "little") + \
+        (len(plans)).to_bytes(4, "little")
+    requirement_total = sum(len(plan.requirements) for plan in plans)
+    assert len(payload) == 12 + 24 * len(plans) + 24 * requirement_total
+    decoded = decode_request_binding_section(payload)
+    assert decoded["plans"][0]["requirements"][0]["kind"] == 1
+
+
+def test_checked_in_serving_image_matches_the_rebuild():
+    _type, _manifest, _plans, image = serving_image()
+    stored = (SERVING_FIXTURES
+              / "agent_plan_image_serving_bindings.bin").read_bytes()
+    assert stored == image
+
+
+def test_missing_profile_is_not_silently_zero():
+    from mesh_ir.host_bindings import build_host_binding_plans
+    from mesh_ir.model import MeshIrError
+
+    import dataclasses
+
+    program, _manifest, plans = serving_binding_plans()
+    stripped = dataclasses.replace(
+        program, agent_request_binding_requirements=[
+            requirement
+            for requirement in program.agent_request_binding_requirements
+            if requirement.request_profile_id != plans[0].profile_id])
+    try:
+        build_host_binding_plans(stripped, [0] * 8)
+    except MeshIrError as error:
+        assert error.code == "E_BINDING_ROLE"
+    else:
+        raise AssertionError("dropped profile produced a plan")
+
+
+def test_plan_projection_must_match_the_frozen_workload(monkeypatch):
+    import struct
+
+    import pytest
+
+    import mesh_ir.agent_plan_image as plan_image
+    from mesh_ir.agent_workload import PlanError
+
+    original = plan_image._round
+
+    def tampered_item(round_):
+        data = bytearray(original(round_))
+        struct.pack_into("<I", data, 0, round_.workload_plan_item_id + 998)
+        return bytes(data)
+
+    monkeypatch.setattr(plan_image, "_round", tampered_item)
+    with pytest.raises(PlanError):
+        build()
+
+
+def test_plan_projection_rejects_a_tampered_round_cached_tokens(monkeypatch):
+    import struct
+
+    import pytest
+
+    import mesh_ir.agent_plan_image as plan_image
+    from mesh_ir.agent_workload import PlanError
+
+    original = plan_image._round
+
+    def tampered_cached(round_):
+        data = bytearray(original(round_))
+        struct.pack_into("<I", data, 28, round_.expected_cached_tokens + 1)
+        return bytes(data)
+
+    monkeypatch.setattr(plan_image, "_round", tampered_cached)
+    with pytest.raises(PlanError):
+        build()
+
+
+def _assert_projection_rejects(monkeypatch, mutate):
+    import mesh_ir.agent_plan_image as plan_image
+    from mesh_ir.agent_workload import PlanError
+
+    original = plan_image._round
+
+    def encode(round_):
+        changed = mutate(round_)
+        return original(changed) if changed is not None else original(round_)
+
+    monkeypatch.setattr(plan_image, "_round", encode)
+    with pytest.raises(PlanError):
+        build()
+
+
+@pytest.mark.parametrize("field", ["prompt_bytes", "prompt_tokens",
+                                   "delta_prompt_bytes", "delta_prompt_tokens"])
+def test_plan_projection_checks_prompt_fields(monkeypatch, field):
+    def mutate(round_):
+        value = getattr(round_, field)
+        if value is None:
+            return None
+        return dataclasses.replace(round_, **{field: value + 1})
+
+    _assert_projection_rejects(monkeypatch, mutate)
+
+
+@pytest.mark.parametrize("field", ["nominal_ns", "host_tokens_required",
+                                   "raw_log_bytes", "excerpt_bytes",
+                                   "excerpt_tokens"])
+def test_plan_projection_checks_compile_stage_fields(monkeypatch, field):
+    def mutate(round_):
+        stage = round_.compile
+        return dataclasses.replace(
+            round_, compile=dataclasses.replace(
+                stage, **{field: (getattr(stage, field) or 0) + 1}))
+
+    _assert_projection_rejects(monkeypatch, mutate)
+
+
+@pytest.mark.parametrize("field", ["read_bytes", "write_bytes"])
+def test_plan_projection_checks_compile_local_io(monkeypatch, field):
+    def mutate(round_):
+        stage = round_.compile
+        return dataclasses.replace(
+            round_, compile=dataclasses.replace(
+                stage, local_io=dataclasses.replace(
+                    stage.local_io,
+                    **{field: getattr(stage.local_io, field) + 1})))
+
+    _assert_projection_rejects(monkeypatch, mutate)
+
+
+def test_plan_projection_checks_compile_outcome(monkeypatch):
+    def mutate(round_):
+        stage = round_.compile
+        outcome = "FAIL" if stage.outcome == "SUCCESS" else "SUCCESS"
+        return dataclasses.replace(
+            round_, compile=dataclasses.replace(stage, outcome=outcome))
+
+    _assert_projection_rejects(monkeypatch, mutate)
+
+
+def test_plan_projection_checks_optional_stage_presence(monkeypatch):
+    def mutate(round_):
+        if round_.test is not None:
+            return dataclasses.replace(round_, test=None)
+        if round_.log_parse is not None:
+            return dataclasses.replace(round_, log_parse=None)
+        return None
+
+    _assert_projection_rejects(monkeypatch, mutate)

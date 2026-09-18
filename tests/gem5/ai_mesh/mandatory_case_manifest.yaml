@@ -9834,14 +9834,22 @@ cases:
       msi_rob_entries: 0
       fatal_records: 0
     timeout:
-      sim_ticks: 20000000
-      wall_seconds: 240
+      sim_ticks: 10000000000
+      wall_seconds: 600
     artifacts: *id002
     execution:
       runner: GEM5
       config_script: configs/example/ai_mesh/run_dummy_core_agent.py
-      case_name: future_e2e_d
-      args: []
+      case_name: gate6_serving_e2e_d
+      args:
+      - "--serving-program"
+      - "tests/gem5/ai_mesh/fixtures/gate6/serving_two_tokens.mshb"
+      - "--runtime-config"
+      - "tests/gem5/ai_mesh/fixtures/gate6/serving_runtime_config.yaml"
+      - "--surrogate-profiles"
+      - "tests/gem5/ai_mesh/fixtures/gate6/serving_surrogate_profiles.json"
+      - "--weight-image-digest"
+      - "d3c1ec48f8238e96c579ad087d218b8510ca81c9c15f9b05d97b99111fd789b2"
 - id: E2E-E
   earliest_gate: 6
   subcases:

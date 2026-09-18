@@ -1,14 +1,14 @@
 {
   "abi_major": 1,
-  "abi_minor": 2,
+  "abi_minor": 3,
   "agent_instance_member_bindings": [
     {
       "expected_logical_source_rank": 0,
       "instance_profile_id": 11,
       "member_ordinal": 0,
       "reserved0": 0,
-      "static_input_symbol_id": 11,
-      "static_kv_symbol_id": 12,
+      "static_input_symbol_id": 7,
+      "static_kv_symbol_id": 8,
       "static_output_symbol_id": 0
     },
     {
@@ -17,7 +17,7 @@
       "member_ordinal": 0,
       "reserved0": 0,
       "static_input_symbol_id": 0,
-      "static_kv_symbol_id": 12,
+      "static_kv_symbol_id": 8,
       "static_output_symbol_id": 0
     },
     {
@@ -27,15 +27,15 @@
       "reserved0": 0,
       "static_input_symbol_id": 0,
       "static_kv_symbol_id": 0,
-      "static_output_symbol_id": 13
+      "static_output_symbol_id": 9
     },
     {
       "expected_logical_source_rank": 0,
       "instance_profile_id": 111,
       "member_ordinal": 0,
       "reserved0": 0,
-      "static_input_symbol_id": 11,
-      "static_kv_symbol_id": 12,
+      "static_input_symbol_id": 7,
+      "static_kv_symbol_id": 8,
       "static_output_symbol_id": 0
     },
     {
@@ -43,8 +43,8 @@
       "instance_profile_id": 111,
       "member_ordinal": 1,
       "reserved0": 0,
-      "static_input_symbol_id": 14,
-      "static_kv_symbol_id": 16,
+      "static_input_symbol_id": 10,
+      "static_kv_symbol_id": 12,
       "static_output_symbol_id": 0
     },
     {
@@ -53,7 +53,7 @@
       "member_ordinal": 0,
       "reserved0": 0,
       "static_input_symbol_id": 0,
-      "static_kv_symbol_id": 12,
+      "static_kv_symbol_id": 8,
       "static_output_symbol_id": 0
     },
     {
@@ -62,7 +62,7 @@
       "member_ordinal": 1,
       "reserved0": 0,
       "static_input_symbol_id": 0,
-      "static_kv_symbol_id": 16,
+      "static_kv_symbol_id": 12,
       "static_output_symbol_id": 0
     },
     {
@@ -72,7 +72,7 @@
       "reserved0": 0,
       "static_input_symbol_id": 0,
       "static_kv_symbol_id": 0,
-      "static_output_symbol_id": 13
+      "static_output_symbol_id": 9
     },
     {
       "expected_logical_source_rank": 0,
@@ -81,7 +81,7 @@
       "reserved0": 0,
       "static_input_symbol_id": 0,
       "static_kv_symbol_id": 0,
-      "static_output_symbol_id": 15
+      "static_output_symbol_id": 11
     }
   ],
   "agent_instance_profiles": [
@@ -103,8 +103,8 @@
       "mesh_profile_id": 1,
       "path_kind": 0,
       "phase": 1,
-      "primary_input_symbol_id": 5,
-      "primary_kv_symbol_id": 7,
+      "primary_input_symbol_id": 1,
+      "primary_kv_symbol_id": 3,
       "primary_output_symbol_id": 0,
       "request_profile_id": 1,
       "request_program_id": 1,
@@ -124,12 +124,12 @@
       "member_binding_count": 1,
       "member_binding_first": 1,
       "member_count": 1,
-      "mesh_entrypoint_id": 1,
-      "mesh_profile_id": 2,
+      "mesh_entrypoint_id": 3,
+      "mesh_profile_id": 3,
       "path_kind": 0,
       "phase": 2,
       "primary_input_symbol_id": 0,
-      "primary_kv_symbol_id": 7,
+      "primary_kv_symbol_id": 3,
       "primary_output_symbol_id": 0,
       "request_profile_id": 1,
       "request_program_id": 1,
@@ -149,13 +149,13 @@
       "member_binding_count": 1,
       "member_binding_first": 2,
       "member_count": 1,
-      "mesh_entrypoint_id": 1,
-      "mesh_profile_id": 3,
+      "mesh_entrypoint_id": 5,
+      "mesh_profile_id": 5,
       "path_kind": 0,
       "phase": 3,
       "primary_input_symbol_id": 0,
       "primary_kv_symbol_id": 0,
-      "primary_output_symbol_id": 10,
+      "primary_output_symbol_id": 6,
       "request_profile_id": 1,
       "request_program_id": 1,
       "valid_tokens_per_member": 0
@@ -174,12 +174,12 @@
       "member_binding_count": 2,
       "member_binding_first": 3,
       "member_count": 2,
-      "mesh_entrypoint_id": 1,
-      "mesh_profile_id": 4,
+      "mesh_entrypoint_id": 2,
+      "mesh_profile_id": 2,
       "path_kind": 0,
       "phase": 1,
-      "primary_input_symbol_id": 5,
-      "primary_kv_symbol_id": 7,
+      "primary_input_symbol_id": 1,
+      "primary_kv_symbol_id": 3,
       "primary_output_symbol_id": 0,
       "request_profile_id": 1,
       "request_program_id": 1,
@@ -199,12 +199,12 @@
       "member_binding_count": 2,
       "member_binding_first": 5,
       "member_count": 2,
-      "mesh_entrypoint_id": 1,
-      "mesh_profile_id": 5,
+      "mesh_entrypoint_id": 4,
+      "mesh_profile_id": 4,
       "path_kind": 0,
       "phase": 2,
       "primary_input_symbol_id": 0,
-      "primary_kv_symbol_id": 7,
+      "primary_kv_symbol_id": 3,
       "primary_output_symbol_id": 0,
       "request_profile_id": 1,
       "request_program_id": 1,
@@ -224,13 +224,13 @@
       "member_binding_count": 2,
       "member_binding_first": 7,
       "member_count": 2,
-      "mesh_entrypoint_id": 1,
+      "mesh_entrypoint_id": 6,
       "mesh_profile_id": 6,
       "path_kind": 0,
       "phase": 3,
       "primary_input_symbol_id": 0,
       "primary_kv_symbol_id": 0,
-      "primary_output_symbol_id": 10,
+      "primary_output_symbol_id": 6,
       "request_profile_id": 1,
       "request_program_id": 1,
       "valid_tokens_per_member": 0
@@ -240,36 +240,36 @@
     {
       "allocation_id": 5,
       "allocation_role": 1,
-      "completion_event_id": 8,
+      "completion_event_id": 14,
       "digest_source": 0,
       "fill_kind": 1,
       "instance_profile_id": 13,
       "member_ordinal": 0,
-      "producer_command_id": 8,
+      "producer_command_id": 16,
       "reserved0": 0,
       "reserved1": 0
     },
     {
       "allocation_id": 10,
       "allocation_role": 1,
-      "completion_event_id": 18,
+      "completion_event_id": 39,
       "digest_source": 0,
       "fill_kind": 1,
       "instance_profile_id": 113,
       "member_ordinal": 0,
-      "producer_command_id": 17,
+      "producer_command_id": 44,
       "reserved0": 0,
       "reserved1": 0
     },
     {
       "allocation_id": 15,
       "allocation_role": 1,
-      "completion_event_id": 27,
+      "completion_event_id": 42,
       "digest_source": 0,
       "fill_kind": 1,
       "instance_profile_id": 113,
       "member_ordinal": 1,
-      "producer_command_id": 26,
+      "producer_command_id": 47,
       "reserved0": 0,
       "reserved1": 0
     }
@@ -281,7 +281,7 @@
       "request_profile_id": 1,
       "request_program_id": 1,
       "reserved": 0,
-      "symbol_id": 5
+      "symbol_id": 1
     },
     {
       "binding_flags": 5,
@@ -289,7 +289,7 @@
       "request_profile_id": 1,
       "request_program_id": 1,
       "reserved": 0,
-      "symbol_id": 6
+      "symbol_id": 2
     },
     {
       "binding_flags": 15,
@@ -297,7 +297,7 @@
       "request_profile_id": 1,
       "request_program_id": 1,
       "reserved": 0,
-      "symbol_id": 7
+      "symbol_id": 3
     },
     {
       "binding_flags": 2,
@@ -305,7 +305,7 @@
       "request_profile_id": 1,
       "request_program_id": 1,
       "reserved": 0,
-      "symbol_id": 10
+      "symbol_id": 6
     }
   ],
   "agent_request_profiles": [
@@ -321,13 +321,13 @@
       "kv_bytes_per_token": 16,
       "output_tokens": 1,
       "path_mask": 1,
-      "primary_input_symbol_id": 5,
-      "primary_kv_symbol_id": 7,
-      "primary_output_symbol_id": 10,
+      "primary_input_symbol_id": 1,
+      "primary_kv_symbol_id": 3,
+      "primary_output_symbol_id": 6,
       "profile_id": 1,
       "program_id": 1,
       "publish_chunk_bytes": 64,
-      "requested_profile_key": 2437511124843631100,
+      "requested_profile_key": 13339354591489743213,
       "reserved0": 0,
       "source_core_map_begin": 0,
       "source_rank_count": 1
@@ -344,7 +344,7 @@
     "batch_weight_binding_entries_per_context": 1,
     "instance_member_binding_entries_per_context": 4
   },
-  "profile_key_base_digest": "9b518f47f46e8f74929b8c646d4f454179258527b8f6f1fc8c6394542d324630",
-  "required_features": 2,
-  "semantic_sha256": "0b1b14b7187304bc5bdfa27bcb9123a8a20d0a53829d6c14279aec828104a931"
+  "profile_key_base_digest": "500f3fc6dd3b351994f05b83e2af2187ad8bf2f5c9d481242a93316864796956",
+  "required_features": 6,
+  "semantic_sha256": "872138ec17d37ef5afcf89af2f6260de6f5c101a2974cac400556d6eb78b4052"
 }

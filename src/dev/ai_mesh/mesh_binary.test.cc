@@ -156,7 +156,7 @@ TEST(MeshBinaryTest, HeaderLayoutMatchesSpec)
     EXPECT_EQ(kMagic, 0x010000004248534Dull);
     EXPECT_EQ(kFeatureDynamicMoeV1, 0x1ull);
     EXPECT_EQ(kFeatureAgentServingV1, 0x2ull);
-    EXPECT_EQ(kKnownFeatureMask, 0x3ull);
+    EXPECT_EQ(kKnownFeatureMask, 0x7ull);
     EXPECT_EQ(kFeatureDynamicMoeV1MinWriterMinor, 1);
     EXPECT_EQ(kFeatureAgentServingV1MinWriterMinor, 1);
     EXPECT_EQ(kDmaFillRuntimeBoundSentinel, 0x52554e54494d4531ull);
@@ -184,6 +184,18 @@ TEST(MeshBinaryTest, HeaderLayoutMatchesSpec)
               kFeatureAgentServingV1);
     EXPECT_EQ(sectionRequiredFeature(kSectionTypeAGENT_PUBLISH_SURROGATE_BINDINGS),
               kFeatureAgentServingV1);
+    EXPECT_EQ(kFeatureProfileScopedExecutionV1, 0x4ull);
+    EXPECT_EQ(kFeatureProfileScopedExecutionV1MinWriterMinor, 3);
+    EXPECT_EQ(kFeatureAgentServingV1Requires, kFeatureProfileScopedExecutionV1);
+    EXPECT_TRUE(featureRequirementsMet(kFeatureAgentServingV1 |
+                                       kFeatureProfileScopedExecutionV1));
+    EXPECT_FALSE(featureRequirementsMet(kFeatureAgentServingV1));
+    EXPECT_FALSE(featureRequirementsMet(kFeatureDynamicMoeV1 |
+                                        kFeatureAgentServingV1));
+    EXPECT_EQ(kSectionTypePROFILE_STREAM_RANGES, 16);
+    EXPECT_EQ(kProfileStreamRangesBytes, 16);
+    EXPECT_EQ(sectionRequiredFeature(kSectionTypePROFILE_STREAM_RANGES),
+              kFeatureProfileScopedExecutionV1);
     EXPECT_EQ(sectionRequiredFeature(kSectionTypeCOMMANDS), 0ull);
     EXPECT_FALSE(featureRequiresSection(0, kSectionTypeMOE_LAYER_SPECS));
     EXPECT_FALSE(featureRequiresSection(0, kSectionTypeCONTENT_DIGESTS));
@@ -2801,9 +2813,11 @@ TEST(MeshBinaryServingTest, LoadsCrossLanguageServingFixture)
     ASSERT_TRUE(decodeMeshBinary(image, program, error))
         << error.code << ": " << error.message;
     EXPECT_EQ(program.abi_major, 1u);
-    EXPECT_EQ(program.abi_minor, 2u);
-    EXPECT_EQ(program.required_features, kFeatureAgentServingV1);
+    EXPECT_EQ(program.abi_minor, 3u);
+    EXPECT_EQ(program.required_features,
+              kFeatureAgentServingV1 | kFeatureProfileScopedExecutionV1);
     EXPECT_TRUE(program.has_serving_v1);
+    EXPECT_TRUE(program.has_profile_scoped_execution_v1);
     EXPECT_FALSE(program.has_moe_v1);
     ASSERT_EQ(program.agent_request_profiles.size(), 1u);
     ASSERT_EQ(program.agent_instance_profiles.size(), 3u);
@@ -2815,7 +2829,7 @@ TEST(MeshBinaryServingTest, LoadsCrossLanguageServingFixture)
     EXPECT_EQ(request.program_id, 1u);
     EXPECT_EQ(request.profile_id, 1u);
     EXPECT_EQ(request.flags, kAgentRequestFlagsHAS_KV);
-    EXPECT_EQ(request.requested_profile_key, 0xd5df2dd59659b6baull);
+    EXPECT_EQ(request.requested_profile_key, 0x1e7508bdba23c5f6ull);
     EXPECT_EQ(request.path_mask, 0x1u);
     EXPECT_EQ(request.publish_chunk_bytes, 64u);
     const auto &prefill = program.agent_instance_profiles[0];
@@ -2846,6 +2860,55 @@ TEST(MeshBinaryServingTest, LoadsCrossLanguageServingFixture)
     EXPECT_EQ(required.batch_weight_binding_entries, 1u);
     EXPECT_EQ(required.instance_member_binding_entries, 2u);
     EXPECT_EQ(required.batch_interval_entries, 5u);
+}
+
+TEST(MeshBinaryServingTest, LoadsTwoTokenServingFixture)
+{
+    using namespace mesh_abi;
+    const MeshBytes image = loadFixture(
+        "tests/gem5/ai_mesh/fixtures/gate6/serving_two_tokens.mshb");
+    ASSERT_FALSE(image.empty());
+    DecodedProgram program;
+    MeshLoadError error;
+    ASSERT_TRUE(decodeMeshBinary(image, program, error))
+        << error.code << ": " << error.message;
+    EXPECT_TRUE(program.has_serving_v1);
+    ASSERT_EQ(program.agent_request_profiles.size(), 1u);
+    ASSERT_EQ(program.agent_instance_profiles.size(), 4u);
+    ASSERT_EQ(program.agent_instance_member_bindings.size(), 4u);
+    ASSERT_EQ(program.agent_publish_surrogate_bindings.size(), 1u);
+    const auto &request = program.agent_request_profiles[0];
+    EXPECT_EQ(request.output_tokens, 2u);
+    EXPECT_EQ(request.host_output_bytes, 256ull);
+    const auto &prefill = program.agent_instance_profiles[0];
+    const auto &decode0 = program.agent_instance_profiles[1];
+    const auto &decode1 = program.agent_instance_profiles[2];
+    const auto &publish = program.agent_instance_profiles[3];
+    EXPECT_EQ(prefill.instance_profile_id, 11u);
+    EXPECT_EQ(decode0.instance_profile_id, 12u);
+    EXPECT_EQ(decode1.instance_profile_id, 13u);
+    EXPECT_EQ(publish.instance_profile_id, 14u);
+    EXPECT_EQ(prefill.phase, kPhasePREFILL);
+    EXPECT_EQ(decode0.phase, kPhaseDECODE);
+    EXPECT_EQ(decode1.phase, kPhaseDECODE);
+    EXPECT_EQ(publish.phase, kPhasePUBLISH);
+    EXPECT_EQ(decode0.kv_tokens_before, 8u);
+    EXPECT_EQ(decode1.kv_tokens_before, 9u);
+    EXPECT_EQ(decode0.kv_read_bytes_per_member, 128ull);
+    EXPECT_EQ(decode1.kv_read_bytes_per_member, 144ull);
+    EXPECT_EQ(decode1.kv_write_bytes_per_member, 16ull);
+    EXPECT_EQ(publish.kv_tokens_before, 10u);
+    EXPECT_EQ(publish.kv_read_bytes_per_member, 0ull);
+    EXPECT_EQ(publish.kv_write_bytes_per_member, 0ull);
+    EXPECT_EQ(publish.host_output_dma_bytes_per_member, 256ull);
+    EXPECT_NE(decode0.mesh_profile_id, decode1.mesh_profile_id);
+    const auto &binding = program.agent_publish_surrogate_bindings[0];
+    EXPECT_EQ(binding.instance_profile_id, 14u);
+    EXPECT_EQ(binding.fill_kind, kDmaFillKindAGENT_OUTPUT_SURROGATE);
+    RuntimeArch arch = testArch();
+    arch.arch_digest_hex = program.arch_digest_hex;
+    EXPECT_TRUE(verifyDecodedProgram(program, arch, error))
+        << error.code << ": " << error.message;
 }
 
 std::string hexDigest(const std::array<uint8_t, 32> &digest)
@@ -2909,15 +2972,15 @@ TEST(MeshBinaryServingTest, MatchesThePythonProfileKeyGolden)
     ASSERT_TRUE(decodeMeshBinary(image, program, error))
         << error.code << ": " << error.message;
     EXPECT_EQ(hexDigest(programProfileKeyBaseDigest(program)),
-              "6abbcef487aebebdfe977d712ccdc911"
-              "c95cb1365a2833686b0dcf1cbf079a67");
+              "32f907bb2496112a2485a2a3a24598a6"
+              "ee06a61e6c796328dedd86ab4cba596f");
     EXPECT_EQ(hexDigest(programSemanticDigest(program)),
-              "72d5d7548d44aa96b82dd06c1bfdd941"
-              "e65dfe527cd6aebcae32345c636104a5");
+              "4516eb428ab47e038ba71c5e5baea8d0"
+              "8a731b5f70358b327fe6cd6c46e91d04");
     EXPECT_TRUE(verifyRequestProfileKeys(program, error))
         << error.code << ": " << error.message;
     EXPECT_EQ(program.agent_request_profiles[0].requested_profile_key,
-              0xd5df2dd59659b6baull);
+              0x1e7508bdba23c5f6ull);
 }
 
 TEST(MeshBinaryServingTest, RejectsATamperedProfileKey)
@@ -3057,6 +3120,96 @@ TEST(MeshBinaryFullViewTest, RejectsCrossedPublishBinding)
               "publish store must read the bound surrogate allocation");
 }
 
+TEST(MeshBinaryServingTest, LoadsProfileStreamRangesFixture)
+{
+    using namespace mesh_abi;
+    const MeshBytes image =
+        loadFixture("tests/gem5/ai_mesh/fixtures/gate6/serving_min.mshb");
+    ASSERT_FALSE(image.empty());
+    DecodedProgram program;
+    MeshLoadError error;
+    ASSERT_TRUE(decodeMeshBinary(image, program, error))
+        << error.code << ": " << error.message;
+    EXPECT_TRUE(program.has_profile_scoped_execution_v1);
+    ASSERT_EQ(program.profile_stream_ranges.size(), 3u);
+    const uint32_t begins[] = {0u, 8u, 14u};
+    const uint32_t counts[] = {8u, 6u, 6u};
+    for (size_t i = 0; i < program.profile_stream_ranges.size(); i++) {
+        const auto &range = program.profile_stream_ranges[i];
+        EXPECT_EQ(range.profile_id, i + 1) << i;
+        EXPECT_EQ(range.core_id, 0u) << i;
+        EXPECT_EQ(range.stream_id, 0u) << i;
+        EXPECT_EQ(range.command_begin, begins[i]) << i;
+        EXPECT_EQ(range.command_count, counts[i]) << i;
+    }
+    RuntimeArch arch = testArch();
+    arch.arch_digest_hex = program.arch_digest_hex;
+    EXPECT_TRUE(verifyDecodedProgram(program, arch, error))
+        << error.code << ": " << error.message;
+}
+
+TEST(MeshBinaryServingTest, RejectsProfileStreamRangeViolations)
+{
+    using namespace mesh_abi;
+    const MeshBytes golden =
+        loadFixture("tests/gem5/ai_mesh/fixtures/gate6/serving_min.mshb");
+    ASSERT_FALSE(golden.empty());
+    const size_t ranges =
+        sectionOffset(golden, kSectionTypePROFILE_STREAM_RANGES);
+    const MoeViolation cases[] = {
+        {"empty_range",
+         ranges + kProfileStreamRangesCommandCountOffset, 4, 0,
+         "E_ABI_BOUNDS"},
+        {"unknown_profile",
+         ranges + kProfileStreamRangesProfileIdOffset, 4, 9, "E_ABI_BOUNDS"},
+        {"range_leaves_stream",
+         ranges + kProfileStreamRangesCommandCountOffset, 4, 9,
+         "E_ABI_SECTION_RANGE"},
+        {"command_belongs_elsewhere",
+         ranges + kProfileStreamRangesBytes +
+             kProfileStreamRangesCommandCountOffset, 4, 9,
+         "E_ABI_SECTION_RANGE"},
+        {"duplicate_identity",
+         ranges + kProfileStreamRangesBytes +
+             kProfileStreamRangesProfileIdOffset, 4, 1, "E_ABI_DUPLICATE"},
+        {"unsorted_identities",
+         ranges + kProfileStreamRangesBytes +
+             kProfileStreamRangesProfileIdOffset, 4, 0, "E_ABI_BOUNDS"},
+    };
+    for (const auto &test : cases) {
+        MeshBytes image = golden;
+        writeField(image, test.offset, test.width, test.value);
+        recomputeMeshChecksums(image);
+        DecodedProgram program;
+        MeshLoadError error;
+        RuntimeArch arch = testArch();
+        const bool decoded = decodeMeshBinary(image, program, error);
+        if (decoded)
+            arch.arch_digest_hex = program.arch_digest_hex;
+        const bool accepted =
+            decoded && verifyDecodedProgram(program, arch, error);
+        EXPECT_FALSE(accepted) << test.name;
+        if (!accepted) {
+            EXPECT_EQ(error.code, test.code) << test.name;
+        }
+    }
+}
+
+TEST(MeshBinaryServingTest, RejectsServingFeatureWithoutExecutionRanges)
+{
+    using namespace mesh_abi;
+    const MeshBytes golden =
+        loadFixture("tests/gem5/ai_mesh/fixtures/gate6/serving_min.mshb");
+    ASSERT_FALSE(golden.empty());
+    MeshBytes image = golden;
+    writeField(image, 104, 8, kFeatureAgentServingV1);
+    recomputeMeshChecksums(image);
+    DecodedProgram program;
+    MeshLoadError error;
+    EXPECT_FALSE(decodeMeshBinary(image, program, error));
+    EXPECT_EQ(error.code, "E_ABI_FEATURE");
+}
+
 TEST(MeshBinaryServingTest, RejectsServingSectionWithoutTheFeatureBit)
 {
     using namespace mesh_abi;
@@ -3178,11 +3331,11 @@ TEST(MeshBinaryServingTest, RejectsServingViolationsAfterRecomputedChecksums)
          relocations + 4 * kRelocationsBytes + kRelocationsTensorIdOffset, 4,
          6, "E_BINDING_ROLE"},
         {"kv_store_offset",
-         descriptors + 4 * kDmaDescriptorsBytes + kDmaDescriptorsDstOffset +
+         descriptors + 6 * kDmaDescriptorsBytes + kDmaDescriptorsDstOffset +
              kDmaEndpointOffsetBytesOffset, 8, 4194304,
          "E_BINDING_ROLE"},
         {"publish_store_wait",
-         commands + 8 * kCommandsBytes + kCommandsWaitCountOffset, 4, 0,
+         commands + 16 * kCommandsBytes + kCommandsWaitCountOffset, 4, 0,
          "E_DMA_RANGE"},
     };
     for (const auto &test : cases) {

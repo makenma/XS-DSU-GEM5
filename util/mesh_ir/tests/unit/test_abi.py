@@ -120,9 +120,21 @@ MOE_RECORDS = {
 
 def test_dynamic_moe_abi_surface_is_frozen_by_contract():
     assert A.DYNAMIC_MOE_V1 == 0x1
-    assert A.KNOWN_FEATURE_MASK == (A.DYNAMIC_MOE_V1 | A.AGENT_SERVING_V1)
+    assert A.KNOWN_FEATURE_MASK == (
+        A.DYNAMIC_MOE_V1 | A.AGENT_SERVING_V1 |
+        A.PROFILE_SCOPED_EXECUTION_V1)
     assert A.FEATURE_MIN_WRITER_MINOR == {
-        "DYNAMIC_MOE_V1": 1, "AGENT_SERVING_V1": 1}
+        "DYNAMIC_MOE_V1": 1, "AGENT_SERVING_V1": 1,
+        "PROFILE_SCOPED_EXECUTION_V1": 3}
+    assert A.FEATURE_REQUIRES == {
+        "DYNAMIC_MOE_V1": (), "AGENT_SERVING_V1":
+        ("PROFILE_SCOPED_EXECUTION_V1",),
+        "PROFILE_SCOPED_EXECUTION_V1": ()}
+    assert A.SECTION_TYPE.PROFILE_STREAM_RANGES == 16
+    assert A.PROFILE_STREAM_RANGES_BYTES == 16
+    assert A.conditional_required_sections(
+        A.PROFILE_SCOPED_EXECUTION_V1) == (
+        A.SECTION_TYPE.PROFILE_STREAM_RANGES,)
     assert A.SECTION_TYPE.MOE_LAYER_SPECS == 0x4000
     assert A.SECTION_TYPE.MOE_EXPERT_SPECS == 0x4001
     assert A.SECTION_TYPE.MOE_DYNAMIC_REGIONS == 0x4002

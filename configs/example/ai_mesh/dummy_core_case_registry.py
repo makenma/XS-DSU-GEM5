@@ -19,6 +19,7 @@ class Backend(Enum):
     GATE3 = "GATE3"
     GATE4 = "GATE4"
     GATE5 = "GATE5"
+    GATE6 = "GATE6"
 
 
 @dataclass(frozen=True)
@@ -247,6 +248,36 @@ GATE5_CASES = {
 CASES.update(GATE5_CASES)
 
 
+GATE6_CASES = {
+    "gate6_serving_e2e_d": CaseDefinition(
+        Backend.GATE6,
+        "gate6_serving_e2e_d",
+        (
+            "quiescence",
+            "completion_timing",
+            "serving_phase_chain",
+            "serving_unique_cq",
+            "serving_host_compile",
+        ),
+    ),
+}
+CASES.update(GATE6_CASES)
+
+
+GATE6_ARGS = {
+    "gate6_serving_e2e_d": (
+        "--serving-program",
+        "tests/gem5/ai_mesh/fixtures/gate6/serving_two_tokens.mshb",
+        "--runtime-config",
+        "tests/gem5/ai_mesh/fixtures/gate6/serving_runtime_config.yaml",
+        "--surrogate-profiles",
+        "tests/gem5/ai_mesh/fixtures/gate6/serving_surrogate_profiles.json",
+        "--weight-image-digest",
+        "d3c1ec48f8238e96c579ad087d218b8510ca81c9c15f9b05d97b99111fd789b2",
+    ),
+}
+
+
 GATE3_PROFILES = {}
 for _requirements in GATE3_CASES.values():
     for _requirement in _requirements:
@@ -308,7 +339,7 @@ def _option_values(arguments, name):
 def invariant_registry(case_name, arguments):
     definition = CASES[case_name]
     if definition.backend in (Backend.GARNET, Backend.GATE3, Backend.GATE4,
-                              Backend.GATE5):
+                              Backend.GATE5, Backend.GATE6):
         return definition.invariants
     names = list(MOCK_BASE_INVARIANTS)
     for option, name, enabled in MOCK_VALUE_INVARIANTS:
@@ -362,6 +393,14 @@ def invocation(case_name: str, arguments: list[str], sim_ticks: str) -> tuple[Pa
             "--case",
             definition.backend_case,
             "--axi-max-sim-ticks",
+            sim_ticks,
+        ]
+    elif definition.backend is Backend.GATE6:
+        script = ROOT / "configs/example/ai_mesh/run_gate6_serving.py"
+        argv = [
+            str(script),
+            *GATE6_ARGS[case_name],
+            "--sim-tick-limit",
             sim_ticks,
         ]
     elif definition.backend is Backend.GATE4:

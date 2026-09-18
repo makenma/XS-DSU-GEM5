@@ -20,6 +20,7 @@ struct AxiBurst
     uint64_t logical_start = 0;
     uint64_t useful_bytes = 0;
     uint32_t beats = 0;
+    uint32_t row = 0;
 };
 
 std::vector<AxiBurst> splitBursts(uint64_t address, uint64_t useful, uint32_t width,

@@ -177,6 +177,11 @@ std::string canonicalProgramProjection(const DecodedProgram &program,
     appendTable(out, program.attrs, appendAttr);
     section("PROFILES");
     appendTable(out, program.profiles, jsonProfile);
+    if (program.required_features & kFeatureProfileScopedExecutionV1) {
+        section("PROFILE_STREAM_RANGES");
+        appendTable(out, program.profile_stream_ranges,
+                    jsonProfileStreamRange);
+    }
     section("RELOCATIONS");
     appendTable(out, program.relocations, jsonRelocation);
     section("SHARDS");

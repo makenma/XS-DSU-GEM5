@@ -8,6 +8,9 @@
 #include "base/statistics.hh"
 #include "dev/ai_mesh/generated/mesh_ir_abi.hh"
 #include "dev/ai_mesh/mesh_dummy_core.hh"
+#include "dev/ai_mesh/mesh_dma_observer.hh"
+#include "dev/ai_mesh/mesh_execution_view.hh"
+#include "dev/ai_mesh/serving_mesh_dispatch.hh"
 #include "dev/ai_mesh/mesh_moe_runtime.hh"
 #include "dev/ai_mesh/program_scoreboard.hh"
 #include "sim/clocked_object.hh"
@@ -33,7 +36,7 @@ class PeerSramAperture;
 // Dispatches program instances at core edges, watches progress and writes
 // the machine-readable result artifact (traffic oracle, per-core counters,
 // conservation and drain state) consumed by the acceptance configs.
-class MeshDispatcher : public ClockedObject
+class MeshDispatcher : public ClockedObject, public ServingMeshDispatch
 {
   public:
     using Params = MeshDispatcherParams;
@@ -43,6 +46,7 @@ class MeshDispatcher : public ClockedObject
     void regStats() override;
     void startup() override;
 
+    void begin();
     void notifyCoreHalted(uint16_t core_id);
     void notifyOverlayExit(uint32_t layer_id);
     void latchInstanceError(MeshDummyCore *source, Tick tick);
@@ -55,17 +59,63 @@ class MeshDispatcher : public ClockedObject
     // runs, but every set-up core has to be undone and the run has to reach a
     // defined error terminal instead of hanging.
     void commitPrestartFailure();
+    void commitErrorTerminal();
+    // Snapshot the live dispatcher state to the result artifact.  The single
+    // writer is also driven by external prestart-cancel observation, which
+    // ends the run before any program terminal.
+    void writeResultJson();
 
     // MoE insertion gate coordination (contract 7.2.2).  The dispatcher arms
     // every participating region of the loaded program before the instance
     // starts and releases the layer's gate once its overlay group exit is
     // published.
+    bool installSelectors(
+        const std::vector<std::pair<uint32_t, uint32_t>> &selectors,
+        std::string &reason) override;
+    void setInstanceObserver(MeshInstanceObserver *observer);
+    void setDmaObserver(MeshDmaObserver *observer);
+    void bindInstance(const ServingInstanceBinding &value) override;
+    bool canAccessKv(uint64_t address, uint64_t bytes) const override;
+    void bindFillContent(const ServingFillBinding &binding) override;
+    void bindSemanticDigest(
+        const std::array<uint8_t, 32> &digest) override;
+    void cancelPendingInstance() override;
+    void failCurrentInstance() override;
+    void beginFirstInstance() override;
+    void resumeInstance() override;
+    const ProfileExecutionView *executionView() const;
+    void advanceAfterInstance();
     void armOverlayGates();
     bool reserveWeightCaches();
     bool retryCacheReservations();
+    // Single write entry for leaving the reservation-wait window: the retry
+    // event, the progress watchdog and the frozen reservation queue belong to
+    // the window, so every termination path has to drop all three.
+    void releaseWaitWindow();
     bool cacheReservationWaiting() const
     {
         return cache_reservation_waiting;
+    }
+    // Read-only wait-window observability: the window's own bookkeeping is the
+    // evidence a prestart cancel has to leave clean.
+    size_t pendingReservations() const
+    {
+        return cache_reservation_queue.size();
+    }
+    bool retryEventScheduled() const { return cache_retry_event.scheduled(); }
+    bool progressWatchdogScheduled() const
+    {
+        return watchdog_event.scheduled();
+    }
+    uint64_t instanceStarts() const { return batch_starts; }
+    uint64_t instanceGeneration() const { return instance_counter.value(); }
+    uint64_t cacheReservationAttempts() const
+    {
+        return cache_reservation_attempts;
+    }
+    uint64_t cacheReservationCommits() const
+    {
+        return cache_reservation_commits;
     }
     bool overlayGroupExited(uint32_t layer_id);
     bool allOverlayGroupsExited() const;
@@ -113,6 +163,18 @@ class MeshDispatcher : public ClockedObject
         { return "ai_mesh.dispatcher.cache_retry"; }
     };
 
+    // A halted participant may still be draining (publication/overlay work),
+    // in which case the settle edge has to be retried until every participant
+    // is quiescent.
+    struct SettleRetryEvent : public Event
+    {
+        MeshDispatcher *dispatcher;
+        explicit SettleRetryEvent(MeshDispatcher *d) : Event(), dispatcher(d) {}
+        void process() override { dispatcher->retryInstanceSettle(); }
+        const char *description() const override
+        { return "ai_mesh.dispatcher.settle_retry"; }
+    };
+
     // One core's whole batch demand: every layer of this core is covered by a
     // single reservation shadow so physical keys, slots, MSHR/eviction,
     // incarnation and epoch are shared inside one transaction.
@@ -144,18 +206,23 @@ class MeshDispatcher : public ClockedObject
     void dispatch();
     void checkWatchdog();
     void checkAllHalted();
-    void writeResultJson();
+    void retryInstanceSettle();
+    std::string outputSpanDigest() const;
     void writeConservationJson(std::ofstream &out);
-    bool anyCoreErrored() const;
+    int erroredCoreId() const;
+    bool anyCoreErrored() const { return erroredCoreId() >= 0; }
 
     MeshProgramLoader *const loader;
     const std::vector<MeshDummyCore *> cores;
     MockAxiTransport *const transport;
     const std::vector<PeerSramAperture *> apertures;
     NpuMemoryEndpoint *const endpoint;
+    const uint64_t output_span_base;
+    const uint64_t output_span_bytes;
     ruby::Network *const network;
     const std::string result_json_path;
     const uint32_t total_instances;
+    const bool autostart;
     const uint64_t watchdog_ticks_value;
 
     struct PendingFence
@@ -174,6 +241,15 @@ class MeshDispatcher : public ClockedObject
     std::vector<PendingFence> pending_fences;
 
     bool instance_error_latched = false;
+    // Whether the latched error belongs to a running instance.  Only such an
+    // error owns the ERROR_DRAINED terminal; an error raised while the batch
+    // was still arming belongs to the prestart-failure terminal instead.
+    bool error_latched_during_run = false;
+    std::string output_digest_before;
+    ServingInstanceBinding instance_binding;
+    std::vector<ServingFillBinding> pending_fill_bindings;
+    std::array<uint8_t, 32> semantic_digest = {};
+    bool semantic_digest_set = false;
 
     ProgramScoreboard scoreboard;
     InstanceGeneration instance_counter;
@@ -182,6 +258,8 @@ class MeshDispatcher : public ClockedObject
     mesh_abi::MeshBatchState batch_state =
         mesh_abi::MeshBatchState::PROGRAM_READY;
     std::vector<MeshDummyCore *> participant_cores;
+    std::vector<std::pair<uint32_t, uint32_t>> execution_selectors;
+    MeshInstanceObserver *instance_observer = nullptr;
     bool started = false;
     std::set<uint16_t> halted_cores;
     uint64_t last_progress_snapshot = 0;
@@ -205,6 +283,7 @@ class MeshDispatcher : public ClockedObject
     StartEvent start_event;
     WatchdogEvent watchdog_event;
     CacheRetryEvent cache_retry_event;
+    SettleRetryEvent settle_retry_event;
 };
 
 } // namespace ai_mesh

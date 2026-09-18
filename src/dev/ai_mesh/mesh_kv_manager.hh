@@ -189,6 +189,8 @@ struct KvGeometry
     bool valid(std::string &reason) const;
     uint32_t tokensPerSlot() const
     { return static_cast<uint32_t>(slot_bytes / bytes_per_token); }
+    uint64_t regionBytes() const
+    { return slot_bytes * static_cast<uint64_t>(max_sessions); }
     uint64_t slotBase(uint32_t slot_id) const
     { return region_base + static_cast<uint64_t>(slot_id) * slot_bytes; }
 };
@@ -497,6 +499,8 @@ class MeshKvManager
   public:
     MeshKvManager(const KvGeometry &geometry, const KvCapacity &capacity);
 
+    const KvGeometry &geometry() const { return geometry_; }
+
     KvEdgeResult commitEdge(const KvEdgeInputs &edge);
 
     const KvRecord *findRecord(uint64_t session_id, uint64_t kv_handle) const;
@@ -504,6 +508,10 @@ class MeshKvManager
     size_t tombstoneCount() const { return tombstones.size(); }
     bool releasePending(uint64_t session_id, uint64_t kv_handle) const;
     bool hasPin(uint64_t request_id) const;
+    // True when the record owns no live KV work, i.e. releasing its pin (or
+    // claiming its owner terminal) is legal.  The release guard and the
+    // serving executor both read this one predicate.
+    bool kvWorkDrained(uint64_t session_id, uint64_t kv_handle) const;
     bool hasClaim(uint64_t request_id) const;
     bool hasReleaseWaiter(uint64_t request_id) const;
     bool liveAppend(uint64_t session_id, uint64_t kv_handle) const;

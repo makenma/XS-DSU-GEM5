@@ -24,10 +24,10 @@ REPO = Path(__file__).resolve().parents[4]
 ARCH_PATH = REPO / "configs/example/ai_mesh/arch/mesh_1x2.yaml"
 
 BASE_DIGEST_HEX = (
-    "6abbcef487aebebdfe977d712ccdc911"
-    "c95cb1365a2833686b0dcf1cbf079a67"
+    "32f907bb2496112a2485a2a3a24598a6"
+    "ee06a61e6c796328dedd86ab4cba596f"
 )
-REQUEST_KEY = 0xD5DF2DD59659B6BA
+REQUEST_KEY = 0x1E7508BDBA23C5F6
 
 
 @pytest.fixture(scope="module")
@@ -247,6 +247,7 @@ def test_verifier_rejects_a_double_classified_symbol(arch, program):
 from mesh_ir.serving_profiles import (
     SelectorIndex,
     _relocation,
+    instance_descriptors,
     verify_descriptor_attribution,
     instance_io_intervals,
     member_rank_vector,
@@ -333,6 +334,21 @@ def _decode(program):
                 if i.phase == A.PHASE.DECODE)
 
 
+def _phase_descriptors(program, instance, kind):
+    return [descriptor for descriptor in
+            instance_descriptors(program, instance)
+            if descriptor.kind == kind]
+
+
+def _publish_stores(program):
+    return _phase_descriptors(program, _publish(program), A.DMA_KIND.STORE)
+
+
+def _publish_fill(program):
+    return _phase_descriptors(program, _publish(program),
+                              A.DMA_KIND.LOCAL_FILL)[0]
+
+
 def test_io_oracle_accepts_the_fixture(arch, program):
     request = program.agent_request_profiles[0]
     for instance in program.agent_instance_profiles:
@@ -360,7 +376,9 @@ def test_io_oracle_rejects_a_shifted_interval(arch, program):
 
 def test_io_oracle_rejects_an_overlapping_store(arch, program):
     request = program.agent_request_profiles[0]
-    overlapped = _with_descriptor(program, 7, useful_bytes=96)
+    overlapped = _with_descriptor(
+        program, _publish_stores(program)[0].descriptor_id,
+        useful_bytes=96)
     with pytest.raises(MeshIrError) as err:
         verify_instance_io(overlapped, request, _publish(overlapped))
     assert err.value.code == "E_HOST_IO_SIZE_MISMATCH"
@@ -371,10 +389,10 @@ def test_io_oracle_rejects_a_wrong_store_role(arch, program):
     input_tensor = next(
         r.tensor_id for r in program.relocations
         if program.strings[r.symbol_sid - 1].value == "input")
-    descriptor = program.dma_descriptors[6]
+    descriptor = _publish_stores(program)[1]
     wrong = dataclasses.replace(
         descriptor.dst, tensor_id=input_tensor)
-    mutated = _with_descriptor(program, 7, dst=wrong)
+    mutated = _with_descriptor(program, descriptor.descriptor_id, dst=wrong)
     with pytest.raises(MeshIrError) as err:
         verify_instance_io(mutated, request, _publish(mutated))
     assert err.value.code == "E_HOST_IO_SIZE_MISMATCH"
@@ -717,8 +735,8 @@ def test_member_slot_must_resolve_to_the_request_primary_tensor(arch, program):
 
 
 def test_publish_must_not_read_kv(arch, program):
-    kv_read = next(d for d in program.dma_descriptors
-                   if d.kind == A.DMA_KIND.LOAD and d.src.tensor_id == 3)
+    kv_read = _phase_descriptors(program, _decode(program),
+                                 A.DMA_KIND.LOAD)[0]
     mutated = dataclasses.replace(
         program,
         expected_traffic=[
@@ -811,10 +829,12 @@ def test_reuse_closure_requires_its_own_prefill(arch, program):
 
 
 def test_publish_dag_requires_the_store_wait(arch, program):
+    store_commands = {descriptor.command_id
+                      for descriptor in _publish_stores(program)}
     mutated = dataclasses.replace(
         program,
         commands=[dataclasses.replace(c, wait_count=0)
-                  if c.command_id in (9, 10) else c
+                  if c.command_id in store_commands else c
                   for c in program.commands])
     with pytest.raises(MeshIrError) as err:
         verify_program(keyed(mutated), arch)
@@ -822,8 +842,7 @@ def test_publish_dag_requires_the_store_wait(arch, program):
 
 
 def test_publish_dag_requires_the_producer_allocation(arch, program):
-    fill = next(d for d in program.dma_descriptors
-                if d.kind == A.DMA_KIND.LOCAL_FILL)
+    fill = _publish_fill(program)
     command = next(c for c in program.commands
                    if c.command_id == fill.command_id)
     kv_shard = next(s for s in program.shards
@@ -1007,8 +1026,7 @@ def test_closure_requires_prefill_for_an_explicit_rank(arch, program):
 
 
 def test_publish_producer_must_be_in_the_publish_closure(arch, program):
-    fill = next(d for d in program.dma_descriptors
-                if d.kind == A.DMA_KIND.LOCAL_FILL)
+    fill = _publish_fill(program)
     mutated = dataclasses.replace(
         program,
         expected_traffic=[
@@ -1022,8 +1040,7 @@ def test_publish_producer_must_be_in_the_publish_closure(arch, program):
 
 
 def test_publish_producer_must_fill_the_whole_allocation(arch, program):
-    fill = next(d for d in program.dma_descriptors
-                if d.kind == A.DMA_KIND.LOCAL_FILL)
+    fill = _publish_fill(program)
     short = dataclasses.replace(fill, row_bytes=64, useful_bytes=64,
                                 physical_storage_bytes=64,
                                 src_stride_bytes=64, dst_stride_bytes=64)

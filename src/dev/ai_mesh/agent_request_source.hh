@@ -25,6 +25,7 @@ struct AgentSubmissionIntent
     uint64_t outputAddress = 0;
     uint64_t outputCapacityBytes = 0;
     uint64_t parameterAddress = 0;
+    uint64_t parameterCapacityBytes = 0;
     uint64_t outputMetadataAddress = 0;
     uint64_t kvHandle = 0;
     uint64_t kvGeneration = 0;

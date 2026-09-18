@@ -44,6 +44,9 @@ class AxiTensorDmaEngine : public DmaEngineBase
     void startup() override;
     void regStats() override;
 
+    void bindInstance(const ServingInstanceBinding &value) override
+    { instance_binding = value; }
+
     bool submit(const DecodedDmaDescriptor &descriptor,
                 const RuntimeObjectKey &descriptor_key,
                 const RuntimeObjectKey &command_key,
@@ -53,6 +56,7 @@ class AxiTensorDmaEngine : public DmaEngineBase
     void bindFillContent(RuntimeObjectKey command,
                          const std::vector<uint8_t> &content,
                          bool install_bytes) override;
+    void releaseFillBindings(InstanceGeneration instance) override;
     bool idle() const override;
     void bindOwner(MeshDummyCore *core, const RuntimeArch *arch) override;
     const std::map<RuntimeObjectKey, ActualTraffic> &
@@ -252,6 +256,10 @@ class AxiTensorDmaEngine : public DmaEngineBase
                      uint64_t size);
     ActualTraffic &rowOf(RuntimeObjectKey descriptor);
     std::vector<AxiBurst> planOf(const DecodedDmaDescriptor &descriptor) const;
+    uint64_t remoteRowAddress(const DecodedDmaDescriptor &descriptor,
+                              uint32_t row) const;
+
+    ServingInstanceBinding instance_binding;
 
     AxiGarnetBridge *const bridge;
     const uint32_t data_bus_bytes;

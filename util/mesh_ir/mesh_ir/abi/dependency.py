@@ -25,7 +25,7 @@ def command_waits(program: Program) -> dict:
     return waits_by_command
 
 
-def command_prerequisites(program: Program) -> dict:
+def command_prerequisites(program: Program, views=None) -> dict:
     producers = {}
     for command in program.commands:
         if command.signal_event:
@@ -35,16 +35,29 @@ def command_prerequisites(program: Program) -> dict:
         producers.setdefault(descriptor.completion_event, set()).add(
             descriptor.command_id)
 
+    wait_owners = {}
+    if views is not None and not views.whole_program:
+        for view in views.views:
+            for command_id in view.command_ids:
+                wait_owners[command_id] = view.profile_id
+
+    def related(left: int, right: int) -> bool:
+        if not wait_owners:
+            return True
+        return wait_owners.get(left) == wait_owners.get(right)
+
     waits_by_command = command_waits(program)
     prerequisites = {c.command_id: [] for c in program.commands}
     for stream in program.streams:
         commands = stream_commands(program, stream)
         for previous, current in zip(commands, commands[1:]):
-            prerequisites[current.command_id].append(previous.command_id)
+            if related(previous.command_id, current.command_id):
+                prerequisites[current.command_id].append(previous.command_id)
     for command in program.commands:
         for event_id in waits_by_command[command.command_id]:
             prerequisites[command.command_id].extend(
-                producers.get(event_id, ()))
+                producer for producer in producers.get(event_id, ())
+                if related(producer, command.command_id))
     return prerequisites
 
 

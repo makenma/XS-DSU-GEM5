@@ -295,18 +295,15 @@ MeshDummyCore::InstanceLedger MeshDummyCore::takeInstanceLedger()
     return ledger;
 }
 
-void MeshDummyCore::dispatchInstance(InstanceGeneration instance)
-{
-    armRequest(instance);
-    startRequest();
-}
-
-void MeshDummyCore::armRequest(InstanceGeneration instance)
+void MeshDummyCore::armRequest(InstanceGeneration instance,
+                              const ProfileExecutionView &view,
+                              std::shared_ptr<const ServingFillInputs> fill_inputs)
 {
     fatal_if(!program, "core %u dispatched without an installed program", core_id_value);
     fatal_if(instanceActive(), "core %u already running an instance",
              core_id_value);
     instance_generation = instance;
+    runtime_fill_inputs = std::move(fill_inputs);
     instance_state = mesh_abi::MeshCoreInstanceState::REQUEST_ARMED;
     error_latch_tick = 0;
     work_drained_tick = 0;
@@ -333,13 +330,11 @@ void MeshDummyCore::armRequest(InstanceGeneration instance)
     outstanding_axi = 0;
     for (auto &kv : sram.allocations)
         kv.second.valid = false; // per-instance producer dominance
-    for (const auto &stream : program->streams) {
-        if (stream.core_id != core_id_value)
-            continue;
+    for (const auto &range : view.rangesForCore(core_id_value)) {
         StreamCursor cursor;
-        cursor.next_command = stream.command_begin;
-        cursor.end_command = stream.command_begin + stream.command_count;
-        cursors[stream.stream_id] = cursor;
+        cursor.next_command = range.command_begin;
+        cursor.end_command = range.command_begin + range.command_count;
+        cursors[range.stream_id] = cursor;
     }
     DPRINTF(AiMesh, "core %u instance %u dispatched with %zu streams\n", core_id_value,
             instance.value(), cursors.size());
@@ -350,6 +345,7 @@ void MeshDummyCore::disarmRequest()
     fatal_if(instance_state != mesh_abi::MeshCoreInstanceState::REQUEST_ARMED,
              "core %u disarmed without an armed request", core_id_value);
     cancelAllPendingVisibility();
+    releaseInstanceInputs();
     cursors.clear();
     instance_state = mesh_abi::MeshCoreInstanceState::PROGRAM_READY;
     DPRINTF(AiMesh, "core %u request disarmed before start\n", core_id_value);
@@ -1111,6 +1107,21 @@ void MeshDummyCore::unpinDmaAllocations(const DecodedCommand &command)
     }
 }
 
+void
+MeshDummyCore::releaseInstanceInputs()
+{
+    runtime_fill_inputs.reset();
+    dma->releaseFillBindings(instance_generation);
+}
+
+void
+MeshDummyCore::setInstanceBinding(const ServingInstanceBinding &value)
+{
+    armed_binding = value;
+    if (dma != nullptr)
+        dma->bindInstance(value);
+}
+
 bool MeshDummyCore::issueDma(const DecodedCommand &command)
 {
     bool submitted = false;
@@ -1122,9 +1133,18 @@ bool MeshDummyCore::issueDma(const DecodedCommand &command)
                  "descriptors",
                  command.command_id);
         if (descriptor.kind == mesh_abi::kDmaKindLOCAL_FILL) {
+            const auto *content = runtime_fill_inputs ?
+                runtime_fill_inputs->contentFor(commandKey(command.command_id)) : nullptr;
+            if (content != nullptr)
+                dma->bindFillContent(commandKey(command.command_id),
+                                     *content, true);
             const DecodedAttr *attr = attrOf(command);
             fatal_if(attr == nullptr || attr->kind != mesh_abi::kAttrKindFILL_V1,
                      "DMA_FILL command %u missing FILL_V1 attr", command.command_id);
+            fatal_if(attr->as<mesh_abi::FillV1>().pattern ==
+                         mesh_abi::kDmaFillRuntimeBoundSentinel && content == nullptr,
+                     "E_BINDING_ROLE: runtime sentinel fill binding missing for command %u",
+                     command.command_id);
             dma->bindFillPattern(
                 commandKey(command.command_id),
                 attr->as<mesh_abi::FillV1>().pattern);
@@ -1142,6 +1162,13 @@ bool MeshDummyCore::issueDma(const DecodedCommand &command)
         if (descriptor.kind == mesh_abi::kDmaKindP2P_PUSH &&
             descriptor.useful_bytes > 0 && dispatcher)
             dispatcher->armTransferExpectation(descriptor.transfer_id);
+        if (dma_observer != nullptr)
+            dma_observer->onDmaAccepted(descriptor.descriptor_id,
+                                        command.command_id,
+                                        instance_generation.value(),
+                                        armed_binding.requestId(),
+                                        armed_binding.requestGeneration(),
+                                        curTick());
         commandsIssued++;
         command_issue_ticks[commandKey(command.command_id)] = curTick();
         live_commands++;
@@ -1297,6 +1324,40 @@ void MeshDummyCore::onDmaCompleted(RuntimeObjectKey command,
                                    RuntimeObjectKey completion_event,
                                    Tick commit_tick, DmaStatus status)
 {
+    if (dma_observer != nullptr) {
+        for (const auto &descriptor : program->descriptors) {
+            if (descriptor.command_id != command.ordinal)
+                continue;
+            const auto &traffic = dma->actualTraffic();
+            const auto found = traffic.find(descriptorKey(
+                descriptor.descriptor_id));
+            uint64_t committed = 0;
+            uint32_t error_code = 0;
+            std::vector<DmaCommittedSegment> segments;
+            if (found != traffic.end()) {
+                const ActualTraffic &row = found->second;
+                if (descriptor.kind == mesh_abi::kDmaKindSTORE ||
+                    descriptor.kind == mesh_abi::kDmaKindP2P_PUSH)
+                    committed = row.write_bytes;
+                else if (descriptor.kind == mesh_abi::kDmaKindLOCAL_FILL)
+                    committed = row.fill_bytes;
+                else
+                    committed = row.read_bytes;
+                error_code = row.error_code;
+                segments = row.committed_segments;
+            }
+            if (status != DmaStatus::OK && error_code == 0)
+                error_code = static_cast<uint32_t>(status);
+            dma_observer->onDmaTerminal(descriptor.descriptor_id,
+                                        command.ordinal, committed,
+                                        error_code,
+                                        instance_generation.value(),
+                                        armed_binding.requestId(),
+                                        armed_binding.requestGeneration(),
+                                        commit_tick, segments);
+            break;
+        }
+    }
     if (command.domain == mesh_abi::MeshObjectDomain::WEIGHT_FILL) {
         if (weight_cache == nullptr)
             fatal("cache fill completion without an installed cache");

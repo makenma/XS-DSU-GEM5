@@ -10,6 +10,11 @@
 #include "base/logging.hh"
 #include "dev/ai_mesh/agent_axi_driver.hh"
 #include "dev/ai_mesh/agent_plan_image.hh"
+#include "dev/ai_mesh/mesh_dispatcher.hh"
+#include "dev/ai_mesh/mesh_kv_layout.hh"
+#include "dev/ai_mesh/mesh_program_loader.hh"
+#include "dev/ai_mesh/mesh_serving_projection.hh"
+#include "dev/ai_mesh/serving_mesh_executor.hh"
 #include "params/NpuServingFrontend.hh"
 #include "sim/core.hh"
 #include "sim/cur_tick.hh"
@@ -65,7 +70,11 @@ NpuServingFrontend::NpuServingFrontend(const Params &p)
       outputBErrorRequest(p.output_b_error_request),
       outputBErrorSegment(p.output_b_error_segment),
       controlCqFirst(p.control_cq_first),
-      profile(p.profile), planExecution(p.executor == "full_context_surrogate"),
+      profile(p.profile),
+      planExecution(p.executor == "full_context_surrogate" ||
+                    p.executor == "serving_mesh"),
+      surrogateExecution(p.executor == "full_context_surrogate"),
+      servingExecution(p.executor == "serving_mesh"),
       requestCount(p.request_count),
       sqReadIssueDelay(p.sq_read_issue_delay),
       doorbellAxiId(p.doorbell_axi_id), sqHeadAxiId(p.sq_head_axi_id),
@@ -87,8 +96,22 @@ NpuServingFrontend::NpuServingFrontend(const Params &p)
              "%s: Gate3 control window must be 8 bytes", name());
     fatal_if(!isPowerOfTwo(sqDepth) || !isPowerOfTwo(cqDepth),
              "%s: ring depths must be powers of two", name());
-    fatal_if(!planExecution && p.executor != "protocol_probe",
+    fatal_if(!planExecution && !servingExecution &&
+                 p.executor != "protocol_probe",
              "%s: unknown executor %s", name(), p.executor);
+    if (servingExecution) {
+        fatal_if(p.serving_loader == nullptr,
+                 "%s: serving_mesh requires a program loader", name());
+        fatal_if(p.serving_dispatcher == nullptr,
+                 "%s: serving_mesh requires a dispatcher", name());
+        fatal_if(p.serving_weight_image_digest.size() != 64,
+                 "%s: serving_mesh requires a 32 byte weight image digest",
+                 name());
+        servingLoader = p.serving_loader;
+        servingDispatcher = p.serving_dispatcher;
+        servingWeightImageDigest = p.serving_weight_image_digest;
+        servingPlanImage = p.plan_image;
+    }
     const uint64_t msiEnd = uint64_t(msiAxiId) + msiAxiIdCount;
     fatal_if(msiAxiIdCount == 0 || msiEnd > uint64_t(UINT32_MAX) + 1,
              "%s: invalid MSI AXI ID range", name());
@@ -104,35 +127,214 @@ NpuServingFrontend::NpuServingFrontend(const Params &p)
                  "%s: kv_session_record_entries must be nonzero", name());
         fatal_if(acceptedQueueEntries == 0,
                  "%s: accepted_queue_entries must be nonzero", name());
-        auto image = loadAgentPlanImageFile(p.plan_image);
-        fatal_if(!image, "%s: plan image %s cannot be loaded", name(),
+        planImage = loadAgentPlanImageFile(p.plan_image);
+        fatal_if(!planImage, "%s: plan image %s cannot be loaded", name(),
                  p.plan_image);
-        const SurrogateProfileRegistry *registry = image->surrogateRegistry();
+        const SurrogateProfileRegistry *registry = planImage->surrogateRegistry();
         fatal_if(registry == nullptr,
                  "%s: plan image has no surrogate profile registry", name());
-        requestCount = image->generateCommandCount();
+        requestCount = planImage->generateCommandCount();
         fatal_if(requestCount == 0,
                  "%s: plan image has no GENERATE commands", name());
-        for (const AgentPlanUser &user : image->users())
-            for (const AgentPlanTask &task : user.tasks)
-                for (const AgentPlanRound &round : task.rounds)
-                    generateDeadlineTicks[round.requestId] =
-                        round.hasDeadline ? round.deadlineTick :
-                        kNpuNoDeadline;
+        for (const AgentCommandRecord &command : planImage->commands()) {
+            if (command.commandKind != kAgentCommandGenerate)
+                continue;
+            const AgentPlanRound *round = nullptr;
+            for (const AgentPlanUser &user : planImage->users()) {
+                if (user.userId != command.userId)
+                    continue;
+                for (const AgentPlanTask &task : user.tasks) {
+                    if (task.taskSeq != command.taskSeq)
+                        continue;
+                    for (const AgentPlanRound &candidate : task.rounds)
+                        if (candidate.repairRound == command.repairRoundOrFFFF)
+                            round = &candidate;
+                }
+            }
+            if (round == nullptr)
+                fatal("%s: GENERATE command %llu has no frozen plan round",
+                      name(), (unsigned long long)command.requestId);
+            generateDeadlineTicks[command.requestId] =
+                round->hasDeadline ? round->deadlineTick : kNpuNoDeadline;
+            AgentPlanRequestProof proof;
+            proof.userId = command.userId;
+            proof.taskSeq = command.taskSeq;
+            proof.repairRound = command.repairRoundOrFFFF;
+            proof.sessionId = command.sessionId;
+            proof.kvHandle = command.kvHandle;
+            proof.generation = command.generation;
+            proof.itemId = round->itemId;
+            proof.fullContextTokens = round->fullContextTokens;
+            proof.fullContextBytes = round->fullContextBytes;
+            proof.cachedTokens = round->cachedTokens;
+            proof.outputTokens = round->outputTokens;
+            proof.outputCapacityBytes = round->outputCapacityBytes;
+            proof.metadataCapacityBytes = round->metadataCapacityBytes;
+            proof.programId = round->programId;
+            proof.profileId = round->profileId;
+            proof.profileKey = round->profileKey;
+            proof.qos = round->qos;
+            proof.hasDeadline = round->hasDeadline;
+            proof.deadlineTick = round->deadlineTick;
+            proof.inputDigest = round->inputDigest;
+            planRequestProofs[command.requestId] = proof;
+        }
+        frozenWorkloadDigest = planImage->workloadPlanDigest();
         kvContractDigest = MeshKvManager::contractDigest(
-            image->imageDigest(), image->workloadPlanDigest(),
-            image->controlPlanDigest(), kvBytesPerToken);
+            planImage->imageDigest(), planImage->workloadPlanDigest(),
+            planImage->controlPlanDigest(), kvBytesPerToken);
         if (kvManager.fatalReason()) {
             fatal("%s: invalid KV geometry or capacity: %s", name(),
                   kvManager.fatalReason()->c_str());
         }
-        requestExecutor = std::make_unique<FullContextSurrogateExecutor>(
-            *registry);
-        return;
+        planRegistry = registry;
+        frozenBindingPlans = planImage->hostBindingPlans();
+        frozenKvSessionSlotBytes = planImage->kvSessionSlotBytes();
+        fatal_if(!frozenBindingPlans.empty() &&
+                     frozenKvSessionSlotBytes != kvSessionSlotBytes,
+                 "%s: plan image KV slot bytes %llu differ from the served "
+                 "geometry %llu", name(),
+                 (unsigned long long)frozenKvSessionSlotBytes,
+                 (unsigned long long)kvSessionSlotBytes);
+        if (surrogateExecution) {
+            requestExecutor =
+                std::make_unique<FullContextSurrogateExecutor>(*registry);
+            requestExecutor->attachSink(this);
+        }
+        if (surrogateExecution || servingExecution)
+            return;
     }
     fatal_if(requestCount == 0,
              "%s: request count must be positive", name());
+    if (servingExecution)
+        return;
     requestExecutor = std::make_unique<NpuProtocolProbeExecutor>();
+    requestExecutor->attachSink(this);
+}
+
+void
+NpuServingFrontend::onCoreStart(uint64_t requestId)
+{
+    recordSemantic("CORE_START", "CONTEXT", std::nullopt, requestId,
+                   currentCookie);
+    recorder->setMetric("core_starts", recorder->metric("core_starts") + 1);
+}
+
+void
+NpuServingFrontend::onRequestComplete(
+    const NpuExecutionRequest &request,
+    const NpuExecutionCompletion &completion)
+{
+    fatal_if(request.requestId != currentRequestId,
+             "%s: completion request does not match the live context", name());
+    currentCompletion = completion;
+    if (completion.kvTerminal)
+        recorder->setMetric("kv_cached_tokens",
+                            completion.kvTerminal->cached_tokens);
+    if (parkedBusiness)
+        parkedBusiness->completion = completion;
+    if (!executionCurrent())
+        return;
+    if (servingExecution && !completion.success) {
+        queueErrorCompletion(
+            static_cast<uint16_t>(agent_abi::CqStatus::PROGRAM_ERROR),
+            agent_abi::kCqFlagsDETAIL_IN_CQ, agent_abi::E_KV_STATE);
+        return;
+    }
+    if (servingExecution) {
+        startMetadata();
+        return;
+    }
+    startOutput();
+}
+
+void
+NpuServingFrontend::completeExecution()
+{
+    fatal_if(!lastExecutionRequest,
+             "%s: execution completion without a submitted request", name());
+    activeExecutor()->postCompletion(*lastExecutionRequest);
+}
+
+void
+NpuServingFrontend::ensureServingPrepared()
+{
+    if (meshExecutor)
+        return;
+    fatal_if(servingLoader == nullptr || servingDispatcher == nullptr,
+             "%s: serving_mesh is not configured", name());
+    fatal_if(!servingLoader->loaded(),
+             "%s: serving program is not loaded", name());
+    std::array<uint8_t, 32> weight_digest{};
+    for (size_t index = 0; index < weight_digest.size(); ++index) {
+        const std::string byte = servingWeightImageDigest.substr(index * 2, 2);
+        weight_digest[index] = static_cast<uint8_t>(
+            std::stoul(byte, nullptr, 16));
+    }
+    const DecodedProgram &serving_program = servingLoader->program();
+    std::array<uint8_t, 32> layout_digest{};
+    MeshLoadError layout_error;
+    fatal_if(!kvLayoutDigest(serving_program, layout_digest, layout_error),
+             "%s: %s: %s", name(), layout_error.code, layout_error.message);
+    fatal_if(serving_program.agent_request_profiles.empty(),
+             "%s: serving program has no request profile", name());
+    servingContractDigest = MeshKvManager::contractDigest(
+        programSemanticDigest(serving_program), weight_digest, layout_digest,
+        serving_program.agent_request_profiles[0].kv_bytes_per_token);
+    meshExecutor = std::make_unique<ServingMeshExecutor>(
+        serving_program, kvManager);
+    meshExecutor->attachDispatch(*servingDispatcher);
+    servingDispatcher->setDmaObserver(meshExecutor.get());
+    servingDispatcher->setInstanceObserver(meshExecutor.get());
+    meshExecutor->setTickSource([this]() { return curTick(); });
+    meshExecutor->setPhaseFactSink([this](const ServingPhaseFact &fact) {
+        recorder->recordServingPhase(
+            Gate3ObservationRecorder::ServingPhaseRow{
+                fact.phase, fact.instance_profile_id, fact.mesh_profile_id,
+                fact.kv_tokens_before, fact.append_tokens,
+                fact.accepted_descriptors, fact.terminal_descriptors,
+                fact.core_drain_tick, fact.append_terminal_tick,
+                fact.commit_tick});
+    });
+    meshExecutor->attachSink(this);
+    if (planRegistry != nullptr) {
+        const SurrogateProfileRegistry *registry = planRegistry;
+        meshExecutor->setDigestSource(
+            [this, registry](const NpuExecutionRequest &request,
+                             uint64_t output_bytes) {
+                const SurrogateProfile *profile =
+                    FullContextSurrogateExecutor::profileFor(*registry,
+                                                              request);
+                if (profile != nullptr) {
+                    fatal_if(profile->outputBytes != output_bytes,
+                             "%s: surrogate output bytes %llu != mesh output "
+                             "bytes %llu", name(),
+                             (unsigned long long)profile->outputBytes,
+                             (unsigned long long)output_bytes);
+                    return FullContextSurrogateExecutor::semanticDigestFor(
+                        request, *profile);
+                }
+                fatal_if(request.maxOutputTokens == 0,
+                         "%s: serving request needs output tokens", name());
+                const std::array<uint8_t, 32> seed = surrogateSeed(
+                    request.inputDigest.data(), request.programId,
+                    request.profileId, request.requestedProfileKey);
+                std::vector<std::array<uint8_t, 32>> token_digests;
+                token_digests.reserve(request.maxOutputTokens);
+                for (uint32_t ordinal = 0; ordinal < request.maxOutputTokens;
+                     ++ordinal)
+                    token_digests.push_back(
+                        surrogateTokenDigest(seed.data(), ordinal));
+                return surrogateOutputPrefixDigest(
+                    request.workloadDigest.data(),
+                    request.workloadPlanItemId, request.maxOutputTokens,
+                    token_digests);
+            });
+    }
+    if (kvManager.fatalReason()) {
+        fatal("%s: invalid KV geometry or capacity: %s", name(),
+              kvManager.fatalReason()->c_str());
+    }
 }
 
 void
@@ -237,11 +439,10 @@ NpuServingFrontend::makeControl(uint64_t sequence) const
 std::optional<uint32_t>
 NpuServingFrontend::terminalOutputBytes() const
 {
-    if (!planExecution || !lastExecutionRequest || currentError ||
+    if (!planExecution || !currentCompletion || currentError ||
         currentControlOpcode != 0 || currentRequestId == 0)
         return std::nullopt;
-    return static_cast<uint32_t>(
-        requestExecutor->outputBytes(*lastExecutionRequest));
+    return static_cast<uint32_t>(currentCompletion->outputBytes);
 }
 
 std::vector<uint8_t>
@@ -780,6 +981,20 @@ NpuServingFrontend::startOutput()
 void
 NpuServingFrontend::startMetadata()
 {
+    // Metadata encodes the immutable KV owner terminal, so it may only be
+    // built once the executor has formed that snapshot and given up
+    // ownership; otherwise the CQ would describe state the release changes.
+    if (servingExecution) {
+        fatal_if(!currentCompletion || !currentCompletion->kvTerminal,
+                 "%s: metadata built without a KV owner terminal snapshot",
+                 name());
+        recorder->setMetric("serving_instance_count",
+                            currentCompletion->phaseInstances);
+        fatal_if(kvManager.hasPin(currentRequestId) ||
+                     kvManager.hasClaim(currentRequestId),
+                 "%s: metadata built while KV ownership is still live",
+                 name());
+    }
     activeWrite = makeWrite(
         "METADATA", "METADATA", std::nullopt, currentRequestId,
         currentCookie, currentMetadataAddress, 22,
@@ -862,6 +1077,11 @@ NpuServingFrontend::releaseKvPin(uint64_t requestId, uint16_t status)
 {
     if (!planExecution || requestId == 0)
         return;
+    // The record census belongs to the manager, not to whoever performed the
+    // release: the serving executor seals the owner terminal before the
+    // completion, so this call may legitimately find the pin already gone.
+    recorder->setMetric("kv_session_records",
+                        static_cast<unsigned>(kvManager.recordCount()));
     if (!kvManager.hasPin(requestId) && !kvManager.hasClaim(requestId))
         return;
     KvOwnerTerminal terminal;
@@ -874,7 +1094,8 @@ NpuServingFrontend::releaseKvPin(uint64_t requestId, uint16_t status)
     edge.tick = curTick();
     edge.owner_terminals.push_back(terminal);
     const KvEdgeResult result = kvManager.commitEdge(edge);
-    fatal_if(result.fatal, "%s: KV pin release is invalid", name());
+    fatal_if(result.fatal, "%s: KV pin release is invalid: %s", name(),
+             result.fatal->c_str());
     recorder->setMetric("kv_session_records",
                         static_cast<unsigned>(kvManager.recordCount()));
     consumeReleaseOutcomes(result);
@@ -1289,6 +1510,7 @@ NpuServingFrontend::scheduleRetire()
 void
 NpuServingFrontend::finishCurrent()
 {
+    currentCompletion.reset();
     currentValid = false;
     currentError = false;
     currentOutputBytes.reset();

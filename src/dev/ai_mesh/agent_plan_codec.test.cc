@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <limits>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -152,4 +153,181 @@ TEST(AgentPlanCodec, ControlParameterMatchesPythonGolden)
     const auto release = gem5::ai_mesh::buildControlParameter(1, 0, 11, 1);
     ASSERT_EQ(release.size(), 160u);
     EXPECT_EQ(hexOf(release.data(), release.size()), kControlReleaseHex);
+}
+
+TEST(AgentPlanCodec, NormalizeBindingsSortsAndRejectsRepeats)
+{
+    std::vector<gem5::ai_mesh::agent_abi::BindingRecord> bindings(2);
+    bindings[0].symbol_id = 7;
+    bindings[0].kind = gem5::ai_mesh::agent_abi::kBindingKindHOST_OUTPUT;
+    bindings[1].symbol_id = 3;
+    bindings[1].kind = gem5::ai_mesh::agent_abi::kBindingKindHOST_INPUT;
+    std::string reason;
+    ASSERT_TRUE(gem5::ai_mesh::normalizeBindings(bindings, reason)) << reason;
+    EXPECT_EQ(bindings[0].symbol_id, 3u);
+    EXPECT_EQ(bindings[1].symbol_id, 7u);
+
+    std::vector<gem5::ai_mesh::agent_abi::BindingRecord> same(2);
+    same[0].symbol_id = 5;
+    same[0].kind = gem5::ai_mesh::agent_abi::kBindingKindHOST_INPUT;
+    same[1].symbol_id = 5;
+    same[1].kind = gem5::ai_mesh::agent_abi::kBindingKindHOST_OUTPUT;
+    EXPECT_FALSE(gem5::ai_mesh::normalizeBindings(same, reason));
+
+    std::vector<gem5::ai_mesh::agent_abi::BindingRecord> same_kind(2);
+    same_kind[0].symbol_id = 9;
+    same_kind[0].kind = gem5::ai_mesh::agent_abi::kBindingKindKV_EXTERNAL;
+    same_kind[1] = same_kind[0];
+    EXPECT_FALSE(gem5::ai_mesh::normalizeBindings(same_kind, reason));
+    std::vector<gem5::ai_mesh::agent_abi::BindingRecord> empty;
+    EXPECT_TRUE(gem5::ai_mesh::normalizeBindings(empty, reason));
+}
+
+TEST(AgentPlanCodec, BindingCountStaysRepresentable)
+{
+    std::string reason;
+    EXPECT_TRUE(gem5::ai_mesh::bindingTableRepresentable(0, 0, reason));
+    EXPECT_TRUE(gem5::ai_mesh::bindingTableRepresentable(0xFFFFu, 96, reason))
+        << reason;
+    EXPECT_FALSE(gem5::ai_mesh::bindingTableRepresentable(0x10000u, 96,
+                                                          reason));
+    EXPECT_FALSE(reason.empty());
+    const uint64_t limit = std::numeric_limits<uint32_t>::max();
+    const uint64_t header = gem5::ai_mesh::agent_abi::kParameterHeaderBytes;
+    EXPECT_TRUE(gem5::ai_mesh::bindingTableRepresentable(0, limit - header,
+                                                         reason)) << reason;
+    EXPECT_FALSE(gem5::ai_mesh::bindingTableRepresentable(
+        0, limit - header + 1, reason));
+    EXPECT_FALSE(gem5::ai_mesh::bindingTableRepresentable(
+        0, limit, reason));
+    EXPECT_FALSE(reason.empty());
+}
+
+TEST(AgentPlanCodec, NonEmptyBindingTableLayoutAndCrc)
+{
+    for (const bool withDeadline : {false, true}) {
+        gem5::ai_mesh::AgentPlanRound round;
+        round.hasDeadline = withDeadline;
+        round.deadlineTick = 12345;
+        round.fullContextBytes = 128;
+        round.fullContextTokens = 8;
+        round.outputCapacityBytes = 256;
+        round.metadataCapacityBytes = 512;
+        round.outputTokens = 2;
+        round.itemId = 3;
+        round.qos = 1;
+        gem5::ai_mesh::AgentPlanTask task;
+        task.taskSeq = 1;
+        task.kvHandle = 4;
+        task.generation = 1;
+        gem5::ai_mesh::PlanWireAddresses addresses;
+        addresses.inputBase = 0x100000;
+        addresses.outputBase = 0x300000;
+        const uint8_t workloadDigest[32] = {};
+        std::vector<gem5::ai_mesh::agent_abi::BindingRecord> bindings(2);
+        bindings[0].symbol_id = 1;
+        bindings[0].kind = gem5::ai_mesh::agent_abi::kBindingKindHOST_INPUT;
+        bindings[0].flags = gem5::ai_mesh::agent_abi::kBindingFlagsREAD;
+        bindings[0].address = addresses.inputBase;
+        bindings[0].bytes = 128;
+        bindings[1].symbol_id = 2;
+        bindings[1].kind = gem5::ai_mesh::agent_abi::kBindingKindHOST_OUTPUT;
+        bindings[1].flags = gem5::ai_mesh::agent_abi::kBindingFlagsWRITE;
+        bindings[1].address = addresses.outputBase;
+        bindings[1].bytes = 256;
+        const auto parameter = gem5::ai_mesh::buildPlanParameter(
+            round, task, 0, addresses, workloadDigest, 4096, bindings);
+        ASSERT_GE(parameter.size(), 160u + 48u);
+        const auto header =
+            gem5::ai_mesh::agent_abi::decodeParameterHeader(parameter.data());
+        EXPECT_EQ(header.binding_count, 2u);
+        EXPECT_EQ(header.binding_table_offset, 160u);
+        EXPECT_EQ(header.binding_record_bytes, gem5::ai_mesh::agent_abi::kBindingRecordBytes);
+        EXPECT_EQ(header.extension_offset, 160u + 48u);
+        EXPECT_EQ(header.total_bytes, parameter.size());
+        EXPECT_EQ(header.extension_offset + header.extension_bytes,
+                  parameter.size());
+        for (uint32_t index = 0; index < 2; ++index) {
+            const auto record = gem5::ai_mesh::agent_abi::decodeBindingRecord(
+                parameter.data() + header.binding_table_offset +
+                index * gem5::ai_mesh::agent_abi::kBindingRecordBytes);
+            EXPECT_EQ(record.symbol_id, bindings[index].symbol_id);
+            EXPECT_EQ(record.kind, bindings[index].kind);
+            EXPECT_EQ(record.flags, bindings[index].flags);
+            EXPECT_EQ(record.address, bindings[index].address);
+            EXPECT_EQ(record.bytes, bindings[index].bytes);
+        }
+        const size_t crcOffset =
+            gem5::ai_mesh::agent_abi::kParameterHeaderCrc32Offset;
+        uint32_t stored = 0;
+        for (size_t index = 0; index < 4; ++index)
+            stored |= uint32_t(parameter[crcOffset + index]) << (8 * index);
+        std::vector<uint8_t> copy = parameter;
+        std::fill(copy.begin() + crcOffset, copy.begin() + crcOffset + 4, 0);
+        EXPECT_EQ(stored, gem5::ai_mesh::agent_abi::crc32c(copy.data(),
+                                                           copy.size()));
+        copy = parameter;
+        copy[header.binding_table_offset + 4] ^= 0xff;
+        std::fill(copy.begin() + crcOffset, copy.begin() + crcOffset + 4, 0);
+        EXPECT_NE(stored, gem5::ai_mesh::agent_abi::crc32c(copy.data(),
+                                                           copy.size()));
+    }
+}
+
+TEST(AgentPlanCodec, NonEmptyBindingTableMatchesPythonGolden)
+{
+    const std::vector<uint8_t> image = loadFixture();
+    const auto parsed = gem5::ai_mesh::AgentPlanImage::parse(
+        image.data(), image.size());
+    ASSERT_TRUE(parsed.has_value());
+    const auto &task = parsed->users()[0].tasks[0];
+    const auto &round = task.rounds[0];
+    gem5::ai_mesh::PlanWireAddresses addresses;
+    addresses.inputBase = 0x0000000101000000ull;
+    addresses.outputBase = 0x0000000105000000ull;
+    addresses.metadataBase = 0x0000000109000000ull;
+    std::vector<gem5::ai_mesh::agent_abi::BindingRecord> bindings(2);
+    bindings[0].symbol_id = 1;
+    bindings[0].kind = gem5::ai_mesh::agent_abi::kBindingKindHOST_INPUT;
+    bindings[0].flags = gem5::ai_mesh::agent_abi::kBindingFlagsREAD;
+    bindings[0].address = addresses.inputBase;
+    bindings[0].bytes = round.fullContextBytes;
+    bindings[1].symbol_id = 2;
+    bindings[1].kind = gem5::ai_mesh::agent_abi::kBindingKindHOST_OUTPUT;
+    bindings[1].flags = gem5::ai_mesh::agent_abi::kBindingFlagsWRITE;
+    bindings[1].address = addresses.outputBase;
+    bindings[1].bytes = round.outputCapacityBytes;
+    const auto parameter = gem5::ai_mesh::buildPlanParameter(
+        round, task, 0, addresses, parsed->workloadPlanDigest().data(),
+        4096, bindings);
+    EXPECT_EQ(hexOf(gem5::ai_mesh::agentSha256(parameter).data(), 32),
+              "2abd6a99b91d3c84919fea81ca3d56707c84c1841e568ef1a13fa54d09b0de22");
+}
+
+TEST(AgentPlanCodec, PlannedLengthMatchesEncodedBlob)
+{
+    const std::vector<uint8_t> image = loadFixture();
+    const auto parsed = gem5::ai_mesh::AgentPlanImage::parse(
+        image.data(), image.size());
+    ASSERT_TRUE(parsed.has_value());
+    const auto &task = parsed->users()[0].tasks[0];
+    for (size_t roundIndex = 0; roundIndex < 2; ++roundIndex) {
+        const auto &round = task.rounds[roundIndex];
+        for (size_t count : {size_t(0), size_t(2)}) {
+            std::vector<gem5::ai_mesh::agent_abi::BindingRecord> bindings;
+            for (size_t index = 0; index < count; ++index) {
+                gem5::ai_mesh::agent_abi::BindingRecord record;
+                record.symbol_id = uint32_t(index + 1);
+                record.kind = gem5::ai_mesh::agent_abi::kBindingKindHOST_INPUT;
+                bindings.push_back(record);
+            }
+            const uint8_t workloadDigest[32] = {};
+            const auto parameter = gem5::ai_mesh::buildPlanParameter(
+                round, task, 0, gem5::ai_mesh::PlanWireAddresses(),
+                workloadDigest, 4096, bindings);
+            EXPECT_EQ(gem5::ai_mesh::planParameterBytes(round, count),
+                      parameter.size())
+                << "round " << roundIndex << " count " << count;
+        }
+    }
 }

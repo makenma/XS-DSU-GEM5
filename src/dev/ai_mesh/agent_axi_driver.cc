@@ -1,4 +1,6 @@
 #include "dev/ai_mesh/agent_axi_driver.hh"
+
+#include "dev/ai_mesh/mesh_payload_digest.hh"
 #include "dev/ai_mesh/gate3_protocol_runtime_internal.hh"
 
 #include <algorithm>
@@ -21,7 +23,9 @@ namespace ai_mesh
 
 AgentAxiDriver::AgentAxiDriver(const Params &p)
     : ClockedObject(p),
-      master(p.master), target(p.target), recorder(p.recorder),
+      master(p.master), target(p.target),
+      generatedCodeSpanBase(p.generated_code_span_base),
+      recorder(p.recorder),
       planDrivenMode(p.request_source == "replay_plan"),
       dataBusBytes(p.data_bus_bytes), sqDepth(p.sq_depth),
       cqDepth(p.cq_depth), controlBytes(p.control_bytes),
@@ -65,6 +69,8 @@ AgentAxiDriver::AgentAxiDriver(const Params &p)
                  p.plan_image);
         fatal_if(!image->surrogateRegistry(),
                  "%s: plan image has no surrogate profile registry", name());
+        hostBindingPlans = image->hostBindingPlans();
+        kvSessionSlotBytes = image->kvSessionSlotBytes();
         for (const AgentControlAction &action : image->controlActions())
             fatal_if(action.triggerKind >
                          static_cast<uint8_t>(
@@ -488,15 +494,19 @@ AgentAxiDriver::encodeControl(uint64_t sequence) const
 
 void
 AgentAxiDriver::storeBytes(uint64_t address,
-                           const std::vector<uint8_t> &data)
+                           const std::vector<uint8_t> &data,
+                           uint64_t capacity)
 {
     fatal_if(data.empty(), "%s: local store has no data", name());
-    for (size_t index = 0; index < data.size(); ++index) {
-        const uint64_t current = rangeEnd(address, index);
-        fatal_if(!target->containsMemoryAddress(current),
+    fatal_if(capacity != 0 && data.size() > capacity,
+             "%s: local object write of %zu bytes exceeds its %llu byte "
+             "allocation", name(), data.size(),
+             static_cast<unsigned long long>(capacity));
+    for (size_t index = 0; index < data.size(); ++index)
+        fatal_if(!target->containsMemoryAddress(rangeEnd(address, index)),
                  "%s: local store escapes host memory", name());
-        target->writeMemoryByte(current, data[index]);
-    }
+    for (size_t index = 0; index < data.size(); ++index)
+        target->writeMemoryByte(rangeEnd(address, index), data[index]);
 }
 
 Gate3WriteWork
@@ -1373,6 +1383,60 @@ AgentAxiDriver::startDoorbellProbe(uint64_t tail, uint64_t requestId,
 }
 
 void
+AgentAxiDriver::readGeneratedCodeBacking()
+{
+    // A zero span base means the platform does not read the output backing
+    // back.  When it does, the address authority is the admitted request: the
+    // configured span only has to agree with it.
+    if (generatedCodeSpanBase == 0 || metadataOutputBytes == 0)
+        return;
+    uint64_t spanBase = generatedCodeSpanBase;
+    if (planDrivenMode && currentSqSequence < planIntents.size()) {
+        const uint64_t requestSpan =
+            planIntents.at(currentSqSequence).outputAddress;
+        fatal_if(requestSpan != 0 && generatedCodeSpanBase != requestSpan,
+                 "%s: Host output backing %#llx differs from the request "
+                 "output binding %#llx", name(),
+                 (unsigned long long)generatedCodeSpanBase,
+                 (unsigned long long)requestSpan);
+        if (requestSpan != 0)
+            spanBase = requestSpan;
+    }
+    std::vector<uint8_t> bytes(metadataOutputBytes);
+    for (uint64_t i = 0; i < metadataOutputBytes; ++i) {
+        if (!target->containsMemoryAddress(spanBase + i))
+            return;
+        bytes[i] = target->readMemoryByte(spanBase + i);
+    }
+    const std::string digest = dualFnvDigest(bytes.data(), bytes.size());
+    Gate3Event event;
+    event.tick = curTick();
+    event.kind = "LOCAL_READ";
+    event.object = "GENERATED_CODE_READ";
+    event.absoluteSeq = currentCqSequence;
+    event.requestId = currentRequestId;
+    event.cookie = currentCookie;
+    event.direction = "LOCAL";
+    event.control = "GENERATED_CODE_READ";
+    event.address = spanBase;
+    event.bytes = metadataOutputBytes;
+    event.status = digest;
+    recorder->record(std::move(event));
+    recorder->setMetric("generated_code_read_bytes",
+                        recorder->metric("generated_code_read_bytes") +
+                        metadataOutputBytes);
+    recorder->setMetric("generated_code_reads_validated",
+                        recorder->metric("generated_code_reads_validated") + 1);
+    const size_t split = digest.find('-');
+    if (split != std::string::npos) {
+        recorder->setMetric("generated_code_digest_lo",
+                            std::stoull(digest.substr(0, split), nullptr, 16));
+        recorder->setMetric("generated_code_digest_hi",
+                            std::stoull(digest.substr(split + 1), nullptr, 16));
+    }
+}
+
+void
 AgentAxiDriver::startMetadataRead()
 {
     if (curTick() < metadataReadReadyTick) {
@@ -1454,6 +1518,7 @@ AgentAxiDriver::handleMetadataRead()
     }
     if (metadataReadPhase == MetadataReadPhase::Header) {
         const auto header = agent_abi::decodeOutputMetadata(work.data.data());
+        metadataOutputBytes = header.output_bytes;
         if (!gate3MetadataHeaderValid(header, metadataExpectation())) {
             requestFault(
                 agent_abi::FaultSiteV1::DRIVER_METADATA_READ,
@@ -1493,6 +1558,7 @@ AgentAxiDriver::handleMetadataRead()
     }
     recorder->setMetric("metadata_reads_validated",
                         recorder->metric("metadata_reads_validated") + 1);
+    readGeneratedCodeBacking();
     metadataData.clear();
     metadataTotalBytes = 0;
     metadataReadPhase = MetadataReadPhase::Header;

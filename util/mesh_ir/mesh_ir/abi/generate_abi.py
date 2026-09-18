@@ -122,9 +122,19 @@ def load_schema(path: Path) -> dict:
     for feature_name, spec in features.items():
         if not isinstance(spec.get("bit"), int) or not 0 <= spec["bit"] < 64:
             raise ValueError(f"feature {feature_name}: bit must be 0..63")
-        if spec.get("min_writer_minor") != 1:
+        minor = spec.get("min_writer_minor")
+        if not isinstance(minor, int) or minor < 1 or \
+                minor > schema["abi"]["minor"]:
             raise ValueError(
-                f"feature {feature_name}: min_writer_minor must be 1")
+                f"feature {feature_name}: min_writer_minor must be "
+                f"1..{schema['abi']['minor']}")
+        for required in spec.get("requires", ()):
+            if required not in features:
+                raise ValueError(
+                    f"feature {feature_name}: unknown requirement {required}")
+            if required == feature_name:
+                raise ValueError(
+                    f"feature {feature_name}: self requirement")
     if len({spec["bit"] for spec in features.values()}) != len(features):
         raise ValueError("feature bits must be unique")
     section_types = schema["enums"]["section_type"]
@@ -203,6 +213,32 @@ def render_python(schema: dict, sha: str) -> str:
     writer_minors = {name: spec["min_writer_minor"]
                      for name, spec in features.items()}
     lines.append(f"FEATURE_MIN_WRITER_MINOR = {writer_minors!r}")
+    requirements = {
+        name: tuple(spec.get("requires", ()))
+        for name, spec in features.items()
+    }
+    lines.append(f"FEATURE_REQUIRES = {requirements!r}")
+    lines.append("")
+    lines.append("")
+    lines.append("def feature_min_writer_minor(features):")
+    lines.append("    minor = 0")
+    lines.append("    for name, bit in FEATURE_BITS.items():")
+    lines.append("        if features & bit:")
+    lines.append("            minor = max(minor, FEATURE_MIN_WRITER_MINOR[name])")
+    lines.append("            for required in FEATURE_REQUIRES[name]:")
+    lines.append("                minor = max(minor,")
+    lines.append("                            FEATURE_MIN_WRITER_MINOR[required])")
+    lines.append("    return minor")
+    lines.append("")
+    lines.append("")
+    lines.append("def feature_requirements_met(features):")
+    lines.append("    for name, bit in FEATURE_BITS.items():")
+    lines.append("        if not features & bit:")
+    lines.append("            continue")
+    lines.append("        for required in FEATURE_REQUIRES[name]:")
+    lines.append("            if not features & FEATURE_BITS[required]:")
+    lines.append("                return False")
+    lines.append("    return True")
     section_types = schema["enums"]["section_type"]
     conditional = {
         name: tuple(section_types[section] for section in sections)
@@ -558,19 +594,41 @@ def render_cpp(schema: dict, sha: str) -> str:
     known_mask = sum(1 << spec["bit"] for spec in feature_specs.values())
     out.append(f"constexpr uint64_t kKnownFeatureMask = {known_mask:#x}ull;")
     out.append("")
+    feature_bits = {name: 1 << spec["bit"]
+                    for name, spec in feature_specs.items()}
+    for feature_name, spec in feature_specs.items():
+        cpp_feature = feature_cpp_name(feature_name)
+        mask = 0
+        for required in spec.get("requires", ()):
+            mask |= feature_bits[required]
+        out.append(f"constexpr uint64_t kFeature{cpp_feature}"
+                   f"Requires = {mask:#x}ull;")
+    out.append("")
     out.append("struct FeatureSpec")
     out.append("{")
     out.append("    uint64_t bit;")
+    out.append("    uint64_t requires_mask;")
     out.append("    uint16_t min_writer_minor;")
     out.append("};")
     out.append("constexpr FeatureSpec kFeatureSpecs[] = {")
     for feature_name, spec in feature_specs.items():
         cpp_feature = feature_cpp_name(feature_name)
         out.append(f"    {{kFeature{cpp_feature}, "
+                   f"kFeature{cpp_feature}Requires, "
                    f"kFeature{cpp_feature}MinWriterMinor}},")
     out.append("};")
     out.append("constexpr size_t kFeatureCount = "
                f"{len(feature_specs)};")
+    out.append("")
+    out.append("inline bool featureRequirementsMet(uint64_t features)")
+    out.append("{")
+    out.append("    for (size_t i = 0; i < kFeatureCount; i++)")
+    out.append("        if ((features & kFeatureSpecs[i].bit) &&")
+    out.append("            (features & kFeatureSpecs[i].requires_mask) !=")
+    out.append("                kFeatureSpecs[i].requires_mask)")
+    out.append("            return false;")
+    out.append("    return true;")
+    out.append("}")
     out.append("")
     for enum_name, values in schema["enums"].items():
         if enum_name == "opcode_engine_map":

@@ -65,7 +65,7 @@ def _serving_tables(program):
     )
 
 
-def verify_serving_v1(program, arch) -> None:
+def verify_serving_v1(program, arch, views) -> None:
     unknown = program.required_features & ~A.KNOWN_FEATURE_MASK
     if unknown:
         _fail("E_ABI_FEATURE", "unknown required feature bits",
@@ -87,7 +87,7 @@ def verify_serving_v1(program, arch) -> None:
     _verify_member_bindings(program, requests, instances)
     _verify_requirements(program, requests)
     _verify_symbol_classification(program)
-    _verify_publish_bindings(program, requests, instances)
+    _verify_publish_bindings(program, requests, instances, views)
     for request in requests:
         verify_path_closure(program, request)
     for instance in instances:
@@ -537,16 +537,15 @@ def _command_waits(program, command) -> set:
             program.command_waits[command.wait_begin:end]}
 
 
-def _profile_descriptors(program, instance):
-    descriptor_ids = {
-        row.descriptor_id for row in program.expected_traffic
-        if row.entrypoint_id == instance.mesh_entrypoint_id and
-        row.profile_id == instance.mesh_profile_id}
+def _profile_descriptors(program, instance, views):
+    view = views.for_instance(instance.mesh_entrypoint_id,
+                              instance.mesh_profile_id)
     return [descriptor for descriptor in program.dma_descriptors
-            if descriptor.descriptor_id in descriptor_ids]
+            if descriptor.descriptor_id in view.descriptor_ids]
 
 
-def _verify_publish_bindings(program, requests, instances) -> None:
+def _verify_publish_bindings(program, requests, instances,
+                             views) -> None:
     by_instance = {}
     records = program.agent_publish_surrogate_bindings
     order = [(r.instance_profile_id, r.member_ordinal) for r in records]
@@ -593,11 +592,11 @@ def _verify_publish_bindings(program, requests, instances) -> None:
                                    instance.request_profile_id)]
         for ordinal, record in enumerate(exposed):
             _verify_publish_record(program, request, instance, ordinal,
-                                   record)
+                                   record, views)
 
 
 def _verify_publish_record(program, request, instance, ordinal,
-                           record) -> None:
+                           record, views) -> None:
     if record.fill_kind != A.DMA_FILL_KIND.AGENT_OUTPUT_SURROGATE:
         _fail("E_BINDING_ROLE", "publish producer must use the serving fill",
               instance_profile_id=instance.instance_profile_id)
@@ -656,7 +655,7 @@ def _verify_publish_record(program, request, instance, ordinal,
     if not producer_descriptors:
         _fail("E_BINDING_ROLE", "publish producer has no descriptor",
               command_id=command.command_id)
-    closure = _profile_descriptors(program, instance)
+    closure = _profile_descriptors(program, instance, views)
     producer_fill = []
     for descriptor in closure:
         if descriptor.command_id != command.command_id:

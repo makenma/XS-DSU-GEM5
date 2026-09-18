@@ -186,6 +186,9 @@ bool decodeMeshBinaryInto(const MeshBytes &image, DecodedProgram &out,
     uint64_t required_features = rdU64(base + 104);
     if ((required_features & ~kKnownFeatureMask) != 0)
         return fail("E_ABI_VERSION", "unknown required feature bits", error);
+    if (!featureRequirementsMet(required_features))
+        return fail("E_ABI_FEATURE",
+                    "required feature dependency is not satisfied", error);
     for (size_t i = 0; i < kFeatureCount; i++) {
         const FeatureSpec &spec = kFeatureSpecs[i];
         if (minor < spec.min_writer_minor && (required_features & spec.bit))
@@ -212,6 +215,8 @@ bool decodeMeshBinaryInto(const MeshBytes &image, DecodedProgram &out,
     out.abi_minor = minor;
     out.required_features = required_features;
     out.has_moe_v1 = (required_features & kFeatureDynamicMoeV1) != 0;
+    out.has_profile_scoped_execution_v1 =
+        (required_features & kFeatureProfileScopedExecutionV1) != 0;
     out.has_serving_v1 = (required_features & kFeatureAgentServingV1) != 0;
 
     uint64_t dir_offset = rdU64(base + 24);
@@ -412,6 +417,7 @@ bool decodeMeshBinaryInto(const MeshBytes &image, DecodedProgram &out,
         {kSectionTypeTENSORS, kTensorsBytes},
         {kSectionTypeSHARDS, kShardsBytes},
         {kSectionTypeRELOCATIONS, kRelocationsBytes},
+        {kSectionTypePROFILE_STREAM_RANGES, kProfileStreamRangesBytes},
         {kSectionTypeSOURCE_MAP, kSourceMapBytes},
         {kSectionTypeCONTENT_DIGESTS, kContentDigestsBytes},
         {kSectionTypeMOE_LAYER_SPECS, kMoeLayerSpecsBytes},
@@ -572,6 +578,12 @@ bool decodeMeshBinaryInto(const MeshBytes &image, DecodedProgram &out,
                 out.traffic.emplace_back();
                 ok = mesh_abi::decodeExpectedTraffic(r, out.traffic.back(),
                                                      abi_error);
+                break;
+            }
+            case kSectionTypePROFILE_STREAM_RANGES: {
+                out.profile_stream_ranges.emplace_back();
+                ok = mesh_abi::decodeProfileStreamRange(
+                    r, out.profile_stream_ranges.back(), abi_error);
                 break;
             }
             case kSectionTypeSOURCE_MAP: {

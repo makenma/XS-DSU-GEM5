@@ -9,7 +9,7 @@ description: >
   unknown required-feature bits are rejected fail-closed by every reader.
 abi:
   major: 1
-  minor: 2
+  minor: 3
   min_reader_minor: 0
 magic_hex: "4d53484200000001"
 
@@ -20,6 +20,11 @@ features:
   AGENT_SERVING_V1:
     bit: 1
     min_writer_minor: 1
+    requires:
+      - PROFILE_SCOPED_EXECUTION_V1
+  PROFILE_SCOPED_EXECUTION_V1:
+    bit: 2
+    min_writer_minor: 3
 
 conditional_required_sections:
   DYNAMIC_MOE_V1:
@@ -35,6 +40,8 @@ conditional_required_sections:
     - AGENT_INSTANCE_MEMBER_BINDINGS
     - AGENT_REQUEST_BINDING_REQUIREMENTS
     - AGENT_PUBLISH_SURROGATE_BINDINGS
+  PROFILE_SCOPED_EXECUTION_V1:
+    - PROFILE_STREAM_RANGES
 
 constants:
   DMA_FILL_RUNTIME_BOUND_SENTINEL: 0x52554e54494d4531
@@ -56,6 +63,7 @@ enums:
     OP_ATTRS: 13
     RELOCATIONS: 14
     EXPECTED_TRAFFIC: 15
+    PROFILE_STREAM_RANGES: 16
     SOURCE_MAP: 101
     PROFILE_HINTS: 102
     CONTENT_DIGESTS: 103
@@ -662,6 +670,14 @@ records:
       - {name: b_count, type: u32, offset: 60}
       - {name: min_flits, type: u32, offset: 64}
       - {name: reserved2, type: u32, offset: 68, const_zero: true}
+  PROFILE_STREAM_RANGES:
+    bytes: 16
+    fields:
+      - {name: profile_id, type: u32, offset: 0}
+      - {name: core_id, type: u16, offset: 4}
+      - {name: stream_id, type: u16, offset: 6}
+      - {name: command_begin, type: u32, offset: 8}
+      - {name: command_count, type: u32, offset: 12}
   SOURCE_MAP:
     bytes: 16
     fields:

@@ -456,6 +456,87 @@ Gate 3/4 的 surrogate session 状态与 KV record 同表（`MeshKvManager` 是�
 可变 session 表，`session_record_table.{hh,cc}` 已删除）；真实
 PREFILL/DECODE/PUBLISH 的 admission/slot/pin/append 生产接线属 R3。
 
+## Gate 6 serving E2E-D (R3)
+
+R3 当前接受范围、独立证据与后续边界见 [r86 独立复审](../../.tmp/docs/gate6-r3-r86-independent-review.md)；实施状态唯一入口为 [Gate 6 实施计划](../../.tmp/docs/gate6-implementation-plan.md)。
+
+profile 执行绑定由 ABI section `PROFILE_STREAM_RANGES`（16 B/record，feature
+`PROFILE_SCOPED_EXECUTION_V1`，`abi.minor 3`）单点定义；Python 侧唯一 ownership
+入口为 `mesh_ir.execution_view`，C++ 侧镜像为
+[mesh_execution_view.hh](../../src/dev/ai_mesh/mesh_execution_view.hh)（scoped
+program 无 selector 即 fatal，不退回全 stream 执行）。per-phase fixture 为
+`tests/gem5/ai_mesh/fixtures/gate6/serving_two_tokens.mshb`（PREFILL → 2×DECODE
+→ PUBLISH 四个 concrete profile），运行期由
+[serving_mesh_executor.hh](../../src/dev/ai_mesh/serving_mesh_executor.hh) 按真实
+DMA/instance 回调推进 phase 链；`mesh_result.json` 的 descriptor surface 由
+[mesh_dispatcher.cc](../../src/dev/ai_mesh/mesh_dispatcher.cc) 写出。
+
+真实 run 与验收产物由 suite selector 驱动（单一入口；`run_gate6_serving.py` 只在
+子进程内运行）：
+
+```bash
+python3 -m pytest util/mesh_ir/tests/unit/test_serving_e2e_oracle.py \
+    util/mesh_ir/tests/unit/test_gate6_acceptance.py -q
+python3 tests/gem5/ai_mesh/run_manifest_selector.py --gate 6 --id E2E-D \
+    --workdir .tmp/gate6-suite
+```
+
+`configs/example/ai_mesh/gate6_acceptance.py` 从 `mesh_result.json` 与
+`gate6_facts.tsv` 派生 `invariants.json`/`traffic.json`/`child_report.json`：
+descriptor 闭包、per-phase KV token/descriptor 账本与终态账本由
+`mesh_ir.serving_e2e_oracle` 独立重算（输入为 facts 的 `SERVING_PHASE` 行，
+单点定义在 `mesh_ir.gate3_oracle.SERVING_PHASE_FIELDS`），phase 串行性由
+`command_issue_ticks`、join 双条件 tick 次序由 `SERVING_PHASE` 行重算，traffic
+由 `program.expected_traffic` 重建；`SERVING_PHASE` 行由运行期
+`ServingMeshExecutor::setPhaseFactSink`（frontend 接
+`Gate3ObservationRecorder::recordServingPhase`）在每次 phase commit 时落盘。
+invariant 名与顺序即 `dummy_core_case_registry.GATE6_CASES` 的 requirements。run manifest 的
+GEM5 scenario 由 `run_manifest_selector._gate6_scenario` 从同一 fixture 与
+plan 文档派生。真实运行的证据快照保留在
+`tests/gem5/ai_mesh/fixtures/gate6/run_evidence/`（`mesh_result.json`、
+`gate6_facts.tsv`、`gate6_scenario.json`），验收单测在该快照上通过。
+
+Host backing 读取入口为
+[AgentAxiDriver::readGeneratedCodeBacking](../../src/dev/ai_mesh/agent_axi_driver.cc)，
+冻结输入期望由
+[serving_contract_digest.py](../../util/mesh_ir/mesh_ir/serving_contract_digest.py)
+派生。生产 artifact 入口与复审篡改回归见
+[gate6_acceptance.py](../../configs/example/ai_mesh/gate6_acceptance.py) 和
+[test_gate6_acceptance.py](../../util/mesh_ir/tests/unit/test_gate6_acceptance.py)。
+
+Host-wire 冻结证明反例由
+[serving_fault_entry.py](../../tests/gem5/ai_mesh/gate6/serving_fault_entry.py) 的
+`--host-wire-mode {control,input_digest,workload_digest,item,session_id,program_id,chunk,deadline}`
+驱动（Frontend 证明保持 canonical，仅 Host 镜像变异；`deadline` 臂同步扩
+parameter arena 容量以容纳新增 TLV）：digest/workload/item/session/program/deadline
+错配断言 `--expect-workload-mismatch`，chunk 值错配断言
+`--expect-chunk-mismatch`；两者均要求接纳前拒绝、零 phase/core start/payload、
+错误 CQ 被真实 Host 消费且无 infrastructure fatal。参数 TLV 的 wire 语义（type
+严格递增、known type flags/size exact、unknown required 拒绝、unknown optional
+跳过并记 `skipped_optional_tlvs`、8 B 对齐零 padding、chunk u32+reserved=0）
+由 `parameterTlvStructureError` 单一走查入口定义，单测见
+[agent_protocol_validation.test.cc](../../src/dev/ai_mesh/agent_protocol_validation.test.cc)；
+first-error 顺序依主合同 `RequestValidationSiteV1` 全序（WORKLOAD_PLAN 身份 →
+REQUEST_PROFILE_KEY → 绑定 → TLV 结构 → digest → chunk → deadline），交叉
+反例（item+chunk）经 `.tmp` gdb 注入探针复跑。
+
+fill 的 instance 生命周期组件入口为
+[serving_fill_inputs.test.cc](../../src/dev/ai_mesh/serving_fill_inputs.test.cc)。
+KV 物理地址平移与内容不变回归入口为
+[test_gate6_timing_ab.py](../../util/mesh_ir/tests/integration/test_gate6_timing_ab.py)
+的 `test_kv_physical_binding_moves_axi_addresses_and_preserves_content`；物理 base
+覆盖参数见 [run_gate6_serving.py](../../configs/example/ai_mesh/run_gate6_serving.py)。
+KV FILL/STORE/LOAD 的冻结内容期望同样由 `serving_contract_digest.py` 派生，并经
+`write_gate6_artifacts` 的生产验收入口核对。
+
+§4 的 timing A/B 类由 `util/mesh_ir/tests/integration/test_gate6_timing_ab.py`
+覆盖（真实 gem5 两跑）：`run_gate6_serving.py` 的
+`--sram-write-bytes-per-cycle-per-bank`（经 `EFFECTIVE_ARCH` 覆盖，模型装配统一取
+`EFFECTIVE_ARCH`）放慢 SRAM 写服务后，per-descriptor 字节与 `payload_digest`
+逐字节不变、commit tick 与 run terminal tick 后移。determinism 类由
+`run_manifest_selector.py --gate 6 --id E2E-D` 重复运行并对
+`mesh_result.json`/`gate6_facts.tsv`/`traffic.json` 做逐字节比较取证。
+
 ## Gate 5 Dynamic MoE V1
 
 ABI surface（feature bit、四个 conditional-required section、record 布局）由

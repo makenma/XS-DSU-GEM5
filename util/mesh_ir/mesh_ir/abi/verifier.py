@@ -13,6 +13,8 @@ from mesh_ir.abi.rules import check_payload_rules, check_record_rules
 from mesh_ir.abi.serving_verifier import verify_serving_v1
 from mesh_ir.abi.spans import checked_span, span_fits
 from mesh_ir.burst_splitter import checked_mul, plan_descriptor
+from mesh_ir.execution_view import ExecutionViewSet, build_execution_views
+from mesh_ir.kv_layout import verify_kv_layout
 from mesh_ir.generated import abi as A
 from mesh_ir.model import (
     ArchManifest,
@@ -27,9 +29,11 @@ _U64_MAX = (1 << 64) - 1
 class VerifiedProgram:
     """Convenience views over a verified program (loader-side indices)."""
 
-    def __init__(self, program: Program, arch: ArchManifest):
+    def __init__(self, program: Program, arch: ArchManifest,
+                 views: ExecutionViewSet):
         self.program = program
         self.arch = arch
+        self.views = views
         self.commands_by_id = {c.command_id: c for c in program.commands}
         self.events_by_id = {e.event_id: e for e in program.events}
         self.tensors_by_id = {t.tensor_id: t for t in program.tensors}
@@ -43,19 +47,21 @@ def verify_program(program: Program, arch: ArchManifest) -> VerifiedProgram:
     _verify_arch_digest(program, arch)
     _verify_closed_sets(program)
     _verify_ids_and_references(program)
-    _verify_streams(program, arch)
+    views = build_execution_views(program)
+    _verify_streams(program, arch, views)
     _verify_commands(program, arch)
     _verify_operand_contract(program)
-    _verify_events(program)
+    _verify_events(program, views)
     _verify_allocations(program, arch)
     _verify_descriptors(program, arch)
     _verify_relocations(program, arch)
-    _verify_expected_traffic(program, arch)
-    _verify_lifecycle(program)
-    _verify_acyclic(program)
+    _verify_expected_traffic(program, arch, views)
+    _verify_lifecycle(program, views)
+    _verify_acyclic(program, views)
     verify_moe_v1(program, arch)
-    verify_serving_v1(program, arch)
-    return VerifiedProgram(program, arch)
+    verify_serving_v1(program, arch, views)
+    verify_kv_layout(program)
+    return VerifiedProgram(program, arch, views)
 
 
 def _verify_arch_digest(program: Program, arch: ArchManifest) -> None:
@@ -151,7 +157,8 @@ def _verify_ids_and_references(program: Program) -> None:
         symbol_names.add(name)
 
 
-def _verify_streams(program: Program, arch: ArchManifest) -> None:
+def _verify_streams(program: Program, arch: ArchManifest,
+                    views: ExecutionViewSet) -> None:
     keys = set()
     per_core_streams = {}
     for stream in program.streams:
@@ -167,15 +174,6 @@ def _verify_streams(program: Program, arch: ArchManifest) -> None:
         control = [s for s in streams if s.flags & A.STREAM_FLAGS.IS_LOCAL_CONTROL]
         if len(control) != 1:
             raise MeshIrError("E_STREAM_CONTRACT", "core must have exactly one local control stream", core=core)
-        halts = [c for c in stream_commands(program, control[0])
-                 if c.opcode == A.OPCODE.HALT]
-        if len(halts) != 1:
-            raise MeshIrError(
-                "E_STREAM_CONTRACT",
-                "control stream must contain exactly one HALT",
-                core=core,
-                halts=len(halts),
-            )
         for stream in streams:
             for command in stream_commands(program, stream):
                 if command.core_id != core:
@@ -188,6 +186,16 @@ def _verify_streams(program: Program, arch: ArchManifest) -> None:
                         "HALT outside the local control stream",
                         command=command.command_id,
                     )
+        if views.whole_program:
+            halts = [c for c in stream_commands(program, control[0])
+                     if c.opcode == A.OPCODE.HALT]
+            if len(halts) != 1:
+                raise MeshIrError(
+                    "E_STREAM_CONTRACT",
+                    "control stream must contain exactly one HALT",
+                    core=core,
+                    halts=len(halts),
+                )
 
     covered = sorted(
         c.command_id
@@ -196,6 +204,40 @@ def _verify_streams(program: Program, arch: ArchManifest) -> None:
     )
     if covered != sorted(c.command_id for c in program.commands):
         raise MeshIrError("E_STREAM_CONTRACT", "stream ranges must partition the command table")
+
+    _verify_view_lifecycle(program, views)
+
+
+def _verify_view_lifecycle(program: Program,
+                           views: ExecutionViewSet) -> None:
+    if views.whole_program:
+        return
+    by_id = {c.command_id: c for c in program.commands}
+    for view in views.views:
+        commands = [by_id[command_id] for command_id in view.command_ids]
+        begins = [c for c in commands if c.opcode == A.OPCODE.REQUEST_BEGIN]
+        ends = [c for c in commands if c.opcode == A.OPCODE.REQUEST_END]
+        halts = [c for c in commands if c.opcode == A.OPCODE.HALT]
+        if len(begins) != 1 or len(ends) != 1 or len(halts) != 1:
+            raise MeshIrError(
+                "E_LIFECYCLE",
+                "profile view must hold one REQUEST_BEGIN, REQUEST_END and "
+                "HALT",
+                profile=view.profile_id,
+            )
+        ordered = sorted(view.command_indices)
+        if begins[0].command_id - 1 != ordered[0]:
+            raise MeshIrError("E_LIFECYCLE",
+                              "REQUEST_BEGIN must begin the profile view",
+                              profile=view.profile_id)
+        if halts[0].command_id - 1 != ordered[-1]:
+            raise MeshIrError("E_LIFECYCLE",
+                              "HALT must end the profile view",
+                              profile=view.profile_id)
+        if ends[0].signal_event == 0 or begins[0].signal_event == 0:
+            raise MeshIrError("E_LIFECYCLE",
+                              "REQUEST_BEGIN/END must signal an event",
+                              profile=view.profile_id)
 
 
 def _verify_commands(program: Program, arch: ArchManifest) -> None:
@@ -482,7 +524,7 @@ def _opcode_name(opcode: int) -> str:
     return str(opcode)
 
 
-def _verify_events(program: Program) -> None:
+def _verify_events(program: Program, views: ExecutionViewSet) -> None:
     producers = {}
     descriptor_by_event = {}
     for descriptor in program.dma_descriptors:
@@ -490,6 +532,28 @@ def _verify_events(program: Program) -> None:
     for command in program.commands:
         if command.signal_event:
             producers.setdefault(command.signal_event, []).append(command)
+
+    if not views.whole_program:
+        by_id = {c.command_id: c for c in program.commands}
+        for view in views.views:
+            for command_id in view.command_ids:
+                command = by_id[command_id]
+                end = command.wait_begin + command.wait_count
+                for wait in program.command_waits[
+                        command.wait_begin:end]:
+                    owners = [producer.command_id for producer in
+                              producers.get(wait.event_id, ())]
+                    owners.extend(
+                        descriptor.command_id for descriptor in
+                        descriptor_by_event.get(wait.event_id, ()))
+                    for owner in owners:
+                        if owner not in view.command_ids:
+                            raise MeshIrError(
+                                "E_BINDING_ROLE",
+                                "profile view waits on another profile's "
+                                "event",
+                                event=wait.event_id, profile=view.profile_id,
+                                producer=owner)
 
     for event in program.events:
         if event.expected_arrivals < 1:
@@ -901,7 +965,8 @@ def _verify_relocations(program: Program, arch: ArchManifest) -> None:
             raise MeshIrError("E_RELOCATION", "relocation offset outside region")
 
 
-def _verify_expected_traffic(program: Program, arch: ArchManifest) -> None:
+def _verify_expected_traffic(program: Program, arch: ArchManifest,
+                             views: ExecutionViewSet) -> None:
     commands_by_id = {c.command_id: c for c in program.commands}
     seen = set()
     for descriptor in program.dma_descriptors:
@@ -920,6 +985,15 @@ def _verify_expected_traffic(program: Program, arch: ArchManifest) -> None:
             raise MeshIrError("E_TRAFFIC_MISMATCH", "traffic row references unknown descriptor", descriptor=row.descriptor_id)
         if row.command_id != descriptor.command_id:
             raise MeshIrError("E_TRAFFIC_MISMATCH", "traffic row command mismatch", descriptor=row.descriptor_id)
+        if not views.whole_program:
+            view = views.for_instance(row.entrypoint_id, row.profile_id)
+            if row.command_id not in view.command_ids:
+                raise MeshIrError(
+                    "E_BINDING_ROLE",
+                    "traffic row disagrees with the execution binding",
+                    descriptor=row.descriptor_id,
+                    command=row.command_id,
+                    profile=row.profile_id)
         if row.kind != descriptor.kind:
             raise MeshIrError("E_TRAFFIC_MISMATCH", "traffic row kind mismatch", descriptor=row.descriptor_id)
         if row.useful_bytes != descriptor.useful_bytes:
@@ -975,7 +1049,21 @@ def _verify_expected_traffic(program: Program, arch: ArchManifest) -> None:
             raise MeshIrError("E_TRAFFIC_MISMATCH", "W beat count mismatch", descriptor=row.descriptor_id)
 
 
-def _verify_lifecycle(program: Program) -> None:
+def _verify_lifecycle(program: Program, views: ExecutionViewSet) -> None:
+    if not views.whole_program:
+        for view in views.views:
+            entrypoint = next(e for e in program.entrypoints
+                              if e.entrypoint_id == view.entrypoint_id)
+            key = (entrypoint.lifecycle_core_id,
+                   entrypoint.lifecycle_stream_id)
+            if key not in view.local_control:
+                raise MeshIrError(
+                    "E_LIFECYCLE",
+                    "entrypoint lifecycle stream does not participate in the "
+                    "profile view",
+                    entrypoint=entrypoint.entrypoint_id,
+                    profile=view.profile_id)
+        return
     for entrypoint in program.entrypoints:
         key = (entrypoint.lifecycle_core_id, entrypoint.lifecycle_stream_id)
         stream = next((s for s in program.streams if (s.core_id, s.stream_id) == key), None)
@@ -1002,8 +1090,10 @@ def _verify_lifecycle(program: Program) -> None:
             raise MeshIrError("E_LIFECYCLE", "REQUEST_BEGIN must signal an event")
 
 
-def _verify_acyclic(program: Program) -> None:
-    edges = command_prerequisites(program)
+def _verify_acyclic(program: Program, views: ExecutionViewSet) -> None:
+    edges = command_prerequisites(program, views)
+    edges = {node: sorted(targets) for node, targets in edges.items()}
+
 
     state = {}
 

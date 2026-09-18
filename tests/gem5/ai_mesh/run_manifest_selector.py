@@ -22,6 +22,7 @@ CONFIG_ROOT = REPO / "configs" / "example" / "ai_mesh"
 sys.path.insert(0, str(MESH_IR_ROOT))
 sys.path.insert(0, str(CONFIG_ROOT))
 
+from dummy_core_case_registry import Backend
 from dummy_core_case_registry import CASES as GEM5_CASES
 from dummy_core_case_registry import GATE3_PROFILES
 from dummy_core_case_registry import invariant_registry
@@ -416,6 +417,83 @@ def _gate4_plan_documents(
     return workload, control, identity, host_tasks, arena, capacity
 
 
+def _gate6_scenario(execution: dict, arguments: list[str]) -> dict:
+    program_text = _argument_value(arguments, "--serving-program")
+    config_text = _argument_value(arguments, "--runtime-config")
+    surrogate_text = _argument_value(arguments, "--surrogate-profiles")
+    weight_digest = _argument_value(arguments, "--weight-image-digest")
+    if None in (program_text, config_text, surrogate_text, weight_digest):
+        raise ContractError("Gate6 execution lacks its serving fixtures")
+    program_image = _repo_path(program_text)
+    decoded = decode_program(program_image.read_bytes())
+    workload, control, identity, host_tasks, arena, capacity = (
+        _gate4_plan_documents(config_text, surrogate_text)
+    )
+    arch_path = _repo_path(
+        _argument_value(
+            arguments, "--arch", str(CONFIG_ROOT / "arch/mesh_1x2.yaml")
+        )
+    )
+    arch = load_arch(arch_path)
+    effective = EffectiveArchitecture(arch)
+    period = 1_000_000_000_000 // arch.clock_hz
+    empty_digests = {
+        "program_weight_registry": None,
+        "endpoint_map": None,
+    }
+    return {
+        "kind": "GEM5",
+        "master_seed": 20260901,
+        "data_mode": "FUNCTIONAL_BYTES",
+        "strict_replay_serial_batches": False,
+        "digests": {
+            "configuration": canonical_digest(
+                {"case_name": execution["case_name"], "arguments": arguments}
+            ),
+            "base_architecture": arch.digest().hex(),
+            "effective_architecture": effective.digest().hex(),
+            "command_identity": identity["command_identity_digest"],
+            "workload_plan": workload.digest,
+            "control_plan": arena["control_plan_digest"],
+            "host_task_identity": host_tasks["host_task_identity_digest"],
+            "host_arena_object_plan": arena["host_arena_object_digest"],
+            "capacity_plan": capacity["capacity_plan_digest"],
+            "model_weight_image": weight_digest,
+            **empty_digests,
+        },
+        "mesh_programs": [
+            {
+                "program_id": 1,
+                "semantic_digest": decoded.semantic_sha256(),
+                "file_sha256": _digest(str(program_image.resolve())),
+            }
+        ],
+        "provider_profiles": [],
+        "identity_counters": None,
+        "physical_source_counters": [],
+        "tick_projection": {
+            "host_clock_period_ticks": period,
+            "npu_clock_period_ticks": period,
+            "core_clock_period_ticks": period,
+            "host_tasks": [],
+        },
+        "endpoint_map": None,
+        "host_arena_object_plan": None,
+        "capacity_plan": None,
+        "host_task_identity_plan": None,
+        "approximation": {
+            "reference_compute": False,
+            "numeric_compute": False,
+            "cpu_instruction_simulation": False,
+            "cpu_mesh_simulation": False,
+            "ucie_protocol_simulation": False,
+            "remote_link_is_analytic_proxy": True,
+            "synthetic_weight_bytes": True,
+            "synthetic_output_bytes": True,
+        },
+    }
+
+
 def _gate4_scenario(execution: dict, arguments: list[str]) -> dict:
     config_text = _argument_value(arguments, "--runtime-config")
     surrogate_text = _argument_value(arguments, "--surrogate-profiles")
@@ -486,6 +564,8 @@ def _gate4_scenario(execution: dict, arguments: list[str]) -> dict:
 
 def _gem5_scenario(execution: dict, command: list[str], golden: Path) -> dict:
     arguments = [_replace_golden(value, golden) for value in execution["args"]]
+    if GEM5_CASES[execution["case_name"]].backend is Backend.GATE6:
+        return _gate6_scenario(execution, arguments)
     if execution["config_script"] == "configs/example/ai_mesh/run_gate4_agent.py":
         return _gate4_scenario(execution, arguments)
     if execution["config_script"] == "configs/example/ai_mesh/run_gate3_protocol.py":

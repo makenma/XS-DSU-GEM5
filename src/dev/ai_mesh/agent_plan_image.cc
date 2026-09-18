@@ -23,6 +23,7 @@ constexpr uint16_t kSectionHostTaskIdentity = 3;
 constexpr uint16_t kSectionArena = 4;
 constexpr uint16_t kSectionSurrogate = 5;
 constexpr uint16_t kSectionControl = 6;
+constexpr uint16_t kSectionRequestBindings = 7;
 
 class Reader
 {
@@ -292,6 +293,41 @@ readControlSection(Reader &reader, std::vector<AgentControlAction> &actions)
     return true;
 }
 
+bool
+readRequestBindingSection(Reader &reader, uint64_t &kvSessionSlotBytes,
+                          std::vector<AgentHostBindingPlan> &plans)
+{
+    kvSessionSlotBytes = reader.u64();
+    const uint32_t count = reader.u32();
+    if (reader.failed() || count > 65536)
+        return false;
+    for (uint32_t index = 0; index < count; ++index) {
+        AgentHostBindingPlan plan;
+        plan.programId = reader.u16();
+        plan.profileId = reader.u16();
+        plan.primaryInputSymbolId = reader.u32();
+        plan.primaryOutputSymbolId = reader.u32();
+        plan.primaryKvSymbolId = reader.u32();
+        const uint32_t requirementCount = reader.u32();
+        plan.instanceCount = reader.u32();
+        if (reader.failed() || requirementCount > 65536)
+            return false;
+        for (uint32_t item = 0; item < requirementCount; ++item) {
+            AgentHostBindingRequirement requirement;
+            requirement.symbolId = reader.u32();
+            requirement.kind = reader.u16();
+            requirement.flags = reader.u16();
+            requirement.platformAddress = reader.u64();
+            requirement.platformBytes = reader.u64();
+            if (reader.failed())
+                return false;
+            plan.requirements.push_back(requirement);
+        }
+        plans.push_back(std::move(plan));
+    }
+    return true;
+}
+
 }
 
 std::optional<AgentPlanImage>
@@ -315,7 +351,7 @@ AgentPlanImage::parse(const uint8_t *data, size_t length)
     if (reader.u32() != kVersion)
         return std::nullopt;
     const uint32_t sectionCount = reader.u32();
-    if (reader.failed() || sectionCount < 4 || sectionCount > 6)
+    if (reader.failed() || sectionCount < 4 || sectionCount > 7)
         return std::nullopt;
 
     AgentPlanImage image;
@@ -340,6 +376,9 @@ AgentPlanImage::parse(const uint8_t *data, size_t length)
             ok = readArenaSection(reader, image.arena_);
         else if (type == kSectionControl)
             ok = readControlSection(reader, image.controlActions_);
+        else if (type == kSectionRequestBindings)
+            ok = readRequestBindingSection(reader, image.kvSessionSlotBytes_,
+                                           image.hostBindingPlans_);
         else if (type == kSectionSurrogate) {
             if (sectionLength > length - 32 - start)
                 return std::nullopt;

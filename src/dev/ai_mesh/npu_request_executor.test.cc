@@ -39,84 +39,6 @@ registryFromSection()
         section.data(), section.size());
 }
 
-}
-
-TEST(NpuProtocolProbeExecutor, AcceptsSynchronouslyWithCoreStartProbe)
-{
-    gem5::ai_mesh::NpuProtocolProbeExecutor executor;
-    gem5::ai_mesh::NpuExecutionRequest request;
-    request.sqSequence = 7;
-    request.requestId = 42;
-    request.completionCookie = 42;
-    request.inputAddress = 0x20000;
-    request.inputBytes = 32;
-    request.outputAddress = 0x30000;
-    request.metadataAddress = 0x40000;
-    request.qos = 4;
-    const gem5::ai_mesh::NpuExecutionOutcome outcome =
-        executor.accept(request);
-    EXPECT_TRUE(outcome.coreStartProbe);
-    EXPECT_EQ(outcome.serviceNs, 0u);
-    EXPECT_TRUE(outcome.admitted);
-    EXPECT_TRUE(executor.idle());
-}
-
-TEST(FullContextSurrogateExecutor, AdmitsMatchingProfileWithServiceNs)
-{
-    auto registry = registryFromSection();
-    ASSERT_TRUE(registry.has_value());
-    gem5::ai_mesh::FullContextSurrogateExecutor executor(
-        std::move(*registry));
-    gem5::ai_mesh::NpuExecutionRequest request;
-    request.requestId = 1;
-    request.programId = 1;
-    request.profileId = 1;
-    request.inputTokens = 1024;
-    request.inputBytes = 16384;
-    request.maxOutputTokens = 128;
-    request.outputTokens = 128;
-    request.requestedProfileKey = 4097;
-    request.outputCapacityBytes = 4096;
-    const gem5::ai_mesh::SurrogateProfile *profile =
-        executor.profileFor(request);
-    ASSERT_NE(profile, nullptr);
-    EXPECT_EQ(profile->profileKey, 4097u);
-    const gem5::ai_mesh::NpuExecutionOutcome outcome =
-        executor.accept(request);
-    EXPECT_TRUE(outcome.admitted);
-    EXPECT_FALSE(outcome.coreStartProbe);
-    EXPECT_EQ(outcome.serviceNs, 4000000u);
-    EXPECT_EQ(outcome.rejectDetail, 0u);
-    EXPECT_TRUE(executor.idle());
-}
-
-TEST(FullContextSurrogateExecutor, RejectsUnknownProfileIdentity)
-{
-    auto registry = registryFromSection();
-    ASSERT_TRUE(registry.has_value());
-    gem5::ai_mesh::FullContextSurrogateExecutor executor(
-        std::move(*registry));
-    gem5::ai_mesh::NpuExecutionRequest request;
-    request.requestId = 2;
-    request.programId = 9;
-    request.profileId = 9;
-    EXPECT_EQ(executor.profileFor(request), nullptr);
-    const gem5::ai_mesh::NpuExecutionOutcome outcome =
-        executor.accept(request);
-    EXPECT_FALSE(outcome.admitted);
-    EXPECT_FALSE(outcome.coreStartProbe);
-    EXPECT_EQ(outcome.serviceNs, 0u);
-    EXPECT_EQ(outcome.rejectDetail,
-              gem5::ai_mesh::agent_abi::E_WORKLOAD_PLAN_MISMATCH);
-    EXPECT_TRUE(executor.outputPayload(request).empty());
-    EXPECT_EQ(executor.semanticDigest(request),
-              (std::array<uint8_t, 32>{}));
-    EXPECT_EQ(executor.outputBytes(request), 0u);
-}
-
-namespace
-{
-
 gem5::ai_mesh::NpuExecutionRequest
 matchingRequest()
 {
@@ -133,6 +55,122 @@ matchingRequest()
     return request;
 }
 
+class RecordingSink : public gem5::ai_mesh::NpuCompletionSink
+{
+  public:
+    void onCoreStart(uint64_t requestId) override
+    {
+        core_starts.push_back(requestId);
+    }
+
+    void onRequestComplete(
+        const gem5::ai_mesh::NpuExecutionRequest &request,
+        const gem5::ai_mesh::NpuExecutionCompletion &completion) override
+    {
+        completed.push_back(request.requestId);
+        payload_bytes = completion.outputPayload.size();
+        output_bytes = completion.outputBytes;
+    }
+
+    std::vector<uint64_t> core_starts;
+    std::vector<uint64_t> completed;
+    size_t payload_bytes = 0;
+    uint64_t output_bytes = 0;
+};
+
+}
+
+TEST(NpuProtocolProbeExecutor, SubmitOnlyReportsAdmissionAndCoreStart)
+{
+    gem5::ai_mesh::NpuProtocolProbeExecutor executor;
+    RecordingSink sink;
+    executor.attachSink(&sink);
+    gem5::ai_mesh::NpuExecutionRequest request;
+    request.sqSequence = 7;
+    request.requestId = 42;
+    request.completionCookie = 42;
+    const gem5::ai_mesh::NpuAdmission admission = executor.submit(request);
+    ASSERT_EQ(sink.core_starts.size(), 1u);
+    EXPECT_EQ(sink.core_starts[0], 42u);
+    EXPECT_TRUE(admission.admitted);
+    EXPECT_EQ(admission.rejectDetail, 0u);
+    EXPECT_EQ(executor.kind(),
+              gem5::ai_mesh::NpuExecutorKind::ProtocolProbe);
+    EXPECT_EQ(executor.modeledServiceNs(request), 0u);
+    const gem5::ai_mesh::NpuExecutionCompletion completion =
+        executor.completionFor(request);
+    EXPECT_TRUE(completion.outputPayload.empty());
+    EXPECT_EQ(completion.outputBytes, 0u);
+    EXPECT_EQ(completion.semanticDigest, (std::array<uint8_t, 32>{}));
+}
+
+TEST(FullContextSurrogateExecutor, SubmitAdmitsWithoutFabricatingCompletion)
+{
+    auto registry = registryFromSection();
+    ASSERT_TRUE(registry.has_value());
+    gem5::ai_mesh::FullContextSurrogateExecutor executor(
+        std::move(*registry));
+    const gem5::ai_mesh::NpuExecutionRequest request = matchingRequest();
+    const gem5::ai_mesh::NpuAdmission admission = executor.submit(request);
+    EXPECT_TRUE(admission.admitted);
+    EXPECT_EQ(admission.rejectDetail, 0u);
+    EXPECT_EQ(executor.kind(),
+              gem5::ai_mesh::NpuExecutorKind::FullContextSurrogate);
+    EXPECT_EQ(executor.modeledServiceNs(request), 4000000u);
+    const gem5::ai_mesh::NpuExecutionCompletion completion =
+        executor.completionFor(request);
+    EXPECT_EQ(completion.outputBytes, 4096u);
+    ASSERT_EQ(completion.outputPayload.size(), 4096u);
+    EXPECT_EQ(completion.semanticDigest.size(), 32u);
+    EXPECT_FALSE(completion.coreStarted);
+}
+
+TEST(FullContextSurrogateExecutor, CompletionCarriesTheSurrogatePayload)
+{
+    auto registry = registryFromSection();
+    ASSERT_TRUE(registry.has_value());
+    gem5::ai_mesh::FullContextSurrogateExecutor executor(
+        std::move(*registry));
+    gem5::ai_mesh::NpuExecutionRequest request = matchingRequest();
+    request.inputDigest.fill(0xaa);
+    request.workloadDigest.fill(0x5a);
+    request.workloadPlanItemId = 7;
+    const std::array<uint8_t, 32> seed = gem5::ai_mesh::surrogateSeed(
+        request.inputDigest.data(), 1, 1, 4097);
+    std::vector<std::array<uint8_t, 32>> tokenDigests;
+    for (uint32_t ordinal = 0; ordinal < 128; ++ordinal)
+        tokenDigests.push_back(
+            gem5::ai_mesh::surrogateTokenDigest(seed.data(), ordinal));
+    const gem5::ai_mesh::NpuExecutionCompletion completion =
+        executor.completionFor(request);
+    EXPECT_EQ(completion.semanticDigest,
+              gem5::ai_mesh::surrogateOutputPrefixDigest(
+                  request.workloadDigest.data(), 7, 128, tokenDigests));
+    EXPECT_EQ(completion.outputPayload,
+              gem5::ai_mesh::surrogateOutputBytes(
+                  completion.semanticDigest.data(), 4096));
+}
+
+TEST(FullContextSurrogateExecutor, RejectsUnknownProfileIdentity)
+{
+    auto registry = registryFromSection();
+    ASSERT_TRUE(registry.has_value());
+    gem5::ai_mesh::FullContextSurrogateExecutor executor(
+        std::move(*registry));
+    gem5::ai_mesh::NpuExecutionRequest request;
+    request.requestId = 2;
+    request.programId = 9;
+    request.profileId = 9;
+    EXPECT_EQ(executor.profileFor(request), nullptr);
+    const gem5::ai_mesh::NpuAdmission admission = executor.submit(request);
+    EXPECT_FALSE(admission.admitted);
+    EXPECT_EQ(admission.rejectDetail,
+              gem5::ai_mesh::agent_abi::E_WORKLOAD_PLAN_MISMATCH);
+    const gem5::ai_mesh::NpuExecutionCompletion completion =
+        executor.completionFor(request);
+    EXPECT_TRUE(completion.outputPayload.empty());
+    EXPECT_EQ(completion.semanticDigest, (std::array<uint8_t, 32>{}));
+    EXPECT_EQ(completion.outputBytes, 0u);
 }
 
 TEST(FullContextSurrogateExecutor, RejectsWireFieldMismatch)
@@ -145,75 +183,30 @@ TEST(FullContextSurrogateExecutor, RejectsWireFieldMismatch)
         gem5::ai_mesh::agent_abi::E_WORKLOAD_PLAN_MISMATCH;
     gem5::ai_mesh::NpuExecutionRequest request = matchingRequest();
     request.requestedProfileKey = 4098;
-    EXPECT_FALSE(executor.accept(request).admitted);
-    EXPECT_EQ(executor.accept(request).rejectDetail, mismatch);
+    EXPECT_FALSE(executor.submit(request).admitted);
+    EXPECT_EQ(executor.submit(request).rejectDetail, mismatch);
     request = matchingRequest();
     request.inputTokens = 2048;
-    EXPECT_FALSE(executor.accept(request).admitted);
-    EXPECT_EQ(executor.accept(request).rejectDetail, mismatch);
+    EXPECT_FALSE(executor.submit(request).admitted);
     request = matchingRequest();
-    request.inputBytes = 8192;
-    EXPECT_FALSE(executor.accept(request).admitted);
-    EXPECT_EQ(executor.accept(request).rejectDetail, mismatch);
-    request = matchingRequest();
-    request.maxOutputTokens = 127;
-    EXPECT_FALSE(executor.accept(request).admitted);
-    EXPECT_EQ(executor.accept(request).rejectDetail, mismatch);
-}
-
-TEST(FullContextSurrogateExecutor, RejectsOutputCapacityShortfall)
-{
-    auto registry = registryFromSection();
-    ASSERT_TRUE(registry.has_value());
-    gem5::ai_mesh::FullContextSurrogateExecutor executor(
-        std::move(*registry));
-    gem5::ai_mesh::NpuExecutionRequest request = matchingRequest();
     request.outputCapacityBytes = 4095;
-    const gem5::ai_mesh::NpuExecutionOutcome outcome =
-        executor.accept(request);
-    EXPECT_FALSE(outcome.admitted);
-    EXPECT_EQ(outcome.rejectDetail,
+    EXPECT_EQ(executor.submit(request).rejectDetail,
               gem5::ai_mesh::agent_abi::E_OUTPUT_CAPACITY);
 }
 
-TEST(FullContextSurrogateExecutor, SurrogateOutputsDeriveFromProfileIdentity)
+TEST(FullContextSurrogateExecutor, PostCompletionReachesTheSink)
 {
     auto registry = registryFromSection();
     ASSERT_TRUE(registry.has_value());
     gem5::ai_mesh::FullContextSurrogateExecutor executor(
         std::move(*registry));
-    gem5::ai_mesh::NpuExecutionRequest request;
-    request.requestId = 1;
-    request.programId = 1;
-    request.profileId = 1;
-    request.inputDigest.fill(0xaa);
-    request.workloadDigest.fill(0x5a);
-    request.workloadPlanItemId = 7;
-    const std::array<uint8_t, 32> seed =
-        gem5::ai_mesh::surrogateSeed(
-            request.inputDigest.data(), 1, 1, 4097);
-    std::vector<std::array<uint8_t, 32>> tokenDigests;
-    for (uint32_t ordinal = 0; ordinal < 128; ++ordinal)
-        tokenDigests.push_back(
-            gem5::ai_mesh::surrogateTokenDigest(seed.data(), ordinal));
-    EXPECT_EQ(executor.semanticDigest(request),
-              gem5::ai_mesh::surrogateOutputPrefixDigest(
-                  request.workloadDigest.data(), 7, 128, tokenDigests));
-    EXPECT_EQ(executor.outputBytes(request), 4096u);
-    const std::vector<uint8_t> payload = executor.outputPayload(request);
-    ASSERT_EQ(payload.size(), 4096u);
-    EXPECT_EQ(payload, gem5::ai_mesh::surrogateOutputBytes(
-                           executor.semanticDigest(request).data(), 4096));
-}
-
-TEST(NpuProtocolProbeExecutor, ProbeExecutorHasNoSurrogateOutputs)
-{
-    gem5::ai_mesh::NpuProtocolProbeExecutor executor;
-    gem5::ai_mesh::NpuExecutionRequest request;
-    request.programId = 1;
-    request.profileId = 1;
-    EXPECT_TRUE(executor.outputPayload(request).empty());
-    EXPECT_EQ(executor.semanticDigest(request),
-              (std::array<uint8_t, 32>{}));
-    EXPECT_EQ(executor.outputBytes(request), 0u);
+    RecordingSink sink;
+    executor.attachSink(&sink);
+    const gem5::ai_mesh::NpuExecutionRequest request = matchingRequest();
+    ASSERT_TRUE(executor.submit(request).admitted);
+    executor.postCompletion(request);
+    ASSERT_EQ(sink.completed.size(), 1u);
+    EXPECT_EQ(sink.completed[0], 1u);
+    EXPECT_EQ(sink.payload_bytes, 4096u);
+    EXPECT_EQ(sink.output_bytes, 4096u);
 }

@@ -361,6 +361,15 @@ class Relocation:
 
 
 @dataclass
+class ProfileStreamRange:
+    profile_id: int
+    core_id: int
+    stream_id: int
+    command_begin: int
+    command_count: int
+
+
+@dataclass
 class ExpectedTrafficRow:
     entrypoint_id: int
     profile_id: int
@@ -591,6 +600,7 @@ class Program:
     op_attrs: list
     relocations: list
     expected_traffic: list
+    profile_stream_ranges: list = field(default_factory=list)
     required_features: int = 0
     moe_layer_specs: list = field(default_factory=list)
     moe_expert_specs: list = field(default_factory=list)
@@ -625,6 +635,9 @@ class Program:
         }
         if self.required_features:
             abi["required_features"] = self.required_features
+        if self.required_features & A.PROFILE_SCOPED_EXECUTION_V1:
+            sections["PROFILE_STREAM_RANGES"] = [
+                canonical(rec) for rec in self.profile_stream_ranges]
         if self.required_features & A.DYNAMIC_MOE_V1:
             sections["CONTENT_DIGESTS"] = [
                 canonical(rec) for rec in self.content_digests]
@@ -708,6 +721,7 @@ RECORD_CLASSES = {
     "DMA_DESCRIPTORS": DmaDescriptor,
     "RELOCATIONS": Relocation,
     "EXPECTED_TRAFFIC": ExpectedTrafficRow,
+    "PROFILE_STREAM_RANGES": ProfileStreamRange,
     "CONTENT_DIGESTS": ContentDigest,
     "MOE_LAYER_SPECS": MoeLayerSpec,
     "MOE_EXPERT_SPECS": MoeExpertSpec,

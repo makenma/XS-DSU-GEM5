@@ -9,9 +9,11 @@
 #include <functional>
 #include <map>
 #include <set>
+#include <tuple>
 
 #include "dev/ai_mesh/generated/mesh_ir_abi.hh"
 #include "dev/ai_mesh/mesh_ir_spans.hh"
+#include "dev/ai_mesh/mesh_kv_layout.hh"
 
 namespace gem5
 {
@@ -66,6 +68,150 @@ const RuntimeArch::Region *RuntimeArch::region(uint16_t region_id) const
             return &candidate;
     return nullptr;
 }
+
+namespace
+{
+
+bool verifyProfileStreamRanges(const DecodedProgram &program,
+                               MeshLoadError &error)
+{
+    using namespace mesh_abi;
+    const bool feature =
+        (program.required_features & kFeatureProfileScopedExecutionV1) != 0;
+    const auto &ranges = program.profile_stream_ranges;
+    if (feature && ranges.empty())
+        return fail("E_ABI_FEATURE",
+                    "profile-scoped execution needs stream ranges", error);
+    if (!feature && !ranges.empty())
+        return fail("E_ABI_FEATURE",
+                    "profile stream ranges need the feature bit", error);
+    if (ranges.empty())
+        return true;
+    std::map<uint32_t, bool> profiles;
+    for (const auto &profile : program.profiles)
+        profiles[profile.profile_id] = true;
+    std::map<std::pair<uint16_t, uint16_t>, const DecodedStream *> streams;
+    for (const auto &stream : program.streams)
+        streams[{stream.core_id, stream.stream_id}] = &stream;
+    std::set<std::tuple<uint32_t, uint16_t, uint16_t>> keys;
+    std::vector<int> covered(program.commands.size(), 0);
+    std::tuple<uint32_t, uint16_t, uint16_t> previous{};
+    bool first = true;
+    bool sorted_ranges = true;
+    for (const auto &item : ranges) {
+        const auto key = std::make_tuple(item.profile_id, item.core_id,
+                                         item.stream_id);
+        if (!keys.insert(key).second)
+            return fail("E_ABI_DUPLICATE", "duplicate profile range", error);
+        if (!first && key < previous)
+            sorted_ranges = false;
+        previous = key;
+        first = false;
+        if (!profiles.count(item.profile_id))
+            return fail("E_ABI_BOUNDS", "range profile does not exist", error);
+        auto stream = streams.find({item.core_id, item.stream_id});
+        if (stream == streams.end())
+            return fail("E_ABI_BOUNDS", "range stream does not exist", error);
+        if (item.command_count == 0)
+            return fail("E_ABI_BOUNDS", "range must not be empty", error);
+        const uint64_t begin = item.command_begin;
+        const uint64_t end = begin + item.command_count;
+        if (end > program.commands.size())
+            return fail("E_ABI_BOUNDS", "range leaves the command table",
+                        error);
+        const uint64_t stream_end =
+            uint64_t(stream->second->command_begin) +
+            stream->second->command_count;
+        if (begin < stream->second->command_begin || end > stream_end)
+            return fail("E_ABI_BOUNDS", "range leaves its stream window",
+                        error);
+        for (uint64_t index = begin; index < end; index++) {
+            const auto &command = program.commands[index];
+            if (command.core_id != item.core_id ||
+                command.stream_id != item.stream_id)
+                return fail("E_ABI_SECTION_RANGE",
+                            "command does not belong to the range stream",
+                            error);
+            covered[index]++;
+        }
+    }
+    if (!sorted_ranges)
+        return fail("E_ABI_SECTION_RANGE",
+                    "profile ranges must be sorted by identity", error);
+    for (size_t index = 0; index < covered.size(); index++)
+        if (covered[index] != 1)
+            return fail("E_ABI_SECTION_RANGE",
+                        "every command must belong to exactly one profile "
+                        "range", error);
+    for (const auto &kv : profiles) {
+        bool owned = false;
+        for (const auto &item : ranges)
+            if (item.profile_id == kv.first)
+                owned = true;
+        if (!owned)
+            return fail("E_ABI_SECTION_RANGE",
+                        "profile has no execution range", error);
+    }
+    return true;
+}
+
+bool verifyViewLifecycle(const DecodedProgram &program, MeshLoadError &error)
+{
+    using namespace mesh_abi;
+    if (!program.has_profile_scoped_execution_v1)
+        return true;
+    std::map<uint32_t, std::vector<size_t>> indices;
+    std::map<uint32_t, std::set<std::pair<uint16_t, uint16_t>>> control;
+    for (const auto &range : program.profile_stream_ranges) {
+        control[range.profile_id].insert({range.core_id, range.stream_id});
+        for (uint32_t i = 0; i < range.command_count; i++)
+            indices[range.profile_id].push_back(
+                size_t(range.command_begin) + i);
+    }
+    for (auto &entry : indices) {
+        auto &owned = entry.second;
+        std::sort(owned.begin(), owned.end());
+        int begins = 0;
+        int ends = 0;
+        int halts = 0;
+        for (size_t index : owned) {
+            const uint16_t opcode = program.commands[index].opcode;
+            if (opcode == kOpcodeREQUEST_BEGIN)
+                begins++;
+            else if (opcode == kOpcodeREQUEST_END)
+                ends++;
+            else if (opcode == kOpcodeHALT)
+                halts++;
+        }
+        if (begins != 1 || ends != 1 || halts != 1)
+            return fail("E_LIFECYCLE",
+                        "profile view must hold one REQUEST_BEGIN, "
+                        "REQUEST_END and HALT", error);
+        if (program.commands[owned.front()].opcode != kOpcodeREQUEST_BEGIN)
+            return fail("E_LIFECYCLE",
+                        "REQUEST_BEGIN must begin the profile view", error);
+        if (program.commands[owned.back()].opcode != kOpcodeHALT)
+            return fail("E_LIFECYCLE", "HALT must end the profile view",
+                        error);
+    }
+    for (const auto &profile : program.profiles) {
+        auto owned = control.find(profile.profile_id);
+        if (owned == control.end())
+            continue;
+        for (const auto &entrypoint : program.entrypoints) {
+            if (entrypoint.entrypoint_id != profile.entrypoint_id)
+                continue;
+            if (!owned->second.count({entrypoint.lifecycle_core_id,
+                                      entrypoint.lifecycle_stream_id}))
+                return fail("E_LIFECYCLE",
+                            "entrypoint lifecycle stream does not participate "
+                            "in the profile view", error);
+        }
+    }
+    return true;
+}
+
+} // namespace
 
 bool verifyDecodedProgram(const DecodedProgram &program, const RuntimeArch &arch,
                           MeshLoadError &error)
@@ -220,7 +366,8 @@ bool verifyDecodedProgram(const DecodedProgram &program, const RuntimeArch &arch
                 halts++;
             }
         }
-        if (control && halts != 1)
+        if (control && halts != 1 &&
+            !program.has_profile_scoped_execution_v1)
             return fail("E_STREAM_CONTRACT", "control stream must hold exactly one HALT", error);
     }
     if (covered.size() != program.commands.size())
@@ -229,6 +376,12 @@ bool verifyDecodedProgram(const DecodedProgram &program, const RuntimeArch &arch
     for (size_t i = 0; i < covered.size(); i++)
         if (covered[i] != program.commands[i].command_id)
             return fail("E_STREAM_CONTRACT", "stream ranges must partition commands", error);
+
+    if (!verifyProfileStreamRanges(program, error))
+        return false;
+
+    if (!verifyViewLifecycle(program, error))
+        return false;
 
     // events: producer rules (mirrors the Python verifier exactly)
     std::map<uint32_t, std::vector<uint32_t>> producers;
@@ -914,6 +1067,13 @@ bool verifyDecodedProgram(const DecodedProgram &program, const RuntimeArch &arch
                 return fail("E_TRAFFIC_MISMATCH",
                             "descriptor has no expected traffic row", error);
         }
+        std::map<size_t, uint32_t> range_owner;
+        if (program.has_profile_scoped_execution_v1) {
+            for (const auto &range : program.profile_stream_ranges)
+                for (uint32_t i = 0; i < range.command_count; i++)
+                    range_owner[size_t(range.command_begin) + i] =
+                        range.profile_id;
+        }
         for (const auto &row : program.traffic) {
             const DecodedDmaDescriptor *descriptor = nullptr;
             for (const auto &candidate : program.descriptors)
@@ -925,6 +1085,22 @@ bool verifyDecodedProgram(const DecodedProgram &program, const RuntimeArch &arch
             if (row.command_id != descriptor->command_id)
                 return fail("E_TRAFFIC_MISMATCH", "traffic row command mismatch",
                             error);
+            if (program.has_profile_scoped_execution_v1) {
+                auto index = command_index.find(row.command_id);
+                auto owner = index == command_index.end()
+                    ? range_owner.end()
+                    : range_owner.find(index->second);
+                const DecodedProfile *profile = nullptr;
+                for (const auto &candidate : program.profiles)
+                    if (candidate.profile_id == row.profile_id)
+                        profile = &candidate;
+                if (owner == range_owner.end() ||
+                    owner->second != row.profile_id || profile == nullptr ||
+                    profile->entrypoint_id != row.entrypoint_id)
+                    return fail("E_BINDING_ROLE",
+                                "traffic row disagrees with the execution "
+                                "binding", error);
+            }
             if (row.kind != descriptor->kind)
                 return fail("E_TRAFFIC_MISMATCH", "traffic row kind mismatch",
                             error);
@@ -989,6 +1165,8 @@ bool verifyDecodedProgram(const DecodedProgram &program, const RuntimeArch &arch
 
     // Lifecycle contract (mirrors Python E_LIFECYCLE).
     for (const auto &entrypoint : program.entrypoints) {
+        if (program.has_profile_scoped_execution_v1)
+            continue;
         const DecodedStream *stream = nullptr;
         for (const auto &candidate : program.streams)
             if (candidate.core_id == entrypoint.lifecycle_core_id &&
@@ -1073,8 +1251,16 @@ bool verifyDecodedProgram(const DecodedProgram &program, const RuntimeArch &arch
         if (!visit(kv.first))
             return fail("E_DEPENDENCY_CYCLE", "command dependency cycle", error);
 
-    return verifyMoeV1(program, arch, error) &&
-           verifyServingV1(program, arch, error);
+    if (!verifyMoeV1(program, arch, error))
+        return false;
+    if (!verifyServingV1(program, arch, error))
+        return false;
+    if (program.has_serving_v1) {
+        std::array<uint8_t, 32> kv_layout{};
+        if (!kvLayoutDigest(program, kv_layout, error))
+            return false;
+    }
+    return true;
 }
 
 } // namespace ai_mesh

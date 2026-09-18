@@ -758,6 +758,9 @@ def create_system(
         plans_by_target = _mesh_program_plans(scenario, target_specs)
     if driver_mode == "gate3_protocol":
         plans_by_target, b_delay_plans_by_target = _gate3_plans(scenario, target_specs)
+        for index, entries in enumerate(
+                _mesh_program_plans(scenario, target_specs)):
+            plans_by_target[index].extend(entries)
     if not options.axi_raw_shim_probe and driver_mode not in (
         "mesh_program", "gate3_protocol"
     ):

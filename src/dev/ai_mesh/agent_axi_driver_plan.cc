@@ -1,16 +1,70 @@
 #include "dev/ai_mesh/agent_axi_driver.hh"
-#include "dev/ai_mesh/gate3_protocol_runtime_internal.hh"
 
 #include <algorithm>
+#include "dev/ai_mesh/gate3_protocol_runtime_internal.hh"
+
 
 #include "base/logging.hh"
 #include "dev/ai_mesh/agent_plan_codec.hh"
+#include "dev/ai_mesh/serving_host_bindings.hh"
 #include "sim/cur_tick.hh"
 
 namespace gem5
 {
 namespace ai_mesh
 {
+
+const AgentHostBindingPlan *
+findHostBindingPlan(const std::vector<AgentHostBindingPlan> &plans,
+                    uint16_t programId, uint16_t profileId)
+{
+    for (const AgentHostBindingPlan &plan : plans)
+        if (plan.programId == programId && plan.profileId == profileId)
+            return &plan;
+    return nullptr;
+}
+
+std::vector<agent_abi::BindingRecord>
+AgentAxiDriver::requestBindings(const AgentSubmissionIntent &intent,
+                                const struct PlanWireAddresses &addresses,
+                                const AgentPlanRound &round) const
+{
+    if (hostBindingPlans.empty())
+        return {};
+    const AgentHostBindingPlan *plan = findHostBindingPlan(
+        hostBindingPlans, intent.programId, intent.profileId);
+    fatal_if(plan == nullptr,
+             "%s: request profile %u/%u has no Host binding plan", name(),
+             intent.programId, intent.profileId);
+    std::vector<agent_abi::BindingRecord> bindings = resolveHostBindings(
+        *plan, addresses, round, kvSessionSlotBytes);
+    std::string reason;
+    if (verifyHostBindingRequest(
+            bindings, *plan, addresses.inputBase, round.fullContextBytes,
+            addresses.outputBase, round.outputCapacityBytes,
+            addresses.metadataBase, round.metadataCapacityBytes, 0, 0,
+            kvSessionSlotBytes, reason) != HostBindingVerdict::Match)
+        fatal("%s", reason.c_str());
+    if (!normalizeBindings(bindings, reason))
+        fatal("%s", reason.c_str());
+    return bindings;
+}
+
+uint32_t
+AgentAxiDriver::plannedInstanceCount(uint16_t programId,
+                                     uint16_t profileId) const
+{
+    if (hostBindingPlans.empty())
+        return 0;
+    const AgentHostBindingPlan *plan =
+        findHostBindingPlan(hostBindingPlans, programId, profileId);
+    fatal_if(plan == nullptr,
+             "%s: request profile %u/%u is absent from the frozen Host "
+             "expectation while other profiles are present", name(),
+             programId, profileId);
+    return plan->instanceCount;
+}
+
 
 std::vector<uint8_t>
 AgentAxiDriver::encodePlanSq(uint64_t sequence, uint64_t requestId,
@@ -88,7 +142,8 @@ AgentAxiDriver::preparePlanRecords(const AgentSubmissionIntent &intent,
                 intent.controlSessionId : 0,
             intent.userId, intent.taskSequence, 0, 0, 0}, intent);
         storeBytes(sqAddress(sqSequence), sqBlob);
-        storeBytes(intent.parameterAddress, parameterBlob);
+        storeBytes(intent.parameterAddress, parameterBlob,
+                   agent_abi::kParameterHeaderBytes);
         recordSemantic("LOCAL_VISIBLE", "PARAMETER", std::nullopt, requestId,
                        cookie);
         recordSemantic("LOCAL_VISIBLE", "SQ_ENTRY", sqSequence, requestId,
@@ -97,12 +152,27 @@ AgentAxiDriver::preparePlanRecords(const AgentSubmissionIntent &intent,
             curTick() + localVisibilityDelay * clockPeriod();
         return;
     }
+    const PlanWireAddresses wireAddresses{
+        intent.inputAddress, intent.parameterAddress, intent.outputAddress,
+        intent.outputMetadataAddress};
+    const std::vector<agent_abi::BindingRecord> bindings =
+        requestBindings(intent, wireAddresses, *intent.round);
+    const uint64_t parameterCapacity =
+        planParameterBytes(*intent.round, bindings.size());
     const std::vector<uint8_t> parameterBlob = buildPlanParameter(
-        *intent.round, *intent.task, intent.userId,
-        PlanWireAddresses{
-            intent.inputAddress, intent.parameterAddress, intent.outputAddress,
-            intent.outputMetadataAddress},
-        intent.workloadDigest.data(), intent.publishChunkBytes);
+        *intent.round, *intent.task, intent.userId, wireAddresses,
+        intent.workloadDigest.data(), intent.publishChunkBytes, bindings);
+    fatal_if(parameterBlob.size() != parameterCapacity,
+             "%s: encoded parameter blob of %zu bytes differs from the "
+             "planned parameter object of %llu bytes", name(),
+             parameterBlob.size(),
+             static_cast<unsigned long long>(parameterCapacity));
+    fatal_if(intent.parameterCapacityBytes != 0 &&
+                 parameterCapacity > intent.parameterCapacityBytes,
+             "%s: planned parameter object of %llu bytes overruns the Host "
+             "allocation of %llu bytes", name(),
+             static_cast<unsigned long long>(parameterCapacity),
+             static_cast<unsigned long long>(intent.parameterCapacityBytes));
     submitParameterBlockBytes = parameterBlob.size();
     const std::vector<uint8_t> sqBlob =
         encodePlanSq(sqSequence, requestId, cookie, intent,
@@ -113,10 +183,12 @@ AgentAxiDriver::preparePlanRecords(const AgentSubmissionIntent &intent,
         intent.repairRound, intent.outputMetadataAddress,
         intent.outputMetadataCapacityBytes}, intent);
     storeBytes(sqAddress(sqSequence), sqBlob);
-    storeBytes(intent.parameterAddress, parameterBlob);
+    storeBytes(intent.parameterAddress, parameterBlob,
+               parameterCapacity);
     storeBytes(intent.inputAddress,
                agentInputSurrogateBytes(intent.inputDigest.data(),
-                                        intent.inputBytes));
+                                        intent.inputBytes),
+               intent.inputBytes);
     recordSemantic("LOCAL_VISIBLE", "PROMPT", std::nullopt, requestId, cookie);
     recordSemantic("LOCAL_VISIBLE", "PARAMETER", std::nullopt, requestId,
                    cookie);
@@ -433,7 +505,8 @@ AgentAxiDriver::metadataExpectation() const
             agent_abi::kMetadataFlagsSESSION_ADMITTED : 0;
         expectation.checkSurrogate = true;
         expectation.outputTokens = intent.maxOutputTokens;
-        expectation.completedInstanceCount = 0;
+        expectation.completedInstanceCount =
+            plannedInstanceCount(intent.programId, intent.profileId);
         expectation.semanticDigest = surrogateOutputPrefixDigest(
             intent.workloadDigest.data(), intent.workloadPlanItemId,
             intent.maxOutputTokens, tokenDigests);

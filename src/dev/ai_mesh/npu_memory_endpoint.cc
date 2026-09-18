@@ -5,6 +5,7 @@
 #include <sstream>
 
 #include "base/logging.hh"
+#include "dev/ai_mesh/mesh_payload_digest.hh"
 #include "params/NpuMemoryEndpoint.hh"
 #include "sim/cur_tick.hh"
 
@@ -12,26 +13,6 @@ namespace gem5
 {
 namespace ai_mesh
 {
-
-namespace
-{
-
-std::string
-dualFnvDigest(const uint8_t *data, uint64_t size)
-{
-    uint64_t h0 = 0xCBF29CE484222325ull;
-    uint64_t h1 = 0x9E3779B97F4A7C15ull;
-    for (uint64_t i = 0; i < size; i++) {
-        h0 = (h0 ^ data[i]) * 0x100000001B3ull;
-        h1 = (h1 + ((h0 >> 31) ^ data[i])) * 0xBF58476D1CE4E5B9ull;
-    }
-    std::ostringstream out;
-    out << std::hex << std::setfill('0') << std::setw(16) << h0 << "-"
-        << std::setw(16) << h1;
-    return out.str();
-}
-
-} // anonymous namespace
 
 NpuMemoryEndpoint::NpuMemoryEndpoint(const Params &p)
     : ClockedObject(p),
@@ -122,9 +103,19 @@ NpuMemoryEndpoint::seedBytes(uint64_t address, uint64_t size, uint8_t pattern)
         adapter->writeMemoryByte(address + i, pattern);
 }
 
+bool
+NpuMemoryEndpoint::containsMemoryRange(uint64_t address, uint64_t size) const
+{
+    return size != 0 && size <= UINT64_MAX - address &&
+        adapter->containsMemoryAddress(address) &&
+        adapter->containsMemoryAddress(address + size - 1);
+}
+
 std::string
 NpuMemoryEndpoint::rangeDigest(uint64_t address, uint64_t size) const
 {
+    if (!containsMemoryRange(address, size))
+        return std::string();
     std::vector<uint8_t> bytes(size);
     for (uint64_t i = 0; i < size; i++)
         bytes[i] = adapter->readMemoryByte(address + i);

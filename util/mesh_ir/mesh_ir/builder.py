@@ -27,6 +27,7 @@ from mesh_ir.model import (
     MeshIrError,
     OpAttr,
     Profile,
+    ProfileStreamRange,
     Program,
     Relocation,
     Shard,
@@ -291,6 +292,7 @@ class ProgramBuilder:
         self.op_attrs = []
         self.relocations = []
         self.expected_traffic = []
+        self._owners = []
 
     def string(self, value: str) -> int:
         if value in self._string_ids:
@@ -574,6 +576,36 @@ class ProgramBuilder:
             )
         )
 
+    def execution_ranges(self) -> tuple:
+        owners = self._owners
+        if not owners or all(owner == 0 for owner in owners):
+            return ()
+        if any(owner == 0 for owner in owners):
+            raise MeshIrError("E_ABI_SECTION_RANGE",
+                              "command profile ownership must be complete")
+        ranges = []
+        start = 0
+        for index in range(1, len(owners) + 1):
+            boundary = index == len(owners) or owners[index] != owners[start]
+            if not boundary:
+                current, first = self.commands[index], self.commands[start]
+                boundary = (current.core_id != first.core_id or
+                            current.stream_id != first.stream_id)
+            if boundary:
+                command = self.commands[start]
+                ranges.append(ProfileStreamRange(
+                    profile_id=owners[start], core_id=command.core_id,
+                    stream_id=command.stream_id, command_begin=start,
+                    command_count=index - start))
+                start = index
+        keys = [(item.profile_id, item.core_id, item.stream_id)
+                for item in ranges]
+        if len(set(keys)) != len(keys):
+            raise MeshIrError("E_ABI_SECTION_RANGE",
+                              "profile range must be contiguous")
+        return tuple(sorted(ranges, key=lambda item: (
+            item.profile_id, item.core_id, item.stream_id)))
+
     def build(self) -> Program:
         for event in self.events:
             event.producer_command_id = 0
@@ -612,6 +644,7 @@ class ProgramBuilder:
             op_attrs=self.op_attrs,
             relocations=self.relocations,
             expected_traffic=self.expected_traffic,
+            profile_stream_ranges=self.execution_ranges(),
         )
 
 
@@ -630,7 +663,7 @@ class StreamScope:
         )
         self._ordinal = 0
 
-    def command(self, opcode, waits=(), operands=(), signal_event=0, attr_index=0, source_op_id=0) -> Command:
+    def command(self, opcode, waits=(), operands=(), signal_event=0, attr_index=0, source_op_id=0, profile_id=0) -> Command:
         wait_begin = len(self.builder.command_waits)
         for event_id in waits:
             self.builder.command_waits.append(CommandWait(event_id=event_id))
@@ -661,6 +694,7 @@ class StreamScope:
             debug_loc_id=0,
         )
         self.builder.commands.append(command)
+        self.builder._owners.append(profile_id)
         if self.record.command_count == 0:
             self.record.command_begin = command.command_id - 1
         self.record.command_count += 1

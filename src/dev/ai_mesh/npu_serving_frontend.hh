@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "dev/ai_mesh/agent_axi_work.hh"
+#include "dev/ai_mesh/agent_plan_image.hh"
 #include "dev/ai_mesh/agent_protocol_layout.hh"
 #include "dev/ai_mesh/agent_protocol_validation.hh"
 #include "dev/ai_mesh/gate3_axi_transfer.hh"
@@ -23,6 +24,9 @@
 #include "dev/ai_mesh/generated/agent_protocol_abi.hh"
 #include "dev/ai_mesh/npu_execution_selector.hh"
 #include "dev/ai_mesh/npu_request_executor.hh"
+#include "dev/ai_mesh/mesh_dispatcher.hh"
+#include "dev/ai_mesh/mesh_program_loader.hh"
+#include "dev/ai_mesh/serving_mesh_executor.hh"
 #include "mem/axi/axi_garnet_endpoint.hh"
 #include "mem/axi/axi_types.hh"
 #include "sim/clocked_object.hh"
@@ -44,7 +48,8 @@ class AgentAxiDriver;
 class NpuServingFrontend : public ClockedObject,
                            public axi::AxiWriteCommitObserver,
                            public axi::AxiWritePreCommitPolicy,
-                           public Gate3PhaseParticipant
+                           public Gate3PhaseParticipant,
+                           public NpuCompletionSink
 {
   public:
     using Params = NpuServingFrontendParams;
@@ -160,7 +165,8 @@ class NpuServingFrontend : public ClockedObject,
                     owner->restoreParkedBusiness();
                 return;
             }
-            owner->startOutput();
+            if (!owner->servingExecution)
+                owner->completeExecution();
             owner->scheduleTick();
         }
         const char *description() const override
@@ -202,7 +208,7 @@ class NpuServingFrontend : public ClockedObject,
         uint64_t outputCommittedBytes = 0;
         bool outputChunkNotified = false;
         Tick executionDeadlineTick = 0;
-        uint64_t serviceNs = 0;
+        NpuExecutionCompletion completion;
         Tick readyTick = 0;
         uint64_t deadlineTick = kNpuNoDeadline;
     };
@@ -229,6 +235,10 @@ class NpuServingFrontend : public ClockedObject,
     void startMsi();
     void handleSqRecord();
     void handleParameterRecord();
+    bool rejectParameter(agent_abi::DetailCode code);
+    const AgentHostBindingPlan *
+    frozenBindingPlan(uint16_t programId, uint16_t profileId) const;
+    bool verifyParameterBindings(const agent_abi::ParameterHeader &value);
     void handleControlParameter(const agent_abi::ParameterHeader &value);
     bool controlMatrixValid(const agent_abi::ParameterHeader &value) const;
     void resolveControlCommand(const agent_abi::ParameterHeader &value);
@@ -241,13 +251,18 @@ class NpuServingFrontend : public ClockedObject,
     void saveParkedBusiness();
     void restoreParkedBusiness();
     void loadBusinessContext(const ParkedBusiness &parked);
-    void enqueueCurrentBusiness(uint64_t serviceNs);
+    void enqueueCurrentBusiness();
+    void completeExecution();
     void dispatchAcceptedBusiness();
     void cancelQueuedTarget(uint64_t requestId, Tick now);
     void scheduleExecutionEvent(Tick deadline);
     bool businessParked() const { return parkedBusiness.has_value(); }
     bool executionCurrent() const
     { return currentValid && stage == Stage::Execute; }
+    void onCoreStart(uint64_t requestId) override;
+    void onRequestComplete(
+        const NpuExecutionRequest &request,
+        const NpuExecutionCompletion &completion) override;
     void cancelParkedTarget(Tick now);
     void maybeNotifyFirstOutputChunk(std::optional<uint64_t> requestId,
                                      bool outputComplete);
@@ -263,6 +278,7 @@ class NpuServingFrontend : public ClockedObject,
     void consumeReleaseOutcomes(const KvEdgeResult &result);
     uint16_t releaseStatus(KvReleaseOutcome outcome) const;
     void handlePromptRecord();
+    void submitServingRequest();
     void handleWriteResponse(const Gate3WriteWork &work,
                              axi::AxiResp response);
     void recordAxi(const Gate3WriteWork &work, const char *channel,
@@ -357,6 +373,8 @@ class NpuServingFrontend : public ClockedObject,
     const bool controlCqFirst;
     const std::string profile;
     const bool planExecution;
+    const bool surrogateExecution;
+    const bool servingExecution;
     uint32_t requestCount;
     const uint32_t sqReadIssueDelay;
     const uint32_t doorbellAxiId;
@@ -371,6 +389,46 @@ class NpuServingFrontend : public ClockedObject,
     Gate3MsiIdPool msiIdPool;
     Gate3SqIntakeLedger sqIntakeLedger;
     std::unique_ptr<NpuRequestExecutor> requestExecutor;
+    std::unique_ptr<ServingMeshExecutor> meshExecutor;
+    std::array<uint8_t, 32> servingContractDigest{};
+    std::vector<AgentHostBindingPlan> frozenBindingPlans;
+    uint64_t frozenKvSessionSlotBytes = 0;
+    MeshProgramLoader *servingLoader = nullptr;
+    MeshDispatcher *servingDispatcher = nullptr;
+    std::string servingWeightImageDigest;
+    std::string servingPlanImage;
+    std::optional<AgentPlanImage> planImage;
+    const SurrogateProfileRegistry *planRegistry = nullptr;
+    struct AgentPlanRequestProof
+    {
+        uint32_t userId = 0;
+        uint32_t taskSeq = 0;
+        uint16_t repairRound = 0;
+        uint64_t sessionId = 0;
+        uint64_t kvHandle = 0;
+        uint32_t generation = 0;
+        uint32_t itemId = 0;
+        uint32_t fullContextTokens = 0;
+        uint64_t fullContextBytes = 0;
+        uint32_t cachedTokens = 0;
+        uint32_t outputTokens = 0;
+        uint64_t outputCapacityBytes = 0;
+        uint32_t metadataCapacityBytes = 0;
+        uint16_t programId = 0;
+        uint16_t profileId = 0;
+        uint64_t profileKey = 0;
+        uint8_t qos = 0;
+        bool hasDeadline = false;
+        uint64_t deadlineTick = 0;
+        std::array<uint8_t, 32> inputDigest{};
+    };
+    std::map<uint64_t, AgentPlanRequestProof> planRequestProofs;
+    std::array<uint8_t, 32> frozenWorkloadDigest{};
+    void ensureServingPrepared();
+    NpuRequestExecutor *activeExecutor() const
+    {
+        return meshExecutor ? meshExecutor.get() : requestExecutor.get();
+    }
     class RetireEvent : public Event
     {
       public:
@@ -395,7 +453,7 @@ class NpuServingFrontend : public ClockedObject,
     std::optional<Gate3ReadWork> activeRead;
     std::vector<uint8_t> sqData;
     std::vector<uint8_t> parameterData;
-    std::vector<uint8_t> promptData;
+    std::vector<agent_abi::BindingRecord> currentHostBindings;
     uint64_t currentSqSequence = 0;
     uint64_t currentRequestId = 0;
     uint64_t currentCookie = 0;
@@ -407,6 +465,7 @@ class NpuServingFrontend : public ClockedObject,
     uint64_t currentMetadataCapacityBytes = 0;
     uint64_t currentRequestedProfileKey = 0;
     uint32_t currentInputTokens = 0;
+    uint32_t currentCachedTokens = 0;
     uint8_t currentQos = 0;
     uint32_t currentParameterBytes = 0;
     uint64_t currentOutputAddress = 0;
@@ -428,6 +487,7 @@ class NpuServingFrontend : public ClockedObject,
     std::array<uint8_t, 32> currentInputDigest{};
     std::array<uint8_t, 32> currentWorkloadDigest{};
     std::optional<NpuExecutionRequest> lastExecutionRequest;
+    std::optional<NpuExecutionCompletion> currentCompletion;
     std::optional<ParkedBusiness> parkedBusiness;
     std::map<uint64_t, ParkedBusiness> acceptedQueue;
     std::map<uint64_t, ParkedRelease> pendingReleases;

@@ -1,0 +1,2633 @@
+{
+  "abi": {
+    "major": 1,
+    "minor": 3,
+    "required_features": 6
+  },
+  "arch_digest": "76bb2d472057bd3907a9722ff397a164fae2328825c41e48bf12bc92d9bfe25c",
+  "sections": {
+    "AGENT_INSTANCE_MEMBER_BINDINGS": [
+      {
+        "expected_logical_source_rank": 0,
+        "instance_profile_id": 11,
+        "member_ordinal": 0,
+        "reserved0": 0,
+        "static_input_symbol_id": 7,
+        "static_kv_symbol_id": 8,
+        "static_output_symbol_id": 0
+      },
+      {
+        "expected_logical_source_rank": 0,
+        "instance_profile_id": 12,
+        "member_ordinal": 0,
+        "reserved0": 0,
+        "static_input_symbol_id": 0,
+        "static_kv_symbol_id": 8,
+        "static_output_symbol_id": 0
+      },
+      {
+        "expected_logical_source_rank": 0,
+        "instance_profile_id": 13,
+        "member_ordinal": 0,
+        "reserved0": 0,
+        "static_input_symbol_id": 0,
+        "static_kv_symbol_id": 8,
+        "static_output_symbol_id": 0
+      },
+      {
+        "expected_logical_source_rank": 0,
+        "instance_profile_id": 14,
+        "member_ordinal": 0,
+        "reserved0": 0,
+        "static_input_symbol_id": 0,
+        "static_kv_symbol_id": 0,
+        "static_output_symbol_id": 9
+      }
+    ],
+    "AGENT_INSTANCE_PROFILES": [
+      {
+        "decode_chunk_tokens": 0,
+        "flags": 0,
+        "host_input_dma_bytes_per_member": 128,
+        "host_output_dma_bytes_per_member": 0,
+        "instance_profile_id": 11,
+        "kv_read_bytes_per_member": 0,
+        "kv_tokens_before": 0,
+        "kv_write_bytes_per_member": 128,
+        "local_padded_members": 0,
+        "local_padded_tokens_per_member": 0,
+        "member_binding_count": 1,
+        "member_binding_first": 0,
+        "member_count": 1,
+        "mesh_entrypoint_id": 1,
+        "mesh_profile_id": 1,
+        "path_kind": 0,
+        "phase": 1,
+        "primary_input_symbol_id": 1,
+        "primary_kv_symbol_id": 3,
+        "primary_output_symbol_id": 0,
+        "request_profile_id": 1,
+        "request_program_id": 1,
+        "valid_tokens_per_member": 8
+      },
+      {
+        "decode_chunk_tokens": 1,
+        "flags": 0,
+        "host_input_dma_bytes_per_member": 0,
+        "host_output_dma_bytes_per_member": 0,
+        "instance_profile_id": 12,
+        "kv_read_bytes_per_member": 128,
+        "kv_tokens_before": 8,
+        "kv_write_bytes_per_member": 16,
+        "local_padded_members": 0,
+        "local_padded_tokens_per_member": 0,
+        "member_binding_count": 1,
+        "member_binding_first": 1,
+        "member_count": 1,
+        "mesh_entrypoint_id": 2,
+        "mesh_profile_id": 2,
+        "path_kind": 0,
+        "phase": 2,
+        "primary_input_symbol_id": 0,
+        "primary_kv_symbol_id": 3,
+        "primary_output_symbol_id": 0,
+        "request_profile_id": 1,
+        "request_program_id": 1,
+        "valid_tokens_per_member": 1
+      },
+      {
+        "decode_chunk_tokens": 1,
+        "flags": 0,
+        "host_input_dma_bytes_per_member": 0,
+        "host_output_dma_bytes_per_member": 0,
+        "instance_profile_id": 13,
+        "kv_read_bytes_per_member": 144,
+        "kv_tokens_before": 9,
+        "kv_write_bytes_per_member": 16,
+        "local_padded_members": 0,
+        "local_padded_tokens_per_member": 0,
+        "member_binding_count": 1,
+        "member_binding_first": 2,
+        "member_count": 1,
+        "mesh_entrypoint_id": 3,
+        "mesh_profile_id": 3,
+        "path_kind": 0,
+        "phase": 2,
+        "primary_input_symbol_id": 0,
+        "primary_kv_symbol_id": 3,
+        "primary_output_symbol_id": 0,
+        "request_profile_id": 1,
+        "request_program_id": 1,
+        "valid_tokens_per_member": 1
+      },
+      {
+        "decode_chunk_tokens": 0,
+        "flags": 0,
+        "host_input_dma_bytes_per_member": 0,
+        "host_output_dma_bytes_per_member": 256,
+        "instance_profile_id": 14,
+        "kv_read_bytes_per_member": 0,
+        "kv_tokens_before": 10,
+        "kv_write_bytes_per_member": 0,
+        "local_padded_members": 0,
+        "local_padded_tokens_per_member": 0,
+        "member_binding_count": 1,
+        "member_binding_first": 3,
+        "member_count": 1,
+        "mesh_entrypoint_id": 4,
+        "mesh_profile_id": 4,
+        "path_kind": 0,
+        "phase": 3,
+        "primary_input_symbol_id": 0,
+        "primary_kv_symbol_id": 0,
+        "primary_output_symbol_id": 6,
+        "request_profile_id": 1,
+        "request_program_id": 1,
+        "valid_tokens_per_member": 0
+      }
+    ],
+    "AGENT_PUBLISH_SURROGATE_BINDINGS": [
+      {
+        "allocation_id": 5,
+        "allocation_role": 1,
+        "completion_event_id": 19,
+        "digest_source": 0,
+        "fill_kind": 1,
+        "instance_profile_id": 14,
+        "member_ordinal": 0,
+        "producer_command_id": 22,
+        "reserved0": 0,
+        "reserved1": 0
+      }
+    ],
+    "AGENT_REQUEST_BINDING_REQUIREMENTS": [
+      {
+        "binding_flags": 1,
+        "binding_kind": 1,
+        "request_profile_id": 1,
+        "request_program_id": 1,
+        "reserved": 0,
+        "symbol_id": 1
+      },
+      {
+        "binding_flags": 5,
+        "binding_kind": 4,
+        "request_profile_id": 1,
+        "request_program_id": 1,
+        "reserved": 0,
+        "symbol_id": 2
+      },
+      {
+        "binding_flags": 15,
+        "binding_kind": 3,
+        "request_profile_id": 1,
+        "request_program_id": 1,
+        "reserved": 0,
+        "symbol_id": 3
+      },
+      {
+        "binding_flags": 2,
+        "binding_kind": 2,
+        "request_profile_id": 1,
+        "request_program_id": 1,
+        "reserved": 0,
+        "symbol_id": 6
+      }
+    ],
+    "AGENT_REQUEST_PROFILES": [
+      {
+        "delta_input_dma_bytes": 128,
+        "delta_input_tokens": 8,
+        "expected_cached_tokens": 0,
+        "flags": 1,
+        "full_input_dma_bytes": 128,
+        "full_input_tokens": 8,
+        "host_output_bytes": 256,
+        "input_binding_bytes": 128,
+        "kv_bytes_per_token": 16,
+        "output_tokens": 2,
+        "path_mask": 1,
+        "primary_input_symbol_id": 1,
+        "primary_kv_symbol_id": 3,
+        "primary_output_symbol_id": 6,
+        "profile_id": 1,
+        "program_id": 1,
+        "publish_chunk_bytes": 64,
+        "requested_profile_key": 2537423335318638178,
+        "reserved0": 0,
+        "source_core_map_begin": 0,
+        "source_rank_count": 1
+      }
+    ],
+    "AGENT_SOURCE_CORE_MAP": [
+      {
+        "core_id": 0,
+        "reserved": 0
+      }
+    ],
+    "ALLOCATIONS": [
+      {
+        "alignment_bytes": 64,
+        "allocation_id": 1,
+        "flags": 0,
+        "memory_space": 3,
+        "offset_bytes": 0,
+        "owner_core": 0,
+        "size_bytes": 128
+      },
+      {
+        "alignment_bytes": 64,
+        "allocation_id": 2,
+        "flags": 0,
+        "memory_space": 3,
+        "offset_bytes": 8192,
+        "owner_core": 0,
+        "size_bytes": 128
+      },
+      {
+        "alignment_bytes": 64,
+        "allocation_id": 3,
+        "flags": 0,
+        "memory_space": 3,
+        "offset_bytes": 12288,
+        "owner_core": 0,
+        "size_bytes": 160
+      },
+      {
+        "alignment_bytes": 64,
+        "allocation_id": 4,
+        "flags": 0,
+        "memory_space": 3,
+        "offset_bytes": 20480,
+        "owner_core": 0,
+        "size_bytes": 128
+      },
+      {
+        "alignment_bytes": 64,
+        "allocation_id": 5,
+        "flags": 0,
+        "memory_space": 3,
+        "offset_bytes": 16384,
+        "owner_core": 0,
+        "size_bytes": 256
+      }
+    ],
+    "COMMANDS": [
+      {
+        "attr_index": 0,
+        "command_id": 1,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 1,
+        "opcode": 1,
+        "operand_begin": 0,
+        "operand_count": 0,
+        "signal_event": 1,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 0,
+        "wait_count": 0
+      },
+      {
+        "attr_index": 0,
+        "command_id": 2,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 2,
+        "opcode": 4,
+        "operand_begin": 0,
+        "operand_count": 1,
+        "signal_event": 0,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 0,
+        "wait_count": 1
+      },
+      {
+        "attr_index": 0,
+        "command_id": 3,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 2,
+        "opcode": 4,
+        "operand_begin": 1,
+        "operand_count": 1,
+        "signal_event": 0,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 1,
+        "wait_count": 1
+      },
+      {
+        "attr_index": 2,
+        "command_id": 4,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 4,
+        "opcode": 10,
+        "operand_begin": 2,
+        "operand_count": 3,
+        "signal_event": 4,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 2,
+        "wait_count": 2
+      },
+      {
+        "attr_index": 1,
+        "command_id": 5,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 3,
+        "opcode": 8,
+        "operand_begin": 5,
+        "operand_count": 1,
+        "signal_event": 0,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 4,
+        "wait_count": 1
+      },
+      {
+        "attr_index": 0,
+        "command_id": 6,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 3,
+        "opcode": 5,
+        "operand_begin": 6,
+        "operand_count": 1,
+        "signal_event": 0,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 5,
+        "wait_count": 1
+      },
+      {
+        "attr_index": 0,
+        "command_id": 7,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 1,
+        "opcode": 2,
+        "operand_begin": 7,
+        "operand_count": 0,
+        "signal_event": 7,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 6,
+        "wait_count": 1
+      },
+      {
+        "attr_index": 0,
+        "command_id": 8,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 1,
+        "opcode": 3,
+        "operand_begin": 7,
+        "operand_count": 0,
+        "signal_event": 0,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 7,
+        "wait_count": 1
+      },
+      {
+        "attr_index": 0,
+        "command_id": 9,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 1,
+        "opcode": 1,
+        "operand_begin": 7,
+        "operand_count": 0,
+        "signal_event": 8,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 8,
+        "wait_count": 0
+      },
+      {
+        "attr_index": 0,
+        "command_id": 10,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 2,
+        "opcode": 4,
+        "operand_begin": 7,
+        "operand_count": 1,
+        "signal_event": 0,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 8,
+        "wait_count": 1
+      },
+      {
+        "attr_index": 1,
+        "command_id": 11,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 3,
+        "opcode": 8,
+        "operand_begin": 8,
+        "operand_count": 1,
+        "signal_event": 0,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 9,
+        "wait_count": 1
+      },
+      {
+        "attr_index": 0,
+        "command_id": 12,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 3,
+        "opcode": 5,
+        "operand_begin": 9,
+        "operand_count": 1,
+        "signal_event": 0,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 10,
+        "wait_count": 1
+      },
+      {
+        "attr_index": 0,
+        "command_id": 13,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 1,
+        "opcode": 2,
+        "operand_begin": 10,
+        "operand_count": 0,
+        "signal_event": 12,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 11,
+        "wait_count": 1
+      },
+      {
+        "attr_index": 0,
+        "command_id": 14,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 1,
+        "opcode": 3,
+        "operand_begin": 10,
+        "operand_count": 0,
+        "signal_event": 0,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 12,
+        "wait_count": 1
+      },
+      {
+        "attr_index": 0,
+        "command_id": 15,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 1,
+        "opcode": 1,
+        "operand_begin": 10,
+        "operand_count": 0,
+        "signal_event": 13,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 13,
+        "wait_count": 0
+      },
+      {
+        "attr_index": 0,
+        "command_id": 16,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 2,
+        "opcode": 4,
+        "operand_begin": 10,
+        "operand_count": 1,
+        "signal_event": 0,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 13,
+        "wait_count": 1
+      },
+      {
+        "attr_index": 1,
+        "command_id": 17,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 3,
+        "opcode": 8,
+        "operand_begin": 11,
+        "operand_count": 1,
+        "signal_event": 0,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 14,
+        "wait_count": 1
+      },
+      {
+        "attr_index": 0,
+        "command_id": 18,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 3,
+        "opcode": 5,
+        "operand_begin": 12,
+        "operand_count": 1,
+        "signal_event": 0,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 15,
+        "wait_count": 1
+      },
+      {
+        "attr_index": 0,
+        "command_id": 19,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 1,
+        "opcode": 2,
+        "operand_begin": 13,
+        "operand_count": 0,
+        "signal_event": 17,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 16,
+        "wait_count": 1
+      },
+      {
+        "attr_index": 0,
+        "command_id": 20,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 1,
+        "opcode": 3,
+        "operand_begin": 13,
+        "operand_count": 0,
+        "signal_event": 0,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 17,
+        "wait_count": 1
+      },
+      {
+        "attr_index": 0,
+        "command_id": 21,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 1,
+        "opcode": 1,
+        "operand_begin": 13,
+        "operand_count": 0,
+        "signal_event": 18,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 18,
+        "wait_count": 0
+      },
+      {
+        "attr_index": 1,
+        "command_id": 22,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 3,
+        "opcode": 8,
+        "operand_begin": 13,
+        "operand_count": 1,
+        "signal_event": 0,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 18,
+        "wait_count": 1
+      },
+      {
+        "attr_index": 0,
+        "command_id": 23,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 3,
+        "opcode": 5,
+        "operand_begin": 14,
+        "operand_count": 1,
+        "signal_event": 0,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 19,
+        "wait_count": 1
+      },
+      {
+        "attr_index": 0,
+        "command_id": 24,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 3,
+        "opcode": 5,
+        "operand_begin": 15,
+        "operand_count": 1,
+        "signal_event": 0,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 20,
+        "wait_count": 1
+      },
+      {
+        "attr_index": 0,
+        "command_id": 25,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 3,
+        "opcode": 5,
+        "operand_begin": 16,
+        "operand_count": 1,
+        "signal_event": 0,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 21,
+        "wait_count": 1
+      },
+      {
+        "attr_index": 0,
+        "command_id": 26,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 3,
+        "opcode": 5,
+        "operand_begin": 17,
+        "operand_count": 1,
+        "signal_event": 0,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 22,
+        "wait_count": 1
+      },
+      {
+        "attr_index": 0,
+        "command_id": 27,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 1,
+        "opcode": 2,
+        "operand_begin": 18,
+        "operand_count": 0,
+        "signal_event": 24,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 23,
+        "wait_count": 4
+      },
+      {
+        "attr_index": 0,
+        "command_id": 28,
+        "core_id": 0,
+        "debug_loc_id": 0,
+        "engine": 1,
+        "opcode": 3,
+        "operand_begin": 18,
+        "operand_count": 0,
+        "signal_event": 0,
+        "source_op_id": 0,
+        "stream_id": 0,
+        "wait_begin": 27,
+        "wait_count": 1
+      }
+    ],
+    "COMMAND_OPERANDS": [
+      {
+        "access": 1,
+        "allocation_id": 1,
+        "reserved": 0,
+        "shard_id": 1,
+        "tensor_id": 1
+      },
+      {
+        "access": 1,
+        "allocation_id": 2,
+        "reserved": 0,
+        "shard_id": 2,
+        "tensor_id": 2
+      },
+      {
+        "access": 1,
+        "allocation_id": 1,
+        "reserved": 0,
+        "shard_id": 1,
+        "tensor_id": 1
+      },
+      {
+        "access": 1,
+        "allocation_id": 2,
+        "reserved": 0,
+        "shard_id": 2,
+        "tensor_id": 2
+      },
+      {
+        "access": 2,
+        "allocation_id": 4,
+        "reserved": 0,
+        "shard_id": 4,
+        "tensor_id": 4
+      },
+      {
+        "access": 2,
+        "allocation_id": 3,
+        "reserved": 0,
+        "shard_id": 3,
+        "tensor_id": 3
+      },
+      {
+        "access": 2,
+        "allocation_id": 3,
+        "reserved": 0,
+        "shard_id": 3,
+        "tensor_id": 3
+      },
+      {
+        "access": 2,
+        "allocation_id": 3,
+        "reserved": 0,
+        "shard_id": 3,
+        "tensor_id": 3
+      },
+      {
+        "access": 2,
+        "allocation_id": 3,
+        "reserved": 0,
+        "shard_id": 3,
+        "tensor_id": 3
+      },
+      {
+        "access": 2,
+        "allocation_id": 3,
+        "reserved": 0,
+        "shard_id": 3,
+        "tensor_id": 3
+      },
+      {
+        "access": 2,
+        "allocation_id": 3,
+        "reserved": 0,
+        "shard_id": 3,
+        "tensor_id": 3
+      },
+      {
+        "access": 2,
+        "allocation_id": 3,
+        "reserved": 0,
+        "shard_id": 3,
+        "tensor_id": 3
+      },
+      {
+        "access": 2,
+        "allocation_id": 3,
+        "reserved": 0,
+        "shard_id": 3,
+        "tensor_id": 3
+      },
+      {
+        "access": 2,
+        "allocation_id": 5,
+        "reserved": 0,
+        "shard_id": 5,
+        "tensor_id": 5
+      },
+      {
+        "access": 2,
+        "allocation_id": 5,
+        "reserved": 0,
+        "shard_id": 6,
+        "tensor_id": 6
+      },
+      {
+        "access": 2,
+        "allocation_id": 5,
+        "reserved": 0,
+        "shard_id": 6,
+        "tensor_id": 6
+      },
+      {
+        "access": 2,
+        "allocation_id": 5,
+        "reserved": 0,
+        "shard_id": 6,
+        "tensor_id": 6
+      },
+      {
+        "access": 2,
+        "allocation_id": 5,
+        "reserved": 0,
+        "shard_id": 6,
+        "tensor_id": 6
+      }
+    ],
+    "COMMAND_WAITS": [
+      {
+        "event_id": 1
+      },
+      {
+        "event_id": 1
+      },
+      {
+        "event_id": 2
+      },
+      {
+        "event_id": 3
+      },
+      {
+        "event_id": 4
+      },
+      {
+        "event_id": 5
+      },
+      {
+        "event_id": 6
+      },
+      {
+        "event_id": 7
+      },
+      {
+        "event_id": 8
+      },
+      {
+        "event_id": 9
+      },
+      {
+        "event_id": 10
+      },
+      {
+        "event_id": 11
+      },
+      {
+        "event_id": 12
+      },
+      {
+        "event_id": 13
+      },
+      {
+        "event_id": 14
+      },
+      {
+        "event_id": 15
+      },
+      {
+        "event_id": 16
+      },
+      {
+        "event_id": 17
+      },
+      {
+        "event_id": 18
+      },
+      {
+        "event_id": 19
+      },
+      {
+        "event_id": 19
+      },
+      {
+        "event_id": 19
+      },
+      {
+        "event_id": 19
+      },
+      {
+        "event_id": 20
+      },
+      {
+        "event_id": 21
+      },
+      {
+        "event_id": 22
+      },
+      {
+        "event_id": 23
+      },
+      {
+        "event_id": 24
+      }
+    ],
+    "DMA_DESCRIPTORS": [
+      {
+        "axi_id": 2,
+        "command_id": 2,
+        "completion_event": 2,
+        "descriptor_id": 1,
+        "dst": {
+          "memory_space": 3,
+          "offset_bytes": 0,
+          "owner_core": 0,
+          "region_id": 2,
+          "reserved": 0,
+          "shard_id": 1,
+          "tensor_id": 1
+        },
+        "dst_stride_bytes": 128,
+        "kind": 1,
+        "max_burst_beats": 16,
+        "owner_core": 0,
+        "physical_storage_bytes": 128,
+        "qos": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "row_bytes": 128,
+        "rows": 1,
+        "src": {
+          "memory_space": 1,
+          "offset_bytes": 1048576,
+          "owner_core": 65535,
+          "region_id": 0,
+          "reserved": 0,
+          "shard_id": 1,
+          "tensor_id": 1
+        },
+        "src_stride_bytes": 128,
+        "transfer_id": 0,
+        "useful_bytes": 128
+      },
+      {
+        "axi_id": 3,
+        "command_id": 3,
+        "completion_event": 3,
+        "descriptor_id": 2,
+        "dst": {
+          "memory_space": 3,
+          "offset_bytes": 8192,
+          "owner_core": 0,
+          "region_id": 2,
+          "reserved": 0,
+          "shard_id": 2,
+          "tensor_id": 2
+        },
+        "dst_stride_bytes": 128,
+        "kind": 1,
+        "max_burst_beats": 16,
+        "owner_core": 0,
+        "physical_storage_bytes": 128,
+        "qos": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "row_bytes": 128,
+        "rows": 1,
+        "src": {
+          "memory_space": 1,
+          "offset_bytes": 2097152,
+          "owner_core": 65535,
+          "region_id": 0,
+          "reserved": 0,
+          "shard_id": 2,
+          "tensor_id": 2
+        },
+        "src_stride_bytes": 128,
+        "transfer_id": 0,
+        "useful_bytes": 128
+      },
+      {
+        "axi_id": 5,
+        "command_id": 5,
+        "completion_event": 5,
+        "descriptor_id": 3,
+        "dst": {
+          "memory_space": 3,
+          "offset_bytes": 12288,
+          "owner_core": 0,
+          "region_id": 2,
+          "reserved": 0,
+          "shard_id": 3,
+          "tensor_id": 3
+        },
+        "dst_stride_bytes": 128,
+        "kind": 5,
+        "max_burst_beats": 16,
+        "owner_core": 0,
+        "physical_storage_bytes": 128,
+        "qos": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "row_bytes": 128,
+        "rows": 1,
+        "src": {
+          "memory_space": 3,
+          "offset_bytes": 12288,
+          "owner_core": 0,
+          "region_id": 2,
+          "reserved": 0,
+          "shard_id": 3,
+          "tensor_id": 3
+        },
+        "src_stride_bytes": 128,
+        "transfer_id": 0,
+        "useful_bytes": 128
+      },
+      {
+        "axi_id": 6,
+        "command_id": 6,
+        "completion_event": 6,
+        "descriptor_id": 4,
+        "dst": {
+          "memory_space": 1,
+          "offset_bytes": 4194304,
+          "owner_core": 65535,
+          "region_id": 0,
+          "reserved": 0,
+          "shard_id": 3,
+          "tensor_id": 3
+        },
+        "dst_stride_bytes": 128,
+        "kind": 2,
+        "max_burst_beats": 16,
+        "owner_core": 0,
+        "physical_storage_bytes": 128,
+        "qos": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "row_bytes": 128,
+        "rows": 1,
+        "src": {
+          "memory_space": 3,
+          "offset_bytes": 12288,
+          "owner_core": 0,
+          "region_id": 2,
+          "reserved": 0,
+          "shard_id": 3,
+          "tensor_id": 3
+        },
+        "src_stride_bytes": 128,
+        "transfer_id": 0,
+        "useful_bytes": 128
+      },
+      {
+        "axi_id": 10,
+        "command_id": 10,
+        "completion_event": 9,
+        "descriptor_id": 5,
+        "dst": {
+          "memory_space": 3,
+          "offset_bytes": 12288,
+          "owner_core": 0,
+          "region_id": 2,
+          "reserved": 0,
+          "shard_id": 3,
+          "tensor_id": 3
+        },
+        "dst_stride_bytes": 128,
+        "kind": 1,
+        "max_burst_beats": 16,
+        "owner_core": 0,
+        "physical_storage_bytes": 128,
+        "qos": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "row_bytes": 128,
+        "rows": 1,
+        "src": {
+          "memory_space": 1,
+          "offset_bytes": 4194304,
+          "owner_core": 65535,
+          "region_id": 0,
+          "reserved": 0,
+          "shard_id": 3,
+          "tensor_id": 3
+        },
+        "src_stride_bytes": 128,
+        "transfer_id": 0,
+        "useful_bytes": 128
+      },
+      {
+        "axi_id": 11,
+        "command_id": 11,
+        "completion_event": 10,
+        "descriptor_id": 6,
+        "dst": {
+          "memory_space": 3,
+          "offset_bytes": 12416,
+          "owner_core": 0,
+          "region_id": 2,
+          "reserved": 0,
+          "shard_id": 3,
+          "tensor_id": 3
+        },
+        "dst_stride_bytes": 16,
+        "kind": 5,
+        "max_burst_beats": 16,
+        "owner_core": 0,
+        "physical_storage_bytes": 16,
+        "qos": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "row_bytes": 16,
+        "rows": 1,
+        "src": {
+          "memory_space": 3,
+          "offset_bytes": 12416,
+          "owner_core": 0,
+          "region_id": 2,
+          "reserved": 0,
+          "shard_id": 3,
+          "tensor_id": 3
+        },
+        "src_stride_bytes": 16,
+        "transfer_id": 0,
+        "useful_bytes": 16
+      },
+      {
+        "axi_id": 12,
+        "command_id": 12,
+        "completion_event": 11,
+        "descriptor_id": 7,
+        "dst": {
+          "memory_space": 1,
+          "offset_bytes": 4194432,
+          "owner_core": 65535,
+          "region_id": 0,
+          "reserved": 0,
+          "shard_id": 3,
+          "tensor_id": 3
+        },
+        "dst_stride_bytes": 16,
+        "kind": 2,
+        "max_burst_beats": 16,
+        "owner_core": 0,
+        "physical_storage_bytes": 16,
+        "qos": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "row_bytes": 16,
+        "rows": 1,
+        "src": {
+          "memory_space": 3,
+          "offset_bytes": 12416,
+          "owner_core": 0,
+          "region_id": 2,
+          "reserved": 0,
+          "shard_id": 3,
+          "tensor_id": 3
+        },
+        "src_stride_bytes": 16,
+        "transfer_id": 0,
+        "useful_bytes": 16
+      },
+      {
+        "axi_id": 16,
+        "command_id": 16,
+        "completion_event": 14,
+        "descriptor_id": 8,
+        "dst": {
+          "memory_space": 3,
+          "offset_bytes": 12288,
+          "owner_core": 0,
+          "region_id": 2,
+          "reserved": 0,
+          "shard_id": 3,
+          "tensor_id": 3
+        },
+        "dst_stride_bytes": 144,
+        "kind": 1,
+        "max_burst_beats": 16,
+        "owner_core": 0,
+        "physical_storage_bytes": 144,
+        "qos": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "row_bytes": 144,
+        "rows": 1,
+        "src": {
+          "memory_space": 1,
+          "offset_bytes": 4194304,
+          "owner_core": 65535,
+          "region_id": 0,
+          "reserved": 0,
+          "shard_id": 3,
+          "tensor_id": 3
+        },
+        "src_stride_bytes": 144,
+        "transfer_id": 0,
+        "useful_bytes": 144
+      },
+      {
+        "axi_id": 17,
+        "command_id": 17,
+        "completion_event": 15,
+        "descriptor_id": 9,
+        "dst": {
+          "memory_space": 3,
+          "offset_bytes": 12432,
+          "owner_core": 0,
+          "region_id": 2,
+          "reserved": 0,
+          "shard_id": 3,
+          "tensor_id": 3
+        },
+        "dst_stride_bytes": 16,
+        "kind": 5,
+        "max_burst_beats": 16,
+        "owner_core": 0,
+        "physical_storage_bytes": 16,
+        "qos": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "row_bytes": 16,
+        "rows": 1,
+        "src": {
+          "memory_space": 3,
+          "offset_bytes": 12432,
+          "owner_core": 0,
+          "region_id": 2,
+          "reserved": 0,
+          "shard_id": 3,
+          "tensor_id": 3
+        },
+        "src_stride_bytes": 16,
+        "transfer_id": 0,
+        "useful_bytes": 16
+      },
+      {
+        "axi_id": 18,
+        "command_id": 18,
+        "completion_event": 16,
+        "descriptor_id": 10,
+        "dst": {
+          "memory_space": 1,
+          "offset_bytes": 4194448,
+          "owner_core": 65535,
+          "region_id": 0,
+          "reserved": 0,
+          "shard_id": 3,
+          "tensor_id": 3
+        },
+        "dst_stride_bytes": 16,
+        "kind": 2,
+        "max_burst_beats": 16,
+        "owner_core": 0,
+        "physical_storage_bytes": 16,
+        "qos": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "row_bytes": 16,
+        "rows": 1,
+        "src": {
+          "memory_space": 3,
+          "offset_bytes": 12432,
+          "owner_core": 0,
+          "region_id": 2,
+          "reserved": 0,
+          "shard_id": 3,
+          "tensor_id": 3
+        },
+        "src_stride_bytes": 16,
+        "transfer_id": 0,
+        "useful_bytes": 16
+      },
+      {
+        "axi_id": 22,
+        "command_id": 22,
+        "completion_event": 19,
+        "descriptor_id": 11,
+        "dst": {
+          "memory_space": 3,
+          "offset_bytes": 16384,
+          "owner_core": 0,
+          "region_id": 2,
+          "reserved": 0,
+          "shard_id": 5,
+          "tensor_id": 5
+        },
+        "dst_stride_bytes": 256,
+        "kind": 5,
+        "max_burst_beats": 16,
+        "owner_core": 0,
+        "physical_storage_bytes": 256,
+        "qos": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "row_bytes": 256,
+        "rows": 1,
+        "src": {
+          "memory_space": 3,
+          "offset_bytes": 16384,
+          "owner_core": 0,
+          "region_id": 2,
+          "reserved": 0,
+          "shard_id": 5,
+          "tensor_id": 5
+        },
+        "src_stride_bytes": 256,
+        "transfer_id": 0,
+        "useful_bytes": 256
+      },
+      {
+        "axi_id": 23,
+        "command_id": 23,
+        "completion_event": 20,
+        "descriptor_id": 12,
+        "dst": {
+          "memory_space": 1,
+          "offset_bytes": 3145728,
+          "owner_core": 65535,
+          "region_id": 0,
+          "reserved": 0,
+          "shard_id": 6,
+          "tensor_id": 6
+        },
+        "dst_stride_bytes": 64,
+        "kind": 2,
+        "max_burst_beats": 16,
+        "owner_core": 0,
+        "physical_storage_bytes": 64,
+        "qos": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "row_bytes": 64,
+        "rows": 1,
+        "src": {
+          "memory_space": 3,
+          "offset_bytes": 16384,
+          "owner_core": 0,
+          "region_id": 2,
+          "reserved": 0,
+          "shard_id": 6,
+          "tensor_id": 6
+        },
+        "src_stride_bytes": 64,
+        "transfer_id": 0,
+        "useful_bytes": 64
+      },
+      {
+        "axi_id": 24,
+        "command_id": 24,
+        "completion_event": 21,
+        "descriptor_id": 13,
+        "dst": {
+          "memory_space": 1,
+          "offset_bytes": 3145792,
+          "owner_core": 65535,
+          "region_id": 0,
+          "reserved": 0,
+          "shard_id": 6,
+          "tensor_id": 6
+        },
+        "dst_stride_bytes": 64,
+        "kind": 2,
+        "max_burst_beats": 16,
+        "owner_core": 0,
+        "physical_storage_bytes": 64,
+        "qos": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "row_bytes": 64,
+        "rows": 1,
+        "src": {
+          "memory_space": 3,
+          "offset_bytes": 16448,
+          "owner_core": 0,
+          "region_id": 2,
+          "reserved": 0,
+          "shard_id": 6,
+          "tensor_id": 6
+        },
+        "src_stride_bytes": 64,
+        "transfer_id": 0,
+        "useful_bytes": 64
+      },
+      {
+        "axi_id": 25,
+        "command_id": 25,
+        "completion_event": 22,
+        "descriptor_id": 14,
+        "dst": {
+          "memory_space": 1,
+          "offset_bytes": 3145856,
+          "owner_core": 65535,
+          "region_id": 0,
+          "reserved": 0,
+          "shard_id": 6,
+          "tensor_id": 6
+        },
+        "dst_stride_bytes": 64,
+        "kind": 2,
+        "max_burst_beats": 16,
+        "owner_core": 0,
+        "physical_storage_bytes": 64,
+        "qos": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "row_bytes": 64,
+        "rows": 1,
+        "src": {
+          "memory_space": 3,
+          "offset_bytes": 16512,
+          "owner_core": 0,
+          "region_id": 2,
+          "reserved": 0,
+          "shard_id": 6,
+          "tensor_id": 6
+        },
+        "src_stride_bytes": 64,
+        "transfer_id": 0,
+        "useful_bytes": 64
+      },
+      {
+        "axi_id": 26,
+        "command_id": 26,
+        "completion_event": 23,
+        "descriptor_id": 15,
+        "dst": {
+          "memory_space": 1,
+          "offset_bytes": 3145920,
+          "owner_core": 65535,
+          "region_id": 0,
+          "reserved": 0,
+          "shard_id": 6,
+          "tensor_id": 6
+        },
+        "dst_stride_bytes": 64,
+        "kind": 2,
+        "max_burst_beats": 16,
+        "owner_core": 0,
+        "physical_storage_bytes": 64,
+        "qos": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "row_bytes": 64,
+        "rows": 1,
+        "src": {
+          "memory_space": 3,
+          "offset_bytes": 16576,
+          "owner_core": 0,
+          "region_id": 2,
+          "reserved": 0,
+          "shard_id": 6,
+          "tensor_id": 6
+        },
+        "src_stride_bytes": 64,
+        "transfer_id": 0,
+        "useful_bytes": 64
+      }
+    ],
+    "ENTRYPOINTS": [
+      {
+        "entrypoint_id": 1,
+        "flags": 0,
+        "lifecycle_core_id": 0,
+        "lifecycle_stream_id": 0,
+        "name_sid": 10,
+        "profile_begin": 0,
+        "profile_count": 1,
+        "reserved": 0
+      },
+      {
+        "entrypoint_id": 2,
+        "flags": 0,
+        "lifecycle_core_id": 0,
+        "lifecycle_stream_id": 0,
+        "name_sid": 11,
+        "profile_begin": 1,
+        "profile_count": 1,
+        "reserved": 0
+      },
+      {
+        "entrypoint_id": 3,
+        "flags": 0,
+        "lifecycle_core_id": 0,
+        "lifecycle_stream_id": 0,
+        "name_sid": 12,
+        "profile_begin": 2,
+        "profile_count": 1,
+        "reserved": 0
+      },
+      {
+        "entrypoint_id": 4,
+        "flags": 0,
+        "lifecycle_core_id": 0,
+        "lifecycle_stream_id": 0,
+        "name_sid": 13,
+        "profile_begin": 3,
+        "profile_count": 1,
+        "reserved": 0
+      }
+    ],
+    "EVENTS": [
+      {
+        "event_id": 1,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 1,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 2,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 2,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 3,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 3,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 4,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 4,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 5,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 5,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 6,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 6,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 7,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 7,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 8,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 9,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 9,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 10,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 10,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 11,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 11,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 12,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 12,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 13,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 13,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 15,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 14,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 16,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 15,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 17,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 16,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 18,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 17,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 19,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 18,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 21,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 19,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 22,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 20,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 23,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 21,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 24,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 22,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 25,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 23,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 26,
+        "reserved": 0,
+        "reserved2": 0
+      },
+      {
+        "event_id": 24,
+        "expected_arrivals": 1,
+        "kind": 1,
+        "producer_command_id": 27,
+        "reserved": 0,
+        "reserved2": 0
+      }
+    ],
+    "EXPECTED_TRAFFIC": [
+      {
+        "ar_count": 1,
+        "aw_count": 0,
+        "b_count": 0,
+        "bursts": 1,
+        "command_id": 2,
+        "descriptor_id": 1,
+        "entrypoint_id": 1,
+        "kind": 1,
+        "min_flits": 0,
+        "physical_beat_bytes": 128,
+        "profile_id": 1,
+        "r_beats": 4,
+        "reserved": 0,
+        "reserved2": 0,
+        "segments": 1,
+        "useful_bytes": 128,
+        "w_beats": 0
+      },
+      {
+        "ar_count": 1,
+        "aw_count": 0,
+        "b_count": 0,
+        "bursts": 1,
+        "command_id": 3,
+        "descriptor_id": 2,
+        "entrypoint_id": 1,
+        "kind": 1,
+        "min_flits": 0,
+        "physical_beat_bytes": 128,
+        "profile_id": 1,
+        "r_beats": 4,
+        "reserved": 0,
+        "reserved2": 0,
+        "segments": 1,
+        "useful_bytes": 128,
+        "w_beats": 0
+      },
+      {
+        "ar_count": 0,
+        "aw_count": 0,
+        "b_count": 0,
+        "bursts": 0,
+        "command_id": 5,
+        "descriptor_id": 3,
+        "entrypoint_id": 1,
+        "kind": 5,
+        "min_flits": 0,
+        "physical_beat_bytes": 0,
+        "profile_id": 1,
+        "r_beats": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "segments": 0,
+        "useful_bytes": 128,
+        "w_beats": 0
+      },
+      {
+        "ar_count": 0,
+        "aw_count": 1,
+        "b_count": 1,
+        "bursts": 1,
+        "command_id": 6,
+        "descriptor_id": 4,
+        "entrypoint_id": 1,
+        "kind": 2,
+        "min_flits": 0,
+        "physical_beat_bytes": 128,
+        "profile_id": 1,
+        "r_beats": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "segments": 1,
+        "useful_bytes": 128,
+        "w_beats": 4
+      },
+      {
+        "ar_count": 1,
+        "aw_count": 0,
+        "b_count": 0,
+        "bursts": 1,
+        "command_id": 10,
+        "descriptor_id": 5,
+        "entrypoint_id": 2,
+        "kind": 1,
+        "min_flits": 0,
+        "physical_beat_bytes": 128,
+        "profile_id": 2,
+        "r_beats": 4,
+        "reserved": 0,
+        "reserved2": 0,
+        "segments": 1,
+        "useful_bytes": 128,
+        "w_beats": 0
+      },
+      {
+        "ar_count": 0,
+        "aw_count": 0,
+        "b_count": 0,
+        "bursts": 0,
+        "command_id": 11,
+        "descriptor_id": 6,
+        "entrypoint_id": 2,
+        "kind": 5,
+        "min_flits": 0,
+        "physical_beat_bytes": 0,
+        "profile_id": 2,
+        "r_beats": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "segments": 0,
+        "useful_bytes": 16,
+        "w_beats": 0
+      },
+      {
+        "ar_count": 0,
+        "aw_count": 1,
+        "b_count": 1,
+        "bursts": 1,
+        "command_id": 12,
+        "descriptor_id": 7,
+        "entrypoint_id": 2,
+        "kind": 2,
+        "min_flits": 0,
+        "physical_beat_bytes": 32,
+        "profile_id": 2,
+        "r_beats": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "segments": 1,
+        "useful_bytes": 16,
+        "w_beats": 1
+      },
+      {
+        "ar_count": 1,
+        "aw_count": 0,
+        "b_count": 0,
+        "bursts": 1,
+        "command_id": 16,
+        "descriptor_id": 8,
+        "entrypoint_id": 3,
+        "kind": 1,
+        "min_flits": 0,
+        "physical_beat_bytes": 160,
+        "profile_id": 3,
+        "r_beats": 5,
+        "reserved": 0,
+        "reserved2": 0,
+        "segments": 1,
+        "useful_bytes": 144,
+        "w_beats": 0
+      },
+      {
+        "ar_count": 0,
+        "aw_count": 0,
+        "b_count": 0,
+        "bursts": 0,
+        "command_id": 17,
+        "descriptor_id": 9,
+        "entrypoint_id": 3,
+        "kind": 5,
+        "min_flits": 0,
+        "physical_beat_bytes": 0,
+        "profile_id": 3,
+        "r_beats": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "segments": 0,
+        "useful_bytes": 16,
+        "w_beats": 0
+      },
+      {
+        "ar_count": 0,
+        "aw_count": 1,
+        "b_count": 1,
+        "bursts": 1,
+        "command_id": 18,
+        "descriptor_id": 10,
+        "entrypoint_id": 3,
+        "kind": 2,
+        "min_flits": 0,
+        "physical_beat_bytes": 32,
+        "profile_id": 3,
+        "r_beats": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "segments": 1,
+        "useful_bytes": 16,
+        "w_beats": 1
+      },
+      {
+        "ar_count": 0,
+        "aw_count": 0,
+        "b_count": 0,
+        "bursts": 0,
+        "command_id": 22,
+        "descriptor_id": 11,
+        "entrypoint_id": 4,
+        "kind": 5,
+        "min_flits": 0,
+        "physical_beat_bytes": 0,
+        "profile_id": 4,
+        "r_beats": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "segments": 0,
+        "useful_bytes": 256,
+        "w_beats": 0
+      },
+      {
+        "ar_count": 0,
+        "aw_count": 1,
+        "b_count": 1,
+        "bursts": 1,
+        "command_id": 23,
+        "descriptor_id": 12,
+        "entrypoint_id": 4,
+        "kind": 2,
+        "min_flits": 0,
+        "physical_beat_bytes": 64,
+        "profile_id": 4,
+        "r_beats": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "segments": 1,
+        "useful_bytes": 64,
+        "w_beats": 2
+      },
+      {
+        "ar_count": 0,
+        "aw_count": 1,
+        "b_count": 1,
+        "bursts": 1,
+        "command_id": 24,
+        "descriptor_id": 13,
+        "entrypoint_id": 4,
+        "kind": 2,
+        "min_flits": 0,
+        "physical_beat_bytes": 64,
+        "profile_id": 4,
+        "r_beats": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "segments": 1,
+        "useful_bytes": 64,
+        "w_beats": 2
+      },
+      {
+        "ar_count": 0,
+        "aw_count": 1,
+        "b_count": 1,
+        "bursts": 1,
+        "command_id": 25,
+        "descriptor_id": 14,
+        "entrypoint_id": 4,
+        "kind": 2,
+        "min_flits": 0,
+        "physical_beat_bytes": 64,
+        "profile_id": 4,
+        "r_beats": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "segments": 1,
+        "useful_bytes": 64,
+        "w_beats": 2
+      },
+      {
+        "ar_count": 0,
+        "aw_count": 1,
+        "b_count": 1,
+        "bursts": 1,
+        "command_id": 26,
+        "descriptor_id": 15,
+        "entrypoint_id": 4,
+        "kind": 2,
+        "min_flits": 0,
+        "physical_beat_bytes": 64,
+        "profile_id": 4,
+        "r_beats": 0,
+        "reserved": 0,
+        "reserved2": 0,
+        "segments": 1,
+        "useful_bytes": 64,
+        "w_beats": 2
+      }
+    ],
+    "OP_ATTRS": [
+      {
+        "kind": 8,
+        "pattern": 5932734208044516657,
+        "reserved": 0
+      },
+      {
+        "a_transpose": 0,
+        "accum_dtype": 1,
+        "b_transpose": 0,
+        "batch": 1,
+        "dtype": 2,
+        "efficiency_q16": 65536,
+        "epilogue": 0,
+        "k": 8,
+        "kind": 2,
+        "m": 8,
+        "n": 8
+      }
+    ],
+    "PROFILES": [
+      {
+        "dims": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "entrypoint_id": 1,
+        "name_sid": 10,
+        "profile_id": 1,
+        "rank": 0,
+        "reserved": 0
+      },
+      {
+        "dims": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "entrypoint_id": 2,
+        "name_sid": 11,
+        "profile_id": 2,
+        "rank": 0,
+        "reserved": 0
+      },
+      {
+        "dims": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "entrypoint_id": 3,
+        "name_sid": 12,
+        "profile_id": 3,
+        "rank": 0,
+        "reserved": 0
+      },
+      {
+        "dims": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "entrypoint_id": 4,
+        "name_sid": 13,
+        "profile_id": 4,
+        "rank": 0,
+        "reserved": 0
+      }
+    ],
+    "PROFILE_STREAM_RANGES": [
+      {
+        "command_begin": 0,
+        "command_count": 8,
+        "core_id": 0,
+        "profile_id": 1,
+        "stream_id": 0
+      },
+      {
+        "command_begin": 8,
+        "command_count": 6,
+        "core_id": 0,
+        "profile_id": 2,
+        "stream_id": 0
+      },
+      {
+        "command_begin": 14,
+        "command_count": 6,
+        "core_id": 0,
+        "profile_id": 3,
+        "stream_id": 0
+      },
+      {
+        "command_begin": 20,
+        "command_count": 8,
+        "core_id": 0,
+        "profile_id": 4,
+        "stream_id": 0
+      }
+    ],
+    "RELOCATIONS": [
+      {
+        "kind": 2,
+        "offset_bytes": 1048576,
+        "region_id": 0,
+        "relocation_id": 1,
+        "reserved": 0,
+        "reserved2": 0,
+        "symbol_sid": 1,
+        "tensor_id": 1
+      },
+      {
+        "kind": 2,
+        "offset_bytes": 2097152,
+        "region_id": 0,
+        "relocation_id": 2,
+        "reserved": 0,
+        "reserved2": 0,
+        "symbol_sid": 2,
+        "tensor_id": 2
+      },
+      {
+        "kind": 2,
+        "offset_bytes": 4194304,
+        "region_id": 0,
+        "relocation_id": 3,
+        "reserved": 0,
+        "reserved2": 0,
+        "symbol_sid": 3,
+        "tensor_id": 3
+      },
+      {
+        "kind": 2,
+        "offset_bytes": 3145728,
+        "region_id": 0,
+        "relocation_id": 4,
+        "reserved": 0,
+        "reserved2": 0,
+        "symbol_sid": 6,
+        "tensor_id": 6
+      },
+      {
+        "kind": 2,
+        "offset_bytes": 1048576,
+        "region_id": 0,
+        "relocation_id": 5,
+        "reserved": 0,
+        "reserved2": 0,
+        "symbol_sid": 7,
+        "tensor_id": 1
+      },
+      {
+        "kind": 2,
+        "offset_bytes": 4194304,
+        "region_id": 0,
+        "relocation_id": 6,
+        "reserved": 0,
+        "reserved2": 0,
+        "symbol_sid": 8,
+        "tensor_id": 3
+      },
+      {
+        "kind": 2,
+        "offset_bytes": 3145728,
+        "region_id": 0,
+        "relocation_id": 7,
+        "reserved": 0,
+        "reserved2": 0,
+        "symbol_sid": 9,
+        "tensor_id": 6
+      }
+    ],
+    "SHARDS": [
+      {
+        "allocation_id": 1,
+        "allocation_offset": 0,
+        "flags": 0,
+        "global_origin": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "local_shape": [
+          8,
+          8,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "owner_core": 0,
+        "rank": 2,
+        "reserved": 0,
+        "reserved0": 0,
+        "reserved2": 0,
+        "shard_id": 1,
+        "sharding_id": 0,
+        "span_bytes": 128,
+        "tensor_id": 1,
+        "valid_shape": [
+          8,
+          8,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "allocation_id": 2,
+        "allocation_offset": 0,
+        "flags": 0,
+        "global_origin": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "local_shape": [
+          8,
+          8,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "owner_core": 0,
+        "rank": 2,
+        "reserved": 0,
+        "reserved0": 0,
+        "reserved2": 0,
+        "shard_id": 2,
+        "sharding_id": 0,
+        "span_bytes": 128,
+        "tensor_id": 2,
+        "valid_shape": [
+          8,
+          8,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "allocation_id": 3,
+        "allocation_offset": 0,
+        "flags": 0,
+        "global_origin": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "local_shape": [
+          160,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "owner_core": 0,
+        "rank": 1,
+        "reserved": 0,
+        "reserved0": 0,
+        "reserved2": 0,
+        "shard_id": 3,
+        "sharding_id": 0,
+        "span_bytes": 160,
+        "tensor_id": 3,
+        "valid_shape": [
+          160,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "allocation_id": 4,
+        "allocation_offset": 0,
+        "flags": 0,
+        "global_origin": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "local_shape": [
+          8,
+          8,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "owner_core": 0,
+        "rank": 2,
+        "reserved": 0,
+        "reserved0": 0,
+        "reserved2": 0,
+        "shard_id": 4,
+        "sharding_id": 0,
+        "span_bytes": 128,
+        "tensor_id": 4,
+        "valid_shape": [
+          8,
+          8,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "allocation_id": 5,
+        "allocation_offset": 0,
+        "flags": 0,
+        "global_origin": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "local_shape": [
+          8,
+          16,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "owner_core": 0,
+        "rank": 2,
+        "reserved": 0,
+        "reserved0": 0,
+        "reserved2": 0,
+        "shard_id": 5,
+        "sharding_id": 0,
+        "span_bytes": 256,
+        "tensor_id": 5,
+        "valid_shape": [
+          8,
+          16,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "allocation_id": 5,
+        "allocation_offset": 0,
+        "flags": 0,
+        "global_origin": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "local_shape": [
+          8,
+          16,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "owner_core": 0,
+        "rank": 2,
+        "reserved": 0,
+        "reserved0": 0,
+        "reserved2": 0,
+        "shard_id": 6,
+        "sharding_id": 0,
+        "span_bytes": 256,
+        "tensor_id": 6,
+        "valid_shape": [
+          8,
+          16,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "STREAMS": [
+      {
+        "command_begin": 0,
+        "command_count": 28,
+        "core_id": 0,
+        "flags": 3,
+        "reserved": 0,
+        "stream_id": 0
+      }
+    ],
+    "STRINGS": [
+      "input",
+      "weight",
+      "kv",
+      "activation",
+      "surrogate",
+      "output",
+      "in_slot_0",
+      "kv_slot_0",
+      "out_slot_0",
+      "serving_prefill",
+      "serving_decode_0",
+      "serving_decode_1",
+      "serving_publish"
+    ],
+    "TENSORS": [
+      {
+        "access": 1,
+        "content_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "dims": [
+          8,
+          8,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "dtype": 2,
+        "flags": 0,
+        "layout": 1,
+        "layout_attr": 0,
+        "name_sid": 1,
+        "placement_id": 0,
+        "rank": 2,
+        "reserved": 0,
+        "role": 1,
+        "sharding_id": 0,
+        "storage_class": 1,
+        "tensor_id": 1
+      },
+      {
+        "access": 1,
+        "content_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "dims": [
+          8,
+          8,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "dtype": 2,
+        "flags": 0,
+        "layout": 1,
+        "layout_attr": 0,
+        "name_sid": 2,
+        "placement_id": 0,
+        "rank": 2,
+        "reserved": 0,
+        "role": 3,
+        "sharding_id": 0,
+        "storage_class": 1,
+        "tensor_id": 2
+      },
+      {
+        "access": 2,
+        "content_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "dims": [
+          160,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "dtype": 4,
+        "flags": 0,
+        "layout": 1,
+        "layout_attr": 0,
+        "name_sid": 3,
+        "placement_id": 0,
+        "rank": 1,
+        "reserved": 0,
+        "role": 6,
+        "sharding_id": 0,
+        "storage_class": 1,
+        "tensor_id": 3
+      },
+      {
+        "access": 2,
+        "content_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "dims": [
+          8,
+          8,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "dtype": 2,
+        "flags": 0,
+        "layout": 1,
+        "layout_attr": 0,
+        "name_sid": 4,
+        "placement_id": 0,
+        "rank": 2,
+        "reserved": 0,
+        "role": 5,
+        "sharding_id": 0,
+        "storage_class": 4,
+        "tensor_id": 4
+      },
+      {
+        "access": 2,
+        "content_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "dims": [
+          8,
+          16,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "dtype": 2,
+        "flags": 0,
+        "layout": 1,
+        "layout_attr": 0,
+        "name_sid": 5,
+        "placement_id": 0,
+        "rank": 2,
+        "reserved": 0,
+        "role": 5,
+        "sharding_id": 0,
+        "storage_class": 4,
+        "tensor_id": 5
+      },
+      {
+        "access": 2,
+        "content_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "dims": [
+          8,
+          16,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "dtype": 2,
+        "flags": 0,
+        "layout": 1,
+        "layout_attr": 0,
+        "name_sid": 6,
+        "placement_id": 0,
+        "rank": 2,
+        "reserved": 0,
+        "role": 2,
+        "sharding_id": 0,
+        "storage_class": 1,
+        "tensor_id": 6
+      }
+    ]
+  }
+}

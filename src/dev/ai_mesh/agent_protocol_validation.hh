@@ -40,6 +40,20 @@ bool gate3MetadataRecordValid(
     const std::vector<uint8_t> &data,
     const Gate3MetadataExpectation &expected);
 
+struct ParameterTlvValues
+{
+    std::vector<uint8_t> inputDigest;
+    std::vector<uint8_t> workloadDigest;
+    uint32_t outputChunkBytes = 0;
+    bool hasDeadline = false;
+    uint64_t deadlineTick = 0;
+    uint32_t skippedOptional = 0;
+};
+
+std::optional<agent_abi::DetailCode> parameterTlvStructureError(
+    const uint8_t *data, uint64_t actualBytes,
+    const agent_abi::ParameterHeader &header, ParameterTlvValues &values);
+
 }
 }
 

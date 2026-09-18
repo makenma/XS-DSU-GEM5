@@ -37,6 +37,7 @@ class NpuMemoryEndpoint : public ClockedObject,
     void seed(uint64_t address, uint64_t size, uint8_t pattern);
     // Digest of the current committed bytes of [address, address+size).
     std::string rangeDigest(uint64_t address, uint64_t size) const;
+    bool containsMemoryRange(uint64_t address, uint64_t size) const;
     uint64_t committedBytes() const { return committed_valid_bytes; }
     uint64_t errorDrainBytes() const { return error_drained_bytes; }
 

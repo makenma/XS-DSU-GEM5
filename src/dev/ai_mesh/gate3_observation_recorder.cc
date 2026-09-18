@@ -134,6 +134,12 @@ Gate3ObservationRecorder::fatalValue() const
 }
 
 void
+Gate3ObservationRecorder::recordServingPhase(ServingPhaseRow row)
+{
+    _servingPhases.push_back(row);
+}
+
+void
 Gate3ObservationRecorder::recordFatalSqIntake(FatalSqIntake intake)
 {
     fatal_if(intake.intakeId == 0,
@@ -340,6 +346,13 @@ Gate3ObservationRecorder::write(const Gate3FinalState &final) const
            << final.ackWaitB << '|' << (final.fatal ? 1 : 0) << '|'
            << final.coreStarts << '|' << final.cqAssignments << '|'
            << final.irqDeliveries << '\n';
+    for (const ServingPhaseRow &phase : _servingPhases)
+        output << "SERVING_PHASE|" << phase.phase << '|'
+               << phase.instanceProfileId << '|' << phase.meshProfileId << '|'
+               << phase.kvTokensBefore << '|' << phase.appendTokens << '|'
+               << phase.acceptedDescriptors << '|'
+               << phase.terminalDescriptors << '|' << phase.coreDrainTick << '|'
+               << phase.appendTerminalTick << '|' << phase.commitTick << '\n';
     for (const auto &[name, value] : metrics)
         output << "METRIC|" << name << '|' << value << '\n';
     for (const auto &[id, intake] : _fatalSqIntakes)

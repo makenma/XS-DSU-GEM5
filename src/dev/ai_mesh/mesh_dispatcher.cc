@@ -1,5 +1,7 @@
 #include "dev/ai_mesh/mesh_dispatcher.hh"
 
+#include "dev/ai_mesh/npu_memory_endpoint.hh"
+
 #include <algorithm>
 #include <fstream>
 #include <iomanip>
@@ -37,13 +39,17 @@ MeshDispatcher::MeshDispatcher(const Params &p)
       transport(p.transport),
       apertures(p.apertures.begin(), p.apertures.end()),
       endpoint(p.endpoint),
+      output_span_base(p.output_span_base),
+      output_span_bytes(p.output_span_bytes),
       network(p.network),
       result_json_path(p.result_json),
       total_instances(p.instances),
+      autostart(p.autostart),
       watchdog_ticks_value(p.watchdog_ticks),
       start_event(this),
       watchdog_event(this),
-      cache_retry_event(this)
+      cache_retry_event(this),
+      settle_retry_event(this)
 {}
 
 void MeshDispatcher::regStats()
@@ -57,7 +63,106 @@ void MeshDispatcher::startup()
 {
     // The atomic start goes out at the first legal core clock edge; all
     // loader startup work is guaranteed complete before this tick.
+    if (endpoint != nullptr && output_span_bytes != 0)
+        output_digest_before = outputSpanDigest();
+    if (autostart)
+        begin();
+}
+
+void MeshDispatcher::begin()
+{
+    fatal_if(started, "dispatcher already started an instance");
+    fatal_if(start_event.scheduled(), "dispatcher start is already scheduled");
     schedule(&start_event, clockEdge() + 1);
+}
+
+bool MeshDispatcher::installSelectors(
+    const std::vector<std::pair<uint32_t, uint32_t>> &selectors,
+    std::string &reason)
+{
+    if (selectors.empty()) {
+        reason = "dispatcher execution selectors must not be empty";
+        return false;
+    }
+    if (selectors.size() != total_instances) {
+        reason = "dispatcher execution selectors do not cover every instance";
+        return false;
+    }
+    if (!execution_selectors.empty()) {
+        reason = "dispatcher execution selectors are already installed";
+        return false;
+    }
+    for (const auto &selector : selectors) {
+        if (selector.first == 0 || selector.second == 0) {
+            reason = "dispatcher execution selector must be nonzero";
+            return false;
+        }
+    }
+    execution_selectors = selectors;
+    return true;
+}
+
+void MeshDispatcher::setDmaObserver(MeshDmaObserver *observer)
+{
+    for (MeshDummyCore *core : cores)
+        core->setDmaObserver(observer);
+}
+
+void
+MeshDispatcher::bindInstance(const ServingInstanceBinding &value)
+{
+    instance_binding = value;
+}
+
+bool
+MeshDispatcher::canAccessKv(uint64_t address, uint64_t bytes) const
+{
+    return endpoint != nullptr && endpoint->containsMemoryRange(address, bytes);
+}
+
+void
+MeshDispatcher::bindSemanticDigest(const std::array<uint8_t, 32> &digest)
+{
+    semantic_digest = digest;
+    semantic_digest_set = true;
+}
+
+void
+MeshDispatcher::bindFillContent(const ServingFillBinding &binding)
+{
+    fatal_if(batch_setup_done, "runtime fill binding changed after arm");
+    pending_fill_bindings.push_back(binding);
+}
+
+void MeshDispatcher::beginFirstInstance()
+{
+    begin();
+}
+
+void MeshDispatcher::setInstanceObserver(MeshInstanceObserver *observer)
+{
+    instance_observer = observer;
+}
+
+void MeshDispatcher::resumeInstance()
+{
+    fatal_if(instance_observer == nullptr,
+             "dispatcher has no instance observer to resume");
+    advanceAfterInstance();
+}
+
+const ProfileExecutionView *MeshDispatcher::executionView() const
+{
+    if (loader->executionViews().wholeProgram())
+        return &loader->executionViews().wholeProgramView();
+    fatal_if(execution_selectors.size() != total_instances,
+             "dispatcher execution selectors do not cover every instance");
+    const auto &selector = execution_selectors[instance_counter.value() - 1];
+    const ProfileExecutionView *view = loader->executionViews().forInstance(
+        selector.first, selector.second);
+    fatal_if(view == nullptr,
+             "dispatcher selector has no execution view");
+    return view;
 }
 
 bool MeshDispatcher::armInstance()
@@ -69,6 +174,7 @@ bool MeshDispatcher::armInstance()
         fatal_if(instance_error_latched && !pending_fences.empty(),
                  "previous instance left live cross-core fences");
         instance_error_latched = false;
+        error_latched_during_run = false;
         const auto next_instance = checkedSequenceAdd(instance_counter, 1);
         fatal_if(!next_instance, "dispatcher instance generation overflow");
         instance_counter = *next_instance;
@@ -79,13 +185,26 @@ bool MeshDispatcher::armInstance()
             aperture->beginInstance();
         scoreboard.reset();
         participant_cores.clear();
+        for (MeshDummyCore *core : cores)
+            core->setInstanceBinding(instance_binding);
         overlay_bus.clear();
         overlay_exits_seen.clear();
+        const ProfileExecutionView *view = executionView();
+        std::string fill_reason;
+        auto prepared_fills = ServingFillInputs::freeze(
+            loader->program(), *view, instance_counter, instance_binding, pending_fill_bindings,
+            fill_reason);
+        fatal_if(!prepared_fills, "%s", fill_reason);
+        auto fill_inputs = std::make_shared<const ServingFillInputs>(
+            std::move(*prepared_fills));
+        pending_fill_bindings.clear();
         for (MeshDummyCore *core : cores) {
             core->setDispatcher(this);
             core->clearRegionGates();
             core->setOverlayBus(&overlay_bus);
-            core->armRequest(instance_counter);
+            if (view->rangesForCore(core->archCoreId()).empty())
+                continue;
+            core->armRequest(instance_counter, *view, fill_inputs);
             participant_cores.push_back(core);
         }
         loader->installOverlayImage();
@@ -111,6 +230,11 @@ bool MeshDispatcher::startInstance()
     batch_starts++;
     for (MeshDummyCore *core : participant_cores)
         core->startRequest();
+    if (instance_observer != nullptr)
+        instance_observer->onInstanceStarted(instance_counter.value(),
+                                             instance_binding.requestId(),
+                                             instance_binding.requestGeneration(),
+                                             curTick());
     DPRINTF(AiMesh, "dispatcher: instance %u/%u started on %zu cores\n",
             instance_counter.value(), total_instances,
             participant_cores.size());
@@ -370,10 +494,55 @@ std::string MeshDispatcher::overlayGateState() const
     return state;
 }
 
+void
+MeshDispatcher::releaseWaitWindow()
+{
+    if (cache_retry_event.scheduled())
+        deschedule(&cache_retry_event);
+    if (watchdog_event.scheduled())
+        deschedule(&watchdog_event);
+    cache_reservation_queue.clear();
+    cache_reservation_waiting = false;
+}
+
+void
+MeshDispatcher::cancelPendingInstance()
+{
+    // Only a pending, not-yet-started instance is cancellable.  Validating the
+    // state before touching the window keeps a stray cancel on a running or
+    // draining instance from silently closing its progress watchdog.
+    if (batch_state == mesh_abi::MeshBatchState::REQUEST_ARMED) {
+        releaseWaitWindow();
+        abortBeforeStart();
+        return;
+    }
+    if (batch_state != mesh_abi::MeshBatchState::PROGRAM_READY ||
+        !batch_setup_done || !cache_reservation_waiting)
+        return;
+    releaseWaitWindow();
+    for (MeshDummyCore *core : participant_cores)
+        core->disarmRequest();
+    participant_cores.clear();
+    halted_cores.clear();
+    batch_setup_done = false;
+    started = false;
+    DPRINTF(AiMesh, "dispatcher: pending instance %u cancelled before start\n",
+            instance_counter.value());
+}
+
+void
+MeshDispatcher::failCurrentInstance()
+{
+    if (participant_cores.empty())
+        return;
+    latchInstanceError(participant_cores.front(), curTick());
+}
+
 void MeshDispatcher::abortBeforeStart()
 {
     fatal_if(batch_state != mesh_abi::MeshBatchState::REQUEST_ARMED,
              "prestart abort requires an armed batch");
+    releaseWaitWindow();
     batch_state = mesh_abi::MeshBatchState::BATCH_PRESTART_ABORTING;
     for (MeshDummyCore *core : participant_cores)
         core->disarmRequest();
@@ -384,7 +553,6 @@ void MeshDispatcher::abortBeforeStart()
             instance_counter.value());
     batch_state = mesh_abi::MeshBatchState::PROGRAM_READY;
     batch_setup_done = false;
-    cache_reservation_waiting = false;
 }
 
 const char *
@@ -425,6 +593,7 @@ void MeshDispatcher::commitPrestartFailure()
              "prestart failure committed after the batch started");
     DPRINTF(AiMesh, "dispatcher: instance %u prestart failure\n",
             instance_counter.value());
+    releaseWaitWindow();
     for (MeshDummyCore *core : participant_cores)
         core->disarmRequest();
     for (MeshDummyCore *core : cores)
@@ -468,6 +637,22 @@ void MeshDispatcher::notifyCoreHalted(uint16_t core_id)
 {
     halted_cores.insert(core_id);
     checkAllHalted();
+    if (batch_state != mesh_abi::MeshBatchState::REQUEST_RUNNING ||
+            participant_cores.empty())
+        return;
+    // The settle edge is deferred until every participant is quiescent; keep
+    // retrying on the next edge instead of waiting for a later callback that
+    // may never come.
+    if (!settle_retry_event.scheduled())
+        schedule(&settle_retry_event, clockEdge() + 1);
+}
+
+std::string
+MeshDispatcher::outputSpanDigest() const
+{
+    if (endpoint == nullptr || output_span_bytes == 0)
+        return std::string();
+    return endpoint->rangeDigest(output_span_base, output_span_bytes);
 }
 
 void MeshDispatcher::writeResultJson()
@@ -619,17 +804,24 @@ void MeshDispatcher::writeResultJson()
         }
     }
     out << "\n  ],\n";
+    out << "  \"output_span\": {\"semantic_digest\": \"";
+    for (uint8_t byte : semantic_digest)
+        out << std::hex << std::setfill('0') << std::setw(2) << unsigned(byte);
+    out << std::dec << std::setfill(' ') << "\", \"base\": " << output_span_base
+        << ", \"bytes\": " << output_span_bytes
+        << ", \"digest_before\": \"" << output_digest_before
+        << "\", \"digest_after\": \"" << outputSpanDigest() << "\"},\n";
     writeConservationJson(out);
     out << "\n}\n";
 }
 
-bool
-MeshDispatcher::anyCoreErrored() const
+int
+MeshDispatcher::erroredCoreId() const
 {
     for (const MeshDummyCore *core : cores)
         if (core->instanceErrored())
-            return true;
-    return false;
+            return int(core->archCoreId());
+    return -1;
 }
 
 void
@@ -688,6 +880,9 @@ MeshDispatcher::writeConservationJson(std::ofstream &out)
     out << "},\n";
 
     out << "  \"terminal\": \"" << terminalName() << "\",\n";
+    out << "  \"terminal_tick\": " << curTick() << ",\n";
+    out << "  \"terminal_instance\": " << instance_counter.value() << ",\n";
+    out << "  \"terminal_error_core\": " << erroredCoreId() << ",\n";
     out << "  \"error_drained\": "
         << (program_terminal == ProgramTerminal::ERROR_DRAINED ||
                     program_terminal == ProgramTerminal::PRESTART_FAILED
@@ -1276,6 +1471,8 @@ void MeshDispatcher::latchInstanceError(MeshDummyCore *source, Tick tick)
     if (instance_error_latched)
         return;
     instance_error_latched = true;
+    error_latched_during_run =
+        started && batch_state == mesh_abi::MeshBatchState::REQUEST_RUNNING;
     for (PeerSramAperture *aperture : apertures)
         aperture->cancelAllExpectations();
     for (MeshDummyCore *core : cores)
@@ -1291,26 +1488,76 @@ void MeshDispatcher::routePeerCommit(uint16_t peer_core, uint32_t transfer_id)
         }
 }
 
+void MeshDispatcher::retryInstanceSettle()
+{
+    checkAllHalted();
+}
+
 void MeshDispatcher::checkAllHalted()
 {
     if (!started)
         return;
-    for (MeshDummyCore *core : cores) {
+    if (batch_state != mesh_abi::MeshBatchState::REQUEST_RUNNING ||
+            participant_cores.empty())
+        return;
+    for (MeshDummyCore *core : participant_cores) {
         if (!core->halted() || !core->quiescent())
             return;
         if (!halted_cores.count(core->archCoreId()))
             return;
+        fatal_if(!core->dmaEngine()->idle(),
+                 "core %u settled with live DMA traffic",
+                 core->archCoreId());
     }
     {
         InstanceRecord record;
-        for (MeshDummyCore *core : cores)
+        for (MeshDummyCore *core : participant_cores) {
             record.cores[core->archCoreId()] = core->takeInstanceLedger();
+            core->releaseInstanceInputs();
+        }
         instance_records.push_back(std::move(record));
     }
     batch_state = mesh_abi::MeshBatchState::PROGRAM_READY;
     batch_setup_done = false;
     cache_reservation_waiting = false;
     participant_cores.clear();
+    // A latched error is only a latched error: the final error state and its
+    // artifact belong to the drained instance, so they are committed here,
+    // after every participant halted, quiesced and its DMA is idle.
+    // Observer-driven runs return to their observer before the normal
+    // advance, so they need the mesh-side terminal published here; a
+    // mesh-program run reaches it through advanceAfterInstance() instead.
+    if (instance_observer != nullptr && instance_error_latched &&
+            error_latched_during_run)
+        commitErrorTerminal();
+    if (instance_observer != nullptr) {
+        instance_observer->onInstanceSettled(instance_counter.value(),
+                                             instance_binding.requestId(),
+                                             instance_binding.requestGeneration(),
+                                             anyCoreErrored(), curTick());
+        return;
+    }
+    advanceAfterInstance();
+}
+
+void
+MeshDispatcher::commitErrorTerminal()
+{
+    if (program_terminal != ProgramTerminal::NONE)
+        return;
+    program_terminal = ProgramTerminal::ERROR_DRAINED;
+    const std::string cause = programCause();
+    DPRINTF(AiMesh, "dispatcher: %s\n", cause.c_str());
+    writeResultJson();
+    if (instance_observer != nullptr)
+        return;
+    exitSimLoop(cause.c_str());
+}
+
+void MeshDispatcher::advanceAfterInstance()
+{
+    if (program_terminal != ProgramTerminal::NONE)
+        return;
     if (instance_counter.value() < total_instances) {
         // Same immutable CommandROM, fresh per-instance state (spec 17.2.24).
         schedule(&start_event, clockEdge() + 1);
@@ -1322,6 +1569,8 @@ void MeshDispatcher::checkAllHalted()
     const std::string cause = programCause();
     DPRINTF(AiMesh, "dispatcher: %s\n", cause.c_str());
     writeResultJson();
+    if (instance_observer != nullptr)
+        return;
     exitSimLoop(cause.c_str());
 }
 

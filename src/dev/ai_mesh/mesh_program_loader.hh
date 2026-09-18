@@ -9,6 +9,7 @@
 
 #include "dev/ai_mesh/mesh_binary.hh"
 #include "dev/ai_mesh/mesh_ir_verifier.hh"
+#include "dev/ai_mesh/mesh_execution_view.hh"
 #include "dev/ai_mesh/mesh_moe_overlay.hh"
 #include "dev/ai_mesh/mesh_moe_runtime.hh"
 #include "dev/ai_mesh/mesh_weight_cache.hh"
@@ -51,6 +52,7 @@ class MeshProgramLoader : public SimObject
         return effective_arch_digest;
     }
     const std::vector<MeshDummyCore *> &coreObjects() const { return core_objects; }
+    const ExecutionViewSet &executionViews() const { return execution_views; }
 
     struct TransferPlan
     {
@@ -90,6 +92,7 @@ class MeshProgramLoader : public SimObject
     RuntimeArch runtime_arch;
     std::string program_name;
     std::map<uint32_t, TransferPlan> transfer_plans;
+    ExecutionViewSet execution_views;
     bool load_ok = false;
 };
 

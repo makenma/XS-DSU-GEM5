@@ -149,6 +149,21 @@ class Gate3ObservationRecorder : public SimObject
         std::string responseTokenWire;
     };
 
+    struct ServingPhaseRow
+    {
+        uint32_t phase = 0;
+        uint32_t instanceProfileId = 0;
+        uint32_t meshProfileId = 0;
+        uint32_t kvTokensBefore = 0;
+        uint32_t appendTokens = 0;
+        uint32_t acceptedDescriptors = 0;
+        uint32_t terminalDescriptors = 0;
+        uint64_t coreDrainTick = 0;
+        uint64_t appendTerminalTick = 0;
+        uint64_t commitTick = 0;
+    };
+
+    void recordServingPhase(ServingPhaseRow row);
     void recordFatalSqIntake(FatalSqIntake intake);
     void updateFatalSqIntakeTerminal(
         SqIntakeId intakeId, const std::string &terminalEvidence);
@@ -214,6 +229,7 @@ class Gate3ObservationRecorder : public SimObject
     std::map<uint64_t, FatalControlRecord> _msiRecords;
     std::map<uint64_t, uint64_t> _msiTransactionOrdinals;
     std::map<uint64_t, FatalPublicationRecord> _fatalPublications;
+    std::vector<ServingPhaseRow> _servingPhases;
     Gate3FatalReducer fatalReducer;
 };
 

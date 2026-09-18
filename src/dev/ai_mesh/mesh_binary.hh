@@ -32,6 +32,7 @@ using DecodedTensor = mesh_abi::Tensor;
 using DecodedShard = mesh_abi::Shard;
 using DecodedOperand = mesh_abi::CommandOperand;
 using DecodedTrafficRow = mesh_abi::ExpectedTraffic;
+using DecodedProfileStreamRange = mesh_abi::ProfileStreamRange;
 using DecodedProfile = mesh_abi::Profile;
 using DecodedRelocation = mesh_abi::Relocation;
 using DecodedEntrypoint = mesh_abi::Entrypoint;
@@ -82,6 +83,7 @@ struct DecodedProgram
     uint16_t abi_minor = 0;
     uint64_t required_features = 0;
     bool has_moe_v1 = false;
+    bool has_profile_scoped_execution_v1 = false;
     std::string arch_digest_hex;
     std::vector<std::string> strings;
     std::vector<DecodedEntrypoint> entrypoints;
@@ -98,6 +100,7 @@ struct DecodedProgram
     std::vector<DecodedAttr> attrs;
     std::vector<DecodedRelocation> relocations;
     std::vector<DecodedTrafficRow> traffic;
+    std::vector<DecodedProfileStreamRange> profile_stream_ranges;
     std::vector<mesh_abi::SourceMap> source_map;
     std::vector<mesh_abi::ContentDigest> content_digests;
     std::vector<DecodedMoeLayerSpec> moe_layer_specs;

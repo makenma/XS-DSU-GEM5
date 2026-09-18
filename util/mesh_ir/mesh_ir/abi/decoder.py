@@ -43,6 +43,7 @@ from mesh_ir.model import (
     Stream,
     StringEntry,
     Tensor,
+    ProfileStreamRange,
 )
 
 U64_MAX = (1 << 64) - 1
@@ -52,7 +53,8 @@ SECTION_RECORD_BYTES = {
     for name in ("ENTRYPOINTS", "PROFILES", "TENSORS", "SHARDS", "ALLOCATIONS",
                  "STREAMS", "COMMANDS", "COMMAND_WAITS", "COMMAND_OPERANDS",
                  "EVENTS", "DMA_DESCRIPTORS", "OP_ATTRS", "RELOCATIONS",
-                 "EXPECTED_TRAFFIC", "SOURCE_MAP", "CONTENT_DIGESTS",
+                 "EXPECTED_TRAFFIC", "PROFILE_STREAM_RANGES", "SOURCE_MAP",
+                 "CONTENT_DIGESTS",
                  "MOE_LAYER_SPECS", "MOE_EXPERT_SPECS", "MOE_DYNAMIC_REGIONS",
                  "MOE_KERNEL_SPECS", "AGENT_REQUEST_PROFILES",
                  "AGENT_INSTANCE_PROFILES", "AGENT_SOURCE_CORE_MAP",
@@ -101,6 +103,10 @@ def decode_header(data: bytes) -> dict:
     features = header["required_features"]
     if features & ~A.KNOWN_FEATURE_MASK:
         raise MeshIrError("E_ABI_VERSION", "unknown required feature bits",
+                          features=hex(features))
+    if not A.feature_requirements_met(features):
+        raise MeshIrError("E_ABI_FEATURE",
+                          "required feature dependency is not satisfied",
                           features=hex(features))
     for name, bit in A.FEATURE_BITS.items():
         if features & bit and header["abi_minor"] < \
@@ -379,6 +385,13 @@ def decode_program(data: bytes) -> Program:
         check_record_rules(name, table)
         decoded[name] = table
 
+    if header["required_features"] & A.PROFILE_SCOPED_EXECUTION_V1:
+        entry, payload = records_of("PROFILE_STREAM_RANGES")
+        ranges = _unpack_table("PROFILE_STREAM_RANGES", payload,
+                               entry["count"], ProfileStreamRange)
+        check_record_rules("PROFILE_STREAM_RANGES", ranges)
+        decoded["PROFILE_STREAM_RANGES"] = ranges
+
     entry, payload = records_of("DMA_DESCRIPTORS")
     descriptors = _decode_descriptors(payload, entry["count"])
     for descriptor in descriptors:
@@ -437,6 +450,7 @@ def decode_program(data: bytes) -> Program:
         op_attrs=attrs,
         relocations=decoded["RELOCATIONS"],
         expected_traffic=decoded["EXPECTED_TRAFFIC"],
+        profile_stream_ranges=decoded.get("PROFILE_STREAM_RANGES", []),
         required_features=header["required_features"],
         content_digests=decoded.get("CONTENT_DIGESTS", []),
         moe_layer_specs=decoded.get("MOE_LAYER_SPECS", []),

@@ -7,6 +7,7 @@
 
 #include "base/logging.hh"
 #include "dev/ai_mesh/agent_axi_driver.hh"
+#include "dev/ai_mesh/serving_host_bindings.hh"
 #include "sim/core.hh"
 #include "sim/cur_tick.hh"
 
@@ -67,6 +68,77 @@ NpuServingFrontend::commitCurrentSq()
     startSqHead();
 }
 
+const AgentHostBindingPlan *
+NpuServingFrontend::frozenBindingPlan(uint16_t programId,
+                                      uint16_t profileId) const
+{
+    for (const AgentHostBindingPlan &plan : frozenBindingPlans)
+        if (plan.programId == programId && plan.profileId == profileId)
+            return &plan;
+    return nullptr;
+}
+
+bool
+NpuServingFrontend::rejectParameter(agent_abi::DetailCode code)
+{
+    const std::optional<agent_abi::DetailDispositionV1> disposition =
+        agent_abi::detailDispositionV1(code);
+    if (!disposition) {
+        requestFatal(agent_abi::E_AGENT_PROTOCOL_FATAL);
+        return false;
+    }
+    recordSemantic("PARAMETER_REJECT", "PARAMETER", currentSqSequence,
+                   currentRequestId, currentCookie,
+                   agent_abi::detailCodeNameV1(code));
+    queueErrorCompletion(static_cast<uint16_t>(disposition->cqStatus),
+                         agent_abi::kCqFlagsDETAIL_IN_CQ,
+                         static_cast<uint32_t>(code));
+    return false;
+}
+
+bool
+NpuServingFrontend::verifyParameterBindings(
+    const agent_abi::ParameterHeader &value)
+{
+    if (!servingExecution)
+        return true;
+    if (frozenBindingPlans.empty())
+        return value.binding_count == 0 ? true :
+            rejectParameter(agent_abi::E_BINDING_ROLE);
+    const AgentHostBindingPlan *plan =
+        frozenBindingPlan(currentProgramId, currentProfileId);
+    if (plan == nullptr)
+        return rejectParameter(agent_abi::E_REQUEST_PROFILE);
+    if (value.binding_record_bytes != agent_abi::kBindingRecordBytes ||
+            value.binding_table_offset != agent_abi::kParameterHeaderBytes ||
+            value.binding_count != plan->requirements.size() ||
+            value.extension_offset != value.binding_table_offset +
+                uint32_t(value.binding_count) *
+                    agent_abi::kBindingRecordBytes ||
+            value.total_bytes != value.extension_offset +
+                value.extension_bytes)
+        return rejectParameter(agent_abi::E_BINDING_ROLE);
+    std::vector<agent_abi::BindingRecord> bindings;
+    bindings.reserve(value.binding_count);
+    for (uint32_t index = 0; index < value.binding_count; ++index)
+        bindings.push_back(agent_abi::decodeBindingRecord(
+            parameterData.data() + value.binding_table_offset +
+            index * agent_abi::kBindingRecordBytes));
+    std::string reason;
+    const HostBindingVerdict verdict = verifyHostBindingRequest(
+            bindings, *plan, value.input_addr, value.input_bytes,
+            value.output_addr, value.output_capacity_bytes,
+            value.output_metadata_addr, value.output_metadata_capacity_bytes,
+            kvManager.geometry().region_base, kvManager.geometry().regionBytes(),
+            frozenKvSessionSlotBytes, reason);
+    if (verdict == HostBindingVerdict::AliasMismatch)
+        return rejectParameter(agent_abi::E_BINDING_ALIAS_MISMATCH);
+    if (verdict != HostBindingVerdict::Match)
+        return rejectParameter(agent_abi::E_BINDING_ROLE);
+    currentHostBindings = std::move(bindings);
+    return true;
+}
+
 void
 NpuServingFrontend::handleParameterRecord()
 {
@@ -76,29 +148,15 @@ NpuServingFrontend::handleParameterRecord()
     const bool readError = activeRead->sawError;
     activeRead.reset();
     if (readError || parameterData.size() < agent_abi::kParameterHeaderBytes) {
-        recordSemantic("PARAMETER_REJECT", "PARAMETER", currentSqSequence,
-                       currentRequestId, currentCookie,
-                       "E_PARAMETER_LENGTH_MISMATCH");
-        queueErrorCompletion(static_cast<uint16_t>(
-            agent_abi::CqStatus::PARAM_ERROR),
-            agent_abi::kCqFlagsDETAIL_IN_CQ,
-            agent_abi::E_PARAMETER_LENGTH_MISMATCH);
+        rejectParameter(agent_abi::E_PARAMETER_LENGTH_MISMATCH);
         return;
     }
     const auto value = agent_abi::decodeParameterHeader(parameterData.data());
     const auto structureError =
         gate3ParameterStructureError(value, parameterData.size());
     if (parameterData.size() != currentParameterBytes || structureError) {
-        const agent_abi::DetailCode detail =
-            parameterData.size() != currentParameterBytes ?
-            agent_abi::E_PARAMETER_LENGTH_MISMATCH : *structureError;
-        recordSemantic("PARAMETER_REJECT", "PARAMETER", currentSqSequence,
-                       currentRequestId, currentCookie,
-                       agent_abi::detailCodeNameV1(detail));
-        queueErrorCompletion(static_cast<uint16_t>(
-            agent_abi::CqStatus::PARAM_ERROR),
-            agent_abi::kCqFlagsDETAIL_IN_CQ,
-            detail);
+        rejectParameter(parameterData.size() != currentParameterBytes ?
+            agent_abi::E_PARAMETER_LENGTH_MISMATCH : *structureError);
         return;
     }
     if (planExecution && currentControlOpcode != 0) {
@@ -109,69 +167,104 @@ NpuServingFrontend::handleParameterRecord()
     uint32_t crc_offset = agent_abi::kParameterHeaderCrc32Offset;
     std::fill(covered.begin() + crc_offset, covered.begin() + crc_offset + 4, 0);
     const uint32_t total = value.total_bytes;
-    bool valid = value.magic == 0x504e4741 &&
+    const bool layoutValid = value.magic == 0x504e4741 &&
         value.abi_major == agent_abi::kAbiMajor &&
         value.abi_minor == agent_abi::kAbiMinor &&
         value.header_bytes == agent_abi::kParameterHeaderBytes &&
         total >= agent_abi::kParameterHeaderBytes &&
         total % 8 == 0 && total == parameterData.size() &&
-        value.request_kind == 1 &&
-        value.target_request_id == 0 &&
-        value.qos == currentQos &&
-        value.output_capacity_bytes >= dataBusBytes &&
-        value.output_metadata_capacity_bytes >= agent_abi::kOutputMetadataBytes &&
         agent_abi::crc32c(covered.data(), total) == value.crc32;
-    std::vector<uint8_t> inputDigest;
-    std::vector<uint8_t> workloadDigest;
-    uint64_t chunkBytes = 0;
-    bool sawInput = false, sawWorkload = false, sawChunk = false;
-    if (valid && value.extension_bytes >= 8 &&
-        value.extension_offset + value.extension_bytes <= total) {
-        size_t offset = value.extension_offset;
-        const size_t end = value.extension_offset + value.extension_bytes;
-        while (offset + 8 <= end) {
-            const uint16_t type =
-                agent_abi::rdU16(parameterData.data() + offset);
-            const uint16_t flags =
-                agent_abi::rdU16(parameterData.data() + offset + 2);
-            const uint32_t payload_bytes =
-                agent_abi::rdU32(parameterData.data() + offset + 4);
-            if (offset + 8 + payload_bytes > end) { valid = false; break; }
-            const uint8_t *payload =
-                parameterData.data() + offset + 8;
-            if (type == agent_abi::kTlvTypeINPUT_DIGEST &&
-                payload_bytes == 32 &&
-                (flags & agent_abi::kTlvFlagsREQUIRED)) {
-                inputDigest.assign(payload, payload + 32);
-                sawInput = true;
-            } else if (type == agent_abi::kTlvTypeWORKLOAD_ID_DIGEST &&
-                       payload_bytes == 32 &&
-                       (flags & agent_abi::kTlvFlagsREQUIRED)) {
-                workloadDigest.assign(payload, payload + 32);
-                sawWorkload = true;
-            } else if (type == agent_abi::kTlvTypeOUTPUT_CHUNK_BYTES &&
-                       payload_bytes == 8 &&
-                       (flags & agent_abi::kTlvFlagsREQUIRED)) {
-                chunkBytes = agent_abi::rdU64(payload);
-                sawChunk = true;
-            }
-            offset += 8 + payload_bytes;
-        }
-    }
-    valid = valid && sawInput && sawWorkload && sawChunk && chunkBytes > 0;
-    if (!valid) {
-        const agent_abi::DetailCode detail =
+    if (!layoutValid) {
+        rejectParameter(
             value.total_bytes != parameterData.size() ||
             value.total_bytes % 8 ?
             agent_abi::E_PARAMETER_LENGTH_MISMATCH :
-            agent_abi::E_RESERVED_FIELD;
-        recordSemantic("PARAMETER_REJECT", "PARAMETER", currentSqSequence,
-                       currentRequestId, currentCookie,
-                       agent_abi::detailCodeNameV1(detail));
-        queueErrorCompletion(static_cast<uint16_t>(
-            agent_abi::CqStatus::PARAM_ERROR),
-            agent_abi::kCqFlagsDETAIL_IN_CQ,
-            detail);
+            agent_abi::E_REQUEST_BINDING);
+        return;
+    }
+    if (value.request_kind != 1 || value.target_request_id != 0 ||
+            value.qos != currentQos || value.reserved != 0 ||
+            value.reserved2 != 0 || value.reserved3 != 0 ||
+            value.moe_route_profile_id != 0) {
+        rejectParameter(agent_abi::E_RESERVED_FIELD);
+        return;
+    }
+    const AgentPlanRequestProof *proof = nullptr;
+    if (planExecution) {
+        const auto proof_it = planRequestProofs.find(currentRequestId);
+        if (proof_it == planRequestProofs.end()) {
+            rejectParameter(agent_abi::E_WORKLOAD_PLAN_MISMATCH);
+            return;
+        }
+        proof = &proof_it->second;
+        if (proof->sessionId != currentSessionId ||
+                proof->programId != currentProgramId ||
+                proof->profileId != currentProfileId ||
+                proof->itemId != value.workload_plan_item_id ||
+                proof->repairRound != value.repair_round ||
+                proof->userId != value.user_id ||
+                proof->taskSeq != value.task_seq ||
+                proof->kvHandle != value.kv_handle ||
+                proof->generation != value.kv_generation ||
+                proof->qos != value.qos ||
+                proof->fullContextTokens != value.input_tokens ||
+                proof->fullContextBytes != value.input_bytes ||
+                proof->cachedTokens != value.cached_tokens ||
+                proof->outputTokens != value.max_output_tokens ||
+                proof->outputCapacityBytes != value.output_capacity_bytes ||
+                proof->metadataCapacityBytes !=
+                    value.output_metadata_capacity_bytes) {
+            rejectParameter(agent_abi::E_WORKLOAD_PLAN_MISMATCH);
+            return;
+        }
+        if (proof->profileKey != value.requested_profile_key) {
+            rejectParameter(agent_abi::E_REQUEST_PROFILE_KEY);
+            return;
+        }
+    }
+    currentHostBindings.clear();
+    if (!verifyParameterBindings(value))
+        return;
+    ParameterTlvValues tlvs;
+    if (parameterTlvStructureError(parameterData.data(), parameterData.size(),
+                                   value, tlvs)) {
+        rejectParameter(agent_abi::E_REQUEST_BINDING);
+        return;
+    }
+    if (tlvs.skippedOptional != 0)
+        recorder->setMetric("skipped_optional_tlvs",
+                            recorder->metric("skipped_optional_tlvs") +
+                            tlvs.skippedOptional);
+    if (tlvs.inputDigest.size() != 32 ||
+            (proof != nullptr && !std::equal(
+                proof->inputDigest.begin(), proof->inputDigest.end(),
+                tlvs.inputDigest.begin()))) {
+        rejectParameter(agent_abi::E_WORKLOAD_PLAN_MISMATCH);
+        return;
+    }
+    if (tlvs.workloadDigest.size() != 32 ||
+            (proof != nullptr && !std::equal(
+                frozenWorkloadDigest.begin(), frozenWorkloadDigest.end(),
+                tlvs.workloadDigest.begin()))) {
+        rejectParameter(agent_abi::E_WORKLOAD_PLAN_MISMATCH);
+        return;
+    }
+    if (tlvs.outputChunkBytes == 0 ||
+            (proof != nullptr && tlvs.outputChunkBytes !=
+                planRegistry->publishChunkBytes())) {
+        rejectParameter(agent_abi::E_OUTPUT_CHUNK_MISMATCH);
+        return;
+    }
+    if (proof != nullptr &&
+            (tlvs.hasDeadline != proof->hasDeadline ||
+             (proof->hasDeadline && tlvs.deadlineTick != proof->deadlineTick))) {
+        rejectParameter(agent_abi::E_WORKLOAD_PLAN_MISMATCH);
+        return;
+    }
+    if (value.output_capacity_bytes < dataBusBytes ||
+            value.output_metadata_capacity_bytes <
+                agent_abi::kOutputMetadataBytes) {
+        rejectParameter(agent_abi::E_OUTPUT_CAPACITY);
         return;
     }
     currentOutputAddress = value.output_addr;
@@ -182,20 +275,25 @@ NpuServingFrontend::handleParameterRecord()
     currentMetadataCapacityBytes = value.output_metadata_capacity_bytes;
     currentRequestedProfileKey = value.requested_profile_key;
     currentInputTokens = value.input_tokens;
+    currentCachedTokens = value.cached_tokens;
     currentUserId = value.user_id;
     currentTaskSeq = value.task_seq;
     currentRepairRound = value.repair_round;
     currentMaxOutputTokens = value.max_output_tokens;
     currentWorkloadItemId = value.workload_plan_item_id;
-    currentPublishChunkBytes = chunkBytes;
-    if (inputDigest.size() == currentInputDigest.size())
-        std::copy(inputDigest.begin(), inputDigest.end(),
+    currentPublishChunkBytes = tlvs.outputChunkBytes;
+    if (tlvs.inputDigest.size() == currentInputDigest.size())
+        std::copy(tlvs.inputDigest.begin(), tlvs.inputDigest.end(),
                   currentInputDigest.begin());
-    if (workloadDigest.size() == currentWorkloadDigest.size())
-        std::copy(workloadDigest.begin(), workloadDigest.end(),
+    if (tlvs.workloadDigest.size() == currentWorkloadDigest.size())
+        std::copy(tlvs.workloadDigest.begin(), tlvs.workloadDigest.end(),
                   currentWorkloadDigest.begin());
     currentKvHandle = value.kv_handle;
     currentKvGeneration = value.kv_generation;
+    if (servingExecution) {
+        submitServingRequest();
+        return;
+    }
     if (planExecution && !admitKvSession())
         return;
     startPromptRead();
@@ -251,21 +349,62 @@ NpuServingFrontend::admitKvSession()
         currentSessionAdmitted = true;
     if (mapping.success)
         return true;
-    const agent_abi::DetailCode code = mapping.detail;
-    const uint32_t detail = static_cast<uint32_t>(code);
-    const std::optional<agent_abi::DetailDispositionV1> disposition =
-        agent_abi::detailDispositionV1(code);
-    if (!disposition) {
-        requestFatal(agent_abi::E_AGENT_PROTOCOL_FATAL);
-        return false;
+    return rejectParameter(mapping.detail);
+}
+
+void
+NpuServingFrontend::submitServingRequest()
+{
+    if (servingExecution)
+        ensureServingPrepared();
+    NpuExecutionRequest executionRequest;
+    executionRequest.sqSequence = currentSqSequence;
+    executionRequest.requestId = currentRequestId;
+    executionRequest.completionCookie = currentCookie;
+    executionRequest.inputAddress = currentInputAddress;
+    executionRequest.inputBytes = currentInputBytes;
+    executionRequest.outputAddress = currentOutputAddress;
+    executionRequest.outputCapacityBytes = currentOutputCapacityBytes;
+    executionRequest.metadataAddress = currentMetadataAddress;
+    executionRequest.metadataCapacityBytes = currentMetadataCapacityBytes;
+    executionRequest.inputTokens = currentInputTokens;
+    executionRequest.cachedTokens = currentCachedTokens;
+    executionRequest.kvFlags = currentSqFlags &
+        (agent_abi::kSqFlagsREQUIRE_KV_REUSE |
+         agent_abi::kSqFlagsALLOW_REPREFILL);
+    executionRequest.repairRound = currentRepairRound;
+    executionRequest.maxOutputTokens = currentMaxOutputTokens;
+    executionRequest.outputTokens = currentMaxOutputTokens;
+    executionRequest.requestedProfileKey = currentRequestedProfileKey;
+    executionRequest.workloadPlanItemId = currentWorkloadItemId;
+    executionRequest.programId = currentProgramId;
+    executionRequest.profileId = currentProfileId;
+    executionRequest.qos = currentQos;
+    executionRequest.inputDigest = currentInputDigest;
+    executionRequest.workloadDigest = currentWorkloadDigest;
+    executionRequest.sessionId = currentSessionId;
+    executionRequest.kvHandle = currentKvHandle;
+    executionRequest.generation = currentKvGeneration;
+    executionRequest.contractDigest = servingContractDigest;
+    executionRequest.hostBindings = currentHostBindings;
+    lastExecutionRequest = executionRequest;
+    const NpuAdmission admission = activeExecutor()->submit(executionRequest);
+    if (servingExecution && admission.admitted)
+        currentSessionAdmitted = true;
+    if (planExecution && !admission.admitted) {
+        rejectParameter(static_cast<agent_abi::DetailCode>(
+            admission.rejectDetail));
+        return;
     }
-    recordSemantic("PARAMETER_REJECT", "PARAMETER", currentSqSequence,
-                   currentRequestId, currentCookie,
-                   agent_abi::detailCodeNameV1(code));
-    queueErrorCompletion(
-        static_cast<uint16_t>(disposition->cqStatus),
-        agent_abi::kCqFlagsDETAIL_IN_CQ, detail);
-    return false;
+    recordSemantic("CAPACITY_ACCEPT", "CONTEXT", std::nullopt,
+                   currentRequestId, currentCookie);
+    recorder->setMetric("live_contexts",
+                        (unsigned)completionLedger.liveCount());
+    if (planExecution) {
+        enqueueCurrentBusiness();
+        return;
+    }
+    startOutput();
 }
 
 void
@@ -282,73 +421,11 @@ NpuServingFrontend::handlePromptRecord()
             agent_abi::E_AXI_RESPONSE);
         return;
     }
-    recordSemantic("CAPACITY_ACCEPT", "CONTEXT", std::nullopt,
-                   currentRequestId, currentCookie);
-    recorder->setMetric("live_contexts", (unsigned)completionLedger.liveCount());
-    NpuExecutionRequest executionRequest;
-    executionRequest.sqSequence = currentSqSequence;
-    executionRequest.requestId = currentRequestId;
-    executionRequest.completionCookie = currentCookie;
-    executionRequest.inputAddress = currentInputAddress;
-    executionRequest.inputBytes = currentInputBytes;
-    executionRequest.outputAddress = currentOutputAddress;
-    executionRequest.outputCapacityBytes = currentOutputCapacityBytes;
-    executionRequest.metadataAddress = currentMetadataAddress;
-    executionRequest.metadataCapacityBytes = currentMetadataCapacityBytes;
-    executionRequest.inputTokens = currentInputTokens;
-    executionRequest.maxOutputTokens = currentMaxOutputTokens;
-    executionRequest.outputTokens = currentMaxOutputTokens;
-    executionRequest.requestedProfileKey = currentRequestedProfileKey;
-    executionRequest.workloadPlanItemId = currentWorkloadItemId;
-    executionRequest.programId = currentProgramId;
-    executionRequest.profileId = currentProfileId;
-    executionRequest.qos = currentQos;
-    executionRequest.inputDigest = currentInputDigest;
-    executionRequest.workloadDigest = currentWorkloadDigest;
-    lastExecutionRequest = executionRequest;
-    const NpuExecutionOutcome outcome =
-        requestExecutor->accept(executionRequest);
-    if (planExecution && !outcome.admitted) {
-        recordSemantic("PARAMETER_REJECT", "PARAMETER", currentSqSequence,
-                       currentRequestId, currentCookie,
-                       agent_abi::detailCodeNameV1(
-                           static_cast<agent_abi::DetailCode>(
-                               outcome.rejectDetail)));
-        queueErrorCompletion(static_cast<uint16_t>(
-            agent_abi::CqStatus::PARAM_ERROR),
-            agent_abi::kCqFlagsDETAIL_IN_CQ,
-            outcome.rejectDetail);
-        return;
-    }
-    if (planExecution &&
-            currentMetadataCapacityBytes <
-                agent_abi::kOutputMetadataBytes +
-                    kSurrogateTimingBreakdownTlvBytes) {
-        recordSemantic("PARAMETER_REJECT", "PARAMETER", currentSqSequence,
-                       currentRequestId, currentCookie,
-                       agent_abi::detailCodeNameV1(
-                           agent_abi::E_OUTPUT_CAPACITY));
-        queueErrorCompletion(static_cast<uint16_t>(
-            agent_abi::CqStatus::PARAM_ERROR),
-            agent_abi::kCqFlagsDETAIL_IN_CQ,
-            agent_abi::E_OUTPUT_CAPACITY);
-        return;
-    }
-    if (outcome.coreStartProbe) {
-        recordSemantic("CORE_START", "CONTEXT", std::nullopt,
-                       currentRequestId, currentCookie);
-        recorder->setMetric("core_starts",
-                            recorder->metric("core_starts") + 1);
-    }
-    if (planExecution) {
-        enqueueCurrentBusiness(outcome.serviceNs);
-        return;
-    }
-    startOutput();
+    submitServingRequest();
 }
 
 void
-NpuServingFrontend::enqueueCurrentBusiness(uint64_t serviceNs)
+NpuServingFrontend::enqueueCurrentBusiness()
 {
     fatal_if(acceptedQueue.size() + (executingBusiness ? 1 : 0) >=
                  acceptedQueueEntries,
@@ -372,7 +449,7 @@ NpuServingFrontend::enqueueCurrentBusiness(uint64_t serviceNs)
     parked.qos = currentQos;
     parked.sessionAdmitted = currentSessionAdmitted;
     parked.publishChunkBytes = currentPublishChunkBytes;
-    parked.serviceNs = serviceNs;
+
     parked.readyTick = currentAcceptTick;
     const auto deadline = generateDeadlineTicks.find(currentRequestId);
     parked.deadlineTick =
@@ -408,9 +485,10 @@ NpuServingFrontend::dispatchAcceptedBusiness()
     ParkedBusiness parked = selected->second;
     acceptedQueue.erase(selected);
     executingBusiness = true;
+    const uint64_t serviceNs = parked.executionRequest ?
+        activeExecutor()->modeledServiceNs(*parked.executionRequest) : 0;
     parked.executionDeadlineTick =
-        curTick() + (parked.serviceNs > 0 ?
-                     parked.serviceNs * sim_clock::as_int::ns : 1);
+        curTick() + (serviceNs > 0 ? serviceNs * sim_clock::as_int::ns : 1);
     parkedBusiness = parked;
     scheduleExecutionEvent(parked.executionDeadlineTick);
     scheduleTick();

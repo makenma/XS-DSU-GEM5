@@ -151,6 +151,14 @@ class AgentAxiDriver(ClockedObject):
     master = Param.AxiInitiatorAdapter("Driver AXI initiator")
     target = Param.AxiTargetAdapter("Driver host-memory target")
     recorder = Param.Gate3ObservationRecorder("Gate3 observation recorder")
+    generated_code_span_base = Param.UInt64(
+        0, "Request output span base read back by the host")
+    serving_input_symbol_id = Param.UInt32(
+        0, "Mesh symbol bound as the request Host input")
+    serving_output_symbol_id = Param.UInt32(
+        0, "Mesh symbol bound as the request Host output")
+    serving_kv_symbol_id = Param.UInt32(
+        0, "Mesh symbol bound as the request KV region")
     data_bus_bytes = Param.UInt32(64, "AXI data bus width in bytes")
     sq_depth = Param.UInt32(2, "Submission queue depth")
     cq_depth = Param.UInt32(2, "Completion queue depth")
@@ -271,7 +279,17 @@ class NpuServingFrontend(ClockedObject):
     msi_axi_id = Param.UInt32(32, "MSI AXI ID pool base")
     msi_axi_id_count = Param.UInt32(4, "MSI AXI ID pool size")
     executor = Param.String(
-        "protocol_probe", "protocol_probe or full_context_surrogate"
+        "protocol_probe",
+        "protocol_probe, full_context_surrogate or serving_mesh",
+    )
+    serving_loader = Param.MeshProgramLoader(
+        NULL, "Program loader for the serving mesh executor"
+    )
+    serving_dispatcher = Param.MeshDispatcher(
+        NULL, "Dispatcher driven by the serving mesh executor"
+    )
+    serving_weight_image_digest = Param.String(
+        "", "Verified model weight image digest for the serving contract"
     )
     plan_image = Param.String("", "agent plan image path")
     kv_session_record_entries = Param.UInt32(
@@ -358,7 +376,12 @@ class MeshDispatcher(ClockedObject):
         [], "Per-core SRAM apertures (real Garnet runtime)"
     )
     endpoint = Param.NpuMemoryEndpoint(NULL, "HBM memory endpoint")
+    output_span_base = Param.UInt64(0, "Published output span base")
+    output_span_bytes = Param.UInt64(0, "Published output span bytes")
     network = Param.RubyNetwork(NULL, "NPU Garnet network for quiescence")
     result_json = Param.String("", "Machine-readable result artifact path")
     instances = Param.UInt32(1, "Program instances dispatched back to back")
+    autostart = Param.Bool(
+        True, "Dispatch the first instance at startup"
+    )
     watchdog_ticks = Param.UInt64(0, "Progress watchdog bound, 0 disables")

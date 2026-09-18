@@ -1,14 +1,14 @@
 {
   "abi_major": 1,
-  "abi_minor": 2,
+  "abi_minor": 3,
   "agent_instance_member_bindings": [
     {
       "expected_logical_source_rank": 0,
       "instance_profile_id": 11,
       "member_ordinal": 0,
       "reserved0": 0,
-      "static_input_symbol_id": 11,
-      "static_kv_symbol_id": 12,
+      "static_input_symbol_id": 7,
+      "static_kv_symbol_id": 8,
       "static_output_symbol_id": 0
     },
     {
@@ -17,7 +17,7 @@
       "member_ordinal": 0,
       "reserved0": 0,
       "static_input_symbol_id": 0,
-      "static_kv_symbol_id": 12,
+      "static_kv_symbol_id": 8,
       "static_output_symbol_id": 0
     },
     {
@@ -27,7 +27,7 @@
       "reserved0": 0,
       "static_input_symbol_id": 0,
       "static_kv_symbol_id": 0,
-      "static_output_symbol_id": 13
+      "static_output_symbol_id": 9
     }
   ],
   "agent_instance_profiles": [
@@ -49,8 +49,8 @@
       "mesh_profile_id": 1,
       "path_kind": 0,
       "phase": 1,
-      "primary_input_symbol_id": 5,
-      "primary_kv_symbol_id": 7,
+      "primary_input_symbol_id": 1,
+      "primary_kv_symbol_id": 3,
       "primary_output_symbol_id": 0,
       "request_profile_id": 1,
       "request_program_id": 1,
@@ -70,12 +70,12 @@
       "member_binding_count": 1,
       "member_binding_first": 1,
       "member_count": 1,
-      "mesh_entrypoint_id": 1,
+      "mesh_entrypoint_id": 2,
       "mesh_profile_id": 2,
       "path_kind": 0,
       "phase": 2,
       "primary_input_symbol_id": 0,
-      "primary_kv_symbol_id": 7,
+      "primary_kv_symbol_id": 3,
       "primary_output_symbol_id": 0,
       "request_profile_id": 1,
       "request_program_id": 1,
@@ -95,13 +95,13 @@
       "member_binding_count": 1,
       "member_binding_first": 2,
       "member_count": 1,
-      "mesh_entrypoint_id": 1,
+      "mesh_entrypoint_id": 3,
       "mesh_profile_id": 3,
       "path_kind": 0,
       "phase": 3,
       "primary_input_symbol_id": 0,
       "primary_kv_symbol_id": 0,
-      "primary_output_symbol_id": 10,
+      "primary_output_symbol_id": 6,
       "request_profile_id": 1,
       "request_program_id": 1,
       "valid_tokens_per_member": 0
@@ -111,12 +111,12 @@
     {
       "allocation_id": 5,
       "allocation_role": 1,
-      "completion_event_id": 8,
+      "completion_event_id": 14,
       "digest_source": 0,
       "fill_kind": 1,
       "instance_profile_id": 13,
       "member_ordinal": 0,
-      "producer_command_id": 8,
+      "producer_command_id": 16,
       "reserved0": 0,
       "reserved1": 0
     }
@@ -128,7 +128,7 @@
       "request_profile_id": 1,
       "request_program_id": 1,
       "reserved": 0,
-      "symbol_id": 5
+      "symbol_id": 1
     },
     {
       "binding_flags": 5,
@@ -136,7 +136,7 @@
       "request_profile_id": 1,
       "request_program_id": 1,
       "reserved": 0,
-      "symbol_id": 6
+      "symbol_id": 2
     },
     {
       "binding_flags": 15,
@@ -144,7 +144,7 @@
       "request_profile_id": 1,
       "request_program_id": 1,
       "reserved": 0,
-      "symbol_id": 7
+      "symbol_id": 3
     },
     {
       "binding_flags": 2,
@@ -152,7 +152,7 @@
       "request_profile_id": 1,
       "request_program_id": 1,
       "reserved": 0,
-      "symbol_id": 10
+      "symbol_id": 6
     }
   ],
   "agent_request_profiles": [
@@ -168,13 +168,13 @@
       "kv_bytes_per_token": 16,
       "output_tokens": 1,
       "path_mask": 1,
-      "primary_input_symbol_id": 5,
-      "primary_kv_symbol_id": 7,
-      "primary_output_symbol_id": 10,
+      "primary_input_symbol_id": 1,
+      "primary_kv_symbol_id": 3,
+      "primary_output_symbol_id": 6,
       "profile_id": 1,
       "program_id": 1,
       "publish_chunk_bytes": 64,
-      "requested_profile_key": 15411086845258872506,
+      "requested_profile_key": 2194670004377732598,
       "reserved0": 0,
       "source_core_map_begin": 0,
       "source_rank_count": 1
@@ -191,7 +191,7 @@
     "batch_weight_binding_entries_per_context": 1,
     "instance_member_binding_entries_per_context": 2
   },
-  "profile_key_base_digest": "6abbcef487aebebdfe977d712ccdc911c95cb1365a2833686b0dcf1cbf079a67",
-  "required_features": 2,
-  "semantic_sha256": "72d5d7548d44aa96b82dd06c1bfdd941e65dfe527cd6aebcae32345c636104a5"
+  "profile_key_base_digest": "32f907bb2496112a2485a2a3a24598a6ee06a61e6c796328dedd86ab4cba596f",
+  "required_features": 6,
+  "semantic_sha256": "4516eb428ab47e038ba71c5e5baea8d08a731b5f70358b327fe6cd6c46e91d04"
 }

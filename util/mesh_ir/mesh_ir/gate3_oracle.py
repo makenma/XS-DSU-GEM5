@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import jsonschema
@@ -36,15 +37,39 @@ FACTS_FINAL_FIELDS = (
 )
 
 
+SERVING_PHASE_FIELDS = (
+    "phase",
+    "instance_profile_id",
+    "mesh_profile_id",
+    "kv_tokens_before",
+    "append_tokens",
+    "accepted_descriptors",
+    "terminal_descriptors",
+    "core_drain_tick",
+    "append_terminal_tick",
+    "commit_tick",
+)
+
+
+@dataclass
+class FactsDocument:
+    events: list = field(default_factory=list)
+    final: dict | None = None
+    metrics: dict = field(default_factory=dict)
+    fatal: dict | None = None
+    serving_phases: list = field(default_factory=list)
+
+
 def _optional(value):
     return None if value == "-" else int(value)
 
 
-def parse_facts_tsv(path: Path):
+def read_facts_document(path: Path) -> FactsDocument:
     events = []
     metrics = {}
     fatal = None
     final = None
+    serving_phases = []
     fatal_sq_intakes = []
     fatal_cq_obligations = []
     fatal_ack_records = []
@@ -180,6 +205,15 @@ def parse_facts_tsv(path: Path):
                 "candidate_key_wire": fields[12],
                 "physical_source_token_wire": fields[13],
             }
+        elif fields[0] == "SERVING_PHASE":
+            if len(fields) != len(SERVING_PHASE_FIELDS) + 1:
+                raise ContractError(
+                    "Gate3 facts SERVING_PHASE field count mismatch"
+                )
+            serving_phases.append({
+                name: int(value)
+                for name, value in zip(SERVING_PHASE_FIELDS, fields[1:])
+            })
         elif fields[0] == "FATAL_CANDIDATE":
             if len(fields) != 2:
                 raise ContractError(
@@ -232,7 +266,13 @@ def parse_facts_tsv(path: Path):
     for ordinal, event in enumerate(events):
         event.pop("source_ordinal")
         event["ordinal"] = ordinal
-    return events, final, metrics, fatal
+    return FactsDocument(events=events, final=final, metrics=metrics,
+                         fatal=fatal, serving_phases=serving_phases)
+
+
+def parse_facts_tsv(path: Path):
+    document = read_facts_document(path)
+    return document.events, document.final, document.metrics, document.fatal
 
 
 CHECKS = (

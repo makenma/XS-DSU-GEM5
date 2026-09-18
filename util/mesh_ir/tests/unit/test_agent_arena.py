@@ -9,6 +9,7 @@ from mesh_ir.agent_planning import (
     build_host_arena_object_plan,
     parameter_block_bytes,
 )
+from mesh_ir.abi.decoder import decode_program
 from mesh_ir.agent_workload import PlanError, load_control_plan, load_workload_plan
 from mesh_ir.model import canonical_json_bytes
 
@@ -147,3 +148,81 @@ def test_arena_padding_covers_alignment_in_returned_allocation():
 def test_arena_overlap_fails_with_address_plan_code():
     with pytest.raises(PlanError, match="E_ADDRESS_PLAN"):
         build(parameter_bytes=0x10000000)
+
+
+def test_parameter_block_bytes_tracks_the_binding_count():
+    workload = load_workload_plan(FIXTURES / "agent_workload_plan_two_user.json")
+    rounds = [
+        round_
+        for user in workload.users
+        for task in user.tasks
+        for round_ in task.rounds
+    ]
+    assert {parameter_block_bytes(round_, 0) for round_ in rounds} == {256}
+    assert {parameter_block_bytes(round_, 1) for round_ in rounds} == {280}
+    assert {parameter_block_bytes(round_, 2) for round_ in rounds} == {304}
+    with pytest.raises(PlanError):
+        parameter_block_bytes(rounds[0], 0x10000)
+
+
+def test_arena_plan_allocates_the_full_binding_table_capacity():
+    workload = load_workload_plan(FIXTURES / "agent_workload_plan_two_user.json")
+    control = load_control_plan(
+        FIXTURES / "agent_control_plan_two_user.json", workload
+    )
+    keyed = {
+        (round_.program_id, round_.profile_id): 2
+        for user in workload.users
+        for task in user.tasks
+        for round_ in task.rounds
+    }
+    document = build_host_arena_object_plan(
+        workload,
+        control,
+        "EXPLICIT_ONLY",
+        regions(),
+        keyed,
+    )
+    parameters = [
+        record
+        for record in by_kind(document, "PARAMETER")
+        if record["command_kind"] == "GENERATE"
+    ]
+    assert parameters
+    for record in parameters:
+        assert record["allocation_bytes"] >= 304
+        assert record["initial_valid_bytes"] >= 304
+    spans = sorted(
+        (record["base"], record["base"] + record["allocation_bytes"])
+        for record in document["records"]
+    )
+    for (_, end), (next_start, _) in zip(spans, spans[1:]):
+        assert end <= next_start
+
+
+def test_host_binding_plan_projects_the_four_roles_without_npu_slots():
+    from mesh_ir.host_bindings import (build_host_binding_plans,
+                                       resolve_host_binding_records)
+
+    program = decode_program(
+        (Path(__file__).resolve().parents[4] / "tests/gem5/ai_mesh/fixtures"
+         / "gate6" / "serving_two_tokens.mshb").read_bytes()
+    )
+    plans = build_host_binding_plans(
+        program, [0, 0x100200000, 0x100300000, 0x100400000])
+    assert len(plans) == 1
+    plan = plans[0]
+    assert plan.primary_input_symbol_id == 1
+    assert plan.primary_output_symbol_id == 6
+    assert plan.primary_kv_symbol_id == 3
+    assert plan.instance_count == 4
+    assert [row.symbol_id for row in plan.requirements] == [1, 2, 3, 6]
+    assert [row.kind for row in plan.requirements] == [1, 4, 3, 2]
+    assert plan.requirements[0].platform_address == 0
+    assert plan.requirements[2].platform_address == 0
+    records = resolve_host_binding_records(
+        plan, 0x100200000, 128, 0x100300000, 256, 4096)
+    assert [record[0] for record in records] == [1, 2, 3, 6]
+    assert records[0][3:] == (0x100200000, 128)
+    assert records[2][3:] == (0, 4096)
+    assert records[3][3:] == (0x100300000, 256)

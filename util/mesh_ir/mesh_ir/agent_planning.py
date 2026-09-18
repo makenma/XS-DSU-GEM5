@@ -21,6 +21,7 @@ _PARAMETER_TLV_BYTES = {
     "OUTPUT_CHUNK_BYTES": 16,
     "DEADLINE": 16,
 }
+_BINDING_RECORD_BYTES = 24
 _CONTROL_PARAMETER_BYTES = 160
 
 
@@ -315,12 +316,18 @@ def build_host_task_identity_plan(workload: WorkloadPlan) -> dict:
     return document
 
 
-def parameter_block_bytes(round_) -> int:
+def parameter_block_bytes(round_, binding_count: int = 0) -> int:
+    if binding_count < 0:
+        raise PlanError("E_BINDING_ROLE", "$", "binding count must be nonnegative")
+    if binding_count > 0xFFFF:
+        raise PlanError("E_BINDING_ROLE", "$",
+                        "binding count exceeds the u16 wire field")
     total = (
         _PARAMETER_HEADER_BYTES
         + _PARAMETER_TLV_BYTES["INPUT_DIGEST"]
         + _PARAMETER_TLV_BYTES["WORKLOAD_ID_DIGEST"]
         + _PARAMETER_TLV_BYTES["OUTPUT_CHUNK_BYTES"]
+        + binding_count * _BINDING_RECORD_BYTES
     )
     if round_.deadline_tick is not None:
         total += _PARAMETER_TLV_BYTES["DEADLINE"]
@@ -385,6 +392,7 @@ def build_host_arena_object_plan(
     control: ControlPlan | None,
     release_policy: str,
     regions,
+    binding_counts=None,
 ) -> dict:
     if {region.kind for region in regions} != set(_ARENA_KIND_ORDER):
         raise PlanError("E_ADDRESS_PLAN", "regions", "exactly four arena kinds required")
@@ -399,15 +407,20 @@ def build_host_arena_object_plan(
         for task in user.tasks
         for round_ in task.rounds
     }
+    binding_counts = binding_counts or {}
     identity = build_command_identity_plan(workload, control, release_policy)
     records = []
     for record in identity["records"]:
         key = (record["user_id"], record["task_seq"], record["repair_round_or_ffff"])
         round_ = rounds_by_key.get(key)
         if record["command_kind"] == "GENERATE":
+            parameter_bytes = parameter_block_bytes(
+                round_,
+                binding_counts.get((round_.program_id, round_.profile_id), 0),
+            )
             demands = (
                 ("INPUT", round_.full_context_bytes, round_.full_context_bytes),
-                ("PARAMETER", parameter_block_bytes(round_), parameter_block_bytes(round_)),
+                ("PARAMETER", parameter_bytes, parameter_bytes),
                 ("OUTPUT", round_.output_capacity_bytes, 0),
                 ("METADATA", round_.output_metadata_capacity_bytes, 0),
             )

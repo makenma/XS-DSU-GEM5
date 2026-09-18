@@ -24,6 +24,10 @@ SimObject('AiMesh.py', sim_objects=[
 ])
 
 Source('mesh_binary.cc')
+Source('mesh_execution_view.cc')
+Source('mesh_kv_layout.cc')
+Source('serving_mesh_executor.cc')
+Source('serving_fill_inputs.cc')
 Source('mesh_splitter.cc')
 Source('mesh_ir_verifier.cc')
 Source('mesh_moe_verifier.cc')
@@ -56,11 +60,14 @@ Source('agent_sha256.cc')
 Source('agent_plan_image.cc')
 Source('agent_surrogate_codec.cc')
 Source('agent_plan_codec.cc')
+Source('serving_host_bindings.cc')
 Source('control_trigger_coordinator.cc')
 Source('npu_request_executor.cc')
 Source('npu_serving_frontend.cc')
 Source('npu_serving_frontend_control.cc')
 Source('npu_serving_frontend_kv_map.cc')
+Source('serving_request_context.cc')
+Source('kv_token_ledger.cc')
 Source('npu_serving_frontend_plan.cc')
 Source('gate3_axi_transfer.cc')
 Source('gate3_completion_ledger.cc')
@@ -76,14 +83,56 @@ Source('mesh_dummy_core.cc')
 Source('mesh_dispatcher.cc')
 SimObject('MeshExperimentObserver.py', sim_objects=['MeshExperimentObserver'])
 Source('mesh_experiment_observer.cc')
+SimObject('PrestartCancelDriver.py', sim_objects=['PrestartCancelDriver'])
+Source('prestart_cancel_driver.cc')
 Source('agent_crc32c.cc')
 DebugFlag('AiMesh')
+
+GTest('serving_fill_inputs.test',
+      'serving_fill_inputs.test.cc',
+      'serving_fill_inputs.cc',
+      'mesh_execution_view.cc',
+      'mesh_binary.cc',
+      'agent_sha256.cc',
+      'agent_crc32c.cc')
+
+GTest('serving_instance_binding.test', 'serving_instance_binding.test.cc')
+
+GTest('serving_mesh_executor.test',
+      'serving_mesh_executor.test.cc',
+      'mesh_execution_view.cc',
+      'serving_mesh_executor.cc',
+      'serving_host_bindings.cc',
+      'mesh_serving_projection.cc',
+      'agent_surrogate_codec.cc',
+      'kv_token_ledger.cc',
+      'serving_request_context.cc',
+      'mesh_binary.cc',
+      'agent_sha256.cc',
+      'agent_crc32c.cc',
+      'mesh_kv_manager.cc',
+      'mesh_kv_manager_state.cc')
+
+GTest('mesh_kv_layout.test',
+      'mesh_kv_layout.test.cc',
+      'mesh_kv_layout.cc',
+      'mesh_binary.cc',
+      'agent_sha256.cc',
+      'agent_crc32c.cc')
+
+GTest('mesh_execution_view.test',
+      'mesh_execution_view.test.cc',
+      'mesh_execution_view.cc',
+      'mesh_binary.cc',
+      'agent_sha256.cc',
+      'agent_crc32c.cc')
 
 GTest('mesh_binary.test',
       'mesh_binary.test.cc',
       'acceptance_gtest_reporter.cc',
       'mesh_binary.cc',
       'mesh_ir_verifier.cc',
+      'mesh_kv_layout.cc',
       'mesh_moe_verifier.cc',
       'mesh_serving_verifier.cc',
       'mesh_serving_projection.cc',
@@ -195,6 +244,7 @@ GTest('agent_surrogate_codec.test',
 GTest('agent_plan_codec.test',
       'agent_plan_codec.test.cc',
       'agent_plan_codec.cc',
+      'serving_host_bindings.cc',
       'agent_plan_image.cc',
       'agent_surrogate_codec.cc',
       'agent_sha256.cc',
@@ -205,6 +255,21 @@ GTest('control_trigger_coordinator.test',
       'agent_plan_image.cc',
       'agent_surrogate_codec.cc',
       'agent_sha256.cc')
+GTest('kv_token_ledger.test',
+      'kv_token_ledger.test.cc',
+      'kv_token_ledger.cc',
+      'mesh_kv_manager.cc',
+      'mesh_kv_manager_state.cc',
+      'agent_sha256.cc')
+GTest('serving_request_context.test',
+      'serving_request_context.test.cc',
+      'serving_request_context.cc',
+      'mesh_serving_projection.cc',
+      'mesh_binary.cc',
+      'agent_sha256.cc',
+      'agent_crc32c.cc',
+      'mesh_kv_manager.cc',
+      'mesh_kv_manager_state.cc')
 GTest('npu_serving_frontend_kv_map.test',
       'npu_serving_frontend_kv_map.test.cc',
       'npu_serving_frontend_kv_map.cc')

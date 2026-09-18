@@ -20,7 +20,7 @@ ROUND0_HEX = (
 ROUND1_SHA256 = "2854ec712c5739031bf5256627f1d26d18c567ee5417fe095e0891b7343137c7"
 
 
-def build_parameter(round_, task, user_id, addresses) -> bytes:
+def build_parameter(round_, task, user_id, addresses, bindings=()) -> bytes:
     def tlv(tlv_type, payload):
         return P.encode_tlv(tlv_type, payload, A.TLV_FLAGS.REQUIRED)
 
@@ -56,15 +56,15 @@ def build_parameter(round_, task, user_id, addresses) -> bytes:
         "workload_plan_item_id": round_.workload_plan_item_id,
         "target_request_id": 0,
         "binding_table_offset": A.PARAMETER_HEADER_BYTES,
-        "binding_count": 0,
+        "binding_count": len(bindings),
         "binding_record_bytes": A.BINDING_RECORD_BYTES,
-        "extension_offset": A.PARAMETER_HEADER_BYTES,
+        "extension_offset": A.PARAMETER_HEADER_BYTES + len(bindings) * A.BINDING_RECORD_BYTES,
         "extension_bytes": len(tail),
         "requested_profile_key": round_.requested_profile_key,
         "reserved2": 0,
         "reserved3": 0,
     }
-    return P.encode_parameter(values, tail)
+    return P.encode_parameter(values, tail, bindings)
 
 
 def task0():
@@ -186,3 +186,37 @@ def test_release_control_parameter_is_exactly_160_bytes():
     assert decoded["target_request_id"] == 0
     assert decoded["kv_handle"] == 11
     assert decoded["kv_generation"] == 1
+
+
+NONEMPTY_BINDING_SHA256 = "2abd6a99b91d3c84919fea81ca3d56707c84c1841e568ef1a13fa54d09b0de22"
+
+
+def test_non_empty_binding_table_matches_frozen_sha256():
+    task = task0()
+    bindings = [
+        {"symbol_id": 1, "kind": A.BINDING_KIND.HOST_INPUT,
+          "flags": A.BINDING_FLAGS.READ,
+          "address": 0x0000000101000000,
+          "bytes": int(task.rounds[0].full_context_bytes)},
+        {"symbol_id": 2, "kind": A.BINDING_KIND.HOST_OUTPUT,
+          "flags": A.BINDING_FLAGS.WRITE,
+          "address": 0x0000000105000000,
+          "bytes": int(task.rounds[0].output_capacity_bytes)},
+    ]
+    parameter = build_parameter(
+        task.rounds[0], task, 0,
+        (0x0000000101000000, 0x0000000105000000, 0x0000000109000000),
+        bindings,
+    )
+    assert hashlib.sha256(parameter).hexdigest() == NONEMPTY_BINDING_SHA256
+    decoded = P.decode_parameter(parameter)
+    assert decoded["binding_count"] == 2
+    assert decoded["binding_table_offset"] == A.PARAMETER_HEADER_BYTES
+    assert decoded["extension_offset"] == A.PARAMETER_HEADER_BYTES + 48
+    tampered = bytearray(parameter)
+    tampered[A.PARAMETER_HEADER_BYTES + 4] ^= 0xFF
+    try:
+        P.decode_parameter(bytes(tampered))
+        raise AssertionError("tampered binding byte was accepted")
+    except Exception:
+        pass

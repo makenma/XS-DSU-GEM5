@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <map>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -12,11 +13,14 @@
 #include "dev/ai_mesh/dma_types.hh"
 #include "dev/ai_mesh/mesh_binary.hh"
 #include "dev/ai_mesh/mesh_compute_commit.hh"
+#include "dev/ai_mesh/mesh_dma_observer.hh"
+#include "dev/ai_mesh/mesh_execution_view.hh"
 #include "dev/ai_mesh/mesh_moe_gate.hh"
 #include "dev/ai_mesh/mesh_moe_runtime.hh"
 #include "dev/ai_mesh/mesh_weight_cache.hh"
 #include "dev/ai_mesh/mesh_weight_tags.hh"
 #include "dev/ai_mesh/runtime_key.hh"
+#include "dev/ai_mesh/serving_fill_inputs.hh"
 #include "dev/ai_mesh/tensor_sram.hh"
 #include "base/statistics.hh"
 #include "sim/clocked_object.hh"
@@ -55,8 +59,9 @@ class MeshDummyCore : public ClockedObject, public MoeOverlayComputePort
     void installProgram(const std::shared_ptr<const DecodedProgram> &program);
 
     // Dispatcher interface.
-    void dispatchInstance(InstanceGeneration instance);
-    void armRequest(InstanceGeneration instance);
+    void armRequest(InstanceGeneration instance,
+                    const ProfileExecutionView &view,
+                    std::shared_ptr<const ServingFillInputs> fill_inputs);
     void startRequest();
     void disarmRequest();
     mesh_abi::MeshCoreInstanceState instanceState() const
@@ -141,6 +146,11 @@ class MeshDummyCore : public ClockedObject, public MoeOverlayComputePort
         uint16_t dst_space;
     };
 
+    void setDmaObserver(MeshDmaObserver *observer) { dma_observer = observer; }
+    void setInstanceBinding(const ServingInstanceBinding &value);
+    const ServingInstanceBinding &instanceBinding() const
+    { return armed_binding; }
+    void releaseInstanceInputs();
     void completeFence(RuntimeObjectKey command,
                        RuntimeObjectKey signal_event);
     void onInstanceError(Tick tick);
@@ -467,6 +477,7 @@ class MeshDummyCore : public ClockedObject, public MoeOverlayComputePort
     const DecodedAttr *attrOf(const DecodedCommand &command) const;
 
     uint16_t core_id_value;
+    std::shared_ptr<const ServingFillInputs> runtime_fill_inputs;
     MoeInsertionGate region_gate;
     MoeOverlayEventBus *overlay_bus = nullptr;
     std::map<uint32_t, std::unique_ptr<MoeOverlayExecutor>> overlay_executors;
@@ -522,6 +533,7 @@ class MeshDummyCore : public ClockedObject, public MoeOverlayComputePort
     std::vector<uint64_t> reduce_ops_by_dtype_value;
 
     DmaEngineBase *dma;
+    MeshDmaObserver *dma_observer = nullptr;
     MeshDispatcher *dispatcher = nullptr;
     std::shared_ptr<const DecodedProgram> program;
     const uint32_t bank_queue_depth_value;
@@ -565,6 +577,7 @@ class MeshDummyCore : public ClockedObject, public MoeOverlayComputePort
     std::map<RuntimeObjectKey, uint64_t> dma_command_tag;
     uint64_t next_dma_tag = 1;
     InstanceGeneration instance_generation;
+    ServingInstanceBinding armed_binding;
     mesh_abi::MeshCoreInstanceState instance_state =
         mesh_abi::MeshCoreInstanceState::PROGRAM_READY;
     Tick error_latch_tick = 0;

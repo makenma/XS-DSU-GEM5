@@ -64,9 +64,11 @@ def section_order(program: Program) -> tuple:
     if unknown:
         raise MeshIrError("E_ABI_FEATURE", "unknown required feature bits",
                           features=hex(unknown))
-    minor = max(A.FEATURE_MIN_WRITER_MINOR[name]
-                for name, bit in A.FEATURE_BITS.items()
-                if program.required_features & bit)
+    if not A.feature_requirements_met(program.required_features):
+        raise MeshIrError("E_ABI_FEATURE",
+                          "required feature dependency is not satisfied",
+                          features=hex(program.required_features))
+    minor = A.feature_min_writer_minor(program.required_features)
     if program.abi_minor < minor:
         raise MeshIrError("E_ABI_VERSION", "feature needs a higher abi minor",
                           minor=program.abi_minor)
@@ -159,6 +161,7 @@ def encode_program(program: Program) -> bytes:
         "EVENTS": program.events,
         "RELOCATIONS": program.relocations,
         "EXPECTED_TRAFFIC": program.expected_traffic,
+        "PROFILE_STREAM_RANGES": program.profile_stream_ranges,
         "CONTENT_DIGESTS": program.content_digests,
         "MOE_LAYER_SPECS": program.moe_layer_specs,
         "MOE_EXPERT_SPECS": program.moe_expert_specs,
@@ -268,6 +271,7 @@ def _section_count(name: str, program: Program) -> int:
         "OP_ATTRS": len(program.op_attrs),
         "RELOCATIONS": len(program.relocations),
         "EXPECTED_TRAFFIC": len(program.expected_traffic),
+        "PROFILE_STREAM_RANGES": len(program.profile_stream_ranges),
         "CONTENT_DIGESTS": len(program.content_digests),
         "MOE_LAYER_SPECS": len(program.moe_layer_specs),
         "MOE_EXPERT_SPECS": len(program.moe_expert_specs),

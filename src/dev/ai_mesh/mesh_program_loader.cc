@@ -88,6 +88,7 @@ void MeshProgramLoader::startup()
         fatal("MeshProgramLoader: %s: %s", error.code, error.message);
 
     decoded = result;
+    execution_views = ExecutionViewSet::fromVerified(*result);
     program_name = result->strings.empty() ? "program" : result->strings[0];
     load_ok = true;
 

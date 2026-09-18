@@ -91,6 +91,7 @@ fillArenaAddresses(const AgentPlanImage &image, const AgentCommandRecord &record
             break;
           case kArenaParameter:
             intent.parameterAddress = arena.base;
+            intent.parameterCapacityBytes = arena.allocationBytes;
             break;
           case kArenaOutput:
             intent.outputAddress = arena.base;

@@ -1,6 +1,7 @@
 #include "dev/ai_mesh/axi_tensor_dma_engine.hh"
 
 #include <algorithm>
+#include <iterator>
 
 #include "base/logging.hh"
 #include "base/statistics.hh"
@@ -89,6 +90,15 @@ AxiTensorDmaEngine::bindFillContent(RuntimeObjectKey command,
     fill_contents[command] = std::move(entry);
 }
 
+void
+AxiTensorDmaEngine::releaseFillBindings(InstanceGeneration instance)
+{
+    for (auto item = fill_contents.begin(); item != fill_contents.end();)
+        item = item->first.instance == instance ? fill_contents.erase(item) : std::next(item);
+    for (auto item = fill_patterns.begin(); item != fill_patterns.end();)
+        item = item->first.instance == instance ? fill_patterns.erase(item) : std::next(item);
+}
+
 bool
 AxiTensorDmaEngine::idle() const
 {
@@ -156,29 +166,38 @@ AxiTensorDmaEngine::submit(const DecodedDmaDescriptor &descriptor,
     return true;
 }
 
-std::vector<AxiBurst>
-AxiTensorDmaEngine::planOf(const DecodedDmaDescriptor &descriptor) const
+uint64_t
+AxiTensorDmaEngine::remoteRowAddress(const DecodedDmaDescriptor &descriptor,
+                                    uint32_t row) const
 {
-    // The AXI address is always the remote endpoint: LOAD/PREFETCH plan on
-    // the source, STORE/P2P plan on the destination.
     const bool is_read = descriptor.kind == mesh_abi::kDmaKindLOAD ||
                          descriptor.kind == mesh_abi::kDmaKindPREFETCH;
     const DecodedDmaEndpoint &remote =
         is_read ? descriptor.src : descriptor.dst;
     const RuntimeArch::Region *region = arch->region(remote.region_id);
     fatal_if(!region, "dma remote region unresolved");
-    const uint32_t limit = std::min(
-        max_burst_beats, uint32_t(descriptor.max_burst_beats));
     const uint64_t stride =
         is_read ? descriptor.src_stride_bytes : descriptor.dst_stride_bytes;
+    const auto address = instance_binding.resolve(remote.tensor_id,
+        remote.offset_bytes + uint64_t(row) * stride, descriptor.row_bytes,
+        !is_read, region->base + uint64_t(remote.owner_core) * tileStrideOf(*region));
+    fatal_if(!address, "E_BINDING_ROLE: DMA row escapes its frozen binding window");
+    return *address;
+}
+
+std::vector<AxiBurst>
+AxiTensorDmaEngine::planOf(const DecodedDmaDescriptor &descriptor) const
+{
+    const uint32_t limit = std::min(
+        max_burst_beats, uint32_t(descriptor.max_burst_beats));
     std::vector<AxiBurst> plan;
     for (uint32_t row = 0; row < descriptor.rows; row++) {
-        const uint64_t row_abs =
-            region->base + uint64_t(remote.owner_core) * tileStrideOf(*region) +
-            remote.offset_bytes + uint64_t(row) * stride;
+        const uint64_t row_abs = remoteRowAddress(descriptor, row);
         for (auto burst : splitBursts(row_abs, descriptor.row_bytes,
-                                      data_bus_bytes, limit))
+                                      data_bus_bytes, limit)) {
+            burst.row = row;
             plan.push_back(burst);
+        }
     }
     return plan;
 }
@@ -252,17 +271,10 @@ AxiTensorDmaEngine::driveReadDescriptor()
     // Destination: local SRAM offset of this burst's logical interval.
     const DecodedDmaDescriptor &descriptor = state.descriptor;
     const RuntimeObjectKey &descriptor_key = state.descriptor_key;
-    const RuntimeArch::Region *src_region =
-        arch->region(descriptor.src.region_id);
     uint64_t dst_base = 0;
     bool found = false;
     for (uint32_t row = 0; row < descriptor.rows && !found; row++) {
-        const uint64_t src_abs =
-            src_region->base +
-            uint64_t(descriptor.src.owner_core) *
-                tileStrideOf(*src_region) +
-            descriptor.src.offset_bytes +
-            uint64_t(row) * descriptor.src_stride_bytes;
+        const uint64_t src_abs = remoteRowAddress(descriptor, row);
         if (burst_plan.logical_start >= src_abs &&
             burst_plan.logical_start < src_abs + descriptor.row_bytes) {
             dst_base = descriptor.dst.offset_bytes +
@@ -337,17 +349,10 @@ AxiTensorDmaEngine::driveWriteDescriptor()
         // The burst's logical interval lives in remote (destination)
         // address space; the source mapping uses the same logical offset
         // within the descriptor row.
-        const RuntimeArch::Region *dst_region =
-            arch->region(descriptor.dst.region_id);
         uint64_t row_src_local = 0;
         bool found = false;
         for (uint32_t row = 0; row < descriptor.rows && !found; row++) {
-            const uint64_t dst_abs =
-                dst_region->base +
-                uint64_t(descriptor.dst.owner_core) *
-                    tileStrideOf(*dst_region) +
-                descriptor.dst.offset_bytes +
-                uint64_t(row) * descriptor.dst_stride_bytes;
+            const uint64_t dst_abs = remoteRowAddress(descriptor, row);
             if (burst_plan.logical_start >= dst_abs &&
                 burst_plan.logical_start < dst_abs + descriptor.row_bytes) {
                 row_src_local = descriptor.src.offset_bytes +
@@ -518,6 +523,8 @@ AxiTensorDmaEngine::commitFillRow(RuntimeObjectKey descriptor_key,
                  "fill content not bound for command %u",
                  descriptor.command_id);
         const uint64_t pattern = it->second;
+        fatal_if(pattern == mesh_abi::kDmaFillRuntimeBoundSentinel,
+                 "E_BINDING_ROLE: runtime sentinel is not a fill pattern");
         for (uint64_t i = 0; i < descriptor.row_bytes; i++)
             bytes[i] = static_cast<uint8_t>((pattern >> (8 * (i % 8))) & 0xFF);
         installed = bytes;
@@ -530,6 +537,8 @@ AxiTensorDmaEngine::commitFillRow(RuntimeObjectKey descriptor_key,
     notePayload(descriptor_key, bytes.data(), bytes.size());
     ActualTraffic &row_stats = rowOf(descriptor_key);
     row_stats.fill_bytes += descriptor.row_bytes;
+    row_stats.committed_segments.push_back(
+        DmaCommittedSegment{row, 0, descriptor.row_bytes});
     if (curTick() >= timings[descriptor_key].local_commit_tick)
         timings[descriptor_key].local_commit_tick = curTick();
 
@@ -679,6 +688,12 @@ AxiTensorDmaEngine::commitReadBurst(uint64_t burst_ordinal)
     ActualTraffic &row = rowOf(burst.descriptor_key);
     row.read_bytes += burst.packed.size();
     row.read_bursts++;
+    const uint64_t row_base = remoteRowAddress(
+        read_queue.front().descriptor, burst.plan.row);
+    row.committed_segments.push_back(
+        DmaCommittedSegment{burst.plan.row,
+                            burst.plan.logical_start - row_base,
+                            burst.packed.size()});
     read_bursts_completed++;
     // Keep the RLAST of the burst whose local commit is the latest, so the
     // exported pair satisfies rlast <= commit <= done exactly.
@@ -743,6 +758,12 @@ AxiTensorDmaEngine::onWriteDone(uint64_t burst_ordinal, axi::AxiResp resp)
             row.write_bytes += burst.plan.useful_bytes;
         else
             row.p2p_bytes += burst.plan.useful_bytes;
+        const uint64_t row_base = remoteRowAddress(
+            write_queue.front().descriptor, burst.plan.row);
+        row.committed_segments.push_back(
+            DmaCommittedSegment{burst.plan.row,
+                                burst.plan.logical_start - row_base,
+                                burst.plan.useful_bytes});
     }
     write_bursts_completed++;
     DescriptorTiming &timing = timings[burst.descriptor_key];
@@ -858,6 +879,8 @@ AxiTensorDmaEngine::notifyOwner(RuntimeObjectKey descriptor,
                                 RuntimeObjectKey completion_event,
                                 DmaStatus status)
 {
+    fill_contents.erase(command);
+    fill_patterns.erase(command);
     auto it = payload_state.find(descriptor);
     if (it != payload_state.end()) {
         char digest[40];

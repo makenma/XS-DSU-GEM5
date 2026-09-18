@@ -1,5 +1,10 @@
 #include "dev/ai_mesh/agent_plan_codec.hh"
 
+#include <algorithm>
+#include <limits>
+
+#include "base/logging.hh"
+
 #include <cstring>
 
 #include "dev/ai_mesh/agent_axi_work.hh"
@@ -37,11 +42,114 @@ pushTlv(std::vector<uint8_t> &tail, uint16_t type, const uint8_t *payload,
 
 }
 
+uint64_t
+planParameterBytes(const AgentPlanRound &round, size_t binding_count)
+{
+    constexpr uint64_t kInputDigestTlv = 40;
+    constexpr uint64_t kOutputChunkTlv = 16;
+    constexpr uint64_t kWorkloadDigestTlv = 40;
+    constexpr uint64_t kDeadlineTlv = 16;
+    return agent_abi::kParameterHeaderBytes + kInputDigestTlv +
+        kOutputChunkTlv + kWorkloadDigestTlv +
+        (round.hasDeadline ? kDeadlineTlv : 0) +
+        binding_count * agent_abi::kBindingRecordBytes;
+}
+
+bool
+normalizeBindings(std::vector<agent_abi::BindingRecord> &bindings,
+                  std::string &reason)
+{
+    std::sort(bindings.begin(), bindings.end(),
+              [](const agent_abi::BindingRecord &lhs,
+                 const agent_abi::BindingRecord &rhs) {
+                  return lhs.symbol_id < rhs.symbol_id;
+              });
+    for (size_t index = 1; index < bindings.size(); ++index) {
+        if (bindings[index - 1].symbol_id == bindings[index].symbol_id) {
+            reason = "binding table repeats symbol " +
+                std::to_string(bindings[index].symbol_id);
+            return false;
+        }
+    }
+    return true;
+}
+
+bool
+bindingTableRepresentable(size_t binding_count, size_t tail_bytes,
+                          std::string &reason)
+{
+    if (binding_count > 0xFFFFu) {
+        reason = "binding count exceeds the u16 wire field";
+        return false;
+    }
+    const uint64_t limit = std::numeric_limits<uint32_t>::max();
+    const uint64_t header = agent_abi::kParameterHeaderBytes;
+    if (tail_bytes > limit - header) {
+        reason = "parameter tail does not fit the u32 parameter size";
+        return false;
+    }
+    if (binding_count >
+            (limit - header - tail_bytes) / agent_abi::kBindingRecordBytes) {
+        reason = "binding table does not fit the u32 parameter size";
+        return false;
+    }
+    return true;
+}
+
+
+uint32_t
+parameterBlockBytes(const AgentPlanRound &round, size_t binding_count)
+{
+    const uint32_t header = agent_abi::kParameterHeaderBytes;
+    const uint32_t extensions = 40 + 16 + 40 + (round.hasDeadline ? 16 : 0);
+    return header + extensions +
+        static_cast<uint32_t>(binding_count) * agent_abi::kBindingRecordBytes;
+}
+
+std::vector<agent_abi::BindingRecord>
+resolveHostBindings(const AgentHostBindingPlan &plan,
+                    const PlanWireAddresses &addresses,
+                    const AgentPlanRound &round, uint64_t kvSessionSlotBytes)
+{
+    std::vector<agent_abi::BindingRecord> bindings;
+    bindings.reserve(plan.requirements.size());
+    for (const AgentHostBindingRequirement &requirement : plan.requirements) {
+        agent_abi::BindingRecord record;
+        record.symbol_id = requirement.symbolId;
+        record.kind = requirement.kind;
+        record.flags = requirement.flags;
+        switch (requirement.kind) {
+          case agent_abi::kBindingKindHOST_INPUT:
+            record.address = addresses.inputBase;
+            record.bytes = round.fullContextBytes;
+            break;
+          case agent_abi::kBindingKindHOST_OUTPUT:
+            record.address = addresses.outputBase;
+            record.bytes = round.outputCapacityBytes;
+            break;
+          case agent_abi::kBindingKindKV_EXTERNAL:
+            record.address = 0;
+            record.bytes = kvSessionSlotBytes;
+            break;
+          case agent_abi::kBindingKindWEIGHT_EXTERNAL:
+            record.address = requirement.platformAddress;
+            record.bytes = requirement.platformBytes;
+            break;
+          default:
+            fatal("binding requirement %u uses unknown kind %u",
+                  requirement.symbolId, requirement.kind);
+        }
+        bindings.push_back(record);
+    }
+    return bindings;
+}
+
 std::vector<uint8_t>
 buildPlanParameter(const AgentPlanRound &round, const AgentPlanTask &task,
                    uint32_t userId, const PlanWireAddresses &addresses,
                    const uint8_t workloadDigest[32],
-                   uint32_t outputChunkBytes)
+                   uint32_t outputChunkBytes,
+                   const std::vector<agent_abi::BindingRecord> &bindings)
 {
     agent_abi::ParameterHeader value;
     value.magic = 0x504e4741;
@@ -68,10 +176,7 @@ buildPlanParameter(const AgentPlanRound &round, const AgentPlanTask &task,
         agent_abi::SqOpcode::GENERATE);
     value.workload_plan_item_id = round.itemId;
     value.target_request_id = 0;
-    value.binding_table_offset = agent_abi::kParameterHeaderBytes;
-    value.binding_count = 0;
-    value.binding_record_bytes = 24;
-    value.extension_offset = agent_abi::kParameterHeaderBytes;
+    value.binding_record_bytes = agent_abi::kBindingRecordBytes;
     value.requested_profile_key = round.profileKey;
 
     std::vector<uint8_t> tail;
@@ -90,11 +195,29 @@ buildPlanParameter(const AgentPlanRound &round, const AgentPlanTask &task,
     pushTlv(tail, agent_abi::kTlvTypeWORKLOAD_ID_DIGEST, workloadDigest,
             32);
     value.extension_bytes = static_cast<uint32_t>(tail.size());
-    value.total_bytes = agent_abi::kParameterHeaderBytes +
-                        static_cast<uint32_t>(tail.size());
+    std::string bindingReason;
+    if (!bindingTableRepresentable(bindings.size(), tail.size(),
+                                   bindingReason))
+        fatal("%s", bindingReason.c_str());
+    std::vector<uint8_t> bindingBytes;
+    for (const agent_abi::BindingRecord &binding : bindings) {
+        const auto encoded = agent_abi::encodeBindingRecord(binding);
+        bindingBytes.insert(bindingBytes.end(), encoded.begin(),
+                            encoded.end());
+    }
+    value.binding_count = static_cast<uint32_t>(bindings.size());
+    value.binding_table_offset = agent_abi::kParameterHeaderBytes;
+    value.extension_offset = agent_abi::kParameterHeaderBytes +
+        static_cast<uint32_t>(bindingBytes.size());
+    value.total_bytes = parameterBlockBytes(round, bindings.size());
+    if (value.total_bytes != agent_abi::kParameterHeaderBytes +
+            static_cast<uint32_t>(bindingBytes.size()) +
+            static_cast<uint32_t>(tail.size()))
+        fatal("parameter length authority disagrees with the encoded parts");
 
     std::vector<uint8_t> data =
         toVector(agent_abi::encodeParameterHeader(value));
+    data.insert(data.end(), bindingBytes.begin(), bindingBytes.end());
     data.insert(data.end(), tail.begin(), tail.end());
     const uint32_t crcOffset = agent_abi::kParameterHeaderCrc32Offset;
     std::fill(data.begin() + crcOffset, data.begin() + crcOffset + 4, 0);

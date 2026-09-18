@@ -37,6 +37,9 @@ struct AgentAxiDriverParams;
 namespace ai_mesh
 {
 
+class NpuMemoryEndpoint;
+struct PlanWireAddresses;
+
 class AgentAxiDriver : public ClockedObject,
                        public axi::AxiWriteCommitObserver,
                        public Gate3PhaseParticipant
@@ -195,6 +198,13 @@ class AgentAxiDriver : public ClockedObject,
                            axi::AxiResp response);
     void startCqRead();
     void startMetadataRead();
+    void readGeneratedCodeBacking();
+    std::vector<agent_abi::BindingRecord> requestBindings(
+        const AgentSubmissionIntent &intent,
+        const struct PlanWireAddresses &addresses,
+        const AgentPlanRound &round) const;
+    uint32_t plannedInstanceCount(uint16_t programId,
+                                  uint16_t profileId) const;
     Gate3MetadataExpectation metadataExpectation() const;
     void processIrqCommits();
     void startDoorbellProbe(uint64_t tail, uint64_t requestId,
@@ -228,7 +238,8 @@ class AgentAxiDriver : public ClockedObject,
     std::vector<uint8_t> encodeParameter(uint64_t requestId) const;
     std::vector<uint8_t> encodeControl(uint64_t sequence) const;
     std::vector<uint8_t> makePayload(uint64_t seed, uint64_t bytes) const;
-    void storeBytes(uint64_t address, const std::vector<uint8_t> &data);
+    void storeBytes(uint64_t address, const std::vector<uint8_t> &data,
+                    uint64_t capacity = 0);
     Gate3WriteWork makeWrite(const std::string &object,
                              const std::string &control,
                              std::optional<uint64_t> absoluteSeq,
@@ -262,6 +273,10 @@ class AgentAxiDriver : public ClockedObject,
 
     axi::AxiInitiatorAdapter *const master;
     axi::AxiTargetAdapter *const target;
+    const uint64_t generatedCodeSpanBase;
+    std::vector<AgentHostBindingPlan> hostBindingPlans;
+    uint64_t kvSessionSlotBytes = 0;
+    uint64_t metadataOutputBytes = 0;
     Gate3ObservationRecorder *const recorder;
     const bool planDrivenMode;
     const uint32_t dataBusBytes;

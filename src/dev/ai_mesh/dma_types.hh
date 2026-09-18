@@ -7,7 +7,9 @@
 #include <string>
 
 #include "dev/ai_mesh/mesh_binary.hh"
+#include "dev/ai_mesh/mesh_dma_observer.hh"
 #include "dev/ai_mesh/runtime_key.hh"
+#include "dev/ai_mesh/serving_instance_binding.hh"
 #include "sim/clocked_object.hh"
 
 namespace gem5
@@ -33,6 +35,7 @@ struct ActualTraffic
     uint32_t error_code = 0;
     uint16_t dma_kind = 0;
     std::string payload_digest;
+    std::vector<DmaCommittedSegment> committed_segments;
 };
 
 enum class DmaStatus : uint8_t
@@ -54,6 +57,11 @@ class DmaEngineBase : public ClockedObject
     // Identity is derived by the core (the owner of wire ids) and passed in:
     // the engine only carries typed keys, so overlay descriptors are not
     // forced back through static wire-id lookups.
+    virtual void bindInstance(const ServingInstanceBinding &value)
+    {
+        (void)value;
+    }
+
     virtual bool submit(const DecodedDmaDescriptor &descriptor,
                         const RuntimeObjectKey &descriptor_key,
                         const RuntimeObjectKey &command_key,
@@ -71,6 +79,7 @@ class DmaEngineBase : public ClockedObject
         (void)content;
         (void)install_bytes;
     }
+    virtual void releaseFillBindings(InstanceGeneration instance) {}
     virtual bool idle() const = 0;
     virtual void bindOwner(MeshDummyCore *core, const struct RuntimeArch *arch) = 0;
     virtual const std::map<RuntimeObjectKey, ActualTraffic> &

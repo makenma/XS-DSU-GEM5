@@ -247,15 +247,18 @@ std::vector<const DmaDescriptor *>
 profileDescriptors(const DecodedProgram &program,
                   const AgentInstanceProfile &instance)
 {
-    std::vector<const DmaDescriptor *> out;
-    for (const auto &row : program.traffic) {
-        if (row.entrypoint_id != instance.mesh_entrypoint_id ||
-            row.profile_id != instance.mesh_profile_id)
+    std::set<uint32_t> commands;
+    for (const auto &range : program.profile_stream_ranges) {
+        if (range.profile_id != instance.mesh_profile_id)
             continue;
-        for (const auto &descriptor : program.descriptors)
-            if (descriptor.descriptor_id == row.descriptor_id)
-                out.push_back(&descriptor);
+        for (uint32_t i = 0; i < range.command_count; i++)
+            commands.insert(
+                program.commands[size_t(range.command_begin) + i].command_id);
     }
+    std::vector<const DmaDescriptor *> out;
+    for (const auto &descriptor : program.descriptors)
+        if (commands.count(descriptor.command_id))
+            out.push_back(&descriptor);
     return out;
 }
 
