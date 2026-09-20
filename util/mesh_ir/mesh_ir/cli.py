@@ -10,8 +10,8 @@ from pathlib import Path
 
 from mesh_ir.abi.decoder import decode_program
 from mesh_ir.abi.encoder import encode_program
-from mesh_ir.abi.verifier import verify_program
-from mesh_ir.builder import load_arch
+from mesh_ir.architecture import load_arch
+from mesh_ir.model import MeshIrError
 from mesh_ir.golden_programs import (
     build_dma_edge_program,
     build_dma_shapes_program,
@@ -21,6 +21,19 @@ from mesh_ir.golden_programs import (
     build_dma_write_error_program,
     build_dual_core_program,
     build_fill_program,
+    build_fill_offset_program,
+    build_fill_view_offset_in0_out_program,
+    build_fill_view_offset_in0_program,
+    build_fill_view_offset_padding_pattern_program,
+    build_fill_view_offset_padding_zero_program,
+    build_fill_view_offset_row_gap_pattern_program,
+    build_fill_view_offset_row_gap_zero_program,
+    build_fill_view_offset_split_pattern_program,
+    build_fill_view_offset_split_program,
+    build_fill_view_offset_split_zero_program,
+    build_fill_view_offset_out_pad_program,
+    build_fill_view_offset_out_program,
+    build_fill_view_offset_program,
     build_repeat_program,
     build_single_core_program,
     build_poison_program,
@@ -29,6 +42,8 @@ from mesh_ir.golden_programs import (
     build_poison_elementwise_inplace_program,
     build_poison_store_program,
     build_poison_reduce_dst_old_program,
+    build_multi_descriptor_program,
+    build_pre_resident_weight_program,
     build_zero_dma_program,
     build_fence_scopes_program,
     build_cross_error_program,
@@ -43,11 +58,37 @@ from mesh_ir.golden_programs import (
     build_load_saturation_multi_tensor_program,
     build_load_saturation_strided_program,
 )
+from mesh_ir.golden_runtime_programs import (
+    build_barrier_asymmetric_program,
+    build_p2p_cancel_program,
+    build_p2p_multi_descriptor_program,
+    build_p2p_prefilled_destination_program,
+    build_double_buffer_overlap_program,
+    build_double_buffer_serialized_program,
+    build_engine_reduce_pressure_program,
+    build_engine_tensor_pressure_program,
+    build_engine_vector_pressure_program,
+)
+from mesh_ir.publication import publish_authored_program
+from mesh_ir.scheduled.verify import verify_program as verify_complete_program
 
 BUILDERS = {
     "single": build_single_core_program,
     "dual": build_dual_core_program,
     "fill": build_fill_program,
+    "fill_offset": build_fill_offset_program,
+    "fill_view_offset": build_fill_view_offset_program,
+    "fill_view_offset_out": build_fill_view_offset_out_program,
+    "fill_view_offset_out_pad": build_fill_view_offset_out_pad_program,
+    "fill_view_offset_padding_zero": build_fill_view_offset_padding_zero_program,
+    "fill_view_offset_padding_pattern": build_fill_view_offset_padding_pattern_program,
+    "fill_view_offset_row_gap_zero": build_fill_view_offset_row_gap_zero_program,
+    "fill_view_offset_row_gap_pattern": build_fill_view_offset_row_gap_pattern_program,
+    "fill_view_offset_split": build_fill_view_offset_split_program,
+    "fill_view_offset_split_zero": build_fill_view_offset_split_zero_program,
+    "fill_view_offset_split_pattern": build_fill_view_offset_split_pattern_program,
+    "fill_view_offset_in0": build_fill_view_offset_in0_program,
+    "fill_view_offset_in0_out": build_fill_view_offset_in0_out_program,
     "repeat": build_repeat_program,
     "poison": build_poison_program,
     "dma_edge": build_dma_edge_program,
@@ -74,57 +115,101 @@ BUILDERS = {
     "poison_ew": build_poison_elementwise_inplace_program,
     "poison_store": build_poison_store_program,
     "poison_reduce": build_poison_reduce_dst_old_program,
+    "multi_descriptor": build_multi_descriptor_program,
+    "pre_resident_weight": build_pre_resident_weight_program,
+    "engine_tensor_pressure": build_engine_tensor_pressure_program,
+    "engine_vector_pressure": build_engine_vector_pressure_program,
+    "engine_reduce_pressure": build_engine_reduce_pressure_program,
+    "double_buffer_overlap": build_double_buffer_overlap_program,
+    "double_buffer_serialized": build_double_buffer_serialized_program,
+    "barrier_asymmetric": build_barrier_asymmetric_program,
+    "p2p_multi_descriptor": build_p2p_multi_descriptor_program,
+    "p2p_prefilled_destination": build_p2p_prefilled_destination_program,
+    "p2p_cancel": build_p2p_cancel_program,
 }
 
 
 def cmd_build(args) -> int:
     arch = load_arch(args.arch)
     program = BUILDERS[args.program](arch)
-    verify_program(program, arch)
-    blob = encode_program(program)
+    result = publish_authored_program(
+        args.out,
+        program,
+        arch,
+        kind="golden",
+        identity=(("program", args.program), ("arch_name", arch.arch_name)),
+        protected_inputs=(args.arch,),
+    )
+    print(json.dumps(result.canonical_dict(), sort_keys=True))
+    return 0
 
-    out = Path(args.out)
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "program.mshb").write_bytes(blob)
-    (out / "schedule.mesh.json").write_bytes(
-        json.dumps(program.canonical_dict(), sort_keys=True, indent=2).encode("utf-8")
+
+def cmd_bindings(args) -> int:
+    arch = load_arch(args.arch)
+    program = BUILDERS[args.program](arch)
+    selected = tuple(
+        variant
+        for variant in program.semantics.variants
+        if (args.entrypoint_id == 0 or variant.entrypoint_id == args.entrypoint_id)
+        and (args.profile_id == 0 or variant.profile_id == args.profile_id)
     )
-    traffic = [
-        {
-            "entrypoint_id": row.entrypoint_id,
-            "profile_id": row.profile_id,
-            "command_id": row.command_id,
-            "descriptor_id": row.descriptor_id,
-            "kind": row.kind,
-            "useful_bytes": row.useful_bytes,
-            "physical_beat_bytes": row.physical_beat_bytes,
-            "segments": row.segments,
-            "bursts": row.bursts,
-            "ar_count": row.ar_count,
-            "r_beats": row.r_beats,
-            "aw_count": row.aw_count,
-            "w_beats": row.w_beats,
-            "b_count": row.b_count,
-        }
-        for row in program.expected_traffic
-    ]
-    (out / "expected_traffic.json").write_bytes(
-        json.dumps(traffic, sort_keys=True, indent=2).encode("utf-8")
+    if len(selected) != 1:
+        raise MeshIrError(
+            "E_RELOCATION",
+            "invocation selects no unique Program variant",
+        )
+    variant = selected[0]
+    span = variant.membership.binding_slots
+    slots = {slot.slot_id: slot for slot in program.semantics.binding_slots}
+    if args.bindings_in:
+        payload = json.loads(Path(args.bindings_in).read_text())
+    else:
+        payload = []
+        for slot_id in range(span.first_id, span.first_id + span.count):
+            slot = slots[slot_id]
+            binding = slot.reference_binding
+            payload.append(
+                {
+                    "slot_id": binding.slot_id,
+                    "symbol": slot.symbol,
+                    "region_id": binding.region_id,
+                    "owner_core": binding.owner_core,
+                    "allocation_offset_bytes": binding.allocation_offset_bytes,
+                    "allocation_size_bytes": binding.allocation_size_bytes,
+                    "allocation_alignment_bytes": binding.allocation_alignment_bytes,
+                    "access": int(getattr(binding.access, "value", binding.access)),
+                }
+            )
+    Path(args.out).write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-    manifest = {
-        "program": args.program,
-        "abi": {"major": program.abi_major, "minor": program.abi_minor},
-        "arch_name": arch.arch_name,
-        "arch_digest": arch.digest().hex(),
-        "semantic_sha256": program.semantic_sha256(),
-        "mshb_sha256": hashlib.sha256(blob).hexdigest(),
-        "mshb_bytes": len(blob),
-        "status": "ok",
-    }
-    (out / "manifest.json").write_bytes(
-        json.dumps(manifest, sort_keys=True, indent=2).encode("utf-8")
-    )
-    print(json.dumps(manifest, sort_keys=True))
+    if args.traffic_out:
+        from mesh_ir.ir.common import Access
+        from mesh_ir.scheduled.addressing import bind_invocation
+        from mesh_ir.traffic import Binding
+
+        bindings = tuple(
+            Binding(
+                item["slot_id"],
+                item["region_id"],
+                item["owner_core"],
+                item["allocation_offset_bytes"],
+                item["allocation_size_bytes"],
+                item["allocation_alignment_bytes"],
+                Access(item["access"]),
+            )
+            for item in payload
+        )
+        invocation = bind_invocation(
+            program, arch, variant.entrypoint_id, variant.profile_id, bindings
+        )
+        Path(args.traffic_out).write_text(
+            json.dumps(
+                invocation.traffic.canonical_dict(), indent=2, sort_keys=True
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     return 0
 
 
@@ -132,12 +217,12 @@ def cmd_verify(args) -> int:
     arch = load_arch(args.arch)
     data = Path(args.program).read_bytes()
     program = decode_program(data)
-    verify_program(program, arch)
+    verify_complete_program(program, arch)
     print(
         json.dumps(
             {
                 "status": "ok",
-                "semantic_sha256": program.semantic_sha256(),
+                "semantic_sha256": program.semantic_sha256,
                 "mshb_sha256": hashlib.sha256(data).hexdigest(),
             },
             sort_keys=True,
@@ -219,7 +304,7 @@ def cmd_emit_cpp_golden(args) -> int:
     ]
     for key in ("single", "dual", "repeat"):
         program = BUILDERS[key](arch)
-        verify_program(program, arch)
+        verify_complete_program(program, arch)
         blob = encode_program(program)
         lines.append(f"static const unsigned char kGoldenMshb{key.capitalize()}[] = {{")
         for i in range(0, len(blob), 16):
@@ -309,6 +394,19 @@ def main(argv=None) -> int:
     verify.add_argument("--program", required=True)
     verify.add_argument("--arch", required=True)
     verify.set_defaults(func=cmd_verify)
+
+    bindings = sub.add_parser(
+        "bindings", help="emit the compiler reference dispatch bindings as JSON")
+    bindings.add_argument("--program", choices=sorted(BUILDERS), required=True)
+    bindings.add_argument("--arch", required=True)
+    bindings.add_argument("--out", required=True)
+    bindings.add_argument("--entrypoint-id", type=int, default=0)
+    bindings.add_argument("--profile-id", type=int, default=0)
+    bindings.add_argument(
+        "--bindings-in", default="", help="Dispatch bindings to echo instead of the reference set")
+    bindings.add_argument(
+        "--traffic-out", default="", help="Also derive the invocation expected traffic JSON")
+    bindings.set_defaults(func=cmd_bindings)
 
     emit_agent = sub.add_parser(
         "emit-agent-golden",

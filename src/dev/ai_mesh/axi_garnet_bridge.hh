@@ -106,6 +106,10 @@ class AxiGarnetBridge : public ClockedObject
 
     bool idle() const;
 
+    // Instance boundary guard: the bridge must be drained and must not keep
+    // per-response bookkeeping that could match the next instance.
+    void beginInstance();
+
     void startup() override;
 
   private:
@@ -145,8 +149,6 @@ class AxiGarnetBridge : public ClockedObject
     const uint32_t aw_queue_depth;
     const uint32_t ar_queue_depth;
     const uint32_t w_beats_per_cycle;
-    const uint32_t max_axi_ids;
-    const uint16_t axi_id_base;
     uint64_t w_accept_cycle = 0;
     uint64_t w_accepted_this_cycle = 0;
 
@@ -167,7 +169,6 @@ class AxiGarnetBridge : public ClockedObject
     std::map<uint64_t, PendingWrite> live_writes;
     std::map<uint64_t, PendingRead> live_reads;
     uint64_t next_ordinal = 0;
-    uint16_t id_cursor = 0;
 
     Counters ctr;
     TickEvent tick_event;

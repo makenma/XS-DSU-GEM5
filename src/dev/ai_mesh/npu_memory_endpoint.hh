@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "dev/ai_mesh/target_sentinels.hh"
 #include "mem/axi/axi_garnet_endpoint.hh"
 #include "mem/axi/axi_types.hh"
 #include "sim/clocked_object.hh"
@@ -37,11 +38,21 @@ class NpuMemoryEndpoint : public ClockedObject,
     void seed(uint64_t address, uint64_t size, uint8_t pattern);
     // Digest of the current committed bytes of [address, address+size).
     std::string rangeDigest(uint64_t address, uint64_t size) const;
+    // Raw committed bytes of [address, address+size) from the real backing.
+    bool readBytes(uint64_t address, uint64_t size, uint8_t *out) const;
     uint64_t committedBytes() const { return committed_valid_bytes; }
+    // No accepted write or response of this target endpoint is still pending.
+    bool functionalIdle() const { return adapter->functionalIdle(); }
     uint64_t errorDrainBytes() const { return error_drained_bytes; }
 
-    // Drain-time digest computation for every registered verify row.
+    // Drain-time digest computation for every registered verify row, and the
+    // before/after comparison of every declared sentinel span.
     void computeVerifyDigests();
+    const std::vector<SentinelRangeObservation> &sentinelRanges() const
+    {
+        return sentinels;
+    }
+    bool sentinelsEmpty() const { return sentinel_spans.empty(); }
 
     struct SeedRow
     {
@@ -59,6 +70,11 @@ class NpuMemoryEndpoint : public ClockedObject,
         uint64_t size = 0;
         std::string digest;
         std::string after_digest; // digest of bytes [16, size)
+        // Post-quiescence readback of the whole row, present only when the
+        // row fits the configured byte-dump limit.  It lets a reviewer
+        // compare the real committed bytes against the admitted source
+        // without trusting a digest.
+        std::string bytes_hex;
     };
     const std::vector<VerifyRow> &verifyRows() const { return verifies; }
 
@@ -75,9 +91,14 @@ class NpuMemoryEndpoint : public ClockedObject,
     axi::AxiTargetAdapter *const adapter;
     const std::string seed_json_path;
     const std::string verify_json_path;
+    const uint64_t verify_bytes_limit;
+
+    const std::string sentinel_json_path;
 
     std::vector<SeedRow> seeds;
     std::vector<VerifyRow> verifies;
+    TargetSentinels sentinel_spans;
+    std::vector<SentinelRangeObservation> sentinels;
     uint64_t committed_valid_bytes = 0;
     uint64_t error_drained_bytes = 0;
 };

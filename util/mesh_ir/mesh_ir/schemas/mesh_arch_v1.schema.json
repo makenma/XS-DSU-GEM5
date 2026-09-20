@@ -1,0 +1,273 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mesh-arch-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "arch_name", "clock_hz", "mesh", "core", "axi", "memory_regions", "fabric"],
+  "properties": {
+    "schema_version": {"const": "mesh-arch-v1"},
+    "arch_name": {"type": "string", "minLength": 1},
+    "clock_hz": {"type": "integer", "minimum": 1, "maximum": 18446744073709551615},
+    "mesh": {
+      "type": "object", "additionalProperties": false,
+      "required": ["rows", "cols", "endpoint_order", "routing", "core_ids"],
+      "properties": {
+        "rows": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "cols": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "endpoint_order": {"const": "row_major_yx"},
+        "routing": {"enum": ["xy", "yx"]},
+        "core_ids": {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 0, "maximum": 65534}}
+      }
+    },
+    "core": {
+      "type": "object", "additionalProperties": false,
+      "required": ["command_rom_entries", "decode_width", "event_visibility_cycles", "admit_window", "sram", "tensor_engine", "vector_engine", "reduce_engine", "dma"],
+      "properties": {
+        "command_rom_entries": {"type": "integer", "minimum": 1},
+        "decode_width": {"type": "integer", "minimum": 1},
+        "event_visibility_cycles": {"type": "integer", "minimum": 1},
+        "admit_window": {"type": "integer", "minimum": 1},
+        "sram": {
+          "type": "object", "additionalProperties": false,
+          "required": ["bytes", "banks", "read_ports_per_bank", "write_ports_per_bank", "bank_queue_depth", "bank_interleave_bytes", "read_bytes_per_cycle_per_bank", "write_bytes_per_cycle_per_bank", "base_alignment_bytes"],
+          "properties": {
+            "bytes": {"type": "integer", "minimum": 1, "maximum": 18446744073709551615},
+            "banks": {"type": "integer", "minimum": 1},
+            "read_ports_per_bank": {"type": "integer", "minimum": 1},
+            "write_ports_per_bank": {"type": "integer", "minimum": 1},
+            "bank_queue_depth": {"type": "integer", "minimum": 1},
+            "bank_interleave_bytes": {"type": "integer", "minimum": 1, "maximum": 18446744073709551615},
+            "read_bytes_per_cycle_per_bank": {"type": "integer", "minimum": 1},
+            "write_bytes_per_cycle_per_bank": {"type": "integer", "minimum": 1},
+            "base_alignment_bytes": {"type": "integer", "minimum": 1}
+          }
+        },
+        "tensor_engine": {"$ref": "#/$defs/tensor_engine"},
+        "vector_engine": {"$ref": "#/$defs/vector_engine"},
+        "reduce_engine": {"$ref": "#/$defs/reduce_engine"},
+        "dma": {"$ref": "#/$defs/dma"}
+      }
+    },
+    "axi": {
+      "type": "object", "additionalProperties": false,
+      "required": ["data_bytes", "address_bits", "id_bits", "max_burst_beats", "enforce_4k_boundary", "max_outstanding_per_id", "qos_default"],
+      "properties": {
+        "data_bytes": {"type": "integer", "enum": [8, 16, 32, 64]},
+        "address_bits": {"type": "integer", "minimum": 32, "maximum": 64},
+        "id_bits": {"type": "integer", "minimum": 1, "maximum": 16},
+        "max_burst_beats": {"type": "integer", "minimum": 1, "maximum": 256},
+        "enforce_4k_boundary": {"const": true},
+        "max_outstanding_per_id": {"type": "integer", "minimum": 1},
+        "qos_default": {"type": "integer", "minimum": 0, "maximum": 15}
+      }
+    },
+    "memory_regions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/region"}},
+    "fabric": {
+      "type": "object", "additionalProperties": false,
+      "required": ["channel_order", "axi", "initiator", "target", "network", "initiators", "targets", "default_error_target_node", "quotas"],
+      "properties": {
+        "channel_order": {"const": ["AW", "W", "B", "AR", "R"]},
+        "axi": {"$ref": "#/$defs/fabric_axi"},
+        "initiator": {"$ref": "#/$defs/fabric_initiator"},
+        "target": {"$ref": "#/$defs/fabric_target"},
+        "network": {"$ref": "#/$defs/fabric_network"},
+        "initiators": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/initiator_endpoint"}},
+        "targets": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/target_endpoint"}},
+        "default_error_target_node": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+        "quotas": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/source_target_quota"}}
+      }
+    }
+  },
+  "$defs": {
+    "throughput": {
+      "type": "object", "additionalProperties": false, "minProperties": 1,
+      "properties": {
+        "fp32": {"type": "integer", "minimum": 1}, "fp16": {"type": "integer", "minimum": 1},
+        "bf16": {"type": "integer", "minimum": 1}, "int8": {"type": "integer", "minimum": 1},
+        "int32": {"type": "integer", "minimum": 1}
+      }
+    },
+    "tensor_engine": {
+      "type": "object", "additionalProperties": false,
+      "required": ["queue_depth", "setup_cycles", "pipeline_flush_cycles", "macs_per_cycle"],
+      "properties": {
+        "queue_depth": {"type": "integer", "minimum": 1},
+        "setup_cycles": {"type": "integer", "minimum": 0},
+        "pipeline_flush_cycles": {"type": "integer", "minimum": 0},
+        "macs_per_cycle": {"$ref": "#/$defs/throughput"}
+      }
+    },
+    "vector_engine": {
+      "type": "object", "additionalProperties": false,
+      "required": ["queue_depth", "elements_per_cycle"],
+      "properties": {
+        "queue_depth": {"type": "integer", "minimum": 1},
+        "setup_cycles": {"type": "integer", "minimum": 0, "default": 0},
+        "flush_cycles": {"type": "integer", "minimum": 0, "default": 0},
+        "elements_per_cycle": {"$ref": "#/$defs/throughput"}
+      }
+    },
+    "reduce_engine": {
+      "type": "object", "additionalProperties": false,
+      "required": ["queue_depth", "setup_cycles", "flush_cycles", "ops_per_cycle"],
+      "properties": {
+        "queue_depth": {"type": "integer", "minimum": 1},
+        "setup_cycles": {"type": "integer", "minimum": 0},
+        "flush_cycles": {"type": "integer", "minimum": 0},
+        "ops_per_cycle": {"$ref": "#/$defs/throughput"}
+      }
+    },
+    "dma": {
+      "type": "object", "additionalProperties": false,
+      "required": ["read_engines", "write_engines", "descriptor_queue_depth", "segment_queue_depth", "read_outstanding", "write_outstanding", "setup_cycles", "burst_base_latency"],
+      "properties": {
+        "read_engines": {"type": "integer", "minimum": 1},
+        "write_engines": {"type": "integer", "minimum": 1},
+        "descriptor_queue_depth": {"type": "integer", "minimum": 1},
+        "segment_queue_depth": {"type": "integer", "minimum": 1},
+        "read_outstanding": {"type": "integer", "minimum": 1},
+        "write_outstanding": {"type": "integer", "minimum": 1},
+        "setup_cycles": {"type": "integer", "minimum": 0},
+        "burst_base_latency": {"type": "integer", "minimum": 0}
+      }
+    },
+    "region": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "kind", "base"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["HBM", "HOST_SHARED", "CORE_SRAM_APERTURE"]},
+        "base": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "bytes": {"type": "integer", "minimum": 1, "maximum": 18446744073709551615},
+        "tile_stride": {"type": "integer", "minimum": 1, "maximum": 18446744073709551615},
+        "tile_bytes": {"type": "integer", "minimum": 1, "maximum": 18446744073709551615}
+      }
+    },
+    "channel_positive_vector": {
+      "type": "array", "minItems": 5, "maxItems": 5,
+      "items": {"type": "integer", "minimum": 1, "maximum": 2147483647}
+    },
+    "fabric_axi": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "wire_header_bytes": {"$ref": "#/$defs/channel_positive_vector", "default": [24, 16, 8, 24, 16]},
+        "data_header_sideband": {"type": "boolean", "default": false},
+        "w_beats_per_cycle": {"type": "integer", "minimum": 1, "maximum": 4294967295, "default": 1}
+      },
+      "default": {}
+    },
+    "fabric_initiator": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "source_fifo_depths": {"$ref": "#/$defs/channel_positive_vector", "default": [16, 64, 16, 32, 128]},
+        "message_buffer_depths": {"$ref": "#/$defs/channel_positive_vector", "default": [16, 64, 16, 32, 128]},
+        "local_delivery_depths": {"$ref": "#/$defs/channel_positive_vector", "default": [16, 64, 16, 32, 128]},
+        "max_outstanding_reads": {"type": "integer", "minimum": 1, "default": 64},
+        "max_outstanding_writes": {"type": "integer", "minimum": 1, "default": 32},
+        "pre_aw_bursts": {"type": "integer", "minimum": 1, "default": 16},
+        "pre_aw_beats": {"type": "integer", "minimum": 1, "default": 256},
+        "b_reorder_transactions": {"type": "integer", "minimum": 1, "default": 64},
+        "r_reorder_beats": {"type": "integer", "minimum": 1, "default": 1024}
+      },
+      "default": {}
+    },
+    "fabric_target": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "write_contexts": {"type": "integer", "minimum": 1, "default": 64},
+        "write_assembly_beats": {"type": "integer", "minimum": 1, "default": 4096},
+        "read_contexts": {"type": "integer", "minimum": 1, "default": 64},
+        "read_response_beats": {"type": "integer", "minimum": 1, "default": 4096},
+        "orphan_w_transactions": {"type": "integer", "minimum": 1, "default": 16},
+        "orphan_w_beats": {"type": "integer", "minimum": 1, "default": 256},
+        "service_queue_depths": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "integer", "minimum": 1}, "default": [32, 32]},
+        "base_latency_cycles": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "integer", "minimum": 0}, "default": [1, 1]},
+        "response_ready_depths": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "integer", "minimum": 1}, "default": [16, 128]}
+      },
+      "default": {}
+    },
+    "fabric_network": {
+      "type": "object", "additionalProperties": false,
+      "required": ["router_rows", "router_cols", "router_input_depths", "ni_receive_depths"],
+      "properties": {
+        "router_rows": {"type": "integer", "minimum": 1},
+        "router_cols": {"type": "integer", "minimum": 1},
+        "flit_bytes": {"type": "integer", "minimum": 1, "maximum": 2147483647, "default": 16},
+        "link_latency_cycles": {"type": "integer", "minimum": 1, "default": 1},
+        "router_latency_cycles": {"type": "integer", "minimum": 1, "default": 1},
+        "vcs_per_vnet": {"type": "integer", "minimum": 1, "default": 4},
+        "vnet_classes": {"const": ["ctrl", "data", "ctrl", "ctrl", "data"], "default": ["ctrl", "data", "ctrl", "ctrl", "data"]},
+        "router_input_depths": {"$ref": "#/$defs/channel_positive_vector"},
+        "ni_receive_depths": {"$ref": "#/$defs/channel_positive_vector"},
+        "router_input_overrides": {"type": "array", "items": {"$ref": "#/$defs/router_input_depth"}, "default": []},
+        "yx_vnets": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 4}, "default": []},
+        "dual_lane": {"type": "boolean", "default": false}
+      }
+    },
+    "router_input_depth": {
+      "type": "object", "additionalProperties": false,
+      "required": ["router_id", "input_port", "vnet", "depth"],
+      "properties": {
+        "router_id": {"type": "integer", "minimum": 0},
+        "input_port": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+        "vnet": {"type": "integer", "minimum": 0, "maximum": 4},
+        "depth": {"type": "integer", "minimum": 1, "maximum": 2147483647}
+      }
+    },
+    "initiator_endpoint": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "core_id", "src_node", "src_port", "router_id", "default_target_node"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "core_id": {"type": "integer", "minimum": 0, "maximum": 65534},
+        "src_node": {"type": "integer", "minimum": 0, "maximum": 65535},
+        "src_port": {"type": "integer", "minimum": 0, "maximum": 255},
+        "router_id": {"type": "integer", "minimum": 0},
+        "default_target_node": {"type": "integer", "minimum": 0, "maximum": 4294967295}
+      }
+    },
+    "target_range": {
+      "type": "object", "additionalProperties": false,
+      "required": ["region_id", "owner_core", "offset_bytes", "size_bytes", "access"],
+      "properties": {
+        "region_id": {"type": "integer", "minimum": 0, "maximum": 65535},
+        "owner_core": {"type": "integer", "minimum": 0, "maximum": 65535},
+        "offset_bytes": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615},
+        "size_bytes": {"type": "integer", "minimum": 1, "maximum": 18446744073709551615},
+        "access": {"enum": ["READ_ONLY", "READ_WRITE"]}
+      }
+    },
+    "target_endpoint": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "dst_node", "router_id", "ranges"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "dst_node": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+        "router_id": {"type": "integer", "minimum": 0},
+        "ranges": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/target_range"}},
+        "synthetic_hbm": {"$ref": "#/$defs/synthetic_hbm"}
+      }
+    },
+    "synthetic_hbm": {
+      "type": "object", "additionalProperties": false,
+      "required": ["bytes_per_cycle", "queue_depth"],
+      "properties": {
+        "bytes_per_cycle": {"type": "integer", "minimum": 1, "maximum": 4294967295},
+        "queue_depth": {"type": "integer", "minimum": 1, "maximum": 4294967295}
+      }
+    },
+    "source_target_quota": {
+      "type": "object", "additionalProperties": false,
+      "required": ["src_node", "src_port", "dst_node", "write_contexts", "write_beats", "read_contexts", "read_beats"],
+      "properties": {
+        "src_node": {"type": "integer", "minimum": 0, "maximum": 65535},
+        "src_port": {"type": "integer", "minimum": 0, "maximum": 255},
+        "dst_node": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+        "write_contexts": {"type": "integer", "minimum": 1},
+        "write_beats": {"type": "integer", "minimum": 1},
+        "read_contexts": {"type": "integer", "minimum": 1},
+        "read_beats": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}

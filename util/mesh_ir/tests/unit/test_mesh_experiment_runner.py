@@ -1,14 +1,19 @@
+import copy
 import importlib.util
 import json
 from pathlib import Path
 
 from mesh_ir.experiment.config import BufferMap, WorkloadSpec
 from mesh_ir.experiment.execution import file_digest
-from mesh_ir.experiment.verify import verified_measurement
-import mesh_ir.experiment.verify as VERIFIER
 import pytest
+import yaml
 from types import SimpleNamespace
 
+from mesh_ir.architecture import architecture_document, load_arch, load_arch_text
+from mesh_ir.diagnostics import MeshIrError
+from mesh_ir.experiment.config import Topology
+from mesh_ir.experiment.verify import verify_effective
+from mesh_ir.experiment.workload import build_workload, resolve_experiment_architecture
 
 REPO = Path(__file__).resolve().parents[4]
 SPEC = importlib.util.spec_from_file_location("mesh_experiment_runner", REPO / "tests/gem5/ai_mesh/run_mesh_experiment.py")
@@ -16,17 +21,131 @@ RUNNER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(RUNNER)
 
 
-def test_materialization_derives_arch_without_mutating_frozen_profile(tmp_path):
+@pytest.fixture
+def effective_configuration(tmp_path):
+    profile = json.loads((REPO / "configs/example/ai_mesh/experiments/fixed_profile.json").read_text())
+    arch = resolve_experiment_architecture(
+        load_arch(REPO / "configs/example/ai_mesh/arch/mesh_5x5.yaml"),
+        Topology("H5"),
+        profile,
+    )
+    path = tmp_path / "arch.yaml"
+    path.write_text(yaml.safe_dump(architecture_document(arch), sort_keys=False))
+    fabric = arch.fabric
+    hbm_targets = tuple(item for item in fabric.targets if item.synthetic_hbm is not None)
+    error_target = next(item for item in fabric.targets if item.dst_node == fabric.default_error_target_node)
+    targets = (*hbm_targets, error_target)
+    clock = {"type": "SrcClockDomain", "path": "clock", "clock": [500]}
+    objects = [clock, {
+        "type": "GarnetNetwork", "path": "network", "clk_domain": "clock",
+        "num_rows": 5, "number_of_virtual_networks": 5, "dual_lane": fabric.network.dual_lane,
+        "yx_vnets": list(fabric.network.yx_vnets), "routing_algorithm": 1,
+        "ni_flit_size": fabric.network.flit_bytes, "vcs_per_vnet": fabric.network.vcs_per_vnet,
+        "buffers_per_vnet": list(fabric.network.router_input_depths),
+        "ni_buffers_per_vnet": list(fabric.network.ni_receive_depths),
+        "router_input_vc_depths": [
+            ":".join(map(str, (item.router_id, item.input_port, item.vnet, item.depth)))
+            for item in fabric.network.router_input_overrides
+        ],
+        "enable_fault_model": False,
+    }]
+    for core in arch.core_ids:
+        objects.extend((
+            {"type": "MeshDummyCore", "path": f"core.{core}", "clk_domain": "clock",
+             "core_id": core, "sram_bytes": arch.sram_bytes, "sram_banks": arch.sram_banks,
+             "sram_bank_queue_depth": arch.sram_bank_queue_depth,
+             "sram_read_ports": arch.sram_read_ports_per_bank, "sram_write_ports": arch.sram_write_ports_per_bank,
+             "sram_read_bytes_per_cycle": arch.sram_read_bytes_per_cycle_per_bank,
+             "sram_write_bytes_per_cycle": arch.sram_write_bytes_per_cycle_per_bank,
+             "admit_window": arch.admit_window, "decode_width": arch.decode_width},
+            {"type": "AxiTensorDmaEngine", "path": f"dma.{core}", "clk_domain": "clock",
+             "data_bus_bytes": arch.axi_data_bytes, "max_burst_beats": arch.axi_max_burst_beats,
+             "descriptor_queue_depth": arch.dma_descriptor_queue_depth,
+             "segment_queue_depth": arch.dma_segment_queue_depth, "axi_id_count": 1 << arch.axi_id_bits},
+            {"type": "AxiGarnetBridge", "path": f"bridge.{core}", "clk_domain": "clock",
+             "data_bus_bytes": arch.axi_data_bytes, "aw_queue_depth": arch.dma_segment_queue_depth,
+             "ar_queue_depth": arch.dma_segment_queue_depth, "axi_id_count": 1 << arch.axi_id_bits,
+             "w_beats_per_cycle": fabric.axi.w_beats_per_cycle},
+            {"type": "GarnetRouter", "path": f"router.{core}", "clk_domain": "clock",
+             "latency": fabric.network.router_latency_cycles, "width": fabric.network.flit_bytes,
+             "dual_lane": fabric.network.dual_lane},
+        ))
+    quota = {(item.src_node, item.src_port, item.dst_node): item for item in fabric.quotas}
+    for source in fabric.initiators:
+        objects.append({
+            "type": "AxiInitiatorAdapter", "path": f"initiator.{source.src_node}", "clk_domain": "clock",
+            "src_node": source.src_node, "src_port": source.src_port,
+            "max_outstanding_reads": fabric.initiator.max_outstanding_reads,
+            "max_outstanding_writes": fabric.initiator.max_outstanding_writes,
+            "data_bus_bytes": arch.axi_data_bytes, "source_fifo_depths": list(fabric.initiator.source_fifo_depths),
+            "b_rob_transactions": fabric.initiator.b_reorder_transactions,
+            "r_rob_beats": fabric.initiator.r_reorder_beats,
+            "pre_aw_bursts": fabric.initiator.pre_aw_bursts, "pre_aw_beats": fabric.initiator.pre_aw_beats,
+            "wire_header_bytes": list(fabric.axi.wire_header_bytes),
+            "data_header_sideband": fabric.axi.data_header_sideband,
+            **{
+                "quota_" + dimension: [
+                    getattr(quota[(source.src_node, source.src_port, target.dst_node)], dimension)
+                    for target in targets
+                ]
+                for dimension in ("read_contexts", "write_contexts", "read_beats", "write_beats")
+            },
+        })
+    for target in targets:
+        synthetic = target.synthetic_hbm
+        objects.append({
+            "type": "AxiTargetAdapter", "path": f"target.{target.dst_node}", "clk_domain": "clock",
+            "dst_node": target.dst_node, "data_bus_bytes": arch.axi_data_bytes,
+            "service_depths": list(fabric.target.service_queue_depths),
+            "wire_header_bytes": list(fabric.axi.wire_header_bytes),
+            "data_header_sideband": fabric.axi.data_header_sideband,
+            "response_ready_depths": list(fabric.target.response_ready_depths),
+            "orphan_w_transactions": fabric.target.orphan_w_transactions,
+            "orphan_w_beats": fabric.target.orphan_w_beats,
+            "synthetic_hbm_enabled": synthetic is not None,
+            "synthetic_hbm_bytes_per_cycle": 0 if synthetic is None else synthetic.bytes_per_cycle,
+            "synthetic_hbm_queue_depth": 0 if synthetic is None else synthetic.queue_depth,
+            "base_latencies": list(fabric.target.base_latency_cycles),
+            **{
+                "quota_" + dimension: [
+                    getattr(quota[(source.src_node, source.src_port, target.dst_node)], dimension)
+                    for source in fabric.initiators
+                ]
+                for dimension in ("read_contexts", "write_contexts", "read_beats", "write_beats")
+            },
+        })
+    objects.extend(
+        {"type": "GarnetNetworkInterface", "path": f"ni.{node}", "clk_domain": "clock",
+         "vcs_per_vnet": fabric.network.vcs_per_vnet, "virt_nets": 5}
+        for node in range(fabric.default_error_target_node + 1)
+    )
+    return {"system": {"mem_mode": "timing"}, "objects": objects}, {"arch_path": str(path)}
+
+
+def test_materialization_derives_arch_and_program_without_mutating_frozen_profile(tmp_path):
     profile = json.loads((REPO / "configs/example/ai_mesh/experiments/fixed_profile.json").read_text())
     original = json.dumps(profile, sort_keys=True)
     work = WorkloadSpec("MIXED_1_1", bytes_per_core=4096, tile_bytes=1024,
                         hbm_port_bytes=profile["backend"]["port_bytes"])
-    first, a = RUNNER.materialize(tmp_path / "a", profile, "H5", work, 1, 8, (1,) * 5)
-    second, b = RUNNER.materialize(tmp_path / "b", profile, "H5", work, 4, 8, (2,) * 5)
+    case, materialized = RUNNER.materialize(tmp_path / "a", profile, "H5", work, 1, 8, (1,) * 5)
     assert json.dumps(profile, sort_keys=True) == original
-    assert first["n_read"] == 1 and second["n_read"] == 4
-    assert a.plan["workload_digest"] == b.plan["workload_digest"]
-    assert a.program.arch_digest != b.program.arch_digest
+    persisted = load_arch(tmp_path / "a/arch.yaml")
+    document = RUNNER.merge_document(
+        RUNNER.read_yaml_document(REPO / profile["arch_template"]),
+        profile["architecture_overrides"],
+    )
+    document["core"]["dma"]["read_outstanding"] = 1
+    document["core"]["dma"]["write_outstanding"] = 8
+    expected = resolve_experiment_architecture(
+        load_arch_text(yaml.safe_dump(document, sort_keys=False)),
+        Topology("H5"), profile, router_input_depths=(1,) * 5,
+    )
+    bundle = build_workload(expected, work)
+    assert persisted == expected
+    assert bundle.arch.digest() == bundle.program.arch_digest == persisted.digest()
+    assert materialized.program.semantic_sha256 == bundle.program.semantic_sha256
+    assert Path(case["program_dir"]) == tmp_path / "a/program"
+    assert json.loads((tmp_path / "a/program/expected_traffic.json").read_bytes()) == bundle.program.semantics.intrinsic_traffic.canonical_dict()
 
 
 def test_materialization_uses_profile_width_for_packet_and_route_oracles(tmp_path):
@@ -34,11 +153,15 @@ def test_materialization_uses_profile_width_for_packet_and_route_oracles(tmp_pat
     profile["network"]["flit_bytes"] = 32
     work = WorkloadSpec("LOAD_ONLY", bytes_per_core=65536, active_cores=(0,),
                         hbm_port_bytes=profile["backend"]["port_bytes"])
-    case, bundle = RUNNER.materialize(tmp_path, profile, "H10_EAST2", work, 16, 16, (4, 8, 4, 4, 8))
+    arch = resolve_experiment_architecture(
+        load_arch(REPO / "configs/example/ai_mesh/arch/mesh_5x5.yaml"),
+        Topology("H10_EAST2"), profile,
+    )
+    bundle = build_workload(arch, work)
     assert bundle.oracle["flits_per_packet"] == {"AW": 1, "W": 2, "B": 1, "AR": 1, "R": 2}
     assert bundle.oracle["directed_link_flits"]["endpoint:25->router:4"]["R"] == 4096
     assert bundle.oracle["directed_link_flits"]["router:4->router:3"]["R"] == 4096
-    assert case["profile"]["network"]["flit_bytes"] == 32
+    assert bundle.arch.fabric.network.flit_bytes == 32
 
 
 def test_materialization_derives_write_routes_from_frozen_profile(tmp_path):
@@ -47,13 +170,37 @@ def test_materialization_derives_write_routes_from_frozen_profile(tmp_path):
     work = WorkloadSpec("STORE_ONLY", bytes_per_core=65536, active_cores=(20,),
                         distribution="single_target", hotspot_target=0,
                         hbm_port_bytes=profile["backend"]["port_bytes"])
-    case, bundle = RUNNER.materialize(tmp_path, profile, "H10_EAST2", work, 32, 32, (4, 8, 4, 4, 8))
+    arch = resolve_experiment_architecture(
+        load_arch(REPO / "configs/example/ai_mesh/arch/mesh_5x5.yaml"),
+        Topology("H10_EAST2"), profile,
+    )
+    bundle = build_workload(arch, work)
     assert bundle.oracle["directed_link_flits"]["router:20->router:15"]["W"] == 2048
     assert "router:24->router:19" not in bundle.oracle["directed_link_flits"]
-    assert case["profile"]["network"]["yx_vnets"] == [0, 1]
+    assert bundle.arch.fabric.network.yx_vnets == (0, 1)
 
 
-def test_rerun_archives_prior_result_before_launch_failure(tmp_path):
+def test_effective_configuration_matches_resolved_adapter_identities(effective_configuration):
+    raw, case = effective_configuration
+    assert verify_effective(raw, case) is True
+
+
+@pytest.mark.parametrize("adapter_type,identity_fields", (
+    ("AxiInitiatorAdapter", ("src_node", "src_port")),
+    ("AxiTargetAdapter", ("dst_node",)),
+))
+def test_effective_configuration_rejects_duplicate_and_missing_adapter_identity(
+        effective_configuration, adapter_type, identity_fields):
+    raw, case = effective_configuration
+    changed = copy.deepcopy(raw)
+    adapters = [item for item in changed["objects"] if item["type"] == adapter_type]
+    for field in identity_fields:
+        adapters[1][field] = adapters[0][field]
+    with pytest.raises(ValueError, match="identities"):
+        verify_effective(changed, case)
+
+
+def test_rerun_archives_prior_result_before_new_launch(tmp_path, monkeypatch):
     profile = json.loads((REPO / "configs/example/ai_mesh/experiments/fixed_profile.json").read_text())
     work = WorkloadSpec("LOAD_ONLY", bytes_per_core=4096, tile_bytes=1024,
                         hbm_port_bytes=profile["backend"]["port_bytes"])
@@ -66,37 +213,44 @@ def test_rerun_archives_prior_result_before_launch_failure(tmp_path):
     record = {"identity": {}, "artifacts": {"network_final.json": file_digest(stale)},
               "verification": "failed", "returncode": 1, "timed_out": False}
     (directory / "execution.json").write_text(json.dumps(record))
-    row = RUNNER.execute_case(directory, profile=profile, topology="H5", workload=work,
-                              n_read=4, n_write=4, depths=(1,) * 5, gem5=executable,
-                              source={"digest": "a" * 64, "head": "test"}, build_digest=file_digest(executable), resume=True)
-    assert row["status"] == "failed"
+    launches = []
+    monkeypatch.setattr(RUNNER, "run_process", lambda *args, **kwargs: (
+        launches.append(args) or {"argv": args[0], "returncode": 1, "timed_out": False, "host_seconds": .1}
+    ))
+    measured = RUNNER.execute_case(directory, profile=profile, topology="H5", workload=work,
+                                   n_read=4, n_write=4, depths=(1,) * 5, gem5=executable,
+                                   source={"digest": "a" * 64, "head": "test"}, build_digest=file_digest(executable), resume=True)
+    assert measured["correctness"] == "failed"
     assert not stale.exists()
-    assert (directory / "attempts/1/network_final.json").exists()
-    record = json.loads((directory / "execution.json").read_text())
-    assert record["launch_error"]
+    assert (directory / "attempts/1/network_final.json").read_text() == '{"old": true}'
+    assert len(launches) == 1
+    assert (directory / "program/manifest.json").exists()
 
 
-def test_failed_roi_probe_is_visible_in_sweep_measurements(tmp_path):
+def test_failed_roi_probe_does_not_launch_measurement(tmp_path, monkeypatch):
     profile = json.loads((REPO / "configs/example/ai_mesh/experiments/fixed_profile.json").read_text())
     work = WorkloadSpec("LOAD_ONLY", bytes_per_core=4096, tile_bytes=1024,
                         hbm_port_bytes=profile["backend"]["port_bytes"])
     executable = tmp_path / "not-executable"
     executable.write_text("not a runnable file")
     directory = tmp_path / "cases" / "failed-probe"
-    row = RUNNER.execute_with_roi(directory, snapshot_roi=True, profile=profile,
-                                  topology="H5", workload=work, n_read=4, n_write=4,
-                                  depths=(1,) * 5, gem5=executable,
-                                  source={"digest": "a" * 64, "head": "test"},
-                                  build_digest=file_digest(executable))
-    assert row["correctness"] == "failed"
-    assert "roi_probe_unavailable" in row["invalid_reasons"]
-    assert json.loads((directory / "measurement.json").read_text()) == row
-    summary = RUNNER.analyze_directory(tmp_path)
-    assert len(summary) == 1
-    assert summary[0]["status"] == "failed"
+    launches = []
+    monkeypatch.setattr(RUNNER, "run_process", lambda *args, **kwargs: (
+        launches.append(args) or {"argv": args[0], "returncode": 1, "timed_out": False, "host_seconds": .1}
+    ))
+    measured = RUNNER.execute_with_roi(directory, snapshot_roi=True, profile=profile,
+                                       topology="H5", workload=work, n_read=4, n_write=4,
+                                       depths=(1,) * 5, gem5=executable,
+                                       source={"digest": "a" * 64, "head": "test"},
+                                       build_digest=file_digest(executable))
+    assert measured["correctness"] == "failed"
+    assert measured["invalid_reasons"][-1] == "roi_probe_unavailable"
+    assert len(launches) == 1
+    assert (directory / "roi_probe/program/manifest.json").exists()
+    assert not (directory / "program").exists()
 
 
-def test_analysis_recomputes_metrics_and_refuses_missing_raw_evidence(tmp_path, monkeypatch):
+def test_published_program_reaches_runtime_and_verification(tmp_path, monkeypatch):
     profile = json.loads((REPO / "configs/example/ai_mesh/experiments/fixed_profile.json").read_text())
     work = WorkloadSpec("LOAD_ONLY", bytes_per_core=4096, tile_bytes=1024,
                         hbm_port_bytes=profile["backend"]["port_bytes"])
@@ -104,21 +258,19 @@ def test_analysis_recomputes_metrics_and_refuses_missing_raw_evidence(tmp_path, 
     executable.write_text("fixed binary identity")
     monkeypatch.setattr(RUNNER, "run_process", lambda *args, **kwargs: {
         "argv": args[0], "returncode": 0, "timed_out": False, "host_seconds": .1})
-    measurement = {"status": "valid", "correctness": "pass", "bandwidth_Bps": 10}
-    monkeypatch.setattr(RUNNER, "verify_case", lambda directory: dict(measurement))
-    monkeypatch.setattr(VERIFIER, "verify_case", lambda directory: dict(measurement))
+    verification = []
+    monkeypatch.setattr(RUNNER, "verify_case", lambda directory: (
+        verification.append(directory) or {"status": "valid", "correctness": "pass"}
+    ))
     source = {"head": "test", "files": {"source": "a" * 64}}
     source["digest"] = RUNNER.canonical_digest(source["files"])
     directory = tmp_path / "case"
-    row = RUNNER.execute_case(directory, profile=profile, topology="H5", workload=work,
-                              n_read=4, n_write=4, depths=(1,) * 5, gem5=executable,
-                              source=source, build_digest=file_digest(executable))
-    row["bandwidth_Bps"] = 999
-    (directory / "measurement.json").write_text(json.dumps(row))
-    assert verified_measurement(directory)["bandwidth_Bps"] == 10
-    (directory / "program/program.mshb").unlink()
-    with pytest.raises(ValueError, match="artifacts"):
-        verified_measurement(directory)
+    measured = RUNNER.execute_case(directory, profile=profile, topology="H5", workload=work,
+                                   n_read=4, n_write=4, depths=(1,) * 5, gem5=executable,
+                                   source=source, build_digest=file_digest(executable))
+    assert measured["correctness"] == "pass"
+    assert verification == [directory.resolve()]
+    assert json.loads((directory / "program/manifest.json").read_bytes())["status"] == "ok"
 
 
 def test_budget_scheduler_preserves_six_groups_and_capacity_control_families(tmp_path, monkeypatch):

@@ -8,127 +8,24 @@ the schema cannot drift without a loud failure.
 from __future__ import annotations
 
 import dataclasses
-import hashlib
-import json
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
+from mesh_ir.architecture import ArchManifest, ArchRegion
+from mesh_ir.canonical import canonical_json_bytes, to_canonical
+from mesh_ir.diagnostics import ERROR_CODES, MeshIrError
 from mesh_ir.generated import abi as A
 
-ERROR_CODES = (
-    "E_ABI_MAGIC",
-    "E_ABI_VERSION",
-    "E_ABI_CHECKSUM",
-    "E_ABI_SECTION_RANGE",
-    "E_ABI_ENUM",
-    "E_ABI_RESERVED",
-    "E_ABI_DUPLICATE",
-    "E_ABI_ORDER",
-    "E_ABI_BOUNDS",
-    "E_ABI_OVERFLOW",
-    "E_ABI_CORRUPT",
-    "E_ARCH_DIGEST",
-    "E_ENGINE_MISMATCH",
-    "E_EVENT_NO_PRODUCER",
-    "E_EVENT_MULTIPLE_PRODUCERS",
-    "E_DEPENDENCY_CYCLE",
-    "E_DMA_RANGE",
-    "E_P2P_UNMATCHED",
-    "E_STREAM_CONTRACT",
-    "E_LIFECYCLE",
-    "E_RELOCATION",
-    "E_TRAFFIC_MISMATCH",
-    "E_SRAM_OOM",
-    "E_CAPABILITY_MISMATCH",
-)
+if TYPE_CHECKING:
+    from mesh_ir.scheduled.model import ProgramSemantics
 
 
-class MeshIrError(Exception):
-    def __init__(self, code: str, message: str, **context):
-        assert code in ERROR_CODES, f"unregistered error code {code}"
-        self.code = code
-        self.message = message
-        self.context = {k: v for k, v in context.items() if v is not None}
-        super().__init__(f"{code}: {message} {self.context}".rstrip())
-
-
-@dataclass
-class ArchRegion:
-    name: str
-    kind: str
-    base: int
-    bytes: int
-    tile_stride: int = 0
-    tile_bytes: int = 0
-
-
-@dataclass
-class ArchManifest:
-    schema_version: str
-    arch_name: str
-    clock_hz: int
-    core_ids: tuple
-    mesh_rows: int
-    mesh_cols: int
-    mesh_routing: str
-    mesh_endpoint_order: str
-    command_rom_entries: int
-    event_visibility_cycles: int
-    decode_width: int
-    admit_window: int
-    sram_bytes: int
-    sram_banks: int
-    sram_read_ports_per_bank: int
-    sram_write_ports_per_bank: int
-    sram_bank_queue_depth: int
-    sram_read_bytes_per_cycle_per_bank: int
-    sram_write_bytes_per_cycle_per_bank: int
-    sram_base_alignment_bytes: int
-    tensor_queue_depth: int
-    tensor_setup_cycles: int
-    tensor_pipeline_flush_cycles: int
-    tensor_macs_per_cycle: dict
-    vector_queue_depth: int
-    vector_elements_per_cycle: dict
-    reduce_queue_depth: int
-    reduce_setup_cycles: int
-    reduce_flush_cycles: int
-    reduce_ops_per_cycle: dict
-    dma_read_engines: int
-    dma_write_engines: int
-    dma_descriptor_queue_depth: int
-    dma_segment_queue_depth: int
-    dma_read_outstanding: int
-    dma_write_outstanding: int
-    dma_setup_cycles: int
-    dma_burst_base_latency: int
-    axi_data_bytes: int
-    axi_max_burst_beats: int
-    axi_address_bits: int
-    axi_id_bits: int
-    axi_max_outstanding_per_id: int
-    axi_enforce_4k_boundary: bool
-    axi_qos_default: int
-    regions: tuple
-
-    def region_by_id(self, region_id: int) -> ArchRegion:
-        return self.regions[region_id]
-
-    def canonical_dict(self) -> dict:
-        return dataclasses.asdict(self)
-
-    def digest(self) -> bytes:
-        return hashlib.sha256(
-            canonical_json_bytes(self.canonical_dict())
-        ).digest()
-
-
-@dataclass
+@dataclass(frozen=True)
 class StringEntry:
     value: str
 
 
-@dataclass
+@dataclass(frozen=True)
 class Entrypoint:
     entrypoint_id: int
     name_sid: int
@@ -140,7 +37,7 @@ class Entrypoint:
     reserved: int = 0
 
 
-@dataclass
+@dataclass(frozen=True)
 class Profile:
     profile_id: int
     entrypoint_id: int
@@ -150,7 +47,7 @@ class Profile:
     dims: tuple = (0,) * 8
 
 
-@dataclass
+@dataclass(frozen=True)
 class Tensor:
     tensor_id: int
     name_sid: int
@@ -169,7 +66,7 @@ class Tensor:
     content_sha256: bytes = bytes(32)
 
 
-@dataclass
+@dataclass(frozen=True)
 class Shard:
     shard_id: int
     tensor_id: int
@@ -188,7 +85,7 @@ class Shard:
     span_bytes: int = 0
 
 
-@dataclass
+@dataclass(frozen=True)
 class Allocation:
     allocation_id: int
     owner_core: int
@@ -199,7 +96,7 @@ class Allocation:
     flags: int = 0
 
 
-@dataclass
+@dataclass(frozen=True)
 class Stream:
     core_id: int
     stream_id: int
@@ -209,7 +106,7 @@ class Stream:
     reserved: int = 0
 
 
-@dataclass
+@dataclass(frozen=True)
 class Command:
     command_id: int
     source_op_id: int
@@ -226,12 +123,12 @@ class Command:
     debug_loc_id: int = 0
 
 
-@dataclass
+@dataclass(frozen=True)
 class CommandWait:
     event_id: int
 
 
-@dataclass
+@dataclass(frozen=True)
 class CommandOperand:
     tensor_id: int
     shard_id: int
@@ -240,7 +137,7 @@ class CommandOperand:
     reserved: int = 0
 
 
-@dataclass
+@dataclass(frozen=True)
 class Event:
     event_id: int
     kind: int
@@ -250,7 +147,7 @@ class Event:
     reserved2: int = 0
 
 
-@dataclass
+@dataclass(frozen=True)
 class DmaEndpoint:
     memory_space: int
     region_id: int
@@ -261,7 +158,7 @@ class DmaEndpoint:
     offset_bytes: int = 0
 
 
-@dataclass
+@dataclass(frozen=True)
 class DmaDescriptor:
     descriptor_id: int
     command_id: int
@@ -284,7 +181,7 @@ class DmaDescriptor:
     completion_event: int
 
 
-@dataclass
+@dataclass(frozen=True)
 class OpAttr:
     kind: int
     reserved: int = 0
@@ -295,7 +192,7 @@ class OpAttr:
         return dict(zip(self.payload_fields, self.payload))
 
 
-@dataclass
+@dataclass(frozen=True)
 class Relocation:
     relocation_id: int
     symbol_sid: int
@@ -307,7 +204,7 @@ class Relocation:
     reserved2: int
 
 
-@dataclass
+@dataclass(frozen=True)
 class ExpectedTrafficRow:
     entrypoint_id: int
     profile_id: int
@@ -328,79 +225,116 @@ class ExpectedTrafficRow:
     reserved2: int = 0
 
 
-@dataclass
+@dataclass(frozen=True)
+class SourceMap:
+    loc_id: int
+    file: str
+    line: int
+    column: int
+
+
+@dataclass(frozen=True)
+class ProfileHint:
+    entrypoint_id: int
+    profile_id: int
+    name: str
+    value: str
+
+
+@dataclass(frozen=True)
+class ContentDigest:
+    object_kind: int
+    reserved: int
+    object_id: int
+    digest: bytes
+
+
+@dataclass(frozen=True)
 class Program:
     abi_major: int
     abi_minor: int
     arch_digest: bytes
-    strings: list
-    entrypoints: list
-    profiles: list
-    tensors: list
-    shards: list
-    allocations: list
-    streams: list
-    commands: list
-    command_waits: list
-    command_operands: list
-    events: list
-    dma_descriptors: list
-    op_attrs: list
-    relocations: list
-    expected_traffic: list
+    strings: tuple[StringEntry, ...]
+    entrypoints: tuple[Entrypoint, ...]
+    profiles: tuple[Profile, ...]
+    tensors: tuple[Tensor, ...]
+    shards: tuple[Shard, ...]
+    allocations: tuple[Allocation, ...]
+    streams: tuple[Stream, ...]
+    commands: tuple[Command, ...]
+    command_waits: tuple[CommandWait, ...]
+    command_operands: tuple[CommandOperand, ...]
+    events: tuple[Event, ...]
+    dma_descriptors: tuple[DmaDescriptor, ...]
+    op_attrs: tuple[OpAttr, ...]
+    relocations: tuple[Relocation, ...]
+    expected_traffic: tuple[ExpectedTrafficRow, ...]
+    semantics: "ProgramSemantics"
+    semantic_sha256: str
+    min_reader_minor: int = A.MIN_READER_MINOR
+    required_features: int = A.REQUIRED_FEATURES
+    source_map: tuple[SourceMap, ...] = ()
+    profile_hints: tuple[ProfileHint, ...] = ()
+    content_digests: tuple[ContentDigest, ...] = ()
+
+    def semantic_dict(self) -> dict:
+        return self._projection(True)
 
     def canonical_dict(self) -> dict:
-        return {
-            "abi": {"major": self.abi_major, "minor": self.abi_minor},
-            "arch_digest": self.arch_digest.hex(),
-            "sections": {
-                "STRINGS": [s.value for s in self.strings],
-                "ENTRYPOINTS": [canonical(rec) for rec in self.entrypoints],
-                "PROFILES": [canonical(rec) for rec in self.profiles],
-                "TENSORS": [canonical(rec) for rec in self.tensors],
-                "SHARDS": [canonical(rec) for rec in self.shards],
-                "ALLOCATIONS": [canonical(rec) for rec in self.allocations],
-                "STREAMS": [canonical(rec) for rec in self.streams],
-                "COMMANDS": [canonical(rec) for rec in self.commands],
-                "COMMAND_WAITS": [canonical(rec) for rec in self.command_waits],
-                "COMMAND_OPERANDS": [canonical(rec) for rec in self.command_operands],
-                "EVENTS": [canonical(rec) for rec in self.events],
-                "DMA_DESCRIPTORS": [canonical(rec) for rec in self.dma_descriptors],
-                "OP_ATTRS": [self._attr_dict(rec) for rec in self.op_attrs],
-                "RELOCATIONS": [canonical(rec) for rec in self.relocations],
-                "EXPECTED_TRAFFIC": [canonical(rec) for rec in self.expected_traffic],
+        return self._projection(False)
+
+    def _projection(self, semantic: bool) -> dict:
+        from mesh_ir.abi.semantic import semantic_to_canonical
+
+        values = {
+            "abi": {
+                name: to_canonical(getattr(self, binding["program_field"]))
+                for name, binding in A.CANONICAL_ABI_FIELDS.items()
             },
+            "arch_digest": self.arch_digest.hex(),
+            "sections": self._sections(semantic),
+            "semantics": semantic_to_canonical(self.semantics),
+            "semantic_sha256": self.semantic_sha256,
         }
+        return {
+            field["name"]: values[field["name"]]
+            for field in A.PROGRAM_CANONICAL_FIELDS
+            if not semantic or field["semantic"]
+        }
+
+    def _sections(self, semantic: bool) -> dict:
+        sections = {}
+        for name, binding in A.TRANSPORT_CANONICAL_SECTIONS.items():
+            if semantic and not binding["semantic"]:
+                continue
+            records = getattr(self, binding["program_field"])
+            if binding["optional"] and not records:
+                continue
+            if binding["projection"] == "strings":
+                sections[name] = [item.value for item in records]
+            elif binding["projection"] == "attr_payloads":
+                sections[name] = [self._attr_dict(item) for item in records]
+            else:
+                fields = A.TRANSPORT_CANONICAL_FIELDS[name]
+                sections[name] = [{
+                    field["name"]: _plain(getattr(item, field["name"]))
+                    for field in fields
+                    if not semantic or field["semantic"]
+                } for item in records]
+        return sections
 
     @staticmethod
     def _attr_dict(attr: OpAttr) -> dict:
         return {"kind": attr.kind, **{k: _plain(v) for k, v in attr.payload_dict().items()}}
 
-    def semantic_sha256(self) -> str:
-        return hashlib.sha256(canonical_json_bytes(self.canonical_dict())).hexdigest()
+    def canonical_bytes(self) -> bytes:
+        return canonical_json_bytes(self.canonical_dict())
 
 
 def _plain(value):
-    if isinstance(value, bytes):
-        return value.hex()
-    if isinstance(value, tuple):
-        return [_plain(v) for v in value]
     if hasattr(value, "payload_dict"):
-        return {k: _plain(v) for k, v in value.payload_dict().items()}
-    if dataclasses.is_dataclass(value) and not isinstance(value, type):
-        return canonical(value)
-    return value
-
-
-def canonical(record) -> dict:
-    out = {}
-    for f in dataclasses.fields(record):
-        out[f.name] = _plain(getattr(record, f.name))
-    return out
-
-
-def canonical_json_bytes(obj) -> bytes:
-    return json.dumps(obj, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
+        return {key: to_canonical(item) for key, item in value.payload_dict().items()}
+    return to_canonical(value)
 
 
 RECORD_CLASSES = {
@@ -417,12 +351,15 @@ RECORD_CLASSES = {
     "DMA_DESCRIPTORS": DmaDescriptor,
     "RELOCATIONS": Relocation,
     "EXPECTED_TRAFFIC": ExpectedTrafficRow,
+    "SOURCE_MAP": SourceMap,
+    "PROFILE_HINTS": ProfileHint,
+    "CONTENT_DIGESTS": ContentDigest,
 }
 
 
 def _assert_model_matches_schema() -> None:
     for name, cls in RECORD_CLASSES.items():
-        schema_names = tuple(f["name"] for f in getattr(A, f"{name}_FIELDS"))
+        schema_names = tuple(f.get("python_field", f["name"]) for f in getattr(A, f"{name}_FIELDS"))
         model_names = tuple(f.name for f in dataclasses.fields(cls))
         assert schema_names == model_names, (
             f"{name} model fields {model_names} != schema fields {schema_names}; "

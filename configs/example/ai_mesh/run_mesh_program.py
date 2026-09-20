@@ -20,6 +20,15 @@ from m5.objects import Root, SrcClockDomain, System, VoltageDomain
 from m5.util import fatal
 
 from dummy_core_case_registry import Backend, backend_programs, invariant_registry
+from mesh_ir.producer_content import (
+    ProducerContentError,
+    verify_transfer_producer_content,
+)
+from mesh_ir.runtime_reconciliation import (
+    ReconciliationError,
+    payload_digest as _payload_digest,
+    reconcile as reconcile_runtime,
+)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--arch", default=str(Path(__file__).resolve().parent / "arch/mesh_1x2.yaml"))
@@ -48,9 +57,36 @@ parser.add_argument("--assert-event-visibility", action="store_true")
 parser.add_argument("--expect-sram-service-min", type=int, default=0)
 parser.add_argument("--watchdog-ticks", type=int, default=0,
                     help="Dispatcher progress watchdog bound; 0 disables")
+parser.add_argument("--error-descriptors", default="",
+                    help="Comma-separated descriptor ids to complete with an injected AXI error")
+parser.add_argument("--drop-descriptors", default="",
+                    help="Comma-separated descriptor ids whose completion is dropped")
+parser.add_argument("--fault-occurrence", type=int, default=0,
+                    help="Which completion of an injected descriptor faults "
+                         "(0 = every completion; 2 faults the first REPEAT replay pass)")
 parser.add_argument("--sim-tick-limit", type=int, default=0)
+parser.add_argument(
+    "--receiver-fault",
+    default="",
+    help="Test-only receiver notification fault: receive_drop, "
+         "receive_duplicate, receive_redirect or receive_premature",
+)
+parser.add_argument(
+    "--residency-fault",
+    default="",
+    help="Test-only residency installation fault: skip_pre_resident withholds "
+         "the compiler-declared initial residency",
+)
 parser.add_argument("--digest-repeat-count", type=int, default=0,
                     help="Assert each REPEAT-window compute digest appears N times")
+parser.add_argument("--entrypoint-id", type=int, default=0,
+                    help="Selected entrypoint id; 0 selects the unique variant")
+parser.add_argument("--profile-id", type=int, default=0,
+                    help="Selected profile id; 0 selects the unique variant")
+parser.add_argument("--bindings-file", default="",
+                    help="JSON dispatch bindings; empty reuses the compiler reference bindings")
+parser.add_argument("--expected-traffic", default="",
+                    help="Expected traffic oracle override for an alternate dispatch binding")
 parser.add_argument(
     "--mesh-program-dir",
     required=True,
@@ -61,8 +97,9 @@ args = parser.parse_args()
 # Architecture facts come from the single source of truth (arch yaml) via
 # the same loader the compiler side uses; no duplicated constants here.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "util" / "mesh_ir"))
-from mesh_ir.builder import load_arch  # noqa: E402
+from mesh_ir.architecture import load_arch  # noqa: E402
 from mesh_ir.effective import EffectiveArchitecture  # noqa: E402
+from mesh_ir.ir.common import Access  # noqa: E402
 
 arch_manifest = load_arch(Path(args.arch))
 effective_arch = EffectiveArchitecture(arch_manifest)
@@ -95,13 +132,18 @@ arch = {
         for index, region in enumerate(arch_manifest.regions)
     ],
 }
-arch_digest = effective_arch.base_digest().hex()
+arch_digest = effective_arch.digest().hex()
 
 program_dir = Path(args.mesh_program_dir)
 program_path = program_dir / "program.mshb"
-traffic_path = program_dir / "expected_traffic.json"
+traffic_path = (
+    Path(args.expected_traffic)
+    if args.expected_traffic
+    else program_dir / "expected_traffic.json"
+)
 artifact_dir = Path(os.environ.get("AI_MESH_ARTIFACT_DIR", program_dir))
 result_path = artifact_dir / "actual_result.json"
+reconciliation_path = artifact_dir / "reconciliation.json"
 if not program_path.exists():
     fatal("missing %s", program_path)
 
@@ -124,6 +166,13 @@ transport = MockAxiTransport(
     burst_base_latency=arch_manifest.dma_burst_base_latency,
     sram_region_base=arch["regions"][2]["base"],
     sram_tile_stride=arch["regions"][2]["tile_stride"],
+    error_descriptors=[
+        int(value) for value in args.error_descriptors.split(",") if value
+    ],
+    lost_descriptors=[
+        int(value) for value in args.drop_descriptors.split(",") if value
+    ],
+    fault_occurrence=args.fault_occurrence,
 )
 transport.clk_domain = system.clk_domain
 
@@ -151,7 +200,7 @@ for core_id in arch["core_ids"]:
         sram_write_ports=arch_manifest.sram_write_ports_per_bank,
         sram_bytes=arch_manifest.sram_bytes,
         sram_alignment=arch_manifest.sram_base_alignment_bytes,
-        sram_line_bytes=arch_manifest.sram_read_bytes_per_cycle_per_bank,
+        sram_line_bytes=arch_manifest.sram_bank_interleave_bytes,
         sram_read_bytes_per_cycle=arch_manifest.sram_read_bytes_per_cycle_per_bank,
         sram_write_bytes_per_cycle=arch_manifest.sram_write_bytes_per_cycle_per_bank,
         dma=TensorDmaEngine(
@@ -169,6 +218,24 @@ for core_id in arch["core_ids"]:
     core.dma.clk_domain = system.clk_domain
     cores.append(core)
 
+bindings = json.loads(Path(args.bindings_file).read_text()) if args.bindings_file else []
+fabric_target_names = []
+fabric_range_region_ids = []
+fabric_range_owner_cores = []
+fabric_range_offsets = []
+fabric_range_sizes = []
+fabric_range_writable = []
+for target in arch_manifest.fabric.targets:
+    for address_range in target.ranges:
+        fabric_target_names.append(target.name)
+        fabric_range_region_ids.append(address_range.region_id)
+        fabric_range_owner_cores.append(address_range.owner_core)
+        fabric_range_offsets.append(address_range.offset_bytes)
+        fabric_range_sizes.append(address_range.size_bytes)
+        fabric_range_writable.append(
+            1 if address_range.access == Access.READ_WRITE else 0
+        )
+
 loader = MeshProgramLoader(
     program_file=str(program_path),
     cores=cores,
@@ -181,6 +248,9 @@ loader = MeshProgramLoader(
     sram_alignment=arch["sram_alignment"],
     axi_data_bytes=arch["axi_data_bytes"],
     axi_max_burst_beats=arch["axi_max_burst_beats"],
+    axi_address_bits=arch_manifest.axi_address_bits,
+    entrypoint_id=args.entrypoint_id,
+    profile_id=args.profile_id,
     region_ids=[region["id"] for region in arch["regions"]],
     region_bases=[region["base"] for region in arch["regions"]],
     region_bytes=[region["bytes"] for region in arch["regions"]],
@@ -190,6 +260,19 @@ loader = MeshProgramLoader(
         for r in arch_manifest.regions
     ],
     region_tile_bytes=[region.get("tile_bytes", 0) for region in arch["regions"]],
+    binding_slot_ids=[item["slot_id"] for item in bindings],
+    binding_region_ids=[item["region_id"] for item in bindings],
+    binding_owner_cores=[item["owner_core"] for item in bindings],
+    binding_offsets=[item["allocation_offset_bytes"] for item in bindings],
+    binding_sizes=[item["allocation_size_bytes"] for item in bindings],
+    binding_alignments=[item["allocation_alignment_bytes"] for item in bindings],
+    binding_accesses=[item["access"] for item in bindings],
+    fabric_target_names=fabric_target_names,
+    fabric_range_region_ids=fabric_range_region_ids,
+    fabric_range_owner_cores=fabric_range_owner_cores,
+    fabric_range_offsets=fabric_range_offsets,
+    fabric_range_sizes=fabric_range_sizes,
+    fabric_range_writable=fabric_range_writable,
 )
 
 dispatcher = MeshDispatcher(
@@ -199,6 +282,8 @@ dispatcher = MeshDispatcher(
     result_json=str(result_path),
     instances=args.instances,
     watchdog_ticks=args.watchdog_ticks,
+    receiver_fault=args.receiver_fault,
+    residency_fault=args.residency_fault,
 )
 dispatcher.clk_domain = system.clk_domain
 
@@ -216,20 +301,13 @@ m5.instantiate()
 exit_event = m5.simulate(args.sim_tick_limit) if args.sim_tick_limit else m5.simulate()
 cause = exit_event.getCause()
 print("Exiting @ tick", m5.curTick(), "because", cause)
-if not cause.startswith("MESH_PROGRAM_DONE"):
+reconcilable = cause.startswith("MESH_PROGRAM_DONE") or cause.startswith(
+    "MESH_PROGRAM_ERROR_DRAINED"
+)
+if not reconcilable:
     fatal("mesh program did not complete: %s", cause)
 if args.expect_ticks and m5.curTick() != args.expect_ticks:
     fatal("tick golden mismatch: expected %d got %d", args.expect_ticks, m5.curTick())
-
-# Reconcile the mock transport accounting against the compiler oracle and
-# prove content flow with an independent digest oracle.
-def _payload_digest(data: bytes) -> str:
-    h0 = 0xCBF29CE484222325
-    h1 = 0x9E3779B97F4A7C15
-    for byte in data:
-        h0 = ((h0 ^ byte) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
-        h1 = ((h1 + ((h0 >> 31) ^ byte)) * 0xBF58476D1CE4E5B9) & 0xFFFFFFFFFFFFFFFF
-    return f"{h0:016x}-{h1:016x}"
 
 
 schedule = json.loads((program_dir / "schedule.mesh.json").read_text())
@@ -239,77 +317,78 @@ attrs_by_index = {i + 1: attr for i, attr in enumerate(schedule["sections"]["OP_
 def _fill_pattern_of(row):
     for command in schedule["sections"]["COMMANDS"]:
         if command["command_id"] == row["command_id"]:
-            return attrs_by_index.get(command["attr_index"], {}).get("pattern", 0)
+            value = attrs_by_index.get(command["attr_index"], {}).get("pattern", 0)
+            return int(value, 16) if isinstance(value, str) else value
     return 0
 
 
 result = json.loads(result_path.read_text())
-if args.instances > 1:
-    for row in result["transport"]:
-        pass  # per-descriptor rows accumulate across instances; scale below
 
-expected_rows = json.loads(traffic_path.read_text())
+traffic = json.loads(traffic_path.read_text())
+descriptor_kinds = {
+    row["descriptor_id"]: row["kind"]
+    for row in schedule["sections"]["DMA_DESCRIPTORS"]
+}
+expected_rows = [
+    {
+        **row,
+        **row["identity"],
+        "kind": descriptor_kinds[row["identity"]["descriptor_id"]],
+    }
+    for row in traffic["descriptors"]
+]
 expected = {row["descriptor_id"]: row for row in expected_rows}
 actual = {row["descriptor_id"]: row for row in result["transport"]}
-if sorted(actual.keys()) != sorted(expected.keys()):
-    fatal(
-        "traffic descriptor mismatch: expected %s got %s",
-        sorted(expected.keys()),
-        sorted(actual.keys()),
+try:
+    reconciliation = reconcile_runtime(
+        cause=cause,
+        result=result,
+        schedule=schedule,
+        expected_rows=expected_rows,
+        error_descriptors=args.error_descriptors.split(","),
+        fault_occurrence=args.fault_occurrence,
+        instances=args.instances,
+        traffic_multiplier=args.traffic_multiplier,
     )
-for descriptor_id, row in expected.items():
-    got = actual[descriptor_id]
-    useful = row["useful_bytes"] * args.instances * args.traffic_multiplier
-    if useful == 0:
-        zero_fields = (
-            got["read_bytes"], got["write_bytes"], got["fill_bytes"],
-            got["p2p_bytes"], got["read_bursts"], got["write_bursts"],
-            got["p2p_bursts"],
-        )
-        if any(zero_fields):
-            fatal(
-                "zero-byte descriptor %d produced traffic: %s",
-                descriptor_id, zero_fields,
-            )
-        continue
-    if not got.get("payload_digest"):
-        fatal("descriptor %d has no payload digest", descriptor_id)
-    if row["kind"] == 5:  # LOCAL_FILL: analytic pattern digest per instance
-        pattern = _fill_pattern_of(row)
-        data = bytes((pattern >> (8 * (i % 8))) & 0xFF for i in range(row["useful_bytes"]))
-        # bytes repeat per instance; digest is recorded per completion, so the
-        # last instance's digest must equal the analytic pattern digest.
-        if got["payload_digest"] != _payload_digest(data):
-            fatal("fill content mismatch on descriptor %d", descriptor_id)
-        if got["fill_bytes"] != row["useful_bytes"] * args.instances * args.traffic_multiplier:
-            fatal("fill traffic mismatch on descriptor %d", descriptor_id)
-        continue
-    if row["kind"] == 3:  # P2P
-        if got["p2p_bytes"] != useful or got["p2p_bursts"] != row["bursts"] * args.instances * args.traffic_multiplier:
-            fatal("p2p traffic mismatch on descriptor %d", descriptor_id)
-    elif row["kind"] == 2:  # STORE
-        if got["write_bytes"] != useful or got["write_bursts"] != row["bursts"] * args.instances * args.traffic_multiplier:
-            fatal("store traffic mismatch on descriptor %d", descriptor_id)
-    else:
-        if got["read_bytes"] != useful or got["read_bursts"] != row["bursts"] * args.instances * args.traffic_multiplier:
-            fatal("load traffic mismatch on descriptor %d", descriptor_id)
-        # Loads read zero-initialized HBM: content digest is analytic.
-        if got["payload_digest"] != _payload_digest(bytes(row["useful_bytes"])):
-            fatal("load content mismatch on descriptor %d", descriptor_id)
-    if row["kind"] in (2, 3):
-        # STORE/P2P carry compute results: their digest must differ from the
-        # zero-content digest, proving data flowed through SRAM.
-        if got["payload_digest"] == _payload_digest(bytes(row["useful_bytes"])):
-            fatal("descriptor %d payload shows no content flow", descriptor_id)
+except ReconciliationError as error:
+    fatal("runtime reconciliation failed: %s", error)
+reconciliation_path.write_text(json.dumps(reconciliation, indent=2) + "\n")
+
+# The agreement keeps the drain's exit status: the reconciliation above is the
+# authority for the descriptor accounting, and the healthy-only checks below
+# must not reclassify a drained run.
+if not cause.startswith("MESH_PROGRAM_DONE"):
+    fatal("mesh program did not complete: %s", cause)
 
 if args.program == "dma_shapes":
+    # Both identities come from the admitted program: the push descriptor and
+    # the LOCAL_FILL descriptor that carries the declared fill pattern.  The
+    # transfer expectation follows the admitted source's real last producer.
     fill_pattern = bytes([0xA5]) + bytes(7)
     expected_content = _payload_digest(fill_pattern * 16)
-    p2p = next(row for row in result["transport"] if row["p2p_bytes"] > 0)
-    if p2p["payload_digest"] != expected_content:
-        fatal("multi-row P2P content digest does not cover every row")
-    fill = next(row for row in result["transport"] if row["fill_bytes"] == 128)
-    if fill["payload_digest"] != expected_content:
+    transfers = [
+        row for row in schedule["sections"]["DMA_DESCRIPTORS"] if row["kind"] == 3
+    ]
+    fills = [
+        row
+        for row in schedule["sections"]["DMA_DESCRIPTORS"]
+        if row["kind"] == 5 and _fill_pattern_of(row) == 0xA5
+    ]
+    if len(transfers) != 1 or len(fills) != 1:
+        fatal("dma_shapes admitted shapes changed: %d transfers, %d pattern fills",
+              len(transfers), len(fills))
+    try:
+        verify_transfer_producer_content(
+            program_dir, result, transfers[0]["descriptor_id"]
+        )
+    except ProducerContentError as error:
+        fatal("transfer producer content check failed: %s", error)
+    fill_rows = [
+        row
+        for row in result["transport"]
+        if row["descriptor_id"] == fills[0]["descriptor_id"]
+    ]
+    if len(fill_rows) != 1 or fill_rows[0]["payload_digest"] != expected_content:
         fatal("FILL content digest does not cover the descriptor byte stream")
 
 for core in result["cores"]:

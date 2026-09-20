@@ -1,11 +1,40 @@
 # -*- mode:python -*-
 
+import gem5_scons
+
 Import('*')
 
 # The AI Mesh dummy core stack only exists in the AXI_MESH protocol build,
 # mirroring the guard used by src/mem/axi/SConscript.
 if env['CONF']['PROTOCOL'] != 'AXI_MESH':
     Return()
+
+with gem5_scons.Configure(env) as conf:
+    if not conf.CheckPkgConfig('isl'):
+        error('AI Mesh requires libisl-dev with pkg-config metadata')
+    original_libs = list(conf.env['LIBS'])
+    conf.env.Append(LIBS=['isl'])
+    isl_linked = conf.TryLink(r'''
+#include <isl/ctx.h>
+#include <isl/map.h>
+#include <isl/set.h>
+int
+main()
+{
+    isl_ctx *context = isl_ctx_alloc();
+    isl_set *set = isl_set_read_from_str(context, "{ [i] }");
+    isl_map *map = isl_map_read_from_str(context, "{ [i] -> [i] }");
+    isl_set_free(set);
+    isl_map_free(map);
+    isl_ctx_free(context);
+    return 0;
+}
+''', '.cc')
+    conf.env.Replace(LIBS=original_libs)
+    if not isl_linked:
+        error('AI Mesh requires libisl-dev headers and linker support')
+
+isl = SourceLib('isl', tags={'gem5 lib', 'ai mesh isl'})
 
 SimObject('AiMesh.py', sim_objects=[
     'DmaEngineBase',
@@ -24,14 +53,37 @@ SimObject('AiMesh.py', sim_objects=[
 ])
 
 Source('mesh_binary.cc')
+Source('mesh_binary_envelope.cc')
+Source('mesh_binary_storage.cc')
+Source('mesh_binary_validation.cc')
+Source('mesh_binary_canonical.cc')
+Source('mesh_canonical.cc')
+Source('mesh_hash.cc')
 Source('mesh_splitter.cc')
+Source('mesh_ir_computation_verifier.cc')
+Source('mesh_ir_logical_computation_verifier.cc')
+Source('mesh_ir_physical_operation_verifier.cc')
+Source('mesh_ir_compute_verifier.cc')
+Source('mesh_ir_intrinsic_dependency_facts.cc')
+Source('mesh_ir_intrinsic_memory_verifier.cc')
+Source('mesh_ir_control_dependency_verifier.cc')
+Source('mesh_ir_control_projection.cc')
+Source('mesh_ir_dma_verifier.cc')
+Source('mesh_ir_dependency_graph.cc')
+Source('mesh_ir_backing.cc')
+Source('mesh_ir_lifetime_verifier.cc')
+Source('mesh_ir_region.cc')
+Source('mesh_ir_semantic_context.cc')
 Source('mesh_ir_verifier.cc')
+Source('command_rom.cc')
+Source('mesh_invocation_binding.cc')
 Source('mesh_program_loader.cc')
 Source('mock_axi_transport.cc')
 Source('tensor_dma_engine.cc')
 Source('axi_garnet_bridge.cc')
 Source('axi_tensor_dma_engine.cc')
 Source('peer_sram_aperture.cc')
+Source('target_sentinels.cc')
 Source('npu_memory_endpoint.cc')
 Source('gate3_observation_recorder.cc')
 Source('gate3_protocol_runtime.cc')
@@ -47,7 +99,13 @@ Source('agent_protocol_layout.cc')
 Source('agent_ring_state.cc')
 Source('agent_submission_ledger.cc')
 Source('mesh_dummy_core.cc')
+Source('dma_command_lifecycle.cc')
+Source('mesh_dummy_core_wfg.cc')
+Source('mesh_runtime_observations.cc')
+Source('mesh_runtime_diagnostics.cc')
+Source('mesh_dummy_core_observations.cc')
 Source('mesh_dispatcher.cc')
+Source('peer_transfer_coverage.cc')
 SimObject('MeshExperimentObserver.py', sim_objects=['MeshExperimentObserver'])
 Source('mesh_experiment_observer.cc')
 Source('agent_crc32c.cc')
@@ -55,10 +113,54 @@ DebugFlag('AiMesh')
 
 GTest('mesh_binary.test',
       'mesh_binary.test.cc',
+      'mesh_ir_admission.test.cc',
+      'mesh_invocation_binding.test.cc',
       'acceptance_gtest_reporter.cc',
       'mesh_binary.cc',
+      'mesh_binary_envelope.cc',
+      'mesh_binary_storage.cc',
+      'mesh_binary_validation.cc',
+      'mesh_binary_canonical.cc',
+      'mesh_canonical.cc',
+      'mesh_hash.cc',
+      'mesh_ir_computation_verifier.cc',
+      'mesh_ir_logical_computation_verifier.cc',
+      'mesh_ir_physical_operation_verifier.cc',
+      'mesh_ir_compute_verifier.cc',
+      'mesh_ir_intrinsic_dependency_facts.cc',
+      'mesh_ir_intrinsic_memory_verifier.cc',
+      'mesh_ir_control_dependency_verifier.cc',
+      'mesh_ir_control_projection.cc',
+      'mesh_ir_dma_verifier.cc',
+      'mesh_ir_dependency_graph.cc',
+      'mesh_ir_backing.cc',
+      'mesh_ir_lifetime_verifier.cc',
+      'mesh_ir_region.cc',
+      'mesh_ir_semantic_context.cc',
       'mesh_ir_verifier.cc',
-      'mesh_splitter.cc')
+      'command_rom.cc',
+      'mesh_invocation_binding.cc',
+      'mesh_splitter.cc',
+      isl)
+GTest('mesh_runtime_observations.test',
+      'mesh_runtime_observations.test.cc',
+      'mesh_runtime_observations.cc',
+      'acceptance_gtest_reporter.cc')
+GTest('dma_command_lifecycle.test',
+      'dma_command_lifecycle.test.cc',
+      'dma_command_lifecycle.cc',
+      'acceptance_gtest_reporter.cc')
+GTest('mesh_runtime_diagnostics.test',
+      'mesh_runtime_diagnostics.test.cc',
+      'mesh_runtime_diagnostics.cc',
+      'mesh_canonical.cc',
+      'acceptance_gtest_reporter.cc')
+
+GTest('peer_transfer_coverage.test',
+      'peer_transfer_coverage.test.cc',
+      'peer_transfer_coverage.cc',
+      'acceptance_gtest_reporter.cc')
+
 GTest('tensor_sram.test',
       'tensor_sram.test.cc',
       'acceptance_gtest_reporter.cc')
@@ -67,7 +169,14 @@ GTest('tensor_sram_queue.test',
 GTest('mesh_splitter.test',
       'mesh_splitter.test.cc',
       'acceptance_gtest_reporter.cc',
-      'mesh_splitter.cc', 'mesh_binary.cc')
+      'mesh_splitter.cc',
+      'mesh_binary.cc',
+      'mesh_binary_envelope.cc',
+      'mesh_binary_storage.cc',
+      'mesh_binary_validation.cc',
+      'mesh_binary_canonical.cc',
+      'mesh_canonical.cc',
+      'mesh_hash.cc')
 GTest('program_scoreboard.test',
       'program_scoreboard.test.cc')
 GTest('agent_protocol.test',

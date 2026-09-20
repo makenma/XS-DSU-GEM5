@@ -5,7 +5,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from mesh_ir.burst_splitter import plan_descriptor, split_segment, validate_burst_invariants
+from mesh_ir.burst_splitter import Burst, plan_descriptor, split_segment, validate_burst_invariants
+from mesh_ir.canonical import U64_MAX
 from mesh_ir.model import MeshIrError
 
 W = 32
@@ -86,3 +87,48 @@ def test_max_burst_minus_and_plus_one():
 def test_useful_conservation_is_enforced():
     with pytest.raises(MeshIrError):
         validate_burst_invariants(split_segment(0, 64, W, L), 65)
+
+
+@pytest.mark.parametrize("width", [8, 16, 32, 64])
+def test_exact_width_and_burst_boundary_matrix(width):
+    expected = (
+        (0, 0, 0),
+        (1, 1, 1),
+        (width - 1, 1, 1),
+        (width, 1, 1),
+        (width + 1, 1, 2),
+        (L * width - 1, 1, L),
+        (L * width, 1, L),
+        (L * width + 1, 2, L + 1),
+    )
+    for size, bursts, beats in expected:
+        plan = plan_descriptor(size, 1, 0, size, width, L)
+        assert len(plan.bursts) == bursts
+        assert sum(burst.beats for burst in plan.bursts) == beats
+        assert plan.useful_bytes == size
+
+
+def test_unaligned_head_tail_and_row_order_are_exact():
+    assert split_segment(31, 2, 32, 16) == (Burst(0, 31, 2, 2),)
+    plan = plan_descriptor(33, 3, 1, 65, 32, 16)
+    assert [burst.logical_start for burst in plan.bursts] == [1, 66, 131]
+    assert [burst.beats for burst in plan.bursts] == [2, 2, 2]
+    assert plan.beat_bytes == 192
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: split_segment(True, 1, 32, 16),
+        lambda: split_segment(0, 1.0, 32, 16),
+        lambda: split_segment(-1, 1, 32, 16),
+        lambda: split_segment(0, 1, 24, 16),
+        lambda: split_segment(0, 1, 32, 0),
+        lambda: split_segment(U64_MAX, 2, 32, 16),
+        lambda: plan_descriptor(2, 2, U64_MAX - 1, 2, 32, 16),
+        lambda: plan_descriptor(U64_MAX, 2, 0, 0, 32, 16),
+    ],
+)
+def test_splitter_rejects_invalid_scalars_and_u64_overflow(call):
+    with pytest.raises(MeshIrError):
+        call()

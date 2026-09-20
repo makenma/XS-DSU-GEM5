@@ -3,53 +3,84 @@ import hashlib
 import struct
 import zlib
 
+from mesh_ir.generated import abi as A
+
+
+HEADER_OFFSETS = {field["name"]: field["offset"] for field in A.HEADER_FIELDS}
+DIRECTORY_OFFSETS = {
+    field["name"]: field["offset"] for field in A.SECTION_DIR_FIELDS
+}
+
 
 def rebuild_with_extra_section(blob: bytes, extra_type: int, payload: bytes,
                                record_bytes: int = 16) -> bytes:
-    """Append one extra section to a golden .mshb.
-
-    The ABI section directory is a flat array of 40-byte entries (no count
-    prefix; the count lives in the header at offset 32).  All original
-    section offsets shift by exactly the directory size delta.
-    """
+    """Append one extra section to a golden .mshb."""
     blob = bytearray(blob)
-    dir_off = struct.unpack_from("<Q", blob, 24)[0]          # always 128
-    old_count = struct.unpack_from("<I", blob, 32)[0]
-    old_dir_size = old_count * 40
-    first_sec = struct.unpack_from("<Q", blob, dir_off + 8)[0]
+    dir_off = struct.unpack_from(
+        "<Q", blob, HEADER_OFFSETS["section_dir_offset"]
+    )[0]
+    old_count = struct.unpack_from(
+        "<I", blob, HEADER_OFFSETS["section_count"]
+    )[0]
 
     sections = []
     for i in range(old_count):
-        e = dir_off + i * 40
-        stype = struct.unpack_from("<H", blob, e)[0]
-        rbytes = struct.unpack_from("<I", blob, e + 4)[0]
-        off, size, cnt = struct.unpack_from("<QQQ", blob, e + 8)
-        sections.append((stype, rbytes, off - first_sec, size, cnt))
-
-    old_body = bytes(blob[first_sec:])
-    extra_count = len(payload) // record_bytes if record_bytes else 0
-    sections.append((extra_type, record_bytes,
-                     len(old_body), len(payload), extra_count))
-    sections.sort(key=lambda s: s[0])
-
-    new_dir_size = len(sections) * 40
-    new_first_sec = (128 + new_dir_size + 7) & ~7
-    new_body = old_body + payload
-
-    directory = b""
-    for stype, rbytes, body_off, size, cnt in sections:
-        directory += struct.pack(
-            "<HHIQQQII", stype, 0, rbytes,
-            new_first_sec + body_off, size, cnt,
-            zlib.crc32(new_body[body_off : body_off + size]) & 0xFFFFFFFF, 0,
+        entry = dir_off + i * A.SECTION_DIR_BYTES
+        section_type = struct.unpack_from(
+            "<H", blob, entry + DIRECTORY_OFFSETS["section_type"]
+        )[0]
+        section_record_bytes = struct.unpack_from(
+            "<I", blob, entry + DIRECTORY_OFFSETS["record_bytes"]
+        )[0]
+        offset = struct.unpack_from(
+            "<Q", blob, entry + DIRECTORY_OFFSETS["offset"]
+        )[0]
+        size = struct.unpack_from(
+            "<Q", blob, entry + DIRECTORY_OFFSETS["size"]
+        )[0]
+        count = struct.unpack_from(
+            "<Q", blob, entry + DIRECTORY_OFFSETS["count"]
+        )[0]
+        sections.append(
+            (section_type, section_record_bytes, bytes(blob[offset:offset + size]), count)
         )
 
-    total = new_first_sec + len(new_body)
-    header = struct.pack(
-        "<QHHIQQII32s32sQ16s",
-        0x010000004248534D, 1, 1, 128, total, 128, len(sections), 0,
-        bytes(blob[40:72]), b"\x00" * 32, 0, b"\x00" * 16,
+    extra_count = len(payload) // record_bytes if record_bytes else 0
+    sections.append((extra_type, record_bytes, payload, extra_count))
+    sections.sort(key=lambda section: section[0])
+
+    directory_end = A.HEADER_BYTES + len(sections) * A.SECTION_DIR_BYTES
+    cursor = (directory_end + 7) & ~7
+    directory = bytearray()
+    body = bytearray(b"\x00" * (cursor - directory_end))
+    for section_type, section_record_bytes, section_payload, count in sections:
+        aligned = (cursor + 7) & ~7
+        body.extend(b"\x00" * (aligned - cursor))
+        cursor = aligned
+        directory.extend(
+            struct.pack(
+                "<HHIQQQII", section_type, 0, section_record_bytes,
+                cursor, len(section_payload), count,
+                zlib.crc32(section_payload) & 0xFFFFFFFF, 0,
+            )
+        )
+        body.extend(section_payload)
+        cursor += len(section_payload)
+
+    header = bytearray(blob[:A.HEADER_BYTES])
+    struct.pack_into(
+        "<Q", header, HEADER_OFFSETS["file_bytes"],
+        A.HEADER_BYTES + len(directory) + len(body),
     )
-    out = bytearray(header) + bytearray(directory) + bytearray(new_body)
-    out[72:104] = hashlib.sha256(bytes(out[128:])).digest()
+    struct.pack_into(
+        "<Q", header, HEADER_OFFSETS["section_dir_offset"], A.HEADER_BYTES
+    )
+    struct.pack_into(
+        "<I", header, HEADER_OFFSETS["section_count"], len(sections)
+    )
+    out = header + directory + body
+    payload_offset = HEADER_OFFSETS["payload_sha256"]
+    out[payload_offset:payload_offset + 32] = hashlib.sha256(
+        bytes(out[A.HEADER_BYTES:])
+    ).digest()
     return bytes(out)

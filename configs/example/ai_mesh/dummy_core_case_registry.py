@@ -29,6 +29,8 @@ BASE_GARNET_INVARIANTS = (
     "conservation",
     "quiescence",
     "completion_timing",
+    "burst_attribution",
+    "packet_traffic",
 )
 
 
@@ -47,6 +49,19 @@ CASES = {
             "single",
             "dual",
             "fill",
+            "fill_offset",
+            "fill_view_offset",
+            "fill_view_offset_out",
+            "fill_view_offset_out_pad",
+            "fill_view_offset_padding_zero",
+            "fill_view_offset_padding_pattern",
+            "fill_view_offset_row_gap_zero",
+            "fill_view_offset_row_gap_pattern",
+            "fill_view_offset_split",
+            "fill_view_offset_split_zero",
+            "fill_view_offset_split_pattern",
+            "fill_view_offset_in0",
+            "fill_view_offset_in0_out",
             "repeat",
             "poison",
             "sram_parallel",
@@ -59,45 +74,130 @@ CASES = {
             "compute_timing",
             "cross_error",
             "barrier_e2e",
+            "multi_descriptor",
+            "pre_resident_weight",
+            "dma_pin",
+            "dma_fence",
+            "engine_tensor_pressure",
+            "engine_vector_pressure",
+            "engine_reduce_pressure",
+            "double_buffer_overlap",
+            "double_buffer_serialized",
+            "barrier_asymmetric",
+            "p2p_multi_descriptor",
+            "p2p_prefilled_destination",
+            "p2p_cancel",
         )
     },
-    "dma_basic": _garnet("dma_basic", "instance_ledgers", "e2e_a_content"),
+    "drain_stalled": _garnet("drain_stalled"),
+    "dma_basic": _garnet("dma_basic", "reconciliation", "loader_zero_traffic",
+                         "global_drain", "instance_ledgers", "e2e_a_content",
+                         "destination_bytes", "compute_timing"),
     "p2p_basic": _garnet(
-        "p2p_basic", "instance_ledgers", "p2p_commit", "e2e_b_order"
+        "p2p_basic", "global_drain", "instance_ledgers", "p2p_commit",
+        "e2e_b_order", "e2e_b_segments", "e2e_a_content", "destination_bytes", "p2p_unique_publish", "staged_commit_stages"
     ),
-    "dma_edge": _garnet("dma_edge", "edge_bytes"),
-    "region_edge": _garnet("region_edge", "instance_ledgers", "e2e_a_content"),
+    "dma_edge": _garnet("dma_edge", "edge_bytes", "wstrb_sentinels"),
+    "region_edge": _garnet("region_edge", "reconciliation", "wstrb_sentinels",
+                           "instance_ledgers", "e2e_a_content",
+                           "destination_bytes"),
     "delayed_b": _garnet("delayed_b", "b_reorder"),
-    "p2p_delayed": _garnet("p2p_delayed", "p2p_commit", "recv_wait_order"),
-    "read_error": _garnet("read_error", "read_error_drain"),
-    "write_error": _garnet("write_error", "write_error_drain"),
+    "delayed_b_ejection": _garnet("delayed_b_ejection", "b_reorder"),
+    "p2p_delayed": _garnet("p2p_delayed", "p2p_commit", "p2p_unique_publish",
+                           "staged_commit_stages", "recv_wait_order"),
+    "read_error": _garnet("read_error", "reconciliation",
+                          "cancelled_commands_issue_nothing", "read_error_drain"),
+    "read_error_middle": _garnet(
+        "read_error_middle", "reconciliation",
+        "cancelled_commands_issue_nothing", "global_drain"
+    ),
+    "write_error": _garnet("write_error", "reconciliation",
+                           "cancelled_commands_issue_nothing", "write_error_drain"),
     "fence": _garnet("fence", "fence_window"),
-    "pin": _garnet("pin", "pin_serialize"),
-    "constrained": _garnet("constrained", "p2p_commit"),
+    "pin": _garnet("pin", "reconciliation", "pin_serialize"),
+    "constrained": _garnet("constrained", "p2p_commit", "p2p_unique_publish"),
     "fence_scopes": _garnet("fence_scopes", "fence_scopes"),
-    "cross_error": _garnet("cross_error", "cross_error_drain"),
+    "cross_error": _garnet("cross_error", "reconciliation",
+                           "cancelled_commands_issue_nothing", "cross_error_drain"),
     "cross_error_first_instance": CaseDefinition(
         Backend.GARNET,
         "cross_error_first_instance",
-        ("quiescence", "completion_timing", "first_instance_error_only"),
+        ("reconciliation", "quiescence", "completion_timing",
+         "burst_attribution", "first_instance_error_only"),
     ),
-    "repeat_error": _garnet("repeat_error", "repeat_error_drain"),
-    "p2p_reuse": _garnet("p2p_reuse", "p2p_reuse_commits"),
+    "repeat_error": _garnet("repeat_error", "reconciliation",
+                            "cancelled_commands_issue_nothing",
+                            "repeat_error_drain"),
+    "p2p_reuse": _garnet("p2p_reuse", "p2p_reuse_commits",
+                         "p2p_unique_publish", "staged_commit_stages"),
+    "p2p_partial_abandon": _garnet(
+        "p2p_partial_abandon", "reconciliation",
+        "cancelled_commands_issue_nothing", "p2p_partial_abandon"
+    ),
+    "p2p_prefilled": _garnet(
+        "p2p_prefilled", "reconciliation", "transfer_snapshots",
+        "p2p_unique_publish", "wstrb_sentinels"
+    ),
+    "p2p_prefilled_incomplete": _garnet(
+        "p2p_prefilled_incomplete", "reconciliation",
+        "cancelled_commands_issue_nothing", "transfer_snapshots",
+        "p2p_partial_abandon"
+    ),
     "dma_zero": _garnet("dma_zero"),
     "read_outstanding_window": _garnet(
         "read_outstanding_window", "read_window_slides"
     ),
-    "load_saturation_contiguous": _garnet("load_saturation_contiguous"),
+    "lost_response": _garnet("lost_response"),
+    "write_error_post_commit": _garnet(
+        "write_error_post_commit", "reconciliation",
+        "cancelled_commands_issue_nothing", "post_commit_landing"
+    ),
+    "drain_deferred": _garnet(
+        "drain_deferred", "reconciliation", "global_drain", "instance_ledgers",
+        "e2e_a_content", "destination_bytes"
+    ),
+    "read_reorder": _garnet(
+        "read_reorder", "reconciliation", "r_completion_order",
+        "global_drain", "read_window_slides"
+    ),
+    "load_saturation_contiguous": _garnet("load_saturation_contiguous",
+                                          "global_drain"),
     "load_saturation_multi_tensor": _garnet("load_saturation_multi_tensor"),
     "load_saturation_strided": _garnet("load_saturation_strided"),
     "dma_shapes": _garnet(
-        "dma_shapes", "p2p_commit", "shapes_content", "cross_core_order"
+        "dma_shapes", "reconciliation", "p2p_commit", "p2p_unique_publish",
+        "staged_commit_stages", "wstrb_sentinels", "shapes_content",
+        "e2e_b_order", "destination_bytes"
     ),
     "p2p_persist": _garnet(
-        "p2p_persist", "instance_ledgers", "p2p_commit", "e2e_b_order"
+        "p2p_persist", "global_drain", "instance_ledgers", "p2p_commit",
+        "e2e_b_segments", "e2e_a_content", "destination_bytes",
+        "p2p_unique_publish", "staged_commit_stages", "e2e_b_order"
+    ),
+    "dma_basic_shallow": _garnet(
+        "dma_basic_shallow", "reconciliation", "loader_zero_traffic",
+        "global_drain", "instance_ledgers", "e2e_a_content",
+        "destination_bytes", "queue_bounds", "compute_timing"
+    ),
+    "p2p_frames_shallow": _garnet(
+        "p2p_frames_shallow", "reconciliation", "global_drain",
+        "instance_ledgers", "p2p_commit", "e2e_b_order", "e2e_b_segments",
+        "p2p_unique_publish", "staged_commit_stages", "e2e_a_content",
+        "destination_bytes", "queue_bounds", "compute_timing"
+    ),
+    "p2p_peer_edge": _garnet(
+        "p2p_peer_edge", "reconciliation", "global_drain", "instance_ledgers",
+        "p2p_commit", "p2p_unique_publish", "staged_commit_stages",
+        "wstrb_sentinels", "peer_write_bursts", "destination_bytes"
+    ),
+    "p2p_frames": _garnet(
+        "p2p_frames", "reconciliation", "global_drain", "instance_ledgers",
+        "p2p_commit", "e2e_b_order", "e2e_b_segments", "p2p_unique_publish",
+        "staged_commit_stages", "e2e_a_content", "destination_bytes", "compute_timing"
     ),
     "sram_persist": _garnet(
-        "sram_persist", "instance_ledgers", "e2e_a_content"
+        "sram_persist", "reconciliation", "instance_ledgers", "e2e_a_content",
+        "destination_bytes"
     ),
 }
 

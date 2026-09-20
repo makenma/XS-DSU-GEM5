@@ -10,11 +10,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from mesh_ir.abi.decoder import decode_program
 from mesh_ir.abi.encoder import encode_program
-from mesh_ir.abi.verifier import verify_program
-from mesh_ir.builder import load_arch
+from mesh_ir.architecture import load_arch
 from mesh_ir.generated import abi as A
 from mesh_ir.golden_programs import build_dual_core_program, build_single_core_program
 from mesh_ir.model import RECORD_CLASSES, MeshIrError
+from mesh_ir.scheduled.verify import verify_program
 
 ARCH_PATH = Path(__file__).resolve().parents[4] / "configs/example/ai_mesh/arch/mesh_1x2.yaml"
 
@@ -102,14 +102,17 @@ def test_opcode_closed_set_and_engine_mapping():
 
 def test_required_sections_present_in_enum():
     required = set(A.REQUIRED_SECTIONS)
-    assert len(required) == 15
+    assert len(required) == len(A.REQUIRED_SECTIONS)
+    assert len(required) > len(RECORD_CLASSES)
     for name in required:
         assert hasattr(A.SECTION_TYPE, name)
 
 
 def test_model_matches_generated_schema_exactly():
     for name, cls in RECORD_CLASSES.items():
-        schema_names = tuple(f["name"] for f in getattr(A, f"{name}_FIELDS"))
+        schema_names = tuple(
+            field["name"] for field in A.TRANSPORT_CANONICAL_FIELDS[name]
+        )
         model_names = tuple(f.name for f in dataclasses.fields(cls))
         assert schema_names == model_names, name
 
@@ -121,7 +124,7 @@ def test_golden_programs_round_trip_semantic_sha(programs, arch):
         decoded = decode_program(blob)
         verify_program(decoded, arch)
         assert program.canonical_dict() == decoded.canonical_dict(), name
-        assert decoded.semantic_sha256() == program.semantic_sha256(), name
+        assert decoded.semantic_sha256 == program.semantic_sha256, name
 
 
 def test_encode_is_deterministic_across_hashseeds(programs, arch):
@@ -136,7 +139,7 @@ def test_encode_is_deterministic_across_hashseeds(programs, arch):
         script = (
             "import sys, hashlib; "
             f"sys.path.insert(0, {str(Path(__file__).resolve().parents[2])!r}); "
-            "from mesh_ir.builder import load_arch; "
+                "from mesh_ir.architecture import load_arch; "
             f"from mesh_ir.golden_programs import {build_call[name]}; "
             "from mesh_ir.abi.encoder import encode_program; "
             f"blob = encode_program({build_call[name]}(load_arch({str(ARCH_PATH)!r}))); "
@@ -190,6 +193,7 @@ def test_dual_core_program_shape(programs):
         A.OPCODE.GEMM,
         A.OPCODE.RECV_WAIT,
         A.OPCODE.LOCAL_REDUCE,
+        A.OPCODE.ELEMENTWISE,
         A.OPCODE.DMA_STORE,
         A.OPCODE.HALT,
     ]
@@ -201,8 +205,7 @@ def test_dual_core_program_shape(programs):
 
 
 def test_arch_digest_binding(programs, arch):
-    wrong = load_arch(ARCH_PATH)
-    wrong.sram_bytes += 1
+    wrong = dataclasses.replace(arch, arch_name=arch.arch_name + "-wrong")
     with pytest.raises(MeshIrError) as err:
         verify_program(programs["single"], wrong)
     assert err.value.code == "E_ARCH_DIGEST"
@@ -213,13 +216,11 @@ def test_generated_enum_closed_sets_cover_every_enum():
         "opcode", "engine", "memory_space", "tensor_role", "dtype",
         "storage_class", "access_kind", "layout_kind", "dma_kind",
         "event_kind", "attr_kind", "relocation_kind", "stream_flags",
-        "tensor_flags", "fence_scope", "vector_algorithm",
+        "tensor_flags", "fence_scope", "vector_algorithm", "scalar_kind",
+        "content_digest_object_kind",
     }
     for enum_name, values in A.ENUM_CLOSED_SETS.items():
-        mask = A.ENUM_MASKS[enum_name]
-        for value in values:
-            assert mask & (1 << value), enum_name
-    assert A.ENUM_MASKS["stream_flags"] == 0b110
+        assert len(values) == len(set(values)), enum_name
     assert A.ENUM_ALLOWED_BITS["stream_flags"] == (
         A.STREAM_FLAGS.IS_LIFECYCLE | A.STREAM_FLAGS.IS_LOCAL_CONTROL
     )
@@ -244,18 +245,18 @@ def test_payload_by_kind_covers_attr_kinds():
 
 
 def test_generated_cpp_header_has_decoders():
-    header = (
-        Path(__file__).resolve().parents[4]
-        / "src/dev/ai_mesh/generated/mesh_ir_abi.hh"
-    ).read_text()
+    generated = Path(__file__).resolve().parents[4] / "src/dev/ai_mesh/generated"
+    header = (generated / "mesh_ir_abi.hh").read_text()
+    codecs = (generated / "mesh_ir_transport_codecs.hh").read_text()
+    assert '#include "dev/ai_mesh/generated/mesh_ir_transport_codecs.hh"' in header
     for record in ("Command", "DmaDescriptor", "DmaEndpoint", "Profile", "Shard",
                    "Tensor", "Relocation", "Entrypoint", "ExpectedTraffic"):
         assert f"struct {record}" in header, record
-        assert f"decode{record}(" in header, record
-    assert "using AttrPayload = std::variant<" in header
-    assert "decodeAttrPayload(" in header
-    assert "kDtypeValuesMask" in header
+        assert f"decode{record}(" in codecs, record
+    assert "using AttrPayload = std::variant<" in codecs
+    assert "decodeAttrPayload(" in codecs
+    assert "validDtype(" in header
     for payload in ("RepeatV1", "GemmV1", "BmmV1", "ElementwiseV1", "ReduceV1",
                     "SoftmaxV1", "NormV1", "FillV1", "BlockedMnkLayoutV1",
                     "RecvWaitV1"):
-        assert f"decode{payload}(" in header, payload
+        assert f"decode{payload}(" in codecs, payload

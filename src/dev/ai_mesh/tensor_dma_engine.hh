@@ -7,6 +7,7 @@
 
 #include "dev/ai_mesh/dma_types.hh"
 #include "dev/ai_mesh/mesh_binary.hh"
+#include "dev/ai_mesh/mesh_runtime_observations.hh"
 #include "dev/ai_mesh/mesh_splitter.hh"
 #include "sim/clocked_object.hh"
 #include "sim/eventq.hh"
@@ -41,24 +42,32 @@ class TensorDmaEngine : public DmaEngineBase
     void bindOwner(MeshDummyCore *core, const RuntimeArch *arch) override;
     const std::map<uint32_t, ActualTraffic> &actualTraffic() const override;
     uint32_t liveDescriptors() const override { return outstanding; }
+    bool readFunctional(uint64_t address, uint64_t size,
+                        uint8_t *out) override;
 
   private:
-    void completeDescriptor(const DecodedDmaDescriptor &descriptor, Tick commit_tick);
+    void completeDescriptor(const DecodedDmaDescriptor &descriptor,
+                            const DescriptorKey &key, Tick commit_tick);
 
     struct EngineEvent : public Event
     {
         TensorDmaEngine *engine;
         DecodedDmaDescriptor descriptor;
+        DescriptorKey key;
         Tick commit_tick;
 
         EngineEvent(TensorDmaEngine *engine_, const DecodedDmaDescriptor &descriptor_,
-                    Tick commit_tick_)
-            : Event(), engine(engine_), descriptor(descriptor_), commit_tick(commit_tick_)
+                    const DescriptorKey &key_, Tick commit_tick_)
+            : Event(), engine(engine_), descriptor(descriptor_), key(key_),
+              commit_tick(commit_tick_)
         {
             setFlags(AutoDelete);
         }
 
-        void process() override { engine->completeDescriptor(descriptor, commit_tick); }
+        void process() override
+        {
+            engine->completeDescriptor(descriptor, key, commit_tick);
+        }
         const char *description() const override { return "ai_mesh.dma.complete"; }
     };
 

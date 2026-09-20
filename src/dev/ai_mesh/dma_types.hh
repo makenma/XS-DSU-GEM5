@@ -5,6 +5,7 @@
 #include <map>
 #include <string>
 
+#include "dev/ai_mesh/dma_records.hh"
 #include "dev/ai_mesh/mesh_binary.hh"
 #include "sim/clocked_object.hh"
 
@@ -14,30 +15,6 @@ namespace ai_mesh
 {
 
 class MeshDummyCore;
-
-// Per-descriptor actual traffic row shared by the mock transport and the
-// real AXI DMA engine (result-JSON oracle reconciliation).
-struct ActualTraffic
-{
-    uint64_t read_bytes = 0;
-    uint64_t write_bytes = 0;
-    uint64_t p2p_bytes = 0;
-    uint64_t fill_bytes = 0;
-    uint32_t read_bursts = 0;
-    uint32_t write_bursts = 0;
-    uint32_t p2p_bursts = 0;
-    uint64_t read_discarded_bytes = 0;
-    uint64_t write_drained_uncommitted_bytes = 0;
-    uint32_t error_code = 0;
-    std::string payload_digest;
-};
-
-enum class DmaStatus : uint8_t
-{
-    OK = 0,
-    AXI_READ_ERROR = 1,
-    AXI_WRITE_ERROR = 2,
-};
 
 // Abstract DMA engine front-end owned by a MeshDummyCore.  The mock engine
 // (analytic completion over MockAxiTransport) and the real engine
@@ -55,6 +32,17 @@ class DmaEngineBase : public ClockedObject
     virtual const std::map<uint32_t, ActualTraffic> &actualTraffic() const = 0;
     // Live (not yet terminal) descriptor count across both directions.
     virtual uint32_t liveDescriptors() const = 0;
+    // Called once per program instance before the first command issues: the
+    // engine must be drained and must not carry executable state across the
+    // instance boundary.
+    virtual void beginInstance() {}
+    // Observation-only functional read of an admitted endpoint address, local
+    // or peer.  It never changes timing, traffic or business state and returns
+    // false when the backend cannot serve the read.
+    virtual bool readFunctional(uint64_t address, uint64_t size, uint8_t *out)
+    {
+        return false;
+    }
 };
 
 } // namespace ai_mesh

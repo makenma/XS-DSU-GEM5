@@ -1,18 +1,9 @@
-"""Effective runtime architecture: the single configuration object that
-runners, SimObject parameters and architecture digests must share.
-
-The base manifest comes from the arch yaml.  Only tuning fields may be
-overridden at run time; every override enters the effective digest so two
-runs with different behaviour parameters never share one digest.  The base
-digest stays bound to the .mshb program (compatibility contract v1:
-structure-relevant fields are never overridable).
-"""
-
 from __future__ import annotations
 
 import copy
 
-from mesh_ir.model import ArchManifest, MeshIrError
+from mesh_ir.architecture import ArchManifest, validate_arch
+from mesh_ir.diagnostics import MeshIrError
 
 TUNING_OVERRIDE_FIELDS = (
     "dma_descriptor_queue_depth",
@@ -50,10 +41,13 @@ class EffectiveArchitecture:
                 "field is not a tuning override",
                 field=field,
             )
-        self.overrides[field] = value
-        self._effective = copy.deepcopy(self.base)
-        for name, override_value in self.overrides.items():
-            setattr(self._effective, name, override_value)
+        candidate_overrides = {**self.overrides, field: value}
+        candidate = copy.deepcopy(self.base)
+        for name, override_value in candidate_overrides.items():
+            setattr(candidate, name, override_value)
+        validate_arch(candidate)
+        self.overrides = candidate_overrides
+        self._effective = candidate
         return self
 
     _DTYPE_ORDER = ("fp32", "fp16", "bf16", "int8", "int32")

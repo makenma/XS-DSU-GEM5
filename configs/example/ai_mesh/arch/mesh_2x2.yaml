@@ -1,0 +1,154 @@
+schema_version: mesh-arch-v1
+arch_name: xs_ai_mesh_2x2_sparse
+clock_hz: 2000000000
+mesh:
+  rows: 2
+  cols: 2
+  endpoint_order: row_major_yx
+  routing: xy
+  core_ids: [7, 2, 9, 13]
+core:
+  command_rom_entries: 65536
+  decode_width: 1
+  event_visibility_cycles: 1
+  admit_window: 8
+  sram:
+    bytes: 2097152
+    banks: 16
+    read_ports_per_bank: 1
+    write_ports_per_bank: 1
+    bank_queue_depth: 2
+    bank_interleave_bytes: 64
+    read_bytes_per_cycle_per_bank: 32
+    write_bytes_per_cycle_per_bank: 32
+    base_alignment_bytes: 64
+  tensor_engine:
+    queue_depth: 8
+    setup_cycles: 8
+    pipeline_flush_cycles: 4
+    macs_per_cycle: {fp16: 256, bf16: 256, fp32: 64, int8: 512}
+  vector_engine:
+    queue_depth: 8
+    setup_cycles: 1
+    flush_cycles: 1
+    elements_per_cycle: {fp16: 128, bf16: 128, fp32: 64, int8: 256}
+  reduce_engine:
+    queue_depth: 8
+    setup_cycles: 4
+    flush_cycles: 2
+    ops_per_cycle: {fp16: 64, bf16: 64, fp32: 32, int32: 32}
+  dma:
+    read_engines: 1
+    write_engines: 1
+    descriptor_queue_depth: 16
+    segment_queue_depth: 32
+    read_outstanding: 16
+    write_outstanding: 16
+    setup_cycles: 2
+    burst_base_latency: 2
+axi:
+  data_bytes: 32
+  address_bits: 64
+  id_bits: 8
+  max_burst_beats: 16
+  enforce_4k_boundary: true
+  max_outstanding_per_id: 1
+  qos_default: 0
+memory_regions:
+  - {name: hbm, kind: HBM, base: 0x800000000, bytes: 0x400000000}
+  - {name: host_shared, kind: HOST_SHARED, base: 0x100000000, bytes: 0x10000000}
+  - {name: mesh_sram, kind: CORE_SRAM_APERTURE, base: 0x400000000, bytes: 0x3800000, tile_stride: 0x400000, tile_bytes: 0x200000}
+
+
+fabric:
+  channel_order: [AW, W, B, AR, R]
+  axi:
+    wire_header_bytes: [24, 16, 8, 24, 16]
+    data_header_sideband: false
+  initiator:
+    source_fifo_depths: [16, 64, 16, 32, 128]
+    message_buffer_depths: [16, 64, 16, 32, 128]
+    local_delivery_depths: [16, 64, 16, 32, 128]
+    max_outstanding_reads: 64
+    max_outstanding_writes: 32
+    pre_aw_bursts: 16
+    pre_aw_beats: 256
+    b_reorder_transactions: 64
+    r_reorder_beats: 1024
+  target:
+    write_contexts: 64
+    write_assembly_beats: 4096
+    read_contexts: 64
+    read_response_beats: 4096
+    orphan_w_transactions: 16
+    orphan_w_beats: 256
+    service_queue_depths: [32, 32]
+    base_latency_cycles: [1, 1]
+    response_ready_depths: [16, 128]
+  network:
+    router_rows: 2
+    router_cols: 2
+    flit_bytes: 16
+    link_latency_cycles: 1
+    router_latency_cycles: 1
+    vcs_per_vnet: 4
+    vnet_classes: [ctrl, data, ctrl, ctrl, data]
+    router_input_depths: [4, 8, 4, 4, 8]
+    ni_receive_depths: [4, 8, 4, 4, 8]
+    router_input_overrides: []
+    yx_vnets: []
+    dual_lane: false
+  initiators:
+  - {name: core_7, core_id: 7, src_node: 7, src_port: 0, router_id: 0, default_target_node: 100}
+  - {name: core_2, core_id: 2, src_node: 2, src_port: 0, router_id: 1, default_target_node: 100}
+  - {name: core_9, core_id: 9, src_node: 9, src_port: 0, router_id: 2, default_target_node: 100}
+  - {name: core_13, core_id: 13, src_node: 13, src_port: 0, router_id: 3, default_target_node: 100}
+  targets:
+  - name: memory
+    dst_node: 100
+    router_id: 0
+    ranges:
+      - {region_id: 0, owner_core: 65535, offset_bytes: 0, size_bytes: 0x400000000, access: READ_WRITE}
+      - {region_id: 1, owner_core: 65535, offset_bytes: 0, size_bytes: 0x10000000, access: READ_WRITE}
+  - name: peer_7
+    dst_node: 1007
+    router_id: 0
+    ranges:
+      - {region_id: 2, owner_core: 7, offset_bytes: 0, size_bytes: 0x200000, access: READ_WRITE}
+  - name: peer_2
+    dst_node: 1002
+    router_id: 1
+    ranges:
+      - {region_id: 2, owner_core: 2, offset_bytes: 0, size_bytes: 0x200000, access: READ_WRITE}
+  - name: peer_9
+    dst_node: 1009
+    router_id: 2
+    ranges:
+      - {region_id: 2, owner_core: 9, offset_bytes: 0, size_bytes: 0x200000, access: READ_WRITE}
+  - name: peer_13
+    dst_node: 1013
+    router_id: 3
+    ranges:
+      - {region_id: 2, owner_core: 13, offset_bytes: 0, size_bytes: 0x200000, access: READ_WRITE}
+  default_error_target_node: 100
+  quotas:
+  - {src_node: 7, src_port: 0, dst_node: 100, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 7, src_port: 0, dst_node: 1007, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 7, src_port: 0, dst_node: 1002, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 7, src_port: 0, dst_node: 1009, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 7, src_port: 0, dst_node: 1013, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 2, src_port: 0, dst_node: 100, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 2, src_port: 0, dst_node: 1007, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 2, src_port: 0, dst_node: 1002, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 2, src_port: 0, dst_node: 1009, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 2, src_port: 0, dst_node: 1013, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 9, src_port: 0, dst_node: 100, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 9, src_port: 0, dst_node: 1007, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 9, src_port: 0, dst_node: 1002, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 9, src_port: 0, dst_node: 1009, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 9, src_port: 0, dst_node: 1013, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 13, src_port: 0, dst_node: 100, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 13, src_port: 0, dst_node: 1007, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 13, src_port: 0, dst_node: 1002, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 13, src_port: 0, dst_node: 1009, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 13, src_port: 0, dst_node: 1013, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}

@@ -6,7 +6,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from mesh_ir.builder import load_arch
+from mesh_ir.architecture import load_arch
 from mesh_ir.effective import EffectiveArchitecture
 from mesh_ir.model import MeshIrError
 
@@ -54,3 +54,13 @@ def test_dma_outstanding_comes_from_manifest(manifest):
     effective = EffectiveArchitecture(manifest)
     assert effective.dma_read_outstanding == manifest.dma_read_outstanding
     assert effective.dma_write_outstanding == manifest.dma_write_outstanding
+
+
+def test_rejected_override_is_atomic(manifest):
+    effective = EffectiveArchitecture(manifest)
+    digest = effective.digest()
+    with pytest.raises(MeshIrError):
+        effective.override("dma_read_outstanding", 0)
+    assert effective.dma_read_outstanding == manifest.dma_read_outstanding
+    assert effective.overrides == {}
+    assert effective.digest() == digest

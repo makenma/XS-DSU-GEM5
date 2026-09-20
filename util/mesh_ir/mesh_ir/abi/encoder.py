@@ -1,222 +1,209 @@
-"""Binary encoder for .mshb (Scheduled Mesh IR ABI v1).
-
-Deterministic: the same Program always encodes to byte-identical output
-(sections sorted by type, records in table order, zero padding).
-"""
-
 from __future__ import annotations
 
 import hashlib
 import struct
 import zlib
-from dataclasses import fields as dc_fields
 
+from mesh_ir.abi.rules import (
+    check_abi_header,
+    check_field_rules,
+    check_min_reader_minor,
+    check_payload_rules,
+    check_record_rules,
+)
+from mesh_ir.abi.semantic import encode_semantics, encode_string_table, semantic_payloads
+from mesh_ir.abi.optional import validate_optional_sections
+from mesh_ir.canonical import semantic_sha256
+from mesh_ir.diagnostics import MeshIrError
 from mesh_ir.generated import abi as A
-from mesh_ir.model import (
-    RECORD_CLASSES,
-    DmaEndpoint,
-    DmaDescriptor,
-    MeshIrError,
-    OpAttr,
-    Program,
-)
-
-CLASS_TO_SECTION = {cls: name for name, cls in RECORD_CLASSES.items()}
-
-SECTION_ORDER = (
-    "STRINGS",
-    "ENTRYPOINTS",
-    "PROFILES",
-    "TENSORS",
-    "SHARDS",
-    "ALLOCATIONS",
-    "STREAMS",
-    "COMMANDS",
-    "COMMAND_WAITS",
-    "COMMAND_OPERANDS",
-    "EVENTS",
-    "DMA_DESCRIPTORS",
-    "OP_ATTRS",
-    "RELOCATIONS",
-    "EXPECTED_TRAFFIC",
-)
+from mesh_ir.model import DmaDescriptor, DmaEndpoint, OpAttr, Program, RECORD_CLASSES, StringEntry
+from mesh_ir.scheduled.model import ProgramSemantics
 
 
-def _align8(value: int) -> int:
-    return (value + 7) & ~7
+U64_MAX = (1 << 64) - 1
 
 
-def _pack_record(record) -> bytes:
-    if isinstance(record, DmaEndpoint):
-        fmt = A.DMA_ENDPOINT_FORMAT
-        field_iter = dc_fields(record)
-    else:
-        section = CLASS_TO_SECTION[type(record)]
-        fmt = getattr(A, f"{section}_FORMAT")
-        field_iter = dc_fields(record)
-    args = []
-    for f in field_iter:
-        value = getattr(record, f.name)
-        if isinstance(value, tuple):
-            args.extend(value)
-        elif isinstance(value, int) and not isinstance(value, bool):
-            args.append(value)
-        elif isinstance(value, bytes):
-            args.append(value)
+def _record_values(section_name: str, record: object, semantic_strings) -> tuple:
+    values = []
+    for field in getattr(A, f"{section_name}_FIELDS"):
+        name = field.get("python_field", field["name"])
+        value = getattr(record, name)
+        if field.get("string_pool") == "SEMANTIC_STRINGS":
+            value = semantic_strings.intern_string(value, name)
+        if field["type"] == "record_ref":
+            nested_fields = getattr(A, f"{field['ref']}_FIELDS")
+            nested = getattr(A, f"{field['ref']}_FORMAT")
+            nested_values = []
+            for nested_field in nested_fields:
+                nested_value = getattr(value, nested_field["name"])
+                if nested_field["type"] == "u64x8":
+                    nested_values.extend(nested_value)
+                else:
+                    nested_values.append(nested_value)
+            value = nested.pack(*nested_values)
+        if field["type"] == "u64x8":
+            values.extend(value)
         else:
-            raise MeshIrError("E_ABI_ENUM", f"field {f.name} has unsupported type", field=f.name)
-    return fmt.pack(*args)
+            values.append(value)
+    return tuple(values)
 
 
-def _pack_descriptor(record) -> bytes:
-    args = []
-    for f in dc_fields(record):
-        value = getattr(record, f.name)
-        if f.name in ("src", "dst"):
-            args.append(_pack_record(value))
-        elif isinstance(value, tuple):
-            args.extend(value)
-        elif isinstance(value, int) and not isinstance(value, bool):
-            args.append(value)
-        elif isinstance(value, bytes):
-            args.append(value)
-        else:
-            raise MeshIrError("E_ABI_ENUM", f"field {f.name} has unsupported type", field=f.name)
-    return A.DMA_DESCRIPTORS_FORMAT.pack(*args)
+def _encode_table(section_name: str, records: tuple, semantic_strings) -> bytes:
+    fmt = getattr(A, f"{section_name}_FORMAT")
+    try:
+        return b"".join(fmt.pack(*_record_values(section_name, record, semantic_strings)) for record in records)
+    except (struct.error, TypeError, OverflowError) as error:
+        raise MeshIrError("E_ABI_BOUNDS", "transport record cannot be represented", section=section_name) from error
 
 
-def _pack_attr(attr: OpAttr) -> bytes:
-    kind_name = _attr_kind_name(attr.kind)
-    fmt = getattr(A, f"{kind_name}_FORMAT")
-    payload = fmt.pack(*attr.payload).ljust(28, b"\x00")
-    return A.OP_ATTRS_FORMAT.pack(attr.kind, attr.reserved, payload)
+def _encode_attrs(records: tuple[OpAttr, ...]) -> bytes:
+    payloads = []
+    for record in records:
+        name = A.PAYLOAD_BY_KIND[record.kind]
+        fields = getattr(A, f"{name}_FIELDS")
+        try:
+            payload = getattr(A, f"{name}_FORMAT").pack(*record.payload)
+            payloads.append(A.OP_ATTRS_FORMAT.pack(record.kind, record.reserved, payload.ljust(28, b"\0")))
+        except (struct.error, TypeError, OverflowError) as error:
+            raise MeshIrError("E_ABI_BOUNDS", "attr payload cannot be represented", kind=record.kind) from error
+    return b"".join(payloads)
 
 
-def _attr_kind_name(kind: int) -> str:
-    for name, value in vars(A.ATTR_KIND).items():
-        if not name.startswith("_") and value == kind:
-            return name
-    raise MeshIrError("E_ABI_ENUM", f"unknown attr kind {kind}", kind=kind)
+def _align(value: int, alignment: int = 8) -> int:
+    return (value + alignment - 1) // alignment * alignment
 
 
-def encode_program(program: Program) -> bytes:
-    sections: dict = {}
-
-    blob = "".join(s.value for s in program.strings).encode("utf-8")
-    directory = bytearray(struct.pack("<I", len(program.strings)))
-    offset = 0
-    for entry in program.strings:
-        encoded = entry.value.encode("utf-8")
-        directory += struct.pack("<II", offset, len(encoded))
-        offset += len(encoded)
-    sections["STRINGS"] = bytes(directory) + blob
-
-    tables = {
-        "ENTRYPOINTS": program.entrypoints,
-        "PROFILES": program.profiles,
-        "TENSORS": program.tensors,
-        "SHARDS": program.shards,
-        "ALLOCATIONS": program.allocations,
-        "STREAMS": program.streams,
-        "COMMANDS": program.commands,
-        "COMMAND_WAITS": program.command_waits,
-        "COMMAND_OPERANDS": program.command_operands,
-        "EVENTS": program.events,
-        "RELOCATIONS": program.relocations,
-        "EXPECTED_TRAFFIC": program.expected_traffic,
-    }
-    for name, records in tables.items():
-        sections[name] = b"".join(_pack_record(rec) for rec in records)
-    sections["DMA_DESCRIPTORS"] = b"".join(
-        _pack_descriptor(rec) for rec in program.dma_descriptors
-    )
-    sections["OP_ATTRS"] = b"".join(_pack_attr(attr) for attr in program.op_attrs)
-
-    section_dir_offset = A.HEADER_BYTES
-    section_dir_size = len(SECTION_ORDER) * A.SECTION_DIR_BYTES
-    cursor = _align8(section_dir_offset + section_dir_size)
+def _assemble(program: Program, sections: list[tuple[int, int, int, bytes]]) -> bytes:
+    sections.sort(key=lambda item: item[0])
+    directory_bytes = len(sections) * A.SECTION_DIR_BYTES
+    cursor = A.HEADER_BYTES + directory_bytes
     entries = []
-    for name in SECTION_ORDER:
-        payload = sections[name]
-        while cursor % 8:
-            cursor += 1
-        entry_offset = cursor
-        entries.append(
-            {
-                "type": getattr(A.SECTION_TYPE, name),
-                "offset": entry_offset,
-                "size": len(payload),
-                "count": _section_count(name, program),
-                "crc32": zlib.crc32(payload) & 0xFFFFFFFF,
-            }
-        )
-        cursor += len(payload)
-    file_bytes = cursor
-
-    directory_bytes = bytearray()
-    for entry, name in zip(entries, SECTION_ORDER):
-        record_bytes = _record_bytes_for(name)
-        directory_bytes += A.SECTION_DIR_FORMAT.pack(
-            entry["type"],
-            0,
-            record_bytes,
-            entry["offset"],
-            entry["size"],
-            entry["count"],
-            entry["crc32"],
-            0,
-        )
-
-    body = bytearray()
-    body += directory_bytes
-    for entry, name in zip(entries, SECTION_ORDER):
-        pad = entry["offset"] - (A.HEADER_BYTES + len(body))
-        body += b"\x00" * pad
-        body += sections[name]
-    payload_bytes = bytes(body)
-    payload_sha = hashlib.sha256(payload_bytes).digest()
-
+    chunks = []
+    for section_type, record_bytes, count, payload in sections:
+        offset = _align(cursor)
+        chunks.append(bytes(offset - cursor))
+        chunks.append(payload)
+        entries.append((section_type, 0, record_bytes, offset, len(payload), count, zlib.crc32(payload) & 0xFFFFFFFF, 0))
+        cursor = offset + len(payload)
+    directory = b"".join(A.SECTION_DIR_FORMAT.pack(*entry) for entry in entries)
+    body = directory + b"".join(chunks)
     header = A.HEADER_FORMAT.pack(
         A.MAGIC,
         program.abi_major,
         program.abi_minor,
         A.HEADER_BYTES,
-        file_bytes,
-        section_dir_offset,
-        len(SECTION_ORDER),
+        A.HEADER_BYTES + len(body),
+        A.HEADER_BYTES,
+        len(entries),
         0,
         program.arch_digest,
-        payload_sha,
-        0,
+        hashlib.sha256(body).digest(),
+        program.required_features,
         bytes(16),
     )
-    return header + payload_bytes
+    return header + body
 
 
-def _record_bytes_for(name: str) -> int:
-    if name == "STRINGS":
-        return 0
-    if name == "COMMAND_WAITS":
-        return A.COMMAND_WAITS_BYTES
-    return getattr(A, f"{name}_BYTES")
+def encode_program(program: Program) -> bytes:
+    if type(program) is not Program or type(program.semantics) is not ProgramSemantics:
+        raise MeshIrError("E_ABI_BOUNDS", "encoder requires a complete typed Program")
+    check_abi_header(program.abi_major, program.abi_minor, program.required_features)
+    check_min_reader_minor(
+        program.min_reader_minor,
+        program.abi_minor,
+        program.required_features,
+    )
+    if type(program.arch_digest) is not bytes or len(program.arch_digest) != 32:
+        raise MeshIrError("E_ABI_BOUNDS", "architecture digest must contain 32 bytes")
+    for name, binding in A.TRANSPORT_CANONICAL_SECTIONS.items():
+        records = getattr(program, binding["program_field"])
+        if type(records) is not tuple:
+            raise MeshIrError("E_ABI_BOUNDS", "program table must be an immutable tuple", section=name)
+        if name == "STRINGS":
+            if any(type(item) is not StringEntry for item in records):
+                raise MeshIrError("E_ABI_BOUNDS", "STRINGS contains a wrong record type")
+            for item in records:
+                if type(item.value) is not str:
+                    raise MeshIrError("E_ABI_BOUNDS", "STRINGS contains a non-string")
+                try:
+                    item.value.encode("utf-8")
+                except UnicodeEncodeError as error:
+                    raise MeshIrError("E_ABI_BOUNDS", "STRINGS contains invalid Unicode") from error
+        elif name == "OP_ATTRS":
+            fields = {field["name"]: field for field in A.OP_ATTRS_FIELDS}
+            for record in records:
+                if type(record) is not OpAttr:
+                    raise MeshIrError("E_ABI_BOUNDS", "OP_ATTRS contains a wrong record type")
+                check_field_rules(fields["kind"], record.kind, "OP_ATTRS")
+                check_field_rules(fields["reserved"], record.reserved, "OP_ATTRS")
+                payload_name = A.PAYLOAD_BY_KIND.get(record.kind)
+                if payload_name is None:
+                    raise MeshIrError("E_ABI_ENUM", "unknown attr kind", kind=record.kind)
+                payload_fields = getattr(A, f"{payload_name}_FIELDS")
+                if type(record.payload) is not tuple or type(record.payload_fields) is not tuple:
+                    raise MeshIrError("E_ABI_BOUNDS", "attr payload must use immutable tuples", kind=record.kind)
+                if record.payload_fields != tuple(field["name"] for field in payload_fields) or len(record.payload) != len(payload_fields):
+                    raise MeshIrError("E_ABI_BOUNDS", "attr payload fields do not match kind", kind=record.kind)
+                check_payload_rules(payload_name, record.payload, payload_fields)
+        else:
+            expected = RECORD_CLASSES[name]
+            if any(type(record) is not expected for record in records):
+                raise MeshIrError("E_ABI_BOUNDS", "transport table contains a wrong record type", section=name)
+            if name == "DMA_DESCRIPTORS":
+                for record in records:
+                    if type(record.src) is not DmaEndpoint or type(record.dst) is not DmaEndpoint:
+                        raise MeshIrError("E_ABI_BOUNDS", "DMA descriptor endpoint has a wrong record type")
+                    check_record_rules("DMA_ENDPOINT", (record.src, record.dst))
+            check_record_rules(name, records)
+    root_ref, semantic = encode_semantics(program.semantics)
+    validate_optional_sections(program)
+    for name, binding in A.TRANSPORT_CANONICAL_SECTIONS.items():
+        for record in getattr(program, binding["program_field"]):
+            for field in A.TRANSPORT_CANONICAL_FIELDS.get(name, ()):
+                if field["string_pool"] == "SEMANTIC_STRINGS":
+                    semantic.intern_string(getattr(record, field["name"]), field["name"])
+    semantic.finalize_strings()
+    transport = {}
+    for name, binding in A.TRANSPORT_CANONICAL_SECTIONS.items():
+        records = getattr(program, binding["program_field"])
+        if binding["optional"] and not records:
+            continue
+        if name == "STRINGS":
+            if any(type(item) is not StringEntry for item in records):
+                raise MeshIrError("E_ABI_BOUNDS", "STRINGS contains a wrong record type")
+            payload = encode_string_table([item.value for item in records], "STRINGS")
+        elif name == "OP_ATTRS":
+            payload = _encode_attrs(records)
+        else:
+            payload = _encode_table(name, records, semantic)
+        transport[name] = (len(records), payload)
+
+    actual_sha = semantic_sha256(program.semantic_dict())
+    if program.semantic_sha256 != actual_sha:
+        raise MeshIrError("E_ABI_CHECKSUM", "program semantic checksum is stale")
+    semantic_sections = semantic_payloads(semantic)
+    try:
+        digest = bytes.fromhex(program.semantic_sha256)
+    except ValueError as error:
+        raise MeshIrError("E_ABI_CHECKSUM", "program semantic checksum is malformed") from error
+    if len(digest) != 32:
+        raise MeshIrError("E_ABI_CHECKSUM", "program semantic checksum is malformed")
+    metadata = A.PROGRAM_METADATA_FORMAT.pack(
+        program.min_reader_minor,
+        0,
+        0,
+        A.SEMANTIC_REF_FORMAT.pack(root_ref[0], 0, root_ref[1]),
+        digest,
+    )
+    all_payloads = {**transport, "PROGRAM_METADATA": (1, metadata), **semantic_sections}
+    sections = []
+    for name, (count, payload) in all_payloads.items():
+        section_type = getattr(A.SECTION_TYPE, name)
+        record_bytes = A.SECTION_RECORD_BYTES.get(section_type, 0)
+        if not 0 <= count <= U64_MAX:
+            raise MeshIrError("E_ABI_OVERFLOW", "section count exceeds wire range", section=name)
+        sections.append((section_type, record_bytes, count, payload))
+    return _assemble(program, sections)
 
 
-def _section_count(name: str, program: Program) -> int:
-    sizes = {
-        "STRINGS": len(program.strings),
-        "ENTRYPOINTS": len(program.entrypoints),
-        "PROFILES": len(program.profiles),
-        "TENSORS": len(program.tensors),
-        "SHARDS": len(program.shards),
-        "ALLOCATIONS": len(program.allocations),
-        "STREAMS": len(program.streams),
-        "COMMANDS": len(program.commands),
-        "COMMAND_WAITS": len(program.command_waits),
-        "COMMAND_OPERANDS": len(program.command_operands),
-        "EVENTS": len(program.events),
-        "DMA_DESCRIPTORS": len(program.dma_descriptors),
-        "OP_ATTRS": len(program.op_attrs),
-        "RELOCATIONS": len(program.relocations),
-        "EXPECTED_TRAFFIC": len(program.expected_traffic),
-    }
-    return sizes[name]
+__all__ = ["encode_program"]

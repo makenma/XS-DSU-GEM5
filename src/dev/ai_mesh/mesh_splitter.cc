@@ -52,13 +52,23 @@ DmaPlan planDescriptorRemote(const DecodedDmaDescriptor &descriptor, uint32_t wi
         descriptor.kind == mesh_abi::kDmaKindLOAD ||
         descriptor.kind == mesh_abi::kDmaKindPREFETCH;
     const DecodedDmaEndpoint &remote = is_read ? descriptor.src : descriptor.dst;
+    return planDescriptorRemoteAt(remote.offset_bytes, descriptor, width);
+}
+
+DmaPlan planDescriptorRemoteAt(uint64_t remote_base,
+                               const DecodedDmaDescriptor &descriptor,
+                               uint32_t width)
+{
+    const bool is_read =
+        descriptor.kind == mesh_abi::kDmaKindLOAD ||
+        descriptor.kind == mesh_abi::kDmaKindPREFETCH;
     const uint64_t stride =
         is_read ? descriptor.src_stride_bytes : descriptor.dst_stride_bytes;
     DmaPlan plan;
     if (descriptor.rows == 0 || descriptor.row_bytes == 0)
         return plan;
     for (uint32_t row = 0; row < descriptor.rows; row++) {
-        const uint64_t base = remote.offset_bytes + uint64_t(row) * stride;
+        const uint64_t base = remote_base + uint64_t(row) * stride;
         const auto bursts = splitBursts(base, descriptor.row_bytes, width,
                                         descriptor.max_burst_beats);
         plan.bursts += uint32_t(bursts.size());

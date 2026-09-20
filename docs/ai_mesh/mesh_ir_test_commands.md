@@ -1,9 +1,108 @@
 # Mesh IR / Dummy Core Test Commands
 
-All commands run from the repository root on the `AXI_MESH` build. Every
-entry below was executed during its phase and must stay green.
+Torch frontend usage and source indexes are in [`torch_frontend.md`](torch_frontend.md).
+
+## Torch package contract
+
+```bash
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m pytest -q \
+  util/mesh_ir/tests/unit/test_gate1_package_contract.py
+```
+
+## Torch frontend Gate 1
+
+```bash
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m pytest -q \
+  util/mesh_ir/tests/unit/test_gate1_canonical_diagnostics.py \
+  util/mesh_ir/tests/unit/test_gate1_arch_config.py \
+  util/mesh_ir/tests/unit/test_gate1_graph_ir.py \
+  util/mesh_ir/tests/integration/test_gate1_real_frontend.py
+```
+
+## Torch address and traffic foundation
+
+Contracts are indexed by [`architecture.py`](../../util/mesh_ir/mesh_ir/architecture.py) and [`traffic.py`](../../util/mesh_ir/mesh_ir/traffic.py).
+
+```bash
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m pytest -q \
+  util/mesh_ir/tests/unit/test_gate2_shared_attrs.py \
+  util/mesh_ir/tests/unit/test_gate2_address_bindings.py \
+  util/mesh_ir/tests/unit/test_gate2_fabric_traffic.py
+```
+
+## Torch Kernel and SRAM foundation
+
+The dependency and allocation contracts are indexed by the [`analysis`](../../util/mesh_ir/mesh_ir/analysis) package and [`kernel_verify.py`](../../util/mesh_ir/mesh_ir/ir/kernel_verify.py).
+
+```bash
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m pytest -q \
+  util/mesh_ir/tests/unit/test_gate2_kernel_ir.py \
+  util/mesh_ir/tests/unit/test_gate2_kernel_work.py \
+  util/mesh_ir/tests/unit/test_gate2_dependency_sram.py
+```
+
+## Torch Scheduled variant and completion checks
+
+```bash
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m pytest -q \
+  util/mesh_ir/tests/unit/test_gate2_scheduled_variant_dependencies.py \
+  util/mesh_ir/tests/unit/test_gate2_scheduled_dma.py \
+  util/mesh_ir/tests/unit/test_gate2_scheduled_barriers.py
+```
+
+## Torch selected placement geometry
+
+```bash
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m pytest -q \
+  util/mesh_ir/tests/unit/test_gate2_placement_geometry.py
+```
+
+## Torch backend composition
+
+Focused composition contract:
+
+```bash
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m pytest -q \
+  util/mesh_ir/tests/unit/test_gate2_compiler.py
+```
+
+Complete real-model backend integration:
+
+```bash
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m pytest -q \
+  util/mesh_ir/tests/integration/test_gate2_backend_compiler.py
+```
+
+## Torch public compilation
+
+Use new output paths on a filesystem that supports atomic no-replace directory rename. These commands use `/tmp`:
+
+```bash
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m mesh_ir.export_and_compile \
+  --module examples.tiny_mlp:create_model \
+  --inputs util/mesh_ir/examples/tiny_mlp_inputs.json \
+  --arch configs/example/ai_mesh/arch/mesh_2x2.yaml \
+  --config util/mesh_ir/examples/tiny_mlp_compile.yaml \
+  --output /tmp/ai-mesh-tiny-mlp-export
+
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m mesh_ir.compile \
+  --exported-program /tmp/ai-mesh-tiny-mlp-export/exported_program.pt2 \
+  --arch configs/example/ai_mesh/arch/mesh_2x2.yaml \
+  --config util/mesh_ir/examples/tiny_mlp_compile.yaml \
+  --output /tmp/ai-mesh-tiny-mlp-load
+```
+
+All commands run from the repository root. The runtime commands below use
+the `AXI_MESH` build; Python foundation tests do not require a gem5 build.
 
 ## Build
+
+The `AXI_MESH` build requires libisl headers, which the system does not carry;
+export the environment recorded in
+`.tmp/docs/torch-stage3-isl-environment/` (extracted `.deb` tree under
+`.tmp/torch-isl-dev-package/`) before running scons: `CCFLAGS_EXTRA`,
+`LIBRARY_PATH` and `PKG_CONFIG_PATH` are the whitelisted scons variables that
+carry the extracted tree into the probes and the link.
 
 ```bash
 scons build/AXI_MESH/gem5.opt -j8
@@ -218,8 +317,10 @@ python3 tests/gem5/ai_mesh/run_dual_lane_checks.py \
 构建完成后再启动仿真。
 
 5×5 tensor 实验通过 profile 的 `network.dual_lane` 布尔字段启用双 lane；
-[实验入口](../../configs/example/ai_mesh/run_mesh_experiment.py) 和
-[校验器](../../util/mesh_ir/mesh_ir/experiment/verify.py) 读取同一 profile。
+[实验架构解析器](../../util/mesh_ir/mesh_ir/experiment/workload.py) 生成唯一
+`ArchManifest`，[实验入口](../../tests/gem5/ai_mesh/run_mesh_experiment.py) 通过
+`architecture_document` 持久化该架构，[校验器](../../util/mesh_ir/mesh_ir/experiment/verify.py)
+读取同一持久化架构。
 物理链路统计保留 lane 身份，按逻辑路由汇总后与 workload oracle 核对。
 LOAD 图及运行证据见 [实验报告](../../src/doc/ai_mesh/goal_mesh_outstanding_buffer_experiment.md)。
 
@@ -242,6 +343,145 @@ Runtime evidence comes from `MeshDispatcher::writeConservationJson` and
 `util/mesh_ir/tests/unit/test_load_sweep.py`,
 `util/mesh_ir/tests/unit/test_read_outstanding_config.py`, and
 `util/mesh_ir/tests/integration/test_axi_outstanding_runtime.py`.
+
+## Torch Gate 4 mock runtime acceptance
+
+Compiler publication and simulator setup share the
+[`runtime_harness`](../../util/mesh_ir/tests/integration/support/runtime_harness.py).
+Focused contracts are in the [view-offset tests](../../util/mesh_ir/tests/integration/test_gate4_view_offset_runtime.py),
+[fill tests](../../util/mesh_ir/tests/integration/test_gate4_fill_runtime.py),
+[transfer snapshots](../../util/mesh_ir/tests/integration/test_gate4_transfer_snapshots.py),
+[reconciliation tests](../../util/mesh_ir/tests/integration/test_gate4_reconciliation.py),
+[diagnostic lifecycle tests](../../util/mesh_ir/tests/integration/test_gate4_diagnostic_lifecycle.py)
+and [behaviour matrix](../../util/mesh_ir/tests/integration/test_gate4_behaviour_matrix.py).
+Use the locked interpreter and a fresh local `/tmp` publication directory as above.
+
+## Torch Gate 5 real AXI/Garnet runtime
+
+The real-backend run entry is
+[`run_mesh_dma_garnet.py`](../../configs/example/ai_mesh/run_mesh_dma_garnet.py);
+the harness that drives it is
+[`garnet_harness.py`](../../util/mesh_ir/tests/integration/support/garnet_harness.py),
+which shares program publication, oracle readers and the gem5 runtime
+environment with [`runtime_harness.py`](../../util/mesh_ir/tests/integration/support/runtime_harness.py).
+The runner reconciles through the same
+[`runtime_reconciliation.py`](../../util/mesh_ir/mesh_ir/runtime_reconciliation.py)
+entry as the mock runtime and writes its admitted oracle to
+`gate5_oracle.json` before simulating. Raw byte archives are opt-in per run
+(`--dump-verify-bytes`, `--dump-source-bytes`).
+
+```bash
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m pytest -q \
+  util/mesh_ir/tests/integration/test_gate5_garnet_e2e.py \
+  util/mesh_ir/tests/integration/test_gate5_transport_contract.py \
+  util/mesh_ir/tests/integration/test_gate5_axi_completion.py \
+  util/mesh_ir/tests/integration/test_gate5_peer_commit_runtime.py \
+  util/mesh_ir/tests/integration/test_gate5_wstrb_runtime.py \
+  util/mesh_ir/tests/integration/test_gate5_determinism.py \
+  util/mesh_ir/tests/integration/test_gate5_burst_attribution.py \
+  util/mesh_ir/tests/integration/test_gate5_e2e_bytes.py \
+  util/mesh_ir/tests/integration/test_gate5_packet_traffic.py \
+  util/mesh_ir/tests/integration/test_gate5_archive_manifest.py \
+  util/mesh_ir/tests/integration/test_axi_outstanding_runtime.py \
+  --basetemp=/tmp/torch-gate5-focused-UNIQUE
+```
+
+Target fault plans are resolved to admitted execution identities by
+[`fault_plan.py`](../../util/mesh_ir/mesh_ir/fault_plan.py), so an error-drained
+run is judged by the shared reconciliation entry instead of a UID list; the
+same module derives the accepted transaction order, clipped by the smaller of
+the architecture and descriptor burst caps. The `read_reorder` case delays one
+middle read burst and asserts the resulting R completion order, while
+`read_outstanding_window` is its no-delay control.
+Every real commit that extends a transfer's coverage is archived as a stage,
+and the receiver notification crosses `MeshDispatcher::routePeerCommit`, so
+`--receiver-fault receive_duplicate|receive_redirect|receive_drop` injects at
+the same boundary for both backends. Peer coverage is observed per byte by
+[`peer_sram_aperture.cc`](../../src/dev/ai_mesh/peer_sram_aperture.cc) and
+verified by `verified_transfer_publishes` in
+[`runtime_reconciliation.py`](../../util/mesh_ir/mesh_ir/runtime_reconciliation.py);
+`--replay-write-commit TARGET:UID:COUNT` injects a real duplicate observer
+notification at the target delivery boundary. The `p2p_partial_abandon` carrier
+fails one burst of an admitted P2P plan: the aperture retires the expectation as
+abandoned (`PeerSramAperture::abandonAllExpectations`) instead of discarding its
+coverage, and `verified_transfer_publishes` requires the receiver's covered bytes
+and transactions to equal the source's own partial contribution while neither
+side reports a release. The DMA direction class of each descriptor kind is one
+table (`_AXI_DIRECTION_FIELDS`) shared by the execution oracle and the fault
+model. The `p2p_prefilled` and `p2p_prefilled_incomplete` carriers push a
+40-descriptor transfer onto a destination a core-1 `LOCAL_FILL` already made
+resident: every committed descriptor archives its own destination observation
+(`MeshDummyCore::recordTransferCommit`, shared by both engines) and
+`verified_transfer_snapshots` in
+[`runtime_reconciliation.py`](../../util/mesh_ir/mesh_ir/runtime_reconciliation.py)
+requires a resident destination never to be this transfer's completion, the
+pending set to be exactly the admitted descriptors that did not commit, and each
+untouched pending span to still hold its admitted initial content. Peer coverage
+is a per-frame fact: the dispatcher snapshots every aperture's transfer coverage
+into the instance frame it archives (`MeshDispatcher::writeInstanceApertures`),
+and the `p2p_frames` carrier runs the whole E2E-2 chain at 1/2/3 instances with
+each frame's own receiver ordering, peer publish, staged stages and chain content
+(the shared `verify_transfer_producer_content` pairs the frame's producer with
+each local-source descriptor). `dma_basic_shallow` and `p2p_frames_shallow` run
+the same two chains under one shallow configuration
+(`run_mesh_dma_garnet.shallow_queues`) with the full assertion set, and the shared
+`verified_queue_bounds` proves from the archive that the in-flight descriptor
+peak stays within the admitted depth and reaches it, that the read window is
+filled but never exceeded, that every accepted burst retires exactly once and
+that the source recorded measurable blocking. The admitted compute model is one
+shared definition in
+[`compute_timing.py`](../../util/mesh_ir/mesh_ir/compute_timing.py): the core
+archives each engine plan's analytic cycle count, and every real compute command
+must run exactly the cycles its own admitted attribute costs, on the admitted
+engine, ending at the tick the model predicts. `p2p_peer_edge` pushes onto a
+peer destination that itself starts unaligned, pads every row by four bytes and
+crosses a 4 KiB page: its admitted burst split is verified against the observed
+AW bursts, and `verified_sentinels` treats a declared span a published compute
+run really wrote as explained while every other span must stay identical.
+`drain_stalled` arms a test-only credit-drop fault at the real credit-return
+boundary (`--drain-fault drop_credit`) once the drain is open, so every core has
+halted and the data path is empty while the credit ledger alone keeps the gate
+waiting; the drain-phase watchdog must report that state with
+`unrestored_links`/`deficit` instead of DONE. The E2E-1 destination landing is
+owned by `verified_store_destinations`: the verified destination digest must equal
+the payload the last instance's own STORE execution wrote over the whole admitted
+span, so a wrong store payload fails instead of merely being non-zero. WSTRB-disabled lanes, row
+padding and the unaligned head and tail around a payload are proven untouched
+by `TargetSentinels` in
+[`target_sentinels.cc`](../../src/dev/ai_mesh/target_sentinels.cc) and
+`verified_sentinels` in
+[`runtime_reconciliation.py`](../../util/mesh_ir/mesh_ir/runtime_reconciliation.py).
+The unified drain boundary is owned by `MeshDispatcher::drainSatisfied` in
+[`mesh_dispatcher.cc`](../../src/dev/ai_mesh/mesh_dispatcher.cc): after HALT it
+waits for an empty Garnet snapshot, every restored credit-ledger link, idle
+bridges, no live peer expectation and an idle target endpoint, publishes the
+drain window and the ledger, and is verified by `verified_drain` in
+[`runtime_reconciliation.py`](../../util/mesh_ir/mesh_ir/runtime_reconciliation.py).
+The drain is re-evaluated on real clock edges (and on real progress), and a
+drain that makes no progress fires the watchdog with the pending owner
+identities. The `drain_deferred` case raises the per-link latency so credits
+are still returning when the last core halts, which is the carrier for the
+postponed exit. A rejected admission is also covered: a corrupt image and a program admitted
+against a different architecture are refused before any tick runs, and the
+structured diagnostic names the lifecycle stage, the phase (`decode`,
+`admission`, `variant_selection`, `binding_resolution`, `command_rom`),
+`install_state` and `installed_cores`. A post-commit B error is injected with `--post-commit-fault TARGET:UID`: the
+target commits the burst and then reports a failing B, so the landing and the
+error are both recorded. The fault model in
+[`fault_plan.py`](../../util/mesh_ir/mesh_ir/fault_plan.py) names the failed
+burst and the admitted per-burst bytes, and `reconcile` verifies that every
+other burst still accounts as committed. A `lost_response` carrier delays one read transaction far beyond the watchdog
+budget: it must fail closed with `E_RUNTIME_DEADLOCK`, a watchdog diagnostic and
+the pending descriptor and waiter identities, never as DONE or ERROR_DRAINED.
+`test_gate5_determinism.py` runs five carriers twice each and requires the
+canonical result JSON to be identical, with no excluded field.
+A drained run's issued beats are classified from the archived executions and
+must equal the bridge counters exactly, so an errored run is not exempted from
+beat conservation. Per-case evidence for the whole real-backend matrix is
+regenerated by
+[`run_case_matrix.py`](../../.tmp/docs/torch-gate-5-implementation/run_case_matrix.py)
+into `.tmp/docs/torch-gate-5-implementation/matrix`; the implementation state is
+`status.json` under `.tmp/docs/torch-gate-5-implementation/`.
 
 ## Mandatory manifest selector (Dummy Core Gates)
 

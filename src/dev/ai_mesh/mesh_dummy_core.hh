@@ -6,11 +6,14 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include "dev/ai_mesh/dma_command_lifecycle.hh"
 #include "dev/ai_mesh/dma_types.hh"
 #include "dev/ai_mesh/mesh_binary.hh"
+#include "dev/ai_mesh/mesh_runtime_observations.hh"
 #include "dev/ai_mesh/tensor_sram.hh"
 #include "base/statistics.hh"
 #include "sim/clocked_object.hh"
@@ -24,8 +27,11 @@ struct MeshDummyCoreParams;
 namespace ai_mesh
 {
 
+class CommandRom;
 class DmaEngineBase;
 class MeshDispatcher;
+class MeshInvocationBinding;
+class MeshProgramAdmission;
 class MeshProgramLoader;
 class ProgramScoreboard;
 class SramBacking;
@@ -43,21 +49,75 @@ class MeshDummyCore : public ClockedObject
     void startup() override;
     void regStats() override;
 
-    // Loader interface: install the immutable command ROM views.
-    void installProgram(const std::shared_ptr<const DecodedProgram> &program);
+    // Loader interface: install the admitted program, this core's
+    // selected-variant command ROM and the resolved dispatch invocation.
+    void installAdmission(
+        const std::shared_ptr<const MeshProgramAdmission> &admission,
+        const std::shared_ptr<const CommandRom> &rom,
+        const std::shared_ptr<const MeshInvocationBinding> &invocation);
 
     // Dispatcher interface.
     void dispatchInstance(uint32_t instance_id);
     bool halted() const { return core_halted || error_drained; }
-    // Quiescence includes the publication drain: a halted core with a
-    // scheduled-but-invisible signal is not quiet (spec: HALT waits for
-    // event publication drain).
+    // Quiescence must cover the whole physical drain (spec 8.8): every
+    // admitted command and descriptor, the DMA engine, outstanding AXI tags
+    // and the publication queue.  A halted core with in-flight DMA is not
+    // quiescent.
     bool quiescent() const
     {
         return live_commands == 0 && pending_visibility.empty() &&
-               (core_halted || error_drained);
+               dmaDrained() && (core_halted || error_drained);
+    }
+    bool dmaDrained() const;
+    uint64_t progressSnapshot() const;
+    std::string waitForGraph() const;
+    uint32_t liveCommandCount() const { return live_commands; }
+    using EngineKind = ai_mesh::EngineKind;
+    static const char *engineName(EngineKind kind);
+    struct EngineSlotState
+    {
+        uint32_t depth = 0;
+        std::map<uint32_t, uint32_t> owners;
+    };
+    const RuntimeObservations &runtimeObservations() const
+    {
+        return observations;
+    }
+    uint32_t engineOccupancy(EngineKind kind) const
+    {
+        auto slot = engine_slots.find(kind);
+        return slot == engine_slots.end() ? 0 : slot->second.owners.size();
     }
 
+    size_t liveDmaTagCount() const { return live_dma_tags.size(); }
+    uint32_t tagOwner(uint64_t tag) const
+    {
+        auto it = dma_tag_command.find(tag);
+        return it == dma_tag_command.end() ? 0 : it->second;
+    }
+    size_t allocationPinCount() const
+    {
+        size_t total = 0;
+        for (const auto &entry : allocation_pins)
+            total += entry.second;
+        return total;
+    }
+    size_t liveDmaCommandCount() const
+    {
+        size_t total = 0;
+        for (const auto &entry : dma_lifecycle.states())
+            if (!entry.second.terminal)
+                total++;
+        return total;
+    }
+
+    // Per-command DMA admission over a possibly multi-descriptor completion
+    // group (spec 7.1/8.3): descriptors are submitted incrementally under
+    // backpressure and the command completes only when the last one commits.
+    // A lifecycle record exists exactly while the command holds its
+    // allocation pins, so record existence is the single source of
+    // "admitted"; a command that cannot pin has no record at all.
+    // Declared before the accessors and hooks that use it.
     // DMA engine callbacks.
     struct DmaTagInfo
     {
@@ -67,8 +127,9 @@ class MeshDummyCore : public ClockedObject
 
     void completeFence(uint32_t command_id, uint32_t signal_event);
     void onInstanceError(Tick tick);
-    void onDmaCompleted(uint32_t command_id, uint32_t completion_event,
-                        Tick commit_tick, DmaStatus status);
+    void onDmaCompleted(uint32_t command_id, uint32_t descriptor_id,
+                        uint32_t completion_event, Tick commit_tick,
+                        DmaStatus status);
     std::map<uint64_t, DmaTagInfo> liveDmaTagSnapshot() const
     {
         std::map<uint64_t, DmaTagInfo> snapshot;
@@ -80,11 +141,28 @@ class MeshDummyCore : public ClockedObject
         return snapshot;
     }
     void onTransferCommitted(uint32_t transfer_id);
+    void markAllocationValid(uint32_t allocation_id);
+    const DecodedDmaDescriptor *descriptorById(uint32_t descriptor_id) const;
     void notifyPeerCommit(uint16_t peer_core, uint32_t transfer_id);
 
     // Functional SRAM accessors used by the transports.
     bool functionalSramRead(uint64_t offset, uint64_t size, uint8_t *out);
     bool functionalSramWrite(uint64_t offset, uint64_t size, const uint8_t *in);
+
+    // Admitted absolute endpoint address of a descriptor: region base,
+    // per-core SRAM tile base, allocation offset and shard offset are already
+    // folded in.  Runtime consumers use this instead of re-deriving addresses
+    // from the raw descriptor offsets.
+    uint64_t admittedEndpointAddress(uint32_t descriptor_id, bool source) const;
+    // The same endpoint expressed as this core's tile-relative SRAM offset:
+    // the absolute admitted address minus the region's per-core tile base, so
+    // every local SRAM consumer converts exactly once.
+    uint64_t admittedLocalOffset(uint32_t descriptor_id, bool source) const;
+    bool admissionBound() const { return admission != nullptr; }
+
+    // Admitted destination allocation span of a descriptor.
+    std::optional<DestinationStorageObservation>
+    admittedDestinationStorage(uint32_t descriptor_id) const;
 
     // DMA engines validate the local source operand before reading SRAM.
     void checkDmaSourceValidity(uint32_t command_id);
@@ -107,20 +185,13 @@ class MeshDummyCore : public ClockedObject
     void setSramBacking(SramBacking *backing) { sram.setBacking(backing); }
 
     void setDispatcher(MeshDispatcher *dispatcher);
+    MeshDispatcher *runtimeDispatcher() const { return dispatcher; }
     void setScoreboard(ProgramScoreboard *board) { scoreboard = board; }
     uint16_t archCoreId() const { return core_id_value; }
     DmaEngineBase *dmaEngine() const { return dma; }
     bool instanceErrored() const { return instance_error; }
     Tick errorLatchTick() const { return error_latch_tick; }
     Tick workDrainedTick() const { return work_drained_tick; }
-    const std::map<uint32_t, Tick> &commandDoneTicks() const
-    {
-        return command_done_ticks;
-    }
-    const std::map<uint32_t, Tick> &commandIssueTicks() const
-    {
-        return command_issue_ticks;
-    }
 
     // Counters exposed to stats.txt and the result JSON oracle.
     statistics::Scalar commandsIssued;
@@ -142,32 +213,90 @@ class MeshDummyCore : public ClockedObject
     statistics::Scalar sramBankConflicts;
     statistics::Scalar sramServiceCycles;
     statistics::Scalar poisonReadFaults;
-    struct ComputeDigest
+
+    // One command of one REPEAT generation.  A plain command is dispatched in
+    // generation 0; a REPEAT subrange member is dispatched once per generation
+    // 0..repeat_count-1 (spec 4.1 sequential generations).
+    using CommandGeneration = ai_mesh::CommandGeneration;
+    enum class TerminalState
+    {
+        Completed,
+        Errored,
+        Cancelled,
+    };
+    struct TerminalRecord
     {
         uint32_t command_id = 0;
-        uint32_t allocation_id = 0;
-        uint64_t offset = 0;
-        uint32_t digest_words[4] = {0, 0, 0, 0};
+        uint32_t generation = 0;
+        TerminalState state = TerminalState::Completed;
     };
-    std::vector<ComputeDigest> computeDigests;
-    std::vector<uint32_t> completed_command_ids;
+    // The terminal ledger is the single source of the per-command/generation
+    // outcome: every command of the instance, exactly once, in exactly one
+    // state (spec 8.8/12.3.12).
+    std::vector<CommandGeneration> dispatchPlan() const;
+    struct ResourceSnapshot
+    {
+        uint32_t live_commands = 0;
+        uint32_t live_dma_commands = 0;
+        uint32_t live_dma_tags = 0;
+        uint32_t allocation_pins = 0;
+        std::vector<std::pair<EngineKind, uint32_t>> engine_occupancy;
+    };
     struct InstanceLedger
     {
-        std::vector<uint32_t> completed;
-        std::vector<uint32_t> errored;
-        std::vector<uint32_t> cancelled;
+        std::vector<TerminalRecord> terminals;
+        ResourceSnapshot resources;
+        ObservationFrame observations;
     };
     InstanceLedger takeInstanceLedger();
+    ObservationFrame currentObservationFrame() const
+    {
+        return observations.view();
+    }
+    const std::vector<TerminalRecord> &currentTerminals() const
+    {
+        return instance_terminals;
+    }
+    ResourceSnapshot currentResources() const;
+    std::map<uint32_t, Tick> commandIssueTicks() const;
+    std::map<uint32_t, Tick> commandDoneTicks() const;
+    std::vector<ComputeOutputObservation> computeOutputs() const;
 
-    std::vector<uint32_t> instance_completed_ids;
-    std::vector<uint32_t> instance_errored_ids;
-    std::vector<uint32_t> instance_cancelled_ids;
-    std::vector<uint32_t> errored_command_ids;
-    std::vector<uint32_t> cancelled_command_ids;
-    std::map<uint32_t, Tick> command_done_ticks;
-    std::map<uint32_t, Tick> command_issue_ticks;
+    RuntimeObservations observations;
+    std::optional<DescriptorKey> frozenDescriptorKey(uint32_t command_id,
+                                                     uint32_t descriptor_id) const;
+    void recordDescriptorSubmission(const DescriptorKey &key, Tick submit_tick,
+                                    Tick scheduled_completion_tick);
+    void recordDescriptorCompletion(const DescriptorKey &key,
+                                    Tick completion_tick, bool committed,
+                                    Tick commit_tick, DmaStatus status,
+                                    const TrafficContribution &transfer);
+    struct TransferCommitContent
+    {
+        std::string source_digest;
+        std::string target_digest;
+        std::string target_initial_digest;
+    };
+    void recordTransferCommit(const DecodedDmaDescriptor &descriptor,
+                              const TransferCommitContent &content);
+    bool transferCommitted(uint32_t transfer_id) const;
+    uint32_t receivedAllocation(uint32_t transfer_id) const;
+    bool allocationValid(uint32_t allocation_id) const;
+    uint32_t receiveNotificationCount(uint32_t transfer_id) const;
+    Tick receiveNotificationTick(uint32_t transfer_id) const;
+    void recordFillLanding(
+        const DescriptorKey &key, const std::string &landing_digest,
+        const DestinationStorageObservation &destination_storage,
+        const std::vector<SentinelRangeObservation> &sentinel_ranges);
+    void recordDescriptorSourceRows(
+        const DescriptorKey &key,
+        const std::vector<ContentRowObservation> &rows);
+    void recordFaultTarget(const DescriptorKey &key,
+                           const std::string &before_digest,
+                           const std::string &after_digest);
 
   private:
+    struct StreamCursor;
     struct VisibilityEvent : public Event
     {
         MeshDummyCore *core;
@@ -233,19 +362,45 @@ class MeshDummyCore : public ClockedObject
     void tick();
     void scheduleTick();
     void issueRepeat(const DecodedCommand &command, const DecodedAttr *attr);
+    void finalizeRepeat(StreamCursor &cursor);
     void resetSubrangeEvents(uint16_t stream_id);
     void scheduleGenerationCheck(uint16_t stream_id);
     void onGenerationDrained(uint16_t stream_id);
     uint32_t liveStreamCommands(uint16_t stream_id) const;
     bool waitsSatisfied(const DecodedCommand &command) const;
-    bool tryIssue(const DecodedCommand &command);
-    void issueCompute(const DecodedCommand &command, const DecodedAttr *attr);
+    // One issue attempt: whether the command instance is now owned by its
+    // lifecycle (and therefore has a dispatch generation), and whether the
+    // decode cursor may move past it.  A partially submitted DMA command is
+    // dispatched but holds the cursor until its group is fully submitted.
+    struct IssueOutcome
+    {
+        bool dispatched = false;
+        bool resume = false;
+    };
+    IssueOutcome tryIssue(const DecodedCommand &command, uint32_t generation);
+    bool admitWindowBlocked(const StreamCursor &cursor,
+                            const DecodedCommand &command,
+                            uint32_t generation) const;
+    IssueOutcome admitEngine(const DecodedCommand &command, EngineKind kind,
+                             uint32_t generation);
+    void releaseEngineSlot(EngineKind kind, uint32_t command_id,
+                           uint32_t generation);
+    void recordEngineBlock(EngineKind kind, uint32_t command_id,
+                           uint32_t generation);
+    const ObservationFrame *archivedObservationFrame() const;
+    void issueCompute(const DecodedCommand &command, const DecodedAttr *attr,
+                      EngineKind kind, uint32_t generation);
     uint64_t reserveOperandReads(const DecodedCommand &command);
     uint64_t operandView(const DecodedOperand &operand, uint64_t &offset,
                          uint64_t &span) const;
     Tick serviceResultWrite(uint32_t command_id);
-    void issueControl(const DecodedCommand &command);
-    bool issueDma(const DecodedCommand &command);
+    void issueControl(const DecodedCommand &command, uint32_t generation);
+    bool issueDma(const DecodedCommand &command, uint32_t generation);
+    uint32_t generationAt(uint16_t stream_id, uint32_t index) const;
+    uint32_t issuedGeneration(uint32_t command_id) const;
+    void recordTerminal(uint32_t command_id, uint32_t generation,
+                        TerminalState state, Tick terminal_tick);
+    std::string ledgerMismatch() const;
     uint64_t throughputFor(uint16_t dtype, const std::vector<uint64_t> &by_dtype,
                           uint64_t fallback) const;
         uint64_t computeCycles(const DecodedCommand &command, const DecodedAttr *attr) const;
@@ -258,11 +413,17 @@ class MeshDummyCore : public ClockedObject
     void cancelPendingVisibility(uint32_t event_id);
     void finishIfHalted();
     void cancelRemainingCommands();
+    void cancelDmaCommand(uint32_t command_id);
+    void finalizeDmaCommand(uint32_t command_id);
     bool tryPinDmaAllocations(const DecodedCommand &command);
     void unpinDmaAllocations(const DecodedCommand &command);
     void checkOperandValidity(const DecodedCommand &command);
     bool readsResultOperand(const DecodedCommand &command) const;
     void markOperandValid(const DecodedCommand &command);
+    void installInitialResidency();
+    std::vector<uint32_t> residentAllocations() const;
+    void raiseInvalidResidency(uint32_t command_id, uint32_t allocation_id,
+                               uint32_t operand_index, bool dma);
     uint32_t allocationOf(uint32_t allocation_id);
 
     const DecodedAttr *attrOf(const DecodedCommand &command) const;
@@ -289,6 +450,9 @@ class MeshDummyCore : public ClockedObject
     DmaEngineBase *dma;
     MeshDispatcher *dispatcher = nullptr;
     std::shared_ptr<const DecodedProgram> program;
+    std::shared_ptr<const MeshProgramAdmission> admission;
+    std::shared_ptr<const CommandRom> command_rom;
+    std::shared_ptr<const MeshInvocationBinding> invocation_binding;
     const uint32_t bank_queue_depth_value;
     TensorSram sram;
 
@@ -313,9 +477,11 @@ class MeshDummyCore : public ClockedObject
     };
     std::map<uint16_t, StreamCursor> cursors; // stream_id -> cursor
     std::map<uint32_t, bool> signaled;         // event visibility snapshot
-    std::map<uint32_t, uint32_t> barrier_arrivals;
     std::map<uint32_t, uint32_t> recv_waiters; // transfer_id -> pending command
     std::map<uint32_t, bool> committed_transfers;
+    std::map<uint32_t, uint32_t> receive_notifications;
+    std::map<uint32_t, Tick> receive_notification_ticks;
+    std::map<uint32_t, uint32_t> received_allocations;
     std::map<uint32_t, Event *> pending_visibility;
     uint32_t live_commands = 0;
     ProgramScoreboard *scoreboard = nullptr;
@@ -327,7 +493,15 @@ class MeshDummyCore : public ClockedObject
     std::set<uint64_t> live_dma_tags;
     std::map<uint64_t, DmaTagInfo> dma_tag_info;
     std::map<uint64_t, uint32_t> dma_tag_command;
-    std::map<uint32_t, uint64_t> dma_command_tag;
+    DmaCommandLifecycle dma_lifecycle;
+    std::map<uint32_t, uint64_t> dma_descriptor_tag;
+    // Terminal ledger of the current instance and the dispatch generation of
+    // every command it issued, keyed by command id.
+    std::vector<TerminalRecord> instance_terminals;
+    std::map<uint32_t, uint32_t> command_generations;
+    // The never-dispatched part of the plan is logically cancelled once per
+    // instance; later cancellation passes only drain physically issued work.
+    bool plan_instances_cancelled = false;
     uint64_t next_dma_tag = 1;
     bool core_halted = false;
     bool instance_active = false;
@@ -336,9 +510,7 @@ class MeshDummyCore : public ClockedObject
     Tick error_latch_tick = 0;
     Tick work_drained_tick = 0;
     std::map<uint32_t, uint32_t> allocation_pins;
-    uint32_t tensor_queue_used = 0;
-    uint32_t vector_queue_used = 0;
-    uint32_t reduce_queue_used = 0;
+    std::map<EngineKind, EngineSlotState> engine_slots;
     TickEvent tick_event;
 };
 

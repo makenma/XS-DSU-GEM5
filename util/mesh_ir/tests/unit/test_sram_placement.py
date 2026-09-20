@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from mesh_ir.builder import load_arch
+from mesh_ir.architecture import load_arch
 from mesh_ir.golden_programs import (
     SRAM_PLACEMENT_CONFLICT,
     SRAM_PLACEMENT_PARALLEL,

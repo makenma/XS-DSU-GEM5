@@ -434,13 +434,16 @@ def _mesh_program_plans(scenario, target_specs):
 
     The Dummy Core runtime owns transaction generation, so plans cannot be
     derived from a tester transaction list; the scenario states them
-    directly per target node (uid -> extra service cycles / fault).
+    directly per target node (uid -> extra service cycles / fault), including
+    a B ejection delay that lands after the target already committed.
     """
     nodes = [int(spec["dst_node"]) for spec in target_specs]
     plans = [[] for _ in target_specs]
+    b_delay_plans = [[] for _ in target_specs]
     for kind, fields, fault_default in (
         ("mesh_planned_extra_latency", ("uid", "cycles"), None),
         ("mesh_planned_faults", ("uid",), "slverr"),
+        ("mesh_planned_b_ejection", ("uid", "cycles"), None),
     ):
         records = scenario.get(kind, [])
         if not isinstance(records, list):
@@ -465,11 +468,14 @@ def _mesh_program_plans(scenario, target_specs):
             entry_fault = str(record.get("resp", fault_default)).lower()
             if len(fields) == 1 and entry_fault not in ("okay", "slverr"):
                 fatal("AXI mesh_planned_faults resp must be okay or slverr")
-            if len(fields) > 1:
+            if kind == "mesh_planned_b_ejection":
+                b_delay_plans[nodes.index(target)].append(
+                    (uid, value, "okay"))
+            elif len(fields) > 1:
                 plans[nodes.index(target)].append((uid, value, "okay"))
             else:
                 plans[nodes.index(target)].append((uid, 0, entry_fault))
-    return plans
+    return plans, b_delay_plans
 
 
 def _post_commit_plans(scenario, target_specs):
@@ -755,7 +761,8 @@ def create_system(
         fatal("AXI driver_mode must be sequential, concurrent, mesh_program, or gate3_protocol")
     b_delay_plans_by_target = [[] for _ in target_specs]
     if driver_mode == "mesh_program":
-        plans_by_target = _mesh_program_plans(scenario, target_specs)
+        plans_by_target, b_delay_plans_by_target = \
+            _mesh_program_plans(scenario, target_specs)
     if driver_mode == "gate3_protocol":
         plans_by_target, b_delay_plans_by_target = _gate3_plans(scenario, target_specs)
     if not options.axi_raw_shim_probe and driver_mode not in (

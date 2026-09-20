@@ -1,5 +1,7 @@
 #include "dev/ai_mesh/peer_sram_aperture.hh"
 
+#include "dev/ai_mesh/mesh_dispatcher.hh"
+
 #include <algorithm>
 
 #include "base/logging.hh"
@@ -17,7 +19,11 @@ PeerSramAperture::PeerSramAperture(const Params &p)
       adapter(p.adapter),
       core_id(p.core_id),
       sram_base(p.sram_base),
-      sram_bytes(p.sram_bytes)
+      sram_bytes(p.sram_bytes),
+      sentinel_json_path(p.sentinel_json),
+      replay_commit_uid(p.replay_commit_uid),
+      replay_commit_delay(p.replay_commit_delay),
+      replay_event(this)
 {}
 
 void
@@ -26,6 +32,15 @@ PeerSramAperture::init()
     ClockedObject::init();
     fatal_if(adapter == nullptr, "%s: no target adapter bound", name());
     adapter->registerWriteCommitObserver(this);
+    sentinel_spans.load(sentinel_json_path);
+    if (!sentinel_spans.empty())
+        sentinel_spans.sample(*adapter);
+}
+
+void
+PeerSramAperture::sampleSentinels()
+{
+    sentinels = sentinel_spans.compare(*adapter);
 }
 
 void
@@ -58,52 +73,92 @@ void
 PeerSramAperture::expectTransfer(
     uint32_t transfer_id, const std::vector<std::pair<uint64_t, uint64_t>> &ranges)
 {
-    fatal_if(ranges.empty(), "transfer %u has no ranges", transfer_id);
-    fatal_if(expectations.count(transfer_id),
-             "transfer %u expected twice", transfer_id);
-    Expectation expectation;
-    for (const auto &range : ranges) {
-        fatal_if(range.first >= range.second,
-                 "transfer %u has an empty range", transfer_id);
+    // Only this tile knows its own address window; the coverage owner holds the
+    // expectation and attribution rules.
+    for (const auto &range : ranges)
         fatal_if(!adapter->containsMemoryAddress(range.first) ||
                  !adapter->containsMemoryAddress(range.second - 1),
                  "transfer %u range [%#llx,%#llx) escapes the SRAM tile",
                  transfer_id, (unsigned long long)range.first,
                  (unsigned long long)range.second);
-        for (const auto &other : expectation.ranges)
-            fatal_if(range.first < other.second && other.first < range.second,
-                     "transfer %u ranges overlap", transfer_id);
-        for (const auto &installed : expectations)
-            for (const auto &other : installed.second.ranges)
-                fatal_if(
-                    range.first < other.second && other.first < range.second,
-                    "transfer %u range overlaps live transfer %u",
-                    transfer_id, installed.first);
-        expectation.ranges.push_back(range);
-        expectation.expected += range.second - range.first;
+    const bool was_expected = coverage.expects(transfer_id);
+    coverage.expect(transfer_id, ranges);
+    if (!was_expected && captured_commit.captured && !replay_scheduled &&
+        replayCovers(ranges)) {
+        replay_scheduled = true;
+        schedule(replay_event, curTick() + replay_commit_delay);
     }
-    expectations[transfer_id] = expectation;
+}
+
+bool
+PeerSramAperture::replayCovers(
+    const std::vector<std::pair<uint64_t, uint64_t>> &ranges) const
+{
+    for (size_t index = 0; index < captured_commit.beats.size(); index++) {
+        const uint64_t lane_base = captured_commit.request.address
+            + uint64_t(index) * (uint64_t(1) << captured_commit.request.size);
+        uint64_t strobe = captured_commit.beats[index].byteStrobe;
+        while (strobe) {
+            const int lane = __builtin_ctzll(strobe);
+            strobe &= ~(uint64_t(1) << lane);
+            const uint64_t address = lane_base + uint64_t(lane);
+            for (const auto &bounds : ranges)
+                if (address >= bounds.first && address < bounds.second)
+                    return true;
+        }
+    }
+    return false;
 }
 
 void
-PeerSramAperture::cancelAllExpectations()
+PeerSramAperture::replayCommitEvent()
 {
-    expectations.clear();
+    // The stale delivery enters through the real observer entry, so a rejected
+    // replay is rejected by the owner rather than by the fault hook.
+    observeCommit(captured_commit.request, captured_commit.beats,
+                  captured_commit.resp, true, captured_commit.txn_uid);
+}
+
+void
+PeerSramAperture::abandonAllExpectations()
+{
+    coverage.abandonAll();
 }
 
 void
 PeerSramAperture::beginInstance()
 {
     instance_counter++;
-    transfer_commit_ticks.clear();
-    expectations.clear();
+    coverage.beginInstance();
+}
+
+std::vector<PeerTransferCoverage>
+PeerSramAperture::transferCoverage() const
+{
+    return coverage.rows();
 }
 
 void
-PeerSramAperture::onAxiWriteCommitted(
-    const axi::AxiAddressRequest &request,
-    const std::vector<axi::AxiDataPacket> &beats,
-    axi::AxiResp resp)
+PeerSramAperture::onAxiWriteCommitted(const axi::AxiAddressRequest &request,
+                                      const std::vector<axi::AxiDataPacket> &beats,
+                                      axi::AxiResp resp)
+{
+    observeCommit(request, beats, resp, false, 0);
+}
+
+void
+PeerSramAperture::onAxiWriteCommittedWithMeta(
+    const axi::AxiAddressPacket &packet,
+    const std::vector<axi::AxiDataPacket> &beats, axi::AxiResp resp)
+{
+    observeCommit(packet.request, beats, resp, true, packet.meta.txnUid);
+}
+
+void
+PeerSramAperture::observeCommit(const axi::AxiAddressRequest &request,
+                                const std::vector<axi::AxiDataPacket> &beats,
+                                axi::AxiResp resp, bool has_meta,
+                                uint64_t txn_uid)
 {
     const uint64_t bus = uint64_t(1) << request.size;
     uint64_t strobed = 0;
@@ -115,45 +170,45 @@ PeerSramAperture::onAxiWriteCommitted(
         error_drained_bytes += strobed;
         return;
     }
-    committed_valid_bytes += strobed;
 
-    std::vector<uint32_t> completed;
-    for (auto &kv : expectations) {
-        Expectation &expectation = kv.second;
-        if (expectation.observed >= expectation.expected)
-            continue;
-        // Full-width beats: lane l of beat i lands at
-        // address + i*bus + l (AxADDR is bus aligned for our bursts).
-        for (size_t i = 0; i < beats.size() &&
-             expectation.observed < expectation.expected; i++) {
-            const uint64_t lane_base = request.address + uint64_t(i) * bus;
-            uint64_t strobe = beats[i].byteStrobe;
-            while (strobe && expectation.observed < expectation.expected) {
-                const int lane = __builtin_ctzll(strobe);
-                const uint64_t addr = lane_base + uint64_t(lane);
-                for (const auto &range : expectation.ranges)
-                    if (addr >= range.first && addr < range.second) {
-                        expectation.observed++;
-                        break;
-                    }
-                strobe &= ~(uint64_t(1) << lane);
-            }
+    PeerTransferCoverageTable::CommitFacts facts;
+    facts.tick = curTick();
+    facts.base_address = request.address;
+    facts.bus_bytes = bus;
+    facts.has_meta = has_meta;
+    facts.txn_uid = txn_uid;
+    facts.lanes.reserve(strobed);
+    for (size_t index = 0; index < beats.size(); index++) {
+        const uint64_t lane_base = request.address + uint64_t(index) * bus;
+        uint64_t lane_strobe = beats[index].byteStrobe;
+        while (lane_strobe) {
+            const int lane = __builtin_ctzll(lane_strobe);
+            lane_strobe &= ~(uint64_t(1) << lane);
+            facts.lanes.push_back(lane_base + uint64_t(lane));
         }
-        if (expectation.observed == expectation.expected)
-            completed.push_back(kv.first);
     }
-    for (uint32_t transfer_id : completed) {
-        Expectation &expectation = expectations.at(transfer_id);
-        if (expectation.notified)
-            continue;
-        expectation.notified = true;
-        transfer_commit_ticks[transfer_id] = curTick();
-        expectations.erase(transfer_id);
-        if (owner)
+    if (has_meta && replay_commit_uid != ~uint64_t(0) &&
+        txn_uid == replay_commit_uid && !captured_commit.captured) {
+        captured_commit.request = request;
+        captured_commit.beats = beats;
+        captured_commit.resp = resp;
+        captured_commit.txn_uid = txn_uid;
+        captured_commit.captured = true;
+    }
+    const PeerTransferCoverageTable::CommitResult result = coverage.commit(facts);
+    committed_valid_bytes += result.newly_covered + result.unaccounted;
+    if (owner == nullptr)
+        return;
+    // The notification crosses the same delivery boundary the mock runtime
+    // uses, so one fault-injection point covers both backends.
+    MeshDispatcher *dispatcher = owner->runtimeDispatcher();
+    for (uint32_t transfer_id : result.completed) {
+        if (dispatcher != nullptr)
+            dispatcher->routePeerCommit(core_id, transfer_id);
+        else
             owner->onTransferCommitted(transfer_id);
     }
 }
 
 } // namespace ai_mesh
 } // namespace gem5
-

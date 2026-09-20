@@ -6,14 +6,14 @@ from pathlib import Path
 from dataclasses import asdict
 
 from mesh_ir.acceptance import CHILD_ENV_BASE, canonical_digest
-from mesh_ir.builder import load_arch
+from mesh_ir.architecture import load_arch
 from mesh_ir.burst_splitter import split_segment
 
-from .config import BufferMap, CHANNELS, Topology, Workload, WorkloadSpec, validated_yx_vnets
+from .config import BufferMap, CHANNELS, Workload, WorkloadSpec
 from .execution import ExecutionIdentity, verify_resume
 from .metrics import measure_runtime, outstanding_window
 from .search import active_channels
-from .workload import traffic_oracle, validate_simulation_horizon
+from .workload import experiment_hbm_targets, experiment_topology, traffic_oracle, validate_simulation_horizon
 
 
 QUIESCENCE_FIELDS = {"ni_queued_flits", "ni_queued_messages", "router_buffered_flits",
@@ -77,7 +77,10 @@ def memory_expected_bytes(plan):
 
 def verify_workload_plan(plan, arch):
     spec = WorkloadSpec(**{**plan["spec"], "active_cores": tuple(plan["spec"]["active_cores"])})
-    topology = Topology(plan["topology"])
+    topology = experiment_topology(arch)
+    targets = experiment_hbm_targets(arch)
+    if plan["topology"] != topology.name:
+        raise ValueError("workload topology differs from resolved architecture")
     directions = ("read", "write") if spec.workload == Workload.MIXED_1_1 else (
         "read" if spec.workload == Workload.LOAD_ONLY else "write",)
     pairs = spec.tiles_per_core // len(directions)
@@ -109,9 +112,11 @@ def verify_workload_plan(plan, arch):
             target = (core + tile_index) % len(topology.hbm_routers)
         expected_address = hbm.base + target * spec.hbm_port_bytes + core * 2 * spec.bytes_per_core + (
             spec.bytes_per_core if direction == "write" else 0) + pair * spec.tile_bytes
-        if row["target_index"] != target or row["target_node"] != topology.target_node(target) or row["address"] != expected_address:
+        if (row["target_index"], row["target_node"], row["target_router"], row["address"]) != (
+            target, targets[target].dst_node, targets[target].router_id, expected_address
+        ):
             raise ValueError("tile target/address disagrees with frozen distribution")
-        if row["bursts"] != [asdict(burst) for burst in split_segment(expected_address, spec.tile_bytes, 32, arch.axi_max_burst_beats)]:
+        if row["bursts"] != [asdict(burst) for burst in split_segment(expected_address, spec.tile_bytes, arch.axi_data_bytes, arch.axi_max_burst_beats)]:
             raise ValueError("stored tile bursts disagree with independent address splitting")
         if not 1 <= row["expected_byte"] <= 255 or (direction == "write" and row["expected_byte"] != setup[core, offset]["expected_byte"]):
             raise ValueError("tile pattern does not match initialized store ring")
@@ -176,13 +181,15 @@ def verify_effective(raw, case):
     typed = defaultdict(list)
     for obj in objects.values():
         typed[obj["type"]].append(obj)
-    topology = Topology(case["topology"])
-    profile = case["profile"]
     arch = load_arch(case["arch_path"])
+    topology = experiment_topology(arch)
+    hbm_targets = experiment_hbm_targets(arch)
+    error_target = next(target for target in arch.fabric.targets if target.dst_node == arch.fabric.default_error_target_node)
+    runtime_targets = (*hbm_targets, error_target)
     counts = {"MeshDummyCore": 25, "AxiTensorDmaEngine": 25, "AxiGarnetBridge": 25,
-              "AxiInitiatorAdapter": 25, "AxiTargetAdapter": len(topology.hbm_routers) + 1,
+              "AxiInitiatorAdapter": 25, "AxiTargetAdapter": len(runtime_targets),
               "GarnetNetwork": 1, "GarnetRouter": 25,
-              "GarnetNetworkInterface": topology.error_node + 1}
+              "GarnetNetworkInterface": arch.fabric.default_error_target_node + 1}
     for kind, expected in counts.items():
         if len(typed[kind]) != expected:
             raise ValueError(f"effective object count {kind} != {expected}")
@@ -190,18 +197,21 @@ def verify_effective(raw, case):
         raise ValueError("simulation is not FULL_TIMING")
     network = typed["GarnetNetwork"][0]
     wanted_network = {"num_rows": 5, "number_of_virtual_networks": 5,
-                      "dual_lane": profile["network"].get("dual_lane", False),
-                      "yx_vnets": list(validated_yx_vnets(profile["network"].get("yx_vnets", ()))),
-                      "routing_algorithm": 1, "ni_flit_size": profile["network"]["flit_bytes"],
-                      "vcs_per_vnet": profile["network"]["vcs_per_vnet"],
-                      "buffers_per_vnet": case["buffer_depths"],
-                      "ni_buffers_per_vnet": profile["network"]["ni_depths"],
-                      "router_input_vc_depths": case["router_input_vc_depths"], "enable_fault_model": False}
+                      "dual_lane": arch.fabric.network.dual_lane,
+                      "yx_vnets": list(arch.fabric.network.yx_vnets),
+                      "routing_algorithm": 1, "ni_flit_size": arch.fabric.network.flit_bytes,
+                      "vcs_per_vnet": arch.fabric.network.vcs_per_vnet,
+                      "buffers_per_vnet": list(arch.fabric.network.router_input_depths),
+                      "ni_buffers_per_vnet": list(arch.fabric.network.ni_receive_depths),
+                      "router_input_vc_depths": [
+                          ":".join(map(str, (item.router_id, item.input_port, item.vnet, item.depth)))
+                          for item in arch.fabric.network.router_input_overrides
+                      ], "enable_fault_model": False}
     if any(network[key] != value for key, value in wanted_network.items()):
         raise ValueError("effective network differs from frozen case")
     if sorted(core["core_id"] for core in typed["MeshDummyCore"]) != list(range(25)):
         raise ValueError("effective core IDs must be exactly 0..24")
-    axi = profile["axi"]
+    fabric = arch.fabric
     expected_by_type = {
         "MeshDummyCore": {"sram_bytes": arch.sram_bytes, "sram_banks": arch.sram_banks,
                           "sram_bank_queue_depth": arch.sram_bank_queue_depth,
@@ -210,30 +220,28 @@ def verify_effective(raw, case):
                           "sram_read_bytes_per_cycle": arch.sram_read_bytes_per_cycle_per_bank,
                           "sram_write_bytes_per_cycle": arch.sram_write_bytes_per_cycle_per_bank,
                           "admit_window": arch.admit_window, "decode_width": arch.decode_width},
-        "AxiTensorDmaEngine": {"data_bus_bytes": 32, "max_burst_beats": arch.axi_max_burst_beats,
+        "AxiTensorDmaEngine": {"data_bus_bytes": arch.axi_data_bytes, "max_burst_beats": arch.axi_max_burst_beats,
                                "descriptor_queue_depth": arch.dma_descriptor_queue_depth,
                                "segment_queue_depth": arch.dma_segment_queue_depth,
                                "axi_id_count": 1 << arch.axi_id_bits},
-        "AxiGarnetBridge": {"data_bus_bytes": 32, "aw_queue_depth": arch.dma_segment_queue_depth,
+        "AxiGarnetBridge": {"data_bus_bytes": arch.axi_data_bytes, "aw_queue_depth": arch.dma_segment_queue_depth,
                              "ar_queue_depth": arch.dma_segment_queue_depth,
-                             "axi_id_count": 1 << arch.axi_id_bits, "w_beats_per_cycle": axi["w_beats_per_cycle"]},
-        "AxiInitiatorAdapter": {"max_outstanding_reads": case["n_read"], "max_outstanding_writes": case["n_write"],
-                                 "data_bus_bytes": 32, "source_fifo_depths": axi["source_fifo_depths"],
-                                 "b_rob_transactions": axi["b_rob_transactions"], "r_rob_beats": axi["r_rob_beats"],
-                                 "pre_aw_bursts": axi["source_pre_aw_bursts"], "pre_aw_beats": axi["source_pre_aw_beats"],
-                                 "wire_header_bytes": axi["wire_header_bytes"],
-                                 "data_header_sideband": axi.get("data_header_sideband", False)},
-        "AxiTargetAdapter": {"data_bus_bytes": 32, "service_depths": axi["target_service_depths"],
-                              "wire_header_bytes": axi["wire_header_bytes"],
-                              "data_header_sideband": axi.get("data_header_sideband", False),
-                              "response_ready_depths": axi["target_response_ready_depths"],
-                              "orphan_w_transactions": axi["orphan_w_transactions"], "orphan_w_beats": axi["orphan_w_beats"],
-                              "synthetic_hbm_bytes_per_cycle": profile["backend"]["bytes_per_cycle"],
-                              "synthetic_hbm_queue_depth": profile["backend"]["queue_depth"]},
-        "GarnetRouter": {"latency": profile["network"]["router_latency"], "width": profile["network"]["flit_bytes"],
-                         "dual_lane": profile["network"].get("dual_lane", False)},
-        "GarnetNetworkInterface": {"vcs_per_vnet": profile["network"]["vcs_per_vnet"], "virt_nets": 5},
-        "NetworkLink": {"link_latency": profile["network"]["link_latency"], "width": profile["network"]["flit_bytes"]}}
+                             "axi_id_count": 1 << arch.axi_id_bits, "w_beats_per_cycle": fabric.axi.w_beats_per_cycle},
+        "AxiInitiatorAdapter": {"max_outstanding_reads": fabric.initiator.max_outstanding_reads, "max_outstanding_writes": fabric.initiator.max_outstanding_writes,
+                                 "data_bus_bytes": arch.axi_data_bytes, "source_fifo_depths": list(fabric.initiator.source_fifo_depths),
+                                 "b_rob_transactions": fabric.initiator.b_reorder_transactions, "r_rob_beats": fabric.initiator.r_reorder_beats,
+                                 "pre_aw_bursts": fabric.initiator.pre_aw_bursts, "pre_aw_beats": fabric.initiator.pre_aw_beats,
+                                 "wire_header_bytes": list(fabric.axi.wire_header_bytes),
+                                 "data_header_sideband": fabric.axi.data_header_sideband},
+        "AxiTargetAdapter": {"data_bus_bytes": arch.axi_data_bytes, "service_depths": list(fabric.target.service_queue_depths),
+                              "wire_header_bytes": list(fabric.axi.wire_header_bytes),
+                              "data_header_sideband": fabric.axi.data_header_sideband,
+                              "response_ready_depths": list(fabric.target.response_ready_depths),
+                              "orphan_w_transactions": fabric.target.orphan_w_transactions, "orphan_w_beats": fabric.target.orphan_w_beats},
+        "GarnetRouter": {"latency": fabric.network.router_latency_cycles, "width": fabric.network.flit_bytes,
+                         "dual_lane": fabric.network.dual_lane},
+        "GarnetNetworkInterface": {"vcs_per_vnet": fabric.network.vcs_per_vnet, "virt_nets": 5},
+        "NetworkLink": {"link_latency": fabric.network.link_latency_cycles, "width": fabric.network.flit_bytes}}
     for kind, expected_fields in expected_by_type.items():
         for obj in typed[kind]:
             if any(obj[key] != value for key, value in expected_fields.items()):
@@ -241,25 +249,53 @@ def verify_effective(raw, case):
             clock = objects[obj["clk_domain"]]
             if clock["type"] != "SrcClockDomain" or clock["clock"] != [500]:
                 raise ValueError(f"effective {kind} clock is not 2 GHz")
+    quotas = {
+        (item.src_node, item.src_port, item.dst_node): item
+        for item in fabric.quotas
+    }
+    if len(quotas) != len(fabric.quotas):
+        raise ValueError("resolved architecture contains duplicate source-target quotas")
+    expected_initiators = {(item.src_node, item.src_port) for item in fabric.initiators}
+    actual_initiators = [(item["src_node"], item["src_port"]) for item in typed["AxiInitiatorAdapter"]]
+    if len(set(actual_initiators)) != len(actual_initiators) or set(actual_initiators) != expected_initiators:
+        raise ValueError("effective initiator adapter identities differ from resolved architecture")
+    expected_targets = {item.dst_node for item in runtime_targets}
+    actual_targets = [item["dst_node"] for item in typed["AxiTargetAdapter"]]
+    if len(set(actual_targets)) != len(actual_targets) or set(actual_targets) != expected_targets:
+        raise ValueError("effective target adapter identities differ from resolved architecture")
     for adapter in typed["AxiInitiatorAdapter"]:
+        identity = (adapter["src_node"], adapter["src_port"])
         for dimension in ("read_contexts", "write_contexts", "read_beats", "write_beats"):
-            if adapter["quota_" + dimension] != [axi["target_quota"][dimension]] * (len(topology.hbm_routers) + 1):
+            expected = [
+                getattr(quotas[identity + (target.dst_node,)], dimension)
+                for target in runtime_targets
+            ]
+            if adapter["quota_" + dimension] != expected:
                 raise ValueError("initiator quota differs from frozen profile")
     for adapter in typed["AxiTargetAdapter"]:
-        enabled = adapter["dst_node"] != topology.error_node
+        target = next(target for target in runtime_targets if target.dst_node == adapter["dst_node"])
+        enabled = target.synthetic_hbm is not None
         if adapter["synthetic_hbm_enabled"] != enabled:
             raise ValueError("memory target does not use the declared synthetic backend")
-        if enabled and adapter["base_latencies"] != [profile["backend"]["base_latency_cycles"]] * 2:
+        if enabled and (adapter["synthetic_hbm_bytes_per_cycle"], adapter["synthetic_hbm_queue_depth"]) != (
+            target.synthetic_hbm.bytes_per_cycle, target.synthetic_hbm.queue_depth
+        ):
+            raise ValueError("synthetic target service differs from resolved architecture")
+        if enabled and adapter["base_latencies"] != list(fabric.target.base_latency_cycles):
             raise ValueError("synthetic target latency differs from frozen profile")
         for dimension in ("read_contexts", "write_contexts", "read_beats", "write_beats"):
-            if adapter["quota_" + dimension] != [axi["target_quota"][dimension]] * 25:
+            expected = [
+                getattr(quotas[(source.src_node, source.src_port, target.dst_node)], dimension)
+                for source in fabric.initiators
+            ]
+            if adapter["quota_" + dimension] != expected:
                 raise ValueError("target source quotas differ from frozen profile")
     for obj in typed["MessageBuffer"]:
         label = obj["name"]
         channel = next((name for name in CHANNELS if label.lower().startswith(name.lower())), None)
         if channel is None or "axi_" not in obj["path"]:
             continue
-        vector = axi["local_delivery_depths"] if label.endswith("Local") else axi["message_buffer_depths"]
+        vector = fabric.initiator.local_delivery_depths if label.endswith("Local") else fabric.initiator.message_buffer_depths
         if obj["buffer_size"] != vector[CHANNELS.index(channel)]:
             raise ValueError("effective Ruby/local MessageBuffer capacity differs from profile")
     return True
@@ -541,12 +577,7 @@ def verify_case(directory):
     workload_digest = canonical_digest({key: value for key, value in plan.items() if key != "workload_digest"})
     if plan["workload_digest"] != workload_digest:
         raise ValueError("workload digest mismatch")
-    oracle = traffic_oracle(plan, Topology(case["topology"]), data_bytes=arch.axi_data_bytes,
-                            max_beats=arch.axi_max_burst_beats,
-                            flit_bytes=case["profile"]["network"]["flit_bytes"],
-                            header_bytes=case["profile"]["axi"]["wire_header_bytes"],
-                            data_header_sideband=case["profile"]["axi"].get("data_header_sideband", False),
-                            yx_vnets=case["profile"]["network"].get("yx_vnets", ()))
+    oracle = traffic_oracle(plan, arch)
     if stored_oracle != {**oracle, "oracle_digest": canonical_digest(oracle)}:
         raise ValueError("frozen oracle differs from workload reconstruction")
     horizon_lower_bound = validate_simulation_horizon(oracle, case["profile"]["runtime"]["max_sim_ticks"],
@@ -598,7 +629,7 @@ def verify_case(directory):
             expected_packets = expected_bytes // 32 if direction == "read" else expected_bursts
             if progress[retired_key] != expected_bursts or progress[packet_key] != expected_packets:
                 raise ValueError("source response buffering/retirement differs from oracle")
-    topology = Topology(case["topology"])
+    topology = experiment_topology(arch)
     if sorted(target["index"] for target in final["targets"]) != list(range(len(topology.hbm_routers) + 1)):
         raise ValueError("runtime HBM/error target identity set mismatch")
     for target in final["targets"]:

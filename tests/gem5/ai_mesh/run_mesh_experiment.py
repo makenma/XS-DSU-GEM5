@@ -17,14 +17,14 @@ sys.path.insert(0, str(REPO / "util/mesh_ir"))
 import yaml
 
 from mesh_ir.acceptance import CHILD_ENV_BASE, atomic_write_bytes, canonical_digest, read_yaml_document
-from mesh_ir.builder import load_arch
+from mesh_ir.architecture import RouterInputDepth, architecture_document, load_arch_text
 from mesh_ir.experiment.config import BASE_DEPTHS, BufferMap, Topology, Workload, WorkloadSpec
 from mesh_ir.experiment.execution import ExecutionIdentity, artifact_hashes, file_digest, run_process, source_identity, verify_resume
 from mesh_ir.experiment.metrics import COMMON_FIELDS, GROUP_FIELDS, analyze_candidates, common_hardware, eligible
 from mesh_ir.experiment.plots import plot_results
 from mesh_ir.experiment.search import FamilyCoverage, INITIAL_WINDOWS, STAGE_BUDGETS, active_channels, configuration_identity, coordinate_candidates, equal_capacity_exchanges, fair_candidates, long_validation_points, ranked_candidates, uniform_vectors
 from mesh_ir.experiment.verify import load_json, verified_measurement, verify_case
-from mesh_ir.experiment.workload import build_workload, packet_flits, validate_simulation_horizon, write_workload
+from mesh_ir.experiment.workload import build_workload, packet_flits, resolve_experiment_architecture, validate_simulation_horizon, write_workload
 from mesh_ir.model import canonical_json_bytes
 
 
@@ -62,19 +62,24 @@ def materialize(directory, profile, topology, workload, n_read, n_write, depths,
     arch_document = merge_document(read_yaml_document(REPO / profile["arch_template"]), profile["architecture_overrides"])
     arch_document["core"]["dma"]["read_outstanding"] = n_read
     arch_document["core"]["dma"]["write_outstanding"] = n_write
+    buffer_map = BufferMap(tuple(tuple(row) for row in map_document["entries"])) if map_document else None
+    typed_overrides = tuple(RouterInputDepth(*row) for row in buffer_map.entries) if buffer_map else ()
+    base_arch = load_arch_text(yaml.safe_dump(arch_document, sort_keys=False))
+    arch = resolve_experiment_architecture(
+        base_arch,
+        Topology(topology),
+        profile,
+        router_input_depths=tuple(depths),
+        router_input_overrides=typed_overrides,
+    )
     arch_path = directory / "arch.yaml"
-    arch_path.write_text(yaml.safe_dump(arch_document, sort_keys=False), encoding="utf-8")
-    arch = load_arch(arch_path)
-    bundle = build_workload(arch, Topology(topology), workload,
-                            flit_bytes=profile["network"]["flit_bytes"],
-                            header_bytes=profile["axi"]["wire_header_bytes"],
-                            data_header_sideband=profile["axi"].get("data_header_sideband", False),
-                            yx_vnets=profile["network"].get("yx_vnets", ()))
+    arch_path.write_text(yaml.safe_dump(architecture_document(arch), sort_keys=False), encoding="utf-8")
+    bundle = build_workload(arch, workload)
     validate_simulation_horizon(bundle.oracle, profile["runtime"]["max_sim_ticks"], arch.clock_hz,
                                 profile["measurement"]["ticks_per_second"])
     program_dir = directory / "program"
     write_workload(bundle, program_dir)
-    overrides = BufferMap(tuple(tuple(row) for row in map_document["entries"])).overrides() if map_document else []
+    overrides = buffer_map.overrides() if buffer_map else []
     case = {"schema_version": 1, "profile": profile, "topology": topology,
             "program_dir": str(program_dir), "arch_path": str(arch_path),
             "n_read": n_read, "n_write": n_write, "buffer_depths": list(depths),
@@ -507,7 +512,7 @@ def main():
             ports = {tuple(row[:2]) for row in pilot["router_buffer_map"]["entries"]}
             groups = {name: {port for port in ports if port[0] in routers} for name, routers in regions.items()}
             document = {"pilot_case_id": pilot["case_id"], "rule": "rank_actual_allocator_probe_failures_and_full_vc_time_top_fifth_non_hbm",
-                        "pressure": dict(pressure), "regions": {name: sorted(routers) for name, routers in regions.items()},
+                        "pressure": {str(router): value for router, value in pressure.items()}, "regions": {name: sorted(routers) for name, routers in regions.items()},
                         "ports": {name: sorted(ports) for name, ports in groups.items()},
                         "router_tags": Topology(topology).router_tags(hot), "hot_label_scope": "ranked_non_hbm"}
             document["map_digest"] = canonical_digest(document)

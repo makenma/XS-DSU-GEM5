@@ -5,9 +5,12 @@
 #include <deque>
 #include <map>
 #include <optional>
+#include <set>
 #include <vector>
 
 #include "dev/ai_mesh/dma_types.hh"
+#include "dev/ai_mesh/burst_attribution.hh"
+#include "dev/ai_mesh/mesh_runtime_observations.hh"
 #include "dev/ai_mesh/mesh_splitter.hh"
 #include "mem/axi/axi_types.hh"
 #include "sim/clocked_object.hh"
@@ -49,7 +52,7 @@ class AxiTensorDmaEngine : public DmaEngineBase
     void bindFillPattern(uint32_t command_id, uint64_t pattern) override;
     bool idle() const override;
     void bindOwner(MeshDummyCore *core, const RuntimeArch *arch) override;
-    const std::map<uint32_t, ActualTraffic> &actualTraffic() const override
+    void beginInstance() override;    const std::map<uint32_t, ActualTraffic> &actualTraffic() const override
     {
         return actual;
     }
@@ -57,6 +60,9 @@ class AxiTensorDmaEngine : public DmaEngineBase
     {
         return read_queue.size() + write_queue.size();
     }
+
+    bool readFunctional(uint64_t address, uint64_t size,
+                        uint8_t *out) override;
 
     void onReadBeat(uint64_t burst_ordinal, uint16_t beat_index, bool last,
                     axi::AxiResp resp, const uint8_t *data);
@@ -83,6 +89,11 @@ class AxiTensorDmaEngine : public DmaEngineBase
 
     const std::map<uint64_t, Tick> &readCommitTicks() const
     { return read_commit_ticks; }
+
+    // Every burst of the instance that is currently being observed, with the
+    // admitted execution it belongs to and the retirement facts it earned.
+    const std::vector<BurstAttribution> &instanceBursts() const
+    { return instance_bursts; }
 
     uint64_t submittedReadBursts() const { return read_bursts_submitted; }
     uint64_t submittedWriteBursts() const { return write_bursts_submitted; }
@@ -139,6 +150,7 @@ class AxiTensorDmaEngine : public DmaEngineBase
     struct DescriptorState
     {
         DecodedDmaDescriptor descriptor;
+        std::optional<DescriptorKey> key;
         uint32_t bursts_total = 0;
         uint32_t bursts_done = 0;
         uint32_t bursts_errored = 0;
@@ -148,6 +160,17 @@ class AxiTensorDmaEngine : public DmaEngineBase
         std::vector<AxiBurst> plan;
         std::vector<uint64_t> burst_ordinals;
         std::optional<std::vector<axi::AxiWBeat>> prepared_beats;
+        // Per-execution facts.  The transport row accumulates across
+        // instances; this contribution is exactly one dispatched execution.
+        TrafficContribution contribution;
+        // Per-burst payload bytes keyed by logical address, folded over the
+        // committed bursts at completion: read bursts commit on SRAM service
+        // order and a faulted burst commits nothing, so the descriptor digest
+        // must not depend on either.
+        std::map<uint64_t, std::vector<uint8_t>> ordered_burst_payload;
+        std::set<uint64_t> committed_bursts;
+        uint64_t discarded_bytes = 0;
+        uint64_t drained_bytes = 0;
     };
 
     struct TickEvent : public Event
@@ -232,6 +255,8 @@ class AxiTensorDmaEngine : public DmaEngineBase
                            uint64_t row_src_local);
     void commitFillRow(uint32_t descriptor_id, uint32_t row);
     void finishDescriptor(bool read, DmaStatus status);
+    std::string recordSourceRows(const DescriptorState &state);
+    std::string destinationDigest(const DecodedDmaDescriptor &descriptor);
     void notifyOwner(uint32_t descriptor_id, uint32_t command_id,
                      uint32_t completion_event, DmaStatus status);
     void retireBurst(bool read, uint64_t burst_ordinal, bool errored);
@@ -250,14 +275,23 @@ class AxiTensorDmaEngine : public DmaEngineBase
     // (AR handshake to RLAST), which the initiator adapter owns.
     const uint32_t segment_queue_depth;
     const uint16_t axi_id_count;
+    const uint64_t source_bytes_limit;
 
     MeshDummyCore *owner = nullptr;
-    const RuntimeArch *arch = nullptr;
 
     std::deque<DescriptorState> read_queue;
     std::deque<DescriptorState> write_queue;
     std::map<uint64_t, ReadBurst> live_read_bursts;
     std::map<uint64_t, Tick> read_commit_ticks;
+    uint32_t instance_counter = 0;
+    std::vector<BurstAttribution> instance_bursts;
+    std::map<uint64_t, size_t> attribution_by_ordinal;
+
+    BurstAttribution &noteBurst(const DescriptorState &state,
+                                const AxiBurst &plan, uint32_t burst_index,
+                                uint64_t ordinal, uint16_t axi_id, bool read);
+    BurstAttribution *burstAttribution(uint64_t ordinal);
+    void finishBurstAttribution(const DescriptorState &state, Tick done_tick);
     std::map<uint64_t, WriteBurst> live_write_bursts;
     std::map<uint32_t, std::pair<uint64_t, uint64_t>> payload_state;
     std::map<uint32_t, ActualTraffic> actual;

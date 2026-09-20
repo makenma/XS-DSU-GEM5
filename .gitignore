@@ -59,6 +59,7 @@ ready-to-run/
 compile_commands.json
 .direnv
 .cursor/
+/.tmp/
 
 # for use npm to install claude-code locally
 CLAUDE.md

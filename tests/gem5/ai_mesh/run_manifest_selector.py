@@ -54,7 +54,7 @@ from mesh_ir.acceptance import (
     validate_traffic,
 )
 from mesh_ir.abi.decoder import decode_program
-from mesh_ir.builder import load_arch
+from mesh_ir.architecture import load_arch
 from mesh_ir.effective import EffectiveArchitecture
 from mesh_ir.gate3_oracle import load_observation, validate_observation
 
@@ -469,7 +469,7 @@ def _gem5_scenario(execution: dict, command: list[str], golden: Path) -> dict:
         ),
         "base_architecture": arch.digest().hex(),
         "effective_architecture": effective.digest().hex(),
-        "command_identity": decoded.semantic_sha256(),
+        "command_identity": decoded.semantic_sha256,
         **empty_digests,
     }
     return {
@@ -481,7 +481,7 @@ def _gem5_scenario(execution: dict, command: list[str], golden: Path) -> dict:
         "mesh_programs": [
             {
                 "program_id": 1,
-                "semantic_digest": decoded.semantic_sha256(),
+                "semantic_digest": decoded.semantic_sha256,
                 "file_sha256": _digest(str(program_image.resolve())),
             }
         ],

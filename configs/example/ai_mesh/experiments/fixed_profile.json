@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "profile_id": "mesh25_full_timing_v1",
-  "arch_template": "configs/example/ai_mesh/arch/mesh_1x2.yaml",
+  "arch_template": "configs/example/ai_mesh/arch/mesh_5x5.yaml",
   "architecture_overrides": {
     "arch_name": "xs_ai_mesh_5x5_experiment",
     "mesh": {

@@ -9,9 +9,81 @@ description: >
   unknown required-feature bits are rejected fail-closed by every reader.
 abi:
   major: 1
-  minor: 2
-  min_reader_minor: 0
+  minor: 3
+  min_reader_minor: 3
 magic_hex: "4d53484200000001"
+
+canonical:
+  json_safe_integer_max: 9007199254740991
+  abi_fields:
+    major: {program_field: abi_major, type: u16}
+    minor: {program_field: abi_minor, type: u16}
+    min_reader_minor: {program_field: min_reader_minor, type: u16}
+    required_features: {program_field: required_features, type: u64}
+  program_fields:
+    - {name: abi, kind: abi, semantic: true}
+    - {name: arch_digest, kind: bytes, semantic: true}
+    - {name: sections, kind: transport_sections, semantic: true}
+    - {name: semantics, kind: semantic_ref, semantic: true}
+    - {name: semantic_sha256, kind: digest, semantic: false}
+  transport_sections:
+    STRINGS: {program_field: strings, projection: strings, optional: false, semantic: true}
+    ENTRYPOINTS: {program_field: entrypoints, projection: records, optional: false, semantic: true}
+    PROFILES: {program_field: profiles, projection: records, optional: false, semantic: true}
+    TENSORS: {program_field: tensors, projection: records, optional: false, semantic: true}
+    SHARDS: {program_field: shards, projection: records, optional: false, semantic: true}
+    ALLOCATIONS: {program_field: allocations, projection: records, optional: false, semantic: true}
+    STREAMS: {program_field: streams, projection: records, optional: false, semantic: true}
+    COMMANDS: {program_field: commands, projection: records, optional: false, semantic: true}
+    COMMAND_WAITS: {program_field: command_waits, projection: records, optional: false, semantic: true}
+    COMMAND_OPERANDS: {program_field: command_operands, projection: records, optional: false, semantic: true}
+    EVENTS: {program_field: events, projection: records, optional: false, semantic: true}
+    DMA_DESCRIPTORS: {program_field: dma_descriptors, projection: records, optional: false, semantic: true}
+    OP_ATTRS: {program_field: op_attrs, projection: attr_payloads, optional: false, semantic: true}
+    RELOCATIONS: {program_field: relocations, projection: records, optional: false, semantic: true}
+    EXPECTED_TRAFFIC: {program_field: expected_traffic, projection: records, optional: false, semantic: true}
+    SOURCE_MAP: {program_field: source_map, projection: records, optional: true, semantic: false}
+    PROFILE_HINTS: {program_field: profile_hints, projection: records, optional: true, semantic: false}
+    CONTENT_DIGESTS: {program_field: content_digests, projection: records, optional: true, semantic: true}
+
+required_features:
+  SCHEDULED_SEMANTICS:
+    bit: 1
+    min_reader_minor: 3
+
+optional_sections:
+  - SOURCE_MAP
+  - PROFILE_HINTS
+  - CONTENT_DIGESTS
+
+semantic_wire_types:
+  semantic_ref:
+    bytes: 8
+    fields:
+      - {name: section_type, type: u16, offset: 0}
+      - {name: reserved, type: u16, offset: 2, const_zero: true}
+      - {name: row_id, type: u32, offset: 4}
+  list_span:
+    bytes: 8
+    fields:
+      - {name: begin, type: u32, offset: 0}
+      - {name: count, type: u32, offset: 4}
+  string_ref:
+    bytes: 8
+    fields:
+      - {name: string_id, type: u32, offset: 0}
+      - {name: reserved, type: u32, offset: 4, const_zero: true}
+  enum_value:
+    bytes: 8
+    fields:
+      - {name: value, type: u32, offset: 0}
+      - {name: reserved, type: u32, offset: 4, const_zero: true}
+  scalar_value:
+    bytes: 16
+    fields:
+      - {name: kind, type: u16, offset: 0, enum: scalar_kind}
+      - {name: reserved, type: bytes6, offset: 2, const_zero: true}
+      - {name: payload, type: u64, offset: 8}
 
 enums:
   section_type:
@@ -30,9 +102,113 @@ enums:
     OP_ATTRS: 13
     RELOCATIONS: 14
     EXPECTED_TRAFFIC: 15
+    PROGRAM_METADATA: 16
+    SEMANTIC_STRINGS: 17
+    SEMANTIC_U64_VALUES: 18
+    SEMANTIC_I64_VALUES: 19
+    SEMANTIC_REFERENCES: 20
+    SEMANTIC_BYTES: 21
+    SEMANTIC_INTEGER_VALUES: 22
     SOURCE_MAP: 101
     PROFILE_HINTS: 102
     CONTENT_DIGESTS: 103
+    SEMANTIC_EXECUTION_WORK_PHASE: 256
+    SEMANTIC_WORK_ESTIMATE: 257
+    SEMANTIC_ADD: 258
+    SEMANTIC_CEIL_DIV_BY_CONST: 259
+    SEMANTIC_CONST: 260
+    SEMANTIC_FLOOR_DIV_BY_CONST: 261
+    SEMANTIC_MUL_BY_CONST: 262
+    SEMANTIC_SYMBOL: 263
+    SEMANTIC_ELEMENTWISE_ATTRS: 264
+    SEMANTIC_EMBEDDING_ATTRS: 265
+    SEMANTIC_MATMUL_ATTRS: 266
+    SEMANTIC_MOVEMENT_ATTRS: 267
+    SEMANTIC_NORM_ATTRS: 268
+    SEMANTIC_REDUCE_ATTRS: 269
+    SEMANTIC_SOFTMAX_ATTRS: 270
+    SEMANTIC_VIEW_ATTRS: 271
+    SEMANTIC_ALLOC_ATTRS: 272
+    SEMANTIC_BARRIER_ATTRS: 273
+    SEMANTIC_BLOCKED_MNK_LAYOUT: 274
+    SEMANTIC_BUFFER_OBJECT: 275
+    SEMANTIC_BUFFER_VIEW: 276
+    SEMANTIC_COLLECTIVE_ATTRS: 277
+    SEMANTIC_CONTROL_TOKEN: 278
+    SEMANTIC_DMA_ATTRS: 279
+    SEMANTIC_ELEMENT_REGION: 280
+    SEMANTIC_GEMM_KERNEL_ATTRS: 281
+    SEMANTIC_KERNEL_COMPUTATION: 282
+    SEMANTIC_KERNEL_COST: 283
+    SEMANTIC_KERNEL_OP: 284
+    SEMANTIC_KERNEL_TENSOR: 285
+    SEMANTIC_KERNEL_TILE: 286
+    SEMANTIC_LOCAL_COPY_ATTRS: 287
+    SEMANTIC_LOCAL_REDUCE_ATTRS: 288
+    SEMANTIC_MATRIX_EPILOGUE_KERNEL_ATTRS: 289
+    SEMANTIC_MOVEMENT_KERNEL_ATTRS: 290
+    SEMANTIC_NORM_KERNEL_ATTRS: 291
+    SEMANTIC_OPERAND_ACCESS: 292
+    SEMANTIC_PARTIAL_SUM_DEFINITION: 293
+    SEMANTIC_PLACEMENT: 294
+    SEMANTIC_RECV_WAIT_ATTRS: 295
+    SEMANTIC_REDUCTION_KERNEL_ATTRS: 296
+    SEMANTIC_SOFTMAX_KERNEL_ATTRS: 297
+    SEMANTIC_STATE_TRANSITION: 298
+    SEMANTIC_TENSOR_SHARD: 299
+    SEMANTIC_TENSOR_STATE: 300
+    SEMANTIC_VECTOR_KERNEL_ATTRS: 301
+    SEMANTIC_VIEW_DECLARATION_ATTRS: 302
+    SEMANTIC_AUTHORED_PROGRAM_ORIGIN: 303
+    SEMANTIC_AUTHORED_VARIANT_LINEAGE: 304
+    SEMANTIC_AXI_FENCE_ATTRS: 305
+    SEMANTIC_BARRIER_ARRIVAL: 306
+    SEMANTIC_BARRIER_EXECUTION: 307
+    SEMANTIC_BARRIER_GROUP: 308
+    SEMANTIC_COMMAND_SEMANTICS: 309
+    SEMANTIC_COMPILED_PROGRAM_ORIGIN: 310
+    SEMANTIC_COMPILED_VARIANT_LINEAGE: 311
+    SEMANTIC_COMPUTE_EXECUTION: 312
+    SEMANTIC_CONTROL_COMMAND_SOURCE: 313
+    SEMANTIC_CONTROL_EXECUTION: 314
+    SEMANTIC_DESCRIPTOR_ENDPOINT_USE: 315
+    SEMANTIC_DESCRIPTOR_GROUP: 316
+    SEMANTIC_DESCRIPTOR_SOURCE: 317
+    SEMANTIC_DMA_EXECUTION: 318
+    SEMANTIC_EVENT_SIGNAL_ATTRS: 319
+    SEMANTIC_EVENT_WAIT_ATTRS: 320
+    SEMANTIC_EXTERNAL_SLOT_BACKING: 321
+    SEMANTIC_HALT_ATTRS: 322
+    SEMANTIC_ID_SPAN: 323
+    SEMANTIC_KERNEL_COMMAND_SOURCE: 324
+    SEMANTIC_KERNEL_TOKEN_SOURCE: 325
+    SEMANTIC_LIFECYCLE_SOURCE: 326
+    SEMANTIC_LOCAL_ALLOCATION_BACKING: 327
+    SEMANTIC_OBJECT_BACKING: 328
+    SEMANTIC_OBJECT_SOURCE: 329
+    SEMANTIC_PROGRAM_SEMANTICS: 330
+    SEMANTIC_PROGRAM_VARIANT: 331
+    SEMANTIC_READ_ACCESS_USE: 332
+    SEMANTIC_RECV_WAIT_EXECUTION: 333
+    SEMANTIC_REPEAT_COMMAND_ATTRS: 334
+    SEMANTIC_REQUEST_BEGIN_ATTRS: 335
+    SEMANTIC_REQUEST_END_ATTRS: 336
+    SEMANTIC_RESIDENT_VIEW: 337
+    SEMANTIC_SCHEDULED_DEPENDENCY: 338
+    SEMANTIC_SCHEDULED_STREAM: 339
+    SEMANTIC_STATE_SOURCE: 340
+    SEMANTIC_STREAM_ORDER_SOURCE: 341
+    SEMANTIC_VARIANT_MEMBERSHIP: 342
+    SEMANTIC_WRITE_ACCESS_USE: 343
+    SEMANTIC_BINDING: 344
+    SEMANTIC_BINDING_SLOT: 345
+    SEMANTIC_CHANNEL_TRAFFIC: 346
+    SEMANTIC_DESCRIPTOR_IDENTITY: 347
+    SEMANTIC_DESCRIPTOR_TRAFFIC: 348
+    SEMANTIC_TRAFFIC_AGGREGATE: 349
+    SEMANTIC_TRAFFIC_AGGREGATE_KEY: 350
+    SEMANTIC_TRAFFIC_CHANNEL_TOTAL: 351
+    SEMANTIC_TRAFFIC_REPORT: 352
   required_sections:
     - STRINGS
     - ENTRYPOINTS
@@ -49,6 +225,110 @@ enums:
     - OP_ATTRS
     - RELOCATIONS
     - EXPECTED_TRAFFIC
+    - PROGRAM_METADATA
+    - SEMANTIC_STRINGS
+    - SEMANTIC_U64_VALUES
+    - SEMANTIC_I64_VALUES
+    - SEMANTIC_REFERENCES
+    - SEMANTIC_BYTES
+    - SEMANTIC_INTEGER_VALUES
+    - SEMANTIC_EXECUTION_WORK_PHASE
+    - SEMANTIC_WORK_ESTIMATE
+    - SEMANTIC_ADD
+    - SEMANTIC_CEIL_DIV_BY_CONST
+    - SEMANTIC_CONST
+    - SEMANTIC_FLOOR_DIV_BY_CONST
+    - SEMANTIC_MUL_BY_CONST
+    - SEMANTIC_SYMBOL
+    - SEMANTIC_ELEMENTWISE_ATTRS
+    - SEMANTIC_EMBEDDING_ATTRS
+    - SEMANTIC_MATMUL_ATTRS
+    - SEMANTIC_MOVEMENT_ATTRS
+    - SEMANTIC_NORM_ATTRS
+    - SEMANTIC_REDUCE_ATTRS
+    - SEMANTIC_SOFTMAX_ATTRS
+    - SEMANTIC_VIEW_ATTRS
+    - SEMANTIC_ALLOC_ATTRS
+    - SEMANTIC_BARRIER_ATTRS
+    - SEMANTIC_BLOCKED_MNK_LAYOUT
+    - SEMANTIC_BUFFER_OBJECT
+    - SEMANTIC_BUFFER_VIEW
+    - SEMANTIC_COLLECTIVE_ATTRS
+    - SEMANTIC_CONTROL_TOKEN
+    - SEMANTIC_DMA_ATTRS
+    - SEMANTIC_ELEMENT_REGION
+    - SEMANTIC_GEMM_KERNEL_ATTRS
+    - SEMANTIC_KERNEL_COMPUTATION
+    - SEMANTIC_KERNEL_COST
+    - SEMANTIC_KERNEL_OP
+    - SEMANTIC_KERNEL_TENSOR
+    - SEMANTIC_KERNEL_TILE
+    - SEMANTIC_LOCAL_COPY_ATTRS
+    - SEMANTIC_LOCAL_REDUCE_ATTRS
+    - SEMANTIC_MATRIX_EPILOGUE_KERNEL_ATTRS
+    - SEMANTIC_MOVEMENT_KERNEL_ATTRS
+    - SEMANTIC_NORM_KERNEL_ATTRS
+    - SEMANTIC_OPERAND_ACCESS
+    - SEMANTIC_PARTIAL_SUM_DEFINITION
+    - SEMANTIC_PLACEMENT
+    - SEMANTIC_RECV_WAIT_ATTRS
+    - SEMANTIC_REDUCTION_KERNEL_ATTRS
+    - SEMANTIC_SOFTMAX_KERNEL_ATTRS
+    - SEMANTIC_STATE_TRANSITION
+    - SEMANTIC_TENSOR_SHARD
+    - SEMANTIC_TENSOR_STATE
+    - SEMANTIC_VECTOR_KERNEL_ATTRS
+    - SEMANTIC_VIEW_DECLARATION_ATTRS
+    - SEMANTIC_AUTHORED_PROGRAM_ORIGIN
+    - SEMANTIC_AUTHORED_VARIANT_LINEAGE
+    - SEMANTIC_AXI_FENCE_ATTRS
+    - SEMANTIC_BARRIER_ARRIVAL
+    - SEMANTIC_BARRIER_EXECUTION
+    - SEMANTIC_BARRIER_GROUP
+    - SEMANTIC_COMMAND_SEMANTICS
+    - SEMANTIC_COMPILED_PROGRAM_ORIGIN
+    - SEMANTIC_COMPILED_VARIANT_LINEAGE
+    - SEMANTIC_COMPUTE_EXECUTION
+    - SEMANTIC_CONTROL_COMMAND_SOURCE
+    - SEMANTIC_CONTROL_EXECUTION
+    - SEMANTIC_DESCRIPTOR_ENDPOINT_USE
+    - SEMANTIC_DESCRIPTOR_GROUP
+    - SEMANTIC_DESCRIPTOR_SOURCE
+    - SEMANTIC_DMA_EXECUTION
+    - SEMANTIC_EVENT_SIGNAL_ATTRS
+    - SEMANTIC_EVENT_WAIT_ATTRS
+    - SEMANTIC_EXTERNAL_SLOT_BACKING
+    - SEMANTIC_HALT_ATTRS
+    - SEMANTIC_ID_SPAN
+    - SEMANTIC_KERNEL_COMMAND_SOURCE
+    - SEMANTIC_KERNEL_TOKEN_SOURCE
+    - SEMANTIC_LIFECYCLE_SOURCE
+    - SEMANTIC_LOCAL_ALLOCATION_BACKING
+    - SEMANTIC_OBJECT_BACKING
+    - SEMANTIC_OBJECT_SOURCE
+    - SEMANTIC_PROGRAM_SEMANTICS
+    - SEMANTIC_PROGRAM_VARIANT
+    - SEMANTIC_READ_ACCESS_USE
+    - SEMANTIC_RECV_WAIT_EXECUTION
+    - SEMANTIC_REPEAT_COMMAND_ATTRS
+    - SEMANTIC_REQUEST_BEGIN_ATTRS
+    - SEMANTIC_REQUEST_END_ATTRS
+    - SEMANTIC_RESIDENT_VIEW
+    - SEMANTIC_SCHEDULED_DEPENDENCY
+    - SEMANTIC_SCHEDULED_STREAM
+    - SEMANTIC_STATE_SOURCE
+    - SEMANTIC_STREAM_ORDER_SOURCE
+    - SEMANTIC_VARIANT_MEMBERSHIP
+    - SEMANTIC_WRITE_ACCESS_USE
+    - SEMANTIC_BINDING
+    - SEMANTIC_BINDING_SLOT
+    - SEMANTIC_CHANNEL_TRAFFIC
+    - SEMANTIC_DESCRIPTOR_IDENTITY
+    - SEMANTIC_DESCRIPTOR_TRAFFIC
+    - SEMANTIC_TRAFFIC_AGGREGATE
+    - SEMANTIC_TRAFFIC_AGGREGATE_KEY
+    - SEMANTIC_TRAFFIC_CHANNEL_TOTAL
+    - SEMANTIC_TRAFFIC_REPORT
   opcode:
     REQUEST_BEGIN: 1
     REQUEST_END: 2
@@ -168,6 +448,17 @@ enums:
   tensor_flags:
     HAS_CONTENT_SHA256: 1
 
+  scalar_kind:
+    BOOL: 1
+    I64: 2
+    U64: 3
+    F64: 4
+  content_digest_object_kind:
+    TENSOR: 1
+    SHARD: 2
+    ALLOCATION: 3
+    KERNEL_OBJECT: 4
+
 header:
   bytes: 128
   fields:
@@ -184,7 +475,7 @@ header:
     # Spec 9.2 amendment: offset 104..111 carries required_features under
     # ABI 1.1; an ABI 1.0 writer must keep 104..127 all zero and a 1.0-only
     # reader rejects any nonzero bit here (unknown feature -> fail closed).
-    - {name: required_features, type: u64, offset: 104, const: 0}
+    - {name: required_features, type: u64, offset: 104, features: required_features}
     - {name: reserved, type: bytes16, offset: 112, const_zero: true}
 
 section_dir:
@@ -290,7 +581,7 @@ records:
       - {name: operand_begin, type: u32, offset: 24}
       - {name: signal_event, type: u32, offset: 28}
       - {name: attr_index, type: u32, offset: 32}
-      - {name: debug_loc_id, type: u32, offset: 36}
+      - {name: debug_loc_id, type: u32, offset: 36, semantic: false}
   COMMAND_WAITS:
     bytes: 4
     fields:
@@ -383,25 +674,118 @@ records:
       - {name: reserved2, type: u32, offset: 68, const_zero: true}
   SOURCE_MAP:
     bytes: 16
+    semantic: false
     fields:
       - {name: loc_id, type: u32, offset: 0}
-      - {name: file_sid, type: u32, offset: 4}
+      - {name: file_sid, python_field: file, type: u32, offset: 4, string_pool: SEMANTIC_STRINGS}
       - {name: line, type: u32, offset: 8}
       - {name: column, type: u32, offset: 12}
   CONTENT_DIGESTS:
     bytes: 40
     fields:
-      - {name: object_kind, type: u16, offset: 0}
+      - {name: object_kind, type: u16, offset: 0, enum: content_digest_object_kind}
       - {name: reserved, type: u16, offset: 2, const_zero: true}
       - {name: object_id, type: u32, offset: 4}
       - {name: digest, type: bytes32, offset: 8}
 
+  PROGRAM_METADATA:
+    bytes: 48
+    fields:
+    - name: min_reader_minor
+      type: u16
+      offset: 0
+    - name: flags
+      type: u16
+      offset: 2
+      const_zero: true
+    - name: reserved
+      type: u32
+      offset: 4
+      const_zero: true
+    - name: semantics
+      type: semantic_ref
+      offset: 8
+    - name: semantic_sha256
+      type: bytes32
+      offset: 16
+  SEMANTIC_U64_VALUES:
+    bytes: 8
+    fields:
+    - name: value
+      type: u64
+      offset: 0
+  SEMANTIC_I64_VALUES:
+    bytes: 8
+    fields:
+    - name: value
+      type: i64
+      offset: 0
+  SEMANTIC_REFERENCES:
+    bytes: 8
+    fields:
+    - name: value
+      type: semantic_ref
+      offset: 0
+  SEMANTIC_BYTES:
+    bytes: 1
+    fields:
+    - name: value
+      type: u8
+      offset: 0
+  SEMANTIC_INTEGER_VALUES:
+    bytes: 16
+    fields:
+    - name: kind
+      type: u16
+      offset: 0
+      enum: scalar_kind
+    - name: reserved
+      type: bytes6
+      offset: 2
+      const_zero: true
+    - name: payload
+      type: u64
+      offset: 8
+  PROFILE_HINTS:
+    bytes: 16
+    semantic: false
+    fields:
+    - name: entrypoint_id
+      type: u32
+      offset: 0
+    - name: profile_id
+      type: u32
+      offset: 4
+    - name: name_sid
+      python_field: name
+      type: u32
+      offset: 8
+      string_pool: SEMANTIC_STRINGS
+    - name: value_sid
+      python_field: value
+      type: u32
+      offset: 12
+      string_pool: SEMANTIC_STRINGS
+
 blob_sections:
   STRINGS:
+    header_bytes: 4
+    header_fields:
+      - {name: count, type: u32, offset: 0}
     directory_record_bytes: 8
     directory_fields:
-      - {name: offset, type: u32}
-      - {name: length, type: u32}
+      - {name: offset, type: u32, offset: 0}
+      - {name: length, type: u32, offset: 4}
+    record_bytes: 0
+    encoding: utf-8
+  SEMANTIC_STRINGS:
+    header_bytes: 4
+    header_fields:
+      - {name: count, type: u32, offset: 0}
+    directory_record_bytes: 8
+    directory_fields:
+      - {name: offset, type: u32, offset: 0}
+      - {name: length, type: u32, offset: 4}
     record_bytes: 0
     encoding: utf-8
 
@@ -497,3 +881,3239 @@ attr_payloads:
       - {name: reserved0, type: u32, offset: 4, const_zero: true}
       - {name: reserved1, type: u32, offset: 8, const_zero: true}
       - {name: reserved2, type: u32, offset: 12, const_zero: true}
+
+semantic_enums:
+  mesh_ir.analysis.cost.WorkUnit:
+    class_name: WorkUnit
+    python_base: Enum
+    members:
+    - name: MAC
+      wire: 1
+      python: MAC
+    - name: ADD
+      wire: 2
+      python: ADD
+    - name: SUB
+      wire: 3
+      python: SUB
+    - name: MUL
+      wire: 4
+      python: MUL
+    - name: DIV
+      wire: 5
+      python: DIV
+    - name: MAX
+      wire: 6
+      python: MAX
+    - name: EXP
+      wire: 7
+      python: EXP
+    - name: ERF
+      wire: 8
+      python: ERF
+    - name: TANH
+      wire: 9
+      python: TANH
+    - name: NEGATE
+      wire: 10
+      python: NEGATE
+    - name: RSQRT
+      wire: 11
+      python: RSQRT
+    - name: COPY
+      wire: 12
+      python: COPY
+    - name: GATHER
+      wire: 13
+      python: GATHER
+    - name: PREDICATE
+      wire: 14
+      python: PREDICATE
+    - name: LOGICAL_AND
+      wire: 15
+      python: LOGICAL_AND
+    - name: SELECT
+      wire: 16
+      python: SELECT
+    - name: CAST
+      wire: 17
+      python: CAST
+  mesh_ir.ir.common.Access:
+    class_name: Access
+    python_base: IntEnum
+    values_from: access_kind
+  mesh_ir.ir.common.DType:
+    class_name: DType
+    python_base: IntEnum
+    values_from: dtype
+    python_properties:
+      byte_width:
+        kind: scalar
+        values: {FP32: 4, FP16: 2, BF16: 2, INT8: 1, INT32: 4}
+      accumulation:
+        kind: enum
+        values: {FP32: FP32, FP16: FP32, BF16: FP32, INT8: INT32, INT32: INT32}
+      machine_epsilon:
+        kind: scalar
+        values: {FP32: 1.1920928955078125e-7, FP16: 0.0009765625, BF16: 0.0078125}
+  mesh_ir.ir.common.DmaKind:
+    class_name: DmaKind
+    python_base: IntEnum
+    values_from: dma_kind
+  mesh_ir.ir.common.Engine:
+    class_name: Engine
+    python_base: IntEnum
+    values_from: engine
+  mesh_ir.ir.common.Layout:
+    class_name: Layout
+    python_base: IntEnum
+    values_from: layout_kind
+  mesh_ir.ir.common.MemorySpace:
+    class_name: MemorySpace
+    python_base: IntEnum
+    values_from: memory_space
+  mesh_ir.ir.common.StorageClass:
+    class_name: StorageClass
+    python_base: IntEnum
+    values_from: storage_class
+  mesh_ir.ir.common.TensorRole:
+    class_name: TensorRole
+    python_base: IntEnum
+    values_from: tensor_role
+  mesh_ir.ir.graph_ir.OpCode:
+    class_name: OpCode
+    python_base: Enum
+    members:
+    - name: MATMUL
+      wire: 1
+      python: MATMUL
+    - name: BMM
+      wire: 2
+      python: BMM
+    - name: LINEAR_BIAS
+      wire: 3
+      python: LINEAR_BIAS
+    - name: RESHAPE_VIEW
+      wire: 4
+      python: RESHAPE_VIEW
+    - name: TRANSPOSE_VIEW
+      wire: 5
+      python: TRANSPOSE_VIEW
+    - name: PERMUTE_VIEW
+      wire: 6
+      python: PERMUTE_VIEW
+    - name: SLICE_VIEW
+      wire: 7
+      python: SLICE_VIEW
+    - name: EXPAND_VIEW
+      wire: 8
+      python: EXPAND_VIEW
+    - name: CONTIGUOUS_COPY
+      wire: 9
+      python: CONTIGUOUS_COPY
+    - name: CONCAT
+      wire: 10
+      python: CONCAT
+    - name: GATHER_ROWS
+      wire: 11
+      python: GATHER_ROWS
+    - name: ADD
+      wire: 12
+      python: ADD
+    - name: SUB
+      wire: 13
+      python: SUB
+    - name: MUL
+      wire: 14
+      python: MUL
+    - name: DIV
+      wire: 15
+      python: DIV
+    - name: RELU
+      wire: 16
+      python: RELU
+    - name: GELU
+      wire: 17
+      python: GELU
+    - name: SILU
+      wire: 18
+      python: SILU
+    - name: EXP
+      wire: 19
+      python: EXP
+    - name: RSQRT
+      wire: 20
+      python: RSQRT
+    - name: REDUCE_SUM
+      wire: 21
+      python: REDUCE_SUM
+    - name: REDUCE_MAX
+      wire: 22
+      python: REDUCE_MAX
+    - name: REDUCE_MEAN
+      wire: 23
+      python: REDUCE_MEAN
+    - name: LAYERNORM
+      wire: 24
+      python: LAYERNORM
+    - name: RMSNORM
+      wire: 25
+      python: RMSNORM
+    - name: SOFTMAX
+      wire: 26
+      python: SOFTMAX
+    - name: EMBEDDING_LOOKUP
+      wire: 27
+      python: EMBEDDING_LOOKUP
+  mesh_ir.ir.kernel_ir.CollectiveAlgorithm:
+    class_name: CollectiveAlgorithm
+    python_base: Enum
+    members:
+    - name: AUTO
+      wire: 1
+      python: AUTO
+    - name: RING
+      wire: 2
+      python: RING
+    - name: TREE
+      wire: 3
+      python: TREE
+  mesh_ir.ir.kernel_ir.CollectiveKind:
+    class_name: CollectiveKind
+    python_base: Enum
+    members:
+    - name: ALL_REDUCE
+      wire: 1
+      python: ALL_REDUCE
+  mesh_ir.ir.kernel_ir.DistributionKind:
+    class_name: DistributionKind
+    python_base: Enum
+    members:
+    - name: PARTITIONED
+      wire: 1
+      python: PARTITIONED
+    - name: REPLICATED
+      wire: 2
+      python: REPLICATED
+    - name: PARTIAL_SUM
+      wire: 3
+      python: PARTIAL_SUM
+  mesh_ir.ir.kernel_ir.KernelOpcode:
+    class_name: KernelOpcode
+    python_base: Enum
+    members:
+    - name: ALLOC
+      wire: 1
+      python: ALLOC
+    - name: VIEW
+      wire: 2
+      python: VIEW
+    - name: DMA
+      wire: 3
+      python: DMA
+    - name: GEMM
+      wire: 4
+      python: GEMM
+    - name: BMM
+      wire: 5
+      python: BMM
+    - name: MATRIX_EPILOGUE
+      wire: 6
+      python: MATRIX_EPILOGUE
+    - name: VECTOR
+      wire: 7
+      python: VECTOR
+    - name: DATA_MOVEMENT
+      wire: 8
+      python: DATA_MOVEMENT
+    - name: REDUCE
+      wire: 9
+      python: REDUCE
+    - name: SOFTMAX
+      wire: 10
+      python: SOFTMAX
+    - name: NORM
+      wire: 11
+      python: NORM
+    - name: COLLECTIVE
+      wire: 12
+      python: COLLECTIVE
+    - name: LOCAL_REDUCE
+      wire: 13
+      python: LOCAL_REDUCE
+    - name: LOCAL_COPY
+      wire: 14
+      python: LOCAL_COPY
+    - name: RECV_WAIT
+      wire: 15
+      python: RECV_WAIT
+    - name: BARRIER
+      wire: 16
+      python: BARRIER
+  mesh_ir.ir.kernel_ir.MatrixEpilogueAlgorithm:
+    class_name: MatrixEpilogueAlgorithm
+    python_base: Enum
+    members:
+    - name: VECTOR_ACCUMULATION
+      wire: 1
+      python: VECTOR_ACCUMULATION
+  mesh_ir.ir.kernel_ir.MatrixPhase:
+    class_name: MatrixPhase
+    python_base: Enum
+    members:
+    - name: DIRECT
+      wire: 1
+      python: DIRECT
+    - name: ACCUMULATE_ONLY
+      wire: 2
+      python: ACCUMULATE_ONLY
+    - name: ACCUMULATE_FIRST
+      wire: 3
+      python: ACCUMULATE_FIRST
+    - name: ACCUMULATE_CONTINUE
+      wire: 4
+      python: ACCUMULATE_CONTINUE
+    - name: ACCUMULATE_FINAL
+      wire: 5
+      python: ACCUMULATE_FINAL
+  mesh_ir.ir.kernel_ir.MovementAlgorithm:
+    class_name: MovementAlgorithm
+    python_base: Enum
+    members:
+    - name: STRIDED_COPY
+      wire: 1
+      python: STRIDED_COPY
+    - name: CONCAT
+      wire: 2
+      python: CONCAT
+    - name: GATHER_ROWS
+      wire: 3
+      python: GATHER_ROWS
+  mesh_ir.ir.kernel_ir.NormAlgorithm:
+    class_name: NormAlgorithm
+    python_base: Enum
+    members:
+    - name: LAYER_NORM
+      wire: 1
+      python: LAYER_NORM
+    - name: RMS_NORM
+      wire: 2
+      python: RMS_NORM
+  mesh_ir.ir.kernel_ir.OperandAccessMode:
+    class_name: OperandAccessMode
+    python_base: Enum
+    members:
+    - name: READ
+      wire: 1
+      python: READ
+    - name: WRITE
+      wire: 2
+      python: WRITE
+  mesh_ir.ir.kernel_ir.ReduceKind:
+    class_name: ReduceKind
+    python_base: Enum
+    members:
+    - name: SUM
+      wire: 1
+      python: SUM
+  mesh_ir.ir.kernel_ir.ReductionAlgorithm:
+    class_name: ReductionAlgorithm
+    python_base: Enum
+    members:
+    - name: LEFT_TO_RIGHT
+      wire: 1
+      python: LEFT_TO_RIGHT
+  mesh_ir.ir.kernel_ir.SoftmaxAlgorithm:
+    class_name: SoftmaxAlgorithm
+    python_base: Enum
+    members:
+    - name: STABLE_MAX_SUM
+      wire: 1
+      python: STABLE_MAX_SUM
+  mesh_ir.ir.kernel_ir.StateOrigin:
+    class_name: StateOrigin
+    python_base: Enum
+    members:
+    - name: EMPTY
+      wire: 1
+      python: EMPTY
+    - name: EXTERNAL
+      wire: 2
+      python: EXTERNAL
+    - name: PRE_RESIDENT
+      wire: 3
+      python: PRE_RESIDENT
+    - name: PRODUCED
+      wire: 4
+      python: PRODUCED
+  mesh_ir.ir.kernel_ir.SynthesizedTensorPurpose:
+    class_name: SynthesizedTensorPurpose
+    python_base: Enum
+    members:
+    - name: PADDING
+      wire: 1
+      python: PADDING
+    - name: COPY
+      wire: 2
+      python: COPY
+    - name: ACCUMULATION
+      wire: 3
+      python: ACCUMULATION
+    - name: PARTIAL_SUM
+      wire: 4
+      python: PARTIAL_SUM
+    - name: REDUCTION
+      wire: 5
+      python: REDUCTION
+    - name: DATA_MOVEMENT
+      wire: 6
+      python: DATA_MOVEMENT
+  mesh_ir.ir.kernel_ir.VectorAlgorithm:
+    class_name: VectorAlgorithm
+    python_base: Enum
+    members:
+    - name: ELEMENTWISE
+      wire: 1
+      python: ELEMENTWISE
+    - name: EMBEDDING_GATHER
+      wire: 2
+      python: EMBEDDING_GATHER
+  mesh_ir.scheduled.model.EndpointSide:
+    class_name: EndpointSide
+    python_base: Enum
+    members:
+    - name: SRC
+      wire: 1
+      python: SRC
+    - name: DST
+      wire: 2
+      python: DST
+  mesh_ir.scheduled.model.FenceScope:
+    class_name: FenceScope
+    python_base: Enum
+    members:
+    - name: DMA_READ
+      wire: 1
+      python: DMA_READ
+    - name: DMA_WRITE
+      wire: 2
+      python: DMA_WRITE
+    - name: P2P
+      wire: 3
+      python: P2P
+    - name: HOST_SHARED_WRITE
+      wire: 4
+      python: HOST_SHARED_WRITE
+    - name: ALL_INSTANCE
+      wire: 5
+      python: ALL_INSTANCE
+  mesh_ir.scheduled.model.ScheduledDependencyKind:
+    class_name: ScheduledDependencyKind
+    python_base: Enum
+    members:
+    - name: KERNEL_CONTROL
+      wire: 1
+      python: KERNEL_CONTROL
+    - name: KERNEL_STATE
+      wire: 2
+      python: KERNEL_STATE
+    - name: RAW
+      wire: 3
+      python: RAW
+    - name: WAR
+      wire: 4
+      python: WAR
+    - name: WAW
+      wire: 5
+      python: WAW
+    - name: DMA_PIN
+      wire: 6
+      python: DMA_PIN
+    - name: DMA_COMPLETION
+      wire: 7
+      python: DMA_COMPLETION
+    - name: SRAM_REUSE
+      wire: 8
+      python: SRAM_REUSE
+    - name: STREAM_ORDER
+      wire: 9
+      python: STREAM_ORDER
+    - name: LIFECYCLE
+      wire: 10
+      python: LIFECYCLE
+  mesh_ir.traffic.AxiChannel:
+    class_name: AxiChannel
+    python_base: IntEnum
+    members:
+    - name: AW
+      wire: 0
+      python: 0
+    - name: W
+      wire: 1
+      python: 1
+    - name: B
+      wire: 2
+      python: 2
+    - name: AR
+      wire: 3
+      python: 3
+    - name: R
+      wire: 4
+      python: 4
+  mesh_ir.traffic.TrafficAggregateLevel:
+    class_name: TrafficAggregateLevel
+    python_base: StrEnum
+    members:
+    - name: PROGRAM
+      wire: 1
+      python: PROGRAM
+    - name: ENTRYPOINT
+      wire: 2
+      python: ENTRYPOINT
+    - name: PROFILE
+      wire: 3
+      python: PROFILE
+    - name: DETAIL
+      wire: 4
+      python: DETAIL
+  mesh_ir.traffic.TrafficDirection:
+    class_name: TrafficDirection
+    python_base: StrEnum
+    members:
+    - name: READ
+      wire: 1
+      python: READ
+    - name: WRITE
+      wire: 2
+      python: WRITE
+    - name: P2P
+      wire: 3
+      python: P2P
+    - name: LOCAL
+      wire: 4
+      python: LOCAL
+semantic_records:
+  mesh_ir.analysis.cost.ExecutionWorkPhase:
+    section_name: SEMANTIC_EXECUTION_WORK_PHASE
+    section_type: 256
+    json_tag: ExecutionWorkPhase
+    record_bytes: 16
+    fields:
+    - name: work
+      kind: ref_list
+      targets:
+      - mesh_ir.analysis.cost.WorkEstimate
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.analysis.cost.WorkEstimate:
+    section_name: SEMANTIC_WORK_ESTIMATE
+    section_type: 257
+    json_tag: WorkEstimate
+    record_bytes: 40
+    fields:
+    - name: engine
+      kind: enum
+      enum: mesh_ir.ir.common.Engine
+      wire_bytes: 8
+      offset: 8
+    - name: unit
+      kind: enum
+      enum: mesh_ir.analysis.cost.WorkUnit
+      wire_bytes: 8
+      offset: 16
+    - name: dtype
+      kind: enum
+      enum: mesh_ir.ir.common.DType
+      wire_bytes: 8
+      offset: 24
+    - name: operations
+      kind: u64
+      wire_bytes: 8
+      offset: 32
+  mesh_ir.ir.common.Add:
+    section_name: SEMANTIC_ADD
+    section_type: 258
+    json_tag: Add
+    record_bytes: 24
+    fields:
+    - name: lhs
+      kind: ref
+      targets:
+      - mesh_ir.ir.common.Const
+      - mesh_ir.ir.common.Symbol
+      - mesh_ir.ir.common.Add
+      - mesh_ir.ir.common.MulByConst
+      - mesh_ir.ir.common.FloorDivByConst
+      - mesh_ir.ir.common.CeilDivByConst
+      wire_bytes: 8
+      offset: 8
+    - name: rhs
+      kind: ref
+      targets:
+      - mesh_ir.ir.common.Const
+      - mesh_ir.ir.common.Symbol
+      - mesh_ir.ir.common.Add
+      - mesh_ir.ir.common.MulByConst
+      - mesh_ir.ir.common.FloorDivByConst
+      - mesh_ir.ir.common.CeilDivByConst
+      wire_bytes: 8
+      offset: 16
+  mesh_ir.ir.common.CeilDivByConst:
+    section_name: SEMANTIC_CEIL_DIV_BY_CONST
+    section_type: 259
+    json_tag: CeilDivByConst
+    record_bytes: 24
+    fields:
+    - name: value
+      kind: ref
+      targets:
+      - mesh_ir.ir.common.Const
+      - mesh_ir.ir.common.Symbol
+      - mesh_ir.ir.common.Add
+      - mesh_ir.ir.common.MulByConst
+      - mesh_ir.ir.common.FloorDivByConst
+      - mesh_ir.ir.common.CeilDivByConst
+      wire_bytes: 8
+      offset: 8
+    - name: divisor
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+  mesh_ir.ir.common.Const:
+    section_name: SEMANTIC_CONST
+    section_type: 260
+    json_tag: Const
+    record_bytes: 16
+    fields:
+    - name: value
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.ir.common.FloorDivByConst:
+    section_name: SEMANTIC_FLOOR_DIV_BY_CONST
+    section_type: 261
+    json_tag: FloorDivByConst
+    record_bytes: 24
+    fields:
+    - name: value
+      kind: ref
+      targets:
+      - mesh_ir.ir.common.Const
+      - mesh_ir.ir.common.Symbol
+      - mesh_ir.ir.common.Add
+      - mesh_ir.ir.common.MulByConst
+      - mesh_ir.ir.common.FloorDivByConst
+      - mesh_ir.ir.common.CeilDivByConst
+      wire_bytes: 8
+      offset: 8
+    - name: divisor
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+  mesh_ir.ir.common.MulByConst:
+    section_name: SEMANTIC_MUL_BY_CONST
+    section_type: 262
+    json_tag: MulByConst
+    record_bytes: 24
+    fields:
+    - name: value
+      kind: ref
+      targets:
+      - mesh_ir.ir.common.Const
+      - mesh_ir.ir.common.Symbol
+      - mesh_ir.ir.common.Add
+      - mesh_ir.ir.common.MulByConst
+      - mesh_ir.ir.common.FloorDivByConst
+      - mesh_ir.ir.common.CeilDivByConst
+      wire_bytes: 8
+      offset: 8
+    - name: factor
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+  mesh_ir.ir.common.Symbol:
+    section_name: SEMANTIC_SYMBOL
+    section_type: 263
+    json_tag: Symbol
+    record_bytes: 48
+    fields:
+    - name: symbol_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: name
+      kind: string
+      wire_bytes: 8
+      offset: 16
+    - name: minimum
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+    - name: maximum
+      kind: u64
+      wire_bytes: 8
+      offset: 32
+    - name: multiple_of
+      kind: u64
+      wire_bytes: 8
+      offset: 40
+  mesh_ir.ir.graph_ir.ElementwiseAttrs:
+    section_name: SEMANTIC_ELEMENTWISE_ATTRS
+    section_type: 264
+    json_tag: ElementwiseAttrs
+    record_bytes: 48
+    fields:
+    - name: scalar
+      kind: scalar
+      wire_bytes: 16
+      optional_bit: 0
+      offset: 8
+    - name: scalar_side
+      kind: string
+      wire_bytes: 8
+      offset: 24
+    - name: alpha
+      kind: f64
+      wire_bytes: 8
+      offset: 32
+    - name: approximation
+      kind: string
+      wire_bytes: 8
+      offset: 40
+  mesh_ir.ir.graph_ir.EmbeddingAttrs:
+    section_name: SEMANTIC_EMBEDDING_ATTRS
+    section_type: 265
+    json_tag: EmbeddingAttrs
+    record_bytes: 48
+    fields:
+    - name: padding_idx
+      kind: i64
+      wire_bytes: 8
+      offset: 8
+    - name: scale_grad_by_freq
+      kind: bool
+      wire_bytes: 8
+      offset: 16
+    - name: sparse
+      kind: bool
+      wire_bytes: 8
+      offset: 24
+    - name: max_norm
+      kind: f64
+      wire_bytes: 8
+      optional_bit: 3
+      offset: 32
+    - name: norm_type
+      kind: f64
+      wire_bytes: 8
+      offset: 40
+  mesh_ir.ir.graph_ir.MatmulAttrs:
+    section_name: SEMANTIC_MATMUL_ATTRS
+    section_type: 266
+    json_tag: MatmulAttrs
+    record_bytes: 72
+    fields:
+    - name: batch_axes
+      kind: u64_list
+      wire_bytes: 8
+      offset: 8
+    - name: lhs_contract_axis
+      kind: i64
+      wire_bytes: 8
+      offset: 16
+    - name: rhs_contract_axis
+      kind: i64
+      wire_bytes: 8
+      offset: 24
+    - name: lhs_transpose
+      kind: bool
+      wire_bytes: 8
+      offset: 32
+    - name: rhs_transpose
+      kind: bool
+      wire_bytes: 8
+      offset: 40
+    - name: alpha
+      kind: f64
+      wire_bytes: 8
+      offset: 48
+    - name: beta
+      kind: f64
+      wire_bytes: 8
+      offset: 56
+    - name: accum_dtype
+      kind: enum
+      enum: mesh_ir.ir.common.DType
+      wire_bytes: 8
+      offset: 64
+  mesh_ir.ir.graph_ir.MovementAttrs:
+    section_name: SEMANTIC_MOVEMENT_ATTRS
+    section_type: 267
+    json_tag: MovementAttrs
+    record_bytes: 24
+    fields:
+    - name: axis
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: bounds_check
+      kind: bool
+      wire_bytes: 8
+      offset: 16
+  mesh_ir.ir.graph_ir.NormAttrs:
+    section_name: SEMANTIC_NORM_ATTRS
+    section_type: 268
+    json_tag: NormAttrs
+    record_bytes: 40
+    fields:
+    - name: axes
+      kind: u64_list
+      wire_bytes: 8
+      offset: 8
+    - name: epsilon
+      kind: f64
+      wire_bytes: 8
+      offset: 16
+    - name: has_weight
+      kind: bool
+      wire_bytes: 8
+      offset: 24
+    - name: has_bias
+      kind: bool
+      wire_bytes: 8
+      offset: 32
+  mesh_ir.ir.graph_ir.ReduceAttrs:
+    section_name: SEMANTIC_REDUCE_ATTRS
+    section_type: 269
+    json_tag: ReduceAttrs
+    record_bytes: 48
+    fields:
+    - name: axes
+      kind: u64_list
+      wire_bytes: 8
+      offset: 8
+    - name: keepdim
+      kind: bool
+      wire_bytes: 8
+      offset: 16
+    - name: output_dtype
+      kind: enum
+      enum: mesh_ir.ir.common.DType
+      wire_bytes: 8
+      offset: 24
+    - name: accum_dtype
+      kind: enum
+      enum: mesh_ir.ir.common.DType
+      wire_bytes: 8
+      offset: 32
+    - name: order
+      kind: string
+      wire_bytes: 8
+      offset: 40
+  mesh_ir.ir.graph_ir.SoftmaxAttrs:
+    section_name: SEMANTIC_SOFTMAX_ATTRS
+    section_type: 270
+    json_tag: SoftmaxAttrs
+    record_bytes: 32
+    fields:
+    - name: axis
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: output_dtype
+      kind: enum
+      enum: mesh_ir.ir.common.DType
+      wire_bytes: 8
+      offset: 16
+    - name: zero_fully_masked_rows
+      kind: bool
+      wire_bytes: 8
+      offset: 24
+  mesh_ir.ir.graph_ir.ViewAttrs:
+    section_name: SEMANTIC_VIEW_ATTRS
+    section_type: 271
+    json_tag: ViewAttrs
+    record_bytes: 64
+    fields:
+    - name: shape
+      kind: ref_list
+      targets:
+      - mesh_ir.ir.common.Const
+      - mesh_ir.ir.common.Symbol
+      - mesh_ir.ir.common.Add
+      - mesh_ir.ir.common.MulByConst
+      - mesh_ir.ir.common.FloorDivByConst
+      - mesh_ir.ir.common.CeilDivByConst
+      wire_bytes: 8
+      offset: 8
+    - name: permutation
+      kind: u64_list
+      wire_bytes: 8
+      offset: 16
+    - name: axes
+      kind: u64_list
+      wire_bytes: 8
+      offset: 24
+    - name: starts
+      kind: integer_list
+      wire_bytes: 8
+      offset: 32
+    - name: ends
+      kind: integer_list
+      wire_bytes: 8
+      offset: 40
+    - name: steps
+      kind: u64_list
+      wire_bytes: 8
+      offset: 48
+    - name: expanded_axes
+      kind: u64_list
+      wire_bytes: 8
+      offset: 56
+  mesh_ir.ir.kernel_ir.AllocAttrs:
+    section_name: SEMANTIC_ALLOC_ATTRS
+    section_type: 272
+    json_tag: AllocAttrs
+    record_bytes: 16
+    fields:
+    - name: object_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.ir.kernel_ir.BarrierAttrs:
+    section_name: SEMANTIC_BARRIER_ATTRS
+    section_type: 273
+    json_tag: BarrierAttrs
+    record_bytes: 16
+    fields:
+    - name: participants
+      kind: u64_list
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.ir.kernel_ir.BlockedMnkLayout:
+    section_name: SEMANTIC_BLOCKED_MNK_LAYOUT
+    section_type: 274
+    json_tag: BlockedMnkLayout
+    record_bytes: 40
+    fields:
+    - name: block_m
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: block_n
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: block_k
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+    - name: minor_to_major
+      kind: u64_list
+      wire_bytes: 8
+      offset: 32
+  mesh_ir.ir.kernel_ir.BufferObject:
+    section_name: SEMANTIC_BUFFER_OBJECT
+    section_type: 275
+    json_tag: BufferObject
+    record_bytes: 88
+    fields:
+    - name: object_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: storage_tensor_id
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: owner_core
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+    - name: memory_space
+      kind: enum
+      enum: mesh_ir.ir.common.MemorySpace
+      wire_bytes: 8
+      offset: 32
+    - name: shape
+      kind: u64_list
+      wire_bytes: 8
+      offset: 40
+    - name: strides
+      kind: u64_list
+      wire_bytes: 8
+      offset: 48
+    - name: footprint_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 56
+    - name: alignment_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 64
+    - name: persistent
+      kind: bool
+      wire_bytes: 8
+      offset: 72
+    - name: buffer_index
+      kind: u64
+      wire_bytes: 8
+      offset: 80
+  mesh_ir.ir.kernel_ir.BufferView:
+    section_name: SEMANTIC_BUFFER_VIEW
+    section_type: 276
+    json_tag: BufferView
+    record_bytes: 96
+    fields:
+    - name: view_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: object_id
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: shard_id
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+    - name: shard_origin
+      kind: u64_list
+      wire_bytes: 8
+      offset: 32
+    - name: padded_shape
+      kind: u64_list
+      wire_bytes: 8
+      offset: 40
+    - name: valid_shape
+      kind: u64_list
+      wire_bytes: 8
+      offset: 48
+    - name: object_offset_elements
+      kind: u64
+      wire_bytes: 8
+      offset: 56
+    - name: object_strides
+      kind: u64_list
+      wire_bytes: 8
+      offset: 64
+    - name: layout
+      kind: enum
+      enum: mesh_ir.ir.common.Layout
+      wire_bytes: 8
+      optional_bit: 8
+      offset: 72
+    - name: blocked_layout
+      kind: ref
+      targets:
+      - mesh_ir.ir.kernel_ir.BlockedMnkLayout
+      wire_bytes: 8
+      optional_bit: 9
+      offset: 80
+    - name: generation
+      kind: u64
+      wire_bytes: 8
+      offset: 88
+  mesh_ir.ir.kernel_ir.CollectiveAttrs:
+    section_name: SEMANTIC_COLLECTIVE_ATTRS
+    section_type: 277
+    json_tag: CollectiveAttrs
+    record_bytes: 56
+    fields:
+    - name: kind
+      kind: enum
+      enum: mesh_ir.ir.kernel_ir.CollectiveKind
+      wire_bytes: 8
+      offset: 8
+    - name: participants
+      kind: u64_list
+      wire_bytes: 8
+      offset: 16
+    - name: algorithm
+      kind: enum
+      enum: mesh_ir.ir.kernel_ir.CollectiveAlgorithm
+      wire_bytes: 8
+      offset: 24
+    - name: chunk_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 32
+    - name: reduce_kind
+      kind: enum
+      enum: mesh_ir.ir.kernel_ir.ReduceKind
+      wire_bytes: 8
+      offset: 40
+    - name: partial_sum_id
+      kind: u64
+      wire_bytes: 8
+      offset: 48
+  mesh_ir.ir.kernel_ir.ControlToken:
+    section_name: SEMANTIC_CONTROL_TOKEN
+    section_type: 278
+    json_tag: ControlToken
+    record_bytes: 24
+    fields:
+    - name: token_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: initial
+      kind: bool
+      wire_bytes: 8
+      offset: 16
+  mesh_ir.ir.kernel_ir.DmaAttrs:
+    section_name: SEMANTIC_DMA_ATTRS
+    section_type: 279
+    json_tag: DmaAttrs
+    record_bytes: 64
+    fields:
+    - name: kind
+      kind: enum
+      enum: mesh_ir.ir.common.DmaKind
+      wire_bytes: 8
+      offset: 8
+    - name: issuing_core
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: source_core
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+    - name: destination_core
+      kind: u64
+      wire_bytes: 8
+      offset: 32
+    - name: transfer_id
+      kind: u64
+      wire_bytes: 8
+      offset: 40
+    - name: fill_pattern
+      kind: bytes
+      wire_bytes: 8
+      offset: 48
+    - name: max_burst_beats
+      kind: u64
+      wire_bytes: 8
+      optional_bit: 6
+      offset: 56
+  mesh_ir.ir.kernel_ir.ElementRegion:
+    section_name: SEMANTIC_ELEMENT_REGION
+    section_type: 280
+    json_tag: ElementRegion
+    record_bytes: 32
+    fields:
+    - name: origin
+      kind: u64_list
+      wire_bytes: 8
+      offset: 8
+    - name: shape
+      kind: u64_list
+      wire_bytes: 8
+      offset: 16
+    - name: steps
+      kind: u64_list
+      wire_bytes: 8
+      offset: 24
+  mesh_ir.ir.kernel_ir.GemmKernelAttrs:
+    section_name: SEMANTIC_GEMM_KERNEL_ATTRS
+    section_type: 281
+    json_tag: GemmKernelAttrs
+    record_bytes: 56
+    fields:
+    - name: graph_opcode
+      kind: enum
+      enum: mesh_ir.ir.graph_ir.OpCode
+      wire_bytes: 8
+      offset: 8
+    - name: semantic_attrs
+      kind: ref
+      targets:
+      - mesh_ir.ir.graph_ir.MatmulAttrs
+      wire_bytes: 8
+      offset: 16
+    - name: tile
+      kind: ref
+      targets:
+      - mesh_ir.ir.kernel_ir.KernelTile
+      wire_bytes: 8
+      offset: 24
+    - name: cost
+      kind: ref
+      targets:
+      - mesh_ir.ir.kernel_ir.KernelCost
+      wire_bytes: 8
+      offset: 32
+    - name: phase
+      kind: enum
+      enum: mesh_ir.ir.kernel_ir.MatrixPhase
+      wire_bytes: 8
+      offset: 40
+    - name: partial_sum_id
+      kind: u64
+      wire_bytes: 8
+      offset: 48
+  mesh_ir.ir.kernel_ir.KernelComputation:
+    section_name: SEMANTIC_KERNEL_COMPUTATION
+    section_type: 282
+    json_tag: KernelComputation
+    record_bytes: 48
+    fields:
+    - name: computation_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: opcode
+      kind: enum
+      enum: mesh_ir.ir.graph_ir.OpCode
+      wire_bytes: 8
+      offset: 16
+    - name: operand_tensor_ids
+      kind: u64_list
+      wire_bytes: 8
+      offset: 24
+    - name: result_tensor_id
+      kind: u64
+      wire_bytes: 8
+      offset: 32
+    - name: attrs
+      kind: ref
+      targets:
+      - mesh_ir.ir.graph_ir.MatmulAttrs
+      - mesh_ir.ir.graph_ir.ViewAttrs
+      - mesh_ir.ir.graph_ir.MovementAttrs
+      - mesh_ir.ir.graph_ir.ElementwiseAttrs
+      - mesh_ir.ir.graph_ir.ReduceAttrs
+      - mesh_ir.ir.graph_ir.NormAttrs
+      - mesh_ir.ir.graph_ir.SoftmaxAttrs
+      - mesh_ir.ir.graph_ir.EmbeddingAttrs
+      wire_bytes: 8
+      offset: 40
+  mesh_ir.ir.kernel_ir.KernelCost:
+    section_name: SEMANTIC_KERNEL_COST
+    section_type: 283
+    json_tag: KernelCost
+    record_bytes: 56
+    fields:
+    - name: logical_input_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: logical_output_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: local_storage_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+    - name: macs
+      kind: u64
+      wire_bytes: 8
+      offset: 32
+    - name: vector_ops
+      kind: u64
+      wire_bytes: 8
+      offset: 40
+    - name: reduction_ops
+      kind: u64
+      wire_bytes: 8
+      offset: 48
+  mesh_ir.ir.kernel_ir.KernelOp:
+    section_name: SEMANTIC_KERNEL_OP
+    section_type: 284
+    json_tag: KernelOp
+    record_bytes: 96
+    fields:
+    - name: op_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: computation_id
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: stable_key
+      kind: string
+      wire_bytes: 8
+      offset: 24
+    - name: opcode
+      kind: enum
+      enum: mesh_ir.ir.kernel_ir.KernelOpcode
+      wire_bytes: 8
+      offset: 32
+    - name: owner_core
+      kind: u64
+      wire_bytes: 8
+      offset: 40
+    - name: result_shard_id
+      kind: u64
+      wire_bytes: 8
+      offset: 48
+    - name: reads
+      kind: ref_list
+      targets:
+      - mesh_ir.ir.kernel_ir.OperandAccess
+      wire_bytes: 8
+      offset: 56
+    - name: writes
+      kind: ref_list
+      targets:
+      - mesh_ir.ir.kernel_ir.StateTransition
+      wire_bytes: 8
+      offset: 64
+    - name: attrs
+      kind: ref
+      targets:
+      - mesh_ir.ir.kernel_ir.AllocAttrs
+      - mesh_ir.ir.kernel_ir.ViewDeclarationAttrs
+      - mesh_ir.ir.kernel_ir.DmaAttrs
+      - mesh_ir.ir.kernel_ir.RecvWaitAttrs
+      - mesh_ir.ir.kernel_ir.GemmKernelAttrs
+      - mesh_ir.ir.kernel_ir.MatrixEpilogueKernelAttrs
+      - mesh_ir.ir.kernel_ir.VectorKernelAttrs
+      - mesh_ir.ir.kernel_ir.MovementKernelAttrs
+      - mesh_ir.ir.kernel_ir.ReductionKernelAttrs
+      - mesh_ir.ir.kernel_ir.SoftmaxKernelAttrs
+      - mesh_ir.ir.kernel_ir.NormKernelAttrs
+      - mesh_ir.ir.kernel_ir.CollectiveAttrs
+      - mesh_ir.ir.kernel_ir.LocalReduceAttrs
+      - mesh_ir.ir.kernel_ir.LocalCopyAttrs
+      - mesh_ir.ir.kernel_ir.BarrierAttrs
+      wire_bytes: 8
+      offset: 72
+    - name: after_tokens
+      kind: u64_list
+      wire_bytes: 8
+      offset: 80
+    - name: done_token
+      kind: u64
+      wire_bytes: 8
+      optional_bit: 10
+      offset: 88
+  mesh_ir.ir.kernel_ir.KernelTensor:
+    section_name: SEMANTIC_KERNEL_TENSOR
+    section_type: 285
+    json_tag: KernelTensor
+    record_bytes: 128
+    fields:
+    - name: tensor_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: producer_computation_id
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: synthesized_purpose
+      kind: enum
+      enum: mesh_ir.ir.kernel_ir.SynthesizedTensorPurpose
+      wire_bytes: 8
+      optional_bit: 2
+      offset: 24
+    - name: alias_root_tensor_id
+      kind: u64
+      wire_bytes: 8
+      offset: 32
+    - name: storage_offset_elements
+      kind: u64
+      wire_bytes: 8
+      offset: 40
+    - name: name
+      kind: string
+      wire_bytes: 8
+      offset: 48
+    - name: role
+      kind: enum
+      enum: mesh_ir.ir.common.TensorRole
+      wire_bytes: 8
+      offset: 56
+    - name: dtype
+      kind: enum
+      enum: mesh_ir.ir.common.DType
+      wire_bytes: 8
+      offset: 64
+    - name: shape
+      kind: u64_list
+      wire_bytes: 8
+      offset: 72
+    - name: strides
+      kind: u64_list
+      wire_bytes: 8
+      offset: 80
+    - name: storage_class
+      kind: enum
+      enum: mesh_ir.ir.common.StorageClass
+      wire_bytes: 8
+      offset: 88
+    - name: access
+      kind: enum
+      enum: mesh_ir.ir.common.Access
+      wire_bytes: 8
+      offset: 96
+    - name: logical_extent_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 104
+    - name: storage_extent_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 112
+    - name: content_sha256
+      kind: string
+      wire_bytes: 8
+      optional_bit: 14
+      offset: 120
+  mesh_ir.ir.kernel_ir.KernelTile:
+    section_name: SEMANTIC_KERNEL_TILE
+    section_type: 286
+    json_tag: KernelTile
+    record_bytes: 104
+    fields:
+    - name: batch_origin
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: m_origin
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: n_origin
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+    - name: k_origin
+      kind: u64
+      wire_bytes: 8
+      offset: 32
+    - name: batch_extent
+      kind: u64
+      wire_bytes: 8
+      offset: 40
+    - name: m_extent
+      kind: u64
+      wire_bytes: 8
+      offset: 48
+    - name: n_extent
+      kind: u64
+      wire_bytes: 8
+      offset: 56
+    - name: k_extent
+      kind: u64
+      wire_bytes: 8
+      offset: 64
+    - name: valid_batch
+      kind: u64
+      wire_bytes: 8
+      offset: 72
+    - name: valid_m
+      kind: u64
+      wire_bytes: 8
+      offset: 80
+    - name: valid_n
+      kind: u64
+      wire_bytes: 8
+      offset: 88
+    - name: valid_k
+      kind: u64
+      wire_bytes: 8
+      offset: 96
+  mesh_ir.ir.kernel_ir.LocalCopyAttrs:
+    section_name: SEMANTIC_LOCAL_COPY_ATTRS
+    section_type: 287
+    json_tag: LocalCopyAttrs
+    record_bytes: 8
+    fields: []
+  mesh_ir.ir.kernel_ir.LocalReduceAttrs:
+    section_name: SEMANTIC_LOCAL_REDUCE_ATTRS
+    section_type: 288
+    json_tag: LocalReduceAttrs
+    record_bytes: 40
+    fields:
+    - name: reduce_kind
+      kind: enum
+      enum: mesh_ir.ir.kernel_ir.ReduceKind
+      wire_bytes: 8
+      offset: 8
+    - name: partial_sum_id
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: tile
+      kind: ref
+      targets:
+      - mesh_ir.ir.kernel_ir.KernelTile
+      wire_bytes: 8
+      offset: 24
+    - name: cost
+      kind: ref
+      targets:
+      - mesh_ir.ir.kernel_ir.KernelCost
+      wire_bytes: 8
+      offset: 32
+  mesh_ir.ir.kernel_ir.MatrixEpilogueKernelAttrs:
+    section_name: SEMANTIC_MATRIX_EPILOGUE_KERNEL_ATTRS
+    section_type: 289
+    json_tag: MatrixEpilogueKernelAttrs
+    record_bytes: 48
+    fields:
+    - name: graph_opcode
+      kind: enum
+      enum: mesh_ir.ir.graph_ir.OpCode
+      wire_bytes: 8
+      offset: 8
+    - name: semantic_attrs
+      kind: ref
+      targets:
+      - mesh_ir.ir.graph_ir.MatmulAttrs
+      wire_bytes: 8
+      offset: 16
+    - name: tile
+      kind: ref
+      targets:
+      - mesh_ir.ir.kernel_ir.KernelTile
+      wire_bytes: 8
+      offset: 24
+    - name: cost
+      kind: ref
+      targets:
+      - mesh_ir.ir.kernel_ir.KernelCost
+      wire_bytes: 8
+      offset: 32
+    - name: algorithm
+      kind: enum
+      enum: mesh_ir.ir.kernel_ir.MatrixEpilogueAlgorithm
+      wire_bytes: 8
+      offset: 40
+  mesh_ir.ir.kernel_ir.MovementKernelAttrs:
+    section_name: SEMANTIC_MOVEMENT_KERNEL_ATTRS
+    section_type: 290
+    json_tag: MovementKernelAttrs
+    record_bytes: 48
+    fields:
+    - name: graph_opcode
+      kind: enum
+      enum: mesh_ir.ir.graph_ir.OpCode
+      wire_bytes: 8
+      offset: 8
+    - name: semantic_attrs
+      kind: ref
+      targets:
+      - mesh_ir.ir.graph_ir.ViewAttrs
+      - mesh_ir.ir.graph_ir.MovementAttrs
+      wire_bytes: 8
+      offset: 16
+    - name: tile
+      kind: ref
+      targets:
+      - mesh_ir.ir.kernel_ir.KernelTile
+      wire_bytes: 8
+      offset: 24
+    - name: cost
+      kind: ref
+      targets:
+      - mesh_ir.ir.kernel_ir.KernelCost
+      wire_bytes: 8
+      offset: 32
+    - name: algorithm
+      kind: enum
+      enum: mesh_ir.ir.kernel_ir.MovementAlgorithm
+      wire_bytes: 8
+      offset: 40
+  mesh_ir.ir.kernel_ir.NormKernelAttrs:
+    section_name: SEMANTIC_NORM_KERNEL_ATTRS
+    section_type: 291
+    json_tag: NormKernelAttrs
+    record_bytes: 48
+    fields:
+    - name: graph_opcode
+      kind: enum
+      enum: mesh_ir.ir.graph_ir.OpCode
+      wire_bytes: 8
+      offset: 8
+    - name: semantic_attrs
+      kind: ref
+      targets:
+      - mesh_ir.ir.graph_ir.NormAttrs
+      wire_bytes: 8
+      offset: 16
+    - name: tile
+      kind: ref
+      targets:
+      - mesh_ir.ir.kernel_ir.KernelTile
+      wire_bytes: 8
+      offset: 24
+    - name: cost
+      kind: ref
+      targets:
+      - mesh_ir.ir.kernel_ir.KernelCost
+      wire_bytes: 8
+      offset: 32
+    - name: algorithm
+      kind: enum
+      enum: mesh_ir.ir.kernel_ir.NormAlgorithm
+      wire_bytes: 8
+      offset: 40
+  mesh_ir.ir.kernel_ir.OperandAccess:
+    section_name: SEMANTIC_OPERAND_ACCESS
+    section_type: 292
+    json_tag: OperandAccess
+    record_bytes: 40
+    fields:
+    - name: state_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: view_id
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: region
+      kind: ref
+      targets:
+      - mesh_ir.ir.kernel_ir.ElementRegion
+      wire_bytes: 8
+      offset: 24
+    - name: mode
+      kind: enum
+      enum: mesh_ir.ir.kernel_ir.OperandAccessMode
+      wire_bytes: 8
+      offset: 32
+  mesh_ir.ir.kernel_ir.PartialSumDefinition:
+    section_name: SEMANTIC_PARTIAL_SUM_DEFINITION
+    section_type: 293
+    json_tag: PartialSumDefinition
+    record_bytes: 48
+    fields:
+    - name: partial_sum_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: computation_id
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: semantic_result_tensor_id
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+    - name: accumulator_tensor_id
+      kind: u64
+      wire_bytes: 8
+      offset: 32
+    - name: placement_id
+      kind: u64
+      wire_bytes: 8
+      offset: 40
+  mesh_ir.ir.kernel_ir.Placement:
+    section_name: SEMANTIC_PLACEMENT
+    section_type: 294
+    json_tag: Placement
+    record_bytes: 24
+    fields:
+    - name: placement_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: core_ids
+      kind: u64_list
+      wire_bytes: 8
+      offset: 16
+  mesh_ir.ir.kernel_ir.RecvWaitAttrs:
+    section_name: SEMANTIC_RECV_WAIT_ATTRS
+    section_type: 295
+    json_tag: RecvWaitAttrs
+    record_bytes: 40
+    fields:
+    - name: transfer_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: source_core
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: destination_core
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+    - name: expected_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 32
+  mesh_ir.ir.kernel_ir.ReductionKernelAttrs:
+    section_name: SEMANTIC_REDUCTION_KERNEL_ATTRS
+    section_type: 296
+    json_tag: ReductionKernelAttrs
+    record_bytes: 48
+    fields:
+    - name: graph_opcode
+      kind: enum
+      enum: mesh_ir.ir.graph_ir.OpCode
+      wire_bytes: 8
+      offset: 8
+    - name: semantic_attrs
+      kind: ref
+      targets:
+      - mesh_ir.ir.graph_ir.ReduceAttrs
+      wire_bytes: 8
+      offset: 16
+    - name: tile
+      kind: ref
+      targets:
+      - mesh_ir.ir.kernel_ir.KernelTile
+      wire_bytes: 8
+      offset: 24
+    - name: cost
+      kind: ref
+      targets:
+      - mesh_ir.ir.kernel_ir.KernelCost
+      wire_bytes: 8
+      offset: 32
+    - name: algorithm
+      kind: enum
+      enum: mesh_ir.ir.kernel_ir.ReductionAlgorithm
+      wire_bytes: 8
+      offset: 40
+  mesh_ir.ir.kernel_ir.SoftmaxKernelAttrs:
+    section_name: SEMANTIC_SOFTMAX_KERNEL_ATTRS
+    section_type: 297
+    json_tag: SoftmaxKernelAttrs
+    record_bytes: 40
+    fields:
+    - name: semantic_attrs
+      kind: ref
+      targets:
+      - mesh_ir.ir.graph_ir.SoftmaxAttrs
+      wire_bytes: 8
+      offset: 8
+    - name: tile
+      kind: ref
+      targets:
+      - mesh_ir.ir.kernel_ir.KernelTile
+      wire_bytes: 8
+      offset: 16
+    - name: cost
+      kind: ref
+      targets:
+      - mesh_ir.ir.kernel_ir.KernelCost
+      wire_bytes: 8
+      offset: 24
+    - name: algorithm
+      kind: enum
+      enum: mesh_ir.ir.kernel_ir.SoftmaxAlgorithm
+      wire_bytes: 8
+      offset: 32
+  mesh_ir.ir.kernel_ir.StateTransition:
+    section_name: SEMANTIC_STATE_TRANSITION
+    section_type: 298
+    json_tag: StateTransition
+    record_bytes: 48
+    fields:
+    - name: old_state_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: new_state_id
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: view_id
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+    - name: region
+      kind: ref
+      targets:
+      - mesh_ir.ir.kernel_ir.ElementRegion
+      wire_bytes: 8
+      offset: 32
+    - name: mode
+      kind: enum
+      enum: mesh_ir.ir.kernel_ir.OperandAccessMode
+      wire_bytes: 8
+      offset: 40
+  mesh_ir.ir.kernel_ir.TensorShard:
+    section_name: SEMANTIC_TENSOR_SHARD
+    section_type: 299
+    json_tag: TensorShard
+    record_bytes: 80
+    fields:
+    - name: shard_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: tensor_id
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: placement_id
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+    - name: owner_core
+      kind: u64
+      wire_bytes: 8
+      offset: 32
+    - name: distribution
+      kind: enum
+      enum: mesh_ir.ir.kernel_ir.DistributionKind
+      wire_bytes: 8
+      offset: 40
+    - name: global_origin
+      kind: u64_list
+      wire_bytes: 8
+      offset: 48
+    - name: padded_local_shape
+      kind: u64_list
+      wire_bytes: 8
+      offset: 56
+    - name: valid_shape
+      kind: u64_list
+      wire_bytes: 8
+      offset: 64
+    - name: partial_sum_id
+      kind: u64
+      wire_bytes: 8
+      offset: 72
+  mesh_ir.ir.kernel_ir.TensorState:
+    section_name: SEMANTIC_TENSOR_STATE
+    section_type: 300
+    json_tag: TensorState
+    record_bytes: 48
+    fields:
+    - name: state_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: object_id
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: version
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+    - name: origin
+      kind: enum
+      enum: mesh_ir.ir.kernel_ir.StateOrigin
+      wire_bytes: 8
+      offset: 32
+    - name: partial_sum_id
+      kind: u64
+      wire_bytes: 8
+      offset: 40
+  mesh_ir.ir.kernel_ir.VectorKernelAttrs:
+    section_name: SEMANTIC_VECTOR_KERNEL_ATTRS
+    section_type: 301
+    json_tag: VectorKernelAttrs
+    record_bytes: 48
+    fields:
+    - name: graph_opcode
+      kind: enum
+      enum: mesh_ir.ir.graph_ir.OpCode
+      wire_bytes: 8
+      offset: 8
+    - name: semantic_attrs
+      kind: ref
+      targets:
+      - mesh_ir.ir.graph_ir.ElementwiseAttrs
+      - mesh_ir.ir.graph_ir.EmbeddingAttrs
+      wire_bytes: 8
+      offset: 16
+    - name: tile
+      kind: ref
+      targets:
+      - mesh_ir.ir.kernel_ir.KernelTile
+      wire_bytes: 8
+      offset: 24
+    - name: cost
+      kind: ref
+      targets:
+      - mesh_ir.ir.kernel_ir.KernelCost
+      wire_bytes: 8
+      offset: 32
+    - name: algorithm
+      kind: enum
+      enum: mesh_ir.ir.kernel_ir.VectorAlgorithm
+      wire_bytes: 8
+      offset: 40
+  mesh_ir.ir.kernel_ir.ViewDeclarationAttrs:
+    section_name: SEMANTIC_VIEW_DECLARATION_ATTRS
+    section_type: 302
+    json_tag: ViewDeclarationAttrs
+    record_bytes: 16
+    fields:
+    - name: view_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.scheduled.model.AuthoredProgramOrigin:
+    section_name: SEMANTIC_AUTHORED_PROGRAM_ORIGIN
+    section_type: 303
+    json_tag: AuthoredProgramOrigin
+    record_bytes: 32
+    fields:
+    - name: namespace
+      kind: string
+      wire_bytes: 8
+      offset: 8
+    - name: name
+      kind: string
+      wire_bytes: 8
+      offset: 16
+    - name: version
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+  mesh_ir.scheduled.model.AuthoredVariantLineage:
+    section_name: SEMANTIC_AUTHORED_VARIANT_LINEAGE
+    section_type: 304
+    json_tag: AuthoredVariantLineage
+    record_bytes: 16
+    fields:
+    - name: authoring_variant_id
+      kind: string
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.scheduled.model.AxiFenceAttrs:
+    section_name: SEMANTIC_AXI_FENCE_ATTRS
+    section_type: 305
+    json_tag: AxiFenceAttrs
+    record_bytes: 16
+    fields:
+    - name: scope
+      kind: enum
+      enum: mesh_ir.scheduled.model.FenceScope
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.scheduled.model.BarrierArrival:
+    section_name: SEMANTIC_BARRIER_ARRIVAL
+    section_type: 306
+    json_tag: BarrierArrival
+    record_bytes: 40
+    fields:
+    - name: participant_core
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: kernel_op_id
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: command_id
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+    - name: done_token_id
+      kind: u64
+      wire_bytes: 8
+      offset: 32
+  mesh_ir.scheduled.model.BarrierExecution:
+    section_name: SEMANTIC_BARRIER_EXECUTION
+    section_type: 307
+    json_tag: BarrierExecution
+    record_bytes: 16
+    fields:
+    - name: barrier_group_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.scheduled.model.BarrierGroup:
+    section_name: SEMANTIC_BARRIER_GROUP
+    section_type: 308
+    json_tag: BarrierGroup
+    record_bytes: 40
+    fields:
+    - name: barrier_group_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: participants
+      kind: u64_list
+      wire_bytes: 8
+      offset: 16
+    - name: arrivals
+      kind: ref_list
+      targets:
+      - mesh_ir.scheduled.model.BarrierArrival
+      wire_bytes: 8
+      offset: 24
+    - name: completion_event_id
+      kind: u64
+      wire_bytes: 8
+      offset: 32
+  mesh_ir.scheduled.model.CommandSemantics:
+    section_name: SEMANTIC_COMMAND_SEMANTICS
+    section_type: 309
+    json_tag: CommandSemantics
+    record_bytes: 32
+    fields:
+    - name: command_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: source
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.KernelCommandSource
+      - mesh_ir.scheduled.model.ControlCommandSource
+      wire_bytes: 8
+      offset: 16
+    - name: execution
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.ComputeExecution
+      - mesh_ir.scheduled.model.DmaExecution
+      - mesh_ir.scheduled.model.RecvWaitExecution
+      - mesh_ir.scheduled.model.BarrierExecution
+      - mesh_ir.scheduled.model.ControlExecution
+      wire_bytes: 8
+      offset: 24
+  mesh_ir.scheduled.model.CompiledProgramOrigin:
+    section_name: SEMANTIC_COMPILED_PROGRAM_ORIGIN
+    section_type: 310
+    json_tag: CompiledProgramOrigin
+    record_bytes: 16
+    fields:
+    - name: kernel_bundle_semantic_sha256
+      kind: string
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.scheduled.model.CompiledVariantLineage:
+    section_name: SEMANTIC_COMPILED_VARIANT_LINEAGE
+    section_type: 311
+    json_tag: CompiledVariantLineage
+    record_bytes: 24
+    fields:
+    - name: kernel_module_ordinal
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: kernel_module_semantic_sha256
+      kind: string
+      wire_bytes: 8
+      offset: 16
+  mesh_ir.scheduled.model.ComputeExecution:
+    section_name: SEMANTIC_COMPUTE_EXECUTION
+    section_type: 312
+    json_tag: ComputeExecution
+    record_bytes: 16
+    fields:
+    - name: phases
+      kind: ref_list
+      targets:
+      - mesh_ir.analysis.cost.ExecutionWorkPhase
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.scheduled.model.ControlCommandSource:
+    section_name: SEMANTIC_CONTROL_COMMAND_SOURCE
+    section_type: 313
+    json_tag: ControlCommandSource
+    record_bytes: 16
+    fields:
+    - name: attrs
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.RequestBeginAttrs
+      - mesh_ir.scheduled.model.RequestEndAttrs
+      - mesh_ir.scheduled.model.HaltAttrs
+      - mesh_ir.scheduled.model.EventWaitAttrs
+      - mesh_ir.scheduled.model.EventSignalAttrs
+      - mesh_ir.scheduled.model.RepeatCommandAttrs
+      - mesh_ir.scheduled.model.AxiFenceAttrs
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.scheduled.model.ControlExecution:
+    section_name: SEMANTIC_CONTROL_EXECUTION
+    section_type: 314
+    json_tag: ControlExecution
+    record_bytes: 8
+    fields: []
+  mesh_ir.scheduled.model.DescriptorEndpointUse:
+    section_name: SEMANTIC_DESCRIPTOR_ENDPOINT_USE
+    section_type: 315
+    json_tag: DescriptorEndpointUse
+    record_bytes: 40
+    fields:
+    - name: ref_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: descriptor_id
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: side
+      kind: enum
+      enum: mesh_ir.scheduled.model.EndpointSide
+      wire_bytes: 8
+      offset: 24
+    - name: use
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.ReadAccessUse
+      - mesh_ir.scheduled.model.WriteAccessUse
+      wire_bytes: 8
+      offset: 32
+  mesh_ir.scheduled.model.DescriptorGroup:
+    section_name: SEMANTIC_DESCRIPTOR_GROUP
+    section_type: 316
+    json_tag: DescriptorGroup
+    record_bytes: 48
+    fields:
+    - name: group_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: command_id
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: kernel_op_id
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+    - name: descriptor_ids
+      kind: u64_list
+      wire_bytes: 8
+      offset: 32
+    - name: completion_event_id
+      kind: u64
+      wire_bytes: 8
+      offset: 40
+  mesh_ir.scheduled.model.DescriptorSource:
+    section_name: SEMANTIC_DESCRIPTOR_SOURCE
+    section_type: 317
+    json_tag: DescriptorSource
+    record_bytes: 16
+    fields:
+    - name: descriptor_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.scheduled.model.DmaExecution:
+    section_name: SEMANTIC_DMA_EXECUTION
+    section_type: 318
+    json_tag: DmaExecution
+    record_bytes: 16
+    fields:
+    - name: descriptor_group_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.scheduled.model.EventSignalAttrs:
+    section_name: SEMANTIC_EVENT_SIGNAL_ATTRS
+    section_type: 319
+    json_tag: EventSignalAttrs
+    record_bytes: 16
+    fields:
+    - name: event_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.scheduled.model.EventWaitAttrs:
+    section_name: SEMANTIC_EVENT_WAIT_ATTRS
+    section_type: 320
+    json_tag: EventWaitAttrs
+    record_bytes: 16
+    fields:
+    - name: event_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.scheduled.model.ExternalSlotBacking:
+    section_name: SEMANTIC_EXTERNAL_SLOT_BACKING
+    section_type: 321
+    json_tag: ExternalSlotBacking
+    record_bytes: 16
+    fields:
+    - name: slot_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.scheduled.model.HaltAttrs:
+    section_name: SEMANTIC_HALT_ATTRS
+    section_type: 322
+    json_tag: HaltAttrs
+    record_bytes: 8
+    fields: []
+  mesh_ir.scheduled.model.IdSpan:
+    section_name: SEMANTIC_ID_SPAN
+    section_type: 323
+    json_tag: IdSpan
+    record_bytes: 24
+    fields:
+    - name: first_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: count
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+  mesh_ir.scheduled.model.KernelCommandSource:
+    section_name: SEMANTIC_KERNEL_COMMAND_SOURCE
+    section_type: 324
+    json_tag: KernelCommandSource
+    record_bytes: 16
+    fields:
+    - name: kernel_op_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.scheduled.model.KernelTokenSource:
+    section_name: SEMANTIC_KERNEL_TOKEN_SOURCE
+    section_type: 325
+    json_tag: KernelTokenSource
+    record_bytes: 16
+    fields:
+    - name: token_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.scheduled.model.LifecycleSource:
+    section_name: SEMANTIC_LIFECYCLE_SOURCE
+    section_type: 326
+    json_tag: LifecycleSource
+    record_bytes: 16
+    fields:
+    - name: variant_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.scheduled.model.LocalAllocationBacking:
+    section_name: SEMANTIC_LOCAL_ALLOCATION_BACKING
+    section_type: 327
+    json_tag: LocalAllocationBacking
+    record_bytes: 16
+    fields:
+    - name: allocation_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.scheduled.model.ObjectBacking:
+    section_name: SEMANTIC_OBJECT_BACKING
+    section_type: 328
+    json_tag: ObjectBacking
+    record_bytes: 24
+    fields:
+    - name: object_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: backing
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.LocalAllocationBacking
+      - mesh_ir.scheduled.model.ExternalSlotBacking
+      wire_bytes: 8
+      offset: 16
+  mesh_ir.scheduled.model.ObjectSource:
+    section_name: SEMANTIC_OBJECT_SOURCE
+    section_type: 329
+    json_tag: ObjectSource
+    record_bytes: 16
+    fields:
+    - name: object_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.scheduled.model.ProgramSemantics:
+    section_name: SEMANTIC_PROGRAM_SEMANTICS
+    section_type: 330
+    json_tag: ProgramSemantics
+    record_bytes: 200
+    fields:
+    - name: origin
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.CompiledProgramOrigin
+      - mesh_ir.scheduled.model.AuthoredProgramOrigin
+      wire_bytes: 8
+      offset: 8
+    - name: variants
+      kind: ref_list
+      targets:
+      - mesh_ir.scheduled.model.ProgramVariant
+      wire_bytes: 8
+      offset: 16
+    - name: kernel_tensors
+      kind: ref_list
+      targets:
+      - mesh_ir.ir.kernel_ir.KernelTensor
+      wire_bytes: 8
+      offset: 24
+    - name: computations
+      kind: ref_list
+      targets:
+      - mesh_ir.ir.kernel_ir.KernelComputation
+      wire_bytes: 8
+      offset: 32
+    - name: placements
+      kind: ref_list
+      targets:
+      - mesh_ir.ir.kernel_ir.Placement
+      wire_bytes: 8
+      offset: 40
+    - name: logical_shards
+      kind: ref_list
+      targets:
+      - mesh_ir.ir.kernel_ir.TensorShard
+      wire_bytes: 8
+      offset: 48
+    - name: partial_sums
+      kind: ref_list
+      targets:
+      - mesh_ir.ir.kernel_ir.PartialSumDefinition
+      wire_bytes: 8
+      offset: 56
+    - name: objects
+      kind: ref_list
+      targets:
+      - mesh_ir.ir.kernel_ir.BufferObject
+      wire_bytes: 8
+      offset: 64
+    - name: views
+      kind: ref_list
+      targets:
+      - mesh_ir.ir.kernel_ir.BufferView
+      wire_bytes: 8
+      offset: 72
+    - name: states
+      kind: ref_list
+      targets:
+      - mesh_ir.ir.kernel_ir.TensorState
+      wire_bytes: 8
+      offset: 80
+    - name: tokens
+      kind: ref_list
+      targets:
+      - mesh_ir.ir.kernel_ir.ControlToken
+      wire_bytes: 8
+      offset: 88
+    - name: kernel_ops
+      kind: ref_list
+      targets:
+      - mesh_ir.ir.kernel_ir.KernelOp
+      wire_bytes: 8
+      offset: 96
+    - name: object_backings
+      kind: ref_list
+      targets:
+      - mesh_ir.scheduled.model.ObjectBacking
+      wire_bytes: 8
+      offset: 104
+    - name: resident_views
+      kind: ref_list
+      targets:
+      - mesh_ir.scheduled.model.ResidentView
+      wire_bytes: 8
+      offset: 112
+    - name: command_semantics
+      kind: ref_list
+      targets:
+      - mesh_ir.scheduled.model.CommandSemantics
+      wire_bytes: 8
+      offset: 120
+    - name: barrier_groups
+      kind: ref_list
+      targets:
+      - mesh_ir.scheduled.model.BarrierGroup
+      wire_bytes: 8
+      offset: 128
+    - name: dependencies
+      kind: ref_list
+      targets:
+      - mesh_ir.scheduled.model.ScheduledDependency
+      wire_bytes: 8
+      offset: 136
+    - name: streams
+      kind: ref_list
+      targets:
+      - mesh_ir.scheduled.model.ScheduledStream
+      wire_bytes: 8
+      offset: 144
+    - name: stream_command_ids
+      kind: u64_list
+      wire_bytes: 8
+      offset: 152
+    - name: descriptor_groups
+      kind: ref_list
+      targets:
+      - mesh_ir.scheduled.model.DescriptorGroup
+      wire_bytes: 8
+      offset: 160
+    - name: endpoint_uses
+      kind: ref_list
+      targets:
+      - mesh_ir.scheduled.model.DescriptorEndpointUse
+      wire_bytes: 8
+      offset: 168
+    - name: binding_slots
+      kind: ref_list
+      targets:
+      - mesh_ir.traffic.BindingSlot
+      wire_bytes: 8
+      offset: 176
+    - name: reference_binding_identity_sha256
+      kind: string
+      wire_bytes: 8
+      offset: 184
+    - name: intrinsic_traffic
+      kind: ref
+      targets:
+      - mesh_ir.traffic.TrafficReport
+      wire_bytes: 8
+      offset: 192
+  mesh_ir.scheduled.model.ProgramVariant:
+    section_name: SEMANTIC_PROGRAM_VARIANT
+    section_type: 331
+    json_tag: ProgramVariant
+    record_bytes: 56
+    fields:
+    - name: variant_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: entrypoint_id
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: profile_id
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+    - name: lineage
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.CompiledVariantLineage
+      - mesh_ir.scheduled.model.AuthoredVariantLineage
+      wire_bytes: 8
+      offset: 32
+    - name: lifecycle_stream_id
+      kind: u64
+      wire_bytes: 8
+      offset: 40
+    - name: membership
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.VariantMembership
+      wire_bytes: 8
+      offset: 48
+  mesh_ir.scheduled.model.ReadAccessUse:
+    section_name: SEMANTIC_READ_ACCESS_USE
+    section_type: 332
+    json_tag: ReadAccessUse
+    record_bytes: 32
+    fields:
+    - name: kernel_op_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: access_index
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: region
+      kind: ref
+      targets:
+      - mesh_ir.ir.kernel_ir.ElementRegion
+      wire_bytes: 8
+      offset: 24
+  mesh_ir.scheduled.model.RecvWaitExecution:
+    section_name: SEMANTIC_RECV_WAIT_EXECUTION
+    section_type: 333
+    json_tag: RecvWaitExecution
+    record_bytes: 16
+    fields:
+    - name: transfer_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.scheduled.model.RepeatCommandAttrs:
+    section_name: SEMANTIC_REPEAT_COMMAND_ATTRS
+    section_type: 334
+    json_tag: RepeatCommandAttrs
+    record_bytes: 32
+    fields:
+    - name: subrange_begin_stream_ordinal
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: subrange_command_count
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: repeat_count
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+  mesh_ir.scheduled.model.RequestBeginAttrs:
+    section_name: SEMANTIC_REQUEST_BEGIN_ATTRS
+    section_type: 335
+    json_tag: RequestBeginAttrs
+    record_bytes: 8
+    fields: []
+  mesh_ir.scheduled.model.RequestEndAttrs:
+    section_name: SEMANTIC_REQUEST_END_ATTRS
+    section_type: 336
+    json_tag: RequestEndAttrs
+    record_bytes: 8
+    fields: []
+  mesh_ir.scheduled.model.ResidentView:
+    section_name: SEMANTIC_RESIDENT_VIEW
+    section_type: 337
+    json_tag: ResidentView
+    record_bytes: 24
+    fields:
+    - name: runtime_shard_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: view_id
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+  mesh_ir.scheduled.model.ScheduledDependency:
+    section_name: SEMANTIC_SCHEDULED_DEPENDENCY
+    section_type: 338
+    json_tag: ScheduledDependency
+    record_bytes: 48
+    fields:
+    - name: dependency_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: source_command_id
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: target_command_id
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+    - name: kind
+      kind: enum
+      enum: mesh_ir.scheduled.model.ScheduledDependencyKind
+      wire_bytes: 8
+      offset: 32
+    - name: source
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.KernelTokenSource
+      - mesh_ir.scheduled.model.StateSource
+      - mesh_ir.scheduled.model.ObjectSource
+      - mesh_ir.scheduled.model.DescriptorSource
+      - mesh_ir.scheduled.model.StreamOrderSource
+      - mesh_ir.scheduled.model.LifecycleSource
+      wire_bytes: 8
+      offset: 40
+  mesh_ir.scheduled.model.ScheduledStream:
+    section_name: SEMANTIC_SCHEDULED_STREAM
+    section_type: 339
+    json_tag: ScheduledStream
+    record_bytes: 56
+    fields:
+    - name: stream_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: core_id
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: physical_stream_id
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+    - name: command_begin
+      kind: u64
+      wire_bytes: 8
+      offset: 32
+    - name: command_count
+      kind: u64
+      wire_bytes: 8
+      offset: 40
+    - name: flags
+      kind: u64
+      wire_bytes: 8
+      offset: 48
+  mesh_ir.scheduled.model.StateSource:
+    section_name: SEMANTIC_STATE_SOURCE
+    section_type: 340
+    json_tag: StateSource
+    record_bytes: 16
+    fields:
+    - name: state_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.scheduled.model.StreamOrderSource:
+    section_name: SEMANTIC_STREAM_ORDER_SOURCE
+    section_type: 341
+    json_tag: StreamOrderSource
+    record_bytes: 16
+    fields:
+    - name: stream_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+  mesh_ir.scheduled.model.VariantMembership:
+    section_name: SEMANTIC_VARIANT_MEMBERSHIP
+    section_type: 342
+    json_tag: VariantMembership
+    record_bytes: 200
+    fields:
+    - name: abi_tensors
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: transport, program_field: tensors}
+      wire_bytes: 8
+      offset: 8
+    - name: runtime_shards
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: transport, program_field: shards}
+      wire_bytes: 8
+      offset: 16
+    - name: allocations
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: transport, program_field: allocations}
+      wire_bytes: 8
+      offset: 24
+    - name: streams
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: semantic, program_field: streams}
+      wire_bytes: 8
+      offset: 32
+    - name: commands
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: transport, program_field: commands}
+      wire_bytes: 8
+      offset: 40
+    - name: events
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: transport, program_field: events}
+      wire_bytes: 8
+      offset: 48
+    - name: descriptors
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: transport, program_field: dma_descriptors}
+      wire_bytes: 8
+      offset: 56
+    - name: relocations
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: transport, program_field: relocations}
+      wire_bytes: 8
+      offset: 64
+    - name: kernel_tensors
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: semantic, program_field: kernel_tensors}
+      wire_bytes: 8
+      offset: 72
+    - name: computations
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: semantic, program_field: computations}
+      wire_bytes: 8
+      offset: 80
+    - name: placements
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: semantic, program_field: placements}
+      wire_bytes: 8
+      offset: 88
+    - name: logical_shards
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: semantic, program_field: logical_shards}
+      wire_bytes: 8
+      offset: 96
+    - name: partial_sums
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: semantic, program_field: partial_sums}
+      wire_bytes: 8
+      offset: 104
+    - name: objects
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: semantic, program_field: objects}
+      wire_bytes: 8
+      offset: 112
+    - name: views
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: semantic, program_field: views}
+      wire_bytes: 8
+      offset: 120
+    - name: states
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: semantic, program_field: states}
+      wire_bytes: 8
+      offset: 128
+    - name: tokens
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: semantic, program_field: tokens}
+      wire_bytes: 8
+      offset: 136
+    - name: kernel_ops
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: semantic, program_field: kernel_ops}
+      wire_bytes: 8
+      offset: 144
+    - name: object_backings
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: semantic, program_field: object_backings}
+      wire_bytes: 8
+      offset: 152
+    - name: command_semantics
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: semantic, program_field: command_semantics}
+      wire_bytes: 8
+      offset: 160
+    - name: barrier_groups
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: semantic, program_field: barrier_groups}
+      wire_bytes: 8
+      offset: 168
+    - name: dependencies
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: semantic, program_field: dependencies}
+      wire_bytes: 8
+      offset: 176
+    - name: endpoint_uses
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: semantic, program_field: endpoint_uses}
+      wire_bytes: 8
+      offset: 184
+    - name: binding_slots
+      kind: ref
+      targets:
+      - mesh_ir.scheduled.model.IdSpan
+      membership_target: {source: semantic, program_field: binding_slots}
+      wire_bytes: 8
+      offset: 192
+  mesh_ir.scheduled.model.WriteAccessUse:
+    section_name: SEMANTIC_WRITE_ACCESS_USE
+    section_type: 343
+    json_tag: WriteAccessUse
+    record_bytes: 32
+    fields:
+    - name: kernel_op_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: access_index
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: region
+      kind: ref
+      targets:
+      - mesh_ir.ir.kernel_ir.ElementRegion
+      wire_bytes: 8
+      offset: 24
+  mesh_ir.traffic.Binding:
+    section_name: SEMANTIC_BINDING
+    section_type: 344
+    json_tag: Binding
+    record_bytes: 64
+    fields:
+    - name: slot_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: region_id
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: owner_core
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+    - name: allocation_offset_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 32
+    - name: allocation_size_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 40
+    - name: allocation_alignment_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 48
+    - name: access
+      kind: enum
+      enum: mesh_ir.ir.common.Access
+      wire_bytes: 8
+      offset: 56
+  mesh_ir.traffic.BindingSlot:
+    section_name: SEMANTIC_BINDING_SLOT
+    section_type: 345
+    json_tag: BindingSlot
+    record_bytes: 80
+    fields:
+    - name: slot_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: symbol
+      kind: string
+      wire_bytes: 8
+      offset: 16
+    - name: memory_space
+      kind: enum
+      enum: mesh_ir.ir.common.MemorySpace
+      wire_bytes: 8
+      offset: 24
+    - name: region_id
+      kind: u64
+      wire_bytes: 8
+      offset: 32
+    - name: owner_core
+      kind: u64
+      wire_bytes: 8
+      offset: 40
+    - name: required_allocation_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 48
+    - name: required_allocation_alignment_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 56
+    - name: access
+      kind: enum
+      enum: mesh_ir.ir.common.Access
+      wire_bytes: 8
+      offset: 64
+    - name: reference_binding
+      kind: ref
+      targets:
+      - mesh_ir.traffic.Binding
+      wire_bytes: 8
+      offset: 72
+  mesh_ir.traffic.ChannelTraffic:
+    section_name: SEMANTIC_CHANNEL_TRAFFIC
+    section_type: 346
+    json_tag: ChannelTraffic
+    record_bytes: 120
+    fields:
+    - name: channel
+      kind: enum
+      enum: mesh_ir.traffic.AxiChannel
+      wire_bytes: 8
+      offset: 8
+    - name: vnet
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: source_endpoint
+      kind: string
+      wire_bytes: 8
+      offset: 24
+    - name: destination_endpoint
+      kind: string
+      wire_bytes: 8
+      offset: 32
+    - name: source_node
+      kind: u64
+      wire_bytes: 8
+      offset: 40
+    - name: source_port
+      kind: u64
+      wire_bytes: 8
+      offset: 48
+    - name: destination_node
+      kind: u64
+      wire_bytes: 8
+      offset: 56
+    - name: destination_port
+      kind: u64
+      wire_bytes: 8
+      offset: 64
+    - name: source_router
+      kind: u64
+      wire_bytes: 8
+      offset: 72
+    - name: destination_router
+      kind: u64
+      wire_bytes: 8
+      offset: 80
+    - name: messages
+      kind: u64
+      wire_bytes: 8
+      offset: 88
+    - name: packets
+      kind: u64
+      wire_bytes: 8
+      offset: 96
+    - name: flits
+      kind: u64
+      wire_bytes: 8
+      offset: 104
+    - name: wire_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 112
+  mesh_ir.traffic.DescriptorIdentity:
+    section_name: SEMANTIC_DESCRIPTOR_IDENTITY
+    section_type: 347
+    json_tag: DescriptorIdentity
+    record_bytes: 80
+    fields:
+    - name: entrypoint_id
+      kind: u64
+      wire_bytes: 8
+      offset: 8
+    - name: profile_id
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: command_id
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+    - name: descriptor_id
+      kind: u64
+      wire_bytes: 8
+      offset: 32
+    - name: issuing_core
+      kind: u64
+      wire_bytes: 8
+      offset: 40
+    - name: peer_core
+      kind: u64
+      wire_bytes: 8
+      offset: 48
+    - name: tensor_id
+      kind: u64
+      wire_bytes: 8
+      offset: 56
+    - name: tensor_role
+      kind: enum
+      enum: mesh_ir.ir.common.TensorRole
+      wire_bytes: 8
+      offset: 64
+    - name: direction
+      kind: enum
+      enum: mesh_ir.traffic.TrafficDirection
+      wire_bytes: 8
+      offset: 72
+  mesh_ir.traffic.DescriptorTraffic:
+    section_name: SEMANTIC_DESCRIPTOR_TRAFFIC
+    section_type: 348
+    json_tag: DescriptorTraffic
+    record_bytes: 208
+    fields:
+    - name: identity
+      kind: ref
+      targets:
+      - mesh_ir.traffic.DescriptorIdentity
+      wire_bytes: 8
+      offset: 8
+    - name: execution_count
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: src_memory_space
+      kind: enum
+      enum: mesh_ir.ir.common.MemorySpace
+      wire_bytes: 8
+      offset: 24
+    - name: dst_memory_space
+      kind: enum
+      enum: mesh_ir.ir.common.MemorySpace
+      wire_bytes: 8
+      offset: 32
+    - name: src_endpoint
+      kind: string
+      wire_bytes: 8
+      offset: 40
+    - name: dst_endpoint
+      kind: string
+      wire_bytes: 8
+      offset: 48
+    - name: src_router
+      kind: u64
+      wire_bytes: 8
+      offset: 56
+    - name: dst_router
+      kind: u64
+      wire_bytes: 8
+      offset: 64
+    - name: src_address
+      kind: u64
+      wire_bytes: 8
+      offset: 72
+    - name: dst_address
+      kind: u64
+      wire_bytes: 8
+      offset: 80
+    - name: remote_address
+      kind: u64
+      wire_bytes: 8
+      offset: 88
+    - name: rows
+      kind: u64
+      wire_bytes: 8
+      offset: 96
+    - name: row_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 104
+    - name: remote_stride_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 112
+    - name: max_burst_beats
+      kind: u64
+      wire_bytes: 8
+      offset: 120
+    - name: hops
+      kind: u64
+      wire_bytes: 8
+      offset: 128
+    - name: useful_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 136
+    - name: physical_beat_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 144
+    - name: segments
+      kind: u64
+      wire_bytes: 8
+      offset: 152
+    - name: bursts
+      kind: u64
+      wire_bytes: 8
+      offset: 160
+    - name: channels
+      kind: ref_list
+      targets:
+      - mesh_ir.traffic.ChannelTraffic
+      wire_bytes: 8
+      offset: 168
+    - name: packets
+      kind: u64
+      wire_bytes: 8
+      offset: 176
+    - name: flits
+      kind: u64
+      wire_bytes: 8
+      offset: 184
+    - name: wire_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 192
+    - name: hop_wire_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 200
+  mesh_ir.traffic.TrafficAggregate:
+    section_name: SEMANTIC_TRAFFIC_AGGREGATE
+    section_type: 349
+    json_tag: TrafficAggregate
+    record_bytes: 104
+    fields:
+    - name: key
+      kind: ref
+      targets:
+      - mesh_ir.traffic.TrafficAggregateKey
+      wire_bytes: 8
+      offset: 8
+    - name: useful_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: physical_beat_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+    - name: static_descriptors
+      kind: u64
+      wire_bytes: 8
+      offset: 32
+    - name: descriptor_executions
+      kind: u64
+      wire_bytes: 8
+      offset: 40
+    - name: segments
+      kind: u64
+      wire_bytes: 8
+      offset: 48
+    - name: bursts
+      kind: u64
+      wire_bytes: 8
+      offset: 56
+    - name: channels
+      kind: ref_list
+      targets:
+      - mesh_ir.traffic.TrafficChannelTotal
+      wire_bytes: 8
+      offset: 64
+    - name: packets
+      kind: u64
+      wire_bytes: 8
+      offset: 72
+    - name: flits
+      kind: u64
+      wire_bytes: 8
+      offset: 80
+    - name: wire_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 88
+    - name: hop_wire_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 96
+  mesh_ir.traffic.TrafficAggregateKey:
+    section_name: SEMANTIC_TRAFFIC_AGGREGATE_KEY
+    section_type: 350
+    json_tag: TrafficAggregateKey
+    record_bytes: 72
+    fields:
+    - name: level
+      kind: enum
+      enum: mesh_ir.traffic.TrafficAggregateLevel
+      wire_bytes: 8
+      offset: 8
+    - name: entrypoint_id
+      kind: u64
+      wire_bytes: 8
+      optional_bit: 1
+      offset: 16
+    - name: profile_id
+      kind: u64
+      wire_bytes: 8
+      optional_bit: 2
+      offset: 24
+    - name: core_id
+      kind: u64
+      wire_bytes: 8
+      optional_bit: 3
+      offset: 32
+    - name: peer_core
+      kind: u64
+      wire_bytes: 8
+      optional_bit: 4
+      offset: 40
+    - name: memory_space
+      kind: enum
+      enum: mesh_ir.ir.common.MemorySpace
+      wire_bytes: 8
+      optional_bit: 5
+      offset: 48
+    - name: tensor_role
+      kind: enum
+      enum: mesh_ir.ir.common.TensorRole
+      wire_bytes: 8
+      optional_bit: 6
+      offset: 56
+    - name: direction
+      kind: enum
+      enum: mesh_ir.traffic.TrafficDirection
+      wire_bytes: 8
+      optional_bit: 7
+      offset: 64
+  mesh_ir.traffic.TrafficChannelTotal:
+    section_name: SEMANTIC_TRAFFIC_CHANNEL_TOTAL
+    section_type: 351
+    json_tag: TrafficChannelTotal
+    record_bytes: 56
+    fields:
+    - name: channel
+      kind: enum
+      enum: mesh_ir.traffic.AxiChannel
+      wire_bytes: 8
+      offset: 8
+    - name: vnet
+      kind: u64
+      wire_bytes: 8
+      offset: 16
+    - name: messages
+      kind: u64
+      wire_bytes: 8
+      offset: 24
+    - name: packets
+      kind: u64
+      wire_bytes: 8
+      offset: 32
+    - name: flits
+      kind: u64
+      wire_bytes: 8
+      offset: 40
+    - name: wire_bytes
+      kind: u64
+      wire_bytes: 8
+      offset: 48
+  mesh_ir.traffic.TrafficReport:
+    section_name: SEMANTIC_TRAFFIC_REPORT
+    section_type: 352
+    json_tag: TrafficReport
+    record_bytes: 40
+    fields:
+    - name: binding_identity_sha256
+      kind: string
+      wire_bytes: 8
+      offset: 8
+    - name: descriptors
+      kind: ref_list
+      targets:
+      - mesh_ir.traffic.DescriptorTraffic
+      wire_bytes: 8
+      offset: 16
+    - name: aggregates
+      kind: ref_list
+      targets:
+      - mesh_ir.traffic.TrafficAggregate
+      wire_bytes: 8
+      offset: 24
+    - name: semantic_sha256
+      kind: string
+      wire_bytes: 8
+      offset: 32

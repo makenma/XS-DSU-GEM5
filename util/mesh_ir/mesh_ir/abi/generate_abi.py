@@ -15,114 +15,35 @@ import operator
 import sys
 from pathlib import Path
 
-import yaml
+from mesh_ir.abi.generate_python_enums import render_semantic_enums
+from mesh_ir.abi.generate_cpp_envelope import (
+    render_envelope_metadata,
+    render_python_envelope_metadata,
+)
 
-SCALAR_FORMATS = {"u8": "B", "u16": "H", "u32": "I", "u64": "Q"}
-SCALAR_BYTES = {"u8": 1, "u16": 2, "u32": 4, "u64": 8}
-VECTOR_TYPES = {"bytes16": 16, "bytes28": 28, "bytes32": 32, "u64x8": 64}
-CPP_TYPES = {"u8": "uint8_t", "u16": "uint16_t", "u32": "uint32_t", "u64": "uint64_t"}
-ENUM_VALUE_BIT_LIMIT = 32
-CONTAINER_ONLY_ENUMS = {"section_type"}
-
-
-def singular(name: str) -> str:
-    return name[:-1] if name.endswith("s") else name
-
-
-def cpp_name(record_name: str) -> str:
-    return singular("".join(part.capitalize() for part in record_name.split("_")))
-
-
-def enum_masks(schema: dict) -> dict:
-    masks = {}
-    for enum_name, values in schema["enums"].items():
-        if enum_name == "opcode_engine_map" or enum_name in CONTAINER_ONLY_ENUMS or isinstance(values, list):
-            continue
-        mask = 0
-        for value in values.values():
-            if not isinstance(value, int) or value < 0 or value >= ENUM_VALUE_BIT_LIMIT:
-                raise ValueError(
-                    f"{enum_name} value {value} outside mask bit range"
-                )
-            mask |= 1 << value
-        masks[enum_name] = mask
-    return masks
-
-
-def enum_allowed_bits(schema: dict) -> dict:
-    return {
-        enum_name: functools.reduce(operator.or_, values.values(), 0)
-        for enum_name, values in schema["enums"].items()
-        if enum_name != "opcode_engine_map"
-        and enum_name not in CONTAINER_ONLY_ENUMS
-        and not isinstance(values, list)
-    }
-
-
-def field_size(field: dict) -> int:
-    ftype = field["type"]
-    if ftype in SCALAR_BYTES:
-        return SCALAR_BYTES[ftype]
-    if ftype in VECTOR_TYPES:
-        return VECTOR_TYPES[ftype]
-    if ftype == "record_ref":
-        return field["_ref_bytes"]
-    raise ValueError(f"unknown field type {ftype}")
-
-
-def check_layout(name: str, fields: list[dict], total_bytes: int) -> None:
-    # Layout validation: ascending offsets, no overlap, no gap, in-bounds,
-    # unique names, and total coverage equal to the declared record size.
-    seen_names = set()
-    cursor = 0
-    for field in fields:
-        if field["name"] in seen_names:
-            raise ValueError(f"{name}.{field['name']}: duplicate field name")
-        seen_names.add(field["name"])
-        if field["offset"] < cursor:
-            raise ValueError(
-                f"{name}.{field['name']} at {field['offset']} overlaps or "
-                f"precedes the previous field ending at {cursor}"
-            )
-        if field["offset"] > cursor:
-            raise ValueError(
-                f"{name}: gap of {field['offset'] - cursor} byte(s) before "
-                f"{field['name']} (explicit reserved fields only)"
-            )
-        cursor = field["offset"] + field_size(field)
-        if cursor > total_bytes:
-            raise ValueError(f"{name}.{field['name']} overflows record")
-    if cursor != total_bytes:
-        raise ValueError(
-            f"{name}: fields cover {cursor} bytes, record declares {total_bytes}"
-        )
-
-
-def load_schema(path: Path) -> dict:
-    with path.open("rb") as handle:
-        schema = yaml.safe_load(handle)
-    for record_name, record in schema["records"].items():
-        for field in record["fields"]:
-            if field["type"] == "record_ref":
-                field["_ref_bytes"] = schema["records"][field["ref"]]["bytes"]
-            if "enum" in field and field["enum"] not in schema["enums"]:
-                raise ValueError(f"{record_name}.{field['name']}: unknown enum {field['enum']}")
-        check_layout(record_name, record["fields"], record["bytes"])
-    for payload_name, payload in schema["attr_payloads"].items():
-        for field in payload["fields"]:
-            if "enum" in field and field["enum"] not in schema["enums"]:
-                raise ValueError(f"{payload_name}.{field['name']}: unknown enum {field['enum']}")
-        check_layout(payload_name, payload["fields"], payload["bytes"])
-    header = schema["header"]
-    check_layout("header", header["fields"], header["bytes"])
-    check_layout("section_dir", schema["section_dir"]["fields"], schema["section_dir"]["bytes"])
-    enum_masks(schema)
-    enum_allowed_bits(schema)
-    return schema
-
+from mesh_ir.abi.schema_loader import (
+    CPP_TYPES, PYTHON_CONTAINER_ONLY_ENUMS, SCALAR_BYTES, SCALAR_FORMATS,
+    SEMANTIC_SUPPORT_RECORDS, UNSIGNED_MAX, VECTOR_TYPES, cpp_identifier,
+    cpp_name, enum_allowed_bits, enum_field_types, field_size, load_schema,
+    singular,
+)
 
 def schema_sha256(schema: dict, yaml_bytes: bytes) -> str:
     return hashlib.sha256(yaml_bytes).hexdigest()
+
+
+def variant_membership_targets(schema: dict) -> tuple[tuple[str, str, str], ...]:
+    fields = schema["semantic_records"][
+        "mesh_ir.scheduled.model.VariantMembership"
+    ]["fields"]
+    return tuple(
+        (
+            field["name"],
+            field["membership_target"]["source"],
+            field["membership_target"]["program_field"],
+        )
+        for field in fields
+    )
 
 
 def py_struct_expr(fields: list[dict], total: int) -> str:
@@ -138,6 +59,8 @@ def py_struct_expr(fields: list[dict], total: int) -> str:
         elif ftype == "record_ref":
             ref_total = field["_ref_bytes"]
             parts.append(f"{ref_total}s")
+        elif "_semantic_bytes" in field:
+            parts.append(f"{field['_semantic_bytes']}s")
     expr = "".join(parts)
     accounted = sum(field_size(f) for f in fields)
     if accounted != total:
@@ -160,10 +83,24 @@ def render_python(schema: dict, sha: str) -> str:
     lines.append(f"ABI_MAJOR = {schema['abi']['major']}")
     lines.append(f"ABI_MINOR = {schema['abi']['minor']}")
     lines.append(f"MIN_READER_MINOR = {schema['abi']['min_reader_minor']}")
+    lines.append(f"JSON_SAFE_INTEGER_MAX = {schema['canonical']['json_safe_integer_max']}")
     magic_le = int.from_bytes(bytes.fromhex(schema["magic_hex"]), "little")
     lines.append(f"MAGIC = {magic_le}")
     lines.append(f"HEADER_BYTES = {schema['header']['bytes']}")
     lines.append(f"SECTION_DIR_BYTES = {schema['section_dir']['bytes']}")
+    lines.append("")
+    lines.append("class REQUIRED_FEATURE:")
+    for name, feature in schema["required_features"].items():
+        lines.append(f"    {name} = {feature['bit']}")
+    lines.append("")
+    required_features = functools.reduce(
+        operator.or_, (feature["bit"] for feature in schema["required_features"].values()), 0
+    )
+    lines.append(f"REQUIRED_FEATURES = {required_features}")
+    lines.append("REQUIRED_FEATURE_MIN_READER_MINOR = " + repr({
+        feature["bit"]: feature["min_reader_minor"]
+        for feature in schema["required_features"].values()
+    }))
     lines.append("")
     for enum_name, values in schema["enums"].items():
         if enum_name == "opcode_engine_map":
@@ -177,7 +114,7 @@ def render_python(schema: dict, sha: str) -> str:
         lines.append("")
     lines.append("OPCODE_ENGINE = {")
     for opcode, engine in schema["enums"]["opcode_engine_map"].items():
-        lines.append(f"    {schema['enums']['opcode'][opcode]}: {schema['enums']['engine'][engine]},  # {opcode} -> {engine}")
+        lines.append(f"    {schema['enums']['opcode'][opcode]}: {schema['enums']['engine'][engine]},")
     lines.append("}")
     lines.append("")
     for record_name, record in schema["records"].items():
@@ -191,8 +128,18 @@ def render_python(schema: dict, sha: str) -> str:
     secdir = schema["section_dir"]
     lines.append(f"SECTION_DIR_FORMAT = struct.Struct('<{py_struct_expr(secdir['fields'], secdir['bytes'])}')")
     lines.append(f"SECTION_DIR_FIELDS = {secdir['fields']!r}")
-    lines.append("STRING_DIR_FORMAT = struct.Struct('<II')")
-    lines.append(f"STRING_DIR_BYTES = {schema['blob_sections']['STRINGS']['directory_record_bytes']}")
+    lines.extend(render_python_envelope_metadata(schema, py_struct_expr))
+    lines.append(f"SEMANTIC_REF_BYTES = {schema['semantic_wire_types']['semantic_ref']['bytes']}")
+    lines.append(f"LIST_SPAN_BYTES = {schema['semantic_wire_types']['list_span']['bytes']}")
+    lines.append(f"STRING_REF_BYTES = {schema['semantic_wire_types']['string_ref']['bytes']}")
+    lines.append(f"ENUM_VALUE_BYTES = {schema['semantic_wire_types']['enum_value']['bytes']}")
+    lines.append(f"SCALAR_VALUE_BYTES = {schema['semantic_wire_types']['scalar_value']['bytes']}")
+    lines.append(f"INTEGER_VALUE_BYTES = {schema['records']['SEMANTIC_INTEGER_VALUES']['bytes']}")
+    for name, definition in schema["semantic_wire_types"].items():
+        prefix = name.upper()
+        lines.append(f"{prefix}_FORMAT = struct.Struct('<{py_struct_expr(definition['fields'], definition['bytes'])}')")
+        lines.append(f"{prefix}_FIELDS = {definition['fields']!r}")
+        lines.append(f"{prefix}_FIELD_OFFSETS = " + repr({field["name"]: field["offset"] for field in definition["fields"]}))
     lines.append("")
     for payload_name, payload in schema["attr_payloads"].items():
         lines.append(f"{payload_name}_BYTES = {payload['bytes']}")
@@ -201,15 +148,13 @@ def render_python(schema: dict, sha: str) -> str:
         lines.append(f"{payload_name}_FIELD_OFFSETS = " + "{"
             + ", ".join(f"{f['name']!r}: {f['offset']}" for f in payload["fields"]) + "}")
         lines.append("")
-    masks = enum_masks(schema)
     lines.append("ENUM_CLOSED_SETS = {")
     for enum_name in schema["enums"]:
-        if enum_name == "opcode_engine_map" or enum_name in CONTAINER_ONLY_ENUMS or isinstance(schema["enums"][enum_name], list):
+        if enum_name == "opcode_engine_map" or enum_name in PYTHON_CONTAINER_ONLY_ENUMS or isinstance(schema["enums"][enum_name], list):
             continue
         values = schema["enums"][enum_name]
         lines.append(f"    {enum_name!r}: " + "{" + ", ".join(str(v) for v in values.values()) + "},")
     lines.append("}")
-    lines.append("ENUM_MASKS = " + repr(masks))
     lines.append("ENUM_ALLOWED_BITS = " + repr(enum_allowed_bits(schema)))
     payload_names = set(schema["attr_payloads"])
     attr_kinds = set(schema["enums"]["attr_kind"])
@@ -221,6 +166,43 @@ def render_python(schema: dict, sha: str) -> str:
     for record_name, record in schema["records"].items():
         offsets = ", ".join(f"{f['name']!r}: {f['offset']}" for f in record["fields"])
         lines.append(f"{record_name}_FIELD_OFFSETS = {{{offsets}}}")
+    lines.append("SEMANTIC_ENUMS = " + repr(schema["semantic_enums"]))
+    lines.append("SEMANTIC_RECORDS = " + repr(schema["semantic_records"]))
+    lines.append("SEMANTIC_RECORD_BY_SECTION = {record['section_type']: name for name, record in SEMANTIC_RECORDS.items()}")
+    membership_targets = variant_membership_targets(schema)
+    lines.append("VARIANT_MEMBERSHIP_TARGETS = " + repr(membership_targets))
+    lines.append("VARIANT_MEMBERSHIP_FIELDS = " + repr(
+        tuple(field for field, _, _ in membership_targets)
+    ))
+    nonsemantic = {}
+    for record_name, record in schema["records"].items():
+        names = tuple(
+            field.get("python_field", field["name"])
+            for field in record["fields"]
+            if record.get("semantic") is False or field.get("semantic") is False
+        )
+        if names:
+            nonsemantic[record_name] = names
+    lines.append("NONSEMANTIC_FIELDS = " + repr(nonsemantic))
+    lines.append("CONTENT_DIGEST_OBJECT_KIND = " + repr(schema["enums"]["content_digest_object_kind"]))
+    lines.append("CANONICAL_ABI_FIELDS = " + repr(dict(sorted(schema["canonical"]["abi_fields"].items()))))
+    lines.append("PROGRAM_CANONICAL_FIELDS = " + repr(sorted(schema["canonical"]["program_fields"], key=lambda item: item["name"])))
+    lines.append("TRANSPORT_CANONICAL_SECTIONS = " + repr(dict(sorted(schema["canonical"]["transport_sections"].items()))))
+    lines.append("TRANSPORT_CANONICAL_FIELDS = " + repr({
+        name: tuple({
+            "name": field.get("python_field", field["name"]),
+            "wire_name": field["name"],
+            "type": field["type"],
+            "semantic": record.get("semantic", True) and field.get("semantic", True),
+            "string_pool": field.get("string_pool"),
+        } for field in record["fields"])
+        for name, record in schema["records"].items()
+        if name not in SEMANTIC_SUPPORT_RECORDS
+    }))
+    lines.append("ATTR_PAYLOAD_CANONICAL_FIELDS = " + repr({
+        name: tuple(field["name"] for field in payload["fields"])
+        for name, payload in schema["attr_payloads"].items()
+    }))
     lines.append("")
     return "\n".join(lines) + "\n"
 
@@ -229,21 +211,22 @@ def cpp_scalar(field: dict) -> str:
     return CPP_TYPES[field["type"]]
 
 
-def render_cpp(schema: dict, sha: str) -> str:
+def render_cpp(schema: dict, sha: str) -> tuple[str, str]:
     guard = "GEM5_DEV_AI_MESH_GENERATED_MESH_IR_ABI_HH"
     out = []
     out.extend(
         [
-            "// Generated by util/mesh_ir/mesh_ir/abi/generate_abi.py from",
-            "// mesh_ir_abi.yaml -- do not edit.",
-            f"// schema_sha256: {sha}",
             f"#ifndef {guard}",
             f"#define {guard}",
             "",
             "#include <array>",
             "#include <cstdint>",
             "#include <cstring>",
+            "#include <string>",
+            "#include <string_view>",
             "#include <variant>",
+            "#include <vector>",
+            '#include "dev/ai_mesh/generated/mesh_diagnostics.hh"',
             "",
             "namespace gem5",
             "{",
@@ -258,29 +241,47 @@ def render_cpp(schema: dict, sha: str) -> str:
     out.append(f"constexpr uint16_t kAbiMajor = {schema['abi']['major']};")
     out.append(f"constexpr uint16_t kAbiMinor = {schema['abi']['minor']};")
     out.append(f"constexpr uint16_t kMinReaderMinor = {schema['abi']['min_reader_minor']};")
+    out.append(f"constexpr uint64_t kJsonSafeIntegerMax = {schema['canonical']['json_safe_integer_max']}ull;")
+    out.append("enum class RequiredFeature : uint64_t")
+    out.append("{")
+    for name, feature in schema["required_features"].items():
+        out.append(f"    {name} = {feature['bit']},")
+    out.append("};")
+    required_features = functools.reduce(
+        operator.or_, (feature["bit"] for feature in schema["required_features"].values()), 0
+    )
+    out.append(f"constexpr uint64_t kRequiredFeatures = {required_features};")
+    for name, feature in schema["required_features"].items():
+        out.append(f"constexpr uint16_t kRequiredFeature{name.title().replace('_', '')}MinReaderMinor = {feature['min_reader_minor']};")
     magic_le = int.from_bytes(bytes.fromhex(schema["magic_hex"]), "little")
     out.append(f"constexpr uint64_t kMagic = 0x{magic_le:016x}ull;")
-    out.append(f"constexpr uint32_t kHeaderBytes = {schema['header']['bytes']};")
-    out.append(f"constexpr uint32_t kSectionDirBytes = {schema['section_dir']['bytes']};")
-    out.append("")
+    out.extend(render_envelope_metadata(schema, field_size))
+    enum_types = enum_field_types(schema)
     for enum_name, values in schema["enums"].items():
         if enum_name == "opcode_engine_map":
             continue
         if isinstance(values, list):
-            out.append(f"// {enum_name}: {values}")
-            out.append("")
             continue
         cpp_enum = "".join(part.capitalize() for part in enum_name.split("_"))
-        out.append(f"enum class {cpp_enum} : uint16_t")
+        cpp_type = CPP_TYPES[enum_types[enum_name]]
+        out.append(f"enum class {cpp_enum} : {cpp_type}")
         out.append("{")
         for key, value in values.items():
             out.append(f"    {key} = {value},")
         out.append("};")
         out.append("")
         for key, value in values.items():
-            out.append(f"constexpr uint16_t k{cpp_enum}{key} = {value};")
+            out.append(f"constexpr {cpp_type} k{cpp_enum}{key} = {value};")
         out.append("")
-    out.append("// opcode -> engine mapping (closed set)")
+        out.append(f"constexpr bool valid{cpp_enum}({cpp_type} value)")
+        out.append("{")
+        out.append("    switch (value) {")
+        for value in values.values():
+            out.append(f"    case {value}: return true;")
+        out.append("    default: return false;")
+        out.append("    }")
+        out.append("}")
+        out.append("")
     out.append("constexpr uint16_t opcodeEngine(uint16_t opcode)")
     out.append("{")
     out.append("    switch (opcode) {")
@@ -311,14 +312,10 @@ def render_cpp(schema: dict, sha: str) -> str:
                 out.append(f"constexpr uint32_t {fname}Offset = {field['offset']};")
         out.append("")
 
-    masks = enum_masks(schema)
     allowed = enum_allowed_bits(schema)
-    for enum_name, mask in masks.items():
-        cpp_enum = "".join(part.capitalize() for part in enum_name.split("_"))
-        out.append(f"constexpr uint32_t k{cpp_enum}ValuesMask = 0x{mask:x}u;")
     for enum_name, bits in allowed.items():
         cpp_enum = "".join(part.capitalize() for part in enum_name.split("_"))
-        out.append(f"constexpr uint16_t k{cpp_enum}AllowedBits = 0x{bits:x}u;")
+        out.append(f"constexpr uint64_t k{cpp_enum}AllowedBits = 0x{bits:x}ull;")
     out.append("")
     out.extend(
         [
@@ -327,9 +324,6 @@ def render_cpp(schema: dict, sha: str) -> str:
             "    const char *code = \"\";",
             "    const char *message = \"\";",
             "};",
-            "",
-            "constexpr const char *kCodeEnum = \"E_ABI_ENUM\";",
-            "constexpr const char *kCodeReserved = \"E_ABI_RESERVED\";",
             "",
             "inline uint8_t rdU8(const uint8_t *p) { return p[0]; }",
             "inline uint16_t rdU16(const uint8_t *p)",
@@ -344,14 +338,26 @@ def render_cpp(schema: dict, sha: str) -> str:
             "{",
             "    return static_cast<uint64_t>(rdU32(p)) | (static_cast<uint64_t>(rdU32(p + 4)) << 32);",
             "}",
-            "",
-            "inline bool enumMember(uint32_t mask, uint16_t value)",
+            "inline void wrU8(uint8_t *p, uint8_t value) { p[0] = value; }",
+            "inline void wrU16(uint8_t *p, uint16_t value)",
             "{",
-            "    return value < 32 && ((mask >> value) & 1u) != 0;",
+            "    p[0] = static_cast<uint8_t>(value);",
+            "    p[1] = static_cast<uint8_t>(value >> 8);",
             "}",
-            "inline bool flagsWithin(uint32_t mask, uint16_t value)",
+            "inline void wrU32(uint8_t *p, uint32_t value)",
             "{",
-            "    return (value & ~static_cast<uint16_t>(mask)) == 0;",
+            "    wrU16(p, static_cast<uint16_t>(value));",
+            "    wrU16(p + 2, static_cast<uint16_t>(value >> 16));",
+            "}",
+            "inline void wrU64(uint8_t *p, uint64_t value)",
+            "{",
+            "    wrU32(p, static_cast<uint32_t>(value));",
+            "    wrU32(p + 4, static_cast<uint32_t>(value >> 32));",
+            "}",
+            "",
+            "inline bool flagsWithin(uint64_t allowed, uint64_t value)",
+            "{",
+            "    return (value & ~allowed) == 0;",
             "}",
             "",
         ]
@@ -370,6 +376,8 @@ def render_cpp(schema: dict, sha: str) -> str:
         raise ValueError(ftype)
 
     for record_name, record in schema["records"].items():
+        if record_name in SEMANTIC_SUPPORT_RECORDS:
+            continue
         struct = cpp_name(record_name)
         out.append(f"struct {struct}")
         out.append("{")
@@ -392,43 +400,49 @@ def render_cpp(schema: dict, sha: str) -> str:
         out.append("};")
         out.append("")
 
+    transport_codecs = [
+        "#ifndef GEM5_DEV_AI_MESH_GENERATED_MESH_IR_TRANSPORT_CODECS_HH",
+        "#define GEM5_DEV_AI_MESH_GENERATED_MESH_IR_TRANSPORT_CODECS_HH",
+        "",
+    ]
+
     def emit_field_checks(label: str, field: dict, out: list) -> None:
         name = field["name"]
         if "enum" in field:
             cpp_enum = "".join(part.capitalize() for part in field["enum"].split("_"))
-            mask = f"k{cpp_enum}ValuesMask"
             if field.get("flags"):
                 out.append(
                     f"    if (!flagsWithin(k{cpp_enum}AllowedBits, out.{name})) {{ "
-                    f"error = {{kCodeEnum, \"{label}.{name} flags have unknown bits\"}}; return false; }}"
+                    f"error = {{mesh_diagnostics::E_ABI_ENUM, \"{label}.{name} flags have unknown bits\"}}; return false; }}"
                 )
             else:
                 out.append(
-                    f"    if (!enumMember({mask}, out.{name})) {{ "
-                    f"error = {{kCodeEnum, \"{label}.{name} not in closed set\"}}; return false; }}"
+                    f"    if (!valid{cpp_enum}(out.{name})) {{ "
+                    f"error = {{mesh_diagnostics::E_ABI_ENUM, \"{label}.{name} not in closed set\"}}; return false; }}"
                 )
         if field.get("const_zero"):
             ftype = field["type"]
             if ftype in CPP_TYPES:
                 out.append(
                     f"    if (out.{name} != 0) {{ "
-                    f"error = {{kCodeReserved, \"{label}.{name} must be zero\"}}; return false; }}"
+                    f"error = {{mesh_diagnostics::E_ABI_RESERVED, \"{label}.{name} must be zero\"}}; return false; }}"
                 )
             elif ftype.startswith("bytes"):
                 out.append(
                     f"    if (out.{name} != std::array<uint8_t, {VECTOR_TYPES[ftype]}>{{}}) {{ "
-                    f"error = {{kCodeReserved, \"{label}.{name} must be zero\"}}; return false; }}"
+                    f"error = {{mesh_diagnostics::E_ABI_RESERVED, \"{label}.{name} must be zero\"}}; return false; }}"
                 )
         if "const" in field:
             out.append(
                 f"    if (out.{name} != {field['const']}) {{ "
-                f"error = {{kCodeReserved, \"{label}.{name} must equal {field['const']}\"}}; return false; }}"
+                f"error = {{mesh_diagnostics::E_ABI_RESERVED, \"{label}.{name} must equal {field['const']}\"}}; return false; }}"
             )
 
     def emit_decoder(fn_name: str, struct: str, label: str, fields: list,
                      out: list) -> None:
         out.append(f"inline bool {fn_name}(const uint8_t *r, {struct} &out, AbiError &error)")
         out.append("{")
+        out.append("    (void)error;")
         for field in fields:
             ftype = field["type"]
             name = field["name"]
@@ -453,15 +467,56 @@ def render_cpp(schema: dict, sha: str) -> str:
         out.append("}")
         out.append("")
 
+    def emit_encoder(fn_name: str, struct: str, size_name: str, fields: list,
+                     out: list) -> None:
+        out.append(f"inline std::array<uint8_t, {size_name}> {fn_name}(const {struct} &value)")
+        out.append("{")
+        out.append(f"    std::array<uint8_t, {size_name}> data{{}};")
+        for field in fields:
+            ftype = field["type"]
+            name = field["name"]
+            offset = field["offset"]
+            if ftype == "u8":
+                out.append(f"    data[{offset}] = value.{name};")
+            elif ftype in ("u16", "u32", "u64"):
+                out.append(f"    wr{ftype.upper()}(data.data() + {offset}, value.{name});")
+            elif ftype == "u64x8":
+                out.append(f"    for (size_t i = 0; i < 8; i++) wrU64(data.data() + {offset} + i * 8, value.{name}[i]);")
+            elif ftype.startswith("bytes"):
+                out.append(f"    std::memcpy(data.data() + {offset}, value.{name}.data(), {VECTOR_TYPES[ftype]});")
+            elif ftype == "record_ref":
+                nested = cpp_name(field["ref"])
+                out.append(f"    const auto {name} = encode{nested}(value.{name});")
+                out.append(f"    std::memcpy(data.data() + {offset}, {name}.data(), {name}.size());")
+            else:
+                raise ValueError(ftype)
+        out.extend(["    return data;", "}", ""])
+
     for record_name, record in schema["records"].items():
+        if record_name in SEMANTIC_SUPPORT_RECORDS:
+            continue
         emit_decoder(f"decode{cpp_name(record_name)}", cpp_name(record_name),
-                     record_name, record["fields"], out)
+                     record_name, record["fields"], transport_codecs)
+        emit_encoder(
+            f"encode{cpp_name(record_name)}",
+            cpp_name(record_name),
+            "k" + "".join(part.capitalize() for part in record_name.split("_")) + "Bytes",
+            record["fields"],
+            transport_codecs,
+        )
     for payload_name, payload in schema["attr_payloads"].items():
         emit_decoder(f"decode{cpp_name(payload_name)}", cpp_name(payload_name),
-                     payload_name, payload["fields"], out)
+                     payload_name, payload["fields"], transport_codecs)
+        emit_encoder(
+            f"encode{cpp_name(payload_name)}",
+            cpp_name(payload_name),
+            "k" + "".join(part.capitalize() for part in payload_name.split("_")) + "Bytes",
+            payload["fields"],
+            transport_codecs,
+        )
 
     variant_members = ", ".join(cpp_name(name) for name in schema["attr_payloads"])
-    out.extend(
+    transport_codecs.extend(
         [
             "using AttrPayload = std::variant<std::monostate, " + variant_members + ">;",
             "",
@@ -472,8 +527,8 @@ def render_cpp(schema: dict, sha: str) -> str:
     )
     for payload_name in schema["attr_payloads"]:
         const = "kAttrKind" + payload_name
-        out.append(f"    case {const}: return k{cpp_name(payload_name)}Bytes;")
-    out.extend(
+        transport_codecs.append(f"    case {const}: return k{cpp_name(payload_name)}Bytes;")
+    transport_codecs.extend(
         [
             "    default: return 0;",
             "    }",
@@ -487,35 +542,853 @@ def render_cpp(schema: dict, sha: str) -> str:
     )
     for payload_name in schema["attr_payloads"]:
         struct = cpp_name(payload_name)
-        out.append(
+        transport_codecs.append(
             f"    case kAttrKind{payload_name}:"
             f" out = {struct}{{}};"
             f" return decode{struct}(payload, std::get<{struct}>(out), error);"
         )
-    out.extend(
+    transport_codecs.extend(
         [
             "    default:",
-            "        error = {kCodeEnum, \"unknown attr kind\"};",
+            "        error = {mesh_diagnostics::E_ABI_ENUM, \"unknown attr kind\"};",
             "        return false;",
             "    }",
             "}",
             "",
         ]
     )
+    transport_codecs.extend(["#endif", ""])
     out.extend(
         [
+            '#include "dev/ai_mesh/generated/mesh_ir_transport_codecs.hh"',
+            '#include "dev/ai_mesh/generated/mesh_ir_transport_projection.hh"',
+            '#include "dev/ai_mesh/generated/mesh_ir_transport_storage.hh"',
+            "",
             "static_assert(kHeaderBytes == 128, \"header size fixed by spec\");",
             "static_assert(kSectionDirBytes == 40, \"section dir size fixed by spec\");",
             "static_assert(kCommandsBytes == 40, \"COMMANDS record fixed by spec\");",
             "",
-            "} // namespace mesh_abi",
-            "} // namespace ai_mesh",
-            "} // namespace gem5",
+            "}",
+            "}",
+            "}",
             "",
-            f"#endif // {guard}",
+            '#include "dev/ai_mesh/generated/mesh_ir_semantic_abi.hh"',
+            "",
+            "#endif",
             "",
         ]
     )
+    return "\n".join(out), "\n".join(transport_codecs)
+
+
+def semantic_enum_members(schema: dict, definition: dict) -> list[dict]:
+    if "values_from" in definition:
+        return [
+            {"name": name, "wire": value, "python": value}
+            for name, value in schema["enums"][definition["values_from"]].items()
+        ]
+    return definition["members"]
+
+
+def semantic_cpp_type(schema: dict, field: dict) -> str:
+    kind = field["kind"]
+    if kind == "u64":
+        return "uint64_t"
+    if kind == "i64":
+        return "int64_t"
+    if kind == "bool":
+        return "bool"
+    if kind == "f64":
+        return "double"
+    if kind == "string":
+        return "StringRef"
+    if kind in ("bytes", "u64_list", "integer_list", "ref_list"):
+        return "ListSpan"
+    if kind == "ref":
+        return "SemanticRef"
+    if kind == "scalar":
+        return "ScalarValue"
+    if kind == "enum":
+        return schema["semantic_enums"][field["enum"]]["class_name"]
+    raise ValueError(kind)
+
+
+def render_semantic_cpp_entry(schema: dict, sha: str, codec_files: tuple[str, ...]) -> str:
+    semantic_ref = schema["semantic_wire_types"]["semantic_ref"]
+    semantic_ref_fields = {field["name"]: field for field in semantic_ref["fields"]}
+    list_span = schema["semantic_wire_types"]["list_span"]
+    list_span_fields = {field["name"]: field for field in list_span["fields"]}
+    string_ref = schema["semantic_wire_types"]["string_ref"]
+    string_ref_fields = {field["name"]: field for field in string_ref["fields"]}
+    scalar = schema["semantic_wire_types"]["scalar_value"]
+    scalar_fields = {field["name"]: field for field in scalar["fields"]}
+    metadata = schema["records"]["PROGRAM_METADATA"]
+    metadata_fields = {field["name"]: field for field in metadata["fields"]}
+    integer = schema["records"]["SEMANTIC_INTEGER_VALUES"]
+    integer_fields = {field["name"]: field for field in integer["fields"]}
+    scalar_kinds = schema["enums"]["scalar_kind"]
+    semantic_ref_section_reader = "rd" + semantic_ref_fields["section_type"]["type"].upper()
+    semantic_ref_row_reader = "rd" + semantic_ref_fields["row_id"]["type"].upper()
+    semantic_ref_section_writer = "wr" + semantic_ref_fields["section_type"]["type"].upper()
+    semantic_ref_row_writer = "wr" + semantic_ref_fields["row_id"]["type"].upper()
+    list_begin_reader = "rd" + list_span_fields["begin"]["type"].upper()
+    list_count_reader = "rd" + list_span_fields["count"]["type"].upper()
+    list_begin_writer = "wr" + list_span_fields["begin"]["type"].upper()
+    list_count_writer = "wr" + list_span_fields["count"]["type"].upper()
+    string_reader = "rd" + string_ref_fields["string_id"]["type"].upper()
+    string_writer = "wr" + string_ref_fields["string_id"]["type"].upper()
+    metadata_minor_reader = "rd" + metadata_fields["min_reader_minor"]["type"].upper()
+    metadata_minor_writer = "wr" + metadata_fields["min_reader_minor"]["type"].upper()
+    integer_kind_reader = "rd" + integer_fields["kind"]["type"].upper()
+    integer_payload_reader = "rd" + integer_fields["payload"]["type"].upper()
+    integer_kind_writer = "wr" + integer_fields["kind"]["type"].upper()
+    integer_payload_writer = "wr" + integer_fields["payload"]["type"].upper()
+    enum_value_fields = {
+        field["name"]: field for field in schema["semantic_wire_types"]["enum_value"]["fields"]
+    }
+    semantic_enum_cpp_type = cpp_scalar(enum_value_fields["value"])
+    out = [
+        "#ifndef GEM5_DEV_AI_MESH_GENERATED_MESH_IR_SEMANTIC_ABI_HH",
+        "#define GEM5_DEV_AI_MESH_GENERATED_MESH_IR_SEMANTIC_ABI_HH",
+        "",
+        "#include <array>",
+        "#include <cmath>",
+        "#include <cstdint>",
+        "#include <cstring>",
+        "#include <limits>",
+        "#include <string_view>",
+        "#include <vector>",
+        '#include "dev/ai_mesh/generated/mesh_diagnostics.hh"',
+        "",
+        "namespace gem5",
+        "{",
+        "namespace ai_mesh",
+        "{",
+        "namespace mesh_abi",
+        "{",
+        "namespace semantic_abi",
+        "{",
+        "",
+        "static_assert(sizeof(double) == sizeof(uint64_t));",
+        "static_assert(std::numeric_limits<double>::is_iec559);",
+        "",
+        f'constexpr char kSemanticSchemaSha256[] = "{sha}";',
+        f"constexpr uint32_t kSemanticRefBytes = {semantic_ref['bytes']};",
+        *(
+            f"constexpr uint32_t kSemanticRef{''.join(part.capitalize() for part in field['name'].split('_'))}Offset = {field['offset']};"
+            for field in semantic_ref["fields"]
+        ),
+        f"constexpr uint32_t kListSpanBytes = {list_span['bytes']};",
+        *(
+            f"constexpr uint32_t kListSpan{''.join(part.capitalize() for part in field['name'].split('_'))}Offset = {field['offset']};"
+            for field in list_span["fields"]
+        ),
+        f"constexpr uint32_t kStringRefBytes = {string_ref['bytes']};",
+        *(
+            f"constexpr uint32_t kStringRef{''.join(part.capitalize() for part in field['name'].split('_'))}Offset = {field['offset']};"
+            for field in string_ref["fields"]
+        ),
+        f"constexpr uint32_t kEnumValueBytes = {schema['semantic_wire_types']['enum_value']['bytes']};",
+        *(
+            f"constexpr uint32_t kEnumValue{''.join(part.capitalize() for part in field['name'].split('_'))}Offset = {field['offset']};"
+            for field in schema["semantic_wire_types"]["enum_value"]["fields"]
+        ),
+        f"constexpr uint32_t kScalarValueBytes = {scalar['bytes']};",
+        *(
+            f"constexpr uint32_t kScalarValue{''.join(part.capitalize() for part in field['name'].split('_'))}Offset = {field['offset']};"
+            for field in scalar["fields"]
+        ),
+        f"constexpr uint32_t kProgramMetadataBytes = {metadata['bytes']};",
+        *(
+            f"constexpr uint32_t kProgramMetadata{''.join(part.capitalize() for part in field['name'].split('_'))}Offset = {field['offset']};"
+            for field in metadata["fields"]
+        ),
+        f"constexpr uint32_t kSemanticIntegerValueBytes = {integer['bytes']};",
+        *(
+            f"constexpr uint32_t kSemanticIntegerValue{''.join(part.capitalize() for part in field['name'].split('_'))}Offset = {field['offset']};"
+            for field in integer["fields"]
+        ),
+        *(
+            f"constexpr {cpp_scalar(scalar_fields['kind'])} kScalarKind{''.join(part.capitalize() for part in name.split('_'))} = {value};"
+            for name, value in scalar_kinds.items()
+        ),
+        "",
+        f"struct SemanticRef {{ {cpp_scalar(semantic_ref_fields['section_type'])} section_type = 0; {cpp_scalar(semantic_ref_fields['row_id'])} row_id = 0; }};",
+        f"struct ListSpan {{ {cpp_scalar(list_span_fields['begin'])} begin = 0; {cpp_scalar(list_span_fields['count'])} count = 0; }};",
+        f"struct StringRef {{ {cpp_scalar(string_ref_fields['string_id'])} string_id = 0; }};",
+        f"struct ScalarValue {{ {cpp_scalar(scalar_fields['kind'])} kind = 0; {cpp_scalar(scalar_fields['payload'])} payload = 0; }};",
+        f"struct ProgramMetadata {{ {cpp_scalar(metadata_fields['min_reader_minor'])} min_reader_minor = 0; SemanticRef semantics{{}}; std::array<uint8_t, kProgramMetadataBytes - kProgramMetadataSemanticSha256Offset> semantic_sha256{{}}; }};",
+        f"struct SemanticIntegerValue {{ {cpp_scalar(integer_fields['kind'])} kind = 0; {cpp_scalar(integer_fields['payload'])} payload = 0; }};",
+        "enum class SemanticEnumPythonKind : uint8_t { Invalid, Integer, String };",
+        "struct SemanticEnumPythonValue { SemanticEnumPythonKind kind = SemanticEnumPythonKind::Invalid; int64_t integer_value = 0; std::string_view string_value{}; };",
+        "template <typename Enum> struct SemanticEnumTraits;",
+        "enum class SemanticFieldKind : uint8_t { U64, I64, Bool, F64, String, Bytes, Enum, Ref, U64List, IntegerList, RefList, Scalar };",
+        "struct SemanticFieldDescriptor { std::string_view name; SemanticFieldKind kind; uint64_t optional_presence_mask; const uint16_t *allowed_target_section_types; size_t allowed_target_count; bool json_union_discriminator; };",
+        "template <typename Record> struct SemanticRecordTraits;",
+        "",
+    ]
+    for definition in schema["semantic_enums"].values():
+        name = definition["class_name"]
+        out.append(f"enum class {name} : {semantic_enum_cpp_type}")
+        out.append("{")
+        for member in semantic_enum_members(schema, definition):
+            out.append(f"    {member['name']} = {member['wire']},")
+        out.extend(["};", "", f"constexpr bool valid{name}({semantic_enum_cpp_type} value)", "{", "    switch (value) {"])
+        for member in semantic_enum_members(schema, definition):
+            out.append(f"      case {member['wire']}: return true;")
+        out.extend(["      default: return false;", "    }", "}", ""])
+    out.extend([
+        "inline bool zeroBytes(const uint8_t *data, uint32_t size)",
+        "{",
+        "    for (uint32_t index = 0; index < size; ++index) if (data[index] != 0) return false;",
+        "    return true;",
+        "}",
+        "inline int64_t rdI64(const uint8_t *data)",
+        "{",
+        "    uint64_t bits = mesh_abi::rdU64(data);",
+        "    int64_t value;",
+        "    std::memcpy(&value, &bits, sizeof(value));",
+        "    return value;",
+        "}",
+        "inline double rdF64(const uint8_t *data)",
+        "{",
+        "    uint64_t bits = mesh_abi::rdU64(data);",
+        "    double value;",
+        "    std::memcpy(&value, &bits, sizeof(value));",
+        "    return value;",
+        "}",
+        "inline void wrI64(uint8_t *data, int64_t value)",
+        "{",
+        "    uint64_t bits;",
+        "    std::memcpy(&bits, &value, sizeof(bits));",
+        "    mesh_abi::wrU64(data, bits);",
+        "}",
+        "inline void wrF64(uint8_t *data, double value)",
+        "{",
+        "    uint64_t bits;",
+        "    std::memcpy(&bits, &value, sizeof(bits));",
+        "    mesh_abi::wrU64(data, bits);",
+        "}",
+        "inline bool decodeSemanticRef(const uint8_t *data, SemanticRef &out, AbiError &error)",
+        "{",
+        f"    out.section_type = mesh_abi::{semantic_ref_section_reader}(data + kSemanticRefSectionTypeOffset);",
+        f"    if (!zeroBytes(data + kSemanticRefReservedOffset, {field_size(semantic_ref_fields['reserved'])})) {{ error = {{mesh_diagnostics::E_ABI_RESERVED, \"semantic_ref reserved field is nonzero\"}}; return false; }}",
+        f"    out.row_id = mesh_abi::{semantic_ref_row_reader}(data + kSemanticRefRowIdOffset);",
+        "    return true;",
+        "}",
+        "inline void encodeSemanticRef(uint8_t *data, const SemanticRef &value)",
+        "{",
+        "    std::memset(data, 0, kSemanticRefBytes);",
+        f"    mesh_abi::{semantic_ref_section_writer}(data + kSemanticRefSectionTypeOffset, value.section_type);",
+        f"    mesh_abi::{semantic_ref_row_writer}(data + kSemanticRefRowIdOffset, value.row_id);",
+        "}",
+        "inline bool decodeListSpan(const uint8_t *data, ListSpan &out, AbiError &error)",
+        "{",
+        f"    out.begin = mesh_abi::{list_begin_reader}(data + kListSpanBeginOffset);",
+        f"    out.count = mesh_abi::{list_count_reader}(data + kListSpanCountOffset);",
+        "    if (out.count == 0 && out.begin != 0) { error = {mesh_diagnostics::E_ABI_ORDER, \"empty list span has nonzero begin\"}; return false; }",
+        "    return true;",
+        "}",
+        "inline void encodeListSpan(uint8_t *data, const ListSpan &value)",
+        "{",
+        f"    mesh_abi::{list_begin_writer}(data + kListSpanBeginOffset, value.begin);",
+        f"    mesh_abi::{list_count_writer}(data + kListSpanCountOffset, value.count);",
+        "}",
+        "inline bool decodeStringRef(const uint8_t *data, StringRef &out, AbiError &error)",
+        "{",
+        f"    out.string_id = mesh_abi::{string_reader}(data + kStringRefStringIdOffset);",
+        f"    if (!zeroBytes(data + kStringRefReservedOffset, {field_size(string_ref_fields['reserved'])})) {{ error = {{mesh_diagnostics::E_ABI_RESERVED, \"string reference reserved field is nonzero\"}}; return false; }}",
+        "    if (out.string_id == 0) { error = {mesh_diagnostics::E_ABI_BOUNDS, \"string reference is absent\"}; return false; }",
+        "    return true;",
+        "}",
+        "inline void encodeStringRef(uint8_t *data, const StringRef &value)",
+        "{",
+        "    std::memset(data, 0, kStringRefBytes);",
+        f"    mesh_abi::{string_writer}(data + kStringRefStringIdOffset, value.string_id);",
+        "}",
+        "inline bool decodeProgramMetadata(const uint8_t *data, ProgramMetadata &out, AbiError &error)",
+        "{",
+        f"    out.min_reader_minor = mesh_abi::{metadata_minor_reader}(data + kProgramMetadataMinReaderMinorOffset);",
+        "    if (!zeroBytes(data + kProgramMetadataFlagsOffset, kProgramMetadataSemanticsOffset - kProgramMetadataFlagsOffset)) { error = {mesh_diagnostics::E_ABI_RESERVED, \"PROGRAM_METADATA reserved fields are nonzero\"}; return false; }",
+        "    if (!decodeSemanticRef(data + kProgramMetadataSemanticsOffset, out.semantics, error)) return false;",
+        f"    if (out.semantics.section_type != {schema['semantic_records']['mesh_ir.scheduled.model.ProgramSemantics']['section_type']} || out.semantics.row_id != 1) {{ error = {{mesh_diagnostics::E_ABI_BOUNDS, \"PROGRAM_METADATA root is invalid\"}}; return false; }}",
+        "    std::memcpy(out.semantic_sha256.data(), data + kProgramMetadataSemanticSha256Offset, out.semantic_sha256.size());",
+        "    return true;",
+        "}",
+        "inline std::array<uint8_t, kProgramMetadataBytes> encodeProgramMetadata(const ProgramMetadata &value)",
+        "{",
+        "    std::array<uint8_t, kProgramMetadataBytes> data{};",
+        f"    mesh_abi::{metadata_minor_writer}(data.data() + kProgramMetadataMinReaderMinorOffset, value.min_reader_minor);",
+        "    encodeSemanticRef(data.data() + kProgramMetadataSemanticsOffset, value.semantics);",
+        "    std::memcpy(data.data() + kProgramMetadataSemanticSha256Offset, value.semantic_sha256.data(), value.semantic_sha256.size());",
+        "    return data;",
+        "}",
+        "inline bool decodeSemanticIntegerValue(const uint8_t *data, SemanticIntegerValue &out, AbiError &error)",
+        "{",
+        f"    out.kind = mesh_abi::{integer_kind_reader}(data + kSemanticIntegerValueKindOffset);",
+        f"    out.payload = mesh_abi::{integer_payload_reader}(data + kSemanticIntegerValuePayloadOffset);",
+        "    if (!zeroBytes(data + kSemanticIntegerValueReservedOffset, kSemanticIntegerValuePayloadOffset - kSemanticIntegerValueReservedOffset)) { error = {mesh_diagnostics::E_ABI_RESERVED, \"semantic integer reserved bytes are nonzero\"}; return false; }",
+        "    if (out.kind != kScalarKindI64 && out.kind != kScalarKindU64) { error = {mesh_diagnostics::E_ABI_ENUM, \"semantic integer kind is invalid\"}; return false; }",
+        "    if (out.kind == kScalarKindI64 && rdI64(data + kSemanticIntegerValuePayloadOffset) >= 0) { error = {mesh_diagnostics::E_ABI_ORDER, \"semantic signed integer is noncanonical\"}; return false; }",
+        "    return true;",
+        "}",
+        "inline std::array<uint8_t, kSemanticIntegerValueBytes> encodeSemanticIntegerValue(const SemanticIntegerValue &value)",
+        "{",
+        "    std::array<uint8_t, kSemanticIntegerValueBytes> data{};",
+        f"    mesh_abi::{integer_kind_writer}(data.data() + kSemanticIntegerValueKindOffset, value.kind);",
+        f"    mesh_abi::{integer_payload_writer}(data.data() + kSemanticIntegerValuePayloadOffset, value.payload);",
+        "    return data;",
+        "}",
+        "",
+        '#include "dev/ai_mesh/generated/mesh_ir_semantic_enum_traits.hh"',
+        '#include "dev/ai_mesh/generated/mesh_ir_semantic_records.hh"',
+    ])
+    for filename in codec_files:
+        out.append(f'#include "dev/ai_mesh/generated/{filename}"')
+    for filename in (
+        "mesh_ir_semantic_fields_analysis.hh",
+        "mesh_ir_semantic_fields_common.hh",
+        "mesh_ir_semantic_fields_graph.hh",
+        "mesh_ir_semantic_fields_kernel.hh",
+        "mesh_ir_semantic_fields_scheduled.hh",
+        "mesh_ir_semantic_fields_traffic.hh",
+        "mesh_ir_semantic_membership.hh",
+        "mesh_ir_semantic_storage.hh",
+    ):
+        out.append(f'#include "dev/ai_mesh/generated/{filename}"')
+    out.extend([
+        "",
+        "}",
+        "}",
+        "}",
+        "}",
+        "",
+        "#endif",
+        "",
+    ])
+    return "\n".join(out)
+
+
+def render_semantic_cpp_records(schema: dict) -> str:
+    out = [
+        "#ifndef GEM5_DEV_AI_MESH_GENERATED_MESH_IR_SEMANTIC_RECORDS_HH",
+        "#define GEM5_DEV_AI_MESH_GENERATED_MESH_IR_SEMANTIC_RECORDS_HH",
+        "",
+    ]
+    for qualified_name, record in schema["semantic_records"].items():
+        name = record["json_tag"]
+        out.append(f"constexpr uint32_t k{name}Bytes = {record['record_bytes']};")
+        out.append(f"constexpr uint32_t k{name}PresenceMaskOffset = 0;")
+        for field in record["fields"]:
+            out.append(f"constexpr uint32_t k{name}{''.join(part.capitalize() for part in field['name'].split('_'))}Offset = {field['offset']};")
+        coverage = "8" if not record["fields"] else f"{record['fields'][-1]['offset']} + {record['fields'][-1]['wire_bytes']}"
+        out.extend([f"static_assert(k{name}Bytes == {coverage});", f"struct {name}", "{", "    uint64_t presence_mask = 0;"])
+        for field in record["fields"]:
+            ctype = semantic_cpp_type(schema, field)
+            initializer = "false" if ctype == "bool" else "0" if ctype in ("uint64_t", "int64_t", "double") else "{}"
+            out.append(f"    {ctype} {cpp_identifier(field['name'])} = {initializer};")
+        out.extend(["};", ""])
+    out.extend(["#endif", ""])
+    return "\n".join(out)
+
+
+def semantic_ref_condition(schema: dict, field: dict, expression: str) -> str:
+    values = [schema["semantic_records"][target]["section_type"] for target in field["targets"]]
+    return " && ".join(f"{expression} != {value}" for value in values)
+
+
+def render_semantic_decode_field(schema: dict, owner: str, field: dict) -> list[str]:
+    name = cpp_identifier(field["name"])
+    offset = field["offset"]
+    kind = field["kind"]
+    label = f"{owner}.{name}"
+    enum_wire_fields = {
+        item["name"]: item for item in schema["semantic_wire_types"]["enum_value"]["fields"]
+    }
+    scalar_wire_fields = {
+        item["name"]: item for item in schema["semantic_wire_types"]["scalar_value"]["fields"]
+    }
+    if kind == "u64":
+        return [f"    out.{name} = mesh_abi::rdU64(data + {offset});"]
+    if kind == "i64":
+        return [f"    out.{name} = rdI64(data + {offset});"]
+    if kind == "bool":
+        return [
+            f"    if (mesh_abi::rdU64(data + {offset}) > 1) {{ error = {{mesh_diagnostics::E_ABI_ENUM, \"{label} is not boolean\"}}; return false; }}",
+            f"    out.{name} = mesh_abi::rdU64(data + {offset}) != 0;",
+        ]
+    if kind == "f64":
+        return [
+            f"    out.{name} = rdF64(data + {offset});",
+            f"    if (!std::isfinite(out.{name})) {{ error = {{mesh_diagnostics::E_ABI_BOUNDS, \"{label} is not finite\"}}; return false; }}",
+        ]
+    if kind == "string":
+        return [f"    if (!decodeStringRef(data + {offset}, out.{name}, error)) return false;"]
+    if kind in ("bytes", "u64_list", "integer_list", "ref_list"):
+        return [f"    if (!decodeListSpan(data + {offset}, out.{name}, error)) return false;"]
+    if kind == "ref":
+        condition = semantic_ref_condition(schema, field, f"out.{name}.section_type")
+        return [
+            f"    if (!decodeSemanticRef(data + {offset}, out.{name}, error)) return false;",
+            f"    if (out.{name}.row_id == 0 || ({condition})) {{ error = {{mesh_diagnostics::E_ABI_BOUNDS, \"{label} target is invalid\"}}; return false; }}",
+        ]
+    if kind == "enum":
+        enum_name = schema["semantic_enums"][field["enum"]]["class_name"]
+        enum_reader = "rd" + enum_wire_fields["value"]["type"].upper()
+        reserved_reader = "rd" + enum_wire_fields["reserved"]["type"].upper()
+        return [
+            f"    if (mesh_abi::{reserved_reader}(data + {offset} + kEnumValueReservedOffset) != 0) {{ error = {{mesh_diagnostics::E_ABI_RESERVED, \"{label} reserved bytes are nonzero\"}}; return false; }}",
+            f"    if (!valid{enum_name}(mesh_abi::{enum_reader}(data + {offset} + kEnumValueValueOffset))) {{ error = {{mesh_diagnostics::E_ABI_ENUM, \"{label} is invalid\"}}; return false; }}",
+            f"    out.{name} = static_cast<{enum_name}>(mesh_abi::{enum_reader}(data + {offset} + kEnumValueValueOffset));",
+        ]
+    if kind == "scalar":
+        kind_reader = "rd" + scalar_wire_fields["kind"]["type"].upper()
+        payload_reader = "rd" + scalar_wire_fields["payload"]["type"].upper()
+        return [
+            f"    out.{name}.kind = mesh_abi::{kind_reader}(data + {offset} + kScalarValueKindOffset);",
+            f"    out.{name}.payload = mesh_abi::{payload_reader}(data + {offset} + kScalarValuePayloadOffset);",
+            f"    if (!zeroBytes(data + {offset} + kScalarValueReservedOffset, kScalarValuePayloadOffset - kScalarValueReservedOffset)) {{ error = {{mesh_diagnostics::E_ABI_RESERVED, \"{label} scalar reserved bytes are nonzero\"}}; return false; }}",
+            f"    if (!validScalarKind(out.{name}.kind)) {{ error = {{mesh_diagnostics::E_ABI_ENUM, \"{label} scalar kind is invalid\"}}; return false; }}",
+            f"    if (out.{name}.kind == kScalarKindBool && out.{name}.payload > 1) {{ error = {{mesh_diagnostics::E_ABI_ENUM, \"{label} boolean scalar is invalid\"}}; return false; }}",
+            f"    if (out.{name}.kind == kScalarKindI64 && rdI64(data + {offset} + kScalarValuePayloadOffset) >= 0) {{ error = {{mesh_diagnostics::E_ABI_ORDER, \"{label} signed scalar is noncanonical\"}}; return false; }}",
+            f"    if (out.{name}.kind == kScalarKindF64 && !std::isfinite(rdF64(data + {offset} + kScalarValuePayloadOffset))) {{ error = {{mesh_diagnostics::E_ABI_BOUNDS, \"{label} scalar is not finite\"}}; return false; }}",
+        ]
+    raise ValueError(kind)
+
+
+def render_semantic_encode_field(schema: dict, field: dict) -> list[str]:
+    name = cpp_identifier(field["name"])
+    offset = field["offset"]
+    kind = field["kind"]
+    enum_wire_fields = {
+        item["name"]: item for item in schema["semantic_wire_types"]["enum_value"]["fields"]
+    }
+    scalar_wire_fields = {
+        item["name"]: item for item in schema["semantic_wire_types"]["scalar_value"]["fields"]
+    }
+    if kind == "u64":
+        return [f"    mesh_abi::wrU64(data.data() + {offset}, value.{name});"]
+    if kind == "i64":
+        return [f"    wrI64(data.data() + {offset}, value.{name});"]
+    if kind == "bool":
+        return [f"    mesh_abi::wrU64(data.data() + {offset}, value.{name} ? 1 : 0);"]
+    if kind == "f64":
+        return [f"    wrF64(data.data() + {offset}, value.{name});"]
+    if kind == "string":
+        return [f"    encodeStringRef(data.data() + {offset}, value.{name});"]
+    if kind in ("bytes", "u64_list", "integer_list", "ref_list"):
+        return [f"    encodeListSpan(data.data() + {offset}, value.{name});"]
+    if kind == "ref":
+        return [f"    encodeSemanticRef(data.data() + {offset}, value.{name});"]
+    if kind == "enum":
+        writer = "wr" + enum_wire_fields["value"]["type"].upper()
+        return [f"    mesh_abi::{writer}(data.data() + {offset} + kEnumValueValueOffset, static_cast<{cpp_scalar(enum_wire_fields['value'])}>(value.{name}));"]
+    if kind == "scalar":
+        kind_writer = "wr" + scalar_wire_fields["kind"]["type"].upper()
+        payload_writer = "wr" + scalar_wire_fields["payload"]["type"].upper()
+        return [
+            f"    mesh_abi::{kind_writer}(data.data() + {offset} + kScalarValueKindOffset, value.{name}.kind);",
+            f"    mesh_abi::{payload_writer}(data.data() + {offset} + kScalarValuePayloadOffset, value.{name}.payload);",
+        ]
+    raise ValueError(kind)
+
+
+def render_semantic_cpp_codecs(schema: dict, records: list[tuple[str, dict]], domain: str) -> str:
+    guard = f"GEM5_DEV_AI_MESH_GENERATED_MESH_IR_SEMANTIC_CODECS_{domain.upper()}_HH"
+    out = [f"#ifndef {guard}", f"#define {guard}", ""]
+    for qualified_name, record in records:
+        name = record["json_tag"]
+        out.extend([f"inline bool decode{name}(const uint8_t *data, {name} &out, AbiError &error)", "{", f"    out = {name}{{}};", "    out.presence_mask = mesh_abi::rdU64(data);"])
+        out.append(f"    if ((out.presence_mask & ~uint64_t({record['optional_mask']})) != 0) {{ error = {{mesh_diagnostics::E_ABI_RESERVED, \"{name} presence mask has undeclared bits\"}}; return false; }}")
+        for field in record["fields"]:
+            optional_bit = field.get("optional_bit")
+            if optional_bit is not None:
+                out.append(f"    if ((out.presence_mask & (uint64_t(1) << {optional_bit})) == 0) {{")
+                out.append(f"        if (!zeroBytes(data + {field['offset']}, {field['wire_bytes']})) {{ error = {{mesh_diagnostics::E_ABI_RESERVED, \"{name}.{field['name']} absent bytes are nonzero\"}}; return false; }}")
+                out.append("    } else {")
+                out.extend("    " + line for line in render_semantic_decode_field(schema, name, field))
+                out.append("    }")
+            else:
+                out.extend(render_semantic_decode_field(schema, name, field))
+        out.extend(["    return true;", "}", "", f"inline std::array<uint8_t, k{name}Bytes> encode{name}(const {name} &value)", "{", f"    std::array<uint8_t, k{name}Bytes> data{{}};", "    mesh_abi::wrU64(data.data(), value.presence_mask);"])
+        for field in record["fields"]:
+            optional_bit = field.get("optional_bit")
+            if optional_bit is not None:
+                out.append(f"    if ((value.presence_mask & (uint64_t(1) << {optional_bit})) != 0) {{")
+                out.extend("    " + line for line in render_semantic_encode_field(schema, field))
+                out.append("    }")
+            else:
+                out.extend(render_semantic_encode_field(schema, field))
+        out.extend(["    return data;", "}", ""])
+    out.extend(["#endif", ""])
+    return "\n".join(out)
+
+
+def render_semantic_cpp_enum_traits(schema: dict) -> str:
+    guard = "GEM5_DEV_AI_MESH_GENERATED_MESH_IR_SEMANTIC_ENUM_TRAITS_HH"
+    enum_value = {
+        field["name"]: field for field in schema["semantic_wire_types"]["enum_value"]["fields"]
+    }
+    wire_type = cpp_scalar(enum_value["value"])
+    out = [f"#ifndef {guard}", f"#define {guard}", ""]
+    for definition in schema["semantic_enums"].values():
+        name = definition["class_name"]
+        out.extend([f"template <> struct SemanticEnumTraits<{name}>", "{"])
+        out.append(f"    static constexpr std::string_view name = \"{name}\";")
+        out.append(f"    static bool fromWire({wire_type} wire, {name} &value)")
+        out.extend(["    {", f"        if (!valid{name}(wire)) return false;", f"        value = static_cast<{name}>(wire);", "        return true;", "    }"])
+        out.append(f"    static constexpr {wire_type} toWire({name} value) {{ return static_cast<{wire_type}>(value); }}")
+        out.append(f"    static constexpr SemanticEnumPythonValue pythonValue({name} value)")
+        out.extend(["    {", "        switch (value) {"])
+        for member in semantic_enum_members(schema, definition):
+            python_value = member["python"]
+            if isinstance(python_value, str):
+                encoded = python_value.encode("utf-8")
+                literal = "".join(f'"\\x{byte:02x}"' for byte in encoded) or '""'
+                value = f"{{SemanticEnumPythonKind::String, 0, std::string_view{{{literal}, {len(encoded)}}}}}"
+            else:
+                literal = "(-9223372036854775807ll - 1ll)" if python_value == -(1 << 63) else f"{python_value}ll"
+                value = f"{{SemanticEnumPythonKind::Integer, {literal}, {{}}}}"
+            out.append(f"        case {name}::{member['name']}: return {value};")
+        out.extend(["        default: return {};", "        }", "    }", "};", ""])
+    out.extend(["#endif", ""])
+    return "\n".join(out)
+
+
+def render_semantic_cpp_fields(schema: dict, records: list[tuple[str, dict]], domain: str) -> str:
+    guard = f"GEM5_DEV_AI_MESH_GENERATED_MESH_IR_SEMANTIC_FIELDS_{domain.upper()}_HH"
+    kind_names = {
+        "u64": "U64", "i64": "I64", "bool": "Bool", "f64": "F64",
+        "string": "String", "bytes": "Bytes", "enum": "Enum", "ref": "Ref",
+        "u64_list": "U64List", "integer_list": "IntegerList",
+        "ref_list": "RefList", "scalar": "Scalar",
+    }
+    out = [f"#ifndef {guard}", f"#define {guard}", ""]
+    for qualified_name, record in records:
+        owner = record["json_tag"]
+        descriptor_names = {}
+        for field in record["fields"]:
+            suffix = "".join(part.capitalize() for part in field["name"].split("_"))
+            descriptor = f"k{owner}{suffix}Field"
+            descriptor_names[field["name"]] = descriptor
+            targets = field.get("targets", ())
+            target_name = f"k{owner}{suffix}Targets"
+            if targets:
+                values = ", ".join(str(schema["semantic_records"][target]["section_type"]) for target in targets)
+                out.append(f"inline constexpr std::array<uint16_t, {len(targets)}> {target_name} = {{{values}}};")
+                target_data = f"{target_name}.data()"
+            else:
+                target_data = "nullptr"
+            optional_mask = 0 if "optional_bit" not in field else 1 << field["optional_bit"]
+            out.append(
+                f"inline constexpr SemanticFieldDescriptor {descriptor} = "
+                f'{{"{field["name"]}", SemanticFieldKind::{kind_names[field["kind"]]}, '
+                f"{optional_mask}ull, {target_data}, {len(targets)}, "
+                f"{'true' if field['json_union_discriminator'] else 'false'}}};"
+            )
+        out.extend(["", f"template <typename Visitor> bool visitSemanticFieldsWire(const {owner} &value, Visitor &&visitor)", "{"])
+        out.extend(["    (void)value;", "    (void)visitor;"])
+        for field in record["fields"]:
+            descriptor = descriptor_names[field["name"]]
+            present = "true" if "optional_bit" not in field else f"(value.presence_mask & {1 << field['optional_bit']}ull) != 0"
+            out.append(f"    if (!visitor({descriptor}, {present}, value.{cpp_identifier(field['name'])})) return false;")
+        out.extend(["    return true;", "}", "", f"template <typename Visitor> bool visitSemanticFieldsCanonical(const {owner} &value, Visitor &&visitor)", "{"])
+        out.extend(["    (void)value;", "    (void)visitor;"])
+        for field in sorted(record["fields"], key=lambda item: item["name"]):
+            descriptor = descriptor_names[field["name"]]
+            present = "true" if "optional_bit" not in field else f"(value.presence_mask & {1 << field['optional_bit']}ull) != 0"
+            out.append(f"    if (!visitor({descriptor}, {present}, value.{cpp_identifier(field['name'])})) return false;")
+        out.extend(["    return true;", "}", ""])
+    out.extend(["#endif", ""])
+    return "\n".join(out)
+
+
+def render_semantic_cpp_membership(schema: dict) -> str:
+    guard = "GEM5_DEV_AI_MESH_GENERATED_MESH_IR_SEMANTIC_MEMBERSHIP_HH"
+    source_names = {"transport": "Transport", "semantic": "Semantic"}
+    targets = variant_membership_targets(schema)
+    out = [
+        f"#ifndef {guard}",
+        f"#define {guard}",
+        "",
+        "enum class VariantMembershipTargetSource : uint8_t { Transport, Semantic };",
+        "struct VariantMembershipTargetDescriptor { std::string_view field; VariantMembershipTargetSource source; std::string_view program_field; };",
+        "",
+        f"inline constexpr std::array<VariantMembershipTargetDescriptor, {len(targets)}> kVariantMembershipTargets = {{{{",
+    ]
+    for field, source, program_field in targets:
+        out.append(
+            f'    {{"{field}", VariantMembershipTargetSource::{source_names[source]}, "{program_field}"}},'
+        )
+    out.extend([
+        "}};",
+        "",
+        "template <typename Visitor> bool visitVariantMembershipTargets(const VariantMembership &value, Visitor &&visitor)",
+        "{",
+    ])
+    for index, (field, _, _) in enumerate(targets):
+        out.append(
+            f"    if (!visitor(kVariantMembershipTargets[{index}], value.{cpp_identifier(field)})) return false;"
+        )
+    out.extend(["    return true;", "}", "", "#endif", ""])
+    return "\n".join(out)
+
+
+def render_semantic_cpp_storage(schema: dict) -> str:
+    guard = "GEM5_DEV_AI_MESH_GENERATED_MESH_IR_SEMANTIC_STORAGE_HH"
+    out = [f"#ifndef {guard}", f"#define {guard}", "", "struct SemanticTables", "{"]
+    for record in schema["semantic_records"].values():
+        out.append(f"    std::vector<{record['json_tag']}> {record['section_name'][9:].lower()}_rows;")
+    out.extend(["};", ""])
+    for record in schema["semantic_records"].values():
+        name = record["json_tag"]
+        out.extend([
+            f"template <> struct SemanticRecordTraits<{name}>",
+            "{",
+            f"    static constexpr uint16_t section_type = {record['section_type']};",
+            f"    static constexpr uint32_t record_bytes = {record['record_bytes']};",
+            f"    static constexpr std::string_view json_tag = \"{record['json_tag']}\";",
+            f"    static bool decode(const uint8_t *data, {name} &value, AbiError &error) {{ return decode{name}(data, value, error); }}",
+            f"    static std::array<uint8_t, {record['record_bytes']}> encode(const {name} &value) {{ return encode{name}(value); }}",
+            "};",
+            "",
+        ])
+    for qualifier in ("", "const "):
+        out.extend([f"template <typename Visitor> bool visitSemanticTables({qualifier}SemanticTables &tables, Visitor &&visitor)", "{"])
+        for record in schema["semantic_records"].values():
+            name = record["json_tag"]
+            member = record["section_name"][9:].lower() + "_rows"
+            out.append(f"    if (!visitor(SemanticRecordTraits<{name}>{{}}, tables.{member})) return false;")
+        out.extend(["    return true;", "}", ""])
+        out.extend([f"template <typename Visitor> bool dispatchSemanticTable(uint16_t section_type, {qualifier}SemanticTables &tables, Visitor &&visitor)", "{", "    switch (section_type) {"])
+        for record in schema["semantic_records"].values():
+            name = record["json_tag"]
+            member = record["section_name"][9:].lower() + "_rows"
+            out.append(f"    case {record['section_type']}: return visitor(SemanticRecordTraits<{name}>{{}}, tables.{member});")
+        out.extend(["    default: return false;", "    }", "}", ""])
+    out.extend(["#endif", ""])
+    return "\n".join(out)
+
+
+def render_transport_cpp_projection(schema: dict) -> str:
+    guard = "GEM5_DEV_AI_MESH_GENERATED_MESH_IR_TRANSPORT_PROJECTION_HH"
+    kinds = {
+        "u8": "U8", "u16": "U16", "u32": "U32", "u64": "U64",
+        "u64x8": "U64x8", "bytes16": "Bytes", "bytes28": "Bytes",
+        "bytes32": "Bytes", "record_ref": "Record",
+    }
+    out = [
+        f"#ifndef {guard}", f"#define {guard}", "",
+        "enum class CanonicalProjection : uint8_t { Full, Semantic };",
+        "enum class ProgramFieldKind : uint8_t { Abi, Bytes, TransportSections, SemanticRef, Digest };",
+        "enum class ProgramAbiFieldKind : uint8_t { U16, U64 };",
+        "enum class TransportProjectionKind : uint8_t { Strings, Records, AttrPayloads };",
+        "enum class TransportFieldKind : uint8_t { U8, U16, U32, U64, U64x8, Bytes, Record };",
+        "enum class TransportStringPool : uint8_t { None, Transport, Semantic };",
+        "struct ProgramFieldDescriptor { std::string_view name; ProgramFieldKind kind; bool semantic; };",
+        "struct ProgramAbiFieldDescriptor { std::string_view name; ProgramAbiFieldKind kind; };",
+        "struct TransportSectionDescriptor { std::string_view name; uint16_t section_type; std::string_view program_field; TransportProjectionKind projection; bool optional; bool semantic; };",
+        "struct TransportFieldDescriptor { std::string_view name; TransportFieldKind kind; bool semantic; TransportStringPool string_pool; };",
+        "",
+    ]
+    program_kinds = {
+        "abi": "Abi", "bytes": "Bytes", "transport_sections": "TransportSections",
+        "semantic_ref": "SemanticRef", "digest": "Digest",
+    }
+    fields = sorted(schema["canonical"]["program_fields"], key=lambda item: item["name"])
+    out.append(f"inline constexpr std::array<ProgramFieldDescriptor, {len(fields)}> kProgramCanonicalFields = {{{{")
+    for field in fields:
+        out.append(f'    {{"{field["name"]}", ProgramFieldKind::{program_kinds[field["kind"]]}, {str(field["semantic"]).lower()}}},')
+    out.extend(["}};", ""])
+    abi_kinds = {"u16": "U16", "u64": "U64"}
+    parameters = ", ".join(
+        f"{CPP_TYPES[definition['type']]} {definition['program_field']}"
+        for definition in schema["canonical"]["abi_fields"].values()
+    )
+    out.extend([f"template <typename Visitor> bool visitProgramAbiFieldsCanonical({parameters}, Visitor &&visitor)", "{"])
+    for name, definition in sorted(schema["canonical"]["abi_fields"].items()):
+        out.append(
+            f'    if (!visitor(ProgramAbiFieldDescriptor{{"{name}", ProgramAbiFieldKind::{abi_kinds[definition["type"]]}}}, '
+            f'{definition["program_field"]})) return false;'
+        )
+    out.extend(["    return true;", "}", ""])
+    sections = schema["canonical"]["transport_sections"]
+    projection_kinds = {"strings": "Strings", "records": "Records", "attr_payloads": "AttrPayloads"}
+    section_descriptors = {}
+    for name, definition in sorted(sections.items()):
+        descriptor = f"k{cpp_name(name)}TransportSection"
+        section_descriptors[name] = descriptor
+        out.append(
+            f"inline constexpr TransportSectionDescriptor {descriptor} = "
+            f'{{"{name}", {schema["enums"]["section_type"][name]}, "{definition["program_field"]}", '
+            f'TransportProjectionKind::{projection_kinds[definition["projection"]]}, '
+            f'{str(definition["optional"]).lower()}, {str(definition["semantic"]).lower()}}};'
+        )
+    out.append("")
+    out.append(f"inline constexpr std::array<TransportSectionDescriptor, {len(sections)}> kTransportCanonicalSections = {{{{")
+    for name, definition in sorted(sections.items()):
+        out.append(f"    {section_descriptors[name]},")
+    out.extend(["}};", ""])
+    for record_name, record in schema["records"].items():
+        if record_name in SEMANTIC_SUPPORT_RECORDS:
+            continue
+        owner = cpp_name(record_name)
+        descriptors = {}
+        for field in record["fields"]:
+            suffix = "".join(part.capitalize() for part in field["name"].split("_"))
+            descriptor = f"k{owner}{suffix}CanonicalField"
+            descriptors[field["name"]] = descriptor
+            semantic = record.get("semantic", True) and field.get("semantic", True)
+            string_pool = {
+                None: "None", "STRINGS": "Transport", "SEMANTIC_STRINGS": "Semantic",
+            }[field.get("string_pool")]
+            out.append(
+                f"inline constexpr TransportFieldDescriptor {descriptor} = "
+                f'{{"{field.get("python_field", field["name"])}", TransportFieldKind::{kinds[field["type"]]}, '
+                f"{str(semantic).lower()}, TransportStringPool::{string_pool}}};"
+            )
+        out.extend(["", f"template <typename Visitor> bool visitTransportFieldsCanonical(const {owner} &value, CanonicalProjection projection, Visitor &&visitor)", "{"])
+        out.append("    (void)projection;")
+        for field in sorted(record["fields"], key=lambda item: item.get("python_field", item["name"])):
+            descriptor = descriptors[field["name"]]
+            semantic = record.get("semantic", True) and field.get("semantic", True)
+            condition = "" if semantic else "projection == CanonicalProjection::Full && "
+            out.append(f"    if ({condition}!visitor({descriptor}, value.{field['name']})) return false;")
+        out.extend(["    return true;", "}", ""])
+    for payload_name, payload in schema["attr_payloads"].items():
+        owner = cpp_name(payload_name)
+        descriptors = {}
+        for field in payload["fields"]:
+            suffix = "".join(part.capitalize() for part in field["name"].split("_"))
+            descriptor = f"k{owner}{suffix}CanonicalField"
+            descriptors[field["name"]] = descriptor
+            out.append(f'inline constexpr TransportFieldDescriptor {descriptor} = {{"{field["name"]}", TransportFieldKind::{kinds[field["type"]]}, true, TransportStringPool::None}};')
+        out.extend(["", f"template <typename Visitor> bool visitTransportFieldsCanonical(const {owner} &value, CanonicalProjection, Visitor &&visitor)", "{"])
+        for field in sorted(payload["fields"], key=lambda item: item["name"]):
+            out.append(f"    if (!visitor({descriptors[field['name']]}, value.{field['name']})) return false;")
+        out.extend(["    return true;", "}", ""])
+    out.extend(["template <typename Visitor> bool visitAttrPayloadCanonical(uint16_t kind, const AttrPayload &payload, CanonicalProjection projection, Visitor &&visitor)", "{", "    switch (kind) {"])
+    for payload_name in schema["attr_payloads"]:
+        owner = cpp_name(payload_name)
+        out.extend([
+            f"    case kAttrKind{payload_name}: {{",
+            f"        const auto *value = std::get_if<{owner}>(&payload);",
+            "        return value != nullptr && visitTransportFieldsCanonical(*value, projection, visitor);",
+            "    }",
+        ])
+    out.extend(["    default: return false;", "    }", "}", "", "#endif", ""])
+    return "\n".join(out)
+
+
+def render_transport_cpp_storage(schema: dict) -> str:
+    guard = "GEM5_DEV_AI_MESH_GENERATED_MESH_IR_TRANSPORT_STORAGE_HH"
+    sections = schema["canonical"]["transport_sections"]
+    out = [
+        f"#ifndef {guard}",
+        f"#define {guard}",
+        "",
+        "struct TypedOpAttr",
+        "{",
+        "    uint16_t kind = 0;",
+        "    AttrPayload payload{};",
+        "    template <typename Payload> Payload *as() { return std::get_if<Payload>(&payload); }",
+        "    template <typename Payload> const Payload *as() const { return std::get_if<Payload>(&payload); }",
+        "};",
+        "",
+        "inline bool decodeTypedOpAttr(const uint8_t *data, TypedOpAttr &out, AbiError &error)",
+        "{",
+        "    OpAttr raw{};",
+        "    if (!decodeOpAttr(data, raw, error)) return false;",
+        "    TypedOpAttr candidate{};",
+        "    candidate.kind = raw.kind;",
+        "    if (!decodeAttrPayload(raw.kind, raw.payload.data(), candidate.payload, error)) return false;",
+        "    for (uint32_t index = attrPayloadBytes(raw.kind); index < raw.payload.size(); ++index) {",
+        "        if (raw.payload[index] != 0) { error = {mesh_diagnostics::E_ABI_RESERVED, \"attr payload padding must be zero\"}; return false; }",
+        "    }",
+        "    out = candidate;",
+        "    return true;",
+        "}",
+        "",
+        "inline bool encodeTypedOpAttr(const TypedOpAttr &value, std::array<uint8_t, kOpAttrsBytes> &out, AbiError &error)",
+        "{",
+        "    OpAttr raw{};",
+        "    raw.kind = value.kind;",
+        "    switch (value.kind) {",
+    ]
+    for payload_name in schema["attr_payloads"]:
+        owner = cpp_name(payload_name)
+        out.extend([
+            f"    case kAttrKind{payload_name}: {{",
+            f"        const auto *payload = value.as<{owner}>();",
+            f"        if (payload == nullptr) {{ error = {{mesh_diagnostics::E_ABI_ENUM, \"{payload_name} kind and payload disagree\"}}; return false; }}",
+            f"        const auto encoded = encode{owner}(*payload);",
+            "        std::memcpy(raw.payload.data(), encoded.data(), encoded.size());",
+            "        break;",
+            "    }",
+        ])
+    out.extend([
+        "    default:",
+        "        error = {mesh_diagnostics::E_ABI_ENUM, \"unknown attr kind\"};",
+        "        return false;",
+        "    }",
+        "    out = encodeOpAttr(raw);",
+        "    return true;",
+        "}",
+        "",
+        "template <typename Record> struct TransportRecordTraits;",
+        "",
+    ])
+    for name, definition in sections.items():
+        if name == "STRINGS":
+            continue
+        owner = "TypedOpAttr" if name == "OP_ATTRS" else cpp_name(name)
+        descriptor = f"k{cpp_name(name)}TransportSection"
+        bytes_constant = "k" + "".join(part.capitalize() for part in name.split("_")) + "Bytes"
+        out.extend([
+            f"template <> struct TransportRecordTraits<{owner}>",
+            "{",
+            f"    static constexpr TransportSectionDescriptor section = {descriptor};",
+            f"    static constexpr uint32_t record_bytes = {bytes_constant};",
+        ])
+        if name == "OP_ATTRS":
+            out.extend([
+                "    static bool decode(const uint8_t *data, TypedOpAttr &value, AbiError &error) { return decodeTypedOpAttr(data, value, error); }",
+                "    static bool encode(const TypedOpAttr &value, std::array<uint8_t, record_bytes> &data, AbiError &error) { return encodeTypedOpAttr(value, data, error); }",
+            ])
+        else:
+            out.extend([
+                f"    static bool decode(const uint8_t *data, {owner} &value, AbiError &error) {{ return decode{owner}(data, value, error); }}",
+                f"    static bool encode(const {owner} &value, std::array<uint8_t, record_bytes> &data, AbiError &) {{ data = encode{owner}(value); return true; }}",
+            ])
+        out.extend(["};", ""])
+    out.extend(["struct TransportTables", "{"])
+    for name, definition in sections.items():
+        owner = "std::string" if name == "STRINGS" else "TypedOpAttr" if name == "OP_ATTRS" else cpp_name(name)
+        out.append(f"    std::vector<{owner}> {definition['program_field']};")
+    out.extend(["};", ""])
+    wire_sections = sorted(sections.items(), key=lambda item: schema["enums"]["section_type"][item[0]])
+    canonical_sections = sorted(sections.items())
+    for qualifier in ("", "const "):
+        out.extend([f"template <typename Visitor> bool visitTransportTablesWire({qualifier}TransportTables &tables, Visitor &&visitor)", "{"])
+        for name, definition in wire_sections:
+            out.append(f"    if (!visitor(k{cpp_name(name)}TransportSection, tables.{definition['program_field']})) return false;")
+        out.extend(["    return true;", "}", ""])
+        out.extend([f"template <typename Visitor> bool visitTransportTablesCanonical({qualifier}TransportTables &tables, CanonicalProjection projection, Visitor &&visitor)", "{"])
+        for name, definition in canonical_sections:
+            conditions = []
+            if not definition["semantic"]:
+                conditions.append("projection == CanonicalProjection::Full")
+            if definition["optional"]:
+                conditions.append(f"!tables.{definition['program_field']}.empty()")
+            condition = " && ".join(conditions)
+            call = f"!visitor(k{cpp_name(name)}TransportSection, tables.{definition['program_field']})"
+            out.append(f"    if ({condition} && {call}) return false;" if condition else f"    if ({call}) return false;")
+        out.extend(["    return true;", "}", ""])
+        out.extend([f"template <typename Visitor> bool dispatchTransportTable(uint16_t section_type, {qualifier}TransportTables &tables, Visitor &&visitor)", "{", "    switch (section_type) {"])
+        for name, definition in wire_sections:
+            out.append(f"    case kSectionType{name}: return visitor(k{cpp_name(name)}TransportSection, tables.{definition['program_field']});")
+        out.extend(["    default: return false;", "    }", "}", ""])
+    out.extend(["#endif", ""])
     return "\n".join(out)
 
 
@@ -553,6 +1426,16 @@ def render_markdown(schema: dict, sha: str) -> str:
         out.append(f"- `{payload_name}` ({payload['bytes']} B): " + ", ".join(
             f"`{f['name']}`@{f['offset']}" for f in payload["fields"]
         ))
+    out.extend(["", "## Required features", ""])
+    for name, feature in schema["required_features"].items():
+        out.append(f"- `{name}`: bit {feature['bit']}, minimum reader minor {feature['min_reader_minor']}")
+    out.extend(["", "## Semantic enums", ""])
+    for qualified_name, definition in schema["semantic_enums"].items():
+        members = ", ".join(f"{item['name']}={item['wire']}" for item in semantic_enum_members(schema, definition))
+        out.append(f"- `{qualified_name}`: {members}")
+    out.extend(["", "## Semantic records", ""])
+    for qualified_name, record in schema["semantic_records"].items():
+        out.append(f"- `{record['section_type']}` `{qualified_name}`: {record['record_bytes']} bytes, `{record['json_tag']}`")
     out.append("")
     return "\n".join(out)
 
@@ -576,9 +1459,10 @@ def main() -> int:
     yaml_bytes = yaml_path.read_bytes()
     schema = load_schema(yaml_path)
     sha = schema_sha256(schema, yaml_bytes)
+    cpp_source, transport_codecs = render_cpp(schema, sha)
     outputs = {
         defaults["python_out"]: render_python(schema, sha),
-        defaults["cpp_out"]: render_cpp(schema, sha),
+        defaults["cpp_out"]: cpp_source,
         defaults["docs_out"]: render_markdown(schema, sha),
     }
     if args.python_out:
@@ -587,8 +1471,62 @@ def main() -> int:
         outputs[Path(args.cpp_out)] = outputs.pop(defaults["cpp_out"])
     if args.docs_out:
         outputs[Path(args.docs_out)] = outputs.pop(defaults["docs_out"])
+    cpp_entry = Path(args.cpp_out) if args.cpp_out else defaults["cpp_out"]
+    domain_prefixes = {
+        "analysis": "mesh_ir.analysis.",
+        "common": "mesh_ir.ir.common.",
+        "graph": "mesh_ir.ir.graph_ir.",
+        "kernel": "mesh_ir.ir.kernel_ir.",
+        "scheduled": "mesh_ir.scheduled.",
+        "traffic": "mesh_ir.traffic.",
+    }
+    semantic_domains = {
+        domain: [
+            item
+            for item in schema["semantic_records"].items()
+            if item[0].startswith(prefix)
+        ]
+        for domain, prefix in domain_prefixes.items()
+    }
+    if sum(map(len, semantic_domains.values())) != len(schema["semantic_records"]):
+        raise ValueError("semantic record has no generated domain")
+    codec_names = tuple(
+        f"mesh_ir_semantic_codecs_{domain}.hh" for domain in semantic_domains
+    )
+    semantic_outputs = {
+        cpp_entry.parent / "mesh_ir_semantic_abi.hh": render_semantic_cpp_entry(schema, sha, codec_names),
+        cpp_entry.parent / "mesh_ir_semantic_enum_traits.hh": render_semantic_cpp_enum_traits(schema),
+        cpp_entry.parent / "mesh_ir_semantic_records.hh": render_semantic_cpp_records(schema),
+        cpp_entry.parent / "mesh_ir_semantic_membership.hh": render_semantic_cpp_membership(schema),
+        cpp_entry.parent / "mesh_ir_semantic_storage.hh": render_semantic_cpp_storage(schema),
+    }
+    semantic_outputs.update({
+        cpp_entry.parent / name: render_semantic_cpp_codecs(schema, semantic_domains[domain], domain)
+        for domain, name in zip(semantic_domains, codec_names)
+    })
+    semantic_outputs.update({
+        cpp_entry.parent / f"mesh_ir_semantic_fields_{domain}.hh": render_semantic_cpp_fields(schema, records, domain)
+        for domain, records in semantic_domains.items()
+    })
+    outputs.update(semantic_outputs)
+    outputs[defaults["python_out"].with_name("semantic_enums.py")] = render_semantic_enums(schema)
+    outputs[cpp_entry.parent / "mesh_ir_transport_codecs.hh"] = transport_codecs
+    outputs[cpp_entry.parent / "mesh_ir_transport_projection.hh"] = render_transport_cpp_projection(schema)
+    outputs[cpp_entry.parent / "mesh_ir_transport_storage.hh"] = render_transport_cpp_storage(schema)
 
     stale = []
+    owned_children = set(cpp_entry.parent.glob("mesh_ir_semantic_*.hh")) | set(cpp_entry.parent.glob("mesh_ir_transport_*.hh"))
+    expected_children = set(semantic_outputs) | {
+        cpp_entry.parent / "mesh_ir_transport_codecs.hh",
+        cpp_entry.parent / "mesh_ir_transport_projection.hh",
+        cpp_entry.parent / "mesh_ir_transport_storage.hh",
+    }
+    obsolete = owned_children - expected_children
+    if args.check:
+        stale.extend(map(str, sorted(obsolete)))
+    else:
+        for path in obsolete:
+            path.unlink()
     for path, content in outputs.items():
         if args.check:
             if not path.exists() or path.read_text(encoding="utf-8") != content:

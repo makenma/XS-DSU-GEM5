@@ -5,6 +5,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from mesh_ir.acceptance import write_success_artifacts
+from tests.golden.support.cpp_mutation_driver import driver
+from tests.golden.support.cpp_verifier_probe import verifier_probe
 
 
 _ACCEPTANCE_CALLS = []

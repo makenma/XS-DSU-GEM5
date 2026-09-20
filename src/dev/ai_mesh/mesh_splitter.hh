@@ -38,6 +38,14 @@ DmaPlan planDescriptor(const DecodedDmaDescriptor &descriptor, uint32_t width);
 // the same logical bytes but its address alignment does not shape bursts.
 DmaPlan planDescriptorRemote(const DecodedDmaDescriptor &descriptor, uint32_t width);
 
+// The same remote plan but anchored at the runtime-resolved remote address
+// (region base, per-core tile base, binding offset and shard offset already
+// folded in).  Dispatch bindings change the real 4 KiB burst split, so the
+// engines must use this entry point.
+DmaPlan planDescriptorRemoteAt(uint64_t remote_base,
+                               const DecodedDmaDescriptor &descriptor,
+                               uint32_t width);
+
 // Serialized single-engine DMA latency in CYCLES: setup + per-burst base
 // latency + one cycle per beat.  Kept pure so both the engine and the unit
 // tests share one definition.

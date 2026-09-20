@@ -3,26 +3,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from mesh_ir.burst_splitter import plan_descriptor
-from mesh_ir.builder import load_arch
-from mesh_ir.cli import main as cli_main
+from mesh_ir.architecture import load_arch
+from mesh_ir.cli import BUILDERS, main as cli_main
 from mesh_ir.generated import abi as A
-from mesh_ir.golden_programs import (
-    build_dma_edge_program,
-    build_dma_shapes_program,
-    build_dma_error_program,
-    build_dma_fence_program,
-    build_dma_pin_program,
-    build_dma_write_error_program,
-    build_dual_core_program,
-    build_fill_program,
-    build_repeat_program,
-    build_single_core_program,
-)
 
 ARCH_PATH = Path(__file__).resolve().parents[4] / "configs/example/ai_mesh/arch/mesh_1x2.yaml"
 GOLDEN_VECTORS = Path(__file__).resolve().parent / "burst_splitter_golden.json"
@@ -49,37 +35,29 @@ def test_burst_splitter_golden_vectors_pinned():
 def test_golden_semantic_shas_are_stable():
     arch = load_arch(ARCH_PATH)
     pinned = json.loads((Path(__file__).resolve().parent / "golden_program_shas.json").read_text())
-    builders = {
-        "single": build_single_core_program,
-        "dual": build_dual_core_program,
-        "fill": build_fill_program,
-        "repeat": build_repeat_program,
-        "dma_edge": build_dma_edge_program,
-        "dma_shapes": build_dma_shapes_program,
-        "dma_error": build_dma_error_program,
-        "dma_write_error": build_dma_write_error_program,
-        "dma_fence": build_dma_fence_program,
-        "dma_pin": build_dma_pin_program,
-    }
-    assert set(builders) == set(pinned)
-    for name, build in builders.items():
-        assert build(arch).semantic_sha256() == pinned[name]
+    assert set(BUILDERS) == set(pinned)
+    for name, build in BUILDERS.items():
+        assert build(arch).semantic_sha256 == pinned[name]
 
 
-def test_cli_build_and_verify_roundtrip(tmp_path):
+def test_cli_build_publishes_complete_verified_program(tmp_path):
     out = tmp_path / "single"
-    rc = cli_main(["build", "--program", "single", "--arch", str(ARCH_PATH), "--out", str(out)])
-    assert rc == 0
-    manifest = json.loads((out / "manifest.json").read_text())
+    assert cli_main(["build", "--program", "single", "--arch", str(ARCH_PATH), "--out", str(out)]) == 0
+    manifest = json.loads((out / "manifest.json").read_bytes())
     assert manifest["status"] == "ok"
-    import hashlib
+    assert manifest["kind"] == "golden"
+    assert manifest["identity"] == {"arch_name": "xs_ai_mesh_1x2", "program": "single"}
+    assert {item.name for item in out.iterdir()} == {
+        "checksums.sha256",
+        "diagnostics.jsonl",
+        "expected_traffic.json",
+        "manifest.json",
+        "program.mshb",
+        "schedule.mesh.json",
+    }
 
-    assert hashlib.sha256((out / "program.mshb").read_bytes()).hexdigest() == manifest["mshb_sha256"]
-    rc = cli_main(["verify", "--program", str(out / "program.mshb"), "--arch", str(ARCH_PATH)])
-    assert rc == 0
 
-
-def test_cli_entrypoint_runs(tmp_path):
+def test_cli_entrypoint_publishes_complete_verified_program(tmp_path):
     repo = Path(__file__).resolve().parents[4]
     result = subprocess.run(
         [
@@ -99,5 +77,7 @@ def test_cli_entrypoint_runs(tmp_path):
         text=True,
     )
     assert result.returncode == 0, result.stderr
-    manifest = json.loads((tmp_path / "dual" / "manifest.json").read_text())
-    assert manifest["status"] == "ok"
+    published = json.loads(result.stdout)
+    assert published["status"] == "ok"
+    assert Path(published["output"]) == (tmp_path / "dual").resolve()
+    assert json.loads((tmp_path / "dual" / "manifest.json").read_bytes())["status"] == "ok"

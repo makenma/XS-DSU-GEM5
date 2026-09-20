@@ -1,0 +1,41 @@
+schema_version: mesh-diagnostics-v1
+diagnostics:
+  E_EXPORT_UNSUPPORTED_OP: {severity: error, message: unsupported exported operator}
+  E_EXPORT_GRAPH_BREAK: {severity: error, message: export could not produce a single graph}
+  E_EXPORT_STATE_MUTATION: {severity: error, message: exported graph mutates state}
+  E_EXPORT_NON_TENSOR_IO: {severity: error, message: exported graph has non-tensor user I/O}
+  E_EXPORT_DTYPE: {severity: error, message: exported graph uses an unsupported dtype}
+  E_EXPORT_LAYOUT: {severity: error, message: exported graph uses an unsafe layout}
+  E_EXPORT_VERSION: {severity: error, message: exported program version or dialect is unsupported}
+  E_CONFIG: {severity: error, message: configuration is invalid}
+  E_SHAPE_UNBOUND: {severity: error, message: a shape symbol is unbound}
+  E_SHAPE_PROFILE_MISMATCH: {severity: error, message: a shape profile violates exported constraints}
+  E_PLACEMENT_INFEASIBLE: {severity: error, message: placement policy is infeasible}
+  E_SRAM_OOM: {severity: error, message: SRAM capacity is insufficient}
+  E_DEPENDENCY_CYCLE: {severity: error, message: dependency graph contains a cycle}
+  E_EVENT_MULTIPLE_PRODUCERS: {severity: error, message: event has multiple producers}
+  E_TENSOR_NOT_RESIDENT: {severity: error, message: tensor is not resident}
+  E_DMA_RANGE: {severity: error, message: DMA range is invalid}
+  E_DMA_4K_SPLIT: {severity: error, message: DMA burst crosses a 4 KiB boundary}
+  E_P2P_UNMATCHED: {severity: error, message: P2P transfer is unmatched}
+  E_ABI_MAGIC: {severity: error, message: binary magic is invalid}
+  E_ABI_VERSION: {severity: error, message: ABI version is unsupported}
+  E_ABI_CHECKSUM: {severity: error, message: binary checksum is invalid}
+  E_ABI_SECTION_RANGE: {severity: error, message: binary section range is invalid}
+  E_ARCH_DIGEST: {severity: error, message: architecture digest does not match}
+  E_RUNTIME_DEADLOCK: {severity: error, message: runtime made no progress}
+  E_AXI_RESPONSE: {severity: error, message: AXI response failed}
+  E_TRAFFIC_MISMATCH: {severity: error, message: traffic does not match the oracle}
+  E_ABI_ENUM: {severity: error, message: binary enum is invalid}
+  E_ABI_RESERVED: {severity: error, message: reserved binary data is nonzero}
+  E_ABI_DUPLICATE: {severity: error, message: binary identifier is duplicated}
+  E_ABI_ORDER: {severity: error, message: binary ordering is invalid}
+  E_ABI_BOUNDS: {severity: error, message: binary reference is out of bounds}
+  E_ABI_OVERFLOW: {severity: error, message: binary arithmetic overflowed}
+  E_ABI_CORRUPT: {severity: error, message: binary data is corrupt}
+  E_ENGINE_MISMATCH: {severity: error, message: command engine does not match opcode}
+  E_EVENT_NO_PRODUCER: {severity: error, message: event has no producer}
+  E_STREAM_CONTRACT: {severity: error, message: stream contract is invalid}
+  E_LIFECYCLE: {severity: error, message: lifecycle contract is invalid}
+  E_RELOCATION: {severity: error, message: relocation is invalid}
+  E_CAPABILITY_MISMATCH: {severity: error, message: architecture capability does not match}

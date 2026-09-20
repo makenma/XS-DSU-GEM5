@@ -3,12 +3,14 @@
 
 #include <cstdint>
 #include <map>
+#include <set>
 #include <vector>
 
 #include <string>
 
 #include "base/statistics.hh"
-#include "dev/ai_mesh/dma_types.hh"
+#include "dev/ai_mesh/dma_records.hh"
+#include "dev/ai_mesh/mesh_runtime_observations.hh"
 #include "sim/clocked_object.hh"
 
 namespace gem5
@@ -51,20 +53,36 @@ class MockAxiTransport : public ClockedObject
     Tick transferLatency(uint64_t beats_total, uint32_t bursts) const;
 
     // Per-descriptor accounting (oracle reconciliation).
-    void accountRead(uint32_t descriptor_id, uint64_t bytes, uint32_t bursts);
-    void accountWrite(uint32_t descriptor_id, uint64_t bytes, uint32_t bursts);
-    void accountP2p(uint32_t descriptor_id, uint64_t bytes, uint32_t bursts);
-    void accountFill(uint32_t descriptor_id, uint64_t bytes);
+    TrafficContribution accountRead(uint32_t descriptor_id,
+                                             uint64_t bytes, uint32_t bursts);
+    TrafficContribution accountWrite(uint32_t descriptor_id,
+                                              uint64_t bytes, uint32_t bursts);
+    TrafficContribution accountP2p(uint32_t descriptor_id,
+                                            uint64_t bytes, uint32_t bursts);
+    TrafficContribution accountFill(uint32_t descriptor_id,
+                                             uint64_t bytes);
     void notePayload(uint32_t descriptor_id, const uint8_t *data, uint64_t size);
 
     // Digest state lifecycle: begin at submit, rows accumulate, finish
     // formats and retires the state (spec: descriptor rolling state).
     void beginPayloadDigest(uint32_t descriptor_id);
-    void finishPayloadDigest(uint32_t descriptor_id);
+    void accountInjectedError(uint32_t descriptor_id);
+    std::string finishPayloadDigest(uint32_t descriptor_id);
 
     const std::map<uint32_t, ActualTraffic> &actualTraffic() const { return actual; }
 
     uint32_t dataBusBytes() const { return data_bus_bytes; }
+    // Deterministic fault injection (spec 8.8).  A listed descriptor faults on
+    // the completion selected by fault_occurrence; occurrence 0 faults every
+    // completion, so a REPEAT window can be faulted on its first pass or on a
+    // later replay pass with the same descriptor identity.
+    enum class DescriptorFault
+    {
+        None,
+        Lost,
+        Error,
+    };
+    DescriptorFault takeDescriptorFault(uint32_t descriptor_id);
     uint64_t burstBaseLatencyCycles() const
     {
         return static_cast<uint64_t>(burst_base_latency);
@@ -88,6 +106,10 @@ class MockAxiTransport : public ClockedObject
     std::map<uint64_t, std::vector<uint8_t>> hbm_pages;
     std::map<uint32_t, ActualTraffic> actual;
     std::map<uint32_t, std::pair<uint64_t, uint64_t>> digest_state;
+    std::set<uint32_t> error_descriptors;
+    std::set<uint32_t> lost_descriptors;
+    uint32_t fault_occurrence;
+    std::map<uint32_t, uint32_t> descriptor_completions;
 
     std::vector<uint8_t> &page(uint64_t addr);
 };

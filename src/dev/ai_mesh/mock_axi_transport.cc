@@ -14,8 +14,26 @@ MockAxiTransport::MockAxiTransport(const Params &p)
       data_bus_bytes(p.data_bus_bytes),
       burst_base_latency(p.burst_base_latency),
       sram_region_base(p.sram_region_base),
-      sram_tile_stride(p.sram_tile_stride)
+      sram_tile_stride(p.sram_tile_stride),
+      error_descriptors(p.error_descriptors.begin(), p.error_descriptors.end()),
+      lost_descriptors(p.lost_descriptors.begin(), p.lost_descriptors.end()),
+      fault_occurrence(p.fault_occurrence)
 {}
+
+MockAxiTransport::DescriptorFault
+MockAxiTransport::takeDescriptorFault(uint32_t descriptor_id)
+{
+    const bool listed = error_descriptors.count(descriptor_id) != 0 ||
+                        lost_descriptors.count(descriptor_id) != 0;
+    if (!listed)
+        return DescriptorFault::None;
+    const uint32_t occurrence = ++descriptor_completions[descriptor_id];
+    if (fault_occurrence != 0 && occurrence != fault_occurrence)
+        return DescriptorFault::None;
+    if (lost_descriptors.count(descriptor_id) != 0)
+        return DescriptorFault::Lost;
+    return DescriptorFault::Error;
+}
 
 void MockAxiTransport::regStats()
 {
@@ -123,7 +141,9 @@ Tick MockAxiTransport::transferLatency(uint64_t beats_total, uint32_t bursts) co
     return clockPeriod() * Cycles(cycles);
 }
 
-void MockAxiTransport::accountRead(uint32_t descriptor_id, uint64_t bytes, uint32_t bursts)
+ai_mesh::TrafficContribution
+MockAxiTransport::accountRead(uint32_t descriptor_id, uint64_t bytes,
+                              uint32_t bursts)
 {
     auto &row = actual[descriptor_id];
     row.read_bytes += bytes;
@@ -131,9 +151,16 @@ void MockAxiTransport::accountRead(uint32_t descriptor_id, uint64_t bytes, uint3
     readBytes += bytes;
     readBursts += bursts;
 
-    finishPayloadDigest(descriptor_id);}
+    TrafficContribution contribution;
+    contribution.read_bytes = bytes;
+    contribution.read_bursts = bursts;
+    contribution.payload_digest = finishPayloadDigest(descriptor_id);
+    return contribution;
+}
 
-void MockAxiTransport::accountWrite(uint32_t descriptor_id, uint64_t bytes, uint32_t bursts)
+ai_mesh::TrafficContribution
+MockAxiTransport::accountWrite(uint32_t descriptor_id, uint64_t bytes,
+                               uint32_t bursts)
 {
     auto &row = actual[descriptor_id];
     row.write_bytes += bytes;
@@ -141,9 +168,16 @@ void MockAxiTransport::accountWrite(uint32_t descriptor_id, uint64_t bytes, uint
     writeBytes += bytes;
     writeBursts += bursts;
 
-    finishPayloadDigest(descriptor_id);}
+    TrafficContribution contribution;
+    contribution.write_bytes = bytes;
+    contribution.write_bursts = bursts;
+    contribution.payload_digest = finishPayloadDigest(descriptor_id);
+    return contribution;
+}
 
-void MockAxiTransport::accountP2p(uint32_t descriptor_id, uint64_t bytes, uint32_t bursts)
+ai_mesh::TrafficContribution
+MockAxiTransport::accountP2p(uint32_t descriptor_id, uint64_t bytes,
+                             uint32_t bursts)
 {
     auto &row = actual[descriptor_id];
     row.p2p_bytes += bytes;
@@ -151,15 +185,34 @@ void MockAxiTransport::accountP2p(uint32_t descriptor_id, uint64_t bytes, uint32
     p2pBytes += bytes;
     p2pBursts += bursts;
 
-    finishPayloadDigest(descriptor_id);}
+    TrafficContribution contribution;
+    contribution.p2p_bytes = bytes;
+    contribution.p2p_bursts = bursts;
+    contribution.payload_digest = finishPayloadDigest(descriptor_id);
+    return contribution;
+}
 
-void MockAxiTransport::accountFill(uint32_t descriptor_id, uint64_t bytes)
+ai_mesh::TrafficContribution
+MockAxiTransport::accountFill(uint32_t descriptor_id, uint64_t bytes)
 {
     auto &row = actual[descriptor_id];
     row.fill_bytes += bytes;
     fillBytes += bytes;
 
-    finishPayloadDigest(descriptor_id);}
+    TrafficContribution contribution;
+    contribution.fill_bytes = bytes;
+    contribution.payload_digest = finishPayloadDigest(descriptor_id);
+    return contribution;
+}
+
+void MockAxiTransport::accountInjectedError(uint32_t descriptor_id)
+{
+    // An injected response failure commits no bytes and no payload: the row is
+    // materialized with zero traffic so the accounting stays complete without
+    // claiming or erasing a successful execution's digest.
+    actual[descriptor_id];
+    digest_state.erase(descriptor_id);
+}
 
 void MockAxiTransport::beginPayloadDigest(uint32_t descriptor_id)
 {
@@ -188,11 +241,12 @@ void MockAxiTransport::notePayload(uint32_t descriptor_id, const uint8_t *data,
     }
 }
 
-void MockAxiTransport::finishPayloadDigest(uint32_t descriptor_id)
+std::string
+MockAxiTransport::finishPayloadDigest(uint32_t descriptor_id)
 {
     auto it = digest_state.find(descriptor_id);
     if (it == digest_state.end())
-        return;
+        return std::string();
     static const char *hex = "0123456789abcdef";
     std::string out;
     for (int shift = 60; shift >= 0; shift -= 4)
@@ -202,6 +256,7 @@ void MockAxiTransport::finishPayloadDigest(uint32_t descriptor_id)
         out += hex[(it->second.second >> shift) & 0xF];
     actual[descriptor_id].payload_digest = out;
     digest_state.erase(it);
+    return out;
 }
 
 } // namespace ai_mesh

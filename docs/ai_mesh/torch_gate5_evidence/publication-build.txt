@@ -1,0 +1,74 @@
+scons: Reading SConscript files ...
+Mkdir("/nfs/home/majunhong/project/DSU-GEM5-TEST/XS-DSU-GEM5/.tmp/worktrees/torch-frontend/build/AXI_MESH/gem5.build")
+Checking for linker -Wl,--as-needed support... yes
+Checking for compiler -Wno-free-nonheap-object support... yes
+Checking for compiler -gz support... yes
+Checking for linker -gz support... yes
+Info: Using Python config: python3-config
+Checking for C header file Python.h... yes
+Checking Python version... 3.12.3
+Checking for accept(0,0,0) in C++ library None... yes
+Checking for zlibVersion() in C++ library z... yes
+Checking for ZSTD_isError(0) in C++ library zstd... yes
+Checking for C library tcmalloc... yes
+Building in /nfs/home/majunhong/project/DSU-GEM5-TEST/XS-DSU-GEM5/.tmp/worktrees/torch-frontend/build/AXI_MESH
+Using saved variables file(s) /nfs/home/majunhong/project/DSU-GEM5-TEST/XS-DSU-GEM5/.tmp/worktrees/torch-frontend/build/AXI_MESH/gem5.build/variables
+Checking for C header file linux/if_tun.h... yes
+Checking for shm_open("/test", 0, 0) in C library None... yes
+Checking for C header file fenv.h... yes
+Checking for C header file png.h... no
+Warning: Header file <png.h> not found.
+         This host has no libpng library.
+         Disabling support for PNG framebuffers.
+Checking for clock_nanosleep(0,0,NULL,NULL) in C library None... yes
+Checking for C header file valgrind/valgrind.h... yes
+Checking for pkg-config package hdf5-serial... no
+Checking for pkg-config package hdf5... no
+Checking for H5Fcreate("", 0, 0, 0) in C library hdf5... no
+Warning: Couldn't find HDF5 C++ libraries. Disabling HDF5 support.
+Checking for C header file linux/kvm.h... yes
+Checking for timer_create(CLOCK_MONOTONIC, NULL, NULL) in C library None... yes
+Checking size of struct kvm_xsave ... yes
+Checking for member exclude_host in struct perf_event_attr...yes
+Checking for pkg-config package protobuf... yes
+Checking for char temp; backtrace_symbols_fd((void *)&temp, 0, 0) in C library None... no
+Checking for char temp; backtrace_symbols_fd((void *)&temp, 0, 0) in C library execinfo... no
+Warning: No suitable back trace implementation found.
+Checking whether __i386__ is declared... (cached) no
+Checking whether __x86_64__ is declared... (cached) yes
+Checking for compiler -Wno-self-assign-overloaded support... yes
+Checking for compiler -Wno-free-nonheap-object support... yes
+Checking for pkg-config package isl... error: no result
+scons: done reading SConscript files.
+scons: Building targets ...
+ [VER TAGS]  -> AXI_MESH/sim/tags.cc
+<string>:74: SyntaxWarning: invalid escape sequence '\.'
+<string>:12: SyntaxWarning: invalid escape sequence '\.'
+<string>:38: SyntaxWarning: invalid escape sequence '\.'
+<string>:49: SyntaxWarning: invalid escape sequence '\.'
+<string>:60: SyntaxWarning: invalid escape sequence '\.'
+<string>:254: SyntaxWarning: invalid escape sequence '\.'
+<string>:270: SyntaxWarning: invalid escape sequence '\.'
+<string>:65: SyntaxWarning: invalid escape sequence '\.'
+<string>:42: SyntaxWarning: invalid escape sequence '\.'
+<string>:8: SyntaxWarning: invalid escape sequence '\.'
+<string>:26: SyntaxWarning: invalid escape sequence '\.'
+<string>:7: SyntaxWarning: invalid escape sequence '\.'
+<string>:42: SyntaxWarning: invalid escape sequence '\.'
+<string>:8: SyntaxWarning: invalid escape sequence '\.'
+<string>:7: SyntaxWarning: invalid escape sequence '\.'
+<string>:11: SyntaxWarning: invalid escape sequence '\.'
+<string>:14: SyntaxWarning: invalid escape sequence '\.'
+<string>:16: SyntaxWarning: invalid escape sequence '\.'
+<string>:7: SyntaxWarning: invalid escape sequence '\.'
+<string>:7: SyntaxWarning: invalid escape sequence '\.'
+<string>:8: SyntaxWarning: invalid escape sequence '\.'
+<string>:29: SyntaxWarning: invalid escape sequence '\.'
+ [    LINK]  -> AXI_MESH/gem5.opt
+scons: done building targets.
+*** Summary of Warnings ***
+Warning: Header file <png.h> not found.
+         This host has no libpng library.
+         Disabling support for PNG framebuffers.
+Warning: Couldn't find HDF5 C++ libraries. Disabling HDF5 support.
+Warning: No suitable back trace implementation found.

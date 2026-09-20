@@ -20,6 +20,7 @@ core:
     read_ports_per_bank: 1
     write_ports_per_bank: 1
     bank_queue_depth: 2
+    bank_interleave_bytes: 64
     read_bytes_per_cycle_per_bank: 32
     write_bytes_per_cycle_per_bank: 32
     base_alignment_bytes: 64
@@ -60,3 +61,71 @@ memory_regions:
   - {name: host_shared, kind: HOST_SHARED, base: 0x100000000, bytes: 0x10000000}
   - {name: mesh_sram, kind: CORE_SRAM_APERTURE,
      base: 0x400000000, tile_stride: 0x400000, tile_bytes: 0x200000}
+
+
+fabric:
+  channel_order: [AW, W, B, AR, R]
+  axi:
+    wire_header_bytes: [24, 16, 8, 24, 16]
+    data_header_sideband: false
+  initiator:
+    source_fifo_depths: [16, 64, 16, 32, 128]
+    message_buffer_depths: [16, 64, 16, 32, 128]
+    local_delivery_depths: [16, 64, 16, 32, 128]
+    max_outstanding_reads: 64
+    max_outstanding_writes: 32
+    pre_aw_bursts: 16
+    pre_aw_beats: 256
+    b_reorder_transactions: 64
+    r_reorder_beats: 1024
+  target:
+    write_contexts: 64
+    write_assembly_beats: 4096
+    read_contexts: 64
+    read_response_beats: 4096
+    orphan_w_transactions: 16
+    orphan_w_beats: 256
+    service_queue_depths: [32, 32]
+    base_latency_cycles: [1, 1]
+    response_ready_depths: [16, 128]
+  network:
+    router_rows: 1
+    router_cols: 2
+    flit_bytes: 16
+    link_latency_cycles: 1
+    router_latency_cycles: 1
+    vcs_per_vnet: 4
+    vnet_classes: [ctrl, data, ctrl, ctrl, data]
+    router_input_depths: [4, 8, 4, 4, 8]
+    ni_receive_depths: [4, 8, 4, 4, 8]
+    router_input_overrides: []
+    yx_vnets: []
+    dual_lane: false
+  initiators:
+  - {name: core_0, core_id: 0, src_node: 0, src_port: 0, router_id: 0, default_target_node: 100}
+  - {name: core_1, core_id: 1, src_node: 1, src_port: 0, router_id: 1, default_target_node: 100}
+  targets:
+  - name: memory
+    dst_node: 100
+    router_id: 0
+    ranges:
+      - {region_id: 0, owner_core: 65535, offset_bytes: 0, size_bytes: 0x400000000, access: READ_WRITE}
+      - {region_id: 1, owner_core: 65535, offset_bytes: 0, size_bytes: 0x10000000, access: READ_WRITE}
+  - name: peer_0
+    dst_node: 1000
+    router_id: 0
+    ranges:
+      - {region_id: 2, owner_core: 0, offset_bytes: 0, size_bytes: 0x200000, access: READ_WRITE}
+  - name: peer_1
+    dst_node: 1001
+    router_id: 1
+    ranges:
+      - {region_id: 2, owner_core: 1, offset_bytes: 0, size_bytes: 0x200000, access: READ_WRITE}
+  default_error_target_node: 100
+  quotas:
+  - {src_node: 0, src_port: 0, dst_node: 100, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 0, src_port: 0, dst_node: 1000, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 0, src_port: 0, dst_node: 1001, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 1, src_port: 0, dst_node: 100, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 1, src_port: 0, dst_node: 1000, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}
+  - {src_node: 1, src_port: 0, dst_node: 1001, write_contexts: 16, write_beats: 512, read_contexts: 16, read_beats: 512}

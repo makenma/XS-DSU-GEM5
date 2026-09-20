@@ -1,3 +1,5 @@
+import copy
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -5,28 +7,98 @@ import pytest
 
 from mesh_ir.abi.decoder import decode_program
 from mesh_ir.abi.encoder import encode_program
-from mesh_ir.abi.verifier import verify_program
-from mesh_ir.builder import load_arch
+from mesh_ir.architecture import load_arch
+from mesh_ir.canonical import to_canonical
+from mesh_ir.diagnostics import MeshIrError
 from mesh_ir.experiment.config import Topology, WorkloadSpec
-from mesh_ir.experiment.workload import build_workload, packet_flits, traffic_oracle, validate_simulation_horizon
+from mesh_ir.experiment.workload import build_workload, packet_flits, resolve_experiment_architecture, traffic_oracle, validate_simulation_horizon, write_workload
 from mesh_ir.experiment.verify import verify_workload_plan
 from mesh_ir.generated import abi as A
+from mesh_ir.scheduled.verify import verify_program
+
+
+ROOT = Path(__file__).resolve().parents[4]
 
 
 @pytest.fixture
 def arch():
-    original = load_arch(Path(__file__).resolve().parents[4] /
-                         "configs/example/ai_mesh/arch/mesh_1x2.yaml")
-    return replace(original, core_ids=tuple(range(25)), mesh_rows=5, mesh_cols=5)
+    return load_arch(ROOT / "configs/example/ai_mesh/arch/mesh_5x5.yaml")
+
+
+@pytest.fixture
+def profile():
+    return json.loads((ROOT / "configs/example/ai_mesh/experiments/fixed_profile.json").read_text())
+
+
+def experiment_bundle(arch, profile, topology, spec, **changes):
+    selected = copy.deepcopy(profile)
+    for field, value in changes.items():
+        owner = selected["axi"] if field == "data_header_sideband" else selected["network"]
+        owner[field] = value
+    resolved = resolve_experiment_architecture(arch, Topology(topology), selected)
+    return build_workload(
+        resolved,
+        replace(spec, hbm_port_bytes=selected["backend"]["port_bytes"]),
+    )
+
+
+def test_resolved_architecture_is_the_only_program_and_oracle_hardware_source(arch, profile):
+    xy_arch = resolve_experiment_architecture(arch, Topology("H10_EAST2"), profile)
+    yx_profile = copy.deepcopy(profile)
+    yx_profile["network"]["yx_vnets"] = [0, 1]
+    yx_arch = resolve_experiment_architecture(arch, Topology("H10_EAST2"), yx_profile)
+    spec = WorkloadSpec(
+        "MIXED_1_1", bytes_per_core=131072, active_cores=(20,),
+        distribution="single_target", hotspot_target=0,
+        hbm_port_bytes=profile["backend"]["port_bytes"],
+    )
+
+    xy = build_workload(xy_arch, spec)
+    yx = build_workload(yx_arch, spec)
+
+    assert xy.arch is xy_arch
+    assert xy.program.arch_digest == xy.arch.digest()
+    assert yx.program.arch_digest == yx.arch.digest()
+    assert xy.arch.digest() != yx.arch.digest()
+    assert xy.program.semantic_sha256 != yx.program.semantic_sha256
+    for bundle in (xy, yx):
+        intrinsic = {
+            row.identity.descriptor_id: row
+            for row in bundle.program.semantics.intrinsic_traffic.descriptors
+        }
+        for expected in bundle.oracle["descriptors"]:
+            actual = intrinsic[expected["descriptor_id"]]
+            assert (actual.identity.issuing_core, actual.remote_address) == (
+                expected["core_id"], expected["address"])
+            remote_router = actual.src_router if expected["direction"] == "read" else actual.dst_router
+            assert remote_router == expected["target_router"]
+            assert (actual.useful_bytes, actual.bursts, actual.packets,
+                    actual.flits, actual.wire_bytes) == (
+                expected["useful_bytes"], expected["bursts"],
+                expected["packets"], expected["flits"], expected["wire_bytes"])
+            assert {
+                channel.channel.name: (channel.source_node, channel.destination_node,
+                                       channel.packets, channel.flits, channel.wire_bytes)
+                for channel in actual.channels
+            } == {
+                channel: (row["source_node"], row["destination_node"],
+                          row["packets"], row["flits"], row["wire_bytes"])
+                for channel, row in expected["channels"].items()
+            }
+            for channel, links in expected["directed_links"].items():
+                if expected["channels"][channel]["packets"]:
+                    assert sum(link.startswith("router:") and "->router:" in link for link in links) == actual.hops
 
 
 @pytest.mark.parametrize("kind", ("LOAD_ONLY", "STORE_ONLY", "MIXED_1_1"))
 @pytest.mark.parametrize("topology", ("H5", "H10"))
-def test_generated_program_is_abi_valid_and_exact(arch, kind, topology):
+def test_generated_program_is_complete_and_exactly_encodable(arch, profile, kind, topology):
     spec = WorkloadSpec(kind, bytes_per_core=262144)
-    bundle = build_workload(arch, Topology(topology), spec)
-    verify_program(bundle.program, arch)
-    verify_program(decode_program(encode_program(bundle.program)), arch)
+    bundle = experiment_bundle(arch, profile, topology, spec)
+    verify_program(bundle.program, bundle.arch)
+    decoded = decode_program(encode_program(bundle.program))
+    verify_program(decoded, bundle.arch)
+    assert decoded.canonical_bytes() == bundle.program.canonical_bytes()
     oracle = bundle.oracle
     assert oracle["useful_bytes"] == 25 * 262144
     assert oracle["burst_counts"]["read"] + oracle["burst_counts"]["write"] == 25 * 512
@@ -48,8 +120,8 @@ def test_generated_program_is_abi_valid_and_exact(arch, kind, topology):
     assert all(1 <= row["expected_byte"] <= 255 for row in bundle.plan["setup"])
 
 
-def test_packet_and_link_oracle_is_independent(arch):
-    bundle = build_workload(arch, Topology("H5"), WorkloadSpec(
+def test_packet_and_link_oracle_is_independent(arch, profile):
+    bundle = experiment_bundle(arch, profile, "H5", WorkloadSpec(
         "LOAD_ONLY", bytes_per_core=65536, active_cores=(0,)))
     oracle = bundle.oracle
     assert oracle["packets"] == {"AW": 0, "W": 0, "B": 0, "AR": 128, "R": 2048}
@@ -57,19 +129,33 @@ def test_packet_and_link_oracle_is_independent(arch):
     assert oracle["flits"]["R"] == 6144
     assert oracle["directed_link_flits"]["endpoint:0->router:0"]["AR"] == 256
     assert oracle["directed_link_flits"]["endpoint:25->router:0"]["R"] == 6144
-    bundle.program.expected_traffic[0].bursts = 99999
+    altered = replace(bundle.program.expected_traffic[0], bursts=99999)
+    assert altered.bursts == 99999
     assert oracle["burst_counts"]["read"] == 128
 
 
+def test_workload_writer_publishes_verified_program_and_canonical_traffic(arch, profile, tmp_path):
+    bundle = experiment_bundle(arch, profile, "H5", WorkloadSpec(
+        "LOAD_ONLY", bytes_per_core=65536, active_cores=(0,)))
+    destination = tmp_path / "workload"
+    result = write_workload(bundle, destination)
+    assert result.program_semantic_sha256 == bundle.program.semantic_sha256
+    assert decode_program((destination / "program.mshb").read_bytes()).canonical_bytes() == bundle.program.canonical_bytes()
+    assert json.loads((destination / "expected_traffic.json").read_bytes()) == bundle.program.semantics.intrinsic_traffic.canonical_dict()
+    assert json.loads((destination / "oracle.json").read_bytes()) == bundle.oracle
+    assert json.loads((destination / "workload.json").read_bytes()) == to_canonical(bundle.plan)
+
+
 @pytest.mark.parametrize("kind", ("LOAD_ONLY", "STORE_ONLY", "MIXED_1_1"))
-def test_yx_write_routes_preserve_workload_and_return_paths(arch, kind):
+def test_yx_write_routes_preserve_workload_and_return_paths(arch, profile, kind):
     spec = WorkloadSpec(kind, bytes_per_core=131072, active_cores=(20,),
                         distribution="single_target", hotspot_target=0)
-    xy = build_workload(arch, Topology("H10_EAST2"), spec,
-                        flit_bytes=32, data_header_sideband=True)
-    yx = build_workload(arch, Topology("H10_EAST2"), spec,
-                        flit_bytes=32, data_header_sideband=True, yx_vnets=(0, 1))
-    assert encode_program(xy.program) == encode_program(yx.program)
+    xy = experiment_bundle(arch, profile, "H10_EAST2", spec,
+                           flit_bytes=32, data_header_sideband=True)
+    yx = experiment_bundle(arch, profile, "H10_EAST2", spec,
+                           flit_bytes=32, data_header_sideband=True, yx_vnets=(0, 1))
+    assert xy.program.semantic_sha256 != yx.program.semantic_sha256
+    assert xy.arch.digest() != yx.arch.digest()
     assert xy.plan == yx.plan
     assert xy.oracle["flits"] == yx.oracle["flits"]
     for channel in ("B", "AR", "R"):
@@ -86,17 +172,17 @@ def test_yx_write_routes_preserve_workload_and_return_paths(arch, kind):
 
 
 @pytest.mark.parametrize("vnets", ((0, 0), (-1,), (5,), (True,), ("W",)))
-def test_routing_rejects_invalid_yx_vnets(arch, vnets):
+def test_routing_rejects_invalid_yx_vnets(arch, profile, vnets):
     with pytest.raises(ValueError, match="yx_vnets"):
-        build_workload(arch, Topology("H10_EAST2"),
-                       WorkloadSpec("STORE_ONLY", bytes_per_core=65536), yx_vnets=vnets)
+        experiment_bundle(arch, profile, "H10_EAST2",
+                          WorkloadSpec("STORE_ONLY", bytes_per_core=65536), yx_vnets=vnets)
 
 
-def test_sideband_metadata_changes_serialization_without_changing_data(arch):
+def test_sideband_metadata_changes_serialization_without_changing_data(arch, profile):
     spec = WorkloadSpec("MIXED_1_1", bytes_per_core=131072)
-    plain = build_workload(arch, Topology("H10_EAST2"), spec, flit_bytes=32)
-    sideband = build_workload(arch, Topology("H10_EAST2"), spec,
-                              flit_bytes=32, data_header_sideband=True)
+    plain = experiment_bundle(arch, profile, "H10_EAST2", spec, flit_bytes=32)
+    sideband = experiment_bundle(arch, profile, "H10_EAST2", spec,
+                                 flit_bytes=32, data_header_sideband=True)
     assert sideband.plan == plain.plan
     assert sideband.oracle["useful_bytes"] == 25 * 131072
     assert sideband.oracle["flits"] == sideband.oracle["packets"]
@@ -105,21 +191,21 @@ def test_sideband_metadata_changes_serialization_without_changing_data(arch):
     assert packet_flits((24, 16, 8, 24, 16), 32, 16, True)["R"] == 2
 
 
-def test_hotspot_plan_exact_half_and_different_holdout(arch):
+def test_hotspot_plan_exact_half_and_different_holdout(arch, profile):
     spec = WorkloadSpec("MIXED_1_1", bytes_per_core=524288,
                         distribution="hotspot", hotspot_target=9)
-    bundle = build_workload(arch, Topology("H10"), spec)
+    bundle = experiment_bundle(arch, profile, "H10", spec)
     hot = [tile for tile in bundle.plan["tiles"] if tile["target_index"] == 9]
     assert sum(tile["useful_bytes"] for tile in hot) == 25 * 524288 // 2
-    assert bundle.plan["workload_digest"] != build_workload(
-        arch, Topology("H10"), replace(spec, hotspot_target=0)).plan["workload_digest"]
+    assert bundle.plan["workload_digest"] != experiment_bundle(
+        arch, profile, "H10", replace(spec, hotspot_target=0)).plan["workload_digest"]
 
 
-def test_near_far_diagnostic_keeps_fixed_target_and_other_hardware(arch):
+def test_near_far_diagnostic_keeps_fixed_target_and_other_hardware(arch, profile):
     spec = WorkloadSpec("LOAD_ONLY", bytes_per_core=131072,
                         distribution="single_target", active_cores=(0,))
-    near = build_workload(arch, Topology("H10"), spec)
-    far = build_workload(arch, Topology("H10"), replace(spec, active_cores=(24,)))
+    near = experiment_bundle(arch, profile, "H10", spec)
+    far = experiment_bundle(arch, profile, "H10", replace(spec, active_cores=(24,)))
     assert {tile["target_index"] for tile in near.plan["tiles"] + far.plan["tiles"]} == {0}
     assert sum(near.oracle["directed_link_flits"][key]["AR"] for key in near.oracle["directed_link_flits"]
                if key.startswith("router:") and "->router:" in key) == 0
@@ -129,9 +215,9 @@ def test_near_far_diagnostic_keeps_fixed_target_and_other_hardware(arch):
 
 
 @pytest.mark.parametrize("change", ("data_size", "pair", "slot", "setup"))
-def test_workload_declaration_cannot_disagree_with_tiles_and_setup(arch, change):
-    bundle = build_workload(arch, Topology("H5"), WorkloadSpec("MIXED_1_1", bytes_per_core=262144))
-    verify_workload_plan(bundle.plan, arch)
+def test_workload_declaration_cannot_disagree_with_tiles_and_setup(arch, profile, change):
+    bundle = experiment_bundle(arch, profile, "H5", WorkloadSpec("MIXED_1_1", bytes_per_core=262144))
+    verify_workload_plan(bundle.plan, bundle.arch)
     if change == "data_size":
         bundle.plan["spec"]["bytes_per_core"] *= 2
     elif change == "pair":
@@ -141,13 +227,14 @@ def test_workload_declaration_cannot_disagree_with_tiles_and_setup(arch, change)
     else:
         bundle.plan["setup"].pop()
     with pytest.raises(ValueError):
-        verify_workload_plan(bundle.plan, arch)
+        verify_workload_plan(bundle.plan, bundle.arch)
 
 
-def test_hot_store_serialization_lower_bound_rejects_ten_ms_not_one_hundred_ms(arch):
-    plan = {"tiles": [{"core_id": core, "direction": "write", "target_index": 0,
+def test_hot_store_serialization_lower_bound_rejects_ten_ms_not_one_hundred_ms(arch, profile):
+    plan = {"tiles": [{"descriptor_id": core + 1, "core_id": core, "direction": "write", "target_index": 0,
                        "address": 4096 + core * 512, "useful_bytes": 512} for core in range(25)]}
-    one_burst_per_core = traffic_oracle(plan, Topology("H10"))
+    resolved = resolve_experiment_architecture(arch, Topology("H10"), profile)
+    one_burst_per_core = traffic_oracle(plan, resolved)
     hot_bursts_per_core = (16 * 1048576 // 2) // 512
     oracle = {"directed_link_flits": {route: {channel: count * hot_bursts_per_core for channel, count in counts.items()}
                                        for route, counts in one_burst_per_core["directed_link_flits"].items()}}
