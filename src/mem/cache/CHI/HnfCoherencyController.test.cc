@@ -735,6 +735,151 @@ TEST(HnfCoherencyControllerTest,
     EXPECT_EQ(cc.pendingDirtyVictimRequesterCount(), 0);
 }
 
+// Stop the independent writeback at each externally observable boundary,
+// then issue two reads to the evicted line. Neither may reach memory before
+// the writeback retires, and retirement must wake exactly one of them.
+class DirtyVictimAddressHazardTest : public ::testing::TestWithParam<int>
+{};
+
+TEST_P(DirtyVictimAddressHazardTest, BlocksSameLineUntilWritebackRetires)
+{
+    HnfSLCSF slcsf(BlockSize, 1, 1, 16, 4);
+    HnfCoherencyController cc(BlockSize, BeatSize, 8, SnNode, false, 4);
+    cc.setSlcsf(&slcsf);
+    const auto dirty_data = lineData(0x91);
+    slcsf.writeLine(
+        TestAddr, 0, dirty_data, PocqTxnKind::WriteUnique, HnfNode);
+    Tick tick = 1200;
+    reachDirtyVictimWriteback(cc, slcsf, tick, lineData(0xa1));
+    ASSERT_TRUE(cc.hasTxReq());
+    HnfCcTxReq writeback = cc.frontTxReq();
+    const SlcSfVictimId victim_id{*writeback.dirtyVictimId};
+
+    // Retire the replacement's requester so only the independent victim
+    // owns the address under test.
+    pumpUpdate(cc, slcsf, 0, tick);
+    while (cc.hasTxDat()) {
+        ASSERT_FALSE(cc.frontTxDat().dirtyVictimId.has_value());
+        cc.popTxDat();
+    }
+    ASSERT_TRUE(cc.acceptRxRsp(makeRsp(4, 121, 0x02)));
+
+    const int stop = GetParam();
+    // 0: request backpressure; 1: wait DBID; 2: wait retry credit;
+    // 3: reissued request backpressure; 4: data backpressure; 5: wait Comp;
+    // 6: CompDBID received, data blocked; 7: early Comp, data blocked.
+    if (stop >= 1) {
+        cc.popTxReq();
+        cc.notifyTxReqSent(writeback);
+    }
+    if (stop == 2 || stop == 3) {
+        EXPECT_FALSE(cc.acceptRxRsp(
+            makeDirtyVictimRsp(writeback, 0x03, 0, 7)));
+        if (stop == 3) {
+            EXPECT_FALSE(cc.acceptRxRsp(
+                makeDirtyVictimRsp(writeback, 0x07, 0, 7)));
+            writeback = cc.frontTxReq();
+        }
+    }
+    if (stop >= 4) {
+        EXPECT_FALSE(cc.acceptRxRsp(
+            makeDirtyVictimRsp(writeback, stop == 6 ? 0x05 : 0x06, 9)));
+        if (stop == 5) {
+            cc.popTxDat();
+        } else if (stop == 7) {
+            EXPECT_FALSE(cc.acceptRxRsp(
+                makeDirtyVictimRsp(writeback, 0x04, 9)));
+        }
+    }
+
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(1, 8002, 0, 122, 0x01), tick).accepted);
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(2, 8003, 4, 123, 0x01), tick).accepted);
+    ASSERT_EQ(cc.pocqState(1), PocqState::Sleep);
+    ASSERT_EQ(cc.pocqState(2), PocqState::Sleep);
+
+    // An unrelated miss must still make progress while the victim is held.
+    ASSERT_TRUE(cc.acceptLinkReq(
+        makeRead(3, 8004, 8, 124, 0x01, TestAddr + 2 * BlockSize),
+        tick).accepted);
+    for (int i = 0; i < 32; ++i) {
+        pumpOnce(cc, slcsf, tick);
+        EXPECT_EQ(cc.pocqState(1), PocqState::Sleep);
+        EXPECT_EQ(cc.pocqState(2), PocqState::Sleep);
+    }
+    // Drain REQ backpressure only now, checking that no same-line read
+    // escaped and that the unrelated miss actually reached the output.
+    bool unrelated_sent = false;
+    while (cc.hasTxReq()) {
+        const auto request = cc.frontTxReq();
+        if (!request.dirtyVictimId) {
+            ASSERT_EQ(request.entry, 3);
+            unrelated_sent = true;
+        }
+        cc.popTxReq();
+        cc.notifyTxReqSent(request);
+    }
+    ASSERT_TRUE(unrelated_sent);
+    if (stop == 2) {
+        EXPECT_FALSE(cc.acceptRxRsp(
+            makeDirtyVictimRsp(writeback, 0x07, 0, 7)));
+        ASSERT_TRUE(cc.hasTxReq());
+        writeback = cc.frontTxReq();
+        cc.popTxReq();
+        cc.notifyTxReqSent(writeback);
+    }
+    if (stop < 4) {
+        acceptDirtyVictimDbid(cc, writeback, 9);
+    }
+    if (stop != 5) {
+        ASSERT_TRUE(cc.hasTxDat());
+        ASSERT_EQ(cc.frontTxDat().dirtyVictimId, writeback.dirtyVictimId);
+        EXPECT_EQ(cc.frontTxDat().dat.data, dirty_data);
+        cc.popTxDat();
+    }
+    if (stop != 6 && stop != 7) {
+        // Sending DAT is insufficient: protection lasts through Comp.
+        EXPECT_EQ(cc.dirtyVictimPhase(victim_id),
+                  HnfCoherencyController::DirtyVictimPhase::WaitComp);
+        EXPECT_EQ(cc.pocqState(1), PocqState::Sleep);
+        EXPECT_FALSE(cc.acceptRxRsp(makeDirtyVictimRsp(
+            writeback, 0x04, 9, writeback.req.pcrdtype)));
+    }
+    EXPECT_EQ(cc.dirtyVictimTransactionCount(), 0);
+    EXPECT_NE(cc.pocqState(1), PocqState::Sleep);
+    EXPECT_EQ(cc.pocqState(2), PocqState::Sleep);
+    pumpLookup(cc, slcsf, 1, tick);
+    ASSERT_TRUE(cc.hasTxReq());
+    const auto read = cc.frontTxReq();
+    ASSERT_EQ(read.entry, 1);
+    ASSERT_EQ(read.req.addr, TestAddr);
+    cc.popTxReq();
+    cc.notifyTxReqSent(read);
+    // Memory now contains the completed writeback; verify the resumed
+    // request can return that data and release the next same-line waiter.
+    EXPECT_FALSE(cc.acceptRxDat(
+        makeCompData(read.req.txnid, 0, false, dirty_data)));
+    EXPECT_FALSE(cc.acceptRxDat(
+        makeCompData(read.req.txnid, BeatSize, true, dirty_data)));
+    pumpUpdate(cc, slcsf, 1, tick);
+    std::vector<uint8_t> returned;
+    while (cc.hasTxDat()) {
+        const auto data = cc.frontTxDat();
+        ASSERT_EQ(data.entry, 1);
+        returned.insert(returned.end(), data.dat.data.begin(),
+                        data.dat.data.end());
+        cc.popTxDat();
+    }
+    EXPECT_EQ(returned, dirty_data);
+    ASSERT_TRUE(cc.acceptRxRsp(makeRsp(0, 122, 0x02)));
+    EXPECT_NE(cc.pocqState(2), PocqState::Sleep);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    WritebackBoundaries, DirtyVictimAddressHazardTest,
+    ::testing::Range(0, 8));
+
 TEST(HnfCoherencyControllerTest, RetireWakesOneSameAddressSleeper)
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);

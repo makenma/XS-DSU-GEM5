@@ -411,6 +411,14 @@ HnfCoherencyController::entryAllocated(const Entry& entry) const
 bool
 HnfCoherencyController::hasAddressHazard(uint32_t entry, uint64_t addr) const
 {
+    // The requester can retire while its displaced dirty line still awaits
+    // DBID, data acceptance or completion. Keep that line ordered until the
+    // independent writeback relinquishes ownership, including retry waits.
+    for (const auto& [id, transaction] : dirtyVictimTxns) {
+        if (transaction.victim.lineAddress == addr) {
+            return true;
+        }
+    }
     for (uint32_t i = 0; i < entries.size(); ++i) {
         if (i == entry || !entryAllocated(entries[i]) ||
             entries[i].state == HnfCcEntryState::Sleep) {
@@ -1847,6 +1855,7 @@ HnfCoherencyController::retireDirtyVictimWriteback(
              static_cast<unsigned long long>(
                  transaction.victim.victimId.value));
     const uint64_t victim_id = transaction.victim.victimId.value;
+    const uint64_t addr = transaction.victim.lineAddress;
     const uint32_t downstream_txn = transaction.downstreamTxnId;
     DPRINTF(HnfDirtyVictimE2E,
             "HNF_DV_DONE victim=%llu txn=%u\n",
@@ -1857,6 +1866,7 @@ HnfCoherencyController::retireDirtyVictimWriteback(
     panic_if(dirtyVictimTxns.erase(victim_id) != 1,
              "HnfCC dirty victim=%llu lost PoCQ owner at completion\n",
              static_cast<unsigned long long>(victim_id));
+    wakeSleepingEntries(addr);
 }
 
 void
