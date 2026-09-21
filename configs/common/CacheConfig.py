@@ -138,21 +138,52 @@ def _connect_chi_router_2x2_mesh_once(options, system):
     system.home_node[0].rnf_slices = 1
     r11.local_ports[0] = system.home_node[0].rxport
 
-    system.snf_bridge.node_id = snf_id
-    system.snf_bridge.hnf_node_id = hnf_id
-    system.snf_bridge.block_size = system.cache_line_size
-    r10.local_ports[0] = system.snf_bridge.chi_side
+    cosim_socket = getattr(options, "chi_cosim_socket", None)
+    if cosim_socket:
+        # Co-simulation mode: the SNF is an external RTL testbench reached
+        # over a UNIX socket (see c2xm_pyuvm_env).  The RNF bypass traffic
+        # that used to go straight to the membus is funnelled through a
+        # dedicated xbar into the bridge as well, so *all* memory traffic
+        # crosses the co-sim boundary and gem5's DDR remains the single
+        # source of truth.
+        from m5.objects import ChiCosimBridge
 
-    system.snf_cache = Cache(clk_domain=system.cpu_clk_domain,
-                             size="64kB",
-                             assoc=4,
-                             tag_latency=1,
-                             data_latency=2,
-                             response_latency=1,
-                             mshrs=16,
-                             tgts_per_mshr=8)
-    system.snf_bridge.mem_side = system.snf_cache.cpu_side
-    system.snf_cache.mem_side = system.membus.cpu_side_ports
+        from common.Caches import L3ToMemBus
+
+        class _CosimBypassBus(L3ToMemBus):
+            pass
+
+        system.snf_bridge = ChiCosimBridge(
+            socket_path=cosim_socket,
+            quantum_cycles=getattr(options, "chi_cosim_quantum", 100),
+            node_id=snf_id,
+            hnf_node_id=hnf_id,
+            bypass_route=getattr(options, "chi_cosim_bypass_route", "all"),
+        )
+        r10.local_ports[0] = system.snf_bridge.chi_side
+        system.snf_bridge.mem_side = system.membus.cpu_side_ports
+
+        system.cosim_bypass_bus = _CosimBypassBus()
+        system.cosim_bypass_bus.mem_side_ports = system.snf_bridge.bypass_side
+        print("CHI co-sim SNF: socket=%s quantum=%d bypass=%s" % (
+            cosim_socket, getattr(options, "chi_cosim_quantum", 100),
+            getattr(options, "chi_cosim_bypass_route", "all")))
+    else:
+        system.snf_bridge.node_id = snf_id
+        system.snf_bridge.hnf_node_id = hnf_id
+        system.snf_bridge.block_size = system.cache_line_size
+        r10.local_ports[0] = system.snf_bridge.chi_side
+
+        system.snf_cache = Cache(clk_domain=system.cpu_clk_domain,
+                                 size="64kB",
+                                 assoc=4,
+                                 tag_latency=1,
+                                 data_latency=2,
+                                 response_latency=1,
+                                 mshrs=16,
+                                 tgts_per_mshr=8)
+        system.snf_bridge.mem_side = system.snf_cache.cpu_side
+        system.snf_cache.mem_side = system.membus.cpu_side_ports
 
     system._chi_router_2x2_hnf_node_id = hnf_id
     system._chi_router_2x2_snf_node_id = snf_id
@@ -178,7 +209,12 @@ def _connect_chi_router_2x2_bridge(options, system, cpu_idx, xbar):
     bridge.wakeup_target = system.home_node[0]
 
     xbar.mem_side_ports = bridge.cache_side
-    bridge.mem_side = system.membus.cpu_side_ports
+    if getattr(system, "cosim_bypass_bus", None) is not None:
+        # Co-sim: RNF bypass/uncached traffic enters the co-simulation
+        # through the SNF bridge instead of the local membus.
+        bridge.mem_side = system.cosim_bypass_bus.cpu_side_ports
+    else:
+        bridge.mem_side = system.membus.cpu_side_ports
     bridge.chi_side = _chi_router_2x2(
         system, 0, 0).device_ports[cpu_idx * 4]
 

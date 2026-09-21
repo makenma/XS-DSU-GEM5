@@ -5,6 +5,7 @@ Import("*")
 
 SimObject('Cache2ChiBridge.py',sim_objects=['Cache2ChiBridge'])
 SimObject('Chi2ClassicMemBridge.py',sim_objects=['Chi2ClassicMemBridge'])
+SimObject('ChiCosimBridge.py',sim_objects=['ChiCosimBridge'])
 SimObject('ChiFlitSink.py',sim_objects=['ChiFlitSink'])
 SimObject('ChiRouterRefModel.py',sim_objects=['ChiRouterRefModel'])
 
@@ -17,6 +18,7 @@ SimObject('SlcSnoopFilter.py', sim_objects=['SlcSnoopFilter'])
 Source('Cache2ChiBridge.cc')
 Source('Cache2ChiBridgeData.cc')
 Source('Chi2ClassicMemBridge.cc')
+Source('ChiCosimBridge.cc')
 Source('ChiFlitSink.cc')
 Source('ChiRouterRefModel.cc')
 Source('base/BasicChiComponent.cc')
@@ -89,6 +91,7 @@ GTest('chi2classic_mem_bridge.test',
 
 DebugFlag('Cache2ChiBridge')
 DebugFlag('Chi2ClassicMemBridge')
+DebugFlag('ChiCosimBridge')
 DebugFlag('ChiFlitSink')
 DebugFlag('ChiRouterRefModel')
 DebugFlag('BasicChiComponent')
