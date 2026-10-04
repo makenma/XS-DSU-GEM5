@@ -1,3 +1,4 @@
+#include "mem/cache/CHI/FlowGraphTrace.hh"
 /*
  * Copyright (c) 2010-2019 ARM Limited
  * All rights reserved.
@@ -454,6 +455,8 @@ Cache::handleTimingReqMiss(PacketPtr pkt, CacheBlk *blk, Tick forward_time,
 void
 Cache::recvTimingReq(PacketPtr pkt)
 {
+    Chi::FlowGraphTrace::get().observeInstruction(pkt->req);
+    if(pkt->isWrite()) Chi::FlowGraphTrace::get().observeWrite(pkt->req);
     DPRINTF(CacheTags, "%s tags:\n%s\n", __func__, tags->print());
 
     promoteWholeLineWrites(pkt);

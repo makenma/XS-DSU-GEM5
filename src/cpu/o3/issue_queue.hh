@@ -215,6 +215,8 @@ class IssueQue : public SimObject
     void markMemDepDone(const DynInstPtr& inst);
     /** move the mem inst to readyQ, and try it again. */
     void retryMem(const DynInstPtr& inst);
+    /** Resume an already-authorized non-speculative TLB miss. */
+    void retryCommitAuthorizedMem(const DynInstPtr& inst);
     bool idle();
 
     void doCommit(const InstSeqNum inst);

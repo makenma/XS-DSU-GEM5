@@ -1,0 +1,15 @@
+{
+  "sessionId": 24826,
+  "toolResult": {
+    "chunk_id": "d3fe84",
+    "wall_time_seconds": 0.0000172,
+    "exit_code": 1,
+    "original_token_count": 30,
+    "output": "{\"finished\": \"after\", \"hostExitCode\": 0}\n{\"starting\": \"compare\", \"pid\": 710}\n{\"finished\": \"compare\", \"hostExitCode\": 1}\n"
+  },
+  "directory": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01",
+  "result": "strict-fail-13-cpu0-frontend-statistic-differences",
+  "bothBoundedSimulatorsReachedExpectedLimitAndExited2": true,
+  "comparisonEqual": ["census", "config.ini", "config.json", "manifest", "result", "progress", "serialSha256", "dtbSha256"],
+  "linuxAcceptance": false
+}

@@ -1,3 +1,4 @@
+#include "mem/cache/CHI/FlowGraphTrace.hh"
 /*
  * Copyright (c) 2010-2014, 2017-2021 ARM Limited
  * Copyright (c) 2013 Advanced Micro Devices, Inc.
@@ -1969,6 +1970,7 @@ LSQUnit::offloadToStoreBuffer(uint32_t max_entries)
                 bool success = insertStoreBuffer(vaddr, paddr, (uint8_t *)storeWBIt->data() + offset, req->getSize(),
                                                  req->getByteEnable());
                 if (success) {
+                    Chi::FlowGraphTrace::get().bufferStore(req);
                     request->_numOutstandingPackets++;
                 } else {
                     break;
@@ -1993,6 +1995,7 @@ LSQUnit::offloadToStoreBuffer(uint32_t max_entries)
                 break;
             }
             ++accepted_entries;
+            Chi::FlowGraphTrace::get().bufferStore(request->mainReq());
             // finish once store
             completeStore(storeWBIt, true);
             storeWBIt++;
@@ -2098,6 +2101,7 @@ LSQUnit::squash(const InstSeqNum &squashed_num)
         }
 
         // Clear the smart pointer to make sure it is decremented.
+        Chi::FlowGraphTrace::get().cancelInstruction(cpu->cpuId(),loadQueue.back().instruction()->seqNum);
         loadQueue.back().instruction()->setSquashed();
         loadQueue.back().clear();
 
@@ -2401,6 +2405,7 @@ LSQUnit::completeStore(typename StoreQueue::iterator store_idx, bool from_sbuffe
     if (!from_sbuffer &&
         (!store_inst->isStoreConditional() || store_inst->lockedWriteSuccess()) &&
         cpu->goldenMemManager() &&
+        !request->mainReq()->isCacheMaintenance() &&
         cpu->goldenMemManager()->inPmem(request->mainReq()->getPaddr())) {
         Addr paddr = request->mainReq()->getPaddr();
         if (!store_inst->isAtomic()) {

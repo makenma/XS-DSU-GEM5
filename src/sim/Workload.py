@@ -1,3 +1,4 @@
+from m5.SimObject import PyBindMethod
 # Copyright 2019 Google Inc.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -77,6 +78,7 @@ class SEWorkload(Workload, metaclass=SEWorkloadMeta):
     cxx_header = "sim/se_workload.hh"
     cxx_class = 'gem5::SEWorkload'
     abstract = True
+    cxx_exports = [PyBindMethod('allocPhysPages')]
 
     @classmethod
     def _is_compatible_with(cls, obj):

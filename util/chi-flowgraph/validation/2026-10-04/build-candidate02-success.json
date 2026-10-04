@@ -1,0 +1,14 @@
+{
+  "sessionId": 16060,
+  "toolResult": {
+    "chunk_id": "1a68f6",
+    "wall_time_seconds": 0.0000096,
+    "exit_code": 0,
+    "original_token_count": 58,
+    "output": "{\"built\": true, \"gem5Sha256\": \"7aba95946686c49c763e54d1876670e4e737c90ed843fb0a4905f400c326309a\", \"output\": \"/root/chi-flowgraph-work/linux-validation/artifacts/fs-model-10-fetch-demand-fault-candidate02\", \"linuxAcceptance\": false}\n"
+  },
+  "artifactDirectory": "/root/chi-flowgraph-work/linux-validation/artifacts/fs-model-10-fetch-demand-fault-candidate02",
+  "gem5Sha256": "7aba95946686c49c763e54d1876670e4e737c90ed843fb0a4905f400c326309a",
+  "result": "build-complete",
+  "linuxAcceptance": false
+}

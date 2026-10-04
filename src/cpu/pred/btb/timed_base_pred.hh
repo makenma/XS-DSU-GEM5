@@ -73,6 +73,8 @@ class TimedBaseBTBPredictor: public SimObject
     virtual void recoverBwHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken) {}
     virtual void recoverIHist(const FetchTarget &entry, int shamt, bool cond_taken) {}
     virtual void recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const FetchTarget &entry, int shamt, bool cond_taken) {}
+    // Remove a disproved branch slot from BTB storage, not direction history.
+    virtual void invalidateBTBEntry(Addr pc) {}
     virtual void update(const FetchTarget &entry) {}
     virtual unsigned getDelay() {return numDelay;}
     virtual bool getResolvedUpdate() {return resolvedUpdate;}

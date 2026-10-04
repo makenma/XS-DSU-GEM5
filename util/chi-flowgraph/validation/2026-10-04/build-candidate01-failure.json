@@ -1,0 +1,13 @@
+{
+  "sessionId": 66652,
+  "toolResult": {
+    "chunk_id": "59618b",
+    "wall_time_seconds": 0.000014,
+    "exit_code": 2,
+    "original_token_count": 0,
+    "output": ""
+  },
+  "artifactDirectory": "/root/chi-flowgraph-work/linux-validation/artifacts/fs-model-10-fetch-demand-fault-candidate01",
+  "result": "compile-failed",
+  "linuxAcceptance": false
+}

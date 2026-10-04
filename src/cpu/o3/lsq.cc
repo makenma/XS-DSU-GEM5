@@ -1,3 +1,4 @@
+#include "mem/cache/CHI/FlowGraphTrace.hh"
 /*
  * Copyright (c) 2011-2012, 2014, 2017-2019, 2021 ARM Limited
  * Copyright (c) 2013 Advanced Micro Devices, Inc.
@@ -1650,7 +1651,10 @@ LSQ::pushRequest(const DynInstPtr& inst, bool isLoad, uint8_t *data,
     }
 
 
-    if (!isLoad && !isAtomic) {
+    // Cache maintenance and block zero have no input store data. In
+    // particular, CBO writeMem(nullptr, ...) must not be copied before the
+    // existing STORE_NO_DATA handling in LSQUnit::write.
+    if (!isLoad && !isAtomic && !(flags & Request::STORE_NO_DATA)) {
         // store inst temporally saves its data in memData
         inst->memData = new uint8_t[size];
         memcpy(inst->memData, data, size);
@@ -1956,6 +1960,7 @@ LSQ::SbufferRequest::addReq(Addr blockVaddr, Addr blockPaddr, const std::vector<
         cpu->dataRequestorId());
     req->setContext(cpu->getContext(_port.lsqID)->contextId());
     req->setByteEnable(byteEnable);
+    Chi::FlowGraphTrace::get().bindBufferedStores(req);
 
     _reqs.push_back(req);
 }

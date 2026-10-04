@@ -1,3 +1,6 @@
+#include "mem/cache/CHI/ChiProtocolIntent.hh"
+#include "mem/cache/CHI/ChiIntentCache.hh"
+#include "mem/cache/CHI/FlowGraphTrace.hh"
 #include "mem/cache/CHI/Cache2ChiBridge.hh"
 
 #include <algorithm>
@@ -121,6 +124,7 @@ Cache2ChiBridge::Cache2ChiBridge(const Cache2ChiBridgeParams& p)
              "%s requires txnid_namespace_id=%u < "
              "txnid_namespace_count=%u\n",
              name(), txnIdNamespace, txnIdNamespaceCount);
+    extendedProfile=p.extended_profile;
     nextTxnId = firstTxnIdInNamespace(
         txnIdBase, txnIdNamespace, txnIdNamespaceCount);
     const uint64_t max_txnid = std::numeric_limits<uint32_t>::max();
@@ -496,6 +500,8 @@ Cache2ChiBridge::allocateTxnId()
 void
 Cache2ChiBridge::freeTxn(uint32_t txnid)
 {
+    auto traceTxn=txns.find(txnid);
+    if (traceTxn!=txns.end()) FlowGraphTrace::get().event(traceTxn->second.req.flow,"complete",nodeId);
     txns.erase(txnid);
 }
 
@@ -525,9 +531,23 @@ Cache2ChiBridge::classify(PacketPtr pkt) const
                      pkt->responderHadWritable(),
                  "%s: invalid cache-responding coordination packet %s\n",
                  name(), pkt->print());
-        return cacheRespondingCoordinationIntent();
+        auto intent=cacheRespondingCoordinationIntent();
+        if(extendedProfile)intent.requiresCompAck=true;
+        return intent;
     }
 
+    if(auto* special=dynamic_cast<ChiProtocolIntent*>(pkt->senderState)) {
+        const auto op=special->opcode;
+        MemoryIntent i{};i.needsResponse=true;i.expectsComp=true;
+        i.expectsData=chiRead(op);i.carriesData=chiWrite(op);i.expectsDbid=i.carriesData;
+        i.requiresCompAck=chiAllocating(op)||op==12;i.isPartial=op==0x18||op==0x1c;
+        i.txnClass=i.expectsData?TxnClass::Read:i.carriesData?TxnClass::Write:TxnClass::Maintenance;
+        i.kind=i.expectsData?(op==7?IntentKind::ReadUnique:IntentKind::ReadShared):
+            chiCopyback(op)?(op==0x15?IntentKind::WriteEvictFull:IntentKind::WriteBackFull):
+            i.carriesData?(i.isPartial?IntentKind::WriteUniquePtl:IntentKind::WriteUniqueFull):
+            op==12?IntentKind::MakeUnique:IntentKind::MakeInvalid;
+        return i;
+    }
     MemoryIntent intent{};
     intent.needsResponse = pkt->needsResponse();
 
@@ -570,6 +590,7 @@ Cache2ChiBridge::classify(PacketPtr pkt) const
 
     if (cmd == MemCmd::UpgradeReq || cmd == MemCmd::SCUpgradeReq) {
         intent.kind = IntentKind::MakeUnique;
+        if(extendedProfile)intent.requiresCompAck=true;
         intent.txnClass = TxnClass::Maintenance;
         intent.expectsComp = true;
         return intent;
@@ -656,7 +677,10 @@ Cache2ChiBridge::mapToReq(const MemoryIntent& intent, PacketPtr pkt,
     req.txnid = txnid;
     req.stage = 0;
     req.AllowRetry = enableRetry ? 1 : 0;
-    req.ReturnNid = nodeId;
+    req.ReturnNid = 0; // Inapplicable on RN -> HN requests (B2.4.10).
+    req.memattr = 0x0d; // Normal, cacheable, allocate, EWA for coherent requests.
+    req.snpattr = 1;
+    req.expCompAck = intent.requiresCompAck;
 
     switch (intent.kind) {
       case IntentKind::ReadShared:
@@ -696,6 +720,27 @@ Cache2ChiBridge::mapToReq(const MemoryIntent& intent, PacketPtr pkt,
         break;
     }
 
+    if(auto* special=dynamic_cast<ChiProtocolIntent*>(pkt->senderState)) {
+        req.opcode=special->opcode;req.addr=pkt->getAddr();req.stashNid=special->stashTarget;
+        if(req.opcode==4||req.opcode==0x1c||req.opcode==0x1d) { req.memattr=0;req.snpattr=0; }
+        if(req.opcode==13||req.opcode==0x25)req.memattr=5;
+    } else if(extendedProfile && req.opcode==1) req.opcode=0x26;
+    if(extendedProfile && !dynamic_cast<ChiProtocolIntent*>(pkt->senderState) && req.opcode==12)req.opcode=0x0b;
+    if(extendedProfile && req.opcode==13)req.memattr=5;
+    req.flow = FlowGraphTrace::get().root("rnf"); req.flow.address = req.addr;
+    req.flow.causeInstructionIds=FlowGraphTrace::get().causes(pkt->req);
+    if(auto* special=dynamic_cast<ChiProtocolIntent*>(pkt->senderState))
+        if(!special->instructionId.empty()) req.flow.causeInstructionIds={special->instructionId};
+    if(intent.carriesData) req.flow.dataProducerInstructionIds=FlowGraphTrace::get().producers(nodeId,req.addr);
+    FlowGraphTrace::get().bind(pkt->req,req.flow);
+    FlowGraphTrace::get().stamp(req);
+    FlowGraphTrace::get().event(req.flow,"allocate",nodeId,{{"opcode",FlowGraphTrace::opcode(REQ,req.opcode)}});
+    FlowGraphTrace::get().event(req.flow,"sam",nodeId,
+        {{"target",FlowGraphTrace::get().node(req.tgtid)},
+         {"fields",{{"homeNodeIds",homeNodeIds},{"homeNodeId",homeNodeId},
+                    {"paBits",hnfHashPaBits},{"method","CMN SCG XOR"},
+                    {"index",homeNodeIds.empty()?0:cmnHnfIndex(req.addr,homeNodeIds.size(),hnfHashPaBits)},
+                    {"selectedNodeId",req.tgtid},{"classicCommand",pkt->cmdString()}}}});
     return req;
 }
 
@@ -737,11 +782,18 @@ Cache2ChiBridge::packDataBeats(const MemoryIntent& intent, PacketPtr pkt,
         dat.HomeNID = req.tgtid;
         dat.dbid = 0;
         dat.dataid = static_cast<uint8_t>(dataid);
-        dat.resp = static_cast<uint8_t>(RespState::Unknown);
+        dat.resp = extendedProfile?((intent.kind==IntentKind::WriteEvictFull||intent.kind==IntentKind::WriteBackFull||intent.kind==IntentKind::WriteCleanFull)?(pkt->hasSharers()?3:2):0):static_cast<uint8_t>(RespState::Unknown);
         dat.beatOffset = intent.isPartial ? startOffset + copied : copied;
         dat.data.assign(src + copied, src + copied + beatBytes);
         dat.byteEnable.assign(beatBytes, 1);
+        if(intent.isPartial) {
+            const auto& be=pkt->req->getByteEnable();
+            for(unsigned i=0;i<beatBytes;++i) dat.byteEnable[i]=be.at(copied+i);
+            for(unsigned i=0;i<beatBytes;++i) if(!dat.byteEnable[i]) dat.data[i]=0;
+        }
         dat.chunkValid.assign((beatBytes + 7) / 8, 1);
+        dat.flow=req.flow; dat.flow.messageId.clear(); dat.flow.payloadOrigin="classic_packet";
+        FlowGraphTrace::get().stamp(dat);
         beats.push_back(std::move(dat));
     }
 
@@ -792,6 +844,7 @@ Cache2ChiBridge::cacheRecvFunctional(PacketPtr pkt)
 bool
 Cache2ChiBridge::cacheRecvTimingSnoopResp(PacketPtr pkt)
 {
+    if(intentSnoopResponse) {auto callback=std::move(intentSnoopResponse);intentSnoopResponse={};callback(pkt);return true;}
     auto* state = pkt->findNextSenderState<SnoopSenderState>();
     panic_if(!state, "%s: got classic snoop response without bridge state\n",
              name());
@@ -802,7 +855,9 @@ Cache2ChiBridge::cacheRecvTimingSnoopResp(PacketPtr pkt)
              name(), state->txnid);
 
     SnoopEntry& snoop = it->second;
-    if (pkt->hasData()) {
+    if (extendedProfile && snoop.snp.opcode==0x0a) {
+        sendSnoopRsp(snoop,RespState::I);
+    } else if (pkt->hasData()) {
         sendSnoopData(snoop, pkt);
     } else {
         const RespState state = pkt->hasSharers() && !snoop.invalidating ?
@@ -921,6 +976,7 @@ Cache2ChiBridge::pump()
         }
 
         TxnEntry txn{};
+        txn.extended=extendedProfile;
         txn.txnid = *txnid;
         txn.pkt = pkt;
         txn.intent = intent;
@@ -1080,23 +1136,24 @@ void
 Cache2ChiBridge::handleRsp(const RawRsp& rsp)
 {
     const auto decoded = decodeRsp(rsp.opcode);
+    if (decoded.minor == RspMinor::PCrdGrant || decoded.minor == RspMinor::RetryAck) {
+        for (auto id : acceptRetryResponse(rsp,nodeId,txns,retryCredits)) {
+            auto& txn=txns.at(id);
+            if (FlowGraphTrace::get().enabled()) {
+                txn.req.flow.attemptId=std::to_string(txn.retryCount);
+                txn.req.flow.messageId.clear(); FlowGraphTrace::get().stamp(txn.req);
+                for (auto& beat:txn.dataBeats) { beat.flow=txn.req.flow; beat.flow.messageId.clear(); FlowGraphTrace::get().stamp(beat); }
+            }
+            retryTxnIds.push(id);
+        }
+        return;
+    }
     auto it = txns.find(rsp.txnid);
     panic_if(it == txns.end(), "%s: RSP opcode=0x%x for unknown txnid=%u\n",
              name(), rsp.opcode, rsp.txnid);
     TxnEntry& txn = it->second;
 
     switch (decoded.minor) {
-      case RspMinor::RetryAck:
-        txn.retryBlocked = true;
-        ++txn.retryCount;
-        break;
-      case RspMinor::PCrdGrant:
-        if (txn.retryBlocked) {
-            txn.req.AllowRetry = 0;
-            txn.req.pcrdtype = rsp.pcrdtype;
-            retryTxnIds.push(txn.txnid);
-        }
-        break;
       case RspMinor::DBIDResp:
       case RspMinor::DBIDRespOrd:
         txn.hasDbid = true;
@@ -1106,6 +1163,7 @@ Cache2ChiBridge::handleRsp(const RawRsp& rsp)
       case RspMinor::CompDBIDResp:
         txn.hasDbid = true;
         txn.dbid = rsp.dbid;
+        if(txn.extended && txn.intent.kind==IntentKind::MakeUnique) {txn.dbid=rsp.dbid;txn.hasDbid=true;if(rsp.resp==3)txn.pkt->setCacheResponding();}
         txn.gotComp = true;
         txn.lastResponseChannel = RSP;
         txn.lastResponseOpcode = rsp.opcode;
@@ -1120,6 +1178,7 @@ Cache2ChiBridge::handleRsp(const RawRsp& rsp)
             panic("%s: ReadCleanReq mapped as ReadShared got dirty CHI "
                   "response state %u\n", name(), rsp.resp);
         }
+        if(txn.extended && txn.intent.kind==IntentKind::MakeUnique) {txn.dbid=rsp.dbid;txn.hasDbid=true;if(rsp.resp==3)txn.pkt->setCacheResponding();}
         txn.gotComp = true;
         txn.lastResponseChannel = RSP;
         txn.lastResponseOpcode = rsp.opcode;
@@ -1142,9 +1201,11 @@ Cache2ChiBridge::handleDat(const RawDat& dat)
              name(), dat.opcode, dat.txnid);
     TxnEntry& txn = it->second;
 
+    if(txn.extended) {txn.dbid=dat.dbid;txn.hasDbid=true;}
     acceptReadDataBeat(txn, dat, dataBeatBytes, name().c_str());
     txn.lastResponseChannel = DAT;
     txn.lastResponseOpcode = dat.opcode;
+    if(txn.extended && dat.resp==6 && !txn.pkt->cacheResponding())txn.pkt->setCacheResponding();
     if (dat.resp == static_cast<uint8_t>(RespState::SC) ||
         dat.resp == static_cast<uint8_t>(RespState::SD_PD)) {
         txn.pkt->setHasSharers();
@@ -1165,6 +1226,7 @@ void
 Cache2ChiBridge::handleSnp(const RawSnp& snp, uint32_t attempts,
                            Tick latency_start_tick, bool latency_tracked)
 {
+    if(snp.opcode==0x0b || snp.opcode==0x0c) { handleStash(snp);return; }
     if (attempts == 0 && transactionLatencyTraceEnabled) {
         latency_start_tick = curTick();
         latency_tracked = true;
@@ -1414,11 +1476,12 @@ Cache2ChiBridge::makeCompAck(const TxnEntry& txn) const
     ack.qos = txn.req.qos;
     ack.srcid = nodeId;
     ack.tgtid = txn.req.tgtid;
-    ack.txnid = txn.txnid;
+    ack.txnid = txn.extended?txn.dbid:txn.txnid;
     ack.opcode = RspOp::CompAck;
     ack.stage = 0;
     ack.dbid = 0;
-    ack.resp = static_cast<uint8_t>(RespState::Unknown);
+    ack.resp = extendedProfile?0:static_cast<uint8_t>(RespState::Unknown);
+    ack.flow=txn.req.flow; ack.flow.messageId.clear(); FlowGraphTrace::get().stamp(ack);
     return ack;
 }
 
@@ -1455,6 +1518,7 @@ Cache2ChiBridge::reissueRetriedTxn(uint32_t txnid)
         return false;
     }
     txn.retryBlocked = false;
+    txn.retryQueued = false;
     txn.hasDbid = false;
     txn.gotComp = false;
     txn.gotData = false;
@@ -1495,6 +1559,16 @@ Cache2ChiBridge::completeClassicTxn(TxnEntry& txn)
     const uint32_t txnid = txn.txnid;
     const std::optional<RawRsp> compAck = makeCompAck(txn);
 
+    if(auto* special=dynamic_cast<ChiProtocolIntent*>(pkt->senderState)) {
+        pkt->makeTimingResponse();
+        if(txn.intent.expectsData) pkt->setData(txn.readData.data());
+        FlowGraphTrace::get().event(txn.req.flow,"complete",nodeId);
+        special->complete(pkt);
+        if(intentCache) intentCache->recordState(txn.req.addr,txn.req.flow,nodeId);
+        delete pkt->popSenderState();delete pkt;
+        if(compAck) pendingCompAcks.push({*compAck,txnid}); else freeTxn(txnid);
+        return;
+    }
     if (txn.intent.needsResponse) {
         const std::string cmd = pkt->cmdString();
         if (txn.intent.respondAsUpgrade) {
@@ -1578,6 +1652,7 @@ Cache2ChiBridge::sendSnoopRsp(SnoopEntry& snoop, RespState state)
     rsp.stage = 0;
     rsp.dbid = 0;
     rsp.resp = static_cast<uint8_t>(state);
+    rsp.flow=snoop.snp.flow; rsp.flow.messageId.clear(); FlowGraphTrace::get().stamp(rsp);
     snoop.pendingRsp = rsp;
 }
 
@@ -1613,11 +1688,14 @@ Cache2ChiBridge::sendSnoopData(SnoopEntry& snoop, PacketPtr pkt)
         dat.dataid = static_cast<uint8_t>(dataid);
         dat.resp = static_cast<uint8_t>(
             snoop.invalidating ? RespState::I_PD : RespState::SD_PD);
+        if(extendedProfile)dat.resp=snoop.invalidating?4:3;
         dat.beatOffset = offset;
         dat.data.assign(data + offset, data + offset + beat_bytes);
         dat.byteEnable.assign(beat_bytes, 1);
         dat.chunkValid.assign((beat_bytes + 7) / 8, 1);
 
+        dat.flow=snoop.snp.flow; if(extendedProfile)dat.flow.dataProducerInstructionIds=FlowGraphTrace::get().producers(nodeId,snoop.snp.addr); dat.flow.messageId.clear(); dat.flow.payloadOrigin="classic_cache_snoop";
+        FlowGraphTrace::get().stamp(dat);
         snoop.dataBeats.push_back(std::move(dat));
     }
 }
@@ -1671,6 +1749,7 @@ Cache2ChiBridge::sendPendingSnoopResponses()
 MemCmd
 Cache2ChiBridge::snoopCmdFor(const RawSnp& snp) const
 {
+    if(snp.opcode==8) return MemCmd::ReadExReq;
     const auto decoded = decodeSnp(snp.opcode);
     switch (decoded.minor) {
       case SnpMinor::SnpShared:
@@ -1693,7 +1772,7 @@ bool
 Cache2ChiBridge::snoopInvalidates(const RawSnp& snp) const
 {
     const auto decoded = decodeSnp(snp.opcode);
-    return decoded.minor == SnpMinor::SnpUnique ||
+    return snp.opcode==8 || decoded.minor == SnpMinor::SnpUnique ||
            decoded.minor == SnpMinor::SnpCleanInvalid ||
            decoded.minor == SnpMinor::SnpMakeInvalid;
 }
@@ -1776,6 +1855,13 @@ Cache2ChiBridge::serialize(CheckpointOut &cp) const
     for (const auto &kv : snoops) snoop_ids.push_back(kv.first);
     arrayParamOut(cp, "snoopIds", snoop_ids);
 
+    std::vector<uint32_t> creditState;
+    for (const auto& [key,count] : retryCredits) {
+        creditState.insert(creditState.end(), {std::get<0>(key),std::get<1>(key),std::get<2>(key),count});
+    }
+    paramOut(cp,"retryCreditsSize",creditState.size());
+    arrayParamOut(cp,"retryCredits",creditState);
+
     // Retry TxnID queue (queue + TxnID).
     std::vector<uint32_t> retry_ids;
     {
@@ -1818,6 +1904,15 @@ Cache2ChiBridge::unserialize(CheckpointIn &cp)
     snoops.clear();
     (void)snoop_size;
 
+    retryCredits.clear();
+    uint32_t creditSize=0;
+    if (optParamIn(cp,"retryCreditsSize",creditSize)) {
+        std::vector<uint32_t> creditState;
+        arrayParamIn(cp,"retryCredits",creditState);
+        fatal_if(creditSize%4 || creditState.size()!=creditSize,"Invalid RN credit checkpoint");
+        for(size_t i=0;i<creditState.size();i+=4)
+            retryCredits[std::make_tuple(creditState[i],creditState[i+1],creditState[i+2])]=creditState[i+3];
+    }
     uint32_t retry_size = 0;
     paramIn(cp, "retryTxnIdsSize", retry_size);
     std::vector<uint32_t> retry_ids;
@@ -1855,3 +1950,31 @@ Cache2ChiBridge::unserialize(CheckpointIn &cp)
 
 } // namespace Chi
 } // namespace gem5
+
+namespace gem5::Chi {
+void Cache2ChiBridge::handleStash(const RawSnp& snp) {
+    RawRsp rsp{};rsp.srcid=nodeId;rsp.tgtid=snp.srcid;rsp.txnid=snp.txnid;rsp.opcode=1;rsp.flow=snp.flow;rsp.flow.messageId.clear();
+    ChiIntentCache::Snapshot snapshot;
+    bool accept=acceptStash && intentCache && intentCache->prepareIntent(snp.addr,snapshot);
+    if(accept && snapshot.valid) { intentCache->abortIntent();accept=false; }
+    auto id=accept?allocateTxnId():std::optional<uint32_t>{};
+    if(accept&&!id) { intentCache->abortIntent();accept=false; }
+    if(accept) {
+        panic_if(*id>255,"Stash implicit read DBID exceeds coarse 8-bit field\n");
+        const auto op=uint8_t(snp.opcode==0x0b?7:0x26);
+        auto request=std::make_shared<Request>(snp.addr,64,0,Request::funcRequestorId);
+        auto* p=new Packet(request,MemCmd::ReadReq);p->allocate();
+        auto* special=new ChiProtocolIntent;special->opcode=op;
+        special->complete=[this,address=snp.addr,op](PacketPtr result) {
+            std::vector<uint8_t> data(result->getConstPtr<uint8_t>(),result->getConstPtr<uint8_t>()+64);
+            intentCache->commitIntent(address,op,data,result->cacheResponding(),result->hasSharers());
+        };p->pushSenderState(special);
+        TxnEntry t{};t.extended=true;t.txnid=*id;t.pkt=p;t.intent=classify(p);t.req.addr=snp.addr;t.req.size=64;t.req.srcid=nodeId;t.req.tgtid=snp.srcid;t.req.txnid=*id;t.req.opcode=op;t.req.expCompAck=1;
+        t.req.flow=FlowGraphTrace::get().child(snp.flow,"data-pull",snp.addr);t.readExpectedBytes=64;
+        rsp.pullFlow=t.req.flow; rsp.resp=8;rsp.dbid=*id;
+        txns.emplace(*id,std::move(t));FlowGraphTrace::get().event(rsp.pullFlow,"allocate",nodeId,{{"opcode",FlowGraphTrace::opcode(REQ,op)},{"implicitDataPull",true}});
+    }
+    FlowGraphTrace::get().stamp(rsp);
+    SnoopEntry e{};e.snp=snp;e.pendingRsp=rsp;pendingSnoopResponses.push_back(std::move(e));schedulePump();
+}
+}

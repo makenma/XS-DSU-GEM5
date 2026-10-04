@@ -119,7 +119,8 @@ PMP::pmpCheck(const RequestPtr &req, BaseMMU::Mode mode,
     for (int i = 0; i < pmpTable.size(); i++) {
         AddrRange pmp_range = pmpTable[i].pmpAddr;
         if (pmp_range.contains(req->getPaddr()) &&
-                pmp_range.contains(req->getPaddr() + req->getSize())) {
+                pmp_range.contains(req->getPaddr() + req->getSize() -
+                    (req->isCacheMaintenance() ? 1 : 0))) {
             // according to specs address is only matched,
             // when (addr) and (addr + request_size) are both
             // within the pmp range
@@ -138,7 +139,7 @@ PMP::pmpCheck(const RequestPtr &req, BaseMMU::Mode mode,
                                         (PMP_READ & allowed_privs)) {
                 return NoFault;
             } else if ((mode == BaseMMU::Mode::Write) &&
-                                        (PMP_WRITE & allowed_privs)) {
+                                        ((PMP_WRITE | (req->isCacheMaintenance() ? PMP_READ : 0)) & allowed_privs)) {
                 return NoFault;
             } else if ((mode == BaseMMU::Mode::Execute) &&
                                         (PMP_EXEC & allowed_privs)) {

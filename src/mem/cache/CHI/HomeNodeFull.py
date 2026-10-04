@@ -72,3 +72,5 @@ class HomeNodeFull(BasicChiComponent):
         False, "Enable SLCSF set conflict locking")
     rnf_slices = Param.UInt32(
         1, "Address-interleaved CHI bridges attached to each RNF")
+
+    sn_hash_masks = VectorParam.UInt64([], "XOR parity masks selecting the SN target")

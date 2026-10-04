@@ -1,0 +1,225 @@
+{
+  "schemaVersion": 1,
+  "kind": "model10-bounded-fs-fetch-fault-diagnostic",
+  "observedAtUtc": "2026-10-04T04:52:36.603014+00:00",
+  "diagnosticComplete": true,
+  "linuxAcceptance": false,
+  "originalStrictStatus": "FAIL",
+  "originalStrictEquivalent": false,
+  "originalStrictReportSha256": "2893378bb0872d60bf338872a49a2f9db48a69759d8d9d455b9a648cf005b422",
+  "sourcePlanSha256": "3ae09d15ec0d661f0c687eada2b88cd5a1036acc3ca2ef322a7b8a785efbc3b8",
+  "sourceInputs": {
+    "/root/chi-flowgraph-work/linux-validation/artifacts/fs-model-05-nonspec/gem5.opt": "4b8b39640ef6f2f70fec1824f6f3254bc15a41e45aada746d290de825692ad7d",
+    "/root/chi-flowgraph-work/linux-validation/artifacts/fs-model-10-fetch-demand-fault-candidate02/gem5.opt": "7aba95946686c49c763e54d1876670e4e737c90ed843fb0a4905f400c326309a",
+    "/root/chi-flowgraph-work/linux-validation/opensbi-suite/platform/generic/firmware/fw_payload.elf": "4acde7c2a69d1a0bcea39ec78371510594a558cdce7f7fb367eae2af694eb36e",
+    "/mnt/d/proj/chi_flowgraph/native/gem5/native_l2_fs.py": "6ed1ea6c729b1ac53a11de6c60eb4492af8198f770c65aea242098f2a48981bf",
+    "/mnt/d/proj/chi_flowgraph/scripts/check-native-fs-equivalence.py": "bbdd9c13584b0755b0ce69deb6a521317ef0bf49d2924486f2b87c8caa268022",
+    "/mnt/d/proj/chi_flowgraph/scripts/check-chi-transfer-census.py": "ae66bd3d1e04f0e996d414b450b1dbdc1c3a23a39a80f56dbd87d5036235d050",
+    "/mnt/d/proj/chi_flowgraph/scripts/check-native-linux-validation.py": "632db28b503f50b925f6f502e1baea73f2ab4c34dc530360a6005eeeb4d2be83",
+    "/root/chi-flowgraph-work/gem5/configs/common/xiangshan.py": "600edc0bc88e5f09603f5b910eff976fffeed1824ed545f1f2f7ece63e9773cc",
+    "/root/chi-flowgraph-work/gem5/configs/common/Caches.py": "be090d13988eb7695d084801c14d695a2d563542b053cfd3888c717a47c1e007",
+    "/root/chi-flowgraph-work/linux-validation/artifacts/linux-suite-inputs/76aa90c405b1a84843542040de750d9bcb9380205267bd87ffb1e0eb20a1baac/index.json": "3cf08c06426617a020b82e3c8d721f0de26f05c2ee1f3c6f3346b4795da31fa5",
+    "/mnt/d/proj/chi_flowgraph/native/gem5/linux_stage_gate.py": "57db6126cf289c85d13e01763c4a84063a1add09cde4ac7ebc1d74267150fa49"
+  },
+  "originalHead": "65f3241a6cd486dffddaca251536f5c691af9a1f",
+  "scope": "Read-only archived evidence from the two already-completed full 5e9-tick diagnostic runs; does not waive any original strict failure.",
+  "runs": {
+    "before": {
+      "gem5Sha256": "4b8b39640ef6f2f70fec1824f6f3254bc15a41e45aada746d290de825692ad7d",
+      "hostExitCode": 2,
+      "sameBinaryDebugInvariant": true,
+      "sameBinaryErrors": [],
+      "sameBinaryIncomplete": [],
+      "eventCounts": {
+        "translation-fault-handler-entry": 45
+      },
+      "demandCauseCounts": {},
+      "firstEventTick": "3492776000",
+      "lastEventTick": "3602834000"
+    },
+    "after": {
+      "gem5Sha256": "7aba95946686c49c763e54d1876670e4e737c90ed843fb0a4905f400c326309a",
+      "hostExitCode": 2,
+      "sameBinaryDebugInvariant": true,
+      "sameBinaryErrors": [],
+      "sameBinaryIncomplete": [],
+      "eventCounts": {
+        "translation-fault-handler-entry": 48,
+        "demand-fault-carrier": 23
+      },
+      "demandCauseCounts": {
+        "12": 4,
+        "1": 19
+      },
+      "firstEventTick": "3492776000",
+      "lastEventTick": "3602835000"
+    }
+  },
+  "files": {
+    "before": {
+      "config.ini": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/before/config.ini",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/before/config.ini",
+        "sha256": "a36b38fb356da670106e2a5eb652b76e71f9e51581c08ceb9e66e3d69f9d592e",
+        "bytes": 248074
+      },
+      "config.json": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/before/config.json",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/before/config.json",
+        "sha256": "413d4b074abf0e351da64b43d7742842791aab2ca034c17be91edbd275ef00c9",
+        "bytes": 870808
+      },
+      "flowgraph-config.json": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/before/flowgraph-config.json",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/before/flowgraph-config.json",
+        "sha256": "5814270fd33a4ab25fd7df3e74ff452c39c15fd196e2b11a817d7f5380463767",
+        "bytes": 7446
+      },
+      "device.dtb": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/before/device.dtb",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/before/device.dtb",
+        "sha256": "de00e7dab6e74446a4c4662588e93d3f0dd8fe26c444db87c213f3928b369da2",
+        "bytes": 3152
+      },
+      "native-linux-result.json": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/before/native-linux-result.json",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/before/native-linux-result.json",
+        "sha256": "27b9adc07815c680e8d33feb07a64f52f3f27afdcc6004c17b3649b7d09ccf68",
+        "bytes": 1461
+      },
+      "native-linux-progress.jsonl": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/before/native-linux-progress.jsonl",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/before/native-linux-progress.jsonl",
+        "sha256": "79ff7749994aaa293b4d07837e15be41b18b485136f03b84433ebab9029158a0",
+        "bytes": 631
+      },
+      "native-chi-counts.json": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/before/native-chi-counts.json",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/before/native-chi-counts.json",
+        "sha256": "ab3dc21f71b3f3f3fa001cd74fae26bacdcb643a6dbac9cc3825227eaae3bd0b",
+        "bytes": 80333
+      },
+      "stats.txt": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/before/stats.txt",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/before/stats.txt",
+        "sha256": "b8df7de308b8cbca51c711f0dbbbd985bff47292adefcb44e2ab1cbebd9fa78d",
+        "bytes": 1293417
+      },
+      "system.platform.terminal": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/before/system.platform.terminal",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/before/system.platform.terminal",
+        "sha256": "aeebfa4571824d185dc26277ef9015293d08b53cb87389a7ea19215f52e15661",
+        "bytes": 1160
+      },
+      "run.log": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/before/run.log",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/before/run.log",
+        "sha256": "e078293d07a2efd3072c7db6c54f6299999c7aad31b8deed98ad131e7bdb9be2",
+        "bytes": 43221
+      },
+      "host-exit-code.txt": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/before/host-exit-code.txt",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/before/host-exit-code.txt",
+        "sha256": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+        "bytes": 2
+      },
+      "fetch-fault-debug.log": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/before/fetch-fault-debug.log",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/before/fetch-fault-debug.log",
+        "sha256": "90578d080ae4751db1594de1a5479da65e482669cb1e68c17d928c8f22be00ef",
+        "bytes": 3196
+      },
+      "host-pid.txt": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/before/host-pid.txt",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/before/host-pid.txt",
+        "sha256": "ee3e9aa66fc8c9e97aceae912b53d97631edb3ebd14d95c3aa08a8d689ec1cf5",
+        "bytes": 4
+      }
+    },
+    "after": {
+      "config.ini": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/after/config.ini",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/after/config.ini",
+        "sha256": "740d386d6b425e28aa0c1f98902db99d14628fbdea5d87a63471ec88c6771987",
+        "bytes": 248073
+      },
+      "config.json": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/after/config.json",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/after/config.json",
+        "sha256": "7da8de31f15a2cec15342e96091c452e6a2d8cfa553b171b934ee6c523b98a45",
+        "bytes": 870807
+      },
+      "flowgraph-config.json": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/after/flowgraph-config.json",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/after/flowgraph-config.json",
+        "sha256": "5814270fd33a4ab25fd7df3e74ff452c39c15fd196e2b11a817d7f5380463767",
+        "bytes": 7446
+      },
+      "device.dtb": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/after/device.dtb",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/after/device.dtb",
+        "sha256": "de00e7dab6e74446a4c4662588e93d3f0dd8fe26c444db87c213f3928b369da2",
+        "bytes": 3152
+      },
+      "native-linux-result.json": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/after/native-linux-result.json",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/after/native-linux-result.json",
+        "sha256": "d9faa033b0580c1c765c6fa71b364e2e4deb23b9c864bee8cd7888d9f8941a42",
+        "bytes": 1459
+      },
+      "native-linux-progress.jsonl": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/after/native-linux-progress.jsonl",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/after/native-linux-progress.jsonl",
+        "sha256": "e59a77f9c2fde9dddd145aa177c0321ca691b2ab2daa03b46ca0c9a434df3d04",
+        "bytes": 631
+      },
+      "native-chi-counts.json": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/after/native-chi-counts.json",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/after/native-chi-counts.json",
+        "sha256": "ab3dc21f71b3f3f3fa001cd74fae26bacdcb643a6dbac9cc3825227eaae3bd0b",
+        "bytes": 80333
+      },
+      "stats.txt": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/after/stats.txt",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/after/stats.txt",
+        "sha256": "a7b1817e36b8698dcfabe2c7fbbf16729d3de1412f53430e4b800fbd10e51063",
+        "bytes": 1293417
+      },
+      "system.platform.terminal": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/after/system.platform.terminal",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/after/system.platform.terminal",
+        "sha256": "aeebfa4571824d185dc26277ef9015293d08b53cb87389a7ea19215f52e15661",
+        "bytes": 1160
+      },
+      "run.log": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/after/run.log",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/after/run.log",
+        "sha256": "735613c4bbece3b240465f40a308bae1bf272b2f929567132c948f61041c9150",
+        "bytes": 43239
+      },
+      "host-exit-code.txt": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/after/host-exit-code.txt",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/after/host-exit-code.txt",
+        "sha256": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+        "bytes": 2
+      },
+      "fetch-fault-debug.log": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/after/fetch-fault-debug.log",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/after/fetch-fault-debug.log",
+        "sha256": "8ae21c9a58498ea20442411b3ad66ada847ec40d2e68afc288bc0a8c725984c8",
+        "bytes": 6571
+      },
+      "host-pid.txt": {
+        "source": "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/after/host-pid.txt",
+        "archive": "/mnt/d/proj/chi_flowgraph/build/qa/model10-fs-fetch-fault-diagnostic/after/host-pid.txt",
+        "sha256": "65480e7eda9c4b337e13aeaa4dfb6770fb6a37b863438126e4587068402b8bfc",
+        "bytes": 4
+      }
+    }
+  },
+  "unresolved": [
+    "The original 13 CPU0 frontend statistic differences remain strict FAIL.",
+    "Sparse callback logs do not contain DynInst sequence, FTQ identity or commit/squash ordering; they cannot prove a complete FS event-to-statistic causal mapping.",
+    "No new detailed-window simulation or full Linux run was launched after the user requested branch/upload handoff."
+  ]
+}

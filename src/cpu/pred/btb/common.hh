@@ -1,6 +1,7 @@
 #ifndef __CPU_PRED_BTB_STREAM_STRUCT_HH__
 #define __CPU_PRED_BTB_STREAM_STRUCT_HH__
 
+#include <algorithm>
 #include <queue>
 #include <string>
 
@@ -33,7 +34,8 @@ enum SquashType
     SQUASH_NONE=0,
     SQUASH_TRAP,
     SQUASH_CTRL,
-    SQUASH_OTHER
+    SQUASH_OTHER,
+    SQUASH_PREDECODE
 };
 
 enum BranchType
@@ -282,7 +284,10 @@ struct FetchTarget
     BranchInfo predBranchInfo; // predicted branch info
 
     bool isHit;          // whether the predicted btb entry is hit
-    bool falseHit;       // not used
+    bool falseHit;       // a decoded instruction disproved a predicted BTB slot
+    // Local to this prediction: later streams may legitimately enter the same
+    // halfword as an instruction. Never use a global permanent PC blacklist.
+    std::vector<Addr> falseHitPCs;
     std::vector<BTBEntry> predBTBEntries;   // record predicted BTB entries
 
     // for commit, write at redirect or fetch
@@ -371,12 +376,26 @@ struct FetchTarget
         return startPC;
     }
 
+    bool isFalseHitPC(Addr pc) const
+    {
+        return std::find(falseHitPCs.begin(), falseHitPCs.end(), pc) !=
+            falseHitPCs.end();
+    }
+
+    bool canUpdateBTBPC(Addr pc) const
+    {
+        return !isFalseHitPC(pc) && pc >= startPC &&
+            (squashType == SQUASH_PREDECODE ? pc < updateEndInstPC :
+                                             pc <= updateEndInstPC);
+    }
+
     std::pair<int, bool> getHistInfoDuringSquash(Addr squash_pc, bool is_cond, bool actually_taken)
     {
         int shamt = 0;
         bool cond_taken = false;
         for (auto &entry : predBTBEntries) {
-            if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
+            if (entry.valid && !isFalseHitPC(entry.pc) &&
+                entry.pc >= startPC && entry.pc < squash_pc) {
                 shamt++;
             }
         }
@@ -392,7 +411,8 @@ struct FetchTarget
         int shamt = 0;
         bool cond_taken = false;
         for (auto &entry : predBTBEntries) {
-            if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
+            if (entry.valid && !isFalseHitPC(entry.pc) &&
+                entry.pc >= startPC && entry.pc < squash_pc) {
                 shamt++;
             }
         }
@@ -423,7 +443,7 @@ struct FetchTarget
     {
         updateBTBEntries.clear();
         for (auto &entry : predBTBEntries) {
-            if (entry.valid && entry.pc >= startPC && entry.pc <= updateEndInstPC) {
+            if (entry.valid && canUpdateBTBPC(entry.pc)) {
                 updateBTBEntries.push_back(entry);
             }
         }

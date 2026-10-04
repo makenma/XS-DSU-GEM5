@@ -1,0 +1,20 @@
+{
+  "source": "exec-session-completion",
+  "sessionId": 59269,
+  "execResult": {
+    "chunk_id": "93407e",
+    "wall_time_seconds": 0.0000095,
+    "exit_code": 0,
+    "original_token_count": 54,
+    "output": "{\"finished\": \"after\", \"hostExitCode\": 2, \"expectedHostExitCode\": 2}\n{\"diagnosticComplete\": true, \"output\": \"/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01\", \"linuxAcceptance\": false}\n"
+  },
+  "initialResult": {
+    "chunk_id": "fa338e",
+    "wall_time_seconds": 10.0075509,
+    "session_id": 59269,
+    "original_token_count": 33,
+    "output": "{\"started\": \"before\", \"pid\": 365, \"output\": \"/root/chi-flowgraph-work/linux-validation/runs/model10-fs-fault-diagnostic-01/before\"}\n"
+  },
+  "observedAtUtc": "2026-10-04T04:48:11.349Z",
+  "scope": "Finite 5e9-tick FetchFault diagnostic only; does not establish Linux acceptance."
+}

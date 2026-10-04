@@ -1,3 +1,4 @@
+#include "mem/cache/CHI/FlowGraphTrace.hh"
 #include "mem/cache/CHI/Chi2ClassicMemBridge.hh"
 
 #include <algorithm>
@@ -140,6 +141,9 @@ Chi2ClassicMemBridge::makeWritePacket(const TxnEntry& txn,
     auto* pkt = new Packet(request, MemCmd::WriteReq);
     pkt->allocate();
     std::memcpy(pkt->getPtr<uint8_t>(), dat.data.data(), txn.expectedBytes);
+    if(txn.req.opcode==0x1c) {
+        std::vector<bool> mask(dat.byteEnable.begin(),dat.byteEnable.end()); request->setByteEnable(mask);
+    }
     pkt->pushSenderState(
         new SnfSenderState(Chi2ClassicTxnKey::fromReq(txn.req)));
     return pkt;
@@ -214,6 +218,7 @@ Chi2ClassicMemBridge::acceptReadNoSnp(const RawReq& req)
 
     TxnEntry entry{};
     entry.req = req;
+    FlowGraphTrace::get().event(req.flow,"allocate",nodeId,{{"opcode",FlowGraphTrace::opcode(REQ,req.opcode)}});
     entry.kind = TxnEntry::Kind::Read;
     entry.phase = TxnEntry::Phase::MemReqQueued;
     entry.expectedBytes = expectedDataBytes(req);
@@ -274,6 +279,7 @@ Chi2ClassicMemBridge::acceptWriteNoSnpFull(const RawReq& req)
 
     TxnEntry entry{};
     entry.req = req;
+    FlowGraphTrace::get().event(req.flow,"allocate",nodeId,{{"opcode",FlowGraphTrace::opcode(REQ,req.opcode)}});
     entry.kind = TxnEntry::Kind::Write;
     entry.phase = TxnEntry::Phase::WriteDataPending;
     entry.expectedBytes = expectedDataBytes(req);
@@ -316,8 +322,8 @@ Chi2ClassicMemBridge::tryAcceptPendingReq()
         pendingReq.reset();
         return true;
     }
-    if (decoded.minor == ReqMinor::WriteNoSnp &&
-        req.opcode == Chi2ClassicMemTxnPolicy::WriteNoSnpFullOpcode) {
+    if ((decoded.minor == ReqMinor::WriteNoSnp &&
+        req.opcode == Chi2ClassicMemTxnPolicy::WriteNoSnpFullOpcode) || req.opcode==0x1c) {
         if (!acceptWriteNoSnpFull(req)) {
             return false;
         }
@@ -476,6 +482,7 @@ Chi2ClassicMemBridge::recvMemResp(PacketPtr pkt)
             state->key.txnId,
             static_cast<unsigned long long>(pkt->getAddr()),
             pkt->getSize(), pkt->cmdString().c_str());
+    txn.req.flow.payloadOrigin = pkt->hasData()?"memory_response":"simulator_zero_fill";
     queueCompData(txn, src, std::min<uint32_t>(txn.expectedBytes,
                                                pkt->getSize()));
     txn.phase = *next;
@@ -519,6 +526,9 @@ Chi2ClassicMemBridge::queueCompData(const TxnEntry& txn,
         }
         dat.byteEnable.assign(beatBytes, 1);
         dat.chunkValid.assign((beatBytes + 7) / 8, 1);
+        dat.flow=txn.req.flow; dat.flow.messageId.clear();
+        if (offset+beatBytes>data_bytes) dat.flow.payloadOrigin="memory_response_with_simulator_padding";
+        FlowGraphTrace::get().stamp(dat);
         txDatQ.push_back(
             {Chi2ClassicTxnKey::fromReq(txn.req), std::move(dat)});
     }
@@ -570,11 +580,14 @@ Chi2ClassicMemBridge::sendPendingDat()
                 dat.txnid, dat.dataid,
                 static_cast<unsigned>(dat.data.size()), dat.last,
                 dat.srcid, dat.tgtid);
+        const bool traceLast = dat.last;
+        const uint32_t traceTxnId = dat.txnid;
         txDatQ.pop_front();
-        if (dat.last) {
+        if (traceLast) {
             panic_if(*next != TxnEntry::Phase::Complete,
                      "%s retained accepted read response txnid=%u\n",
-                     name(), dat.txnid);
+                     name(), traceTxnId);
+            FlowGraphTrace::get().event(txn->second.req.flow,"complete",nodeId);
             txns.erase(txn);
         }
     }
@@ -613,6 +626,7 @@ Chi2ClassicMemBridge::sendPendingRsp()
         panic_if(*next != TxnEntry::Phase::Complete,
                  "%s retained accepted write response txnid=%u\n",
                  name(), rsp.txnid);
+        FlowGraphTrace::get().event(txn->second.req.flow,"complete",nodeId);
         txns.erase(txn);
         txRspQ.pop_front();
     }

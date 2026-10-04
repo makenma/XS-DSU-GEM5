@@ -1,0 +1,269 @@
+{
+  "passed": false,
+  "checks": {
+    "actualCpuSuccess": true,
+    "sameResult": true,
+    "sameSimulationStatistics": false,
+    "config.ini": true,
+    "flowgraph-config.json": true,
+    "raw.jsonl": true
+  },
+  "fileSha256": {
+    "config.ini": [
+      "af4e329ac6c627598ba4e501a4fcd5bd84445c790baff6431e65eba4eda1796e",
+      "af4e329ac6c627598ba4e501a4fcd5bd84445c790baff6431e65eba4eda1796e"
+    ],
+    "flowgraph-config.json": [
+      "5409d53f0da22f2f296d43f37f16b36a9a11544ead2e0b7943df1105102522be",
+      "5409d53f0da22f2f296d43f37f16b36a9a11544ead2e0b7943df1105102522be"
+    ],
+    "raw.jsonl": [
+      "4802ef3dcd5aa2cdc80b1796657f79bc1d4cfd3830a756d5573b72e2892aa902",
+      "4802ef3dcd5aa2cdc80b1796657f79bc1d4cfd3830a756d5573b72e2892aa902"
+    ]
+  },
+  "statisticDifferences": [
+    {
+      "system.cpu0.fetch.fetchStatusDist::Blocked": [
+        [
+          "0",
+          "0.00%",
+          "89.70%"
+        ],
+        [
+          "0",
+          "0.00%",
+          "89.71%"
+        ]
+      ],
+      "system.cpu0.fetch.frontendBandwidthBound": [
+        [
+          "0.003285"
+        ],
+        [
+          "0.003293"
+        ]
+      ],
+      "system.cpu0.l1Bound": [
+        [
+          "0.004678"
+        ],
+        [
+          "0.004677"
+        ]
+      ],
+      "system.cpu0.coreBound": [
+        [
+          "0.254148"
+        ],
+        [
+          "0.254141"
+        ]
+      ],
+      "system.cpu0.fetch.cycles": [
+        [
+          "19010"
+        ],
+        [
+          "19011"
+        ]
+      ],
+      "system.cpu0.backendBound": [
+        [
+          "0.296577"
+        ],
+        [
+          "0.296569"
+        ]
+      ],
+      "system.cpu0.memoryBound": [
+        [
+          "0.042429"
+        ],
+        [
+          "0.042428"
+        ]
+      ],
+      "system.cpu0.frontendBandwidthBound": [
+        [
+          "0.003285"
+        ],
+        [
+          "0.003293"
+        ]
+      ],
+      "system.cpu0.fetch.fetchStatusDist::TrapPending": [
+        [
+          "6",
+          "0.03%",
+          "89.73%"
+        ],
+        [
+          "5",
+          "0.02%",
+          "89.73%"
+        ]
+      ],
+      "system.cpu0.fetch.frontendBound": [
+        [
+          "0.084589"
+        ],
+        [
+          "0.084597"
+        ]
+      ],
+      "system.cpu0.frontendBound": [
+        [
+          "0.084589"
+        ],
+        [
+          "0.084597"
+        ]
+      ],
+      "system.cpu0.iew.fetchStallReason::FetchFragStall": [
+        [
+          "518",
+          "0.40%",
+          "82.58%"
+        ],
+        [
+          "519",
+          "0.40%",
+          "82.58%"
+        ]
+      ],
+      "system.cpu0.iew.decodeStallReason::FetchFragStall": [
+        [
+          "441",
+          "0.34%",
+          "88.88%"
+        ],
+        [
+          "437",
+          "0.34%",
+          "88.88%"
+        ]
+      ],
+      "system.cpu0.decode.decodedInsts": [
+        [
+          "73473"
+        ],
+        [
+          "73471"
+        ]
+      ],
+      "system.cpu0.fetch.fetchStatusDist::Squashing": [
+        [
+          "277",
+          "1.28%",
+          "89.70%"
+        ],
+        [
+          "277",
+          "1.28%",
+          "89.71%"
+        ]
+      ],
+      "system.cpu0.fetch.fetchStatusDist::Running": [
+        [
+          "19064",
+          "88.42%",
+          "88.42%"
+        ],
+        [
+          "19065",
+          "88.42%",
+          "88.42%"
+        ]
+      ],
+      "system.cpu0.iew.decodeStallReason::NoStall": [
+        [
+          "114525",
+          "88.54%",
+          "88.54%"
+        ],
+        [
+          "114529",
+          "88.54%",
+          "88.54%"
+        ]
+      ],
+      "system.cpu0.iew.fetchStallReason::ITlbStall": [
+        [
+          "0",
+          "0.00%",
+          "80.91%"
+        ],
+        [
+          "6",
+          "0.00%",
+          "80.91%"
+        ]
+      ],
+      "system.cpu0.iew.fetchStallReason::NoStall": [
+        [
+          "103438",
+          "79.98%",
+          "79.98%"
+        ],
+        [
+          "103437",
+          "79.98%",
+          "79.98%"
+        ]
+      ],
+      "system.cpu0.iew.fetchStallReason::OtherFetchStall": [
+        [
+          "10332",
+          "7.99%",
+          "90.56%"
+        ],
+        [
+          "10326",
+          "7.98%",
+          "90.56%"
+        ]
+      ],
+      "system.cpu0.fetch.fetchBubbles": [
+        [
+          "10943"
+        ],
+        [
+          "10944"
+        ]
+      ],
+      "system.cpu0.decode.runCycles": [
+        [
+          "12668"
+        ],
+        [
+          "12667"
+        ]
+      ]
+    }
+  ],
+  "cpuExitTicks": [
+    "21699000",
+    "21699000"
+  ],
+  "drainEndTicks": [
+    "22699000",
+    "22699000"
+  ],
+  "statisticCounts": [
+    [
+      8936
+    ],
+    [
+      8936
+    ]
+  ],
+  "ignoredHostStatistics": [
+    "hostInstRate",
+    "hostMemory",
+    "hostOpRate",
+    "hostSeconds",
+    "hostTickRate"
+  ],
+  "scope": "Completed real CPU self-checks, configuration, every non-host statistic and every raw.jsonl byte. No unobserved cache-state equality or exhaustive RTL equivalence claim."
+}

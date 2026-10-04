@@ -1,0 +1,94 @@
+{
+  "scope": "Host elapsed simulation-loop seconds bracketed by complete progress samples; guest /init and boot self-check markers, not an interactive login prompt.",
+  "runs": {
+    "linux-random-memory-08": {
+      "terminalSha256": "340793c457bc933e89baab169bb43c712aae12168aa7b1b39b7ba5fdd077255d",
+      "progressSha256": "1261caa2e7984d0af55279018f30155c7e67a4590e2e79ea3debbf2b7d9c662f",
+      "markers": {
+        "Run /init as init process": {
+          "observed": true,
+          "line": "[    0.179010] Run /init as init process",
+          "terminalByteEnd": 11126,
+          "lastSampleBeforeCompleteLine": {
+            "tick": "202000000000",
+            "cause": "simulate() limit reached",
+            "exitCode": 0,
+            "hostElapsedSeconds": 11806.63,
+            "terminalBytes": 11016
+          },
+          "firstSampleWithCompleteLine": {
+            "tick": "203000000000",
+            "cause": "simulate() limit reached",
+            "exitCode": 0,
+            "hostElapsedSeconds": 11853.047,
+            "terminalBytes": 11126
+          }
+        },
+        "CHI_LINUX_BOOT_PASS": {
+          "observed": true,
+          "line": "CHI_LINUX_BOOT_PASS",
+          "terminalByteEnd": 11288,
+          "lastSampleBeforeCompleteLine": {
+            "tick": "217000000000",
+            "cause": "simulate() limit reached",
+            "exitCode": 0,
+            "hostElapsedSeconds": 12525.146,
+            "terminalBytes": 11267
+          },
+          "firstSampleWithCompleteLine": {
+            "tick": "218000000000",
+            "cause": "simulate() limit reached",
+            "exitCode": 0,
+            "hostElapsedSeconds": 12596.069,
+            "terminalBytes": 11288
+          }
+        }
+      }
+    },
+    "linux-suite-08": {
+      "terminalSha256": "1ba2b9e1af642650bd0a27a76e4fe7f5e3178363b341079afb35c358156fe505",
+      "progressSha256": "aa73644c4d5b7e260fb7ddf41934c8ec32d2b31e553f8837c848cf5990135c14",
+      "markers": {
+        "Run /init as init process": {
+          "observed": true,
+          "line": "[    0.324622] Run /init as init process",
+          "terminalByteEnd": 11119,
+          "lastSampleBeforeCompleteLine": {
+            "tick": "348000000000",
+            "cause": "simulate() limit reached",
+            "exitCode": 0,
+            "hostElapsedSeconds": 20575.706,
+            "terminalBytes": 11009
+          },
+          "firstSampleWithCompleteLine": {
+            "tick": "349000000000",
+            "cause": "simulate() limit reached",
+            "exitCode": 0,
+            "hostElapsedSeconds": 20620.461,
+            "terminalBytes": 11119
+          }
+        },
+        "CHI_LINUX_BOOT_PASS": {
+          "observed": true,
+          "line": "CHI_LINUX_BOOT_PASS",
+          "terminalByteEnd": 11281,
+          "lastSampleBeforeCompleteLine": {
+            "tick": "362000000000",
+            "cause": "simulate() limit reached",
+            "exitCode": 0,
+            "hostElapsedSeconds": 21196.369,
+            "terminalBytes": 11260
+          },
+          "firstSampleWithCompleteLine": {
+            "tick": "363000000000",
+            "cause": "simulate() limit reached",
+            "exitCode": 0,
+            "hostElapsedSeconds": 21251.43,
+            "terminalBytes": 11281
+          }
+        }
+      }
+    }
+  },
+  "boundedComparisonSimFreq": "simFreq                                  1000000000000                       # The number of ticks per simulated second ((Tick/Second))"
+}

@@ -49,6 +49,7 @@
  */
 
 #include "arch/riscv/pagetable_walker.hh"
+#include "arch/riscv/cbo.hh"
 
 #include <cstdint>
 #include <memory>
@@ -364,7 +365,8 @@ Walker::WalkerState::tryCoalesce(ThreadContext *_tc, BaseMMU::Translation *trans
     Addr addr_match_num;
     Addr pre_match_num;
     bool model_match;
-    model_match = (mainReq->get_two_stage_state() == req->get_two_stage_state()) &&
+    model_match = (mainReq->isCacheMaintenance() == req->isCacheMaintenance()) &&
+                  (mainReq->get_two_stage_state() == req->get_two_stage_state()) &&
                   (mainReq->get_virt() == req->get_virt()) &&
                   (mainReq->get_twoStageTranslateMode() == req->get_twoStageTranslateMode()) &&
                   (mainReq->get_vsatp_0_mode() == req->get_vsatp_0_mode());
@@ -691,6 +693,11 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
         } else if (!pte.v || (!pte.r && pte.w)) {
             endWalk();
             return endGstageWalk();
+        } else if (mainReq->isCacheMaintenance() && !pte.a) {
+            endWalk();
+            GstageFault = true;
+            fault = pageFault(true, true);
+            return fault;
         } else if (!pte.u) {
             endWalk();
             return endGstageWalk();
@@ -700,7 +707,8 @@ Walker::WalkerState::twoStageStepWalk(PacketPtr &write)
         } else if ((mode == BaseMMU::Read) && (!pte.r && !(status.mxr && pte.x))) {
             endWalk();
             return endGstageWalk();
-        } else if ((mode == BaseMMU::Write) && !(pte.r && pte.w)) {
+        } else if ((mode == BaseMMU::Write) && (mainReq->isCacheMaintenance() ?
+            !Cbo::accessible(pte.r, pte.w, pte.x, status.mxr) : !(pte.r && pte.w))) {
             endWalk();
             GstageFault = true;
             fault = pageFault(true, true);
@@ -907,13 +915,13 @@ Walker::WalkerState::twoStageWalk(PacketPtr &write)
             if (pte.r || pte.x) {
                 doEndWalk = true;
                 if (virt) {
-                    fault = walker->tlb->checkPermissions(vsstatus, pmode, entry.vaddr, mode, pte, 0, false);
+                    fault = walker->tlb->checkPermissions(vsstatus, pmode, entry.vaddr, mode, pte, 0, false, mainReq->isCacheMaintenance());
                 } else {
-                    fault = walker->tlb->checkPermissions(status, pmode, entry.vaddr, mode, pte, 0, false);
+                    fault = walker->tlb->checkPermissions(status, pmode, entry.vaddr, mode, pte, 0, false, mainReq->isCacheMaintenance());
                 }
 
                 if (fault == NoFault) {
-                    if ((!pte.a) || ((!pte.d) && (mode == BaseMMU::Write))) {
+                    if ((!pte.a) || ((!pte.d) && (mode == BaseMMU::Write) && !mainReq->isCacheMaintenance())) {
                         GstageFault = false;
                         fault = pageFault(true,false);
                         endWalk();
@@ -1171,7 +1179,7 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
             if (pte.r || pte.x) {
                 // step 5: leaf PTE
                 doEndWalk = true;
-                fault = walker->tlb->checkPermissions(status, pmode, entry.vaddr, mode, pte, 0, false);
+                fault = walker->tlb->checkPermissions(status, pmode, entry.vaddr, mode, pte, 0, false, mainReq->isCacheMaintenance());
                 // step 6
                 if (fault == NoFault) {
                     if (level >= 1 && pte.ppn0 != 0) {
@@ -1198,7 +1206,7 @@ Walker::WalkerState::stepWalk(PacketPtr &write)
                                 "PTE needs to write pte.a,raising PF\n");
                         fault = pageFault(true,false);
                     }
-                    if (!pte.d && mode == BaseMMU::Write) {
+                    if (!pte.d && mode == BaseMMU::Write && !mainReq->isCacheMaintenance()) {
                         DPRINTF(PageTableWalker3,
                                 "PTE needs to write pte.d,raising PF\n");
                         fault = pageFault(true,false);
@@ -1851,6 +1859,14 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                 r.req->setPaddr(paddr);
                 walker->pma->check(r.req);
                 mainFault = walker->pmp->pmpCheck(r.req, mode, pmode, r.tc);
+                    if (mainFault != NoFault && r.req->isCacheMaintenance()) {
+                        // CBO permission denial is an architectural access
+                        // fault, not the old walker's physical-overflow panic.
+                        // Finish every coalesced request and retire this walk.
+                        r.translation->finish(mainFault, r.req, r.tc, mode);
+                        mainFault = NoFault;
+                        continue;
+                    }
                 if (mainFault != NoFault) {
                     warn("paddr overflow vaddr: %lx paddr: lx\n", vaddr, paddr);
                     r.translation->finish(mainFault, r.req, r.tc, mode);
@@ -1907,6 +1923,14 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                     // passed, otherwise an address fault will be returned.
                     mainFault =
                         walker->pmp->pmpCheck(r.req, mode, pmode, r.tc);
+                    if (mainFault != NoFault && r.req->isCacheMaintenance()) {
+                        // CBO permission denial is an architectural access
+                        // fault, not the old walker's physical-overflow panic.
+                        // Finish every coalesced request and retire this walk.
+                        r.translation->finish(mainFault, r.req, r.tc, mode);
+                        mainFault = NoFault;
+                        continue;
+                    }
                     if (mainFault != NoFault) {
                         // Prefetched assert is ignored
                         if (entry.fromForwardPreReq || entry.fromBackPreReq) {
@@ -1983,6 +2007,14 @@ Walker::WalkerState::recvPacket(PacketPtr pkt)
                     // passed, otherwise an address fault will be returned.
                     mainFault =
                         walker->pmp->pmpCheck(r.req, mode, pmode, r.tc);
+                    if (mainFault != NoFault && r.req->isCacheMaintenance()) {
+                        // CBO permission denial is an architectural access
+                        // fault, not the old walker's physical-overflow panic.
+                        // Finish every coalesced request and retire this walk.
+                        r.translation->finish(mainFault, r.req, r.tc, mode);
+                        mainFault = NoFault;
+                        continue;
+                    }
                     assert(mainFault == NoFault);
 
                     // Let the CPU continue.

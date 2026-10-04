@@ -15,6 +15,7 @@
 #include "cpu/o3/dyn_inst_ptr.hh"
 #include "cpu/pred/bpred_unit.hh"
 #include "cpu/pred/btb/abtb.hh"
+#include "cpu/pred/btb/BpuPhaseSpool.hh"
 #include "cpu/pred/btb/btb_ittage.hh"
 #include "cpu/pred/btb/btb_mgsc.hh"
 #include "cpu/pred/btb/btb_tage.hh"
@@ -192,6 +193,10 @@ class DecoupledBPUWithBTB : public BPredUnit
             stagePred.condTakens.clear();
             stagePred.indirectTargets.clear();
             stagePred.btbEntries.clear();
+            // Per-prediction TAGE -> MGSC communication, not predictor
+            // tables or the saved training/squash metadata. Keep finalPred
+            // copies bounded by the branches in the current prediction.
+            stagePred.tageInfoForMgscs.clear();
         }
     }
 
@@ -394,6 +399,12 @@ class DecoupledBPUWithBTB : public BPredUnit
                           const PCStateBase &inst_pc, const InstSeqNum seq,
                           ThreadID tid, const unsigned &currentLoopIter);
 
+    // The instruction at restart_pc has not been built yet. Retain only the
+    // fetched prefix of this target, invalidate disproved slots, and refetch it.
+    void predecodeSquash(unsigned target_id, const PCStateBase &restart_pc,
+                         const std::vector<Addr> &invalid_pcs, ThreadID tid,
+                         unsigned fetched_insts);
+
     // Not a control. But target is actually disturbed
     void trapSquash(unsigned fsq_id, Addr last_committed_pc,
                     const PCStateBase &inst_pc, ThreadID tid, const unsigned &currentLoopIter);
@@ -429,9 +440,9 @@ class DecoupledBPUWithBTB : public BPredUnit
 
     Addr getPreservedReturnAddr(const DynInstPtr &dynInst);
 
-    std::unordered_map<Addr, int> takenBranches;      // branch address -> taken count
-    std::unordered_map<Addr, int> currentPhaseTakenBranches;
-    std::unordered_map<Addr, int> currentSubPhaseTakenBranches;
+    std::unordered_map<Addr, uint64_t> takenBranches;      // branch address -> taken count
+    std::unordered_map<Addr, uint64_t> currentPhaseTakenBranches;
+    std::unordered_map<Addr, uint64_t> currentSubPhaseTakenBranches;
 
     /**
      * @brief Types of control flow instruction mispredictions
@@ -454,11 +465,11 @@ class DecoupledBPUWithBTB : public BPredUnit
     {
         Addr pc;                ///< Branch PC address
         int branchType;         ///< Branch type (0=cond, 1=uncond, 2=call, 3=ind, etc.)
-        int totalCount;         ///< Total number of times branch was executed
-        int mispredCount;       ///< Total number of mispredictions for this branch
-        int dirWrongCount;      ///< Number of times direction was mispredicted
-        int targetWrongCount;   ///< Number of times target address was mispredicted
-        int noPredCount;        ///< Number of times no prediction was made
+        uint64_t totalCount;         ///< Total number of times branch was executed
+        uint64_t mispredCount;       ///< Total number of mispredictions for this branch
+        uint64_t dirWrongCount;      ///< Number of times direction was mispredicted
+        uint64_t targetWrongCount;   ///< Number of times target address was mispredicted
+        uint64_t noPredCount;        ///< Number of times no prediction was made
 
         /**
          * @brief Default constructor
@@ -477,17 +488,17 @@ class DecoupledBPUWithBTB : public BPredUnit
         /**
          * @brief Increment total execution count
          */
-        void incrementTotal() { totalCount++; }
+        void incrementTotal() { totalCount = phase_storage::nextCount(totalCount); }
 
         /**
          * @brief Increment misprediction count for a specific type
          */
         void incrementMispred(MispredType type) {
-            mispredCount++;
+            mispredCount = phase_storage::nextCount(mispredCount);
             switch(type) {
-                case DIR_WRONG: dirWrongCount++; break;
-                case TARGET_WRONG: targetWrongCount++; break;
-                case NO_PRED: noPredCount++; break;
+                case DIR_WRONG: dirWrongCount = phase_storage::nextCount(dirWrongCount); break;
+                case TARGET_WRONG: targetWrongCount = phase_storage::nextCount(targetWrongCount); break;
+                case NO_PRED: noPredCount = phase_storage::nextCount(noPredCount); break;
                 default: break;
             }
         }
@@ -498,7 +509,7 @@ class DecoupledBPUWithBTB : public BPredUnit
          * @return Misprediction rate scaled to per-mille (0-1000)
          */
         double getMispredRate() const {
-            return totalCount > 0 ? (double)(mispredCount * 1000) / totalCount : 0;
+            return phase_storage::perMille(mispredCount, totalCount);
         }
     };
 
@@ -519,7 +530,7 @@ class DecoupledBPUWithBTB : public BPredUnit
      * This tracks mispredictions based on the starting address of a basic block
      * and the address of the control instruction that was mispredicted.
      */
-    std::map<std::pair<Addr, Addr>, int> topMispredicts;
+    std::map<std::pair<Addr, Addr>, uint64_t> topMispredicts;
 
     /**
      * @brief Maps branch keys (PC, type) to detailed branch statistics
@@ -551,28 +562,29 @@ class DecoupledBPUWithBTB : public BPredUnit
      *
      * Each entry contains the branch statistics for a complete phase.
      */
-    std::vector<BranchStatsMap> topMispredictsByBranchByPhase;
+    std::array<phase_storage::Spool, 5> phaseHistory;
+    uint64_t phaseDumpId{0};
 
     /**
      * @brief Vector of branch statistics for each sub-phase
      *
      * Similar to topMispredictsByBranchByPhase but with finer granularity.
      */
-    std::vector<BranchStatsMap> topMispredictsByBranchBySubPhase;
+    // Complete snapshots are retained in phaseHistory journals.
 
     /**
      * @brief Vector of taken branches for each phase
      *
      * Each entry maps branch addresses to execution counts for a phase.
      */
-    std::vector<std::unordered_map<Addr, int>> takenBranchesByPhase;
+    // Complete snapshots are retained in phaseHistory journals.
 
     /**
      * @brief Vector of taken branches for each sub-phase
      *
      * Each entry maps branch addresses to execution counts for a sub-phase.
      */
-    std::vector<std::unordered_map<Addr, int>> takenBranchesBySubPhase;
+    // Complete snapshots are retained in phaseHistory journals.
 
     // BTB entry tracking
     /**
@@ -580,41 +592,41 @@ class DecoupledBPUWithBTB : public BPredUnit
      *
      * Maps start address to (BTBEntry, visit count) to track BTB entry usage.
      */
-    std::unordered_map<Addr, std::pair<BTBEntry, int>> lastPhaseBTBEntries;
+    std::unordered_map<Addr, std::pair<BTBEntry, uint64_t>> lastPhaseBTBEntries;
 
     /**
      * @brief Cumulative BTB entries seen so far
      *
      * Maps start address to (BTBEntry, visit count) with total usage.
      */
-    std::unordered_map<Addr, std::pair<BTBEntry, int>> totalBTBEntries;
+    std::unordered_map<Addr, std::pair<BTBEntry, uint64_t>> totalBTBEntries;
 
     /**
      * @brief Vector of BTB entries for each phase
      *
      * Each entry contains the BTB entries used during a phase.
      */
-    std::vector<std::unordered_map<Addr, std::pair<BTBEntry, int>>> BTBEntriesByPhase;
+    // Complete snapshots are retained in phaseHistory journals.
 
     /**
      * @brief Next phase ID to dump statistics for
      */
-    int phaseIdToDump{1};
+    uint64_t phaseIdToDump{1};
 
     /**
      * @brief Total number of instructions committed
      */
-    int numInstCommitted{0};
+    uint64_t numInstCommitted{0};
 
     /**
      * @brief Number of instructions per phase
      */
-    int phaseSizeByInst{100000};
+    uint64_t phaseSizeByInst{100000};
 
     /**
      * @brief Next sub-phase ID to dump statistics for
      */
-    int subPhaseIdToDump{1};
+    uint64_t subPhaseIdToDump{1};
 
     /**
      * @brief Ratio between phase and sub-phase sizes
@@ -625,49 +637,49 @@ class DecoupledBPUWithBTB : public BPredUnit
      * @brief Calculate sub-phase size in instructions
      * @return Number of instructions per sub-phase
      */
-    int subPhaseSizeByInst() { return phaseSizeByInst/subPhaseRatio; }
+    uint64_t subPhaseSizeByInst() { return phaseSizeByInst/subPhaseRatio; }
 
     /**
      * @brief Distribution of committed instructions from previous phase
      *
      * Vector indexed by instruction count, values are frequency.
      */
-    std::vector<int> lastPhaseFsqEntryNumCommittedInstDist;
+    std::vector<uint64_t> lastPhaseFsqEntryNumCommittedInstDist;
 
     /**
      * @brief Total committed instruction count distribution
      *
      * Tracks how many FSQ entries have each number of committed instructions.
      */
-    std::vector<int> commitFsqEntryHasInstsVector;
+    std::vector<uint64_t> commitFsqEntryHasInstsVector;
 
     /**
      * @brief Committed instruction distributions by phase
      *
      * Each entry contains the distribution of committed instructions for a phase.
      */
-    std::vector<std::vector<int>> fsqEntryNumCommittedInstDistByPhase;
+    // Complete snapshots are retained in phaseHistory journals.
 
     /**
      * @brief Distribution of fetched instructions from previous phase
      *
      * Vector indexed by instruction count, values are frequency.
      */
-    std::vector<int> lastPhaseFsqEntryNumFetchedInstDist;
+    std::vector<uint64_t> lastPhaseFsqEntryNumFetchedInstDist;
 
     /**
      * @brief Total fetched instruction count distribution
      *
      * Tracks how many FSQ entries have each number of fetched instructions.
      */
-    std::vector<int> commitFsqEntryFetchedInstsVector;
+    std::vector<uint64_t> commitFsqEntryFetchedInstsVector;
 
     /**
      * @brief Fetched instruction distributions by phase
      *
      * Each entry contains the distribution of fetched instructions for a phase.
      */
-    std::vector<std::vector<int>> fsqEntryNumFetchedInstDistByPhase;
+    // Complete snapshots are retained in phaseHistory journals.
 
     /**
      * @brief Total branch misprediction count
@@ -828,11 +840,9 @@ class DecoupledBPUWithBTB : public BPredUnit
      * @param phaseBranchesList List of all phases taken branches
      * @return true If the phase was processed
      */
-    bool processPhase(bool isSubPhase, int phaseID, int &phaseToDump,
+    bool processPhase(bool isSubPhase, uint64_t phaseID, uint64_t &phaseToDump,
                      BranchStatsMap &lastPhaseStats,
-                     std::vector<BranchStatsMap> &phaseStatsList,
-                     std::unordered_map<Addr, int> &currentPhaseBranches,
-                     std::vector<std::unordered_map<Addr, int>> &phaseBranchesList);
+                     std::unordered_map<Addr, uint64_t> &currentPhaseBranches);
 
     /**
      * @brief Process fetch instruction distributions for a phase
@@ -840,15 +850,15 @@ class DecoupledBPUWithBTB : public BPredUnit
      * @param currentPhaseCommittedDist Output vector for committed instruction distribution
      * @param currentPhaseFetchedDist Output vector for fetched instruction distribution
      */
-    void processFetchDistributions(std::vector<int> &currentPhaseCommittedDist,
-                                  std::vector<int> &currentPhaseFetchedDist);
+    void processFetchDistributions(std::vector<uint64_t> &currentPhaseCommittedDist,
+                                  std::vector<uint64_t> &currentPhaseFetchedDist);
 
     /**
      * @brief Process BTB entries for a phase
      *
-     * @return std::map<Addr, std::pair<BTBEntry, int>> Map of BTB entries for the phase
+     * @return std::map<Addr, std::pair<BTBEntry, uint64_t>> Map of BTB entries for the phase
      */
-    std::unordered_map<Addr, std::pair<BTBEntry, int>> processBTBEntries();
+    std::unordered_map<Addr, std::pair<BTBEntry, uint64_t>> processBTBEntries();
 
     /**
      * @brief Process instruction commit and update phase-based statistics

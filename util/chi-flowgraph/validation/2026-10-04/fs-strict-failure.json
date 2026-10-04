@@ -1,0 +1,351 @@
+{
+  "schemaVersion": 1,
+  "status": "FAIL",
+  "equivalent": false,
+  "linuxBootAcceptance": false,
+  "linuxSuiteAcceptance": false,
+  "checks": {
+    "statistics": {
+      "equal": false,
+      "differenceCount": 13,
+      "differences": [
+        {
+          "path": "$[0].system.cpu0.backendBound[0]",
+          "before": "0.144749",
+          "after": "0.144748"
+        },
+        {
+          "path": "$[0].system.cpu0.decode.decodedInsts[0]",
+          "before": "22634367",
+          "after": "22634360"
+        },
+        {
+          "path": "$[0].system.cpu0.fetch.cycles[0]",
+          "before": "4837967",
+          "after": "4837990"
+        },
+        {
+          "path": "$[0].system.cpu0.fetch.fetchBubbles[0]",
+          "before": "1159244",
+          "after": "1159257"
+        },
+        {
+          "path": "$[0].system.cpu0.fetch.fetchBubbles_max[0]",
+          "before": "102669",
+          "after": "102670"
+        },
+        {
+          "path": "$[0].system.cpu0.fetch.fetchStatusDist::Running[0]",
+          "before": "4892428",
+          "after": "4892452"
+        },
+        {
+          "path": "$[0].system.cpu0.fetch.fetchStatusDist::TrapPending[0]",
+          "before": "833",
+          "after": "809"
+        },
+        {
+          "path": "$[0].system.cpu0.fetch.frontendBound[0]",
+          "before": "0.038641",
+          "after": "0.038642"
+        },
+        {
+          "path": "$[0].system.cpu0.fetch.tlbSquashes[0]",
+          "before": "8",
+          "after": "4"
+        },
+        {
+          "path": "$[0].system.cpu0.frontendBound[0]",
+          "before": "0.038641",
+          "after": "0.038642"
+        },
+        {
+          "path": "$[0].system.cpu0.iew.fetchStallReason::FetchFragStall[0]",
+          "before": "594095",
+          "after": "594102"
+        },
+        {
+          "path": "$[0].system.cpu0.iew.fetchStallReason::NoStall[0]",
+          "before": "26167003",
+          "after": "26166990"
+        },
+        {
+          "path": "$[0].system.cpu0.iew.fetchStallReason::OtherFetchStall[0]",
+          "before": "546336",
+          "after": "546342"
+        }
+      ]
+    },
+    "census": {
+      "equal": true,
+      "differenceCount": 0,
+      "differences": []
+    },
+    "config.ini": {
+      "equal": true,
+      "differenceCount": 0,
+      "differences": []
+    },
+    "config.json": {
+      "equal": true,
+      "differenceCount": 0,
+      "differences": []
+    },
+    "manifest": {
+      "equal": true,
+      "differenceCount": 0,
+      "differences": []
+    },
+    "result": {
+      "equal": true,
+      "differenceCount": 0,
+      "differences": []
+    },
+    "progress": {
+      "equal": true,
+      "differenceCount": 0,
+      "differences": []
+    },
+    "serialSha256": {
+      "equal": true,
+      "differenceCount": 0,
+      "differences": []
+    },
+    "dtbSha256": {
+      "equal": true,
+      "differenceCount": 0,
+      "differences": []
+    }
+  },
+  "errors": [
+    "old/new mismatch: statistics"
+  ],
+  "incomplete": [],
+  "inputSha256": {
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/fs-inputs.json": "3ae09d15ec0d661f0c687eada2b88cd5a1036acc3ca2ef322a7b8a785efbc3b8",
+    "/root/chi-flowgraph-work/linux-validation/artifacts/fs-model-05-nonspec/gem5.opt": "4b8b39640ef6f2f70fec1824f6f3254bc15a41e45aada746d290de825692ad7d",
+    "/root/chi-flowgraph-work/linux-validation/artifacts/fs-model-10-fetch-demand-fault-candidate02/gem5.opt": "7aba95946686c49c763e54d1876670e4e737c90ed843fb0a4905f400c326309a",
+    "/root/chi-flowgraph-work/linux-validation/opensbi-suite/platform/generic/firmware/fw_payload.elf": "4acde7c2a69d1a0bcea39ec78371510594a558cdce7f7fb367eae2af694eb36e",
+    "/mnt/d/proj/chi_flowgraph/native/gem5/native_l2_fs.py": "6ed1ea6c729b1ac53a11de6c60eb4492af8198f770c65aea242098f2a48981bf",
+    "/mnt/d/proj/chi_flowgraph/scripts/check-native-fs-equivalence.py": "bbdd9c13584b0755b0ce69deb6a521317ef0bf49d2924486f2b87c8caa268022",
+    "/mnt/d/proj/chi_flowgraph/scripts/check-chi-transfer-census.py": "ae66bd3d1e04f0e996d414b450b1dbdc1c3a23a39a80f56dbd87d5036235d050",
+    "/mnt/d/proj/chi_flowgraph/scripts/check-native-linux-validation.py": "632db28b503f50b925f6f502e1baea73f2ab4c34dc530360a6005eeeb4d2be83",
+    "/root/chi-flowgraph-work/gem5/configs/common/xiangshan.py": "600edc0bc88e5f09603f5b910eff976fffeed1824ed545f1f2f7ece63e9773cc",
+    "/root/chi-flowgraph-work/gem5/configs/common/Caches.py": "be090d13988eb7695d084801c14d695a2d563542b053cfd3888c717a47c1e007",
+    "/root/chi-flowgraph-work/linux-validation/artifacts/linux-suite-inputs/76aa90c405b1a84843542040de750d9bcb9380205267bd87ffb1e0eb20a1baac/index.json": "3cf08c06426617a020b82e3c8d721f0de26f05c2ee1f3c6f3346b4795da31fa5",
+    "/mnt/d/proj/chi_flowgraph/native/gem5/linux_stage_gate.py": "57db6126cf289c85d13e01763c4a84063a1add09cde4ac7ebc1d74267150fa49",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/before/config.ini": "ce30ca76a510e2996f11f0bbf478981594dc69002073b8fefc9ac12f0cb410af",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/before/config.json": "27e6ab355fc4700cebd0ac43013976ecb3efad2be77e7d34c8b5a6d4fb174bb7",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/before/flowgraph-config.json": "5814270fd33a4ab25fd7df3e74ff452c39c15fd196e2b11a817d7f5380463767",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/before/device.dtb": "de00e7dab6e74446a4c4662588e93d3f0dd8fe26c444db87c213f3928b369da2",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/before/native-linux-result.json": "9413f8b61250bd7a4a2afd14737144b2a6224861f3853fb3b24e9fd4d8d55f87",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/before/native-linux-progress.jsonl": "c22fe0c88067b794465e91739fc4875d61b62d6dff5a798c7bfe18d0b2d0059e",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/before/native-chi-counts.json": "ab3dc21f71b3f3f3fa001cd74fae26bacdcb643a6dbac9cc3825227eaae3bd0b",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/before/stats.txt": "f554a2ec5635203a31760f32444e7c6016256d487efe816a9705d98abcb8489b",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/before/system.platform.terminal": "aeebfa4571824d185dc26277ef9015293d08b53cb87389a7ea19215f52e15661",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/before/run.log": "f198df989f90e518a3909ff5788b3556e3b3945ffa79c125427a986c22207a76",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/before/host-exit-code.txt": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/after/config.ini": "d3d103526413573af0fc09421a242411e36516345cbfa87cff62933e846c81a1",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/after/config.json": "f30eb0451edb335159e1f9889f6d3c7ded6d58e902471f308c73e72b2b71eed2",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/after/flowgraph-config.json": "5814270fd33a4ab25fd7df3e74ff452c39c15fd196e2b11a817d7f5380463767",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/after/device.dtb": "de00e7dab6e74446a4c4662588e93d3f0dd8fe26c444db87c213f3928b369da2",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/after/native-linux-result.json": "ac6c37a3b83267a2e71127fc25c9bfa26ad82976789f8c7ff39795c8a7f2881f",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/after/native-linux-progress.jsonl": "bbd55c5d0bcbf7742be10ff80d1aa67c1740f45e412586b0d962444f6267a4db",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/after/native-chi-counts.json": "ab3dc21f71b3f3f3fa001cd74fae26bacdcb643a6dbac9cc3825227eaae3bd0b",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/after/stats.txt": "3664a625acdd0ddf24bcbc29db3e78b46021a8171473fb73fb7cfc950504d0b5",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/after/system.platform.terminal": "aeebfa4571824d185dc26277ef9015293d08b53cb87389a7ea19215f52e15661",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/after/run.log": "c1bbb5d70914f694e721217e98e8689e316603aa8b33893ef10454fb33c70369",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-fs-equivalence-01/after/host-exit-code.txt": "53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3"
+  },
+  "ignoredHostStatistics": [
+    "hostInstRate",
+    "hostMemory",
+    "hostOpRate",
+    "hostSeconds",
+    "hostTickRate"
+  ],
+  "normalization": {
+    "config": [
+      "system.workload.dtb_filename (exact run/device.dtb only)"
+    ],
+    "result": [
+      "gem5Sha256 (must match pinned binary)",
+      "terminalFile",
+      "transferCensusFile (exact run paths only)"
+    ],
+    "progress": [
+      "hostElapsedSeconds"
+    ]
+  },
+  "scope": "Bounded real full-system old/new equivalence only: exact non-host statistics, accepted endpoint transfer census, serial bytes, instantiated configuration, DTB, manifest and incomplete-run result. Not Linux boot/suite PASS, full CHI event ordering/payload or hidden state equality, or RTL equivalence.",
+  "runs": [
+    {
+      "label": "before",
+      "tick": "5000000000",
+      "binarySha256": "4b8b39640ef6f2f70fec1824f6f3254bc15a41e45aada746d290de825692ad7d",
+      "statisticBlockCounts": [
+        9626
+      ],
+      "serialBytes": 1160,
+      "observations": "198138",
+      "topology": {
+        "verified": true,
+        "typeCounts": {
+          "Root": 1,
+          "System": 1,
+          "SrcClockDomain": 1,
+          "BaseO3CPU": 4,
+          "DecoupledBPUWithBTB": 4,
+          "AheadBTB": 4,
+          "ITTAGE": 4,
+          "BTBITTAGE": 4,
+          "MBTB": 4,
+          "BTBMGSC": 4,
+          "MicroTAGE": 4,
+          "BTBRAS": 4,
+          "BTBTAGE": 4,
+          "UBTB": 4,
+          "Cache": 16,
+          "PowerState": 76,
+          "TreePLRURP": 4,
+          "VIPTSetAssoc": 4,
+          "VIPTSetAssociative": 4,
+          "SetAssociative": 28,
+          "LRURP": 28,
+          "MMRUWpu": 4,
+          "RiscvDecoder": 4,
+          "BaseSetAssoc": 12,
+          "RiscvInterrupts": 4,
+          "RiscvISA": 4,
+          "RiscvMMU": 4,
+          "RiscvTLB": 12,
+          "RiscvPagetableWalker": 12,
+          "PMAChecker": 4,
+          "PMP": 4,
+          "Scheduler": 4,
+          "IssueQue": 60,
+          "IssuePort": 100,
+          "FUDesc": 132,
+          "OpDesc": 504,
+          "BaseSelector": 60,
+          "SpecWakeupChannel": 8,
+          "ExeTracer": 4,
+          "DVFSHandler": 1,
+          "ChiExtendedHome": 4,
+          "NoncoherentXBar": 2,
+          "CoherentXBar": 4,
+          "SnoopFilter": 4,
+          "ChiNativeL2": 4,
+          "SimpleMemory": 2,
+          "HiFive": 1,
+          "Clint": 1,
+          "GenericRiscvPciHost": 1,
+          "Plic": 1,
+          "RiscvRTC": 1,
+          "Terminal": 1,
+          "Uart8250": 1,
+          "ChiRouterRefModel": 6,
+          "ChiNativeMemory": 2,
+          "VoltageDomain": 1,
+          "RiscvLinux": 1
+        },
+        "cpuIds": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "mesh": [
+          3,
+          2
+        ],
+        "classicBridge": false
+      },
+      "censusValid": true
+    },
+    {
+      "label": "after",
+      "tick": "5000000000",
+      "binarySha256": "7aba95946686c49c763e54d1876670e4e737c90ed843fb0a4905f400c326309a",
+      "statisticBlockCounts": [
+        9626
+      ],
+      "serialBytes": 1160,
+      "observations": "198138",
+      "topology": {
+        "verified": true,
+        "typeCounts": {
+          "Root": 1,
+          "System": 1,
+          "SrcClockDomain": 1,
+          "BaseO3CPU": 4,
+          "DecoupledBPUWithBTB": 4,
+          "AheadBTB": 4,
+          "ITTAGE": 4,
+          "BTBITTAGE": 4,
+          "MBTB": 4,
+          "BTBMGSC": 4,
+          "MicroTAGE": 4,
+          "BTBRAS": 4,
+          "BTBTAGE": 4,
+          "UBTB": 4,
+          "Cache": 16,
+          "PowerState": 76,
+          "TreePLRURP": 4,
+          "VIPTSetAssoc": 4,
+          "VIPTSetAssociative": 4,
+          "SetAssociative": 28,
+          "LRURP": 28,
+          "MMRUWpu": 4,
+          "RiscvDecoder": 4,
+          "BaseSetAssoc": 12,
+          "RiscvInterrupts": 4,
+          "RiscvISA": 4,
+          "RiscvMMU": 4,
+          "RiscvTLB": 12,
+          "RiscvPagetableWalker": 12,
+          "PMAChecker": 4,
+          "PMP": 4,
+          "Scheduler": 4,
+          "IssueQue": 60,
+          "IssuePort": 100,
+          "FUDesc": 132,
+          "OpDesc": 504,
+          "BaseSelector": 60,
+          "SpecWakeupChannel": 8,
+          "ExeTracer": 4,
+          "DVFSHandler": 1,
+          "ChiExtendedHome": 4,
+          "NoncoherentXBar": 2,
+          "CoherentXBar": 4,
+          "SnoopFilter": 4,
+          "ChiNativeL2": 4,
+          "SimpleMemory": 2,
+          "HiFive": 1,
+          "Clint": 1,
+          "GenericRiscvPciHost": 1,
+          "Plic": 1,
+          "RiscvRTC": 1,
+          "Terminal": 1,
+          "Uart8250": 1,
+          "ChiRouterRefModel": 6,
+          "ChiNativeMemory": 2,
+          "VoltageDomain": 1,
+          "RiscvLinux": 1
+        },
+        "cpuIds": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "mesh": [
+          3,
+          2
+        ],
+        "classicBridge": false
+      },
+      "censusValid": true
+    }
+  ]
+}

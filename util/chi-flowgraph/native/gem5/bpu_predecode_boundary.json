@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "patch": "bpu_predecode_boundary.patch",
+  "patchSha256": "21cd5d0a0835a05aba620cb55e722764ef182df1d855d770214a399d7c891c57",
+  "commit": "65f3241a6cd486dffddaca251536f5c691af9a1f",
+  "sourceDependency": "Apply after the exact model08 bounded BPU phase-storage candidate and its preceding scratch-lifetime fix. The common ITTAGE/commit text mirror is independent. Earlier strict BPU installers intentionally reject these post-patch files and must not be re-run after this patch.",
+  "defaultInstallerIntegrated": false,
+  "compiled": false,
+  "simulationValidated": false,
+  "files": [
+    {
+      "path": "src/cpu/pred/btb/common.hh",
+      "beforeSha256": "0e8c54d73ea31185b4180d39fde32cf18aec7142cbd7ebfaed248a52fdfb4a62",
+      "afterSha256": "070b3b029f2e6e26e57e6153f52aea7e63047f5ed62d002c71708931d029ae29"
+    },
+    {
+      "path": "src/cpu/pred/btb/timed_base_pred.hh",
+      "beforeSha256": "cbbf015774439237f59daf1206af0c08f4992a5ffaf3ac71c7047f4f6df68dda",
+      "afterSha256": "daca012da5d4f46f56a7976a5d2d2b51f71064871c14b9ac434b3f9f882eab5a"
+    },
+    {
+      "path": "src/cpu/pred/btb/decoupled_bpred.hh",
+      "beforeSha256": "90e8a59414a2d45bb7271d64b0b8db887b3c4f50f042ebb5f45b84043027497d",
+      "afterSha256": "7727e1e732243e27f9b1140be1a06e63d810539f5ab59b79f4a4b4f4df3e3c0e"
+    },
+    {
+      "path": "src/cpu/pred/btb/decoupled_bpred.cc",
+      "beforeSha256": "8a5748460dbfefc05930cf8ec6b17e94b97a709564dcf48c322908b5179c6e6a",
+      "afterSha256": "a3a0eb353843afad0c1df12811ce6279a38eb3e4d2ca4a4f5a0fae52639a9b66"
+    },
+    {
+      "path": "src/cpu/pred/btb/btb_ubtb.hh",
+      "beforeSha256": "1172cd8adcb17213f146b498677e51257d50c26b63aa3559c0f210944c4d33c1",
+      "afterSha256": "49471ab1426e4b5774b7e0f5fdc2f37921dddcc5bc1fff63af3b1a2ad44bf22f"
+    },
+    {
+      "path": "src/cpu/pred/btb/btb_ubtb.cc",
+      "beforeSha256": "7c0ed3f6fa8493ea178fbcf734dd01cf15adeceb9728d76c3eba84b23199919e",
+      "afterSha256": "5479e5088c275e9ed8e268a00c35519b9d7b2ff53c39bc70a75d2d74cb6d60c7"
+    },
+    {
+      "path": "src/cpu/pred/btb/abtb.hh",
+      "beforeSha256": "69759242cb6126fdd45f498e1f434367f5f814c2748e54824fbc2a2e697ad165",
+      "afterSha256": "6acae9e4dbfb750c5720e323b48599cd56e940010a55cf54337dd87357fdf1c6"
+    },
+    {
+      "path": "src/cpu/pred/btb/abtb.cc",
+      "beforeSha256": "4cf9f8a2f40eeb23339444d456b99f7ed2911c5445de17ee3bcb1e673a6a7837",
+      "afterSha256": "cb06df733322938ba6b81300012f522647a016e571dc960f2c81c7c5b49c90c7"
+    },
+    {
+      "path": "src/cpu/pred/btb/mbtb.hh",
+      "beforeSha256": "bd31388b0147e9f01deafb55d5ab36c34239caaf6045103e629ff5819f0221fb",
+      "afterSha256": "729deca9128a40c0d9f028ed008ba8e566b8f36541d59ac8e604650931a46eda"
+    },
+    {
+      "path": "src/cpu/pred/btb/mbtb.cc",
+      "beforeSha256": "4d23515117989cd9c80b449590551ffe43b6c8d35b71c21b0e3eb52d3618d624",
+      "afterSha256": "c56b61cff2918626417a82e67e25589e3983dba9e0196cf0fee86a3b700e0696"
+    }
+  ],
+  "requiredUnchangedFiles": [
+    {
+      "path": "src/cpu/pred/btb/decoupled_bpred_stats.cc",
+      "sha256": "7a4b64e4044773829052002dcfecbcccbfcd5257dc960bdd4bb8ba84c0d15e23"
+    },
+    {
+      "path": "src/cpu/pred/btb/BpuPhaseSpool.hh",
+      "sha256": "6b40cb9e287c5da6439503dd5ea15c3964a8e70ad5072b000ff04390f2f589fa"
+    }
+  ]
+}

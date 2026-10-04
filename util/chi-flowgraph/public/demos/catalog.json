@@ -1,0 +1,507 @@
+[
+  {
+    "id": "litmus-iriw",
+    "title": "四核 IRIW · 3×2 mesh",
+    "file": "litmus-iriw.chi.jsonl",
+    "description": "实际 XiangshanCore / 私有 classic L2，4 RN-F / 4 HN-F / 2 SN-F；两个 SAM 均来自仿真配置。"
+  },
+  {
+    "id": "litmus-protocol",
+    "title": "CPU 协议测试 · 19 类 REQ",
+    "file": "litmus-protocol.chi.jsonl",
+    "description": "实际 XiangshanCore / 私有 classic L2，4 RN-F / 4 HN-F / 2 SN-F；两个 SAM 均来自仿真配置。"
+  },
+  {
+    "id": "litmus-iriw-rotation-1",
+    "title": "四核 IRIW · 地址轮换 1",
+    "file": "litmus-iriw-rotation-1.chi.jsonl",
+    "description": "实际 XiangshanCore / 私有 classic L2，4 RN-F / 4 HN-F / 2 SN-F；两个 SAM 均来自仿真配置。 共享物理页 0xd000，分配器轮换 1 页。"
+  },
+  {
+    "id": "litmus-iriw-rotation-2",
+    "title": "四核 IRIW · 地址轮换 2",
+    "file": "litmus-iriw-rotation-2.chi.jsonl",
+    "description": "实际 XiangshanCore / 私有 classic L2，4 RN-F / 4 HN-F / 2 SN-F；两个 SAM 均来自仿真配置。 共享物理页 0xe000，分配器轮换 2 页。"
+  },
+  {
+    "id": "litmus-iriw-rotation-3",
+    "title": "四核 IRIW · 地址轮换 3",
+    "file": "litmus-iriw-rotation-3.chi.jsonl",
+    "description": "实际 XiangshanCore / 私有 classic L2，4 RN-F / 4 HN-F / 2 SN-F；两个 SAM 均来自仿真配置。 共享物理页 0xf000，分配器轮换 3 页。"
+  },
+  {
+    "id": "litmus-stress",
+    "title": "四核重试与 dirty victim · 3×2 mesh",
+    "file": "litmus-stress.chi.jsonl",
+    "description": "实际 XiangshanCore / 私有 classic L2，4 RN-F / 4 HN-F / 2 SN-F；两个 SAM 均来自仿真配置。"
+  },
+  {
+    "id": "miss-hit",
+    "title": "一次 miss，随后同地址 hit",
+    "file": "miss-hit.chi.jsonl",
+    "description": "真实 gem5 HNF/SLCSF 组件；RN 与 SN 使用确定性测试端点。"
+  },
+  {
+    "id": "ordered-read",
+    "title": "有序读取 · Order=01 与 ReadReceipt",
+    "file": "ordered-read.chi.jsonl",
+    "description": "复用实际 miss/hit 观测；显式协议配置补出 ReadReceipt，只有逻辑顺序。"
+  },
+  {
+    "id": "retry",
+    "title": "RetryAck · P-Credit · 重发",
+    "file": "retry.chi.jsonl",
+    "description": "真实 gem5 HNF/SLCSF 组件；RN 与 SN 使用确定性测试端点。"
+  },
+  {
+    "id": "runtime-miss-hit",
+    "title": "gem5 实际运行 · miss 后同地址 hit",
+    "file": "runtime-miss-hit.chi.jsonl",
+    "description": "PyTrafficGen 经 RN / HNF / SN 访问 SimpleMemory；router 仅用于仿真，不在回放中显示。"
+  },
+  {
+    "id": "runtime-retry",
+    "title": "gem5 实际运行 · RN 重试与 P-Credit",
+    "file": "runtime-retry.chi.jsonl",
+    "description": "实际 RN 以 1ns 间隔发出两笔读；HN 只有一个在途名额，第二笔经历 RetryAck、PCrdGrant 与重发。"
+  },
+  {
+    "id": "same-address",
+    "title": "同地址事务等待",
+    "file": "same-address.chi.jsonl",
+    "description": "真实 gem5 HNF/SLCSF 组件；RN 与 SN 使用确定性测试端点。"
+  },
+  {
+    "id": "snoop-owner",
+    "title": "Dirty owner 供数",
+    "file": "snoop-owner.chi.jsonl",
+    "description": "真实 gem5 HNF/SLCSF 组件；RN 与 SN 使用确定性测试端点。"
+  },
+  {
+    "id": "unique",
+    "title": "ReadUnique · 副本失效",
+    "file": "unique.chi.jsonl",
+    "description": "真实 gem5 HNF/SLCSF 组件；RN 与 SN 使用确定性测试端点。"
+  },
+  {
+    "id": "writeback",
+    "title": "RN 写回与 dirty victim 下游写入",
+    "file": "writeback.chi.jsonl",
+    "description": "真实 gem5 HNF/SLCSF 组件；RN 与 SN 使用确定性测试端点。"
+  },
+  {
+    "id": "teach-basic-ReadShared",
+    "title": "ReadShared · 0x01",
+    "file": "teach-basic-ReadShared.chi.jsonl",
+    "description": "获取可共享的缓存副本；观察读数据和 CompAck。",
+    "group": "basics",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-basic-ReadOnce",
+    "title": "ReadOnce · 0x03",
+    "file": "teach-basic-ReadOnce.chi.jsonl",
+    "description": "取得一次数据；请求者不分配该行。",
+    "group": "basics",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-basic-ReadNoSnp",
+    "title": "ReadNoSnp · 0x04",
+    "file": "teach-basic-ReadNoSnp.chi.jsonl",
+    "description": "非一致性读取直达内存路径；不能用来发现其他 RN 的脏副本。",
+    "group": "basics",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-basic-ReadUnique",
+    "title": "ReadUnique · 0x07",
+    "file": "teach-basic-ReadUnique.chi.jsonl",
+    "description": "取得数据与独占权限；冷缓存路径由 SN 供数。",
+    "group": "basics",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-basic-CleanShared",
+    "title": "CleanShared · 0x08",
+    "file": "teach-basic-CleanShared.chi.jsonl",
+    "description": "本例目标不存在，无脏数据可清理，维护请求直接完成。",
+    "group": "basics",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-basic-CleanInvalid",
+    "title": "CleanInvalid · 0x09",
+    "file": "teach-basic-CleanInvalid.chi.jsonl",
+    "description": "本例目标已无效，直接完成；脏副本场景见第三组用例。",
+    "group": "basics",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-basic-MakeInvalid",
+    "title": "MakeInvalid · 0x0A",
+    "file": "teach-basic-MakeInvalid.chi.jsonl",
+    "description": "允许丢弃脏数据的失效操作；此冷例没有有效副本。",
+    "group": "basics",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-basic-MakeUnique",
+    "title": "MakeUnique · 0x0C",
+    "file": "teach-basic-MakeUnique.chi.jsonl",
+    "description": "准备阶段 RN 已有完整干净行；仅取得权限，调用者保证整行覆盖。",
+    "group": "basics",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-basic-Evict",
+    "title": "Evict · 0x0D",
+    "file": "teach-basic-Evict.chi.jsonl",
+    "description": "准备阶段 RN 有真实干净行；逐出通知不携带 DAT。",
+    "group": "basics",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-basic-WriteEvictFull",
+    "title": "WriteEvictFull · 0x15",
+    "file": "teach-basic-WriteEvictFull.chi.jsonl",
+    "description": "准备阶段 RN 为 UC；写数据来自真实缓存，观察 DBID 与 CopyBackWriteData。",
+    "group": "basics",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-basic-WriteUniquePtl",
+    "title": "WriteUniquePtl · 0x18",
+    "file": "teach-basic-WriteUniquePtl.chi.jsonl",
+    "description": "内存预置 0xaa；偏移 8、8 字节访问，BE=0x55，仅选中字节被覆盖。",
+    "group": "basics",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-basic-WriteUniqueFull",
+    "title": "WriteUniqueFull · 0x19",
+    "file": "teach-basic-WriteUniqueFull.chi.jsonl",
+    "description": "完整行一致性写入；先等 DBID，再传递非 CopyBack 数据。",
+    "group": "basics",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-basic-WriteBackFull",
+    "title": "WriteBackFull · 0x1B",
+    "file": "teach-basic-WriteBackFull.chi.jsonl",
+    "description": "准备阶段普通 store 生成 L1 脏数据；测试接口从实际缓存取得最新值。",
+    "group": "basics",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-basic-WriteNoSnpPtl",
+    "title": "WriteNoSnpPtl · 0x1C",
+    "file": "teach-basic-WriteNoSnpPtl.chi.jsonl",
+    "description": "非一致性部分写；HN→SN 必须保留有效字节掩码。",
+    "group": "basics",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-basic-WriteNoSnpFull",
+    "title": "WriteNoSnpFull · 0x1D",
+    "file": "teach-basic-WriteNoSnpFull.chi.jsonl",
+    "description": "非一致性整行写；观察 RN→HN 与 HN→SN 的独立握手。",
+    "group": "basics",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-basic-StashOnceShared",
+    "title": "StashOnceShared · 0x22",
+    "file": "teach-basic-StashOnceShared.chi.jsonl",
+    "description": "原 RN 发一次提示；RN1 实际发起隐式 DataPull 并安装 SC。",
+    "group": "basics",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-basic-StashOnceUnique",
+    "title": "StashOnceUnique · 0x23",
+    "file": "teach-basic-StashOnceUnique.chi.jsonl",
+    "description": "原 RN 发一次提示；RN1 实际发起隐式 DataPull 并安装 UC。",
+    "group": "basics",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-basic-ReadOnceCleanInvalid",
+    "title": "ReadOnceCleanInvalid · 0x24",
+    "file": "teach-basic-ReadOnceCleanInvalid.chi.jsonl",
+    "description": "冷行返回数据且不分配；有脏副本时还需保留最新数据，见复杂用例。",
+    "group": "basics",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-basic-ReadOnceMakeInvalid",
+    "title": "ReadOnceMakeInvalid · 0x25",
+    "file": "teach-basic-ReadOnceMakeInvalid.chi.jsonl",
+    "description": "冷行返回数据且不分配；允许丢弃的脏副本场景见复杂用例。",
+    "group": "basics",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-basic-ReadNotSharedDirty",
+    "title": "ReadNotSharedDirty · 0x26",
+    "file": "teach-basic-ReadNotSharedDirty.chi.jsonl",
+    "description": "分配读取，但请求者最终不允许安装 SD。",
+    "group": "basics",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-hnf-00",
+    "title": "SLC miss / SF miss",
+    "file": "teach-hnf-00.chi.jsonl",
+    "description": "SLC 没有数据，SF 没有其他副本，观察 HN→SN 读取。",
+    "group": "hnf",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-hnf-01",
+    "title": "SLC miss / SF hit",
+    "file": "teach-hnf-01.chi.jsonl",
+    "description": "SLC 没有数据，但 SF 找到 owner；最新数据由 RN 的 snoop 响应提供。",
+    "group": "hnf",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-hnf-10",
+    "title": "SLC hit / SF miss",
+    "file": "teach-hnf-10.chi.jsonl",
+    "description": "SLC 已有数据，SF 没有 RN 副本；本例由 HN 直接供数。",
+    "group": "hnf",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-hnf-11",
+    "title": "SLC hit / SF hit",
+    "file": "teach-hnf-11.chi.jsonl",
+    "description": "SLC 可供数，但取得独占权限仍需按 SF 失效其他 RN 的副本。",
+    "group": "hnf",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-hazard-retry",
+    "title": "RetryAck → P-Credit → 重发",
+    "file": "teach-hazard-retry.chi.jsonl",
+    "description": "请求被拒绝后不能直接重发；跟踪 RetryAck、PCrdGrant 和同一逻辑事务的不同 attempt。",
+    "group": "hazards",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-hazard-same-address",
+    "title": "同地址竞争 · HNF 排队",
+    "file": "teach-hazard-same-address.chi.jsonl",
+    "description": "两个 RN 对同一行竞争；第二个请求在 HNF 等待第一个事务释放该行。",
+    "group": "hazards",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-hazard-victim",
+    "title": "Dirty victim · 替换分支",
+    "file": "teach-hazard-victim.chi.jsonl",
+    "description": "新请求触发有限容量替换；观察受害行地址、snoop 和 HN→SN 写回，与新行请求分支区分。",
+    "group": "hazards",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-hazard-partial",
+    "title": "部分写 · BE=0 的字节保留",
+    "file": "teach-hazard-partial.chi.jsonl",
+    "description": "先初始化内存为 0xaa，再写入交替字节，最后由 CPU 读取验证。",
+    "group": "hazards",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-hazard-clean-invalid",
+    "title": "读取并清理失效 · 保留脏数据",
+    "file": "teach-hazard-clean-invalid.chi.jsonl",
+    "description": "RN1 预先持有 dirty 最新值、内存仍是旧值；比较当前返回数据与后续 ReadNoSnp。",
+    "group": "hazards",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-hazard-make-invalid",
+    "title": "读取并失效 · 允许丢弃",
+    "file": "teach-hazard-make-invalid.chi.jsonl",
+    "description": "RN1 预先持有 dirty 最新值、内存仍是旧值；比较当前返回数据与后续 ReadNoSnp。",
+    "group": "hazards",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-hazard-stash-refuse",
+    "title": "Stash hint 被拒绝",
+    "file": "teach-hazard-stash-refuse.chi.jsonl",
+    "description": "RN3 不接受 stash；观察不发 DataPull 时，原发起者仍可收到完成。",
+    "group": "hazards",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-hazard-stash-pull",
+    "title": "Stash · Comp 与目标安装分离",
+    "file": "teach-hazard-stash-pull.chi.jsonl",
+    "description": "原请求的 Comp 与 RN1 的 DataPull、CompAck、SC 安装是不同阶段。",
+    "group": "hazards",
+    "evidence": "gem5"
+  },
+  {
+    "id": "teach-hazard-early-unique",
+    "title": "early snoop · ReadUnique × WriteBackFull",
+    "file": "teach-hazard-early-unique.chi.jsonl",
+    "description": "snoop 后为 I：仍发送 CopyBackWriteData_I，所有 BE 和数据均为 0。",
+    "group": "hazards",
+    "evidence": "protocol-model"
+  },
+  {
+    "id": "teach-hazard-early-shared",
+    "title": "early snoop · ReadShared × WriteBackFull",
+    "file": "teach-hazard-early-shared.chi.jsonl",
+    "description": "使用 snoop 后的 SC 状态，不能再次声称转移脏数据责任。",
+    "group": "hazards",
+    "evidence": "protocol-model"
+  },
+  {
+    "id": "teach-hazard-early-once",
+    "title": "early snoop · ReadOnce × WriteBackFull",
+    "file": "teach-hazard-early-once.chi.jsonl",
+    "description": "SnpOnce 保留 UD；写回仍发送完整有效脏数据，随后更新内存。",
+    "group": "hazards",
+    "evidence": "protocol-model"
+  },
+  {
+    "id": "teach-special-split-early-snoop",
+    "title": "提前 CompAck 后，snoop 追上读数据",
+    "file": "teach-special-split-early-snoop.chi.jsonl",
+    "description": "RespSepData 允许提前确认完成，但 RN 必须等整行 DAT 到齐才能回答追来的 snoop。",
+    "group": "hazards",
+    "topic": "ordering",
+    "evidence": "protocol-model"
+  },
+  {
+    "id": "teach-special-compack-overtake",
+    "title": "新的 REQ 超过上一次 CompAck",
+    "file": "teach-special-compack-overtake.chi.jsonl",
+    "description": "RN 已经读完并静默逐出，但 HN 必须等旧 CompAck 才能处理同址新请求。",
+    "group": "hazards",
+    "topic": "ordering",
+    "evidence": "protocol-model"
+  },
+  {
+    "id": "teach-special-retry-invalidated",
+    "title": "写回 Retry 后被失效：退还信用",
+    "file": "teach-special-retry-invalidated.chi.jsonl",
+    "description": "WBFull 等待 P-Credit 时仍要回答 snoop；失去副本后可取消写回并 PCrdReturn。",
+    "group": "hazards",
+    "topic": "retry",
+    "evidence": "protocol-model"
+  },
+  {
+    "id": "teach-special-multiple-snoops",
+    "title": "一个写回连续遭遇两次 snoop",
+    "file": "teach-special-multiple-snoops.chi.jsonl",
+    "description": "WriteBackFull 最终采用最后一次 snoop 后的状态；不能锁死在初始 UD 或中间 SC。",
+    "group": "hazards",
+    "topic": "snoop",
+    "evidence": "protocol-model"
+  },
+  {
+    "id": "teach-special-data-before-response",
+    "title": "DAT 先到，完成响应后到",
+    "file": "teach-special-data-before-response.chi.jsonl",
+    "description": "DataSepResp 可以先到；仅收到数据不能提前发送要求等待 RespSepData 的 CompAck。",
+    "group": "hazards",
+    "topic": "ordering",
+    "evidence": "protocol-model"
+  },
+  {
+    "id": "teach-special-evict-snoop",
+    "title": "Evict 在途，旧目录仍触发 snoop",
+    "file": "teach-special-evict-snoop.chi.jsonl",
+    "description": "RN 已逐出 clean 行而 HN 尚未收到 Evict；随后 snoop 必须得到 SnpResp_I。",
+    "group": "hazards",
+    "topic": "snoop",
+    "evidence": "protocol-model"
+  },
+  {
+    "id": "teach-special-early-pcredit",
+    "title": "PCrdGrant 提前到 · 信用先于 RetryAck",
+    "file": "teach-special-early-pcredit.chi.jsonl",
+    "description": "信用与 RetryAck 可以先后颠倒；RN 缓存提前到达的信用，等两个条件都满足才重发。",
+    "group": "hazards",
+    "topic": "retry",
+    "evidence": "protocol-model"
+  },
+  {
+    "id": "teach-special-write-cancel",
+    "title": "WriteDataCancel · 取消写仍要发齐数据拍",
+    "file": "teach-special-write-cancel.chi.jsonl",
+    "description": "部分写已经拿到 DBID 后决定取消；仍发送原定数量的 DAT，但 opcode 为 WriteDataCancel、全部 BE=0。",
+    "group": "hazards",
+    "topic": "data",
+    "evidence": "protocol-model"
+  },
+  {
+    "id": "teach-special-ordered-writes",
+    "title": "Streaming OWO · CompAck 控制写的可见顺序",
+    "file": "teach-special-ordered-writes.chi.jsonl",
+    "description": "两个写可以同时在途；后写的 CompAck 要等前写 Comp，Home 才能向其他观察者公开后写。",
+    "group": "hazards",
+    "topic": "ordering",
+    "evidence": "protocol-model"
+  },
+  {
+    "id": "teach-special-copy-at-home",
+    "title": "CopyAtHome · 写回可以完全没有 DAT",
+    "file": "teach-special-copy-at-home.chi.jsonl",
+    "description": "RN 自取得 CAH=1 的行后未改写，HN 仍有隐藏副本；以 Comp→CompAck 完成逐出，省掉整行数据。",
+    "group": "hazards",
+    "topic": "advanced",
+    "evidence": "protocol-model"
+  },
+  {
+    "id": "teach-special-dct-double",
+    "title": "DCT 双路返回 · 数据同时飞向 RN 与 HN",
+    "file": "teach-special-dct-double.chi.jsonl",
+    "description": "一个 SnpSharedFwd 产生两份数据：读方拿 SC，HN 接过脏责任再写内存。",
+    "group": "hazards",
+    "topic": "forwarding",
+    "evidence": "protocol-model"
+  },
+  {
+    "id": "teach-special-dct-fallback",
+    "title": "DCT 未采用 · Fwd snoop 转普通返回",
+    "file": "teach-special-dct-fallback.chi.jsonl",
+    "description": "发出 forwarding snoop 不保证成功直传；HN 必须识别普通 snoop 响应并完成后备路径。",
+    "group": "hazards",
+    "topic": "forwarding",
+    "evidence": "protocol-model"
+  },
+  {
+    "id": "teach-special-partial-snoop-merge",
+    "title": "UDP 部分脏数据 · 与内存按 BE 合并",
+    "file": "teach-special-partial-snoop-merge.chi.jsonl",
+    "description": "脏 owner 仅持有部分有效字节；HN 必须同时读取内存并以 snoop 的有效字节覆盖旧值。",
+    "group": "hazards",
+    "topic": "data",
+    "evidence": "protocol-model"
+  },
+  {
+    "id": "teach-special-writeclean-old",
+    "title": "WriteCleanFull × SnpOnce · 晚到的数据更旧",
+    "file": "teach-special-writeclean-old.chi.jsonl",
+    "description": "清理旧快照与之后的本地写重叠；snoop 可看见较新值，稍后 copyback 仍回写旧快照。",
+    "group": "hazards",
+    "topic": "advanced",
+    "evidence": "protocol-model"
+  },
+  {
+    "id": "teach-special-make-read-unique",
+    "title": "MakeReadUnique · 升级途中丢行，完成时补数据",
+    "file": "teach-special-make-read-unique.chi.jsonl",
+    "description": "请求发出时有 SC 副本，但被排在前面的竞争者失效；Home 必须按完成前状态决定返回数据。",
+    "group": "hazards",
+    "topic": "advanced",
+    "evidence": "protocol-model"
+  }
+]

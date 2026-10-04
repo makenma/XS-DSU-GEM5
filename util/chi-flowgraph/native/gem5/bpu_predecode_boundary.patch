@@ -1,0 +1,317 @@
+--- a/src/cpu/pred/btb/common.hh
++++ b/src/cpu/pred/btb/common.hh
+@@ -1,6 +1,7 @@
+ #ifndef __CPU_PRED_BTB_STREAM_STRUCT_HH__
+ #define __CPU_PRED_BTB_STREAM_STRUCT_HH__
+ 
++#include <algorithm>
+ #include <queue>
+ #include <string>
+ 
+@@ -33,7 +34,8 @@
+     SQUASH_NONE=0,
+     SQUASH_TRAP,
+     SQUASH_CTRL,
+-    SQUASH_OTHER
++    SQUASH_OTHER,
++    SQUASH_PREDECODE
+ };
+ 
+ enum BranchType
+@@ -282,7 +284,10 @@
+     BranchInfo predBranchInfo; // predicted branch info
+ 
+     bool isHit;          // whether the predicted btb entry is hit
+-    bool falseHit;       // not used
++    bool falseHit;       // a decoded instruction disproved a predicted BTB slot
++    // Local to this prediction: later streams may legitimately enter the same
++    // halfword as an instruction. Never use a global permanent PC blacklist.
++    std::vector<Addr> falseHitPCs;
+     std::vector<BTBEntry> predBTBEntries;   // record predicted BTB entries
+ 
+     // for commit, write at redirect or fetch
+@@ -371,12 +376,26 @@
+         return startPC;
+     }
+ 
++    bool isFalseHitPC(Addr pc) const
++    {
++        return std::find(falseHitPCs.begin(), falseHitPCs.end(), pc) !=
++            falseHitPCs.end();
++    }
++
++    bool canUpdateBTBPC(Addr pc) const
++    {
++        return !isFalseHitPC(pc) && pc >= startPC &&
++            (squashType == SQUASH_PREDECODE ? pc < updateEndInstPC :
++                                             pc <= updateEndInstPC);
++    }
++
+     std::pair<int, bool> getHistInfoDuringSquash(Addr squash_pc, bool is_cond, bool actually_taken)
+     {
+         int shamt = 0;
+         bool cond_taken = false;
+         for (auto &entry : predBTBEntries) {
+-            if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
++            if (entry.valid && !isFalseHitPC(entry.pc) &&
++                entry.pc >= startPC && entry.pc < squash_pc) {
+                 shamt++;
+             }
+         }
+@@ -392,7 +411,8 @@
+         int shamt = 0;
+         bool cond_taken = false;
+         for (auto &entry : predBTBEntries) {
+-            if (entry.valid && entry.pc >= startPC && entry.pc < squash_pc) {
++            if (entry.valid && !isFalseHitPC(entry.pc) &&
++                entry.pc >= startPC && entry.pc < squash_pc) {
+                 shamt++;
+             }
+         }
+@@ -423,7 +443,7 @@
+     {
+         updateBTBEntries.clear();
+         for (auto &entry : predBTBEntries) {
+-            if (entry.valid && entry.pc >= startPC && entry.pc <= updateEndInstPC) {
++            if (entry.valid && canUpdateBTBPC(entry.pc)) {
+                 updateBTBEntries.push_back(entry);
+             }
+         }
+--- a/src/cpu/pred/btb/timed_base_pred.hh
++++ b/src/cpu/pred/btb/timed_base_pred.hh
+@@ -73,6 +73,8 @@
+     virtual void recoverBwHist(const boost::dynamic_bitset<> &history, const FetchTarget &entry, int shamt, bool cond_taken) {}
+     virtual void recoverIHist(const FetchTarget &entry, int shamt, bool cond_taken) {}
+     virtual void recoverLHist(const std::vector<boost::dynamic_bitset<>> &history, const FetchTarget &entry, int shamt, bool cond_taken) {}
++    // Remove a disproved branch slot from BTB storage, not direction history.
++    virtual void invalidateBTBEntry(Addr pc) {}
+     virtual void update(const FetchTarget &entry) {}
+     virtual unsigned getDelay() {return numDelay;}
+     virtual bool getResolvedUpdate() {return resolvedUpdate;}
+--- a/src/cpu/pred/btb/decoupled_bpred.hh
++++ b/src/cpu/pred/btb/decoupled_bpred.hh
+@@ -398,6 +398,12 @@
+     void nonControlSquash(unsigned fsq_id,
+                           const PCStateBase &inst_pc, const InstSeqNum seq,
+                           ThreadID tid, const unsigned &currentLoopIter);
++
++    // The instruction at restart_pc has not been built yet. Retain only the
++    // fetched prefix of this target, invalidate disproved slots, and refetch it.
++    void predecodeSquash(unsigned target_id, const PCStateBase &restart_pc,
++                         const std::vector<Addr> &invalid_pcs, ThreadID tid,
++                         unsigned fetched_insts);
+ 
+     // Not a control. But target is actually disturbed
+     void trapSquash(unsigned fsq_id, Addr last_committed_pc,
+--- a/src/cpu/pred/btb/decoupled_bpred.cc
++++ b/src/cpu/pred/btb/decoupled_bpred.cc
+@@ -535,6 +535,51 @@
+ }
+ 
+ void
++DecoupledBPUWithBTB::predecodeSquash(
++    unsigned target_id, const PCStateBase &restart_pc,
++    const std::vector<Addr> &invalid_pcs, ThreadID tid, unsigned fetched_insts)
++{
++    panic_if(!ftq.hasTarget(target_id, tid) || ftq.fetchId(tid) != target_id,
++             "Predecode recovery must own the current fetching target");
++    panic_if(invalid_pcs.empty(), "Predecode recovery has no disproved BTB slot");
++    auto &target = ftq.get(target_id, tid);
++    panic_if(restart_pc.instAddr() < target.startPC ||
++             restart_pc.instAddr() >= target.predEndPC,
++             "Predecode recovery PC is outside its fetch target");
++
++    // Keep the prediction-time entries/metas as evidence. All later update
++    // paths filter this local list, so a stale metadata copy cannot resurrect
++    // the slot. A new stream remains free to learn a real branch at that PC.
++    target.falseHit = true;
++    for (Addr pc : invalid_pcs) {
++        if (!target.isFalseHitPC(pc))
++            target.falseHitPCs.push_back(pc);
++        for (auto *component : components)
++            component->invalidateBTBEntry(pc);
++    }
++
++    BranchInfo no_branch;
++    no_branch.isDirect = false;
++    target.exeBranchInfo = no_branch;
++    BTBEntry no_entry;
++    no_entry.isDirect = false;
++    target.updateNewBTBEntry = no_entry;
++    target.updateIsOldEntry = true;
++    target.updateBTBEntries.clear();
++    target.fetchInstNum = fetched_insts;
++
++    DPRINTF(DecoupleBP, "Predecode false BTB slot: target=%u restart=%#lx "
++            "prefix_insts=%u invalid_slots=%lu\n", target_id,
++            restart_pc.instAddr(), fetched_insts, invalid_pcs.size());
++
++    // This advances the fetch pointer exactly once, removes younger targets,
++    // restores histories/RAS to the real prefix, clears staged predictions and
++    // restarts prediction at the unbuilt instruction. Do not consume again.
++    handleSquash(tid, target_id, SQUASH_PREDECODE, restart_pc,
++                 restart_pc.instAddr());
++}
++
++void
+ DecoupledBPUWithBTB::trapSquash(unsigned target_id,
+                          Addr last_committed_pc, const PCStateBase &inst_pc,
+                          ThreadID tid, const unsigned &currentLoopIter)
+--- a/src/cpu/pred/btb/btb_ubtb.hh
++++ b/src/cpu/pred/btb/btb_ubtb.hh
+@@ -130,6 +130,7 @@
+     /** for statistics only
+      * @param stream The fetch stream containing execution results and prediction metadata
+      */
++    void invalidateBTBEntry(Addr pc) override;
+     void update(const FetchTarget &stream) override;
+ 
+     /** for statistics only
+--- a/src/cpu/pred/btb/btb_ubtb.cc
++++ b/src/cpu/pred/btb/btb_ubtb.cc
+@@ -283,6 +283,18 @@
+ 
+ 
+ void
++UBTB::invalidateBTBEntry(Addr pc)
++{
++    // The same branch can have entries tagged by different fetch-block starts.
++    for (auto &entry : ubtb) {
++        if (entry.valid && entry.pc == pc)
++            entry.valid = false;
++    }
++    // A staged prediction must not retain an iterator to an invalidated entry.
++    lastPred.hit_entry = ubtb.end();
++}
++
++void
+ UBTB::update(const FetchTarget &stream)
+ {
+     auto meta = std::static_pointer_cast<UBTBMeta>(stream.predMetas[getComponentIdx()]);
+@@ -314,7 +326,7 @@
+ 
+     // Verify uBTB state
+     assert(ubtb.size() <= numEntries);
+-    if (!usingS3Pred) {
++    if (!usingS3Pred && stream.squashType != SQUASH_PREDECODE) {
+         updateNewEntry(oldEntryIter, takenEntry, startAddr);
+     }
+ }
+--- a/src/cpu/pred/btb/abtb.hh
++++ b/src/cpu/pred/btb/abtb.hh
+@@ -173,6 +173,7 @@
+      *  2. Adds new entries if necessary
+      *  3. Updates MRU information
+      */
++    void invalidateBTBEntry(Addr pc) override;
+     void update(const FetchTarget &stream) override;
+ 
+ 
+--- a/src/cpu/pred/btb/abtb.cc
++++ b/src/cpu/pred/btb/abtb.cc
+@@ -474,7 +474,9 @@
+             break;
+         }
+     }
+-    if (!pred_branch_hit) {
++    if (!pred_branch_hit &&
++        (!stream.falseHit || (stream.updateNewBTBEntry.valid &&
++                             stream.canUpdateBTBPC(stream.updateNewBTBEntry.pc)))) {
+         all_entries.push_back(stream.updateNewBTBEntry);
+     }
+ 
+@@ -647,6 +649,19 @@
+  * 5. Update MRU information
+  */
+ void
++AheadBTB::invalidateBTBEntry(Addr pc)
++{
++    // Ahead indexing permits copies in sets selected by different predecessors.
++    for (auto &set : btb) {
++        for (auto &entry : set) {
++            if (entry.valid && entry.pc == pc)
++                entry.valid = false;
++        }
++    }
++    // recoverHist clears the queued ahead reads as part of the same squash.
++}
++
++void
+ AheadBTB::update(const FetchTarget &stream)
+ {
+     if (usingS3Pred) {
+@@ -658,6 +673,12 @@
+ 
+     // 1. Process old entries
+     auto old_entries = processOldEntries(meta->hit_entries, end_inst_pc);
++    if (stream.falseHit) {
++        old_entries.erase(std::remove_if(old_entries.begin(), old_entries.end(),
++            [&stream](const BTBEntry &entry) {
++                return !stream.canUpdateBTBPC(entry.pc);
++            }), old_entries.end());
++    }
+ 
+     // 2. Check prediction hit status, for stats recording
+     checkPredictionHit(stream,
+--- a/src/cpu/pred/btb/mbtb.hh
++++ b/src/cpu/pred/btb/mbtb.hh
+@@ -169,6 +169,7 @@
+      *  2. Adds new entries if necessary
+      *  3. Updates MRU information
+      */
++    void invalidateBTBEntry(Addr pc) override;
+     void update(const FetchTarget &stream) override;
+ 
+     std::vector<BTBEntry> prepareUpdateEntries(const FetchTarget &stream);
+--- a/src/cpu/pred/btb/mbtb.cc
++++ b/src/cpu/pred/btb/mbtb.cc
+@@ -419,6 +419,15 @@
+ MBTB::getAndSetNewBTBEntry(FetchTarget &stream)
+ {
+     DPRINTF(BTB, "getAndSetNewBTBEntry called for pc %#lx\n", stream.startPC);
++    // A predecode correction ends BEFORE the refetched instruction. It is
++    // not an executed control transfer, even if prediction metadata has one.
++    if (stream.squashType == SQUASH_PREDECODE) {
++        BTBEntry no_entry;
++        no_entry.isDirect = false;
++        stream.updateNewBTBEntry = no_entry;
++        stream.updateIsOldEntry = true;
++        return;
++    }
+     // Get prediction metadata from previous stages
+     auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
+     auto &predBTBEntries = meta->hit_entries;
+@@ -427,7 +436,7 @@
+     bool pred_branch_hit = false;
+     BTBEntry entry_to_write = BTBEntry();
+     for (auto &e: predBTBEntries) {
+-        if (stream.exeBranchInfo == e) {
++        if (stream.exeBranchInfo == e && !stream.isFalseHitPC(e.pc)) {
+             pred_branch_hit = true;
+             entry_to_write = e;
+             break;
+@@ -680,6 +689,24 @@
+  * 4. Update existing entries or create new ones
+  * 5. Update MRU information
+  */
++void
++MBTB::invalidateBTBEntry(Addr pc)
++{
++    for (auto *sram : {&sram0, &sram1}) {
++        for (auto &set : *sram) {
++            for (auto &entry : set) {
++                if (entry.valid && entry.pc == pc)
++                    entry.valid = false;
++            }
++        }
++    }
++    // Invalidate every copy, rather than only the first victim match.
++    for (auto &entry : victimCache) {
++        if (entry.valid && entry.pc == pc)
++            entry.valid = false;
++    }
++}
++
+ void
+ MBTB::update(const FetchTarget &stream)
+ {

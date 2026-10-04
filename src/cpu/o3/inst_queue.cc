@@ -606,7 +606,16 @@ InstructionQueue::scheduleReadyInsts()
     }
 
     while ((mem_inst = getDeferredMemInstToExecute())) {
-        mem_inst->issueQue->retryMem(mem_inst);
+        if (mem_inst->isNonSpeculative()) {
+            // The deferred list also releases squashed entries. They must
+            // not regain the ROB-head permission of a live instruction.
+            if (mem_inst->isSquashed()) {
+                continue;
+            }
+            mem_inst->issueQue->retryCommitAuthorizedMem(mem_inst);
+        } else {
+            mem_inst->issueQue->retryMem(mem_inst);
+        }
     }
 
     while ((mem_inst = getSTLFFailInstToExecute())) {

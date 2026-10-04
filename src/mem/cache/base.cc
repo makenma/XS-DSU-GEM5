@@ -1,3 +1,4 @@
+#include "mem/cache/CHI/FlowGraphTrace.hh"
 /*
  * Copyright (c) 2012-2013, 2018-2019 ARM Limited
  * All rights reserved.
@@ -307,6 +308,8 @@ BaseCache::regenerateBlkAddr(CacheBlk* blk)
 void
 BaseCache::init()
 {
+    // Test controllers can register requestors after cache construction.
+    for(auto& slice:prevReqCycles) slice.resize(system->maxRequestors(),Cycles(0));
     if (!cpuSidePort.isConnected() || !memSidePort.isConnected())
         fatal("Cache ports on %s are not connected\n", name());
     cpuSidePort.sendRangeChange();
@@ -534,6 +537,7 @@ BaseCache::handleTimingReqMiss(PacketPtr pkt, MSHR *mshr, CacheBlk *blk,
                 // buffer and to schedule an event to the queued
                 // port and also takes into account the additional
                 // delay of the xbar.
+                Chi::FlowGraphTrace::get().merge(mshr->getTarget()->pkt->req,pkt->req);
                 mshr->allocateTarget(pkt, forward_time, order++,
                                      allocOnFill(pkt->cmd));
                 if (mshr->getNumTargets() >= numTarget) {

@@ -580,6 +580,15 @@ decode QUADRANT {
         }
 
         0x03: decode FUNCT3 {
+            // Zicbom 1.0 encodings: MISC-MEM, funct3=2, rd=0,
+            // imm12=0/1/2 for inval/clean/flush. xenvcfg gates FS execution.
+            0x2: decode RD {
+                0x0: decode IMM12 {
+                    0x0: CboOp::cbo_inval({{Request::INVALIDATE}});
+                    0x1: CboOp::cbo_clean({{Request::CLEAN}});
+                    0x2: CboOp::cbo_flush({{Request::CLEAN | Request::INVALIDATE}});
+                }
+            }
             format FenceOp {
                 0x0: fence({{
                 }}, uint64_t, IsReadBarrier, IsWriteBarrier, MemReadOp);

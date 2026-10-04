@@ -49,6 +49,7 @@
 
 #include "arch/generic/tlb.hh"
 #include "arch/riscv/decoder.hh"
+#include "arch/riscv/faults.hh"
 #include "arch/riscv/pcstate.hh"
 #include "base/debug_helper.hh"
 #include "base/random.hh"
@@ -464,132 +465,82 @@ Fetch::resetStage()
 bool
 Fetch::handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc)
 {
-    DPRINTF(Fetch, "[tid:%i] Handling multi-cacheline fetch for addr %#x, pc=%#lx\n", tid, vaddr, pc);
-    // Transition to WaitingCache state when initiating cache access
+    DPRINTF(Fetch, "[tid:%i] Handling multi-cacheline fetch for addr %#x, pc=%#lx\n",
+            tid, vaddr, pc);
     setThreadStatus(tid, WaitingCache);
+    auto &group = threads[tid].cacheReq;
+    group.reset();
+    group.faultOnDemand = !isTraceMode();
+    group.baseAddr = vaddr;
+    group.totalSize = fetchBufferSize;
+    threads[tid].startPC = vaddr;
+    threads[tid].valid = false;
 
-    // Reset cache request state for this thread
-    threads[tid].cacheReq.reset();
-    threads[tid].cacheReq.baseAddr = vaddr;
-    threads[tid].cacheReq.totalSize = fetchBufferSize;
-
-    Addr fetchPC = vaddr;
-    unsigned fetchSize = cacheBlkSize - fetchPC % cacheBlkSize;  // Size for first cache line
-
-    DPRINTF(Fetch, "[tid:%i] Creating first cache line request: addr=%#x, size=%d\n",
-            tid, fetchPC, fetchSize);
-
-    // Create and send first request (tail of first cache line)
-    RequestPtr first_mem_req = std::make_shared<Request>(
-        fetchPC, fetchSize,
-        Request::INST_FETCH, cpu->instRequestorId(), pc,
+    const unsigned first_size = cacheBlkSize - vaddr % cacheBlkSize;
+    panic_if(first_size >= fetchBufferSize ||
+             fetchBufferSize - first_size > cacheBlkSize,
+             "This fetch buffer must span exactly two cache lines");
+    RequestPtr first = std::make_shared<Request>(
+        vaddr, first_size, Request::INST_FETCH, cpu->instRequestorId(), pc,
         cpu->thread[tid]->contextId());
+    RequestPtr second = std::make_shared<Request>(
+        vaddr + first_size, fetchBufferSize - first_size, Request::INST_FETCH,
+        cpu->instRequestorId(), pc, cpu->thread[tid]->contextId());
+    first->taskId(cpu->taskId());
+    first->setMisalignedFetch();
+    first->setReqNum(1);
+    second->taskId(cpu->taskId());
+    second->setMisalignedFetch();
+    second->setReqNum(2);
 
-    first_mem_req->taskId(cpu->taskId());
-    first_mem_req->setMisalignedFetch();
-    first_mem_req->setReqNum(1);
-
-    threads[tid].cacheReq.addRequest(first_mem_req); // packet will be created later
-
-    // Initiate translation for first request
-    updateCacheRequestStatusByRequest(tid, first_mem_req, TlbWait);
+    // translateTiming can call finishTranslation synchronously. Register the
+    // entire group before either callback can observe or cancel it.
+    group.addRequest(first);
+    group.addRequest(second);
+    updateCacheRequestStatusByRequest(tid, first, TlbWait);
+    updateCacheRequestStatusByRequest(tid, second, TlbWait);
     setAllFetchStalls(StallReason::ITlbStall);
-    FetchTranslation *trans = new FetchTranslation(this);
-    cpu->mmu->translateTiming(first_mem_req, cpu->thread[tid]->getTC(),
-                              trans, BaseMMU::Execute);
-
-    // Prepare second request (head of second cache line)
-    fetchPC += fetchSize;  // Move to start of next cache line
-    assert(fetchPC % cacheBlkSize == 0);
-    fetchSize = fetchBufferSize - fetchSize;  // Remaining size
-
-    DPRINTF(Fetch, "[tid:%i] Creating second cache line request: addr=%#x, size=%d\n",
-            tid, fetchPC, fetchSize);
-
-    // Create and send second request
-    RequestPtr second_mem_req = std::make_shared<Request>(
-        fetchPC, fetchSize,
-        Request::INST_FETCH, cpu->instRequestorId(), pc,
-        cpu->thread[tid]->contextId());
-
-    second_mem_req->taskId(cpu->taskId());
-    second_mem_req->setMisalignedFetch();
-    second_mem_req->setReqNum(2);
-
-    threads[tid].cacheReq.addRequest(second_mem_req);  // Add second request to cache request
-
-    DPRINTF(Fetch, "[tid:%i] Initiating translation for second cache line\n", tid);
-
-    // Always initiate translation for second request, regardless of first request status
-    updateCacheRequestStatusByRequest(tid, second_mem_req, TlbWait);
-    setAllFetchStalls(StallReason::ITlbStall);
-    FetchTranslation *trans2 = new FetchTranslation(this);
-    cpu->mmu->translateTiming(second_mem_req, cpu->thread[tid]->getTC(),
-                              trans2, BaseMMU::Execute);
+    cpu->mmu->translateTiming(first, cpu->thread[tid]->getTC(),
+                             new FetchTranslation(this), BaseMMU::Execute);
+    // Trace mode retains its immediate-fault behavior and may cancel the group
+    // in that first callback. Never create an orphan second translation.
+    if (group.findRequestIndex(second) != SIZE_MAX) {
+        cpu->mmu->translateTiming(second, cpu->thread[tid]->getTC(),
+                                 new FetchTranslation(this), BaseMMU::Execute);
+    }
     return true;
 }
 
 bool
 Fetch::processMultiCacheLineCompletion(ThreadID tid, PacketPtr pkt)
 {
-    DPRINTF(Fetch, "[tid:%i] Processing dual cacheline fetch completion for addr %#lx.\n",
-            tid, pkt->getAddr());
-
-    // Mark this packet as completed in the cache request (this also stores the packet)
-    bool found_packet = threads[tid].cacheReq.markCompletedAndStorePacket(pkt);
-    if (!found_packet) {
-        DPRINTF(Fetch, "[tid:%i] Packet doesn't match current requests, deleting pkt %#lx\n",
-                tid, pkt->getAddr());
-        DPRINTF(Fetch, "[tid:%i] Expected requests: ", tid);
-        for (size_t i = 0; i < threads[tid].cacheReq.requests.size(); i++) {
-            DPRINTF(Fetch, "req[%d]=0x%lx ", i, threads[tid].cacheReq.requests[i]->getVaddr());
-        }
-        DPRINTF(Fetch, "\n");
+    auto &group = threads[tid].cacheReq;
+    const size_t index = group.findRequestIndex(pkt->req);
+    if (index == SIZE_MAX || group.requestStatus[index] != CacheWaitResponse) {
+        // Accepted requests are owned by the memory system until response.
+        // A squash drops only their identities; the late response is ours now.
+        DPRINTF(Fetch, "[tid:%i] Discarding stale Icache response at %#lx\n",
+                tid, pkt->req->getVaddr());
+        delete pkt;
         return false;
     }
 
-    DPRINTF(Fetch, "[tid:%i] Packet successfully matched and stored. Current status: %s\n",
-            tid, threads[tid].cacheReq.getStatusSummary().c_str());
-
-    // Check if we're still waiting for other packets
-    if (!threads[tid].cacheReq.allCompleted()) {
-        DPRINTF(Fetch, "[tid:%i] Waiting for remaining packets. Completed: %d, Total: %d\n",
-                tid, threads[tid].cacheReq.completedPackets, threads[tid].cacheReq.packets.size());
-
-        // Note: retry is handled completely by the standard gem5 recvReqRetry mechanism
-        // No need to handle retry here to avoid duplicate packet sending
-
-        return false;  // Return false to indicate we're still waiting
+    const Addr offset = pkt->req->getVaddr() - group.baseAddr;
+    panic_if(offset > fetchBufferSize || pkt->getSize() > fetchBufferSize - offset,
+             "Icache response is outside its fetch buffer");
+    if (pkt->isError()) {
+        group.faults[index] = std::make_shared<RiscvISA::AddressFault>(
+            pkt->req->getVaddr(), 0, RiscvISA::INST_ACCESS);
+        group.requestStatus[index] = AccessFailed;
+    } else {
+        // Only successful response bytes become valid. No packet pointer is
+        // retained across callbacks, so partial completion/reset cannot leak it.
+        memcpy(threads[tid].data + offset, pkt->getConstPtr<uint8_t>(), pkt->getSize());
+        group.requestStatus[index] = AccessComplete;
+        ++group.completedPackets;
     }
-
-    // All packets have arrived - merge them directly into fetchBuffer
-    DPRINTF(Fetch, "[tid:%i] All packets arrived, merging data into fetchBuffer.\n", tid);
-
-    // Find the packets by request number
-    PacketPtr firstPkt = nullptr;
-    PacketPtr secondPkt = nullptr;
-
-    for (size_t i = 0; i < threads[tid].cacheReq.packets.size(); i++) {
-        if (threads[tid].cacheReq.requests[i]->getReqNum() == 1) {
-            firstPkt = threads[tid].cacheReq.packets[i];
-        } else if (threads[tid].cacheReq.requests[i]->getReqNum() == 2) {
-            secondPkt = threads[tid].cacheReq.packets[i];
-        }
-    }
-
-    assert(firstPkt && secondPkt);
-
-    // Copy merged data directly into fetchBuffer
-    memcpy(threads[tid].data, firstPkt->getConstPtr<uint8_t>(), firstPkt->getSize());
-    memcpy(threads[tid].data + firstPkt->getSize(), secondPkt->getConstPtr<uint8_t>(), secondPkt->getSize());
-    threads[tid].valid = true;
-
-    // Clean up the packets
-    delete firstPkt;
-    delete secondPkt;
-
-    DPRINTF(Fetch, "[tid:%i] Dual cacheline fetch completion processed successfully.\n", tid);
-    return true;
+    delete pkt;
+    return group.allReady();
 }
 
 void
@@ -604,7 +555,19 @@ Fetch::processCacheCompletion(PacketPtr pkt)
         return;
     }
 
-    // Check if this completion should be processed
+    finishCacheRequest(tid);
+}
+
+void
+Fetch::finishCacheRequest(ThreadID tid)
+{
+    assert(threads[tid].cacheReq.allReady());
+    if (isTraceMode() && threads[tid].cacheReq.anyFailed())
+        return;
+    // "valid" means this group's outcomes are ready, not that faulted bytes
+    // exist. demandFetchBytes checks the corresponding per-request outcome.
+    threads[tid].valid = true;
+
     // Either thread is waiting for cache, or cache just completed
     CacheRequestStatus cacheStatus = threads[tid].cacheReq.getOverallStatus();
     if (!hasPendingCacheRequests(tid) && cacheStatus != AccessComplete) {
@@ -613,8 +576,8 @@ Fetch::processCacheCompletion(PacketPtr pkt)
         return;
     }
 
-    // Data has been merged into fetchBuffer, we can proceed
-    DPRINTF(Fetch, "[tid:%i] All misaligned packets received and merged.\n", tid);
+    // Successful bytes have been copied; demandFetchBytes checks any faults.
+    DPRINTF(Fetch, "[tid:%i] All fetch request outcomes are ready.\n", tid);
 
     assert(!cpu->switchedOut());
 
@@ -665,7 +628,7 @@ Fetch::drainSanityCheck() const
     assert(!interruptPending);
 
     for (ThreadID i = 0; i < numThreads; ++i) {
-        assert(threads[i].cacheReq.packets.empty());
+        assert(threads[i].cacheReq.requests.empty());
         assert(fetchStatus[i] == Idle ||
                (fetchStatus[i] == Blocked && stalls[i].drain));
     }
@@ -780,7 +743,12 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     const auto &stream = dbpbtb->ftqFetchingTarget(tid);
 
     const Addr curr_pc = next_pc.instAddr();
-    assert(stream.startPC <= curr_pc && curr_pc < stream.predEndPC);
+    panic_if(!(stream.startPC <= curr_pc && curr_pc < stream.predEndPC),
+             "Fetch PC outside FTQ range: tid=%u pc=%#x start=%#x end=%#x "
+             "predTaken=%u branch=%#x target=%#x ftq=%lu",
+             tid, curr_pc, stream.startPC, stream.predEndPC, stream.predTaken,
+             stream.predBranchInfo.pc, stream.predBranchInfo.target,
+             inst->getFtqId());
 
     bool run_out = false;
 
@@ -881,8 +849,11 @@ Fetch::validateTranslationRequest(ThreadID tid, const RequestPtr &mem_req)
         }
     }
 
-    // Check if request should be processed using new state system
-    if (!isExpectedReq || !hasPendingCacheRequests(tid)) {
+    const size_t index = threads[tid].cacheReq.findRequestIndex(mem_req);
+    // Validate this request, not the aggregate: another request may already
+    // have completed or faulted while this translation was outstanding.
+    if (!isExpectedReq || index == SIZE_MAX ||
+        threads[tid].cacheReq.requestStatus[index] != TlbWait) {
         DPRINTF(Fetch, "[tid:%i] Ignoring translation completed after squash or unexpected request\n", tid);
         DPRINTF(Fetch, "[tid:%i] Ignoring req addr=%#lx\n", tid, mem_req->getVaddr());
         ++fetchStats.tlbSquashes;
@@ -900,7 +871,12 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
         DPRINTF(Fetch, "Address %#x is outside of physical memory, stopping fetch, %lu\n",
                 mem_req->getPaddr(), curTick());
 
-        // Update cache request status using new interface
+        if (!isTraceMode()) {
+            handleTranslationFault(tid, mem_req,
+                std::make_shared<RiscvISA::AddressFault>(
+                    mem_req->getVaddr(), 0, RiscvISA::INST_ACCESS));
+            return;
+        }
         updateCacheRequestStatusByRequest(tid, mem_req, AccessFailed);
         setAllFetchStalls(StallReason::OtherFetchStall);
         // Note: Don't reset here, let the caller handle cleanup based on overall status
@@ -922,7 +898,8 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
 
     fetchStats.cacheLines++;
 
-    // Access the cache.
+    // Set response ownership before a timing port can call back.
+    updateCacheRequestStatusByRequest(tid, mem_req, CacheWaitResponse);
     if (!icachePort.sendTimingReq(data_pkt)) {
         DPRINTF(Fetch, "[tid:%i] Out of MSHRs!\n", tid);
 
@@ -940,8 +917,8 @@ Fetch::handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr
         DPRINTF(Activity, "[tid:%i] Activity: Waiting on I-cache response.\n", tid);
         lastIcacheStall[tid] = curTick();
 
-        // Update cache request status using new interface
-        updateCacheRequestStatusByRequest(tid, mem_req, CacheWaitResponse);
+        // Ownership/status were published before sendTimingReq. Do not
+        // overwrite a terminal outcome if the port replied synchronously.
         setAllFetchStalls(StallReason::IcacheStall);
         // Notify Fetch Request probe when a packet containing a fetch request is successfully sent
         ppFetchRequestSent->notify(mem_req);
@@ -953,6 +930,19 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
 {
     DPRINTF(FetchFault, "fault, mem_req.addr=%#lx\n", mem_req->getVaddr());
 
+    if (!isTraceMode()) {
+        auto &group = threads[tid].cacheReq;
+        const size_t index = group.findRequestIndex(mem_req);
+        assert(index != SIZE_MAX);
+        group.faults[index] = fault;
+        updateCacheRequestStatusByRequest(tid, mem_req, AccessFailed);
+        // A fault beyond a taken branch is speculative, not a fault on fetchpc.
+        if (group.allReady())
+            finishCacheRequest(tid);
+        return;
+    }
+
+    // Trace mode keeps the existing immediate-fault/queue-backpressure path.
     // Don't send an instruction to decode if we can't handle it.
     if (!(numInst < fetchWidth) || !(fetchQueue[tid].size() < fetchQueueSize)) {
         if (finishTranslationEvent.scheduled() && finishTranslationEvent.getReq() != mem_req) {
@@ -976,6 +966,12 @@ Fetch::handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fau
     // Translation faulted, icache request won't be sent.
     threads[tid].cacheReq.reset();
 
+    buildFetchFault(tid, fault);
+}
+
+void
+Fetch::buildFetchFault(ThreadID tid, const Fault &fault)
+{
     // Send the fault to commit.  This thread will not do anything
     // until commit handles the fault.  The only other way it can
     // wake up is if a squash comes along and changes the PC.
@@ -1081,6 +1077,7 @@ Fetch::doSquash(PCStateBase &new_pc, const DynInstPtr squashInst, const InstSeqN
     else
         macroop[tid] = NULL;
     decoder[tid]->reset();
+    threads[tid].lastDecodedValid = false;
 
     // Clear the icache miss if it's outstanding.
     DPRINTF(Fetch, "[tid:%i] Squash: clear cacheReq, current fetchStatus[tid]=%d\n", tid, fetchStatus[tid]);
@@ -1807,51 +1804,156 @@ Fetch::fetch(bool &status_change)
     performInstructionFetch(tid);
 }
 
+bool
+Fetch::demandFetchBytes(ThreadID tid, Addr first, unsigned count)
+{
+    auto &group = threads[tid].cacheReq;
+    for (unsigned byte = 0; byte < count; ++byte) {
+        const Addr addr = first + byte;
+        size_t index = SIZE_MAX;
+        for (size_t i = 0; i < group.requests.size(); ++i) {
+            const auto &req = group.requests[i];
+            if (addr >= req->getVaddr() && addr - req->getVaddr() < req->getSize()) {
+                index = i;
+                break;
+            }
+        }
+        panic_if(index == SIZE_MAX, "Demanded instruction byte is outside its request group");
+        if (group.requestStatus[index] == AccessComplete)
+            continue;
+        panic_if(group.requestStatus[index] != AccessFailed || group.faults[index] == NoFault,
+                 "Instruction byte is neither valid nor a recorded access fault");
+
+        Fault precise = group.faults[index];
+        if (auto address = std::dynamic_pointer_cast<RiscvISA::AddressFault>(precise)) {
+            // TVAL names the first missing instruction byte, while EPC remains
+            // the instruction start. GPA is already the MMU's unshifted value;
+            // an implicit guest page-table access cannot be inferred by adding
+            // a VA offset. Preserve it; RISC-V Hypervisor extension offset
+            // cases are outside this non-virtualized Sv39 validation scope.
+            precise = std::make_shared<RiscvISA::AddressFault>(
+                addr, address->g_trap_value(),
+                static_cast<RiscvISA::ExceptionCode>(precise->exception()));
+        }
+        DPRINTF(FetchFault, "[tid:%i] Demand fetch fault: pc=%#lx missing=%#lx "
+                "request=%#lx cause=%lu\n", tid, threads[tid].fetchpc->instAddr(),
+                addr, group.requests[index]->getVaddr(), precise->exception());
+        // Both requests are terminal before this path is reachable. There are
+        // no retained response packets or unsent retries in this group.
+        assert(group.allReady());
+        group.reset();
+        threads[tid].valid = false;
+        threads[tid].lastDecodedValid = false;
+        buildFetchFault(tid, precise);
+        return false;
+    }
+    return true;
+}
+
 StallReason
 Fetch::checkMemoryNeeds(ThreadID tid, const PCStateBase &this_pc,
                         const StaticInstPtr &curMacroop)
 {
-    // If we are in the middle of a macro-op, the decoder does not need
-    // more memory bytes. It will continue processing the existing instruction.
-    if (curMacroop) {
+    if (curMacroop)
         return StallReason::NoStall;
-    }
 
-    // Trace 按需消费：在 decode 前逐条供给解码器。
+    // Trace remains the sole supplier/consumer of its instruction encoding.
     if (isTraceMode()) {
         assert(traceFetch);
         return traceFetch->checkMemoryNeeds(tid, this_pc);
     }
 
-    Addr fetch_pc = this_pc.instAddr();
-
-    // Check if fetch buffer is valid and contains this PC
-    if (!threads[tid].valid) {
-        DPRINTF(Fetch, "[tid:%i] Fetch buffer invalid, stalling on ICache\n", tid);
+    const Addr fetch_pc = this_pc.instAddr();
+    if (!threads[tid].valid)
         return StallReason::IcacheStall;
-    }
-
-    // Check if the fetch buffer contains enough bytes for this instruction
-    // We need at least 4 bytes to decode any RISC-V instruction (including compressed)
     if (fetch_pc < threads[tid].startPC ||
-        fetch_pc + 4 > threads[tid].startPC + fetchBufferSize) {
-        DPRINTF(Fetch, "[tid:%i] PC %#x outside fetch buffer range [%#x, %#x), stalling on ICache\n",
-                tid, fetch_pc, threads[tid].startPC, threads[tid].startPC + fetchBufferSize);
+        fetch_pc - threads[tid].startPC > fetchBufferSize - 2)
         return StallReason::IcacheStall;
-    }
 
-    // Supply bytes to decoder - always provide 4 bytes for RISC-V
+    // RISC-V IALIGN=16: first read the known low halfword. A compressed
+    // instruction does not require the next halfword/page to be mapped.
+    if (!demandFetchBytes(tid, fetch_pc, 2))
+        return StallReason::TrapStall;
+    const Addr offset = fetch_pc - threads[tid].startPC;
+    const unsigned bytes = (threads[tid].data[offset] & 3) == 3 ? 4 : 2;
+    if (offset > fetchBufferSize - bytes)
+        return StallReason::IcacheStall;
+    if (bytes == 4 && !demandFetchBytes(tid, fetch_pc + 2, 2))
+        return StallReason::TrapStall;
+
+    // The decoder API uses a 32-bit carrier. Zero-extension of a known 16-bit
+    // encoding is padding only: it neither supplies nor validates memory bytes
+    // from the following page. Decoder::moreBytes ignores these upper bits.
+    uint8_t encoding[4] = {};
+    memcpy(encoding, threads[tid].data + offset, bytes);
     auto *dec_ptr = decoder[tid];
-    Addr offset_in_buffer = fetch_pc - threads[tid].startPC;
-    memcpy(dec_ptr->moreBytesPtr(), threads[tid].data + offset_in_buffer, 4);
-
-    DPRINTF(Fetch, "[tid:%i] Supplying 4 bytes from fetchBuffer at PC %#x (offset %d)\n",
-            tid, fetch_pc, offset_in_buffer);
-
-    // Call decoder with the actual instruction PC
-    decoder[tid]->moreBytes(this_pc, fetch_pc);
-
+    memcpy(dec_ptr->moreBytesPtr(), encoding, sizeof(encoding));
+    dec_ptr->moreBytes(this_pc, fetch_pc);
     return StallReason::NoStall;
+}
+
+bool
+Fetch::recoverInvalidBranchSlots(ThreadID tid, PCStateBase &pc)
+{
+    if (isTraceMode()) {
+        return false;
+    }
+    const auto &stream = dbpbtb->ftqFetchingTarget(tid);
+    const Addr start = pc.instAddr();
+    const Addr end = pc.as<RiscvISA::PCState>().npc();
+    const auto &buffer = threads[tid];
+    std::vector<Addr> invalid;
+    auto inspect = [&](Addr branch_pc) {
+        // Decode proves instruction boundaries, including the halfword
+        // consumed from the next FTQ by a 32-bit instruction crossing a block.
+        const bool inside_current = start < branch_pc && branch_pc < end;
+        const bool inside_previous = buffer.lastDecodedValid &&
+            start == buffer.lastDecodedEnd &&
+            buffer.lastDecodedStart < branch_pc && branch_pc < buffer.lastDecodedEnd;
+        if ((inside_current || inside_previous) &&
+            std::find(invalid.begin(), invalid.end(), branch_pc) == invalid.end()) {
+            invalid.push_back(branch_pc);
+        }
+    };
+    for (const auto &entry : stream.predBTBEntries) {
+        if (entry.valid) {
+            inspect(entry.pc);
+        }
+    }
+    if (stream.predTaken) {
+        inspect(stream.predBranchInfo.pc);
+    }
+    if (invalid.empty()) {
+        return false;
+    }
+    const auto target_id = dbpbtb->ftqHeadId(tid);
+    for (Addr bad_pc : invalid) {
+        DPRINTF(Fetch, "[tid:%u] Predecode invalid BTB slot %#x: decoded [%#x,%#x), "
+                "previous [%#x,%#x) valid=%u, ftq=%lu prefix=%u; refetch %#x\n",
+                tid, bad_pc, start, end, buffer.lastDecodedStart, buffer.lastDecodedEnd,
+                buffer.lastDecodedValid, target_id, ftqEntryFetchedInsts[tid], start);
+    }
+    dbpbtb->predecodeSquash(target_id, pc, invalid, tid, ftqEntryFetchedInsts[tid]);
+    ftqEntryFetchedInsts[tid] = 0;
+
+    // The current instruction has not been built yet. Keep every older
+    // dynamic instruction, including this cycle's valid fetchQueue prefix.
+    // No backend squash or prediction of a fabricated control instruction.
+    threads[tid].cacheReq.cancelAllRequests();
+    threads[tid].cacheReq.reset();
+    if (retryTid == tid) {
+        for (auto *packet : retryPkt) {
+            delete packet;
+        }
+        retryPkt.clear();
+        retryTid = InvalidThreadID;
+        cacheBlocked = false;
+    }
+    threads[tid].valid = false;
+    threads[tid].lastDecodedValid = false;
+    decoder[tid]->reset();
+    pc.as<RiscvISA::PCState>().set(start);
+    return true;
 }
 
 bool
@@ -1870,6 +1972,11 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
     if (!curMacroop) {
         // Decode a new instruction if not currently in a macro-op.
         staticInst = dec_ptr->decode(pc);
+        if (recoverInvalidBranchSlots(tid, pc)) {
+            // End this fetch cycle and let the BPU predict from the proven
+            // instruction boundary. No macro-op or DynInst exists yet.
+            return true;
+        }
         ++fetchStats.insts;
 
         if (staticInst->isMacroop()) {
@@ -1934,6 +2041,16 @@ Fetch::processSingleInstruction(ThreadID tid, PCStateBase &pc,
         curMacroop = NULL;
         DPRINTF(Fetch, "[tid:%i] New macroop transition, PC=%s\n",
                 tid, pc);
+    }
+
+    // Retain only a confirmed, sequentially completed instruction span.
+    // A target entered by a taken branch is an independent boundary.
+    if (newMacroop) {
+        auto &buffer = threads[tid];
+        buffer.lastDecodedStart = pc.instAddr();
+        buffer.lastDecodedEnd = pc.as<RiscvISA::PCState>().npc();
+        buffer.lastDecodedValid = !predictedBranch &&
+            next_pc->instAddr() == buffer.lastDecodedEnd;
     }
 
     // Update the main PC state for the next instruction.
@@ -2026,6 +2143,8 @@ Fetch::performInstructionFetch(ThreadID tid)
         wroteToTimeBuffer = true;
     }
 
+    if (fetchStatus[tid] == TrapPending)
+        return;  // Demand fault carrier is queued; wait for precise commit.
     assert(fetchStatus[tid] == Running && "Fetch should be running");
     sendNextCacheRequest(tid, pc_state);
 }
@@ -2069,15 +2188,16 @@ Fetch::recvReqRetry()
     // The presence of retryPkt itself indicates retry is needed.
 
     for (auto it = retryPkt.begin(); it != retryPkt.end();) {
+        // Keep the Request identity independently: an accepted synchronous
+        // response can already have deleted the Packet when send returns.
+        const RequestPtr req = (*it)->req;
+        updateCacheRequestStatusByRequest(retryTid, req, CacheWaitResponse);
         if (icachePort.sendTimingReq(*it)) {
-            // Use new cache state management with specific RequestPtr
-            updateCacheRequestStatusByRequest(retryTid, (*it)->req, CacheWaitResponse);
-            // Notify Fetch Request probe when a retryPkt is successfully sent.
-            // Note that notify must be called before retryPkt is set to NULL.
-            ppFetchRequestSent->notify((*it)->req);
+            ppFetchRequestSent->notify(req);
             it = retryPkt.erase(it);
         } else {
-            it++;
+            updateCacheRequestStatusByRequest(retryTid, req, CacheWaitRetry);
+            ++it;
         }
     }
 

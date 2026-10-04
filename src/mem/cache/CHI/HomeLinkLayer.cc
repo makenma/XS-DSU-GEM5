@@ -1,3 +1,4 @@
+#include "mem/cache/CHI/FlowGraphTrace.hh"
 #include "mem/cache/CHI/HomeLinkLayer.hh"
 
 #include <algorithm>
@@ -528,6 +529,7 @@ HomeLinkLayer::doRetryWakeup()
     retryDecisionQ.pop_front();
 
     RawRsp rsp{};
+    rsp.flow=rec.flow; rsp.flow.messageId.clear(); FlowGraphTrace::get().stamp(rsp);
     rsp.qos = rec.qos;
     rsp.srcid = rec.tgtid;
     rsp.tgtid = rec.srcid;
@@ -580,6 +582,7 @@ HomeLinkLayer::doPcrdGrantWakeup()
         token.staticPriority = winner.priority;
 
         RawRsp rsp{};
+        rsp.flow=winner.flow; rsp.flow.messageId.clear(); FlowGraphTrace::get().stamp(rsp);
         rsp.qos = winner.qos;
         rsp.srcid = winner.tgtid;
         rsp.tgtid = winner.srcid;
@@ -743,6 +746,7 @@ HomeLinkLayer::doStageH1Req(PipeEntry& entry, RawReq& req)
         if (!tokenId) {
             if (retryEnabled && req.AllowRetry) {
                 RetryRecord rec{};
+                rec.flow = req.flow;
                 rec.originSeq = entry.seq;
                 rec.retryCycle = llCycle;
                 rec.srcid = req.srcid;
@@ -1143,6 +1147,7 @@ HomeLinkLayer::selectPendingRetryForResource(uint8_t resourceClass)
             }
 
             PendingWinner winner{};
+            winner.flow = it->flow;
             winner.valid = true;
             winner.priority = it->priority;
             winner.srcid = it->srcid;
@@ -1440,6 +1445,7 @@ RawRsp
 HomeLinkLayer::makeRsp(const RawReq& req, uint8_t opcode) const
 {
     RawRsp rsp{};
+    rsp.flow=req.flow; rsp.flow.messageId.clear(); FlowGraphTrace::get().stamp(rsp);
     rsp.qos = req.qos;
     rsp.srcid = req.tgtid;
     rsp.tgtid = req.srcid;

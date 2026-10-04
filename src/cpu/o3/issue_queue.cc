@@ -449,6 +449,33 @@ IssueQue::retryMem(const DynInstPtr& inst)
     replayQ.push(inst);
 }
 
+void
+IssueQue::retryCommitAuthorizedMem(const DynInstPtr& inst)
+{
+    // scheduleNonSpec already granted ROB-head permission and removed the
+    // instruction from nonSpecInsts. Resume that same instruction after its
+    // translation, including a completed translation fault, without granting
+    // fresh permission or putting it in the speculative ready queues.
+    panic_if(inst->issueQue != this || !inst->isNonSpeculative() ||
+             !inst->isMemRef() || !inst->isAtCommit() ||
+             !inst->translationCompleted() || inst->isSquashed() ||
+             inst->inPipe() || inst->isExecuted(),
+             "Invalid commit-authorized memory replay [sn:%llu] PC %s: "
+             "nonSpec=%d memRef=%d atCommit=%d translated=%d "
+             "squashed=%d inPipe=%d executed=%d",
+             inst->seqNum, inst->pcState(), inst->isNonSpeculative(),
+             inst->isMemRef(), inst->isAtCommit(),
+             inst->translationCompleted(), inst->isSquashed(),
+             inst->inPipe(), inst->isExecuted());
+    iqstats->retryMem++;
+    DPRINTF(Schedule, "retry commit-authorized memory [sn:%llu] PC %s "
+            "fault=%d\n", inst->seqNum, inst->pcState(), inst->faulted());
+    // issueToFu applies the existing replay bandwidth and load/store port
+    // limits. Re-entering the LSQ pipe clears its replay flags; AtCommit,
+    // savedRequest and the translation fault remain intact.
+    replayQ.push(inst);
+}
+
 bool
 IssueQue::idle()
 {

@@ -98,3 +98,31 @@ DebugFlag('HnfCC')
 DebugFlag('HnfDirtyVictimE2E')
 DebugFlag('HnfSLCSF')
 DebugFlag('SlcSnoopFilter')
+
+# FlowGraph: observer and component harness, C++17 like the original gem5.
+env.Append(CPPPATH=[Dir('#ext/flowgraph-json')])
+GTest('flowgraph.test',
+      'FlowGraph.test.cc',
+      'HnfCoherencyController.cc',
+      'HnfPOCQStateGraph.cc',
+      'HnfSeqPOCQStateGraph.cc',
+      'HnfSLCSF.cc',
+      'HnfSLCSFBackend.cc',
+      with_tag('gem5 trace'))
+
+SimObject('ChiIntentCache.py',sim_objects=['ChiIntentCache'])
+Source('ChiIntentCache.cc')
+
+SimObject('ChiTestControl.py',sim_objects=['ChiTestControl'])
+Source('ChiTestControl.cc')
+
+SimObject('ChiExtendedHome.py',sim_objects=['ChiExtendedHome'])
+Source('ChiExtendedHome.cc')
+
+SimObject('ChiNativeL2.py',sim_objects=['ChiNativeL2'])
+Source('ChiNativeL2.cc')
+
+SimObject('ChiNativeMemory.py',sim_objects=['ChiNativeMemory'])
+Source('ChiNativeMemory.cc')
+
+GTest('chi_native_request.test', 'ChiNativeRequest.test.cc', '../../packet.cc', '../../../sim/bufval.cc', with_tag('gem5 trace'))

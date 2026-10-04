@@ -1,0 +1,2531 @@
+{
+  "kind": "source-package",
+  "baseGem5Commit": "65f3241a6cd486dffddaca251536f5c691af9a1f",
+  "note": "Source input hashes before Git line-ending normalization. Build outputs and host-specific QA remain local.",
+  "files": [
+    {
+      "path": "native/CMakeLists.txt",
+      "bytes": 303,
+      "sourceSha256": "35002e2548cc92871e4dbbddeb72f803bc2876d0992a5803232289ae70cd9777",
+      "packagedSha256": "35002e2548cc92871e4dbbddeb72f803bc2876d0992a5803232289ae70cd9777"
+    },
+    {
+      "path": "native/gem5/BpuPhaseSpool.hh",
+      "bytes": 13114,
+      "sourceSha256": "6b40cb9e287c5da6439503dd5ea15c3964a8e70ad5072b000ff04390f2f589fa",
+      "packagedSha256": "6b40cb9e287c5da6439503dd5ea15c3964a8e70ad5072b000ff04390f2f589fa"
+    },
+    {
+      "path": "native/gem5/ChiExtendedHome.cc",
+      "bytes": 33839,
+      "sourceSha256": "d245875c1b9c01492b000cdee3a4118fa4b48966eb5f0d0a9b4f0ee4d841b268",
+      "packagedSha256": "d245875c1b9c01492b000cdee3a4118fa4b48966eb5f0d0a9b4f0ee4d841b268"
+    },
+    {
+      "path": "native/gem5/ChiExtendedHome.hh",
+      "bytes": 3395,
+      "sourceSha256": "a68b8b33e9fe37eaea2cc6a108764ded96896eaa1e6b9aaf1a6f0e6892f640af",
+      "packagedSha256": "a68b8b33e9fe37eaea2cc6a108764ded96896eaa1e6b9aaf1a6f0e6892f640af"
+    },
+    {
+      "path": "native/gem5/ChiExtendedHome.py",
+      "bytes": 579,
+      "sourceSha256": "e49a9b305ba715eab8086d7846db2bd295a1e6afd45b92d08a896ae65254ae22",
+      "packagedSha256": "e49a9b305ba715eab8086d7846db2bd295a1e6afd45b92d08a896ae65254ae22"
+    },
+    {
+      "path": "native/gem5/ChiHomeRecency.hh",
+      "bytes": 1350,
+      "sourceSha256": "ea965c5ff1ec9ed26f3db5a5fb8fe9bc594beac015da2f18a9207fe40e1da586",
+      "packagedSha256": "ea965c5ff1ec9ed26f3db5a5fb8fe9bc594beac015da2f18a9207fe40e1da586"
+    },
+    {
+      "path": "native/gem5/ChiIntentCache.cc",
+      "bytes": 3392,
+      "sourceSha256": "28ef7b0ede841d9d13c7aebe142f4d78f6dbd254f2df2c7122b8209b508cf053",
+      "packagedSha256": "28ef7b0ede841d9d13c7aebe142f4d78f6dbd254f2df2c7122b8209b508cf053"
+    },
+    {
+      "path": "native/gem5/ChiIntentCache.hh",
+      "bytes": 929,
+      "sourceSha256": "79d6b70b8b7736fce47eb78b0724ed6d1b59cd727e2a6d972371bc8377d28add",
+      "packagedSha256": "79d6b70b8b7736fce47eb78b0724ed6d1b59cd727e2a6d972371bc8377d28add"
+    },
+    {
+      "path": "native/gem5/ChiIntentCache.py",
+      "bytes": 188,
+      "sourceSha256": "bb51b989d960c9b9c72ff8a57a0ad3a7eee511228624e44d1f1d5808f1085e6a",
+      "packagedSha256": "bb51b989d960c9b9c72ff8a57a0ad3a7eee511228624e44d1f1d5808f1085e6a"
+    },
+    {
+      "path": "native/gem5/ChiNativeL2.cc",
+      "bytes": 24964,
+      "sourceSha256": "c31075c8376e51e1f57bd256f90b9b796ea966a63b39dbc78b4bff36643318d8",
+      "packagedSha256": "c31075c8376e51e1f57bd256f90b9b796ea966a63b39dbc78b4bff36643318d8"
+    },
+    {
+      "path": "native/gem5/ChiNativeL2.hh",
+      "bytes": 4886,
+      "sourceSha256": "dd47a16ed15478ba9490c310ca7c028eebd3c958730bf285a1a4c758bd573e3f",
+      "packagedSha256": "dd47a16ed15478ba9490c310ca7c028eebd3c958730bf285a1a4c758bd573e3f"
+    },
+    {
+      "path": "native/gem5/ChiNativeL2.py",
+      "bytes": 1066,
+      "sourceSha256": "3b9a913352f6be2e59f80286ead8148ab0d1f342aad3ec16c7610dcf8d583241",
+      "packagedSha256": "3b9a913352f6be2e59f80286ead8148ab0d1f342aad3ec16c7610dcf8d583241"
+    },
+    {
+      "path": "native/gem5/ChiNativeMemory.cc",
+      "bytes": 9457,
+      "sourceSha256": "b5184df8bf17fcf3aa70b28fa93bc8dc0b08589b4cfb068327cc4020b76d9262",
+      "packagedSha256": "b5184df8bf17fcf3aa70b28fa93bc8dc0b08589b4cfb068327cc4020b76d9262"
+    },
+    {
+      "path": "native/gem5/ChiNativeMemory.hh",
+      "bytes": 2348,
+      "sourceSha256": "b8684e8f5d61bdd3c62ae83f9c7c24d9e4e268c7f26b529cf7be930ee1d65a7c",
+      "packagedSha256": "b8684e8f5d61bdd3c62ae83f9c7c24d9e4e268c7f26b529cf7be930ee1d65a7c"
+    },
+    {
+      "path": "native/gem5/ChiNativeMemory.py",
+      "bytes": 563,
+      "sourceSha256": "5a7bc51a75b7c821eaeac0925adac73a314825d51b320409301c634b4489f471",
+      "packagedSha256": "5a7bc51a75b7c821eaeac0925adac73a314825d51b320409301c634b4489f471"
+    },
+    {
+      "path": "native/gem5/ChiNativeRequest.hh",
+      "bytes": 827,
+      "sourceSha256": "89a9b685ad9451e32883fb248eeccb28f5a59db4cb1e6a9e2e0367d1c80fe40a",
+      "packagedSha256": "89a9b685ad9451e32883fb248eeccb28f5a59db4cb1e6a9e2e0367d1c80fe40a"
+    },
+    {
+      "path": "native/gem5/ChiNativeRequest.test.cc",
+      "bytes": 3026,
+      "sourceSha256": "700c553f4e9285a491884c8d98094ca739e75572f73fc570944e689c8c2a999c",
+      "packagedSha256": "700c553f4e9285a491884c8d98094ca739e75572f73fc570944e689c8c2a999c"
+    },
+    {
+      "path": "native/gem5/ChiNativeWire.hh",
+      "bytes": 14788,
+      "sourceSha256": "04f411386b6f5425a261c904f66361dc88713c037c1c6c86b0d076c2e59c8814",
+      "packagedSha256": "04f411386b6f5425a261c904f66361dc88713c037c1c6c86b0d076c2e59c8814"
+    },
+    {
+      "path": "native/gem5/ChiNativeWire.test.cc",
+      "bytes": 10213,
+      "sourceSha256": "0c8967db3755654f5ea64762d47f1e6c7a1c1584260e98959a1a8c506a530322",
+      "packagedSha256": "0c8967db3755654f5ea64762d47f1e6c7a1c1584260e98959a1a8c506a530322"
+    },
+    {
+      "path": "native/gem5/ChiProtocolIntent.hh",
+      "bytes": 827,
+      "sourceSha256": "7dbd71545c1fc6dd8d2966d4e5462ded8daaf117aa7a708a050f22732e0ac664",
+      "packagedSha256": "7dbd71545c1fc6dd8d2966d4e5462ded8daaf117aa7a708a050f22732e0ac664"
+    },
+    {
+      "path": "native/gem5/ChiTestControl.cc",
+      "bytes": 5652,
+      "sourceSha256": "d771ecb5294ddc479ddf4693a1fbebb2f56042929828d94ab6e98892e8ba8d1b",
+      "packagedSha256": "d771ecb5294ddc479ddf4693a1fbebb2f56042929828d94ab6e98892e8ba8d1b"
+    },
+    {
+      "path": "native/gem5/ChiTestControl.hh",
+      "bytes": 1678,
+      "sourceSha256": "c861f11aeda3cbe699583d31ddbfcd9ccd5f71af7c253e0dfd99b7ccf1bcd5bb",
+      "packagedSha256": "c861f11aeda3cbe699583d31ddbfcd9ccd5f71af7c253e0dfd99b7ccf1bcd5bb"
+    },
+    {
+      "path": "native/gem5/ChiTestControl.py",
+      "bytes": 816,
+      "sourceSha256": "c124e2d4e5d9b556e61973b1d155380c0ba0469880f54a27687d1c01fef2d254",
+      "packagedSha256": "c124e2d4e5d9b556e61973b1d155380c0ba0469880f54a27687d1c01fef2d254"
+    },
+    {
+      "path": "native/gem5/ChiTransferCensus.hh",
+      "bytes": 4150,
+      "sourceSha256": "8168c86eaa6876e33ed0eedf559a266b0cc5da708bd8795748769bf79cc7fd78",
+      "packagedSha256": "8168c86eaa6876e33ed0eedf559a266b0cc5da708bd8795748769bf79cc7fd78"
+    },
+    {
+      "path": "native/gem5/ChiTransferCensus.test.cc",
+      "bytes": 1422,
+      "sourceSha256": "0f11c9805db2eae787da9509974c2806f852a7cb48dd14255cb7b9b5ad8720fe",
+      "packagedSha256": "0f11c9805db2eae787da9509974c2806f852a7cb48dd14255cb7b9b5ad8720fe"
+    },
+    {
+      "path": "native/gem5/FlowGraph.test.cc",
+      "bytes": 15928,
+      "sourceSha256": "0509a3ccc7a1e0ef81d06dfd5d0b0f17d31b8bbff543da569602fe8b798b7624",
+      "packagedSha256": "0509a3ccc7a1e0ef81d06dfd5d0b0f17d31b8bbff543da569602fe8b798b7624"
+    },
+    {
+      "path": "native/gem5/FlowGraphTrace.hh",
+      "bytes": 19241,
+      "sourceSha256": "71c542ac56ad1c7dee76af6a67abab0cb958769480c69c5f0e2b5a8afd6bad72",
+      "packagedSha256": "71c542ac56ad1c7dee76af6a67abab0cb958769480c69c5f0e2b5a8afd6bad72"
+    },
+    {
+      "path": "native/gem5/McRetry.inc",
+      "bytes": 2079,
+      "sourceSha256": "e8316533b7e031b45c2210643bf83a1e3b108ead27c23082cb04293c0b1523f9",
+      "packagedSha256": "e8316533b7e031b45c2210643bf83a1e3b108ead27c23082cb04293c0b1523f9"
+    },
+    {
+      "path": "native/gem5/RiscvCbo.hh",
+      "bytes": 2205,
+      "sourceSha256": "df5a17358d19265f0eed14936b4f3f356b11a0e090f2dfcec778716cab864bad",
+      "packagedSha256": "df5a17358d19265f0eed14936b4f3f356b11a0e090f2dfcec778716cab864bad"
+    },
+    {
+      "path": "native/gem5/RiscvCbo.test.cc",
+      "bytes": 4786,
+      "sourceSha256": "2b2ad6f657814688093e7cf196d7e3c69ef8368d12fe9c48be53430b745b072d",
+      "packagedSha256": "2b2ad6f657814688093e7cf196d7e3c69ef8368d12fe9c48be53430b745b072d"
+    },
+    {
+      "path": "native/gem5/RnfRetry.inc",
+      "bytes": 1802,
+      "sourceSha256": "e9eecf942b2e3be7a2009b0059f68eacabcc4d8e4a702b289a3eca8a363e2ea8",
+      "packagedSha256": "e9eecf942b2e3be7a2009b0059f68eacabcc4d8e4a702b289a3eca8a363e2ea8"
+    },
+    {
+      "path": "native/gem5/RnfRetryTests.inc",
+      "bytes": 2070,
+      "sourceSha256": "cb7cc0f81fc998290a7b7919147890822c5dedb4f75561e572b9158c44130c10",
+      "packagedSha256": "cb7cc0f81fc998290a7b7919147890822c5dedb4f75561e572b9158c44130c10"
+    },
+    {
+      "path": "native/gem5/bpu_phase_mirror_patch.py",
+      "bytes": 3148,
+      "sourceSha256": "bfd4f03910eb47567f8c6fdfa0519e382aa0e647a5533be7b29c9fce0e205a9b",
+      "packagedSha256": "bfd4f03910eb47567f8c6fdfa0519e382aa0e647a5533be7b29c9fce0e205a9b"
+    },
+    {
+      "path": "native/gem5/bpu_phase_oracle_patch.py",
+      "bytes": 8450,
+      "sourceSha256": "61cc939887abe5e6f254e4acaa7db16a5c6ce545454f1162bedf8619e2dc3c76",
+      "packagedSha256": "61cc939887abe5e6f254e4acaa7db16a5c6ce545454f1162bedf8619e2dc3c76"
+    },
+    {
+      "path": "native/gem5/bpu_phase_storage_patch.py",
+      "bytes": 14903,
+      "sourceSha256": "fae2f4f34abb55320cc123342d4876c11396377c5a77db0c29e8cf85f74a70ba",
+      "packagedSha256": "fae2f4f34abb55320cc123342d4876c11396377c5a77db0c29e8cf85f74a70ba"
+    },
+    {
+      "path": "native/gem5/bpu_predecode_boundary.json",
+      "bytes": 3326,
+      "sourceSha256": "f5a44ccfbcde25b2618a5c769cec0a604ac8e1894db6d0626871dede2e48cbb4",
+      "packagedSha256": "f5a44ccfbcde25b2618a5c769cec0a604ac8e1894db6d0626871dede2e48cbb4"
+    },
+    {
+      "path": "native/gem5/bpu_predecode_boundary.patch",
+      "bytes": 11492,
+      "sourceSha256": "21cd5d0a0835a05aba620cb55e722764ef182df1d855d770214a399d7c891c57",
+      "packagedSha256": "21cd5d0a0835a05aba620cb55e722764ef182df1d855d770214a399d7c891c57"
+    },
+    {
+      "path": "native/gem5/extended_endpoints.py",
+      "bytes": 14722,
+      "sourceSha256": "48f34bb258384b34ce3c5bcfe902ac68fbfbaecc8d44206891f3d6217a74c2c8",
+      "packagedSha256": "48f34bb258384b34ce3c5bcfe902ac68fbfbaecc8d44206891f3d6217a74c2c8"
+    },
+    {
+      "path": "native/gem5/extended_patch.py",
+      "bytes": 2680,
+      "sourceSha256": "010b2938888cb5559ebb3e42075472eeeababc9945dc6ee4feeaeb4dd12c0c96",
+      "packagedSha256": "010b2938888cb5559ebb3e42075472eeeababc9945dc6ee4feeaeb4dd12c0c96"
+    },
+    {
+      "path": "native/gem5/fetch_demand_fault.json",
+      "bytes": 2999,
+      "sourceSha256": "5a91337e41c7ee01027c3126987830854736ef23937a19746c1efc26a1c716b4",
+      "packagedSha256": "5a91337e41c7ee01027c3126987830854736ef23937a19746c1efc26a1c716b4"
+    },
+    {
+      "path": "native/gem5/fetch_demand_fault.patch",
+      "bytes": 27206,
+      "sourceSha256": "abde4494dc7369ba7fbc6e859a433649b9100dbe9aff341082d6461d1ac408ad",
+      "packagedSha256": "abde4494dc7369ba7fbc6e859a433649b9100dbe9aff341082d6461d1ac408ad"
+    },
+    {
+      "path": "native/gem5/fetch_demand_fault_candidate02.json",
+      "bytes": 3713,
+      "sourceSha256": "8a30d7313ee9d079a890bf04a76bb590b020b04b5a05cf39b2953a267944e988",
+      "packagedSha256": "8a30d7313ee9d079a890bf04a76bb590b020b04b5a05cf39b2953a267944e988"
+    },
+    {
+      "path": "native/gem5/fetch_demand_fault_candidate02.patch",
+      "bytes": 27206,
+      "sourceSha256": "0af568ad8f54ace7dacf7f9b3d7f996a2f74de2c682ae8a6287303402e7142b0",
+      "packagedSha256": "0af568ad8f54ace7dacf7f9b3d7f996a2f74de2c682ae8a6287303402e7142b0"
+    },
+    {
+      "path": "native/gem5/linux_stage_gate.py",
+      "bytes": 4940,
+      "sourceSha256": "57db6126cf289c85d13e01763c4a84063a1add09cde4ac7ebc1d74267150fa49",
+      "packagedSha256": "57db6126cf289c85d13e01763c4a84063a1add09cde4ac7ebc1d74267150fa49"
+    },
+    {
+      "path": "native/gem5/litmus.py",
+      "bytes": 8572,
+      "sourceSha256": "ad973aff01243b4677013f23e719419adcbd0794dac5db2b01736605f1e77386",
+      "packagedSha256": "ad973aff01243b4677013f23e719419adcbd0794dac5db2b01736605f1e77386"
+    },
+    {
+      "path": "native/gem5/native-bpu-phase-test.c",
+      "bytes": 1353,
+      "sourceSha256": "35784e51d9b21cff1918755381d0efa56dd70c45e15040c7bbf5bfa1c6ee9708",
+      "packagedSha256": "35784e51d9b21cff1918755381d0efa56dd70c45e15040c7bbf5bfa1c6ee9708"
+    },
+    {
+      "path": "native/gem5/native-cbo-tlb.S",
+      "bytes": 3067,
+      "sourceSha256": "7d624b3ad27da53a6d2c9f656f9a4646066e255a8ee975538c46e7e3ccf7b57e",
+      "packagedSha256": "7d624b3ad27da53a6d2c9f656f9a4646066e255a8ee975538c46e7e3ccf7b57e"
+    },
+    {
+      "path": "native/gem5/native-fetch-boundary-cases.S",
+      "bytes": 6364,
+      "sourceSha256": "2fd0418df329b137d6a238ee1c97de281fa27dbac9419481e6db0dccd0173072",
+      "packagedSha256": "2fd0418df329b137d6a238ee1c97de281fa27dbac9419481e6db0dccd0173072"
+    },
+    {
+      "path": "native/gem5/native-fetch-page-fault.S",
+      "bytes": 4948,
+      "sourceSha256": "89dd4cbc5da2107b631f7a5f8a4c14c701ecb5ba200d600742cd98f795a56163",
+      "packagedSha256": "89dd4cbc5da2107b631f7a5f8a4c14c701ecb5ba200d600742cd98f795a56163"
+    },
+    {
+      "path": "native/gem5/native-fetch-stream-fs.S",
+      "bytes": 4287,
+      "sourceSha256": "16d73f33c2124d8d1d9b123102ee8f2943471a61e75ca7f5c9230ede56f30a3a",
+      "packagedSha256": "16d73f33c2124d8d1d9b123102ee8f2943471a61e75ca7f5c9230ede56f30a3a"
+    },
+    {
+      "path": "native/gem5/native-l2-litmus.c",
+      "bytes": 9587,
+      "sourceSha256": "c9b5f30061a68af7fbbb091329f289ac90a1877854a104d4d2023871eb2818b5",
+      "packagedSha256": "c9b5f30061a68af7fbbb091329f289ac90a1877854a104d4d2023871eb2818b5"
+    },
+    {
+      "path": "native/gem5/native-l2-rtl-test.c",
+      "bytes": 5895,
+      "sourceSha256": "df3a42e83ab2652938488cb8aead49f700f35bcacba06c021860b61241a9ecb0",
+      "packagedSha256": "df3a42e83ab2652938488cb8aead49f700f35bcacba06c021860b61241a9ecb0"
+    },
+    {
+      "path": "native/gem5/native-l2-test.c",
+      "bytes": 4191,
+      "sourceSha256": "32ed21120632207784a96d28916f5ae802e325c01310bf15e564f8bca7b4ee17",
+      "packagedSha256": "32ed21120632207784a96d28916f5ae802e325c01310bf15e564f8bca7b4ee17"
+    },
+    {
+      "path": "native/gem5/native_l2_fs.py",
+      "bytes": 24177,
+      "sourceSha256": "6ed1ea6c729b1ac53a11de6c60eb4492af8198f770c65aea242098f2a48981bf",
+      "packagedSha256": "6ed1ea6c729b1ac53a11de6c60eb4492af8198f770c65aea242098f2a48981bf"
+    },
+    {
+      "path": "native/gem5/native_l2_patch.py",
+      "bytes": 1460,
+      "sourceSha256": "42d1c607ef3558684f369b512bd5f6a046140a53d6a77d6c039cef510048ab9f",
+      "packagedSha256": "42d1c607ef3558684f369b512bd5f6a046140a53d6a77d6c039cef510048ab9f"
+    },
+    {
+      "path": "native/gem5/native_l2_run.py",
+      "bytes": 9841,
+      "sourceSha256": "2253ac152559e3bfc812ad6106d8e2c594af018907e5599a086011b1b92a4ec5",
+      "packagedSha256": "2253ac152559e3bfc812ad6106d8e2c594af018907e5599a086011b1b92a4ec5"
+    },
+    {
+      "path": "native/gem5/nonspec_tlb_retry_patch.py",
+      "bytes": 3719,
+      "sourceSha256": "1eb78431ae35da3251d500077b5128483d90fbe21df2c37a15cf696c40716dd1",
+      "packagedSha256": "1eb78431ae35da3251d500077b5128483d90fbe21df2c37a15cf696c40716dd1"
+    },
+    {
+      "path": "native/gem5/protocol-test.c",
+      "bytes": 4984,
+      "sourceSha256": "9bfba7b30fa0deeb1f03c1e10baf05ec014e3ac53f012fa7afed5d906f2cbacc",
+      "packagedSha256": "9bfba7b30fa0deeb1f03c1e10baf05ec014e3ac53f012fa7afed5d906f2cbacc"
+    },
+    {
+      "path": "native/gem5/riscv-cbo-format.isa",
+      "bytes": 3647,
+      "sourceSha256": "cf82ac62e7d8c1bbb3a1cbe10490ff175d47dbf2f46b960643b760a328d3ae1c",
+      "packagedSha256": "cf82ac62e7d8c1bbb3a1cbe10490ff175d47dbf2f46b960643b760a328d3ae1c"
+    },
+    {
+      "path": "native/gem5/riscv_cbo_patch.py",
+      "bytes": 8312,
+      "sourceSha256": "db44502102961a8aa5a21000bc83f210dcf4c3a80e138c045f834dcee0a51cc3",
+      "packagedSha256": "db44502102961a8aa5a21000bc83f210dcf4c3a80e138c045f834dcee0a51cc3"
+    },
+    {
+      "path": "native/gem5/router_host_scan_patch.py",
+      "bytes": 3787,
+      "sourceSha256": "06701e5efa196789da9e83f286997ef90946e48d1b510c1f58f4394520bc1663",
+      "packagedSha256": "06701e5efa196789da9e83f286997ef90946e48d1b510c1f58f4394520bc1663"
+    },
+    {
+      "path": "native/gem5/smoke.py",
+      "bytes": 4335,
+      "sourceSha256": "30f01709baac1f73ff056cda963bcd8b06ed64ccf1eb3ba348c69adf5372eabc",
+      "packagedSha256": "30f01709baac1f73ff056cda963bcd8b06ed64ccf1eb3ba348c69adf5372eabc"
+    },
+    {
+      "path": "native/gem5/stress-test.c",
+      "bytes": 857,
+      "sourceSha256": "e22fbf707a20fa8bbf6a92d3f4c25bb139d9302b92f534d472de290d90c914ba",
+      "packagedSha256": "e22fbf707a20fa8bbf6a92d3f4c25bb139d9302b92f534d472de290d90c914ba"
+    },
+    {
+      "path": "native/gem5/tutorial-test.c",
+      "bytes": 3805,
+      "sourceSha256": "fb06ecc8e4e094c8056eb04d4103e5248aa2732e33fcc3dacefb30b5351b87ed",
+      "packagedSha256": "fb06ecc8e4e094c8056eb04d4103e5248aa2732e33fcc3dacefb30b5351b87ed"
+    },
+    {
+      "path": "native/linux-platform/boot-init.sh",
+      "bytes": 761,
+      "sourceSha256": "67e3c485132be3c1134301bedfeb46c939012b59284c806c1bd26eb95e1daff8",
+      "packagedSha256": "67e3c485132be3c1134301bedfeb46c939012b59284c806c1bd26eb95e1daff8"
+    },
+    {
+      "path": "native/linux-platform/guest-control.c",
+      "bytes": 878,
+      "sourceSha256": "2f49b531a549dbf7d854e428a81b610cbbb6df90162dd36c9a85bceff1698047",
+      "packagedSha256": "2f49b531a549dbf7d854e428a81b610cbbb6df90162dd36c9a85bceff1698047"
+    },
+    {
+      "path": "native/linux-platform/litmus-init.sh",
+      "bytes": 967,
+      "sourceSha256": "5c001612e3ede657997c00a876933099b8b97a1f86416b85c6f96175932291a7",
+      "packagedSha256": "5c001612e3ede657997c00a876933099b8b97a1f86416b85c6f96175932291a7"
+    },
+    {
+      "path": "native/linux-platform/random-memory-init.sh",
+      "bytes": 1561,
+      "sourceSha256": "e698ba9e217bbe7e015083e77a60ad364588f371735f6da66f4b2dfda1a6e667",
+      "packagedSha256": "e698ba9e217bbe7e015083e77a60ad364588f371735f6da66f4b2dfda1a6e667"
+    },
+    {
+      "path": "native/linux-platform/rootfs-entry.sh",
+      "bytes": 2401,
+      "sourceSha256": "2ceff16176ce560ffb8817f439cc9fb2a3159516c1394632910bad7db2a6fbf8",
+      "packagedSha256": "2ceff16176ce560ffb8817f439cc9fb2a3159516c1394632910bad7db2a6fbf8"
+    },
+    {
+      "path": "native/linux-platform/rootfs-init.sh",
+      "bytes": 1464,
+      "sourceSha256": "b14c4d55e9162ea9b77d7582b02102409d18011de658b7fc78c6344759afd9c2",
+      "packagedSha256": "b14c4d55e9162ea9b77d7582b02102409d18011de658b7fc78c6344759afd9c2"
+    },
+    {
+      "path": "native/linux-platform/run-kernel-build.sh",
+      "bytes": 3698,
+      "sourceSha256": "dbd5d5a71e9b5eeb59a8357306ddaff03ad6e6bdcae760a1a6871474f62c7b14",
+      "packagedSha256": "dbd5d5a71e9b5eeb59a8357306ddaff03ad6e6bdcae760a1a6871474f62c7b14"
+    },
+    {
+      "path": "native/linux-platform/run-kernel-torture.sh",
+      "bytes": 4311,
+      "sourceSha256": "526286e207295600fed4c5634b362b79ac4557ff96388f6379a654d3721a5dda",
+      "packagedSha256": "526286e207295600fed4c5634b362b79ac4557ff96388f6379a654d3721a5dda"
+    },
+    {
+      "path": "native/linux-platform/suite-init.sh",
+      "bytes": 1864,
+      "sourceSha256": "84a7eecb6f721fba0f165090e88956d064e04bea59f02392dd8ac05fd561b658",
+      "packagedSha256": "84a7eecb6f721fba0f165090e88956d064e04bea59f02392dd8ac05fd561b658"
+    },
+    {
+      "path": "native/linux-tests/README.md",
+      "bytes": 9122,
+      "sourceSha256": "b761821bf6470566cdf78f26a3e54c30b4ace327129981159b91e67514b1fc8e",
+      "packagedSha256": "b761821bf6470566cdf78f26a3e54c30b4ace327129981159b91e67514b1fc8e"
+    },
+    {
+      "path": "native/linux-tests/cbo-module/Makefile",
+      "bytes": 24,
+      "sourceSha256": "b0492ba9d5e309e842f9aa6d7442c479e60af34641f38a71742b4efd5dc9ec61",
+      "packagedSha256": "b0492ba9d5e309e842f9aa6d7442c479e60af34641f38a71742b4efd5dc9ec61"
+    },
+    {
+      "path": "native/linux-tests/cbo-module/chi_cbo_test.c",
+      "bytes": 8896,
+      "sourceSha256": "ee4b62d58b72d1ad463d3df3d35e8d80df8c87b8de59b23703b61dec137df437",
+      "packagedSha256": "ee4b62d58b72d1ad463d3df3d35e8d80df8c87b8de59b23703b61dec137df437"
+    },
+    {
+      "path": "native/linux-tests/cbo-module/chi_cbo_uapi.h",
+      "bytes": 532,
+      "sourceSha256": "8d7d489e9358b001e582ed3f5d75cc29dd54b82e0c332a52029108cd0851b573",
+      "packagedSha256": "8d7d489e9358b001e582ed3f5d75cc29dd54b82e0c332a52029108cd0851b573"
+    },
+    {
+      "path": "native/linux-tests/linux-cbo.c",
+      "bytes": 10879,
+      "sourceSha256": "594ca50d8db30da169878ce8cc8418b14142c808ebeaaa882bb98a129456bae2",
+      "packagedSha256": "594ca50d8db30da169878ce8cc8418b14142c808ebeaaa882bb98a129456bae2"
+    },
+    {
+      "path": "native/linux-tests/linux-uncached.c",
+      "bytes": 6147,
+      "sourceSha256": "1e25ad0e32ce60161431f139fb1cc1a0073ab413d90b7955727d221b481dc82a",
+      "packagedSha256": "1e25ad0e32ce60161431f139fb1cc1a0073ab413d90b7955727d221b481dc82a"
+    },
+    {
+      "path": "native/linux-tests/random-memory.c",
+      "bytes": 23330,
+      "sourceSha256": "778bffaa486e8449447efdcdcdc8af017fcd17509a044ffb4b30cd1f97970bc4",
+      "packagedSha256": "778bffaa486e8449447efdcdcdc8af017fcd17509a044ffb4b30cd1f97970bc4"
+    },
+    {
+      "path": "native/linux-tests/suite.c",
+      "bytes": 19994,
+      "sourceSha256": "7784fce2b49ba0183a60bd351a1c9c10a15137f2e9758b791f15b47ccaa98474",
+      "packagedSha256": "7784fce2b49ba0183a60bd351a1c9c10a15137f2e9758b791f15b47ccaa98474"
+    },
+    {
+      "path": "native/linux-tests/uncached-module/Makefile",
+      "bytes": 29,
+      "sourceSha256": "58f5e9caf14e3ad1b2c9af97135638d7a2025af7ef01458f908f54c36c77ae0b",
+      "packagedSha256": "58f5e9caf14e3ad1b2c9af97135638d7a2025af7ef01458f908f54c36c77ae0b"
+    },
+    {
+      "path": "native/linux-tests/uncached-module/chi_uncached_test.c",
+      "bytes": 5021,
+      "sourceSha256": "c9c938a9d87a61d9070fa3d974f7ba56ef2ecb34c1a031cf4fa7f21e4a925ede",
+      "packagedSha256": "c9c938a9d87a61d9070fa3d974f7ba56ef2ecb34c1a031cf4fa7f21e4a925ede"
+    },
+    {
+      "path": "native/linux-tests/uncached-module/chi_uncached_uapi.h",
+      "bytes": 348,
+      "sourceSha256": "f82843a948438b320cb73674beeb5c9753ed6ccd0ca3d6a3b29aea93bb3f4796",
+      "packagedSha256": "f82843a948438b320cb73674beeb5c9753ed6ccd0ca3d6a3b29aea93bb3f4796"
+    },
+    {
+      "path": "native/refine.cpp",
+      "bytes": 58214,
+      "sourceSha256": "b53037e967a299a6013019853e4fdaf9c989a758dde509f89dba1f9c5bd3aa57",
+      "packagedSha256": "b53037e967a299a6013019853e4fdaf9c989a758dde509f89dba1f9c5bd3aa57"
+    },
+    {
+      "path": "scripts/apply-bpu-phase-mirror.py",
+      "bytes": 2300,
+      "sourceSha256": "09e8846b66cdda3331400dd893392ec11a660f4d2f1ab29bd37c5eee935aaf14",
+      "packagedSha256": "09e8846b66cdda3331400dd893392ec11a660f4d2f1ab29bd37c5eee935aaf14"
+    },
+    {
+      "path": "scripts/apply-bpu-phase-oracle.py",
+      "bytes": 603,
+      "sourceSha256": "cfccbc7d49546e47498fda27331266e9cefbc878e5596c416d37d3210994ae8d",
+      "packagedSha256": "cfccbc7d49546e47498fda27331266e9cefbc878e5596c416d37d3210994ae8d"
+    },
+    {
+      "path": "scripts/apply-bpu-phase-storage.py",
+      "bytes": 3835,
+      "sourceSha256": "af69e77105d0313107468122bcc9cb1d28cab15780c3e319c191709d55afc966",
+      "packagedSha256": "af69e77105d0313107468122bcc9cb1d28cab15780c3e319c191709d55afc966"
+    },
+    {
+      "path": "scripts/apply-bpu-predecode-boundary.py",
+      "bytes": 9284,
+      "sourceSha256": "d6304d47a205d98028db8160cceea6a88fabc99fba2afc4aefb55a74d3273df3",
+      "packagedSha256": "d6304d47a205d98028db8160cceea6a88fabc99fba2afc4aefb55a74d3273df3"
+    },
+    {
+      "path": "scripts/apply-bpu-scratch-lifetime.py",
+      "bytes": 2341,
+      "sourceSha256": "abb3f84154d40c5f089b83feb90e93cc3433b919370e909407d9dc51e4092265",
+      "packagedSha256": "abb3f84154d40c5f089b83feb90e93cc3433b919370e909407d9dc51e4092265"
+    },
+    {
+      "path": "scripts/apply-extensions.py",
+      "bytes": 2539,
+      "sourceSha256": "ef01d1f369f232f9a470c11de9b25a163403083e853c7993a1dd3e83c5bc7322",
+      "packagedSha256": "ef01d1f369f232f9a470c11de9b25a163403083e853c7993a1dd3e83c5bc7322"
+    },
+    {
+      "path": "scripts/apply-fetch-demand-fault-candidate02.py",
+      "bytes": 10469,
+      "sourceSha256": "425f8bfa65b259b4cee0ea31146ffb933b6c93b1d2bbdd28fe8c9cf1daf2c2c2",
+      "packagedSha256": "425f8bfa65b259b4cee0ea31146ffb933b6c93b1d2bbdd28fe8c9cf1daf2c2c2"
+    },
+    {
+      "path": "scripts/apply-fetch-demand-fault.py",
+      "bytes": 9605,
+      "sourceSha256": "a9cfd1f4b0da28aa2a9424292317dad5359b53f578534969f67e4dbcbe66f7ee",
+      "packagedSha256": "a9cfd1f4b0da28aa2a9424292317dad5359b53f578534969f67e4dbcbe66f7ee"
+    },
+    {
+      "path": "scripts/apply-fetch-predecode-boundary.py",
+      "bytes": 8111,
+      "sourceSha256": "9cbc39cdb531db49ef9eca84eceec560a852311a3ae11a8a2ecd74acd1498ad3",
+      "packagedSha256": "9cbc39cdb531db49ef9eca84eceec560a852311a3ae11a8a2ecd74acd1498ad3"
+    },
+    {
+      "path": "scripts/apply-gem5.py",
+      "bytes": 23806,
+      "sourceSha256": "0d31beeab30c742d62d20b817ba74b8ebda42048c837c5480c2d11092a819595",
+      "packagedSha256": "0d31beeab30c742d62d20b817ba74b8ebda42048c837c5480c2d11092a819595"
+    },
+    {
+      "path": "scripts/apply-nonspec-tlb-retry.py",
+      "bytes": 3260,
+      "sourceSha256": "03a5beb0a16c48d78c6aad3ddd5cf44c019715823ead3806de01b7766dc78441",
+      "packagedSha256": "03a5beb0a16c48d78c6aad3ddd5cf44c019715823ead3806de01b7766dc78441"
+    },
+    {
+      "path": "scripts/apply-riscv-cbo.py",
+      "bytes": 4762,
+      "sourceSha256": "0e6298976b49dded0391422b7c83521d03752fa572a6771629f3ba423f351103",
+      "packagedSha256": "0e6298976b49dded0391422b7c83521d03752fa572a6771629f3ba423f351103"
+    },
+    {
+      "path": "scripts/apply-router-host-scan.py",
+      "bytes": 4358,
+      "sourceSha256": "cbd5c2fad678fd7a145890796346fd253ac557ee47200145c396bcc5dc4a193f",
+      "packagedSha256": "cbd5c2fad678fd7a145890796346fd253ac557ee47200145c396bcc5dc4a193f"
+    },
+    {
+      "path": "scripts/audit-sessions.py",
+      "bytes": 7769,
+      "sourceSha256": "946b1c8526d2dd80af21f82a8ba65f01d414fdd0824b0ca2bc218804cc699eba",
+      "packagedSha256": "946b1c8526d2dd80af21f82a8ba65f01d414fdd0824b0ca2bc218804cc699eba"
+    },
+    {
+      "path": "scripts/bootstrap-wsl.sh",
+      "bytes": 1453,
+      "sourceSha256": "0cb4ec039248f1f29901ab1600f26644407477cb1dd879cd44a9d6888408f40a",
+      "packagedSha256": "0cb4ec039248f1f29901ab1600f26644407477cb1dd879cd44a9d6888408f40a"
+    },
+    {
+      "path": "scripts/browser-check.cjs",
+      "bytes": 5717,
+      "sourceSha256": "2c69034ff3526a230976fc0d4bdcfd06f8f03b8745980ac7974dc189be8f3e26",
+      "packagedSha256": "2c69034ff3526a230976fc0d4bdcfd06f8f03b8745980ac7974dc189be8f3e26"
+    },
+    {
+      "path": "scripts/browser-flit-pick.cjs",
+      "bytes": 7696,
+      "sourceSha256": "b645905ae3af557be8ac133f7d37fa46d2ceaaa81640aff8f0421f9961bc58b1",
+      "packagedSha256": "b645905ae3af557be8ac133f7d37fa46d2ceaaa81640aff8f0421f9961bc58b1"
+    },
+    {
+      "path": "scripts/browser-litmus.cjs",
+      "bytes": 4810,
+      "sourceSha256": "a72add90c8dbd163582ad5b87fd4d3bb852a4a9747d824e8d5f1301ba9c18424",
+      "packagedSha256": "a72add90c8dbd163582ad5b87fd4d3bb852a4a9747d824e8d5f1301ba9c18424"
+    },
+    {
+      "path": "scripts/browser-native.cjs",
+      "bytes": 4651,
+      "sourceSha256": "2cd0dde0b0959c1c43a8f4edf7795c6c299d223d57426e6dccf3b23169d9d5ef",
+      "packagedSha256": "2cd0dde0b0959c1c43a8f4edf7795c6c299d223d57426e6dccf3b23169d9d5ef"
+    },
+    {
+      "path": "scripts/browser-replay.cjs",
+      "bytes": 9332,
+      "sourceSha256": "8f6bf5a513436389771a55642d5dddbb72c64a4c0829139369ab008173c97c2e",
+      "packagedSha256": "8f6bf5a513436389771a55642d5dddbb72c64a4c0829139369ab008173c97c2e"
+    },
+    {
+      "path": "scripts/browser-specials.cjs",
+      "bytes": 10252,
+      "sourceSha256": "c08aeeff8bf98dcdd959a8aa73fc549326ad32e3fe4b952d7b290a4c992cf48a",
+      "packagedSha256": "c08aeeff8bf98dcdd959a8aa73fc549326ad32e3fe4b952d7b290a4c992cf48a"
+    },
+    {
+      "path": "scripts/browser-teaching.cjs",
+      "bytes": 5170,
+      "sourceSha256": "b42a40557968ffaa6050cf342842e6ea36e72144fdc757a88755eec919302cfc",
+      "packagedSha256": "b42a40557968ffaa6050cf342842e6ea36e72144fdc757a88755eec919302cfc"
+    },
+    {
+      "path": "scripts/build-fetch-demand-fault-candidate.py",
+      "bytes": 3891,
+      "sourceSha256": "cd51947d01e762085c652543c3e682c036adeea19d18cb70f3475f02eaec5860",
+      "packagedSha256": "cd51947d01e762085c652543c3e682c036adeea19d18cb70f3475f02eaec5860"
+    },
+    {
+      "path": "scripts/build-linux-cbo.py",
+      "bytes": 6458,
+      "sourceSha256": "4334ce151512376c07678262e54aaec1202d4c879537a3b119dcd6da1bd90f6e",
+      "packagedSha256": "4334ce151512376c07678262e54aaec1202d4c879537a3b119dcd6da1bd90f6e"
+    },
+    {
+      "path": "scripts/build-linux-kernel-reference.sh",
+      "bytes": 3962,
+      "sourceSha256": "6e9b75aaffa7f49e2126868f1bce21cc422a0f82b71d5c787b42a6918415a190",
+      "packagedSha256": "6e9b75aaffa7f49e2126868f1bce21cc422a0f82b71d5c787b42a6918415a190"
+    },
+    {
+      "path": "scripts/build-linux-litmus.sh",
+      "bytes": 3576,
+      "sourceSha256": "4289c4a9c0d2d6ce9eb58daa5d3b3a8b895932d6ae2cfc696a031e6956c7373e",
+      "packagedSha256": "4289c4a9c0d2d6ce9eb58daa5d3b3a8b895932d6ae2cfc696a031e6956c7373e"
+    },
+    {
+      "path": "scripts/build-linux-random-memory.py",
+      "bytes": 7214,
+      "sourceSha256": "97ee60c43749e231a5fca0b1766476938ed709a7517d08f9ed8377e33a82a2f5",
+      "packagedSha256": "97ee60c43749e231a5fca0b1766476938ed709a7517d08f9ed8377e33a82a2f5"
+    },
+    {
+      "path": "scripts/build-linux-tests.py",
+      "bytes": 3365,
+      "sourceSha256": "bc4dd52380d3af88c448176d2dd06085c4872e0c9f4651a7ce029a2f7c99db65",
+      "packagedSha256": "bc4dd52380d3af88c448176d2dd06085c4872e0c9f4651a7ce029a2f7c99db65"
+    },
+    {
+      "path": "scripts/build-linux-uncached.py",
+      "bytes": 5057,
+      "sourceSha256": "5fd852b87e4920dc5ecd26b1e935ebb24dec6df366ff9fac63afba3957ebb2c0",
+      "packagedSha256": "5fd852b87e4920dc5ecd26b1e935ebb24dec6df366ff9fac63afba3957ebb2c0"
+    },
+    {
+      "path": "scripts/build-litmus.py",
+      "bytes": 4361,
+      "sourceSha256": "f05b9d9e0ee9d58ef4e76809982fbf1de480efa09672d8d13ccd303d08d8134a",
+      "packagedSha256": "f05b9d9e0ee9d58ef4e76809982fbf1de480efa09672d8d13ccd303d08d8134a"
+    },
+    {
+      "path": "scripts/build-native-bpu-phase.py",
+      "bytes": 4684,
+      "sourceSha256": "84ecb8c18f169004ebb01a06238d3b1c14ee94706e59d05a3832d1fa09b4fd08",
+      "packagedSha256": "84ecb8c18f169004ebb01a06238d3b1c14ee94706e59d05a3832d1fa09b4fd08"
+    },
+    {
+      "path": "scripts/build-native-cbo-tlb.py",
+      "bytes": 2568,
+      "sourceSha256": "9465e9fc1436ca927d4a8ba02f4587714551ce8a8787a267ac33ff43b7729b43",
+      "packagedSha256": "9465e9fc1436ca927d4a8ba02f4587714551ce8a8787a267ac33ff43b7729b43"
+    },
+    {
+      "path": "scripts/build-native-fetch-boundary-cases.py",
+      "bytes": 12479,
+      "sourceSha256": "a2f80cabecb613e235d77d869b48b0bd017182c5f418cbc380fffd1d0945455b",
+      "packagedSha256": "a2f80cabecb613e235d77d869b48b0bd017182c5f418cbc380fffd1d0945455b"
+    },
+    {
+      "path": "scripts/build-native-fetch-page-fault.py",
+      "bytes": 5762,
+      "sourceSha256": "6be696c109272189d85bc276f64c254d79ad08448d9f14bcb20696d2c236e1a5",
+      "packagedSha256": "6be696c109272189d85bc276f64c254d79ad08448d9f14bcb20696d2c236e1a5"
+    },
+    {
+      "path": "scripts/build-native-fetch-stream-fs.py",
+      "bytes": 3343,
+      "sourceSha256": "bbf8512dfc74a357d134a084c709bc65486846a735c7ad4b7b3233d3eac5f056",
+      "packagedSha256": "bbf8512dfc74a357d134a084c709bc65486846a735c7ad4b7b3233d3eac5f056"
+    },
+    {
+      "path": "scripts/build-native-l2.py",
+      "bytes": 1692,
+      "sourceSha256": "f679e590a8e89d15021a0e8e374404d0eb89064cc7bbb588bc5bb3708ab318cd",
+      "packagedSha256": "f679e590a8e89d15021a0e8e374404d0eb89064cc7bbb588bc5bb3708ab318cd"
+    },
+    {
+      "path": "scripts/build-native-linux-boot.sh",
+      "bytes": 4500,
+      "sourceSha256": "648906f07bf1bdfda76e5e82755a3fd30397357262fbef3d74dd7ecc3969a85d",
+      "packagedSha256": "648906f07bf1bdfda76e5e82755a3fd30397357262fbef3d74dd7ecc3969a85d"
+    },
+    {
+      "path": "scripts/build-native-linux-random-memory.py",
+      "bytes": 9538,
+      "sourceSha256": "5ccd37d5803bff60f1b7cd2f7e9a9c3e5902ef3e49c9c98f7be56f139f820802",
+      "packagedSha256": "5ccd37d5803bff60f1b7cd2f7e9a9c3e5902ef3e49c9c98f7be56f139f820802"
+    },
+    {
+      "path": "scripts/build-native-linux-rootfs.sh",
+      "bytes": 5289,
+      "sourceSha256": "a478ddc43d661588e13647925260e5a471901515f672bb08af54812466e666ed",
+      "packagedSha256": "a478ddc43d661588e13647925260e5a471901515f672bb08af54812466e666ed"
+    },
+    {
+      "path": "scripts/build-native-linux-stage.sh",
+      "bytes": 2638,
+      "sourceSha256": "f2ff12f5c83d9b148db74a84e9752c48ce2c7cc348dc7f0bbc5aa7ee14d90ba8",
+      "packagedSha256": "f2ff12f5c83d9b148db74a84e9752c48ce2c7cc348dc7f0bbc5aa7ee14d90ba8"
+    },
+    {
+      "path": "scripts/build-native-linux-suite.sh",
+      "bytes": 5075,
+      "sourceSha256": "2318e57dd3f5ffd4761bf8fa80709cf585f6c3a0384778e131e1141d00b6b8b9",
+      "packagedSha256": "2318e57dd3f5ffd4761bf8fa80709cf585f6c3a0384778e131e1141d00b6b8b9"
+    },
+    {
+      "path": "scripts/build-native-litmus.py",
+      "bytes": 6156,
+      "sourceSha256": "ba35c8a4968e9b6e0f15e42021be2d593ea754e0617124b318761d71db374f73",
+      "packagedSha256": "ba35c8a4968e9b6e0f15e42021be2d593ea754e0617124b318761d71db374f73"
+    },
+    {
+      "path": "scripts/build-native-rtl.py",
+      "bytes": 4449,
+      "sourceSha256": "417590458bc033eae39ed8cd28212629379cd49372f88f024028a528624f663c",
+      "packagedSha256": "417590458bc033eae39ed8cd28212629379cd49372f88f024028a528624f663c"
+    },
+    {
+      "path": "scripts/build-native.mjs",
+      "bytes": 845,
+      "sourceSha256": "bae0c9ef7440feea9c47794809ed106cdd6024c7b88162525b56a64daa4f82ba",
+      "packagedSha256": "bae0c9ef7440feea9c47794809ed106cdd6024c7b88162525b56a64daa4f82ba"
+    },
+    {
+      "path": "scripts/build-teaching.py",
+      "bytes": 15590,
+      "sourceSha256": "491f5967c41574660c576f2008ea7e2c708bb19a1b8a10277d392d029e7f6c8c",
+      "packagedSha256": "491f5967c41574660c576f2008ea7e2c708bb19a1b8a10277d392d029e7f6c8c"
+    },
+    {
+      "path": "scripts/check-bpu-phase-storage-equivalence.py",
+      "bytes": 19586,
+      "sourceSha256": "e3c9226f55c83b7465f6f81cd48c620cdad90389e340f52cb70089b2f43d49d4",
+      "packagedSha256": "e3c9226f55c83b7465f6f81cd48c620cdad90389e340f52cb70089b2f43d49d4"
+    },
+    {
+      "path": "scripts/check-bpu-phase-trace-invariance.py",
+      "bytes": 5470,
+      "sourceSha256": "87d8a46a92737da8d8d967b5f550d1400a54ed4900cc700c8d496535d3096e2a",
+      "packagedSha256": "87d8a46a92737da8d8d967b5f550d1400a54ed4900cc700c8d496535d3096e2a"
+    },
+    {
+      "path": "scripts/check-chi-transfer-census.py",
+      "bytes": 10642,
+      "sourceSha256": "ae66bd3d1e04f0e996d414b450b1dbdc1c3a23a39a80f56dbd87d5036235d050",
+      "packagedSha256": "ae66bd3d1e04f0e996d414b450b1dbdc1c3a23a39a80f56dbd87d5036235d050"
+    },
+    {
+      "path": "scripts/check-home-recency.py",
+      "bytes": 1983,
+      "sourceSha256": "c86099ba523b66d3699f0b1f798082a70ca44456c60c9a320f835d3cbf5b13ce",
+      "packagedSha256": "c86099ba523b66d3699f0b1f798082a70ca44456c60c9a320f835d3cbf5b13ce"
+    },
+    {
+      "path": "scripts/check-kernel-torture.py",
+      "bytes": 11116,
+      "sourceSha256": "59b129a2234bf6be4d1206cdb9bf0387c190dc34e5b8e89766e9e49d5b8a6b07",
+      "packagedSha256": "59b129a2234bf6be4d1206cdb9bf0387c190dc34e5b8e89766e9e49d5b8a6b07"
+    },
+    {
+      "path": "scripts/check-linux-cbo.py",
+      "bytes": 8724,
+      "sourceSha256": "d88d49d30551d932afd94d6160c4c3254f51399a212696dc17de110061c14314",
+      "packagedSha256": "d88d49d30551d932afd94d6160c4c3254f51399a212696dc17de110061c14314"
+    },
+    {
+      "path": "scripts/check-linux-kernel-build.py",
+      "bytes": 6280,
+      "sourceSha256": "be93110e19e8d36c230ab6712c6420b845107b30b80fb185a5dfc6a446072812",
+      "packagedSha256": "be93110e19e8d36c230ab6712c6420b845107b30b80fb185a5dfc6a446072812"
+    },
+    {
+      "path": "scripts/check-linux-litmus.py",
+      "bytes": 9464,
+      "sourceSha256": "f9b3b7ce6b4aae961960ee5ada0b54dbf29b824d4f503637953955c39d8ebcb4",
+      "packagedSha256": "f9b3b7ce6b4aae961960ee5ada0b54dbf29b824d4f503637953955c39d8ebcb4"
+    },
+    {
+      "path": "scripts/check-linux-random-memory.py",
+      "bytes": 21093,
+      "sourceSha256": "a46f86a29b38c5e659397ab902e6f317ef6dd71c88149a9db0b4f12c6f87b419",
+      "packagedSha256": "a46f86a29b38c5e659397ab902e6f317ef6dd71c88149a9db0b4f12c6f87b419"
+    },
+    {
+      "path": "scripts/check-linux-suite.py",
+      "bytes": 9878,
+      "sourceSha256": "bc1a10b655815ed4bd81976a030675a70a41833275d6e0a223c8148ac55b8eef",
+      "packagedSha256": "bc1a10b655815ed4bd81976a030675a70a41833275d6e0a223c8148ac55b8eef"
+    },
+    {
+      "path": "scripts/check-linux-uncached.py",
+      "bytes": 6778,
+      "sourceSha256": "4f84844dd4cfb09979619c35422387e7f6f86119f8cae7e79693f617c4a2a137",
+      "packagedSha256": "4f84844dd4cfb09979619c35422387e7f6f86119f8cae7e79693f617c4a2a137"
+    },
+    {
+      "path": "scripts/check-litmus-attribution.py",
+      "bytes": 5251,
+      "sourceSha256": "0f50557f3ec7e69d32b41868aa1fbb623e42479f71885a5b5cb4a84f74812347",
+      "packagedSha256": "0f50557f3ec7e69d32b41868aa1fbb623e42479f71885a5b5cb4a84f74812347"
+    },
+    {
+      "path": "scripts/check-litmus-invariance.py",
+      "bytes": 1098,
+      "sourceSha256": "292c4a0b76bafc23c4c0f29b6421d0ba5b16cc1bb9efa5a30fc964f52cfd366a",
+      "packagedSha256": "292c4a0b76bafc23c4c0f29b6421d0ba5b16cc1bb9efa5a30fc964f52cfd366a"
+    },
+    {
+      "path": "scripts/check-litmus.py",
+      "bytes": 8329,
+      "sourceSha256": "c885b1b8824f1ee0098113f3ba90210e7ce0519f0aa9f66ad87475813803ff3f",
+      "packagedSha256": "c885b1b8824f1ee0098113f3ba90210e7ce0519f0aa9f66ad87475813803ff3f"
+    },
+    {
+      "path": "scripts/check-native-fetch-fault-regression.py",
+      "bytes": 22312,
+      "sourceSha256": "f21cc399b68ca973ca767bac8a34583c2dcea46dc72481b22dc7ce3e0b06228f",
+      "packagedSha256": "f21cc399b68ca973ca767bac8a34583c2dcea46dc72481b22dc7ce3e0b06228f"
+    },
+    {
+      "path": "scripts/check-native-fs-equivalence.py",
+      "bytes": 25026,
+      "sourceSha256": "bbdd9c13584b0755b0ce69deb6a521317ef0bf49d2924486f2b87c8caa268022",
+      "packagedSha256": "bbdd9c13584b0755b0ce69deb6a521317ef0bf49d2924486f2b87c8caa268022"
+    },
+    {
+      "path": "scripts/check-native-linux-complete-08.py",
+      "bytes": 3448,
+      "sourceSha256": "649853e5ec1137cea5eca448de84460e7492ad6308316fafc3ddeb5db0a0b531",
+      "packagedSha256": "649853e5ec1137cea5eca448de84460e7492ad6308316fafc3ddeb5db0a0b531"
+    },
+    {
+      "path": "scripts/check-native-linux-complete-10.py",
+      "bytes": 1278,
+      "sourceSha256": "1982922c44f657ffae69b436414d730ebd55143bc1891a0e3275fad7202bceec",
+      "packagedSha256": "1982922c44f657ffae69b436414d730ebd55143bc1891a0e3275fad7202bceec"
+    },
+    {
+      "path": "scripts/check-native-linux-complete.py",
+      "bytes": 11187,
+      "sourceSha256": "c951492fb33b6ad7a802a6297739db4d984e7549f969b8371e6b3c66197c6e45",
+      "packagedSha256": "c951492fb33b6ad7a802a6297739db4d984e7549f969b8371e6b3c66197c6e45"
+    },
+    {
+      "path": "scripts/check-native-linux-random-memory.py",
+      "bytes": 21418,
+      "sourceSha256": "f3f6b68603c61b8cbf7bd7f3c2a86ae907cdf8e61415cc63bb710edcb162c9ff",
+      "packagedSha256": "f3f6b68603c61b8cbf7bd7f3c2a86ae907cdf8e61415cc63bb710edcb162c9ff"
+    },
+    {
+      "path": "scripts/check-native-linux-rootfs-build.py",
+      "bytes": 8346,
+      "sourceSha256": "e7ee23af992f063fd033074c4d89b4bde1e0dead81736c2753eba9f1438d4f4d",
+      "packagedSha256": "e7ee23af992f063fd033074c4d89b4bde1e0dead81736c2753eba9f1438d4f4d"
+    },
+    {
+      "path": "scripts/check-native-linux-validation.py",
+      "bytes": 30700,
+      "sourceSha256": "632db28b503f50b925f6f502e1baea73f2ab4c34dc530360a6005eeeb4d2be83",
+      "packagedSha256": "632db28b503f50b925f6f502e1baea73f2ab4c34dc530360a6005eeeb4d2be83"
+    },
+    {
+      "path": "scripts/check-native-litmus.py",
+      "bytes": 7282,
+      "sourceSha256": "5fb0f8653f37e2e67eab3693db4f1dc4773f1fbc9fb6d56b0b3e42efd4f7c051",
+      "packagedSha256": "5fb0f8653f37e2e67eab3693db4f1dc4773f1fbc9fb6d56b0b3e42efd4f7c051"
+    },
+    {
+      "path": "scripts/check-native-model-regression.py",
+      "bytes": 3433,
+      "sourceSha256": "f3720d31804a74d909320a498b124a78a153a047721d1d24c98b0b5463e1806e",
+      "packagedSha256": "f3720d31804a74d909320a498b124a78a153a047721d1d24c98b0b5463e1806e"
+    },
+    {
+      "path": "scripts/check-native-replay.mjs",
+      "bytes": 2184,
+      "sourceSha256": "0364bd7340fc56f8ce859595b5267b8bb45531e469bdcc2db35375c79457ee4a",
+      "packagedSha256": "0364bd7340fc56f8ce859595b5267b8bb45531e469bdcc2db35375c79457ee4a"
+    },
+    {
+      "path": "scripts/check-native-rtl-behavior.py",
+      "bytes": 16934,
+      "sourceSha256": "17f3240c9d5b4a87ce9637d92e7cf15e01c1d691f3ad24a5d9ce2ad4c19723ee",
+      "packagedSha256": "17f3240c9d5b4a87ce9637d92e7cf15e01c1d691f3ad24a5d9ce2ad4c19723ee"
+    },
+    {
+      "path": "scripts/check-native-rtl-invariance.py",
+      "bytes": 6186,
+      "sourceSha256": "9c4ec9e7c630f7fd54c4cfc58f12ed1e74f98418306c25993f3d3a4e47fbb54c",
+      "packagedSha256": "9c4ec9e7c630f7fd54c4cfc58f12ed1e74f98418306c25993f3d3a4e47fbb54c"
+    },
+    {
+      "path": "scripts/check-native-rtl.py",
+      "bytes": 6677,
+      "sourceSha256": "4805e0664d8d138ed75772dae6b670f7ab891dcfd1b50d3ec1fb2399472aa57d",
+      "packagedSha256": "4805e0664d8d138ed75772dae6b670f7ab891dcfd1b50d3ec1fb2399472aa57d"
+    },
+    {
+      "path": "scripts/check-native-wire.py",
+      "bytes": 23602,
+      "sourceSha256": "3226e79b2482ef52064dd000f447877e3be21a92ea0d60d3b0fc2c598a5045dc",
+      "packagedSha256": "3226e79b2482ef52064dd000f447877e3be21a92ea0d60d3b0fc2c598a5045dc"
+    },
+    {
+      "path": "scripts/check-runtime.py",
+      "bytes": 3167,
+      "sourceSha256": "37ab28fcebe839fda0f4c02cd9157f593d9f08f357097acb17169aa03d77e104",
+      "packagedSha256": "37ab28fcebe839fda0f4c02cd9157f593d9f08f357097acb17169aa03d77e104"
+    },
+    {
+      "path": "scripts/check-wsl-space.ps1",
+      "bytes": 1041,
+      "sourceSha256": "09a985d6eef28881141dc267e61a95964700a36d9a82ad039a5f43949e4054da",
+      "packagedSha256": "09a985d6eef28881141dc267e61a95964700a36d9a82ad039a5f43949e4054da"
+    },
+    {
+      "path": "scripts/collect-components.sh",
+      "bytes": 810,
+      "sourceSha256": "e65dcd7319d3d23afc08a7301f7a76713a9bee914c6e27efe8143ba39150ab50",
+      "packagedSha256": "e65dcd7319d3d23afc08a7301f7a76713a9bee914c6e27efe8143ba39150ab50"
+    },
+    {
+      "path": "scripts/collect-runtime.sh",
+      "bytes": 688,
+      "sourceSha256": "11f2fb315b4bb81dc49c1ab4039729608de8e04fb05d6e72915fe0430cbe7a12",
+      "packagedSha256": "11f2fb315b4bb81dc49c1ab4039729608de8e04fb05d6e72915fe0430cbe7a12"
+    },
+    {
+      "path": "scripts/compare-linux-kernel-build.py",
+      "bytes": 5118,
+      "sourceSha256": "0a5b676a2ba944c393c9da89f2274a44907a6c4693f8346fff5dbe99f2f063da",
+      "packagedSha256": "0a5b676a2ba944c393c9da89f2274a44907a6c4693f8346fff5dbe99f2f063da"
+    },
+    {
+      "path": "scripts/continue-native-linux-08.py",
+      "bytes": 10904,
+      "sourceSha256": "a85387dd8acaebb8997a74a4d02924ca45e116d1e81d1a17ae37dd5a79da8b2c",
+      "packagedSha256": "a85387dd8acaebb8997a74a4d02924ca45e116d1e81d1a17ae37dd5a79da8b2c"
+    },
+    {
+      "path": "scripts/continue-native-linux-validation.py",
+      "bytes": 8593,
+      "sourceSha256": "2c741aa68e81933b3bf4b374d0e2a1e05dba2413343f79a18990239579518fe1",
+      "packagedSha256": "2c741aa68e81933b3bf4b374d0e2a1e05dba2413343f79a18990239579518fe1"
+    },
+    {
+      "path": "scripts/freeze-linux-suite.py",
+      "bytes": 8747,
+      "sourceSha256": "c2edc5ee3278bc1b08d86e46df246142fdc2a12f4967db60e3fd1b8354600943",
+      "packagedSha256": "c2edc5ee3278bc1b08d86e46df246142fdc2a12f4967db60e3fd1b8354600943"
+    },
+    {
+      "path": "scripts/generate-benchmark.mjs",
+      "bytes": 1376,
+      "sourceSha256": "a132d5984f22e6bdc30ce9634572841d94ba8a56ce195d2858a12f9fb2d0d1e8",
+      "packagedSha256": "a132d5984f22e6bdc30ce9634572841d94ba8a56ce195d2858a12f9fb2d0d1e8"
+    },
+    {
+      "path": "scripts/generate-linux-litmus.py",
+      "bytes": 18816,
+      "sourceSha256": "8774fc93bd9f2ee905d5286851a75e2f1f443d9eda59044880af6e694dae9349",
+      "packagedSha256": "8774fc93bd9f2ee905d5286851a75e2f1f443d9eda59044880af6e694dae9349"
+    },
+    {
+      "path": "scripts/linux-kernel-reference.py",
+      "bytes": 9111,
+      "sourceSha256": "0672bc7dad845a11e991b9836b401059c64351c20ce96bbeef3ab00761e889c5",
+      "packagedSha256": "0672bc7dad845a11e991b9836b401059c64351c20ce96bbeef3ab00761e889c5"
+    },
+    {
+      "path": "scripts/model-teaching-hazards.py",
+      "bytes": 12876,
+      "sourceSha256": "8d5e80c5f9312f080fe2f5c8f25c21154a30c2a07877c59b49c30017edcef20a",
+      "packagedSha256": "8d5e80c5f9312f080fe2f5c8f25c21154a30c2a07877c59b49c30017edcef20a"
+    },
+    {
+      "path": "scripts/model-teaching-specials.py",
+      "bytes": 895,
+      "sourceSha256": "2597317bef55ecddfa6aded2a51b491db97dd9de176c1403affca91f254fa68b",
+      "packagedSha256": "2597317bef55ecddfa6aded2a51b491db97dd9de176c1403affca91f254fa68b"
+    },
+    {
+      "path": "scripts/native_linux_run08.py",
+      "bytes": 21009,
+      "sourceSha256": "5d46dd860dbec206f828faa5dd01f730629772384318da6775637907fefcf6fd",
+      "packagedSha256": "5d46dd860dbec206f828faa5dd01f730629772384318da6775637907fefcf6fd"
+    },
+    {
+      "path": "scripts/native_linux_run_v2.py",
+      "bytes": 33631,
+      "sourceSha256": "aefd239be6fc89b566fd3037d60525d62e8c97b076a471c9a2f9578efbdbf85e",
+      "packagedSha256": "aefd239be6fc89b566fd3037d60525d62e8c97b076a471c9a2f9578efbdbf85e"
+    },
+    {
+      "path": "scripts/package-gem5-handoff.py",
+      "bytes": 5483,
+      "sourceSha256": "4a0bdea0d9087d91192a48c6924ca6a8861b7b909eceacd30b45cb18eea8e51c",
+      "packagedSha256": "4a0bdea0d9087d91192a48c6924ca6a8861b7b909eceacd30b45cb18eea8e51c"
+    },
+    {
+      "path": "scripts/package-public-site.ps1",
+      "bytes": 2167,
+      "sourceSha256": "b3efe93dce0d8af789b3e7fe85bbb3befc3464a6f11c5a6041bda793e0cfd15c",
+      "packagedSha256": "b3efe93dce0d8af789b3e7fe85bbb3befc3464a6f11c5a6041bda793e0cfd15c"
+    },
+    {
+      "path": "scripts/prepare-bpu-phase-boundary-test.py",
+      "bytes": 9980,
+      "sourceSha256": "06e104fb366c97335cae48fac46eb44715ce3f96c4a188dc125c72c985e3da17",
+      "packagedSha256": "06e104fb366c97335cae48fac46eb44715ce3f96c4a188dc125c72c985e3da17"
+    },
+    {
+      "path": "scripts/prepare-native-linux-08.py",
+      "bytes": 4983,
+      "sourceSha256": "335ee26f6c9ffcdce1c3ada3c32fc58506103278d5037ce5bc2613b2e6d92a5a",
+      "packagedSha256": "335ee26f6c9ffcdce1c3ada3c32fc58506103278d5037ce5bc2613b2e6d92a5a"
+    },
+    {
+      "path": "scripts/prepare-native-linux-10.py",
+      "bytes": 1216,
+      "sourceSha256": "6cd1931e74ad1b500fc8d096defc76b3194e6b1374e29ae295ef90fbb6afecd5",
+      "packagedSha256": "6cd1931e74ad1b500fc8d096defc76b3194e6b1374e29ae295ef90fbb6afecd5"
+    },
+    {
+      "path": "scripts/prepare-native-linux-rootfs.sh",
+      "bytes": 12918,
+      "sourceSha256": "0510214b1de30db25f167f2dc57899bf5674486b285fcfc4682e4fff6fc67c8a",
+      "packagedSha256": "0510214b1de30db25f167f2dc57899bf5674486b285fcfc4682e4fff6fc67c8a"
+    },
+    {
+      "path": "scripts/prepare-native-linux-sources.sh",
+      "bytes": 2018,
+      "sourceSha256": "1c35252f5640eeba37596d15fbc0e402d12f34ff097265c00fb9163206fe40bd",
+      "packagedSha256": "1c35252f5640eeba37596d15fbc0e402d12f34ff097265c00fb9163206fe40bd"
+    },
+    {
+      "path": "scripts/refine-demos.mjs",
+      "bytes": 2409,
+      "sourceSha256": "c4a0775d6238e74d003aee23d4c6650dd58dec84466f94b6263436600b2dbe73",
+      "packagedSha256": "c4a0775d6238e74d003aee23d4c6650dd58dec84466f94b6263436600b2dbe73"
+    },
+    {
+      "path": "scripts/run-fetch-boundary-regressions.py",
+      "bytes": 4286,
+      "sourceSha256": "d41b73c93d09ad5a08835c1ab6acea93ba6dab4a2f99dd1f56de2db86a72ca93",
+      "packagedSha256": "d41b73c93d09ad5a08835c1ab6acea93ba6dab4a2f99dd1f56de2db86a72ca93"
+    },
+    {
+      "path": "scripts/run-litmus-matrix.sh",
+      "bytes": 1137,
+      "sourceSha256": "f4d2d8dc7794f63d671d813018b436458c4f8ddaaec7c68b7f14628c71f82e3a",
+      "packagedSha256": "f4d2d8dc7794f63d671d813018b436458c4f8ddaaec7c68b7f14628c71f82e3a"
+    },
+    {
+      "path": "scripts/run-litmus.sh",
+      "bytes": 751,
+      "sourceSha256": "66ef4018b7e89fd2c8a57beb11053c3ae7aac3902c7e889b65357e68e0092a70",
+      "packagedSha256": "66ef4018b7e89fd2c8a57beb11053c3ae7aac3902c7e889b65357e68e0092a70"
+    },
+    {
+      "path": "scripts/run-model10-launch-regressions.py",
+      "bytes": 17740,
+      "sourceSha256": "562f13600f1dab112f80806b942d8d0c5a8d88331310a7d1c11c71aae8148473",
+      "packagedSha256": "562f13600f1dab112f80806b942d8d0c5a8d88331310a7d1c11c71aae8148473"
+    },
+    {
+      "path": "scripts/run-native-bpu-phase.py",
+      "bytes": 3508,
+      "sourceSha256": "c67e425a84b41eeb3ca9c8936faa108fa209dcbcd00d457c75d761caaede070b",
+      "packagedSha256": "c67e425a84b41eeb3ca9c8936faa108fa209dcbcd00d457c75d761caaede070b"
+    },
+    {
+      "path": "scripts/run-native-cbo-tlb.py",
+      "bytes": 6136,
+      "sourceSha256": "2e915c6116ac8f0d06e6fb7f43e4e4b745398e335cdc16dc7d15aee56ed4cb5e",
+      "packagedSha256": "2e915c6116ac8f0d06e6fb7f43e4e4b745398e335cdc16dc7d15aee56ed4cb5e"
+    },
+    {
+      "path": "scripts/run-native-fetch-stream-fs.py",
+      "bytes": 5239,
+      "sourceSha256": "50840eee0f1a2d07b1780bfb802bd2d2a65e1a5bced732ff71b265cdb50432b1",
+      "packagedSha256": "50840eee0f1a2d07b1780bfb802bd2d2a65e1a5bced732ff71b265cdb50432b1"
+    },
+    {
+      "path": "scripts/run-native-l2.sh",
+      "bytes": 2748,
+      "sourceSha256": "5f6c374139ac62785617706e91fc6a64ec3c4d9e892f6c17a12de6e2f6d41623",
+      "packagedSha256": "5f6c374139ac62785617706e91fc6a64ec3c4d9e892f6c17a12de6e2f6d41623"
+    },
+    {
+      "path": "scripts/run-native-linux-random-memory.py",
+      "bytes": 4427,
+      "sourceSha256": "6cf5498723f5797121db93e4c717c868826d14b14ec12158f9cca8c656ff9c41",
+      "packagedSha256": "6cf5498723f5797121db93e4c717c868826d14b14ec12158f9cca8c656ff9c41"
+    },
+    {
+      "path": "scripts/run-native-linux-server.py",
+      "bytes": 18518,
+      "sourceSha256": "eee0ac19e32d5f4dc913c1ee34dc3620d2d765a76c673fc10cedde7a4a564819",
+      "packagedSha256": "eee0ac19e32d5f4dc913c1ee34dc3620d2d765a76c673fc10cedde7a4a564819"
+    },
+    {
+      "path": "scripts/run-native-litmus.sh",
+      "bytes": 1428,
+      "sourceSha256": "45ac8e388311b14bbc726fe254b08deacb01c6dc33fa4ef978a22287a17f515d",
+      "packagedSha256": "45ac8e388311b14bbc726fe254b08deacb01c6dc33fa4ef978a22287a17f515d"
+    },
+    {
+      "path": "scripts/run-native-rtl.sh",
+      "bytes": 948,
+      "sourceSha256": "bc20e94b3d228fe4969d39107618a372e042051fdff61b4455991164ed0f12d6",
+      "packagedSha256": "bc20e94b3d228fe4969d39107618a372e042051fdff61b4455991164ed0f12d6"
+    },
+    {
+      "path": "scripts/run-native-trace-guard-regression.sh",
+      "bytes": 1160,
+      "sourceSha256": "3d3691f13657d7df02b6b72b1ab2574d1916a1b7842f70191af66421fc06eae7",
+      "packagedSha256": "3d3691f13657d7df02b6b72b1ab2574d1916a1b7842f70191af66421fc06eae7"
+    },
+    {
+      "path": "scripts/run-runtime.sh",
+      "bytes": 1298,
+      "sourceSha256": "412a5811984b24d06eb83aac859c53f349f19a2563373c622091553f230d8f39",
+      "packagedSha256": "412a5811984b24d06eb83aac859c53f349f19a2563373c622091553f230d8f39"
+    },
+    {
+      "path": "scripts/set-wsl-swap-d.ps1",
+      "bytes": 1807,
+      "sourceSha256": "ca6b551155c7fa92fd70e4275c543ffadc1d26f24545c88b4b35a86463ddd4c5",
+      "packagedSha256": "ca6b551155c7fa92fd70e4275c543ffadc1d26f24545c88b4b35a86463ddd4c5"
+    },
+    {
+      "path": "scripts/summarize-extended.py",
+      "bytes": 3787,
+      "sourceSha256": "60d4f9bf83664d612b53b67b3f10bee6f30015f53dddeb9acc53672da663d336",
+      "packagedSha256": "60d4f9bf83664d612b53b67b3f10bee6f30015f53dddeb9acc53672da663d336"
+    },
+    {
+      "path": "scripts/teaching_control.py",
+      "bytes": 12416,
+      "sourceSha256": "5ceecad49e4c19503debe3bd5602ebaa6fa56c9557e2029f3a8dfa54dfaaec9f",
+      "packagedSha256": "5ceecad49e4c19503debe3bd5602ebaa6fa56c9557e2029f3a8dfa54dfaaec9f"
+    },
+    {
+      "path": "scripts/teaching_data.py",
+      "bytes": 23645,
+      "sourceSha256": "6f4ca9b4f9a341fc35382c60b9466ccf19742e4f94d120eee9f46e37953328d4",
+      "packagedSha256": "6f4ca9b4f9a341fc35382c60b9466ccf19742e4f94d120eee9f46e37953328d4"
+    },
+    {
+      "path": "scripts/teaching_flow.py",
+      "bytes": 14265,
+      "sourceSha256": "ef6e7c282968ffc34224d58014cfad9da7c4ff6130b2bf86fc8353fe40474a5a",
+      "packagedSha256": "ef6e7c282968ffc34224d58014cfad9da7c4ff6130b2bf86fc8353fe40474a5a"
+    },
+    {
+      "path": "scripts/teaching_races.py",
+      "bytes": 25267,
+      "sourceSha256": "b259d98bcc513a3d265d46398e6fccbfbe1c6dab2b96b1fb6eb4f7a5952f5389",
+      "packagedSha256": "b259d98bcc513a3d265d46398e6fccbfbe1c6dab2b96b1fb6eb4f7a5952f5389"
+    },
+    {
+      "path": "scripts/test-bpu-phase-spool.py",
+      "bytes": 2804,
+      "sourceSha256": "7920ae1ae48528af1f2b86be231c131cdf151ea9a9bd2d23b4f207f6b1590479",
+      "packagedSha256": "7920ae1ae48528af1f2b86be231c131cdf151ea9a9bd2d23b4f207f6b1590479"
+    },
+    {
+      "path": "scripts/test-linux-cbo-check.py",
+      "bytes": 5515,
+      "sourceSha256": "33f56dbd91815c5cf42ad4a59e0cfe695c375ccdf498cca4d371e4d1093e1dd0",
+      "packagedSha256": "33f56dbd91815c5cf42ad4a59e0cfe695c375ccdf498cca4d371e4d1093e1dd0"
+    },
+    {
+      "path": "scripts/test-linux-uncached-check.py",
+      "bytes": 4470,
+      "sourceSha256": "044778e7c00d626f184042915c509cbb5077d15d2be5febdb3094f7f1d9067e2",
+      "packagedSha256": "044778e7c00d626f184042915c509cbb5077d15d2be5febdb3094f7f1d9067e2"
+    },
+    {
+      "path": "scripts/test-native-fs-equivalence.py",
+      "bytes": 10776,
+      "sourceSha256": "6aac56c094f963949ada50cdfd04ce2c8706ff7d22577b60509e7dd25d38632b",
+      "packagedSha256": "6aac56c094f963949ada50cdfd04ce2c8706ff7d22577b60509e7dd25d38632b"
+    },
+    {
+      "path": "scripts/test-native-linux-validation.py",
+      "bytes": 15295,
+      "sourceSha256": "8eb8a7c79fb07e123af33bc5a6c0b6e0534360005b752c9bdcd2930b013b068f",
+      "packagedSha256": "8eb8a7c79fb07e123af33bc5a6c0b6e0534360005b752c9bdcd2930b013b068f"
+    },
+    {
+      "path": "scripts/test-riscv-cbo-install.py",
+      "bytes": 4962,
+      "sourceSha256": "46c66d3f453bc5b897047db2dc2fe515777fef555ac4080f9264772ea7eed9df",
+      "packagedSha256": "46c66d3f453bc5b897047db2dc2fe515777fef555ac4080f9264772ea7eed9df"
+    },
+    {
+      "path": "scripts/update-native-model.py",
+      "bytes": 3061,
+      "sourceSha256": "5752e94640ec366524c643069d5feabca48b34d746a2b88a0c734e1d6e49867e",
+      "packagedSha256": "5752e94640ec366524c643069d5feabca48b34d746a2b88a0c734e1d6e49867e"
+    },
+    {
+      "path": "scripts/verify-wsl-d-storage.ps1",
+      "bytes": 1331,
+      "sourceSha256": "c1dc5fcb19eb28445197d2a96c9cbc72d9d39b41746c7115585f3740e2865a34",
+      "packagedSha256": "c1dc5fcb19eb28445197d2a96c9cbc72d9d39b41746c7115585f3740e2865a34"
+    },
+    {
+      "path": "config/sources.json",
+      "bytes": 410,
+      "sourceSha256": "caf47cc863c03037593abc6f933720c5a4a3bf5d70f6d1813f5468c0215557bc",
+      "packagedSha256": "caf47cc863c03037593abc6f933720c5a4a3bf5d70f6d1813f5468c0215557bc"
+    },
+    {
+      "path": "docs/extended-litmus.md",
+      "bytes": 7752,
+      "sourceSha256": "1f0919873824460ca89055085a7c114f274f0f3bf06f9d63f7dda7e124bca0c9",
+      "packagedSha256": "1f0919873824460ca89055085a7c114f274f0f3bf06f9d63f7dda7e124bca0c9"
+    },
+    {
+      "path": "docs/format.md",
+      "bytes": 8445,
+      "sourceSha256": "5f14a4f0bef55d74a8d0f1287de75df7a4cd073fc7759ad279c109128e36f7b1",
+      "packagedSha256": "5f14a4f0bef55d74a8d0f1287de75df7a4cd073fc7759ad279c109128e36f7b1"
+    },
+    {
+      "path": "docs/implementation.md",
+      "bytes": 10246,
+      "sourceSha256": "9854dead662d4da7abaf65c9b8825134f313a18d8c201e23ed7b783f682d7b2a",
+      "packagedSha256": "9854dead662d4da7abaf65c9b8825134f313a18d8c201e23ed7b783f682d7b2a"
+    },
+    {
+      "path": "docs/native-l2-design.md",
+      "bytes": 17155,
+      "sourceSha256": "280cd69cabccca238649c17f81438142021b5ed03067151bc79d65b6a1adc266",
+      "packagedSha256": "280cd69cabccca238649c17f81438142021b5ed03067151bc79d65b6a1adc266"
+    },
+    {
+      "path": "docs/native-l2-litmus.md",
+      "bytes": 13079,
+      "sourceSha256": "7902101d3c3d63ea4590fa1292df4eb3f5ce3088b8faf9fe88d43c4d0a67ecc3",
+      "packagedSha256": "7902101d3c3d63ea4590fa1292df4eb3f5ce3088b8faf9fe88d43c4d0a67ecc3"
+    },
+    {
+      "path": "docs/native-l2-rtl-alignment.md",
+      "bytes": 11254,
+      "sourceSha256": "8412eb27f1fbf1268ffac5957215fac5aad72d6a17a6fa25fb97d22b4428ae3f",
+      "packagedSha256": "8412eb27f1fbf1268ffac5957215fac5aad72d6a17a6fa25fb97d22b4428ae3f"
+    },
+    {
+      "path": "docs/native-l2-validation.md",
+      "bytes": 15665,
+      "sourceSha256": "a2aa04849b5713a978cc99e7b9d425d6c5d68336d42bf260a31dc086a13912be",
+      "packagedSha256": "a2aa04849b5713a978cc99e7b9d425d6c5d68336d42bf260a31dc086a13912be"
+    },
+    {
+      "path": "docs/native-linux-random-memory.md",
+      "bytes": 4837,
+      "sourceSha256": "96878e9b8d10151f66574efb7022ba0c592e3fd3dced70c36c1001246b71d099",
+      "packagedSha256": "96878e9b8d10151f66574efb7022ba0c592e3fd3dced70c36c1001246b71d099"
+    },
+    {
+      "path": "docs/native-linux-rootfs.md",
+      "bytes": 10877,
+      "sourceSha256": "3e861565184d9147dae95a4774fef666a769a8a0b75db23da4f1d61cc85aae5e",
+      "packagedSha256": "3e861565184d9147dae95a4774fef666a769a8a0b75db23da4f1d61cc85aae5e"
+    },
+    {
+      "path": "docs/native-linux-server.md",
+      "bytes": 11680,
+      "sourceSha256": "dcfc6b2f503694bf40e41335b768cfedf096d101a6776dda0354cc357e828ae3",
+      "packagedSha256": "dcfc6b2f503694bf40e41335b768cfedf096d101a6776dda0354cc357e828ae3"
+    },
+    {
+      "path": "docs/native-linux-validation.md",
+      "bytes": 33743,
+      "sourceSha256": "5f5d9bf57980524d5a490f9ba3e040a999b219c29f4605c57cebc4c8bb116840",
+      "packagedSha256": "5f5d9bf57980524d5a490f9ba3e040a999b219c29f4605c57cebc4c8bb116840"
+    },
+    {
+      "path": "docs/nonspec-tlb-retry.md",
+      "bytes": 6800,
+      "sourceSha256": "e77b091e833f160cdbcaab7f0ac9a582a5b6bf24744747eb0b59577eaab40d29",
+      "packagedSha256": "e77b091e833f160cdbcaab7f0ac9a582a5b6bf24744747eb0b59577eaab40d29"
+    },
+    {
+      "path": "docs/teaching-timing-audit.md",
+      "bytes": 5723,
+      "sourceSha256": "15e157a6470f2f461810efbdcbf5b40af948f87cd085650f75c1c457f88280f0",
+      "packagedSha256": "15e157a6470f2f461810efbdcbf5b40af948f87cd085650f75c1c457f88280f0"
+    },
+    {
+      "path": "docs/teaching.md",
+      "bytes": 9259,
+      "sourceSha256": "beba658c3661b13f846d41eb6ce542bffbe654c657ac7246e08900ecd79c1469",
+      "packagedSha256": "beba658c3661b13f846d41eb6ce542bffbe654c657ac7246e08900ecd79c1469"
+    },
+    {
+      "path": "src/App.tsx",
+      "bytes": 25506,
+      "sourceSha256": "f0f832e4c3c2005f65af2d568b7b1daec51d811f81ad20e8eded9355e702350b",
+      "packagedSha256": "f0f832e4c3c2005f65af2d568b7b1daec51d811f81ad20e8eded9355e702350b"
+    },
+    {
+      "path": "src/components/CoveragePanel.tsx",
+      "bytes": 2294,
+      "sourceSha256": "d4d0510133d443201810279c9298012f6fcdb7f33ce9d614fe2dbe705901b23f",
+      "packagedSha256": "d4d0510133d443201810279c9298012f6fcdb7f33ce9d614fe2dbe705901b23f"
+    },
+    {
+      "path": "src/components/EventList.tsx",
+      "bytes": 1331,
+      "sourceSha256": "34a8cc155eeb37dff102155321898d80e8754a9056804df784af5b52d9f72d65",
+      "packagedSha256": "34a8cc155eeb37dff102155321898d80e8754a9056804df784af5b52d9f72d65"
+    },
+    {
+      "path": "src/components/FlitDetails.tsx",
+      "bytes": 7215,
+      "sourceSha256": "e15edef596d967e5c9fc1a623bd39adc71d594203eb9663d1dda051f8b7543b5",
+      "packagedSha256": "e15edef596d967e5c9fc1a623bd39adc71d594203eb9663d1dda051f8b7543b5"
+    },
+    {
+      "path": "src/components/LitmusPanel.tsx",
+      "bytes": 8802,
+      "sourceSha256": "fc47c3c9edef40eb567ace19df4d90b120c8eb99fe6ac064f4380fe3c4433725",
+      "packagedSha256": "fc47c3c9edef40eb567ace19df4d90b120c8eb99fe6ac064f4380fe3c4433725"
+    },
+    {
+      "path": "src/components/NetworkScene.tsx",
+      "bytes": 21321,
+      "sourceSha256": "a3e4722fc6463e278f5946f803d0df5b98c3bbd304625198c7347adadc528fc1",
+      "packagedSha256": "a3e4722fc6463e278f5946f803d0df5b98c3bbd304625198c7347adadc528fc1"
+    },
+    {
+      "path": "src/components/SamCalculation.tsx",
+      "bytes": 1947,
+      "sourceSha256": "0224cd1476119ba7477696ba250aba2627487793c32860c552d6a4ee6cb532c3",
+      "packagedSha256": "0224cd1476119ba7477696ba250aba2627487793c32860c552d6a4ee6cb532c3"
+    },
+    {
+      "path": "src/components/Sequence.tsx",
+      "bytes": 8072,
+      "sourceSha256": "55842145aeeba0a6bef84bb4d9c328e2cc980fc9c5fc4a4d624c05b67bd2ebaa",
+      "packagedSha256": "55842145aeeba0a6bef84bb4d9c328e2cc980fc9c5fc4a4d624c05b67bd2ebaa"
+    },
+    {
+      "path": "src/components/TeachingPanel.tsx",
+      "bytes": 3455,
+      "sourceSha256": "b8a46b000e69eb88acb8e19a389bca66c281782fd9487f47b2809b0e3c30970d",
+      "packagedSha256": "b8a46b000e69eb88acb8e19a389bca66c281782fd9487f47b2809b0e3c30970d"
+    },
+    {
+      "path": "src/main.tsx",
+      "bytes": 222,
+      "sourceSha256": "fc400cf6024a7aaa373ad3ad5f17352466a4912ebe94150119bd3476e52d1806",
+      "packagedSha256": "fc400cf6024a7aaa373ad3ad5f17352466a4912ebe94150119bd3476e52d1806"
+    },
+    {
+      "path": "src/styles.css",
+      "bytes": 27794,
+      "sourceSha256": "ede7f6f3b491bee2a9cf64e6919c20d7a465361fbcd57bcd1b1fc06a782fd1da",
+      "packagedSha256": "ede7f6f3b491bee2a9cf64e6919c20d7a465361fbcd57bcd1b1fc06a782fd1da"
+    },
+    {
+      "path": "src/trace/engine.ts",
+      "bytes": 11741,
+      "sourceSha256": "bcb8935817fb23d28855bd13768bfb6a3ffe41df146038c55930bd19f410e2f9",
+      "packagedSha256": "bcb8935817fb23d28855bd13768bfb6a3ffe41df146038c55930bd19f410e2f9"
+    },
+    {
+      "path": "src/trace/navigation.ts",
+      "bytes": 799,
+      "sourceSha256": "7508d879c47a7883eeafe9fbdd4a64c3f93884cce35b973792b11f44d9b5811e",
+      "packagedSha256": "7508d879c47a7883eeafe9fbdd4a64c3f93884cce35b973792b11f44d9b5811e"
+    },
+    {
+      "path": "src/trace/playback.ts",
+      "bytes": 5750,
+      "sourceSha256": "00716855936b91ede2024064b0ec35be98b87ff7ae629624772f4d43c88147d4",
+      "packagedSha256": "00716855936b91ede2024064b0ec35be98b87ff7ae629624772f4d43c88147d4"
+    },
+    {
+      "path": "src/trace/sequence.ts",
+      "bytes": 2681,
+      "sourceSha256": "16356ec2bba46c70074e47717e29e15c50ddcd2fb0f4ad52eed7f7d69121a539",
+      "packagedSha256": "16356ec2bba46c70074e47717e29e15c50ddcd2fb0f4ad52eed7f7d69121a539"
+    },
+    {
+      "path": "src/trace/source.ts",
+      "bytes": 1727,
+      "sourceSha256": "1cce15a222cccaed0501666bbe46641424949e32b36021352888c34fb90d6419",
+      "packagedSha256": "1cce15a222cccaed0501666bbe46641424949e32b36021352888c34fb90d6419"
+    },
+    {
+      "path": "src/trace/types.ts",
+      "bytes": 5057,
+      "sourceSha256": "f3555f826be9da94afe2d4e23ec3edad19e98b58362f9f91aaceb5da237e90ac",
+      "packagedSha256": "f3555f826be9da94afe2d4e23ec3edad19e98b58362f9f91aaceb5da237e90ac"
+    },
+    {
+      "path": "src/trace/worker.ts",
+      "bytes": 1107,
+      "sourceSha256": "c734789c5ee0f2cbfcd7aab4672077bc874a0ed603a2fa0fc297cb333e3928a7",
+      "packagedSha256": "c734789c5ee0f2cbfcd7aab4672077bc874a0ed603a2fa0fc297cb333e3928a7"
+    },
+    {
+      "path": "tests/native/bpu_phase_spool_test.cc",
+      "bytes": 9113,
+      "sourceSha256": "909d6e2195d1bfc5bbf1bdea37dd455974f7a9fcbf3aff5e9620d9ab85d67234",
+      "packagedSha256": "909d6e2195d1bfc5bbf1bdea37dd455974f7a9fcbf3aff5e9620d9ab85d67234"
+    },
+    {
+      "path": "tests/native/fixtures/fetch-fault-rtl-se.json",
+      "bytes": 37323,
+      "sourceSha256": "ab1b6649757e13d3639fff70217ca1bef9e6eb59ec297d5d5819b8759e09019b",
+      "packagedSha256": "ab1b6649757e13d3639fff70217ca1bef9e6eb59ec297d5d5819b8759e09019b"
+    },
+    {
+      "path": "tests/native/home_recency_equivalence.cc",
+      "bytes": 6303,
+      "sourceSha256": "c2d60d4d70cce7e063badb5eaeedf116180b1e660d0946ae4fd63202775bd58c",
+      "packagedSha256": "c2d60d4d70cce7e063badb5eaeedf116180b1e660d0946ae4fd63202775bd58c"
+    },
+    {
+      "path": "tests/native/test_bpu_phase_storage_equivalence.py",
+      "bytes": 14677,
+      "sourceSha256": "e231a8e9770d85bf09014fadacce8dd89a1c35241043c3706b90c2809f0c7602",
+      "packagedSha256": "e231a8e9770d85bf09014fadacce8dd89a1c35241043c3706b90c2809f0c7602"
+    },
+    {
+      "path": "tests/native/test_bpu_phase_storage_patch.py",
+      "bytes": 6941,
+      "sourceSha256": "a694ba5a2cfa0eb10098df45c2d7a010222cdd9302b3ab5245429512aead856f",
+      "packagedSha256": "a694ba5a2cfa0eb10098df45c2d7a010222cdd9302b3ab5245429512aead856f"
+    },
+    {
+      "path": "tests/native/test_bpu_phase_trace_invariance.py",
+      "bytes": 3435,
+      "sourceSha256": "f1677073fd9dd1d174b11cb7f2c4b1a5950dc2d891bab499c59ead2e357bad1b",
+      "packagedSha256": "f1677073fd9dd1d174b11cb7f2c4b1a5950dc2d891bab499c59ead2e357bad1b"
+    },
+    {
+      "path": "tests/native/test_bpu_predecode_boundary_installer.py",
+      "bytes": 5857,
+      "sourceSha256": "523ccb5acb265029577a60660cca2e995530fefc99e9058b1295e374a4c41e6f",
+      "packagedSha256": "523ccb5acb265029577a60660cca2e995530fefc99e9058b1295e374a4c41e6f"
+    },
+    {
+      "path": "tests/native/test_chi_transfer_census.py",
+      "bytes": 5114,
+      "sourceSha256": "5034c80a601b1574417a6c3699ef4c8d77dd564cb9c7dcb38aebe8d4733bd8a7",
+      "packagedSha256": "5034c80a601b1574417a6c3699ef4c8d77dd564cb9c7dcb38aebe8d4733bd8a7"
+    },
+    {
+      "path": "tests/native/test_fetch_demand_fault_candidate02_installer.py",
+      "bytes": 8877,
+      "sourceSha256": "8d7e36d5459bd39811c2b81b97146d7a96405bef775cbc8a459af448410256a3",
+      "packagedSha256": "8d7e36d5459bd39811c2b81b97146d7a96405bef775cbc8a459af448410256a3"
+    },
+    {
+      "path": "tests/native/test_fetch_demand_fault_installer.py",
+      "bytes": 7518,
+      "sourceSha256": "b64eefb4ee7a0903b8a93c78cfe678a22505f77860941571320879aeb54e59ee",
+      "packagedSha256": "b64eefb4ee7a0903b8a93c78cfe678a22505f77860941571320879aeb54e59ee"
+    },
+    {
+      "path": "tests/native/test_freeze_linux_suite.py",
+      "bytes": 6387,
+      "sourceSha256": "8397a996847f122a402b8a2a0959cc44f95b0056f26b8562fc8a8dddcb5668ad",
+      "packagedSha256": "8397a996847f122a402b8a2a0959cc44f95b0056f26b8562fc8a8dddcb5668ad"
+    },
+    {
+      "path": "tests/native/test_kernel_build_checker.py",
+      "bytes": 3792,
+      "sourceSha256": "b60c9c33d1fde3af72e0937185c7fee3fcb82198b353ffa0137964a0e8c49fc5",
+      "packagedSha256": "b60c9c33d1fde3af72e0937185c7fee3fcb82198b353ffa0137964a0e8c49fc5"
+    },
+    {
+      "path": "tests/native/test_kernel_build_reference_compare.py",
+      "bytes": 4152,
+      "sourceSha256": "e2320c48530a788341d326f5eb4ef3ec10d1815808f5eda383d01a26ac808b0c",
+      "packagedSha256": "e2320c48530a788341d326f5eb4ef3ec10d1815808f5eda383d01a26ac808b0c"
+    },
+    {
+      "path": "tests/native/test_kernel_torture_checker.py",
+      "bytes": 6230,
+      "sourceSha256": "249c704e554391ed7e76bdcbc85fdd885264986693e9021e0e7b1a0f40ecd590",
+      "packagedSha256": "249c704e554391ed7e76bdcbc85fdd885264986693e9021e0e7b1a0f40ecd590"
+    },
+    {
+      "path": "tests/native/test_linux_litmus_checker.py",
+      "bytes": 6219,
+      "sourceSha256": "0e12980482822e24decc2b267639c6d1084d083622aa959ac4d20a63825b20dd",
+      "packagedSha256": "0e12980482822e24decc2b267639c6d1084d083622aa959ac4d20a63825b20dd"
+    },
+    {
+      "path": "tests/native/test_linux_random_memory_checker.py",
+      "bytes": 14996,
+      "sourceSha256": "1d8b35a9ebcae3fcd51572c79848c338e43cfe0829dbb8de469e6248194381a2",
+      "packagedSha256": "1d8b35a9ebcae3fcd51572c79848c338e43cfe0829dbb8de469e6248194381a2"
+    },
+    {
+      "path": "tests/native/test_linux_stage_gate.py",
+      "bytes": 2570,
+      "sourceSha256": "a26ec8776843638b0877f34cf3f9bfd8e8ebc87cdb59e6b550869b0649a7ce14",
+      "packagedSha256": "a26ec8776843638b0877f34cf3f9bfd8e8ebc87cdb59e6b550869b0649a7ce14"
+    },
+    {
+      "path": "tests/native/test_linux_suite_checker.py",
+      "bytes": 7639,
+      "sourceSha256": "c0a99523829ef26254ed997a4a5239b4303081b162f8984d961d260be4687880",
+      "packagedSha256": "c0a99523829ef26254ed997a4a5239b4303081b162f8984d961d260be4687880"
+    },
+    {
+      "path": "tests/native/test_native_fetch_fault_regression.py",
+      "bytes": 10037,
+      "sourceSha256": "261eacc83a1494af38b4c4ff55fba843037660ebaa1076f7b21471c1922daa26",
+      "packagedSha256": "261eacc83a1494af38b4c4ff55fba843037660ebaa1076f7b21471c1922daa26"
+    },
+    {
+      "path": "tests/native/test_native_linux_08.py",
+      "bytes": 13135,
+      "sourceSha256": "f63f447ed8472d95b0da3e6fd0fcbbb53e06ad8a3fac4c0bf4d98947945c6492",
+      "packagedSha256": "f63f447ed8472d95b0da3e6fd0fcbbb53e06ad8a3fac4c0bf4d98947945c6492"
+    },
+    {
+      "path": "tests/native/test_native_linux_complete_checker.py",
+      "bytes": 9952,
+      "sourceSha256": "5c374e4b78218142ad797e6767017afd9f16e22e680f74b713bbb6cc51a5296a",
+      "packagedSha256": "5c374e4b78218142ad797e6767017afd9f16e22e680f74b713bbb6cc51a5296a"
+    },
+    {
+      "path": "tests/native/test_native_linux_random_memory.py",
+      "bytes": 11873,
+      "sourceSha256": "146839a4f28cd3c89365db23bd36e77bd69fcfdb0836f876be9729a218194d05",
+      "packagedSha256": "146839a4f28cd3c89365db23bd36e77bd69fcfdb0836f876be9729a218194d05"
+    },
+    {
+      "path": "tests/native/test_native_linux_run_v2.py",
+      "bytes": 26944,
+      "sourceSha256": "066db35ee2124ca7d9e15c3998d09f01608be80c73b9188f1c753ca03cfe7414",
+      "packagedSha256": "066db35ee2124ca7d9e15c3998d09f01608be80c73b9188f1c753ca03cfe7414"
+    },
+    {
+      "path": "tests/native/test_native_linux_server.py",
+      "bytes": 8783,
+      "sourceSha256": "9351d1aa1f8b9bce0021b93a4c1891bac896dfc9797f772f2f211f5efc30a638",
+      "packagedSha256": "9351d1aa1f8b9bce0021b93a4c1891bac896dfc9797f772f2f211f5efc30a638"
+    },
+    {
+      "path": "tests/native/test_native_litmus_checker.py",
+      "bytes": 7306,
+      "sourceSha256": "53a80b19209bc0fc5181e1e25849513f88fb3d4c7d96def352d1862171a3cea5",
+      "packagedSha256": "53a80b19209bc0fc5181e1e25849513f88fb3d4c7d96def352d1862171a3cea5"
+    },
+    {
+      "path": "tests/native/test_native_rtl_behavior.py",
+      "bytes": 12839,
+      "sourceSha256": "0d64150ce4e79e05e6990a8eb7429ca7bbe4fc524914e692f8f3d85a223af857",
+      "packagedSha256": "0d64150ce4e79e05e6990a8eb7429ca7bbe4fc524914e692f8f3d85a223af857"
+    },
+    {
+      "path": "tests/native/test_native_rtl_checker.py",
+      "bytes": 10992,
+      "sourceSha256": "6e447274d9b98176e6474c244d2d7aa22802c5e2206c7029e7ae8642bcf849b3",
+      "packagedSha256": "6e447274d9b98176e6474c244d2d7aa22802c5e2206c7029e7ae8642bcf849b3"
+    },
+    {
+      "path": "tests/native/test_native_wire_gate.py",
+      "bytes": 14294,
+      "sourceSha256": "d89de471f18b8370551b3f7b5c522707f3465b9c84f3f2d4b4b19f892d614da0",
+      "packagedSha256": "d89de471f18b8370551b3f7b5c522707f3465b9c84f3f2d4b4b19f892d614da0"
+    },
+    {
+      "path": "tests/native/test_nonspec_tlb_retry_patch.py",
+      "bytes": 10486,
+      "sourceSha256": "ce7a0000fd50b45f6bf288e0de477ca403e8aff53550094bab74f1e39e661608",
+      "packagedSha256": "ce7a0000fd50b45f6bf288e0de477ca403e8aff53550094bab74f1e39e661608"
+    },
+    {
+      "path": "tests/native/test_refiner.py",
+      "bytes": 24645,
+      "sourceSha256": "4a5f149222499148bebbd092174783b37800fba45996fd0fd6c171a0f3129fc9",
+      "packagedSha256": "4a5f149222499148bebbd092174783b37800fba45996fd0fd6c171a0f3129fc9"
+    },
+    {
+      "path": "tests/native/test_refiner_native.py",
+      "bytes": 13884,
+      "sourceSha256": "9eb76b4b6c69c7fc55aae7d9ad7633c6d66f9062c9cba4d8fae01447dd7caa43",
+      "packagedSha256": "9eb76b4b6c69c7fc55aae7d9ad7633c6d66f9062c9cba4d8fae01447dd7caa43"
+    },
+    {
+      "path": "tests/native/test_router_host_scan_patch.py",
+      "bytes": 13413,
+      "sourceSha256": "89bc531114b8e99d7fd831ac41ed09c9ff59d2798b6aeb1f7ce34fd8b4dc2d5e",
+      "packagedSha256": "89bc531114b8e99d7fd831ac41ed09c9ff59d2798b6aeb1f7ce34fd8b4dc2d5e"
+    },
+    {
+      "path": "tests/web/engine.test.ts",
+      "bytes": 4926,
+      "sourceSha256": "20683ba09d733acfc14755a08f4b913b8fd209eab4fa35cc469e99af8dff2c1c",
+      "packagedSha256": "20683ba09d733acfc14755a08f4b913b8fd209eab4fa35cc469e99af8dff2c1c"
+    },
+    {
+      "path": "tests/web/playback.test.ts",
+      "bytes": 3158,
+      "sourceSha256": "b650d0159a1ee46456e2f8d6e744ac839bcf3ed22163e39c3a5176aac36d7435",
+      "packagedSha256": "b650d0159a1ee46456e2f8d6e744ac839bcf3ed22163e39c3a5176aac36d7435"
+    },
+    {
+      "path": "tests/web/sequence.test.ts",
+      "bytes": 12780,
+      "sourceSha256": "b61e6549a4194a7736cdfc59885ded75bf9c997a191f7d3cf1083a1f4d43cb9d",
+      "packagedSha256": "b61e6549a4194a7736cdfc59885ded75bf9c997a191f7d3cf1083a1f4d43cb9d"
+    },
+    {
+      "path": "tests/web/special-scenarios.test.ts",
+      "bytes": 25112,
+      "sourceSha256": "1f351c6179f5afe750e5abb10b6e83fed61b4d5545c1d576e8e579bd02ae19a8",
+      "packagedSha256": "1f351c6179f5afe750e5abb10b6e83fed61b4d5545c1d576e8e579bd02ae19a8"
+    },
+    {
+      "path": "tests/web/teaching.test.ts",
+      "bytes": 5098,
+      "sourceSha256": "3e9c44438058db4f7d3bd7c729401d336d06ec6388105e573446a1b1a45147b4",
+      "packagedSha256": "3e9c44438058db4f7d3bd7c729401d336d06ec6388105e573446a1b1a45147b4"
+    },
+    {
+      "path": "public/demos/catalog.json",
+      "bytes": 19811,
+      "sourceSha256": "084d36612bd849f67b8c7e0eefeaa6f4acac3697ef476a74b552b83d06f8733c",
+      "packagedSha256": "084d36612bd849f67b8c7e0eefeaa6f4acac3697ef476a74b552b83d06f8733c"
+    },
+    {
+      "path": "public/demos/litmus-iriw-rotation-1.chi.jsonl",
+      "bytes": 760023,
+      "sourceSha256": "13952de5e6a7c208e3305d84a7769120ee51eb8d951ded98ba65585510bc3df0",
+      "packagedSha256": "13952de5e6a7c208e3305d84a7769120ee51eb8d951ded98ba65585510bc3df0"
+    },
+    {
+      "path": "public/demos/litmus-iriw-rotation-2.chi.jsonl",
+      "bytes": 770542,
+      "sourceSha256": "04134eec951908ead9a7d10617081e6353796758a7b2ba52b00c82325269b9ca",
+      "packagedSha256": "04134eec951908ead9a7d10617081e6353796758a7b2ba52b00c82325269b9ca"
+    },
+    {
+      "path": "public/demos/litmus-iriw-rotation-3.chi.jsonl",
+      "bytes": 766500,
+      "sourceSha256": "52a8c4d45747db1760f63263e95f460d60c62c2e40094f63bf8bf2d093e54db4",
+      "packagedSha256": "52a8c4d45747db1760f63263e95f460d60c62c2e40094f63bf8bf2d093e54db4"
+    },
+    {
+      "path": "public/demos/litmus-iriw.chi.jsonl",
+      "bytes": 763772,
+      "sourceSha256": "b1ee8ddb4e35371bbba416513a7182307ab2b95c2490de1fb8e51a03f7a0d58e",
+      "packagedSha256": "b1ee8ddb4e35371bbba416513a7182307ab2b95c2490de1fb8e51a03f7a0d58e"
+    },
+    {
+      "path": "public/demos/litmus-protocol.chi.jsonl",
+      "bytes": 11249598,
+      "sourceSha256": "8fe6af024195daab58e03e2697f9fa78b9769943809db2aabe93be55532ff6ad",
+      "packagedSha256": "8fe6af024195daab58e03e2697f9fa78b9769943809db2aabe93be55532ff6ad"
+    },
+    {
+      "path": "public/demos/litmus-stress.chi.jsonl",
+      "bytes": 21958722,
+      "sourceSha256": "7d7c742b52148b2e408e6c3a3edf5c9f1d2be3e26737f2845584d189f5751919",
+      "packagedSha256": "7d7c742b52148b2e408e6c3a3edf5c9f1d2be3e26737f2845584d189f5751919"
+    },
+    {
+      "path": "public/demos/miss-hit.chi.jsonl",
+      "bytes": 55490,
+      "sourceSha256": "4554d7378bbb2e0c9a7f3d5905605acdee046aa984bfbc62c1c20ff8f767cb51",
+      "packagedSha256": "4554d7378bbb2e0c9a7f3d5905605acdee046aa984bfbc62c1c20ff8f767cb51"
+    },
+    {
+      "path": "public/demos/ordered-read.chi.jsonl",
+      "bytes": 56886,
+      "sourceSha256": "6ed614e7b5c1b609ed203c4635aba36faf8fd17344860e9c7b33045c22ab3843",
+      "packagedSha256": "6ed614e7b5c1b609ed203c4635aba36faf8fd17344860e9c7b33045c22ab3843"
+    },
+    {
+      "path": "public/demos/retry.chi.jsonl",
+      "bytes": 86768,
+      "sourceSha256": "44df5a1d4f3c0d8e16764f88044259b4e6cd4c6a66d031c12b4e735c82547f2a",
+      "packagedSha256": "44df5a1d4f3c0d8e16764f88044259b4e6cd4c6a66d031c12b4e735c82547f2a"
+    },
+    {
+      "path": "public/demos/runtime-miss-hit.chi.jsonl",
+      "bytes": 54119,
+      "sourceSha256": "311dbb3cdf61c96b1e18d3ab12787271355520ea8464abbeee7c865e70d6bc4b",
+      "packagedSha256": "311dbb3cdf61c96b1e18d3ab12787271355520ea8464abbeee7c865e70d6bc4b"
+    },
+    {
+      "path": "public/demos/runtime-retry.chi.jsonl",
+      "bytes": 64820,
+      "sourceSha256": "1a3cdc845f58bd72bb7a5bbff11f6b0787f262e7db5754189d8bf5e30b623648",
+      "packagedSha256": "1a3cdc845f58bd72bb7a5bbff11f6b0787f262e7db5754189d8bf5e30b623648"
+    },
+    {
+      "path": "public/demos/same-address.chi.jsonl",
+      "bytes": 56042,
+      "sourceSha256": "dc55e8fa16700c1aa9642eb343000243037432c6ea7abe8b006807bc6d20d814",
+      "packagedSha256": "dc55e8fa16700c1aa9642eb343000243037432c6ea7abe8b006807bc6d20d814"
+    },
+    {
+      "path": "public/demos/snoop-owner.chi.jsonl",
+      "bytes": 33582,
+      "sourceSha256": "c2b5ff28b4460f30fb135ee3558656c60bd6400b61846b92466e7be46f8f4c6a",
+      "packagedSha256": "c2b5ff28b4460f30fb135ee3558656c60bd6400b61846b92466e7be46f8f4c6a"
+    },
+    {
+      "path": "public/demos/teach-basic-CleanInvalid.chi.jsonl",
+      "bytes": 43660,
+      "sourceSha256": "1c4d4d02e4c19833b807e39aa94990388793cab696529178faf207aa901c149b",
+      "packagedSha256": "1c4d4d02e4c19833b807e39aa94990388793cab696529178faf207aa901c149b"
+    },
+    {
+      "path": "public/demos/teach-basic-CleanShared.chi.jsonl",
+      "bytes": 43276,
+      "sourceSha256": "a3c71ba3ab001e9450f6a70c4415e7bdb39cd6055deb82424a69a5534bf5e5c9",
+      "packagedSha256": "a3c71ba3ab001e9450f6a70c4415e7bdb39cd6055deb82424a69a5534bf5e5c9"
+    },
+    {
+      "path": "public/demos/teach-basic-Evict.chi.jsonl",
+      "bytes": 44634,
+      "sourceSha256": "83aff688918ecd6bb0575529280c0bbddb31e794d51e0d89e78e77378cbf37da",
+      "packagedSha256": "83aff688918ecd6bb0575529280c0bbddb31e794d51e0d89e78e77378cbf37da"
+    },
+    {
+      "path": "public/demos/teach-basic-MakeInvalid.chi.jsonl",
+      "bytes": 44891,
+      "sourceSha256": "6aaf9d71caac1a355f15ae48671fdc7457af87b0eea5aaba5d31c7697012c5eb",
+      "packagedSha256": "6aaf9d71caac1a355f15ae48671fdc7457af87b0eea5aaba5d31c7697012c5eb"
+    },
+    {
+      "path": "public/demos/teach-basic-MakeUnique.chi.jsonl",
+      "bytes": 47914,
+      "sourceSha256": "d3f59aa9ccab36148dc8c8488bd4f336210b782f168bacc410daa6fd4c530117",
+      "packagedSha256": "d3f59aa9ccab36148dc8c8488bd4f336210b782f168bacc410daa6fd4c530117"
+    },
+    {
+      "path": "public/demos/teach-basic-ReadNoSnp.chi.jsonl",
+      "bytes": 55893,
+      "sourceSha256": "b4a93ba2e4c24bf3d3aa5f97d296a294f700cfea73de746e39a5b8b9c5c7c7a8",
+      "packagedSha256": "b4a93ba2e4c24bf3d3aa5f97d296a294f700cfea73de746e39a5b8b9c5c7c7a8"
+    },
+    {
+      "path": "public/demos/teach-basic-ReadNotSharedDirty.chi.jsonl",
+      "bytes": 69180,
+      "sourceSha256": "13ebfa717ee07c23659196edbb7414625edb649cc43c951bccda8fb7b71564dc",
+      "packagedSha256": "13ebfa717ee07c23659196edbb7414625edb649cc43c951bccda8fb7b71564dc"
+    },
+    {
+      "path": "public/demos/teach-basic-ReadOnce.chi.jsonl",
+      "bytes": 67552,
+      "sourceSha256": "6364e7726c0fab0b3e0d0a67a08ec1831261638af18c026cec9fb169f2fb7a4e",
+      "packagedSha256": "6364e7726c0fab0b3e0d0a67a08ec1831261638af18c026cec9fb169f2fb7a4e"
+    },
+    {
+      "path": "public/demos/teach-basic-ReadOnceCleanInvalid.chi.jsonl",
+      "bytes": 66546,
+      "sourceSha256": "ede914b94b0cf7476db6975bd543e00c83764c07c72f7efaa3638d2ee6d28163",
+      "packagedSha256": "ede914b94b0cf7476db6975bd543e00c83764c07c72f7efaa3638d2ee6d28163"
+    },
+    {
+      "path": "public/demos/teach-basic-ReadOnceMakeInvalid.chi.jsonl",
+      "bytes": 67398,
+      "sourceSha256": "0798d20c07a3b998f8e62370feda4ed1da2e02f999bc684653cf110a954b6869",
+      "packagedSha256": "0798d20c07a3b998f8e62370feda4ed1da2e02f999bc684653cf110a954b6869"
+    },
+    {
+      "path": "public/demos/teach-basic-ReadShared.chi.jsonl",
+      "bytes": 72754,
+      "sourceSha256": "9c1248b529e55cb2957ba96035925bec2237f04fcf77f033b87dc29752675c02",
+      "packagedSha256": "9c1248b529e55cb2957ba96035925bec2237f04fcf77f033b87dc29752675c02"
+    },
+    {
+      "path": "public/demos/teach-basic-ReadUnique.chi.jsonl",
+      "bytes": 71053,
+      "sourceSha256": "dad74ea4d66efa8b5b2c39d635c2c71d4014d9f0875cd86ba1a0b7d768313949",
+      "packagedSha256": "dad74ea4d66efa8b5b2c39d635c2c71d4014d9f0875cd86ba1a0b7d768313949"
+    },
+    {
+      "path": "public/demos/teach-basic-StashOnceShared.chi.jsonl",
+      "bytes": 89647,
+      "sourceSha256": "76b8e821a16ee634e847d63a9e6fd7f54c9fb1f7b268dab2068c0a0d6439b0e9",
+      "packagedSha256": "76b8e821a16ee634e847d63a9e6fd7f54c9fb1f7b268dab2068c0a0d6439b0e9"
+    },
+    {
+      "path": "public/demos/teach-basic-StashOnceUnique.chi.jsonl",
+      "bytes": 86154,
+      "sourceSha256": "7558fce43d0a1eeaf779e886c1e6e3f4841c4c160df57e8351f8e69c7bbcf258",
+      "packagedSha256": "7558fce43d0a1eeaf779e886c1e6e3f4841c4c160df57e8351f8e69c7bbcf258"
+    },
+    {
+      "path": "public/demos/teach-basic-WriteBackFull.chi.jsonl",
+      "bytes": 54853,
+      "sourceSha256": "e4c09fba9c14497794196f93602f69113115e9708368ecbd0438c5a3189da88f",
+      "packagedSha256": "e4c09fba9c14497794196f93602f69113115e9708368ecbd0438c5a3189da88f"
+    },
+    {
+      "path": "public/demos/teach-basic-WriteEvictFull.chi.jsonl",
+      "bytes": 54623,
+      "sourceSha256": "232f90af4a50f9ec0b7bbf9f53db734db279dbef830de838ecc3d42c1209d819",
+      "packagedSha256": "232f90af4a50f9ec0b7bbf9f53db734db279dbef830de838ecc3d42c1209d819"
+    },
+    {
+      "path": "public/demos/teach-basic-WriteNoSnpFull.chi.jsonl",
+      "bytes": 78545,
+      "sourceSha256": "d884047ea71137925065fb6f869147a88abedfbb6bea81ab28a69889cac5a3a2",
+      "packagedSha256": "d884047ea71137925065fb6f869147a88abedfbb6bea81ab28a69889cac5a3a2"
+    },
+    {
+      "path": "public/demos/teach-basic-WriteNoSnpPtl.chi.jsonl",
+      "bytes": 70155,
+      "sourceSha256": "beff1b712196e0ad32cd0d26ee0755e106810ec372cc43453111bbba927c018e",
+      "packagedSha256": "beff1b712196e0ad32cd0d26ee0755e106810ec372cc43453111bbba927c018e"
+    },
+    {
+      "path": "public/demos/teach-basic-WriteUniqueFull.chi.jsonl",
+      "bytes": 60138,
+      "sourceSha256": "09628805d6a2876d1f65c820590c25b56e0d40d77e87caa20e06cf89b63eee7e",
+      "packagedSha256": "09628805d6a2876d1f65c820590c25b56e0d40d77e87caa20e06cf89b63eee7e"
+    },
+    {
+      "path": "public/demos/teach-basic-WriteUniquePtl.chi.jsonl",
+      "bytes": 68183,
+      "sourceSha256": "57de3041785c9f80f316de33fa7f7e922f8deea16bbdea8c4ac0d0e46bbaa45f",
+      "packagedSha256": "57de3041785c9f80f316de33fa7f7e922f8deea16bbdea8c4ac0d0e46bbaa45f"
+    },
+    {
+      "path": "public/demos/teach-hazard-clean-invalid.chi.jsonl",
+      "bytes": 145275,
+      "sourceSha256": "cd3b4751c624d4e8ab3a36822e7c58c2872c18aa50eb5f19f5f4be08fd0705f4",
+      "packagedSha256": "cd3b4751c624d4e8ab3a36822e7c58c2872c18aa50eb5f19f5f4be08fd0705f4"
+    },
+    {
+      "path": "public/demos/teach-hazard-early-once.chi.jsonl",
+      "bytes": 49237,
+      "sourceSha256": "d9599f76e8a09060e6d084de44d465657b81548c67528e747d6a852bbf5fd03b",
+      "packagedSha256": "d9599f76e8a09060e6d084de44d465657b81548c67528e747d6a852bbf5fd03b"
+    },
+    {
+      "path": "public/demos/teach-hazard-early-shared.chi.jsonl",
+      "bytes": 49193,
+      "sourceSha256": "359d49583967851bec6db773706750e40fe8600747a5704869637924c5734181",
+      "packagedSha256": "359d49583967851bec6db773706750e40fe8600747a5704869637924c5734181"
+    },
+    {
+      "path": "public/demos/teach-hazard-early-unique.chi.jsonl",
+      "bytes": 37572,
+      "sourceSha256": "f4409c5c169ff108540bee60edcd7d73fbe1713e564c6de85708934a7ac05195",
+      "packagedSha256": "f4409c5c169ff108540bee60edcd7d73fbe1713e564c6de85708934a7ac05195"
+    },
+    {
+      "path": "public/demos/teach-hazard-make-invalid.chi.jsonl",
+      "bytes": 121483,
+      "sourceSha256": "7f318d35dfacf9e2dbd4376c5c32327f10b3d806bdf02766bcf7e0e07cf089fd",
+      "packagedSha256": "7f318d35dfacf9e2dbd4376c5c32327f10b3d806bdf02766bcf7e0e07cf089fd"
+    },
+    {
+      "path": "public/demos/teach-hazard-partial.chi.jsonl",
+      "bytes": 85413,
+      "sourceSha256": "85ff9a64335b836654c22405d32f1b1f473d545a122e55c1b621e147c323e59f",
+      "packagedSha256": "85ff9a64335b836654c22405d32f1b1f473d545a122e55c1b621e147c323e59f"
+    },
+    {
+      "path": "public/demos/teach-hazard-retry.chi.jsonl",
+      "bytes": 74678,
+      "sourceSha256": "2da7a98ded29c20904613f75ef4e9677fee989ea16407f6a89ce9954eb2ecd02",
+      "packagedSha256": "2da7a98ded29c20904613f75ef4e9677fee989ea16407f6a89ce9954eb2ecd02"
+    },
+    {
+      "path": "public/demos/teach-hazard-same-address.chi.jsonl",
+      "bytes": 125896,
+      "sourceSha256": "ed1a6cc4b19529b3c298b91340e28396ae8fc97f648c1ff0e7e8d045acfde67c",
+      "packagedSha256": "ed1a6cc4b19529b3c298b91340e28396ae8fc97f648c1ff0e7e8d045acfde67c"
+    },
+    {
+      "path": "public/demos/teach-hazard-stash-pull.chi.jsonl",
+      "bytes": 111914,
+      "sourceSha256": "031f02feabfac9488f73636b8aefc9107780532de8e74b5cebed57efe6f91971",
+      "packagedSha256": "031f02feabfac9488f73636b8aefc9107780532de8e74b5cebed57efe6f91971"
+    },
+    {
+      "path": "public/demos/teach-hazard-stash-refuse.chi.jsonl",
+      "bytes": 75306,
+      "sourceSha256": "820a35f327bcffe1a56b840c2603f3af903ed4855eabd4e4b92fc19892db88c7",
+      "packagedSha256": "820a35f327bcffe1a56b840c2603f3af903ed4855eabd4e4b92fc19892db88c7"
+    },
+    {
+      "path": "public/demos/teach-hazard-victim.chi.jsonl",
+      "bytes": 113528,
+      "sourceSha256": "6b3207435c703e54731fe4aa5895d04d663a3c772dfa4b627af8d159a938efcc",
+      "packagedSha256": "6b3207435c703e54731fe4aa5895d04d663a3c772dfa4b627af8d159a938efcc"
+    },
+    {
+      "path": "public/demos/teach-hnf-00.chi.jsonl",
+      "bytes": 67507,
+      "sourceSha256": "5a0611746c378dd7e196e6a6846507d66858251df9b9726b08b53a42d40de952",
+      "packagedSha256": "5a0611746c378dd7e196e6a6846507d66858251df9b9726b08b53a42d40de952"
+    },
+    {
+      "path": "public/demos/teach-hnf-01.chi.jsonl",
+      "bytes": 99854,
+      "sourceSha256": "b1307f8b32e7d7896675973eca36a9372622db4a5209af565756697c721b1bb1",
+      "packagedSha256": "b1307f8b32e7d7896675973eca36a9372622db4a5209af565756697c721b1bb1"
+    },
+    {
+      "path": "public/demos/teach-hnf-10.chi.jsonl",
+      "bytes": 49286,
+      "sourceSha256": "0cb6e065a649ed605d23985aca4d63b07a98d4541f9b183456c318bdc62a1f1a",
+      "packagedSha256": "0cb6e065a649ed605d23985aca4d63b07a98d4541f9b183456c318bdc62a1f1a"
+    },
+    {
+      "path": "public/demos/teach-hnf-11.chi.jsonl",
+      "bytes": 102581,
+      "sourceSha256": "7b46a2c3a4824172cf5982348423ff8f16d5850724f6cfda5571dcec415d134c",
+      "packagedSha256": "7b46a2c3a4824172cf5982348423ff8f16d5850724f6cfda5571dcec415d134c"
+    },
+    {
+      "path": "public/demos/teach-special-compack-overtake.chi.jsonl",
+      "bytes": 30368,
+      "sourceSha256": "5b5689ad1ab094aab308e05d8ff1cf329d7c1ed935c699a9969cf828d6f68f01",
+      "packagedSha256": "5b5689ad1ab094aab308e05d8ff1cf329d7c1ed935c699a9969cf828d6f68f01"
+    },
+    {
+      "path": "public/demos/teach-special-copy-at-home.chi.jsonl",
+      "bytes": 13809,
+      "sourceSha256": "b8cd56cc3f96999d1030317e71349675f25ab83d4f1bfeec8276e7f4b6b9135b",
+      "packagedSha256": "b8cd56cc3f96999d1030317e71349675f25ab83d4f1bfeec8276e7f4b6b9135b"
+    },
+    {
+      "path": "public/demos/teach-special-data-before-response.chi.jsonl",
+      "bytes": 20912,
+      "sourceSha256": "8b4b428f4882f97fc2971b0ef9f5c3af3a0b70c7465578159ad5a1212c8c9912",
+      "packagedSha256": "8b4b428f4882f97fc2971b0ef9f5c3af3a0b70c7465578159ad5a1212c8c9912"
+    },
+    {
+      "path": "public/demos/teach-special-dct-double.chi.jsonl",
+      "bytes": 42029,
+      "sourceSha256": "e887fdd68ec7900503c319b3fd4db25345d3ade724f62ddd0a832f02b90d2095",
+      "packagedSha256": "e887fdd68ec7900503c319b3fd4db25345d3ade724f62ddd0a832f02b90d2095"
+    },
+    {
+      "path": "public/demos/teach-special-dct-fallback.chi.jsonl",
+      "bytes": 29106,
+      "sourceSha256": "200608834f473c27996b6018cd3c17752a168862251fb6b39eb2e35143c322fb",
+      "packagedSha256": "200608834f473c27996b6018cd3c17752a168862251fb6b39eb2e35143c322fb"
+    },
+    {
+      "path": "public/demos/teach-special-early-pcredit.chi.jsonl",
+      "bytes": 22196,
+      "sourceSha256": "8763b96405d027d51c20c40225384233e83e6c52fe79437302553c3d12727c44",
+      "packagedSha256": "8763b96405d027d51c20c40225384233e83e6c52fe79437302553c3d12727c44"
+    },
+    {
+      "path": "public/demos/teach-special-evict-snoop.chi.jsonl",
+      "bytes": 39269,
+      "sourceSha256": "dc18092fbae870901cd80ca86ffbac753d33b3b68f55006115a95e772487d182",
+      "packagedSha256": "dc18092fbae870901cd80ca86ffbac753d33b3b68f55006115a95e772487d182"
+    },
+    {
+      "path": "public/demos/teach-special-make-read-unique.chi.jsonl",
+      "bytes": 42819,
+      "sourceSha256": "56e960e3d092778e796d031769d38d43797b013398902d1110eaa43201ea97ea",
+      "packagedSha256": "56e960e3d092778e796d031769d38d43797b013398902d1110eaa43201ea97ea"
+    },
+    {
+      "path": "public/demos/teach-special-multiple-snoops.chi.jsonl",
+      "bytes": 66744,
+      "sourceSha256": "20679dad8053daf27a0d4843ebfbc3299b87d4a253e5cdf2247967c62542f13e",
+      "packagedSha256": "20679dad8053daf27a0d4843ebfbc3299b87d4a253e5cdf2247967c62542f13e"
+    },
+    {
+      "path": "public/demos/teach-special-ordered-writes.chi.jsonl",
+      "bytes": 38953,
+      "sourceSha256": "63ecf949c75948de8b997c5aeda7e9c46dbf8ac698f96552dde552828d1aa62d",
+      "packagedSha256": "63ecf949c75948de8b997c5aeda7e9c46dbf8ac698f96552dde552828d1aa62d"
+    },
+    {
+      "path": "public/demos/teach-special-partial-snoop-merge.chi.jsonl",
+      "bytes": 39126,
+      "sourceSha256": "62982c3f3c19550243ffd0956c1f8f26223fcf64e319c58b94116ced0a52f070",
+      "packagedSha256": "62982c3f3c19550243ffd0956c1f8f26223fcf64e319c58b94116ced0a52f070"
+    },
+    {
+      "path": "public/demos/teach-special-retry-invalidated.chi.jsonl",
+      "bytes": 39492,
+      "sourceSha256": "f92f28f376670be0db799f3c6125d46c68190e3b6ac617ce725c770fe9c12e60",
+      "packagedSha256": "f92f28f376670be0db799f3c6125d46c68190e3b6ac617ce725c770fe9c12e60"
+    },
+    {
+      "path": "public/demos/teach-special-split-early-snoop.chi.jsonl",
+      "bytes": 44965,
+      "sourceSha256": "eaa4a6d253ae2f8b90e67314a8ebb25455a6e3bc913941797bc3998bfd8ccadc",
+      "packagedSha256": "eaa4a6d253ae2f8b90e67314a8ebb25455a6e3bc913941797bc3998bfd8ccadc"
+    },
+    {
+      "path": "public/demos/teach-special-write-cancel.chi.jsonl",
+      "bytes": 18187,
+      "sourceSha256": "fab600210fe220fedbb5b7c461e7d650c8c51b19642fddb867bc1442629af9cc",
+      "packagedSha256": "fab600210fe220fedbb5b7c461e7d650c8c51b19642fddb867bc1442629af9cc"
+    },
+    {
+      "path": "public/demos/teach-special-writeclean-old.chi.jsonl",
+      "bytes": 56066,
+      "sourceSha256": "2d88d97258dd84ad33218a1460ad41adccaf75e57caa1fbef77028ef22e079fa",
+      "packagedSha256": "2d88d97258dd84ad33218a1460ad41adccaf75e57caa1fbef77028ef22e079fa"
+    },
+    {
+      "path": "public/demos/unique.chi.jsonl",
+      "bytes": 35741,
+      "sourceSha256": "1cef9c29f638e494131e3188d783b157905b0aecad9dc89ead23ad812f06f794",
+      "packagedSha256": "1cef9c29f638e494131e3188d783b157905b0aecad9dc89ead23ad812f06f794"
+    },
+    {
+      "path": "public/demos/writeback.chi.jsonl",
+      "bytes": 75554,
+      "sourceSha256": "d1b41056aab7fbc5e0666369240d8222a657c49f9bd03e58d895ddef328656ee",
+      "packagedSha256": "d1b41056aab7fbc5e0666369240d8222a657c49f9bd03e58d895ddef328656ee"
+    },
+    {
+      "path": "public/favicon.svg",
+      "bytes": 245,
+      "sourceSha256": "e37bb096959292c8add050d26741e13d2d89818a6c37b0e09600694b18d1094d",
+      "packagedSha256": "e37bb096959292c8add050d26741e13d2d89818a6c37b0e09600694b18d1094d"
+    },
+    {
+      "path": "public/reference/litmus-hazards.chi.jsonl",
+      "bytes": 8916061,
+      "sourceSha256": "ed5184b7902efc1be5996d3128322646b86fc9fe8e28a12e8d3f76fc9b5c31c7",
+      "packagedSha256": "ed5184b7902efc1be5996d3128322646b86fc9fe8e28a12e8d3f76fc9b5c31c7"
+    },
+    {
+      "path": "public/reference/litmus-tutorial.chi.jsonl",
+      "bytes": 3044578,
+      "sourceSha256": "7578539b77333c8c59ec2904adbfce7ae4d2eb44a1a9d372e1009eae8441db89",
+      "packagedSha256": "7578539b77333c8c59ec2904adbfce7ae4d2eb44a1a9d372e1009eae8441db89"
+    },
+    {
+      "path": "examples/coarse/capture-window.test.jsonl",
+      "bytes": 1294,
+      "sourceSha256": "51911ff993c9501bab92e1921d9c5be643515034ab2c129da310a26f88ccebee",
+      "packagedSha256": "51911ff993c9501bab92e1921d9c5be643515034ab2c129da310a26f88ccebee"
+    },
+    {
+      "path": "examples/coarse/miss-hit.coarse.jsonl",
+      "bytes": 21507,
+      "sourceSha256": "e5011dd4daad57dc1866c29038ae01e05d35899c9bbae5dd372b80b0e4d5c78e",
+      "packagedSha256": "e5011dd4daad57dc1866c29038ae01e05d35899c9bbae5dd372b80b0e4d5c78e"
+    },
+    {
+      "path": "examples/coarse/retry.coarse.jsonl",
+      "bytes": 31073,
+      "sourceSha256": "b62be9ae644a74cd013b84f68ad8ddc57ac0e1ff75323f11ece0d16a2f778e7a",
+      "packagedSha256": "b62be9ae644a74cd013b84f68ad8ddc57ac0e1ff75323f11ece0d16a2f778e7a"
+    },
+    {
+      "path": "examples/coarse/runtime-miss-hit.coarse.jsonl",
+      "bytes": 20292,
+      "sourceSha256": "a945c68d47a45610c4c91ad635aeaaa67997f240e8a090824229005b1e5364b0",
+      "packagedSha256": "a945c68d47a45610c4c91ad635aeaaa67997f240e8a090824229005b1e5364b0"
+    },
+    {
+      "path": "examples/coarse/runtime-retry.coarse.jsonl",
+      "bytes": 23860,
+      "sourceSha256": "6a7fe1d052fba9bc8fe2364ffc424393c39790e179f75080ff47d56e73a57960",
+      "packagedSha256": "6a7fe1d052fba9bc8fe2364ffc424393c39790e179f75080ff47d56e73a57960"
+    },
+    {
+      "path": "examples/coarse/same-address.coarse.jsonl",
+      "bytes": 22066,
+      "sourceSha256": "76facc5a59a55526662b3511d1f55cfe6893a02b7fc48c0ccdf68b21bc5380e8",
+      "packagedSha256": "76facc5a59a55526662b3511d1f55cfe6893a02b7fc48c0ccdf68b21bc5380e8"
+    },
+    {
+      "path": "examples/coarse/snoop-owner.coarse.jsonl",
+      "bytes": 12712,
+      "sourceSha256": "495e6cf8cab8612cb05f134a54767ce2387bf94d0913734f0616c22f41cd555a",
+      "packagedSha256": "495e6cf8cab8612cb05f134a54767ce2387bf94d0913734f0616c22f41cd555a"
+    },
+    {
+      "path": "examples/coarse/unique.coarse.jsonl",
+      "bytes": 12426,
+      "sourceSha256": "2eda4efc002ee8f65bb46c2ecf749131cc5df55ddbc4aec320f99c632b11c4fc",
+      "packagedSha256": "2eda4efc002ee8f65bb46c2ecf749131cc5df55ddbc4aec320f99c632b11c4fc"
+    },
+    {
+      "path": "examples/coarse/writeback.coarse.jsonl",
+      "bytes": 27212,
+      "sourceSha256": "0ebe6f164bb31034b5e6e6c2440ddb95bab3c4c6a31b6089223cae306b197d61",
+      "packagedSha256": "0ebe6f164bb31034b5e6e6c2440ddb95bab3c4c6a31b6089223cae306b197d61"
+    },
+    {
+      "path": "examples/teaching/compack-overtake.c",
+      "bytes": 311,
+      "sourceSha256": "8c8ca264c6b03f442a7f234bba2866acf23166d84cdeef4a676091e7e0fa83ad",
+      "packagedSha256": "8c8ca264c6b03f442a7f234bba2866acf23166d84cdeef4a676091e7e0fa83ad"
+    },
+    {
+      "path": "examples/teaching/copy-at-home.c",
+      "bytes": 286,
+      "sourceSha256": "7da7f1de0767edbc44cea61f7d35125030f8c8d263ea445cf83dd4397995bd79",
+      "packagedSha256": "7da7f1de0767edbc44cea61f7d35125030f8c8d263ea445cf83dd4397995bd79"
+    },
+    {
+      "path": "examples/teaching/data-before-response.c",
+      "bytes": 203,
+      "sourceSha256": "9cd5bc5bbf6c4ee1f41da74a2bd1fbb82094a6806eea955becfbf6808e2d7bce",
+      "packagedSha256": "9cd5bc5bbf6c4ee1f41da74a2bd1fbb82094a6806eea955becfbf6808e2d7bce"
+    },
+    {
+      "path": "examples/teaching/dct-double.c",
+      "bytes": 395,
+      "sourceSha256": "83b165d1665d944e70aa3bef31e5e1329d6244fa2c1e4ee2021bf839afefb9ba",
+      "packagedSha256": "83b165d1665d944e70aa3bef31e5e1329d6244fa2c1e4ee2021bf839afefb9ba"
+    },
+    {
+      "path": "examples/teaching/dct-fallback.c",
+      "bytes": 385,
+      "sourceSha256": "7fe1bddb7e5dd9dbd1febffe024386f407037d788c07c278096717a0974dadcd",
+      "packagedSha256": "7fe1bddb7e5dd9dbd1febffe024386f407037d788c07c278096717a0974dadcd"
+    },
+    {
+      "path": "examples/teaching/early-once.c",
+      "bytes": 383,
+      "sourceSha256": "439fdad2fbab01b24c9ebe3c72477047e5f802ed9af7037979bab59778559c37",
+      "packagedSha256": "439fdad2fbab01b24c9ebe3c72477047e5f802ed9af7037979bab59778559c37"
+    },
+    {
+      "path": "examples/teaching/early-pcredit.c",
+      "bytes": 201,
+      "sourceSha256": "990a2bb169ce3e02697dfda9f374d87339b92c79f7d562caa03fcb35471b7369",
+      "packagedSha256": "990a2bb169ce3e02697dfda9f374d87339b92c79f7d562caa03fcb35471b7369"
+    },
+    {
+      "path": "examples/teaching/early-shared.c",
+      "bytes": 385,
+      "sourceSha256": "ee87facdbd6429e7df060e46ed922f5dd3cb12c933dc35db41491b99c6018a16",
+      "packagedSha256": "ee87facdbd6429e7df060e46ed922f5dd3cb12c933dc35db41491b99c6018a16"
+    },
+    {
+      "path": "examples/teaching/early-unique.c",
+      "bytes": 385,
+      "sourceSha256": "7d691c45d317a60c660409dbb7ba2132b6c433a1b75a4188a4ec95a150b2224d",
+      "packagedSha256": "7d691c45d317a60c660409dbb7ba2132b6c433a1b75a4188a4ec95a150b2224d"
+    },
+    {
+      "path": "examples/teaching/evict-snoop.c",
+      "bytes": 300,
+      "sourceSha256": "83da46be5d5aab811cbdd38f0f25899a0f00aa41367f13cd60075954bb2be151",
+      "packagedSha256": "83da46be5d5aab811cbdd38f0f25899a0f00aa41367f13cd60075954bb2be151"
+    },
+    {
+      "path": "examples/teaching/make-read-unique.c",
+      "bytes": 408,
+      "sourceSha256": "c6e04d4fd9486e265f7a01ddce2db50b8de1bb8c00522819863d3f3e1166f21e",
+      "packagedSha256": "c6e04d4fd9486e265f7a01ddce2db50b8de1bb8c00522819863d3f3e1166f21e"
+    },
+    {
+      "path": "examples/teaching/multiple-snoops.c",
+      "bytes": 414,
+      "sourceSha256": "70b2771d91adf16491069f9e66462837ed0d1c8f50570a74767fb088a784d97e",
+      "packagedSha256": "70b2771d91adf16491069f9e66462837ed0d1c8f50570a74767fb088a784d97e"
+    },
+    {
+      "path": "examples/teaching/ordered-writes.c",
+      "bytes": 309,
+      "sourceSha256": "c53f5d0f1f0a3bf4aa3f5727bc0951695405024714d9ccbb0d46289d237b4eff",
+      "packagedSha256": "c53f5d0f1f0a3bf4aa3f5727bc0951695405024714d9ccbb0d46289d237b4eff"
+    },
+    {
+      "path": "examples/teaching/partial-snoop-merge.c",
+      "bytes": 421,
+      "sourceSha256": "63b907f97bd4b4231e28fc472a1c066731ea0ace97da970601e251a16b375917",
+      "packagedSha256": "63b907f97bd4b4231e28fc472a1c066731ea0ace97da970601e251a16b375917"
+    },
+    {
+      "path": "examples/teaching/retry-invalidated.c",
+      "bytes": 344,
+      "sourceSha256": "53648d825c3d26eacb1b6448413ba231e153c6ac407cf11af9a98d9a07f5d87d",
+      "packagedSha256": "53648d825c3d26eacb1b6448413ba231e153c6ac407cf11af9a98d9a07f5d87d"
+    },
+    {
+      "path": "examples/teaching/split-early-snoop.c",
+      "bytes": 349,
+      "sourceSha256": "e2dd345ef02d2bac4eaa96752dab4509fd63da2c334a1ce70f7158a40d6ea468",
+      "packagedSha256": "e2dd345ef02d2bac4eaa96752dab4509fd63da2c334a1ce70f7158a40d6ea468"
+    },
+    {
+      "path": "examples/teaching/write-cancel.c",
+      "bytes": 311,
+      "sourceSha256": "294b9c031151f0cb7400233629eca534f31618076265240bf1a6324ebbea86fa",
+      "packagedSha256": "294b9c031151f0cb7400233629eca534f31618076265240bf1a6324ebbea86fa"
+    },
+    {
+      "path": "examples/teaching/writeclean-old.c",
+      "bytes": 451,
+      "sourceSha256": "758fc10b159efbaa617dd499b70414114e1d395f169b2a515f71a973f5ef3c94",
+      "packagedSha256": "758fc10b159efbaa617dd499b70414114e1d395f169b2a515f71a973f5ef3c94"
+    },
+    {
+      "path": "validation/2026-10-04/bpu-fault-diagnostic.json",
+      "bytes": 60049,
+      "sourceSha256": "7bf7196cd9bdbc8ef469db7ed1f4641ea3e67f7330d54e3a82f7a8400f28d7ba",
+      "packagedSha256": "7bf7196cd9bdbc8ef469db7ed1f4641ea3e67f7330d54e3a82f7a8400f28d7ba"
+    },
+    {
+      "path": "validation/2026-10-04/bpu-strict-failure.json",
+      "bytes": 5331,
+      "sourceSha256": "0cdcf058d79b97f0340e009c43ec29cf10d2868aa42919a4df3b6506b58112fe",
+      "packagedSha256": "0cdcf058d79b97f0340e009c43ec29cf10d2868aa42919a4df3b6506b58112fe"
+    },
+    {
+      "path": "validation/2026-10-04/bpu-trace-invariance.json",
+      "bytes": 4524,
+      "sourceSha256": "262ed91f8046e05c15e1c96e27014934aa197b9b6b8e6891e5ec8f183b93e481",
+      "packagedSha256": "262ed91f8046e05c15e1c96e27014934aa197b9b6b8e6891e5ec8f183b93e481"
+    },
+    {
+      "path": "validation/2026-10-04/build-candidate01-failure.json",
+      "bytes": 356,
+      "sourceSha256": "48866a7838a1872f94dcd8ad182459b5b521bfc49a3f5a6057a45b68dc5fcbdf",
+      "packagedSha256": "48866a7838a1872f94dcd8ad182459b5b521bfc49a3f5a6057a45b68dc5fcbdf"
+    },
+    {
+      "path": "validation/2026-10-04/build-candidate02-success.json",
+      "bytes": 687,
+      "sourceSha256": "8a1ad1c1425e2ef544d5c0520b6d154d13d4cd8b0a1712316d361d6d6dd23516",
+      "packagedSha256": "8a1ad1c1425e2ef544d5c0520b6d154d13d4cd8b0a1712316d361d6d6dd23516"
+    },
+    {
+      "path": "validation/2026-10-04/fetch-coverage-audit.json",
+      "bytes": 67724,
+      "sourceSha256": "c255c6aaa8341fb983ecd18065edf15a6acc4bdd979a8c3d030ec7cfffa3bdca",
+      "packagedSha256": "c255c6aaa8341fb983ecd18065edf15a6acc4bdd979a8c3d030ec7cfffa3bdca"
+    },
+    {
+      "path": "validation/2026-10-04/focused-driver-failure.json",
+      "bytes": 1106,
+      "sourceSha256": "e5e3c016b31551207379d2476c587b7f92a5812151392607e74559c9eb52a0c1",
+      "packagedSha256": "e5e3c016b31551207379d2476c587b7f92a5812151392607e74559c9eb52a0c1"
+    },
+    {
+      "path": "validation/2026-10-04/focused-summary.json",
+      "bytes": 14966,
+      "sourceSha256": "b4669dd6ffa2e0d4e5ed988cccad50141acd65a0ef444d9e1174aa8a3c5ddbf5",
+      "packagedSha256": "b4669dd6ffa2e0d4e5ed988cccad50141acd65a0ef444d9e1174aa8a3c5ddbf5"
+    },
+    {
+      "path": "validation/2026-10-04/fs-driver-completion.json",
+      "bytes": 693,
+      "sourceSha256": "6e46bb42202a199d4c15c504cfa0cf086315969e8dbc93a646f028468fd9630a",
+      "packagedSha256": "6e46bb42202a199d4c15c504cfa0cf086315969e8dbc93a646f028468fd9630a"
+    },
+    {
+      "path": "validation/2026-10-04/fs-fault-diagnostic-completion.json",
+      "bytes": 898,
+      "sourceSha256": "7136433b79132c781525e60b10978f610ce5b3d1394b1d6391437833c600a419",
+      "packagedSha256": "7136433b79132c781525e60b10978f610ce5b3d1394b1d6391437833c600a419"
+    },
+    {
+      "path": "validation/2026-10-04/fs-fault-diagnostic-notes.md",
+      "bytes": 4293,
+      "sourceSha256": "203a4492ceb83a0b8800f6290909e5c340d335175c3474c132b15ce2ece00f0b",
+      "packagedSha256": "203a4492ceb83a0b8800f6290909e5c340d335175c3474c132b15ce2ece00f0b"
+    },
+    {
+      "path": "validation/2026-10-04/fs-fault-diagnostic.json",
+      "bytes": 13732,
+      "sourceSha256": "626951a78b7fcfbc4bc0ac07c18dce27f8ae506c126488288cccb2d4a12e7697",
+      "packagedSha256": "626951a78b7fcfbc4bc0ac07c18dce27f8ae506c126488288cccb2d4a12e7697"
+    },
+    {
+      "path": "validation/2026-10-04/fs-strict-failure.json",
+      "bytes": 13616,
+      "sourceSha256": "2893378bb0872d60bf338872a49a2f9db48a69759d8d9d455b9a648cf005b422",
+      "packagedSha256": "2893378bb0872d60bf338872a49a2f9db48a69759d8d9d455b9a648cf005b422"
+    },
+    {
+      "path": "validation/2026-10-04/manifest.json",
+      "bytes": 2939,
+      "sourceSha256": "32cf381265ed28781e4e7ef27aa541f67d8ff4662883da3e67b173e75e1d26fb",
+      "packagedSha256": "32cf381265ed28781e4e7ef27aa541f67d8ff4662883da3e67b173e75e1d26fb"
+    },
+    {
+      "path": "validation/2026-10-04/previous-boot-walltime.json",
+      "bytes": 3475,
+      "sourceSha256": "68844004a3c2c9b371b2db1d0a8c0ddcc77110686c473cfcad54c92d3a6d59c7",
+      "packagedSha256": "68844004a3c2c9b371b2db1d0a8c0ddcc77110686c473cfcad54c92d3a6d59c7"
+    },
+    {
+      "path": "validation/2026-10-04/rtl-corrected-fault-behavior.json",
+      "bytes": 14553,
+      "sourceSha256": "00f5f254d8639e7f029f8ce4322e5525463f9e01fea83a796317de5e746e96e6",
+      "packagedSha256": "00f5f254d8639e7f029f8ce4322e5525463f9e01fea83a796317de5e746e96e6"
+    },
+    {
+      "path": "validation/2026-10-04/rtl-strict-failure.json",
+      "bytes": 5047,
+      "sourceSha256": "e97173bd557422243b5b5703574f4524c34ba7b19df52a8133aa71d0e28cff79",
+      "packagedSha256": "e97173bd557422243b5b5703574f4524c34ba7b19df52a8133aa71d0e28cff79"
+    },
+    {
+      "path": "validation/2026-10-04/rtl-trace-invariance.json",
+      "bytes": 1313,
+      "sourceSha256": "ae331657a41e999b45b4e72036cdd736d0d7945f6fc4a7e2c311343c1b7df1e1",
+      "packagedSha256": "ae331657a41e999b45b4e72036cdd736d0d7945f6fc4a7e2c311343c1b7df1e1"
+    },
+    {
+      "path": "validation/README.md",
+      "bytes": 2655,
+      "sourceSha256": "fc5b0fcbc18eb9bcd0b93fe8310846fc763b7045ae78347a94222f42baeba59c",
+      "packagedSha256": "fc5b0fcbc18eb9bcd0b93fe8310846fc763b7045ae78347a94222f42baeba59c"
+    },
+    {
+      "path": ".gitignore",
+      "bytes": 438,
+      "sourceSha256": "ca9828ec6e96616e4ac03fe22e543fdb26ce47864ad29879cb63ae1d4973d6a1",
+      "packagedSha256": "86384f6485e33b09d3fac8db925db6d15243e410d4614990c958f697b7ecb455"
+    },
+    {
+      "path": "README.md",
+      "bytes": 15461,
+      "sourceSha256": "df8e8bffcc2ec2d17a18140a393d4720d5f538ce6f8039a31cdac5e4950397e3",
+      "packagedSha256": "df8e8bffcc2ec2d17a18140a393d4720d5f538ce6f8039a31cdac5e4950397e3"
+    },
+    {
+      "path": "plan.md",
+      "bytes": 7597,
+      "sourceSha256": "7725b8fd75cd8d78c3b0d47e5648a9beb715da4649d1eda6d27451102928bbff",
+      "packagedSha256": "7725b8fd75cd8d78c3b0d47e5648a9beb715da4649d1eda6d27451102928bbff"
+    },
+    {
+      "path": "package.json",
+      "bytes": 1226,
+      "sourceSha256": "3384bfa2cc5d08dcb67ef70a894b211e894a730654e63f3e8d2e81c13551ba6e",
+      "packagedSha256": "3384bfa2cc5d08dcb67ef70a894b211e894a730654e63f3e8d2e81c13551ba6e"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "bytes": 49917,
+      "sourceSha256": "6aef396950ff6c8d2897d051a786ad83b8906ddd1811513448eb22a33475400e",
+      "packagedSha256": "6aef396950ff6c8d2897d051a786ad83b8906ddd1811513448eb22a33475400e"
+    },
+    {
+      "path": "pnpm-workspace.yaml",
+      "bytes": 29,
+      "sourceSha256": "ac02d96368617c760f093cfe61fdec64b6244007ab3553e0d6621f706f54a353",
+      "packagedSha256": "ac02d96368617c760f093cfe61fdec64b6244007ab3553e0d6621f706f54a353"
+    },
+    {
+      "path": "index.html",
+      "bytes": 515,
+      "sourceSha256": "8149c11a3837dacbffba7517566d5965f3909d04bc1136294e3aed8bc74a2748",
+      "packagedSha256": "8149c11a3837dacbffba7517566d5965f3909d04bc1136294e3aed8bc74a2748"
+    },
+    {
+      "path": "tsconfig.json",
+      "bytes": 434,
+      "sourceSha256": "9e9ec0dce4d450da18b001d354a5ea01e778676b2b698f92ad4acb720b05cad9",
+      "packagedSha256": "9e9ec0dce4d450da18b001d354a5ea01e778676b2b698f92ad4acb720b05cad9"
+    },
+    {
+      "path": "vite.config.ts",
+      "bytes": 180,
+      "sourceSha256": "c82a0cd4976de5c9597348777d98b8f4a9fdb96dab5aaf5a93029feabb3d66d1",
+      "packagedSha256": "c82a0cd4976de5c9597348777d98b8f4a9fdb96dab5aaf5a93029feabb3d66d1"
+    },
+    {
+      "path": "vitest.config.ts",
+      "bytes": 167,
+      "sourceSha256": "ed71b5ad8d045535cdcd4aac0d7eda6b8d00b2b98058d9084aaad1d9033452db",
+      "packagedSha256": "ed71b5ad8d045535cdcd4aac0d7eda6b8d00b2b98058d9084aaad1d9033452db"
+    }
+  ],
+  "excludedGeneratedFiles": [
+    "native/gem5/__pycache__/bpu_phase_mirror_patch.cpython-312.pyc",
+    "native/gem5/__pycache__/bpu_phase_oracle_patch.cpython-312.pyc",
+    "native/gem5/__pycache__/bpu_phase_storage_patch.cpython-312.pyc",
+    "native/gem5/__pycache__/extended_endpoints.cpython-312.pyc",
+    "native/gem5/__pycache__/extended_patch.cpython-312.pyc",
+    "native/gem5/__pycache__/linux_stage_gate.cpython-312.pyc",
+    "native/gem5/__pycache__/native_l2_fs.cpython-312.pyc",
+    "native/gem5/__pycache__/native_l2_patch.cpython-312.pyc",
+    "native/gem5/__pycache__/native_l2_run.cpython-312.pyc",
+    "native/gem5/__pycache__/nonspec_tlb_retry_patch.cpython-312.pyc",
+    "native/gem5/__pycache__/riscv_cbo_patch.cpython-312.pyc",
+    "native/gem5/__pycache__/router_host_scan_patch.cpython-312.pyc",
+    "native/gem5/__pycache__/smoke.cpython-312.pyc",
+    "scripts/__pycache__/apply-bpu-phase-mirror.cpython-312.pyc",
+    "scripts/__pycache__/apply-bpu-phase-storage.cpython-312.pyc",
+    "scripts/__pycache__/apply-bpu-predecode-boundary.cpython-312.pyc",
+    "scripts/__pycache__/apply-fetch-demand-fault-candidate02.cpython-312.pyc",
+    "scripts/__pycache__/apply-fetch-demand-fault.cpython-312.pyc",
+    "scripts/__pycache__/apply-fetch-predecode-boundary.cpython-312.pyc",
+    "scripts/__pycache__/apply-gem5.cpython-312.pyc",
+    "scripts/__pycache__/apply-nonspec-tlb-retry.cpython-312.pyc",
+    "scripts/__pycache__/apply-riscv-cbo.cpython-312.pyc",
+    "scripts/__pycache__/apply-router-host-scan.cpython-312.pyc",
+    "scripts/__pycache__/build-fetch-demand-fault-candidate.cpython-312.pyc",
+    "scripts/__pycache__/build-native-fetch-stream-fs.cpython-312.pyc",
+    "scripts/__pycache__/build-native-l2.cpython-312.pyc",
+    "scripts/__pycache__/build-native-linux-random-memory.cpython-312.pyc",
+    "scripts/__pycache__/build-native-rtl.cpython-312.pyc",
+    "scripts/__pycache__/build-teaching.cpython-312.pyc",
+    "scripts/__pycache__/check-bpu-phase-storage-equivalence.cpython-312.pyc",
+    "scripts/__pycache__/check-bpu-phase-trace-invariance.cpython-312.pyc",
+    "scripts/__pycache__/check-chi-transfer-census.cpython-312.pyc",
+    "scripts/__pycache__/check-kernel-build.cpython-312.pyc",
+    "scripts/__pycache__/check-kernel-torture.cpython-312.pyc",
+    "scripts/__pycache__/check-linux-cbo.cpython-312.pyc",
+    "scripts/__pycache__/check-linux-kernel-build.cpython-312.pyc",
+    "scripts/__pycache__/check-linux-litmus.cpython-312.pyc",
+    "scripts/__pycache__/check-linux-random-memory.cpython-312.pyc",
+    "scripts/__pycache__/check-linux-suite.cpython-312.pyc",
+    "scripts/__pycache__/check-linux-uncached.cpython-312.pyc",
+    "scripts/__pycache__/check-native-fetch-fault-regression.cpython-312.pyc",
+    "scripts/__pycache__/check-native-fs-equivalence.cpython-312.pyc",
+    "scripts/__pycache__/check-native-linux-complete-08.cpython-312.pyc",
+    "scripts/__pycache__/check-native-linux-complete.cpython-312.pyc",
+    "scripts/__pycache__/check-native-linux-random-memory.cpython-312.pyc",
+    "scripts/__pycache__/check-native-linux-rootfs-build.cpython-312.pyc",
+    "scripts/__pycache__/check-native-linux-validation.cpython-312.pyc",
+    "scripts/__pycache__/check-native-litmus.cpython-312.pyc",
+    "scripts/__pycache__/check-native-rtl-behavior.cpython-312.pyc",
+    "scripts/__pycache__/check-native-rtl.cpython-312.pyc",
+    "scripts/__pycache__/check-native-wire.cpython-312.pyc",
+    "scripts/__pycache__/check-runtime.cpython-312.pyc",
+    "scripts/__pycache__/compare-linux-kernel-build.cpython-312.pyc",
+    "scripts/__pycache__/continue-native-linux-08.cpython-312.pyc",
+    "scripts/__pycache__/freeze-linux-suite.cpython-312.pyc",
+    "scripts/__pycache__/linux-kernel-reference.cpython-312.pyc",
+    "scripts/__pycache__/native_linux_run08.cpython-312.pyc",
+    "scripts/__pycache__/native_linux_run_v2.cpython-312.pyc",
+    "scripts/__pycache__/prepare-native-linux-08.cpython-312.pyc",
+    "scripts/__pycache__/run-fetch-boundary-regressions.cpython-312.pyc",
+    "scripts/__pycache__/run-native-fetch-stream-fs.cpython-312.pyc",
+    "scripts/__pycache__/run-native-linux-server.cpython-312.pyc",
+    "scripts/__pycache__/teaching_control.cpython-312.pyc",
+    "scripts/__pycache__/teaching_data.cpython-312.pyc",
+    "scripts/__pycache__/teaching_flow.cpython-312.pyc",
+    "scripts/__pycache__/teaching_races.cpython-312.pyc",
+    "scripts/__pycache__/test-native-linux-validation.cpython-312.pyc",
+    "tests/native/__pycache__/test_bpu_phase_storage_equivalence.cpython-312.pyc",
+    "tests/native/__pycache__/test_bpu_phase_storage_patch.cpython-312.pyc",
+    "tests/native/__pycache__/test_bpu_phase_trace_invariance.cpython-312.pyc",
+    "tests/native/__pycache__/test_chi_transfer_census.cpython-312.pyc",
+    "tests/native/__pycache__/test_freeze_linux_suite.cpython-312.pyc",
+    "tests/native/__pycache__/test_kernel_build_checker.cpython-312.pyc",
+    "tests/native/__pycache__/test_kernel_build_reference_compare.cpython-312.pyc",
+    "tests/native/__pycache__/test_kernel_torture_checker.cpython-312.pyc",
+    "tests/native/__pycache__/test_linux_litmus_checker.cpython-312.pyc",
+    "tests/native/__pycache__/test_linux_random_memory_checker.cpython-312.pyc",
+    "tests/native/__pycache__/test_linux_stage_gate.cpython-312.pyc",
+    "tests/native/__pycache__/test_native_fetch_fault_regression.cpython-312.pyc",
+    "tests/native/__pycache__/test_native_linux_08.cpython-312.pyc",
+    "tests/native/__pycache__/test_native_linux_complete_checker.cpython-312.pyc",
+    "tests/native/__pycache__/test_native_linux_random_memory.cpython-312.pyc",
+    "tests/native/__pycache__/test_native_linux_run_v2.cpython-312.pyc",
+    "tests/native/__pycache__/test_native_linux_server.cpython-312.pyc",
+    "tests/native/__pycache__/test_native_wire_gate.cpython-312.pyc",
+    "tests/native/__pycache__/test_nonspec_tlb_retry_patch.cpython-312.pyc",
+    "tests/native/__pycache__/test_refiner.cpython-312.pyc",
+    "tests/native/__pycache__/test_refiner_native.cpython-312.pyc",
+    "tests/native/__pycache__/test_router_host_scan_patch.cpython-312.pyc",
+    "public/benchmarks/100k.chi.jsonl",
+    "public/reference/issue-h.pdf",
+    "examples/native-l2/run.chi.jsonl"
+  ]
+}

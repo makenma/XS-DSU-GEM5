@@ -198,6 +198,7 @@ class HomeLinkLayer : public ruby::Consumer
 
     struct RetryRecord
     {
+        FlowGraphIdentity flow;
         uint64_t originSeq = 0;
         uint64_t retryCycle = 0;
         uint32_t srcid = 0;
@@ -257,6 +258,7 @@ class HomeLinkLayer : public ruby::Consumer
 
     struct PendingWinner
     {
+        FlowGraphIdentity flow;
         bool valid = false;
         uint8_t priority = 0;
         uint32_t srcid = 0;

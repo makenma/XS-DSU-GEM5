@@ -1,0 +1,519 @@
+{
+  "passed": true,
+  "verdict": "corrected-fault-behavior-verified",
+  "legacyStrictPassed": false,
+  "statisticsEquivalent": false,
+  "linuxAcceptance": false,
+  "launchAuthorized": false,
+  "profile": "rtl-se-model09-to-model10-candidate02-trace-on-v1",
+  "strictReport": {
+    "path": "/root/chi-flowgraph-work/linux-validation/runs/model10-statistics-characterization-02/rtl-on-vs-model09-strict.json",
+    "sha256": "e97173bd557422243b5b5703574f4524c34ba7b19df52a8133aa71d0e28cff79"
+  },
+  "preservedHistoricalReports": [
+    {
+      "path": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model09-regressions-01/se-rtl-on-equivalence.json",
+      "sha256": "8a4e0c64a4435e58185d14cc64906cf8a868016f5bac73229488515ccb9cb226",
+      "passed": true
+    },
+    {
+      "path": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model10-regressions-01/se-rtl-on-equivalence.json",
+      "sha256": "0c39d5acb5e79af922086ec31490d1304a58cd2989bd69a30817e66a6eb88614",
+      "passed": false
+    }
+  ],
+  "normalRuns": [
+    {
+      "folder": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model09-regressions-01/se-rtl-on",
+      "planSha256": "c3ee009d4012d04ae104b03b1edc8281ab1cba0c04bad4e61adb07d339f15122",
+      "result": {
+        "tick": "22699000",
+        "cause": "exiting with last active thread context",
+        "exitCode": 0,
+        "cpuExitTick": "21699000",
+        "drainEndTick": "22699000",
+        "tailTicksRequested": 1000000,
+        "tailCause": "simulate() limit reached",
+        "sharedPhysical": "0xc000",
+        "sharedBytes": 65536,
+        "uncachedMapping": {
+          "virtual": "0x200000000",
+          "physical": "0x1c000",
+          "bytes": 4096,
+          "kind": "normal-noncacheable-ram",
+          "cacheableAlias": false
+        },
+        "timedCpuPath": "KMH CPU -> classic L1 -> ChiNativeL2 -> CHI NoC -> HN -> ChiNativeMemory",
+        "protocolOpcodeInjection": false,
+        "simulationSeed": 1,
+        "pass": true
+      },
+      "hashes": {
+        "config.ini": "af4e329ac6c627598ba4e501a4fcd5bd84445c790baff6431e65eba4eda1796e",
+        "flowgraph-config.json": "5409d53f0da22f2f296d43f37f16b36a9a11544ead2e0b7943df1105102522be",
+        "raw.jsonl": "4802ef3dcd5aa2cdc80b1796657f79bc1d4cfd3830a756d5573b72e2892aa902",
+        "counts.json": "1f2b652afcfe37086bc16027acac97251858eec0808a57703f54c3995ca62a0d"
+      }
+    },
+    {
+      "folder": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model10-regressions-01/se-rtl-on",
+      "planSha256": "017f8b490a30c47a487a819a56f1262e46c025626cf447b58631d82a1e697d96",
+      "result": {
+        "tick": "22699000",
+        "cause": "exiting with last active thread context",
+        "exitCode": 0,
+        "cpuExitTick": "21699000",
+        "drainEndTick": "22699000",
+        "tailTicksRequested": 1000000,
+        "tailCause": "simulate() limit reached",
+        "sharedPhysical": "0xc000",
+        "sharedBytes": 65536,
+        "uncachedMapping": {
+          "virtual": "0x200000000",
+          "physical": "0x1c000",
+          "bytes": 4096,
+          "kind": "normal-noncacheable-ram",
+          "cacheableAlias": false
+        },
+        "timedCpuPath": "KMH CPU -> classic L1 -> ChiNativeL2 -> CHI NoC -> HN -> ChiNativeMemory",
+        "protocolOpcodeInjection": false,
+        "simulationSeed": 1,
+        "pass": true
+      },
+      "hashes": {
+        "config.ini": "af4e329ac6c627598ba4e501a4fcd5bd84445c790baff6431e65eba4eda1796e",
+        "flowgraph-config.json": "5409d53f0da22f2f296d43f37f16b36a9a11544ead2e0b7943df1105102522be",
+        "raw.jsonl": "4802ef3dcd5aa2cdc80b1796657f79bc1d4cfd3830a756d5573b72e2892aa902",
+        "counts.json": "1f2b652afcfe37086bc16027acac97251858eec0808a57703f54c3995ca62a0d"
+      }
+    }
+  ],
+  "primitiveDeltaCount": 12,
+  "cdfOnlyChangedKeys": 2,
+  "derivedFormulaCount": 8,
+  "statisticCountPerRun": 8936,
+  "statisticDifferences": {
+    "system.cpu0.backendBound": [
+      [
+        "0.296577"
+      ],
+      [
+        "0.296569"
+      ]
+    ],
+    "system.cpu0.coreBound": [
+      [
+        "0.254148"
+      ],
+      [
+        "0.254141"
+      ]
+    ],
+    "system.cpu0.decode.decodedInsts": [
+      [
+        "73473"
+      ],
+      [
+        "73471"
+      ]
+    ],
+    "system.cpu0.decode.runCycles": [
+      [
+        "12668"
+      ],
+      [
+        "12667"
+      ]
+    ],
+    "system.cpu0.fetch.cycles": [
+      [
+        "19010"
+      ],
+      [
+        "19011"
+      ]
+    ],
+    "system.cpu0.fetch.fetchBubbles": [
+      [
+        "10943"
+      ],
+      [
+        "10944"
+      ]
+    ],
+    "system.cpu0.fetch.fetchStatusDist::Blocked": [
+      [
+        "0",
+        "0.00%",
+        "89.70%"
+      ],
+      [
+        "0",
+        "0.00%",
+        "89.71%"
+      ]
+    ],
+    "system.cpu0.fetch.fetchStatusDist::Running": [
+      [
+        "19064",
+        "88.42%",
+        "88.42%"
+      ],
+      [
+        "19065",
+        "88.42%",
+        "88.42%"
+      ]
+    ],
+    "system.cpu0.fetch.fetchStatusDist::Squashing": [
+      [
+        "277",
+        "1.28%",
+        "89.70%"
+      ],
+      [
+        "277",
+        "1.28%",
+        "89.71%"
+      ]
+    ],
+    "system.cpu0.fetch.fetchStatusDist::TrapPending": [
+      [
+        "6",
+        "0.03%",
+        "89.73%"
+      ],
+      [
+        "5",
+        "0.02%",
+        "89.73%"
+      ]
+    ],
+    "system.cpu0.fetch.frontendBandwidthBound": [
+      [
+        "0.003285"
+      ],
+      [
+        "0.003293"
+      ]
+    ],
+    "system.cpu0.fetch.frontendBound": [
+      [
+        "0.084589"
+      ],
+      [
+        "0.084597"
+      ]
+    ],
+    "system.cpu0.frontendBandwidthBound": [
+      [
+        "0.003285"
+      ],
+      [
+        "0.003293"
+      ]
+    ],
+    "system.cpu0.frontendBound": [
+      [
+        "0.084589"
+      ],
+      [
+        "0.084597"
+      ]
+    ],
+    "system.cpu0.iew.decodeStallReason::FetchFragStall": [
+      [
+        "441",
+        "0.34%",
+        "88.88%"
+      ],
+      [
+        "437",
+        "0.34%",
+        "88.88%"
+      ]
+    ],
+    "system.cpu0.iew.decodeStallReason::NoStall": [
+      [
+        "114525",
+        "88.54%",
+        "88.54%"
+      ],
+      [
+        "114529",
+        "88.54%",
+        "88.54%"
+      ]
+    ],
+    "system.cpu0.iew.fetchStallReason::FetchFragStall": [
+      [
+        "518",
+        "0.40%",
+        "82.58%"
+      ],
+      [
+        "519",
+        "0.40%",
+        "82.58%"
+      ]
+    ],
+    "system.cpu0.iew.fetchStallReason::ITlbStall": [
+      [
+        "0",
+        "0.00%",
+        "80.91%"
+      ],
+      [
+        "6",
+        "0.00%",
+        "80.91%"
+      ]
+    ],
+    "system.cpu0.iew.fetchStallReason::NoStall": [
+      [
+        "103438",
+        "79.98%",
+        "79.98%"
+      ],
+      [
+        "103437",
+        "79.98%",
+        "79.98%"
+      ]
+    ],
+    "system.cpu0.iew.fetchStallReason::OtherFetchStall": [
+      [
+        "10332",
+        "7.99%",
+        "90.56%"
+      ],
+      [
+        "10326",
+        "7.98%",
+        "90.56%"
+      ]
+    ],
+    "system.cpu0.l1Bound": [
+      [
+        "0.004678"
+      ],
+      [
+        "0.004677"
+      ]
+    ],
+    "system.cpu0.memoryBound": [
+      [
+        "0.042429"
+      ],
+      [
+        "0.042428"
+      ]
+    ]
+  },
+  "boundedEpisodes": [
+    {
+      "path": "/root/chi-flowgraph-work/linux-validation/runs/model10-se-fetch-fault-diagnostic-03/model09/fetch-fault-debug.log",
+      "sha256": "24682302a6d67527c57a61d9162db61893e5d9c1b8938b4079e6fee5c252c3f9",
+      "requests": [
+        [
+          "21344000",
+          "system.cpu0.fetch",
+          "0xfffffffffffcc662"
+        ],
+        [
+          "21344000",
+          "system.cpu0.fetch",
+          "0xfffffffffffcc680"
+        ]
+      ],
+      "demands": [],
+      "carriers": [
+        "81808",
+        "81809"
+      ],
+      "decodedCarriers": [
+        "81808",
+        "81809"
+      ],
+      "recoveringBranchSequence": 81764,
+      "carrierFtq": 6609,
+      "recoveringFtq": 6608,
+      "evidence": [
+        {
+          "line": 2787,
+          "text": "21344000: system.cpu0.fetch: [tid:0] Instruction PC (0xfffffffffffcc662=>0xfffffffffffcc666).(0=>1) created [sn:81808]."
+        },
+        {
+          "line": 2790,
+          "text": "21344000: system.cpu0.fetch: Set instruction 81808 with fetch id 6609"
+        },
+        {
+          "line": 2811,
+          "text": "21344000: system.cpu0.fetch: [tid:0] [sn:81808] Sending instruction to decode from fetch queue. Fetch queue size: 2."
+        },
+        {
+          "line": 2803,
+          "text": "21344000: system.cpu0.fetch: [tid:0] Instruction PC (0xfffffffffffcc662=>0xfffffffffffcc666).(0=>1) created [sn:81809]."
+        },
+        {
+          "line": 2806,
+          "text": "21344000: system.cpu0.fetch: Set instruction 81809 with fetch id 6609"
+        },
+        {
+          "line": 2812,
+          "text": "21344000: system.cpu0.fetch: [tid:0] [sn:81809] Sending instruction to decode from fetch queue. Fetch queue size: 1."
+        },
+        {
+          "line": 3093,
+          "text": "21347000: system.cpu0.decode: [tid:0] Processing instruction [sn:81808] with PC (0xfffffffffffcc662=>0xfffffffffffcc666).(0=>1)"
+        },
+        {
+          "line": 3094,
+          "text": "21347000: system.cpu0.decode: [tid:0] Processing instruction [sn:81809] with PC (0xfffffffffffcc662=>0xfffffffffffcc666).(0=>1)"
+        },
+        {
+          "line": 2523,
+          "text": "21343000: system.cpu0.branchPred: Control squash: ftq_id=6608, control_pc=0x105c8, real_target=0xfffffffffffcc662, is_conditional=0, is_indirect=0, actually_taken=1, branch seq: 81773"
+        },
+        {
+          "line": 3074,
+          "text": "21347000: system.cpu0.commit: [tid:0] Squashing due to branch mispred PC:0x105b0 [sn:81764]"
+        },
+        {
+          "line": 3075,
+          "text": "21347000: system.cpu0.commit: [tid:0] Redirecting to PC (0x10000=>0x10004).(0=>1)"
+        },
+        {
+          "line": 3351,
+          "text": "21348000: system.cpu0.decode: [tid:0] Squashing instructions due to squash from commit."
+        },
+        {
+          "line": 3775,
+          "text": "21350000: system.cpu0.fetch: [tid:0] Squash caused by inst at PC: (0x105b0=>0x10000).(0=>1), seqNum: 81764"
+        },
+        {
+          "line": 3781,
+          "text": "21350000: system.cpu0.branchPred: Control squash: ftq_id=6608, control_pc=0x105b0, real_target=0x10000, is_conditional=0, is_indirect=1, actually_taken=1, branch seq: 81764"
+        }
+      ]
+    },
+    {
+      "path": "/root/chi-flowgraph-work/linux-validation/runs/model10-se-fetch-fault-diagnostic-03/model10/fetch-fault-debug.log",
+      "sha256": "5d5d22fc2c664c571c23f3061479e79564efe98dc8d3517b16b90030ae9b2978",
+      "requests": [
+        [
+          "21344000",
+          "system.cpu0.fetch",
+          "0xfffffffffffcc662"
+        ],
+        [
+          "21344000",
+          "system.cpu0.fetch",
+          "0xfffffffffffcc680"
+        ]
+      ],
+      "demands": [
+        [
+          "21345000",
+          "system.cpu0.fetch",
+          "0xfffffffffffcc662",
+          "0xfffffffffffcc662",
+          "0xfffffffffffcc662",
+          "0"
+        ]
+      ],
+      "carriers": [
+        "81808"
+      ],
+      "decodedCarriers": [],
+      "recoveringBranchSequence": 81764,
+      "carrierFtq": 6609,
+      "recoveringFtq": 6608,
+      "evidence": [
+        {
+          "line": 2643,
+          "text": "21345000: system.cpu0.fetch: [tid:0] Instruction PC (0xfffffffffffcc662=>0xfffffffffffcc666).(0=>1) created [sn:81808]."
+        },
+        {
+          "line": 2646,
+          "text": "21345000: system.cpu0.fetch: Set instruction 81808 with fetch id 6609"
+        },
+        {
+          "line": 2652,
+          "text": "21345000: system.cpu0.fetch: [tid:0] [sn:81808] Sending instruction to decode from fetch queue. Fetch queue size: 1."
+        },
+        {
+          "line": 2334,
+          "text": "21343000: system.cpu0.branchPred: Control squash: ftq_id=6608, control_pc=0x105c8, real_target=0xfffffffffffcc662, is_conditional=0, is_indirect=0, actually_taken=1, branch seq: 81773"
+        },
+        {
+          "line": 2876,
+          "text": "21347000: system.cpu0.commit: [tid:0] Squashing due to branch mispred PC:0x105b0 [sn:81764]"
+        },
+        {
+          "line": 2877,
+          "text": "21347000: system.cpu0.commit: [tid:0] Redirecting to PC (0x10000=>0x10004).(0=>1)"
+        },
+        {
+          "line": 3145,
+          "text": "21348000: system.cpu0.decode: [tid:0] Squashing instructions due to squash from commit."
+        },
+        {
+          "line": 3544,
+          "text": "21350000: system.cpu0.fetch: [tid:0] Squash caused by inst at PC: (0x105b0=>0x10000).(0=>1), seqNum: 81764"
+        },
+        {
+          "line": 3550,
+          "text": "21350000: system.cpu0.branchPred: Control squash: ftq_id=6608, control_pc=0x105b0, real_target=0x10000, is_conditional=0, is_indirect=1, actually_taken=1, branch seq: 81764"
+        }
+      ]
+    }
+  ],
+  "completeFaultCensus": [
+    {
+      "path": "/root/chi-flowgraph-work/linux-validation/runs/model10-se-fetch-fault-diagnostic-04/model09/fetch-fault-debug.log",
+      "sha256": "771b55a6533175eceb735dcb18840cb25affd479dc782e6bdfcef2cfd8e40fa0",
+      "requests": [
+        [
+          "21344000",
+          "system.cpu0.fetch",
+          "0xfffffffffffcc662"
+        ],
+        [
+          "21344000",
+          "system.cpu0.fetch",
+          "0xfffffffffffcc680"
+        ]
+      ],
+      "demands": []
+    },
+    {
+      "path": "/root/chi-flowgraph-work/linux-validation/runs/model10-se-fetch-fault-diagnostic-04/model10/fetch-fault-debug.log",
+      "sha256": "f9970df296949cac533193f59b2bcfc23127dadda772218b48f71ce16c68f638",
+      "requests": [
+        [
+          "21344000",
+          "system.cpu0.fetch",
+          "0xfffffffffffcc662"
+        ],
+        [
+          "21344000",
+          "system.cpu0.fetch",
+          "0xfffffffffffcc680"
+        ]
+      ],
+      "demands": [
+        [
+          "21345000",
+          "system.cpu0.fetch",
+          "0xfffffffffffcc662",
+          "0xfffffffffffcc662",
+          "0xfffffffffffcc662",
+          "0"
+        ]
+      ]
+    }
+  ],
+  "formulaSource": "fetch.cc:254-265; cpu.cc:131,486-529; base/stats/text.cc:269-292,338-383",
+  "scope": "One frozen four-hart RTL-SE trace-on workload. All other non-host statistics, CPU results/ticks and complete CHI bytes agree. Does not authorize BPU, FS, trace-off semantic coverage or Linux acceptance; historical strict FAIL remains."
+}

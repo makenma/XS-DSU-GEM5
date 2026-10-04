@@ -283,6 +283,18 @@ void UBTB::updateNewEntry(UBTBIter oldEntryIter, const BTBEntry &takenEntry, con
 
 
 void
+UBTB::invalidateBTBEntry(Addr pc)
+{
+    // The same branch can have entries tagged by different fetch-block starts.
+    for (auto &entry : ubtb) {
+        if (entry.valid && entry.pc == pc)
+            entry.valid = false;
+    }
+    // A staged prediction must not retain an iterator to an invalidated entry.
+    lastPred.hit_entry = ubtb.end();
+}
+
+void
 UBTB::update(const FetchTarget &stream)
 {
     auto meta = std::static_pointer_cast<UBTBMeta>(stream.predMetas[getComponentIdx()]);
@@ -314,7 +326,7 @@ UBTB::update(const FetchTarget &stream)
 
     // Verify uBTB state
     assert(ubtb.size() <= numEntries);
-    if (!usingS3Pred) {
+    if (!usingS3Pred && stream.squashType != SQUASH_PREDECODE) {
         updateNewEntry(oldEntryIter, takenEntry, startAddr);
     }
 }

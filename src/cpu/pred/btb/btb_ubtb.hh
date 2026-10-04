@@ -130,6 +130,7 @@ class UBTB : public TimedBaseBTBPredictor
     /** for statistics only
      * @param stream The fetch stream containing execution results and prediction metadata
      */
+    void invalidateBTBEntry(Addr pc) override;
     void update(const FetchTarget &stream) override;
 
     /** for statistics only

@@ -29,6 +29,7 @@
  */
 
 #include "arch/riscv/isa.hh"
+#include "arch/riscv/cbo.hh"
 
 #include <ctime>
 #include <set>
@@ -266,6 +267,7 @@ namespace RiscvISA
     [MISCREG_NMIVEC]        = "NMIVEC",
     [MISCREG_NMIE]          = "NMIE",
     [MISCREG_NMIP]          = "NMIP",
+    [MISCREG_SENVCFG]       = "SENVCFG",
 }};
 
 
@@ -533,6 +535,13 @@ ISA::setMiscRegNoEffect(int misc_reg, RegVal val)
 void
 ISA::setMiscReg(int misc_reg, RegVal val)
 {
+    // Each xenvcfg has independent WARL storage; do not mask h/s values by
+    // the corresponding higher-privilege CSR. Unsupported Zicboz stays zero.
+    if (misc_reg == MISCREG_MENVCFG || misc_reg == MISCREG_HENVCFG ||
+        misc_reg == MISCREG_SENVCFG) {
+        setMiscRegNoEffect(misc_reg, Cbo::legalizeEnvcfg(val, misc_reg == MISCREG_SENVCFG));
+        return;
+    }
     int v = readMiscReg(MISCREG_VIRMODE);
     if (misc_reg == MISCREG_STATUS) {
         DPRINTF(RiscvMisc, "setMiscReg: setting status with %#lx\n", val);

@@ -1,3 +1,5 @@
+#include <map>
+#include <tuple>
 #ifndef __HNF_COHERENCY_CONTROLLER_HH__
 #define __HNF_COHERENCY_CONTROLLER_HH__
 
@@ -68,6 +70,7 @@ class HnfCoherencyController
                            bool enable_retry = true);
 
     void setSlcsf(HnfSLCSF* slcsf) { slcsfUnit = slcsf; }
+    void setSnHashMasks(const std::vector<uint64_t>& masks) { snHashMasks = masks; }
 
     HnfCcAdmitResult acceptLinkReq(const HnfLinkToCcReq& req,
                                    uint64_t cycle);
@@ -163,6 +166,12 @@ class HnfCoherencyController
         PocqState pocqState = PocqState::Idle;
         PocqTxnKind txnKind = PocqTxnKind::Unknown;
         RawReq req{};
+        RawReq mcRequest{};
+        bool mcRetryPending = false;
+        uint8_t mcRetryType = 0;
+        FlowGraphIdentity mcFlow;
+        std::unordered_map<uint32_t, FlowGraphIdentity> snoopFlows;
+        std::string flowPayloadOrigin = "hnf_slc";
         uint64_t seq = 0;
         uint64_t acceptCycle = 0;
         uint64_t blockAddr = 0;
@@ -227,6 +236,7 @@ class HnfCoherencyController
     struct DirtyVictimTxn
     {
         SlcSfSlcVictim victim;
+        FlowGraphIdentity flow;
         uint32_t downstreamTxnId = 0;
         uint32_t homeNodeId = 0;
         uint8_t dbid = 0;
@@ -253,6 +263,7 @@ class HnfCoherencyController
     // it falls back to the scalar snNodeId (legacy single-SN path).
     std::vector<uint32_t> snNodeIds;
     uint32_t snInterleaveShift = 6;
+    std::vector<uint64_t> snHashMasks;
     bool directSnFakeData = true;
     bool dirtyVictimRetryEnabled = true;
     uint32_t rnfSlices = 1;
@@ -287,7 +298,11 @@ class HnfCoherencyController
      */
     uint32_t selectSnNode(uint64_t addr) const {
         if (snNodeIds.empty()) return snNodeId;
-        return snNodeIds[(addr >> snInterleaveShift) & (snNodeIds.size() - 1)];
+        if (snHashMasks.empty()) return snNodeIds[(addr >> snInterleaveShift) & (snNodeIds.size() - 1)];
+        unsigned index = 0;
+        for (unsigned bit = 0; bit < snHashMasks.size(); ++bit)
+            index |= (__builtin_parityll(addr & snHashMasks[bit]) << bit);
+        return snNodeIds.at(index);
     }
     uint32_t expectedDataBytes(const RawReq& req) const;
     void resetDataAssembly(DataAssembly& assembly, uint32_t start_offset,
@@ -312,6 +327,8 @@ class HnfCoherencyController
                              bool has_data, bool data_dirty = false);
     uint32_t targetRouteId(uint32_t target, uint64_t addr) const;
     void queueMcRead(uint32_t entry);
+    void retryCreditedDownstreamRequests();
+    std::map<std::tuple<uint32_t,uint32_t,uint8_t>,unsigned> downstreamCredits;
     void queueCompData(uint32_t entry, const std::vector<uint8_t>& data);
     void queueComp(uint32_t entry);
     void queueCompDBIDResp(uint32_t entry);

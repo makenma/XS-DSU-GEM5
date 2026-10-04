@@ -198,11 +198,11 @@ class TLB : public BaseTLB
     void demapPageL2(Addr vaddr,uint64_t asn);
 
     Fault checkPermissions(STATUS status, PrivilegeMode pmode, Addr vaddr, BaseMMU::Mode mode, PTE pte,
-                           Addr gpaddr, bool G);
+                           Addr gpaddr, bool G, bool cacheMaintenance = false);
     Fault checkGuestPermissions(STATUS status, PrivilegeMode pmode, Addr vaddr,
                       BaseMMU::Mode mode, PTESv39 pte);
     std::pair<bool, Fault> checkGPermissions(STATUS status, Addr vaddr, Addr gpaddr, BaseMMU::Mode mode, PTE pte,
-                                             bool h_inst);
+                                             bool h_inst, bool cacheMaintenance = false);
     Fault createPagefault(Addr vaddr, Addr gPaddr,BaseMMU::Mode mode,bool G);
 
     PrivilegeMode getMemPriv(ThreadContext *tc, BaseMMU::Mode mode);

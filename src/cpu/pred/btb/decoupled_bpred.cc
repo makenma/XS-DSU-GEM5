@@ -110,6 +110,11 @@ DecoupledBPUWithBTB::DecoupledBPUWithBTB(const DecoupledBPUWithBTBParams &p)
     commitFsqEntryFetchedInstsVector.resize(maxInstsNum+1, 0);
     lastPhaseFsqEntryNumFetchedInstDist.resize(maxInstsNum+1, 0);
 
+    for (size_t i = 0; i < phaseHistory.size(); ++i) {
+        phaseHistory[i].configure(simout.resolve(
+            name() + "." + phase_storage::FileNames[i] + ".spool"));
+    }
+
     registerExitCallback([this]() {
         this->dumpStats();
     });
@@ -527,6 +532,51 @@ DecoupledBPUWithBTB::nonControlSquash(unsigned target_id,
 
     // Call shared squash handling logic
     handleSquash(tid, target_id, SQUASH_OTHER, inst_pc, inst_pc.instAddr());
+}
+
+void
+DecoupledBPUWithBTB::predecodeSquash(
+    unsigned target_id, const PCStateBase &restart_pc,
+    const std::vector<Addr> &invalid_pcs, ThreadID tid, unsigned fetched_insts)
+{
+    panic_if(!ftq.hasTarget(target_id, tid) || ftq.fetchId(tid) != target_id,
+             "Predecode recovery must own the current fetching target");
+    panic_if(invalid_pcs.empty(), "Predecode recovery has no disproved BTB slot");
+    auto &target = ftq.get(target_id, tid);
+    panic_if(restart_pc.instAddr() < target.startPC ||
+             restart_pc.instAddr() >= target.predEndPC,
+             "Predecode recovery PC is outside its fetch target");
+
+    // Keep the prediction-time entries/metas as evidence. All later update
+    // paths filter this local list, so a stale metadata copy cannot resurrect
+    // the slot. A new stream remains free to learn a real branch at that PC.
+    target.falseHit = true;
+    for (Addr pc : invalid_pcs) {
+        if (!target.isFalseHitPC(pc))
+            target.falseHitPCs.push_back(pc);
+        for (auto *component : components)
+            component->invalidateBTBEntry(pc);
+    }
+
+    BranchInfo no_branch;
+    no_branch.isDirect = false;
+    target.exeBranchInfo = no_branch;
+    BTBEntry no_entry;
+    no_entry.isDirect = false;
+    target.updateNewBTBEntry = no_entry;
+    target.updateIsOldEntry = true;
+    target.updateBTBEntries.clear();
+    target.fetchInstNum = fetched_insts;
+
+    DPRINTF(DecoupleBP, "Predecode false BTB slot: target=%u restart=%#lx "
+            "prefix_insts=%u invalid_slots=%lu\n", target_id,
+            restart_pc.instAddr(), fetched_insts, invalid_pcs.size());
+
+    // This advances the fetch pointer exactly once, removes younger targets,
+    // restores histories/RAS to the real prefix, clears staged predictions and
+    // restarts prediction at the unbuilt instruction. Do not consume again.
+    handleSquash(tid, target_id, SQUASH_PREDECODE, restart_pc,
+                 restart_pc.instAddr());
 }
 
 void

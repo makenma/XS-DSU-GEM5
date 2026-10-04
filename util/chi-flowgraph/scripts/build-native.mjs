@@ -1,0 +1,12 @@
+import { spawnSync } from 'node:child_process';
+import { mkdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+mkdirSync(resolve(root, 'build'), { recursive: true });
+const temporary = resolve(root, 'tmp', 'compiler');
+mkdirSync(temporary, { recursive: true });
+const compiler = process.env.CXX || 'g++';
+const result = spawnSync(compiler, ['-std=c++20', '-O2', '-Wall', '-Wextra', '-isystem', 'vendor/json', '-isystem', 'vendor/chiron', 'native/refine.cpp', '-o', `build/chi-refine${process.platform === 'win32' ? '.exe' : ''}`], { cwd: root, stdio: 'inherit', env: { ...process.env, TMPDIR: temporary, TEMP: temporary, TMP: temporary } });
+if (result.error) throw result.error;
+process.exit(result.status ?? 1);

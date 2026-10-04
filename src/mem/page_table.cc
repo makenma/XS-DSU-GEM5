@@ -161,6 +161,8 @@ EmulationPageTable::translate(const RequestPtr &req)
     if (!translate(req->getVaddr(), paddr))
         return Fault(new GenericPageTableFault(req->getVaddr()));
     req->setPaddr(paddr);
+    const auto* entry=lookup(req->getVaddr());
+    if(entry && (entry->flags & Uncacheable)) req->setFlags(Request::UNCACHEABLE | Request::STRICT_ORDER);
     if ((paddr & (_pageSize - 1)) + req->getSize() > _pageSize) {
         panic("Request spans page boundaries!\n");
         return NoFault;

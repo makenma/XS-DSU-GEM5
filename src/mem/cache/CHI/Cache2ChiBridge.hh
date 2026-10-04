@@ -1,3 +1,5 @@
+#include <map>
+#include <tuple>
 #ifndef __CACHE2CHIBRIDGE_HH__
 #define __CACHE2CHIBRIDGE_HH__
 
@@ -32,6 +34,7 @@ namespace Chi
 class Cache2ChiBridgeProtocolTestPeer;
 #endif
 
+class ChiIntentCache;
 class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
 {
   public:
@@ -41,6 +44,20 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     void wakeup() override;
     void print(std::ostream& out) const override;
     DrainState drain() override;
+    void submitIntent(PacketPtr p) { pendingReqPkts.push(p); schedulePump(); }
+    void attachIntentCache(ChiIntentCache* c,bool accept) { intentCache=c; acceptStash=accept; }
+    bool extendedProfile=false;
+    ChiIntentCache* intentCache=nullptr;
+    bool acceptStash=true;
+    std::function<void(PacketPtr)> intentSnoopResponse;
+    bool probeIntent(PacketPtr packet,std::function<void(PacketPtr)> callback) {
+        panic_if(intentSnoopResponse,"Overlapping local intent snoop\n");
+        intentSnoopResponse=std::move(callback);cachePort.sendTimingSnoopReq(packet);
+        const bool pending=packet->cacheResponding();
+        if(!pending) {intentSnoopResponse={};delete packet;}
+        return pending;
+    }
+    void handleStash(const RawSnp& snp);
     void serialize(CheckpointOut &cp) const override;
     void unserialize(CheckpointIn &cp) override;
 
@@ -194,11 +211,13 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
         RawReq req{};
         std::vector<RawDat> dataBeats;
         size_t nextDataBeat = 0;
+        bool extended = false;
         bool hasDbid = false;
         uint8_t dbid = 0;
         bool gotComp = false;
         bool gotData = false;
         bool retryBlocked = false;
+        bool retryQueued = false;
         bool completed = false;
         uint32_t readExpectedBytes = 0;
         std::vector<uint8_t> readData;
@@ -312,6 +331,11 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
     /** ============ Bridge internal queues ============ */
     std::queue<PacketPtr> pendingReqPkts; // cache->bridge 暂存
     std::queue<PendingClassicResponse> pendingRespPkts;
+    using RetryCredits = std::map<std::tuple<uint32_t,uint32_t,uint32_t>,uint32_t>;
+    RetryCredits retryCredits;
+    static std::vector<uint32_t> acceptRetryResponse(
+        const RawRsp&, uint32_t requester,
+        std::unordered_map<uint32_t, TxnEntry>&, RetryCredits&);
     std::queue<uint32_t> retryTxnIds;
     std::queue<PendingCompAck> pendingCompAcks;
     std::queue<PendingSnoopRetry> pendingSnoopRetries;

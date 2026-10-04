@@ -60,3 +60,5 @@ class Cache2ChiBridge(ClockedObject):
         "ROI-only raw RNF transaction latency CSV written in the gem5 "
         "output directory; empty disables the recorder",
     )
+
+    extended_profile = Param.Bool(False, "Issue H test intents and RNSD ordinary reads")

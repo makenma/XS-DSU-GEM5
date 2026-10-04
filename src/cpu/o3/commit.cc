@@ -55,6 +55,9 @@
 #include "base/loader/symtab.hh"
 #include "base/logging.hh"
 #include "base/output.hh"
+#include <array>
+#include <fstream>
+#include <stdexcept>
 #include "config/the_isa.hh"
 #include "cpu/base.hh"
 #include "cpu/checker/cpu.hh"
@@ -83,6 +86,28 @@
 #include "sim/faults.hh"
 #include "sim/full_system.hh"
 #include "sim/sim_exit.hh"
+
+
+// BPU_PHASE_PASSIVE_MIRROR_V1: host output only, original writer is unchanged.
+namespace {
+void phaseMirrorFile(const std::string &source, const std::string &destination)
+{
+    std::ifstream in(gem5::simout.resolve(source), std::ios::binary);
+    std::ofstream out(gem5::simout.resolve(destination),
+                      std::ios::binary | std::ios::trunc);
+    if (!in.good() || !out.good())
+        throw std::runtime_error("BPU mirror: cannot open " + source);
+    std::array<char, 8192> buffer{};
+    while (in.read(buffer.data(), buffer.size()) || in.gcount())
+        out.write(buffer.data(), in.gcount());
+    if (!in.eof() || in.bad())
+        throw std::runtime_error("BPU mirror: read failed " + source);
+    out.flush();
+    if (!out.good()) throw std::runtime_error("BPU mirror: write failed");
+    out.close();
+    if (out.fail()) throw std::runtime_error("BPU mirror: close failed");
+}
+} // anonymous namespace
 
 namespace gem5
 {
@@ -249,6 +274,7 @@ Commit::Commit(CPU *_cpu, branch_prediction::BPredUnit *_bp, const BaseO3CPUPara
             *out_handle->stream() << std::oct << it.second << " " << std::hex << it.first << std::endl;
         }
         simout.close(out_handle);
+        phaseMirrorFile("misPredIndirect.txt", name() + ".misPredIndirect.txt");
     });
 
     faultNum.insert(RiscvISA::ExceptionCode::LOAD_PAGE);

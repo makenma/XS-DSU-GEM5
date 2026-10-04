@@ -1,3 +1,4 @@
+#include "mem/cache/CHI/FlowGraphTrace.hh"
 #include "mem/cache/CHI/HnfCoherencyController.hh"
 
 #include <algorithm>
@@ -508,6 +509,13 @@ HnfCoherencyController::acceptLinkReq(const HnfLinkToCcReq& in,
     entry.pocqState = PocqState::Idle;
     entry.txnKind = txnKind;
     entry.req = in.req;
+    if (FlowGraphTrace::get().enabled() && entry.req.flow.rootId.empty()) {
+        entry.req.flow = FlowGraphTrace::get().root();
+        entry.req.flow.address = in.req.addr;
+        FlowGraphTrace::get().stamp(entry.req);
+    }
+    FlowGraphTrace::get().event(entry.req.flow, "allocate", entry.req.tgtid,
+        {{"opcode", FlowGraphTrace::opcode(REQ, in.req.opcode)}});
     entry.seq = in.seq;
     entry.acceptCycle = cycle;
     entry.blockAddr = blockAddr(in.req);
@@ -541,6 +549,9 @@ HnfCoherencyController::acceptLinkReq(const HnfLinkToCcReq& in,
             if (i != entryId && entryAllocated(entries[i]) &&
                 entries[i].blockAddr == entry.blockAddr) {
                 entry.sleepingOn = i;
+                FlowGraphTrace::get().event(entry.req.flow, "wait_start", entry.req.tgtid,
+                    {{"reason","same_address"},{"waitId",entry.req.flow.legId + "/address"},
+                     {"blocker",entries[i].req.flow.legId}});
                 break;
             }
         }
@@ -630,6 +641,9 @@ HnfCoherencyController::queueSnoops(uint32_t entryId)
         snp.opcode = entry.slcLookupResult.snoopOpcode;
         snp.addr = entry.blockAddr;
         snp.size = static_cast<uint8_t>(blockSize);
+        snp.flow = FlowGraphTrace::get().child(entry.req.flow, "snoop", snp.addr);
+        FlowGraphTrace::get().stamp(snp);
+        entry.snoopFlows[target_src] = snp.flow;
         txSnpQ.push_back(out);
 
         DPRINTF(HnfCC,
@@ -779,11 +793,12 @@ HnfCoherencyController::queueMcRead(uint32_t entryId)
              entryId, entry.mcTxnId);
     req.txnid = allocateMcTxnId();
     req.opcode = ReqOp::ReadNoSnp;
-    req.AllowRetry = 0;
+    req.AllowRetry = 1; // First downstream attempt has no pre-granted P-Credit.
     req.addr = entry.txnKind == PocqTxnKind::ReadNoSnp ?
         entry.req.addr : entry.blockAddr;
     req.size = expectedDataBytes(entry.req);
     req.ReturnNid = entry.req.tgtid;
+    req.ReturnTxnId = req.txnid;
     req.order = entry.req.order;
     req.memattr = entry.req.memattr;
     req.snpattr = 0;
@@ -804,6 +819,10 @@ HnfCoherencyController::queueMcRead(uint32_t entryId)
 
     HnfCcTxReq out{};
     out.entry = entryId;
+    req.flow = FlowGraphTrace::get().child(entry.req.flow, "memory", req.addr);
+    FlowGraphTrace::get().stamp(req);
+    entry.mcFlow = req.flow;
+    entry.mcRequest = req;
     out.req = req;
     txReqQ.push_back(out);
 
@@ -848,6 +867,9 @@ HnfCoherencyController::queueCompData(uint32_t entryId,
         }
         dat.byteEnable.assign(beatBytes, 1);
         dat.chunkValid.assign((beatBytes + 7) / 8, 1);
+        dat.flow = entry.req.flow;
+        dat.flow.messageId.clear(); dat.flow.payloadOrigin = entry.flowPayloadOrigin;
+        FlowGraphTrace::get().stamp(dat);
         txDatQ.push_back(out);
     }
 
@@ -876,6 +898,8 @@ HnfCoherencyController::queueComp(uint32_t entryId)
     out.retire = makeRetireInfo(entry);
     out.traceDirtyVictimRequesterDone =
         dirtyVictimRequesterTracked(entry);
+    rsp.flow = entry.req.flow; rsp.flow.messageId.clear();
+    FlowGraphTrace::get().stamp(rsp);
     txRspQ.push_back(out);
 
     const uint64_t addr = entry.blockAddr;
@@ -908,6 +932,8 @@ HnfCoherencyController::queueCompDBIDResp(uint32_t entryId)
     rsp.resp = RespSC;
     rsp.pcrdtype = entry.req.pcrdtype;
     rsp.rspKind = RspKind::MainPath;
+    rsp.flow = entry.req.flow; rsp.flow.messageId.clear();
+    FlowGraphTrace::get().stamp(rsp);
     txRspQ.push_back(out);
 
     entry.state = HnfCcEntryState::WaitWriteData;
@@ -1145,6 +1171,7 @@ HnfCoherencyController::acceptRxDat(const RawDat& dat)
         const bool complete = acceptDataBeat(
             entry.snoopDataAssembly, entry.readData, dat,
             "snoop entry", snoopIt->second);
+        entry.flowPayloadOrigin = dat.flow.payloadOrigin;
         if (!entry.snoopDataAssembly.source) {
             entry.snoopDataAssembly.source = dat.srcid;
         }
@@ -1188,6 +1215,7 @@ HnfCoherencyController::acceptRxDat(const RawDat& dat)
         const bool complete = acceptDataBeat(
             entry.writeDataAssembly, entry.writePayload, dat,
             "write entry", *entryId);
+        entry.flowPayloadOrigin = dat.flow.payloadOrigin;
 
         DPRINTF(HnfCC,
                 "CC entry=%u got write data src=%u txn=%u dbid=%u "
@@ -1240,6 +1268,7 @@ HnfCoherencyController::acceptRxDat(const RawDat& dat)
 
     const bool complete = acceptDataBeat(
         entry.mcDataAssembly, entry.readData, dat, "MC entry", entryId);
+        entry.flowPayloadOrigin = dat.flow.payloadOrigin;
 
     DPRINTF(HnfCC,
             "CC entry=%u got real SN CompData src=%u txn=%u dataid=%u "
@@ -1319,6 +1348,27 @@ std::optional<HnfCcRetireInfo>
 HnfCoherencyController::acceptRxRsp(const RawRsp& rsp)
 {
     const auto decoded = decodeRsp(rsp.opcode);
+    if (decoded.minor == RspMinor::PCrdGrant) {
+        if (rsp.respErr==0) {
+            ++downstreamCredits[std::make_tuple(rsp.tgtid,rsp.srcid,rsp.pcrdtype)];
+            retryCreditedDownstreamRequests();
+        }
+        return std::nullopt;
+    }
+    if (decoded.minor == RspMinor::RetryAck) {
+        auto match=mcTxnToEntry.find(rsp.txnid);
+        if(match!=mcTxnToEntry.end()) {
+            Entry& entry=entries[match->second];
+            if(rsp.srcid!=entry.mcRequest.tgtid || rsp.tgtid!=entry.mcRequest.srcid ||
+               rsp.respErr!=0 || !entry.mcRequest.AllowRetry || !entry.mcReadIssued ||
+               entry.mcRetryPending || entry.mcDataAssembly.coveredBytes) return std::nullopt;
+            entry.mcRetryPending=true;entry.mcReadIssued=false;entry.mcRetryType=rsp.pcrdtype;
+            FlowGraphTrace::get().wait(entry.mcFlow,entry.req.tgtid,"pcredit",true,"pcredit",
+                {{"blocker",FlowGraphTrace::get().node(rsp.srcid)}});
+            retryCreditedDownstreamRequests();
+            return std::nullopt;
+        }
+    }
     const bool dirtyVictimRsp =
         decoded.minor == RspMinor::RetryAck ||
         decoded.minor == RspMinor::PCrdGrant ||
@@ -1359,6 +1409,7 @@ HnfCoherencyController::acceptRxRsp(const RawRsp& rsp)
             victim.requestSent = false;
             victim.retryPcrdtype = rsp.pcrdtype;
             victim.phase = DirtyVictimPhase::RetryPending;
+            retryCreditedDownstreamRequests();
             DPRINTF(HnfCC,
                     "CC dirty victim=%llu txn=%u got RetryAck "
                     "pcrdtype=%u\n",
@@ -1555,6 +1606,7 @@ HnfCoherencyController::retireEntry(uint32_t entryId)
                  "HnfCC entry=%u retires with unowned MC transaction=%u\n",
                  entryId, entry.mcTxnId);
     }
+    FlowGraphTrace::get().event(entry.req.flow, "complete", entry.req.tgtid);
     HnfCcRetireInfo info = makeRetireInfo(entry);
     const uint64_t addr = entry.blockAddr;
     traceDirtyVictimRequesterDone(entry.req.srcid, entry.req.txnid);
@@ -1577,6 +1629,8 @@ HnfCoherencyController::wakeSleepingEntries(uint64_t addr)
         }
         DPRINTF(HnfCC, "CC wakes sleeping entry=%u addr=%#llx\n",
                 i, static_cast<unsigned long long>(addr));
+        FlowGraphTrace::get().event(entry.req.flow, "wait_end", entry.req.tgtid,
+            {{"waitId",entry.req.flow.legId + "/address"}});
         entry.sleepingOn.reset();
         startReadFlow(i);
         return;
@@ -1675,6 +1729,12 @@ HnfCoherencyController::startDirtyVictimWriteback(
     startDirtyVictimWriteback(
         victim, entries[entryId].req.tgtid, entries[entryId].req.srcid,
         entries[entryId].req.txnid, true);
+    auto& owner = dirtyVictimTxns.at(victim.victimId.value);
+    owner.flow = FlowGraphTrace::get().child(entries[entryId].req.flow, "dirty-victim", victim.lineAddress);
+    owner.flow.payloadOrigin = "hnf_dirty_victim";
+    for (auto& queued : txReqQ) if (queued.dirtyVictimId == victim.victimId.value) {
+        queued.req.flow = owner.flow; FlowGraphTrace::get().stamp(queued.req);
+    }
 }
 
 void
@@ -1758,7 +1818,15 @@ HnfCoherencyController::queueDirtyVictimRequest(
     out.req.addr = transaction.victim.lineAddress;
     out.req.size = static_cast<uint8_t>(blockSize);
     out.req.ReturnNid = transaction.homeNodeId;
+    out.req.memattr = 0x0d; // Issue H B2.8.3.5: system-cache eviction.
+    out.req.snpattr = 0;
     out.req.hnfDirtyVictim = true;
+    out.req.flow = transaction.flow; out.req.flow.messageId.clear();
+    if (!allowRetry && !transaction.flow.rootId.empty()) {
+        out.req.flow.attemptId = std::to_string(std::stoul(transaction.flow.attemptId) + 1);
+        transaction.flow.attemptId = out.req.flow.attemptId;
+    }
+    FlowGraphTrace::get().stamp(out.req);
     txReqQ.push_back(std::move(out));
     transaction.activeAllowRetry = allowRetry;
     transaction.activePcrdtype = pcrdtype;
@@ -1789,6 +1857,8 @@ HnfCoherencyController::queueDirtyVictimData(DirtyVictimTxn& transaction)
     out.dat.dataid = 0;
     out.dat.beatOffset = 0;
     out.dat.data = transaction.victim.line.data;
+    out.dat.flow = transaction.flow; out.dat.flow.messageId.clear();
+    FlowGraphTrace::get().stamp(out.dat);
     out.dat.byteEnable.assign(blockSize, 1);
     out.dat.chunkValid.assign((blockSize + 7) / 8, 1);
     txDatQ.push_back(std::move(out));
@@ -1852,6 +1922,7 @@ HnfCoherencyController::retireDirtyVictimWriteback(
              "HnfCC retires incomplete dirty-victim writeback=%llu\n",
              static_cast<unsigned long long>(
                  transaction.victim.victimId.value));
+    FlowGraphTrace::get().event(transaction.flow, "complete", transaction.homeNodeId);
     const uint64_t victim_id = transaction.victim.victimId.value;
     const uint32_t downstream_txn = transaction.downstreamTxnId;
     DPRINTF(HnfDirtyVictimE2E,
@@ -2072,6 +2143,7 @@ HnfCoherencyController::retrySlcsfReplayEntries(Tick currentTick)
         DPRINTF(HnfCC,
                 "CC retries SLCSF replay entry=%u addr=%#llx\n", i,
                 static_cast<unsigned long long>(entry.blockAddr));
+        FlowGraphTrace::get().wait(entry.req.flow,entry.req.tgtid,"slcsf_replay",false,"");
         if (entry.slcUpdatePhase == SlcUpdatePhase::ReplayWait) {
             entry.slcUpdatePhase = SlcUpdatePhase::None;
         }
@@ -2109,6 +2181,15 @@ HnfCoherencyController::tryIssueSlcUpdate(uint32_t entryId)
 
     const SlcSfEnqueueResult result =
         slcsfUnit->tryEnqueue(std::move(*entry.pendingSlcUpdate));
+    if (FlowGraphTrace::get().enabled()) {
+        const char* reason = result==SlcSfEnqueueResult::NoCredit?"slcsf_no_credit":
+            result==SlcSfEnqueueResult::Initializing?"slcsf_initializing":"slcsf_draining";
+        FlowGraphTrace::get().wait(entry.req.flow,entry.req.tgtid,"slcsf_admission",
+            result!=SlcSfEnqueueResult::Accepted,reason,
+            {{"occupancy",slcsfUnit->reqOutstanding()},{"capacity",slcsfUnit->reqCapacity()},
+             {"blocker","SLCSF request admission"}});
+    }
+
     if (result == SlcSfEnqueueResult::Accepted) {
         entry.pendingSlcUpdate.reset();
         entry.slcUpdatePhase = SlcUpdatePhase::Waiting;
@@ -2146,6 +2227,15 @@ HnfCoherencyController::tryIssueSlcLookup(uint32_t entryId)
 
     const SlcSfEnqueueResult result =
         slcsfUnit->tryEnqueue(std::move(*entry.pendingSlcLookup));
+    if (FlowGraphTrace::get().enabled()) {
+        const char* reason = result==SlcSfEnqueueResult::NoCredit?"slcsf_no_credit":
+            result==SlcSfEnqueueResult::Initializing?"slcsf_initializing":"slcsf_draining";
+        FlowGraphTrace::get().wait(entry.req.flow,entry.req.tgtid,"slcsf_admission",
+            result!=SlcSfEnqueueResult::Accepted,reason,
+            {{"occupancy",slcsfUnit->reqOutstanding()},{"capacity",slcsfUnit->reqCapacity()},
+             {"blocker","SLCSF request admission"}});
+    }
+
     if (result == SlcSfEnqueueResult::Accepted) {
         entry.pendingSlcLookup.reset();
         entry.slcLookupPhase = SlcLookupPhase::Waiting;
@@ -2224,6 +2314,27 @@ HnfCoherencyController::continueLatchedSlcUpdates()
         entry.slcUpdatePhase = SlcUpdatePhase::None;
         entry.expectedSlcUpdateOperation.reset();
 
+        if (FlowGraphTrace::get().enabled()) {
+            HnfSlcLookupReq query{}; query.blockAddr = entry.blockAddr;
+            query.req = entry.req; query.txn = entry.txnKind;
+            const auto probe = slcsfUnit->probe(query);
+            const auto& line = probe.result;
+            static const char* slcNames[] = {"I","EU","EN","SU","SN","MU","MN"};
+            static const char* sfNames[] = {"I","EU","EN","SU","SN"};
+            nlohmann::ordered_json state = {{"state",slcNames[unsigned(line.slcState)]},
+                {"sfState",sfNames[unsigned(line.sfState)]},{"slcHit",line.slcHit},
+                {"sfHit",line.sfHit},{"dirty",line.dataDirty},{"sharers",nlohmann::ordered_json::array()},
+                {"set",probe.snapshot.slc.set},{"way",probe.snapshot.slc.way}};
+            for (unsigned bit=0;bit<64;++bit) if (line.rnfvec & (1ull<<bit))
+                state["sharers"].push_back(FlowGraphTrace::get().node(slcsfUnit->srcIdForIndex(bit)));
+            if (line.sfState==HnfSfState::EU || line.sfState==HnfSfState::EN)
+                state["owner"]=FlowGraphTrace::get().node(line.rnfid);
+            if (line.slcHit) {
+                state["data"]=FlowGraphTrace::bytes(line.data);
+                state["validMask"]=std::string(line.data.size()*2,'f');
+            }
+            FlowGraphTrace::get().event(entry.req.flow,"state",entry.req.tgtid,{{"state",state}});
+        }
         PocqEvent updateDone{};
         updateDone.kind = PocqEventKind::SlcUpdateDone;
         updateDone.txn = entry.txnKind;
@@ -2276,6 +2387,10 @@ HnfCoherencyController::handleSlcsfReplay(
     if (!entry.expectsWriteData) {
         entry.writeDataAssembly = DataAssembly{};
     }
+    static const char* traceReasons[]={"stale_commit_token","resource_conflict","seq_conflict","victim_buffer_full","cancelled"};
+    FlowGraphTrace::get().wait(entry.req.flow,entry.req.tgtid,"slcsf_replay",true,
+        traceReasons[unsigned(replay->reason)],{{"blocker","SLCSF replay"},
+            {"retryNotBeforeTick",std::to_string(replay->retryNotBeforeTick)}});
     entry.retryNotBeforeTick = replay->retryNotBeforeTick;
     entry.slcUpdatePhase = lookup ?
         SlcUpdatePhase::None : SlcUpdatePhase::ReplayWait;
@@ -2441,6 +2556,9 @@ HnfCoherencyController::consumeSlcsfResponse(SlcSfResponse response)
         panic_if(!lookup, "HnfCC entry=%u lookup Done has bad payload\n",
                  entryId);
         entry.slcLookupResult = lookup->result;
+        FlowGraphTrace::get().event(entry.req.flow, "lookup", entry.req.tgtid,
+            {{"fields",{{"slcHit",lookup->result.slcHit},{"sfHit",lookup->result.sfHit},
+                        {"replay",lookup->result.replay},{"snoopTargets",std::to_string(lookup->result.snoopTargets)}}}});
         entry.slcCommitToken = lookup->token;
     } else if (response.status() == SlcSfTerminalStatus::Replay) {
         handleSlcsfReplay(entryId, response);
@@ -2635,3 +2753,43 @@ HnfCoherencyController::hasWork() const
 }
 
 } // namespace gem5::Chi
+
+// Protocol support added to the pinned coarse model. Runs identically with the
+// FlowGraph observer enabled or disabled. Credits are owned by a node pair and
+// PCrdType; PCrdGrant.TxnID never participates in matching.
+namespace gem5::Chi {
+void HnfCoherencyController::retryCreditedDownstreamRequests()
+{
+    for (uint32_t id=0;id<entries.size();++id) {
+        Entry& entry=entries[id];
+        if (!entry.mcRetryPending) continue;
+        auto key=std::make_tuple(entry.mcRequest.srcid,entry.mcRequest.tgtid,entry.mcRetryType);
+        auto credit=downstreamCredits.find(key);
+        if (credit==downstreamCredits.end()||!credit->second) continue;
+        --credit->second;
+        const uint32_t previous=entry.mcTxnId;
+        const uint32_t next=allocateMcTxnId();
+        panic_if(mcTxnToEntry.erase(previous)!=1,"HnfCC retry lost MC identity\n");
+        mcTxnToEntry.emplace(next,id);entry.mcTxnId=next;
+        entry.mcRequest.txnid=next;entry.mcRequest.AllowRetry=0;
+        entry.mcRequest.ReturnTxnId=next;
+        entry.mcRequest.pcrdtype=entry.mcRetryType;
+        if (!entry.mcRequest.flow.rootId.empty()) {
+            entry.mcRequest.flow.attemptId=std::to_string(std::stoul(entry.mcRequest.flow.attemptId)+1);
+            entry.mcRequest.flow.messageId.clear();FlowGraphTrace::get().stamp(entry.mcRequest);
+        }
+        entry.mcFlow=entry.mcRequest.flow;
+        HnfCcTxReq out{};out.entry=id;out.req=entry.mcRequest;txReqQ.push_back(out);
+        entry.mcRetryPending=false;entry.mcReadIssued=false;
+        FlowGraphTrace::get().wait(entry.mcFlow,entry.req.tgtid,"pcredit",false,"");
+    }
+    for (auto& [id,victim]:dirtyVictimTxns) {
+        (void)id;
+        if(victim.phase!=DirtyVictimPhase::RetryPending) continue;
+        auto key=std::make_tuple(victim.homeNodeId,selectSnNode(victim.victim.lineAddress),victim.retryPcrdtype);
+        auto credit=downstreamCredits.find(key);
+        if(credit==downstreamCredits.end()||!credit->second) continue;
+        --credit->second;queueDirtyVictimRequest(victim,false,victim.retryPcrdtype);
+    }
+}
+}

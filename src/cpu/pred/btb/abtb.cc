@@ -474,7 +474,9 @@ AheadBTB::collectEntriesToUpdate(const std::vector<BTBEntry>& old_entries,
             break;
         }
     }
-    if (!pred_branch_hit) {
+    if (!pred_branch_hit &&
+        (!stream.falseHit || (stream.updateNewBTBEntry.valid &&
+                             stream.canUpdateBTBPC(stream.updateNewBTBEntry.pc)))) {
         all_entries.push_back(stream.updateNewBTBEntry);
     }
 
@@ -647,6 +649,19 @@ AheadBTB::collectEntriesToUpdateFromS3Pred(const std::vector<BTBEntry>& old_entr
  * 5. Update MRU information
  */
 void
+AheadBTB::invalidateBTBEntry(Addr pc)
+{
+    // Ahead indexing permits copies in sets selected by different predecessors.
+    for (auto &set : btb) {
+        for (auto &entry : set) {
+            if (entry.valid && entry.pc == pc)
+                entry.valid = false;
+        }
+    }
+    // recoverHist clears the queued ahead reads as part of the same squash.
+}
+
+void
 AheadBTB::update(const FetchTarget &stream)
 {
     if (usingS3Pred) {
@@ -658,6 +673,12 @@ AheadBTB::update(const FetchTarget &stream)
 
     // 1. Process old entries
     auto old_entries = processOldEntries(meta->hit_entries, end_inst_pc);
+    if (stream.falseHit) {
+        old_entries.erase(std::remove_if(old_entries.begin(), old_entries.end(),
+            [&stream](const BTBEntry &entry) {
+                return !stream.canUpdateBTBPC(entry.pc);
+            }), old_entries.end());
+    }
 
     // 2. Check prediction hit status, for stats recording
     checkPredictionHit(stream,

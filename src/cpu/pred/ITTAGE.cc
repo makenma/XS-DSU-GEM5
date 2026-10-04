@@ -8,8 +8,33 @@
 
 #include "base/intmath.hh"
 #include "base/output.hh"
+#include <array>
+#include <fstream>
+#include <stdexcept>
 #include "debug/Indirect.hh"
 #include "sim/core.hh"
+
+
+// BPU_PHASE_PASSIVE_MIRROR_V1: host output only, original writer is unchanged.
+namespace {
+void phaseMirrorFile(const std::string &source, const std::string &destination)
+{
+    std::ifstream in(gem5::simout.resolve(source), std::ios::binary);
+    std::ofstream out(gem5::simout.resolve(destination),
+                      std::ios::binary | std::ios::trunc);
+    if (!in.good() || !out.good())
+        throw std::runtime_error("BPU mirror: cannot open " + source);
+    std::array<char, 8192> buffer{};
+    while (in.read(buffer.data(), buffer.size()) || in.gcount())
+        out.write(buffer.data(), in.gcount());
+    if (!in.eof() || in.bad())
+        throw std::runtime_error("BPU mirror: read failed " + source);
+    out.flush();
+    if (!out.good()) throw std::runtime_error("BPU mirror: write failed");
+    out.close();
+    if (out.fail()) throw std::runtime_error("BPU mirror: close failed");
+}
+} // anonymous namespace
 
 namespace gem5
 {
@@ -80,6 +105,9 @@ ITTAGE::ITTAGE(const ITTAGEParams &params):
             }
             simout.close(out_handle);
         }
+        phaseMirrorFile("altuseCnt.txt", name() + ".altuseCnt.txt");
+        phaseMirrorFile("TableHitCnt.txt", name() + ".TableHitCnt.txt");
+        phaseMirrorFile("missHistMap.txt", name() + ".missHistMap.txt");
     });
 }
 

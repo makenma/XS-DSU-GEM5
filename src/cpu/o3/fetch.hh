@@ -397,12 +397,21 @@ class Fetch
      */
     void handleSuccessfulTranslation(ThreadID tid, const RequestPtr &mem_req, Addr fetchPC);
 
-    /** Handle translation fault by building a noop instruction.
+    /** Record a speculative translation fault (Trace retains immediate delivery).
      * @param tid Thread ID
      * @param mem_req The memory request that faulted
      * @param fault The translation fault
      */
     void handleTranslationFault(ThreadID tid, const RequestPtr &mem_req, const Fault &fault);
+
+    /** Publish a group after both translations/accesses are terminal. */
+    void finishCacheRequest(ThreadID tid);
+
+    /** Require only the bytes used by the current instruction. */
+    bool demandFetchBytes(ThreadID tid, Addr first, unsigned count);
+
+    /** Build the precise fault carrier at the current architectural fetch PC. */
+    void buildFetchFault(ThreadID tid, const Fault &fault);
 
     /** Handle multi-cacheline fetch that spans two cache lines.
      * Creates and sends two separate cache requests.
@@ -413,8 +422,8 @@ class Fetch
      */
     bool handleMultiCacheLineFetch(Addr vaddr, ThreadID tid, Addr pc);
 
-    /** Process multi-cacheline fetch completion when both packets have arrived.
-     * Merges data from both cache lines into the fetch buffer.
+    /** Copy and release one response; report whether both outcomes are terminal.
+     * Failed request bytes are never copied into the fetch buffer.
      * @param tid Thread ID
      * @param pkt Most recently arrived packet
      * @return true if all packets have arrived and data is merged, false if still waiting
@@ -534,6 +543,9 @@ class Fetch
      * @param tid The thread ID to fetch for.
      */
     void performInstructionFetch(ThreadID tid);
+
+    /** Reject BTB branch PCs inside confirmed real instruction bytes. */
+    bool recoverInvalidBranchSlots(ThreadID tid, PCStateBase &pc);
 
 
     /**
@@ -679,8 +691,11 @@ class Fetch
      */
     struct CacheRequest
     {
-        /** Vector of packet pointers for multiple cache line requests */
-        std::vector<PacketPtr> packets;
+        /** Translation/access faults are retained until their bytes are needed. */
+        std::vector<Fault> faults;
+
+        /** Trace retains its existing failed-group stall behavior. */
+        bool faultOnDemand = false;
 
         /** Vector of corresponding request pointers */
         std::vector<RequestPtr> requests;
@@ -702,7 +717,7 @@ class Fetch
 
         /** Check if all packets have been completed */
         bool allCompleted() const {
-            return completedPackets >= packets.size() && packets.size() > 0;
+            return completedPackets >= requests.size() && !requests.empty();
         }
 
         /** Check if any request has failed (NEW) */
@@ -717,7 +732,7 @@ class Fetch
         bool allReady() const {
             if (requestStatus.empty()) return false;
             for (const auto& status : requestStatus) {
-                if (status != AccessComplete) return false;
+                if (status != AccessComplete && status != AccessFailed) return false;
             }
             return true;
         }
@@ -725,24 +740,24 @@ class Fetch
         /** Get overall status of the cache request group (NEW) */
         CacheRequestStatus getOverallStatus() const {
             if (requestStatus.empty()) return CacheIdle;
+            if (!faultOnDemand && anyFailed()) return AccessFailed;
 
-            // Check for specific priority states first
+            // A speculative fault is terminal, but must not hide another
+            // request's outstanding translation or response.
+            if (allReady()) return AccessComplete;
             for (const auto& status : requestStatus) {
-                if (status == AccessFailed) return AccessFailed;
                 if (status == CacheWaitRetry) return CacheWaitRetry;
                 if (status == TlbWait) return TlbWait;
                 if (status == CacheWaitResponse) return CacheWaitResponse;
             }
-
-            // Check if all are completed
-            if (allReady()) return AccessComplete;
 
             return CacheIdle;
         }
 
         /** Reset the cache request state */
         void reset() {
-            packets.clear();
+            faults.clear();
+            faultOnDemand = false;
             requests.clear();
             requestStatus.clear();
             baseAddr = 0;
@@ -753,7 +768,7 @@ class Fetch
         /** Add a new request */
         void addRequest(RequestPtr req) {
             requests.push_back(req);
-            packets.push_back(nullptr);  // Initialize with null packet
+            faults.push_back(NoFault);
             requestStatus.push_back(CacheIdle);  // Initialize status
         }
 
@@ -810,34 +825,14 @@ class Fetch
             return summary;
         }
 
-        /** Mark a packet as completed by matching request */
-        bool markCompletedAndStorePacket(PacketPtr pkt) {
-          // return false if the packet is not found in the requests
-          bool found_packet = false;
-            // Find and mark the packet as completed by matching the request
-            for (size_t i = 0; i < requests.size(); ++i) {
-                if (requests[i] == pkt->req) {
-                    // Only increment count if this packet wasn't already stored
-                    if (packets[i] == nullptr) {
-                        packets[i] = pkt;  // Store the packet
-                        completedPackets++;
-                        found_packet = true;
-                        // Update status to AccessComplete
-                        if (i < requestStatus.size()) {
-                            requestStatus[i] = AccessComplete;
-                        }
-                    }
-                }
-            }
-            if (!found_packet) {
-                return false;
-            }
-            return true;
-        }
-
         /** Get the number of pending packets */
         unsigned getPendingCount() const {
-            return packets.size() - completedPackets;
+            unsigned pending = 0;
+            for (auto status : requestStatus) {
+                pending += status == TlbWait || status == CacheWaitResponse ||
+                           status == CacheWaitRetry;
+            }
+            return pending;
         }
     };
 
@@ -865,6 +860,11 @@ class Fetch
         /** Whether the fetch buffer data is valid */
         bool valid;
 
+        /** Last sequentially decoded instruction, for cross-FTQ halfwords. */
+        Addr lastDecodedStart = 0;
+        Addr lastDecodedEnd = 0;
+        bool lastDecodedValid = false;
+
         /** Size of the fetch buffer in bytes. Set by Fetch class during init. */
         unsigned size;
 
@@ -879,6 +879,7 @@ class Fetch
         /** Reset buffer state */
         void reset() {
             valid = false;
+            lastDecodedValid = false;
             startPC = 0;
             // No need to clear data as it will be overwritten
         }

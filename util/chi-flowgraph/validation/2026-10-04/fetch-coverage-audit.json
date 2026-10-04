@@ -1,0 +1,1737 @@
+{
+  "kind": "independent-read-only-model10-fetch-audit",
+  "createdAtUtc": "2026-10-04T04:08:53.498605+00:00",
+  "directory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model10-regressions-01",
+  "gem5Sha256FromExecutionEvidence": "7aba95946686c49c763e54d1876670e4e737c90ed843fb0a4905f400c326309a",
+  "candidate": "candidate02",
+  "cases": [
+    {
+      "case": "same-layout",
+      "architecturalPass": true,
+      "hostReturnCode": 0,
+      "simulatorExit": {
+        "tick": "23707000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "gem5Sha256": "7aba95946686c49c763e54d1876670e4e737c90ed843fb0a4905f400c326309a"
+      },
+      "firmwareSha256": "c6cc0d14896a9af40c24d958546ffd8e4c0045bf75ce264a4b6a8ecc637a8e5f",
+      "predictWidths": [
+        64,
+        64,
+        64,
+        64
+      ],
+      "artifacts": {
+        "fetch-stream-result.json": {
+          "bytes": 1603,
+          "sha256": "e793301bf0550bc4b9d5cc23d39d085b5d13ccbb741f9cc5be7f9ac104b7b95a",
+          "stableDuringRead": true
+        },
+        "execution-plan.json": {
+          "bytes": 2598,
+          "sha256": "aa8f87743297d38809cc1fa2d421511e04e00acee74450017644482525d81fb5",
+          "stableDuringRead": true
+        },
+        "native-linux-result.json": {
+          "bytes": 1520,
+          "sha256": "9130b3e65b2f2a2969ea61412df6229b1a2c3f8bf844e962270fb841b65cd922",
+          "stableDuringRead": true
+        },
+        "host-exit-code.txt": {
+          "bytes": 2,
+          "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+          "stableDuringRead": true
+        },
+        "config.ini": {
+          "bytes": 247984,
+          "sha256": "043ff883ce52910b00c58b4cf3c2b9579570e39e05da3e200ac9e5d6c4b2873e",
+          "stableDuringRead": true
+        },
+        "system.platform.terminal": {
+          "bytes": 162,
+          "sha256": "f454cb8c98a5662cca9d1c82e2d3bf46c9d71b5f91f05400398f43d42bc7988d",
+          "stableDuringRead": true
+        },
+        "run.log": {
+          "bytes": 12061,
+          "sha256": "8c945333b173b5abca84aa9d39af766be9fc212cf623e7814f4267a9bc08d8b5",
+          "stableDuringRead": true
+        },
+        "fetch-stream-debug.log": {
+          "bytes": 36687629,
+          "sha256": "ce94f55f426739806dda90a9e0896c0e8080a812796d74803c665ef49773fd12",
+          "lines": 499781,
+          "stableDuringRead": true,
+          "copied": false
+        }
+      },
+      "serial": "FETCH_STREAM_BEGIN case=same-layout\nFETCH_STREAM_RESULT {\"case\":\"same-layout\",\"passed\":true,\"trainingChecked\":true,\"mappedCodeChecked\":true,\"trapPcChecked\":true}\n",
+      "predecodeRecoveryCount": 0,
+      "predecodeEvidence": [],
+      "bpuRecoveryEvidence": [],
+      "demandFaultEvidence": [
+        {
+          "line": 335253,
+          "text": "7712000: system.cpu0.fetch: [tid:0] Demand fetch fault: pc=0x40000000 missing=0x40000000 request=0x40000000 cause=1",
+          "pc": "0x40000000",
+          "missing": "0x40000000",
+          "request": "0x40000000",
+          "cause": 1
+        }
+      ],
+      "lastFenceIFetch": {
+        "line": 324687,
+        "text": "7446000: system.cpu0.fetch: [tid:0] Instruction is: fence_i"
+      },
+      "mappedCreationCount": 5,
+      "model09Comparison": {
+        "sameFirmware": true,
+        "model09ArchitecturalPass": true,
+        "model09PredecodeRecoveryCount": 0,
+        "sameRecoveryShape": true
+      },
+      "selectedMappedCreations": [
+        {
+          "line": 330790,
+          "text": "7641000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000000=>0x40000002).(0=>1) created [sn:5097].",
+          "pc": "0x40000000",
+          "nextPc": "0x40000002",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 5097,
+          "mnemonic": "c_addi zero, 0"
+        },
+        {
+          "line": 330799,
+          "text": "7641000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000002=>0x40000004).(0=>1) created [sn:5098].",
+          "pc": "0x40000002",
+          "nextPc": "0x40000004",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 5098,
+          "mnemonic": "c_j 14"
+        },
+        {
+          "line": 335255,
+          "text": "7712000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000000=>0x40000004).(0=>1) created [sn:5304].",
+          "pc": "0x40000000",
+          "nextPc": "0x40000004",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 5304,
+          "mnemonic": "gem5 nop"
+        }
+      ],
+      "selectedDeliveryEvidence": [
+        {
+          "line": 330826,
+          "text": "7641000: system.cpu0.fetch: [tid:0] [sn:5097] Sending instruction to decode from fetch queue. Fetch queue size: 2."
+        },
+        {
+          "line": 330827,
+          "text": "7641000: system.cpu0.fetch: [tid:0] [sn:5098] Sending instruction to decode from fetch queue. Fetch queue size: 1."
+        },
+        {
+          "line": 330841,
+          "text": "7644000: system.cpu0.decode: [tid:0] Processing instruction [sn:5097] with PC (0x40000000=>0x40000002).(0=>1)"
+        },
+        {
+          "line": 330842,
+          "text": "7644000: system.cpu0.decode: [tid:0] Processing instruction [sn:5098] with PC (0x40000002=>0x40000004).(0=>1)"
+        }
+      ]
+    },
+    {
+      "case": "changed-layout",
+      "architecturalPass": true,
+      "hostReturnCode": 0,
+      "simulatorExit": {
+        "tick": "24480000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "gem5Sha256": "7aba95946686c49c763e54d1876670e4e737c90ed843fb0a4905f400c326309a"
+      },
+      "firmwareSha256": "b3c54beb3b6f3890d140c00b65e0ba7d6e347bbbfb49d6d284ffca476b520928",
+      "predictWidths": [
+        64,
+        64,
+        64,
+        64
+      ],
+      "artifacts": {
+        "fetch-stream-result.json": {
+          "bytes": 1609,
+          "sha256": "6fa461eac278831cf91dcdd07a5cca105b29558bf82f24a323eb016e61e85c64",
+          "stableDuringRead": true
+        },
+        "execution-plan.json": {
+          "bytes": 2604,
+          "sha256": "72835f59c86b967483834b568b00a458a3b66b766f7a1ff0ab6fc5d51c150378",
+          "stableDuringRead": true
+        },
+        "native-linux-result.json": {
+          "bytes": 1526,
+          "sha256": "7a85cfb52876405fd49e95f6aabc764b63000afac326b77083b330befaef532f",
+          "stableDuringRead": true
+        },
+        "host-exit-code.txt": {
+          "bytes": 2,
+          "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+          "stableDuringRead": true
+        },
+        "config.ini": {
+          "bytes": 247990,
+          "sha256": "5afa1cb90856bde7e060921153744afc40ed72ab73464ed6b0acf04fe0c6b2d8",
+          "stableDuringRead": true
+        },
+        "system.platform.terminal": {
+          "bytes": 168,
+          "sha256": "4981390527dfef492731fb5cc759bf45b5b5391a51348177a94bfef2ee608f8e",
+          "stableDuringRead": true
+        },
+        "run.log": {
+          "bytes": 12084,
+          "sha256": "f949654b836e87c57a2ffb88e661dd25f15570da2f942c417b828efe0bc3b449",
+          "stableDuringRead": true
+        },
+        "fetch-stream-debug.log": {
+          "bytes": 37202699,
+          "sha256": "7bc2a8ab9cdba2474a9618d48a26ed7e2c0661b05241e6088e411cc8e7234b65",
+          "lines": 507022,
+          "stableDuringRead": true,
+          "copied": false
+        }
+      },
+      "serial": "FETCH_STREAM_BEGIN case=changed-layout\nFETCH_STREAM_RESULT {\"case\":\"changed-layout\",\"passed\":true,\"trainingChecked\":true,\"mappedCodeChecked\":true,\"trapPcChecked\":true}\n",
+      "predecodeRecoveryCount": 1,
+      "predecodeEvidence": [
+        {
+          "line": 334150,
+          "text": "8022000: system.cpu0.fetch: [tid:0] Predecode invalid BTB slot 0x40000002: decoded [0x40000000,0x40000004), previous [0x8000011c,0x80000120) valid=0, ftq=2096 prefix=0; refetch 0x40000000",
+          "tick": "8022000",
+          "invalidPc": "0x40000002",
+          "decodedStart": "0x40000000",
+          "decodedEnd": "0x40000004",
+          "previousStart": "0x8000011c",
+          "previousEnd": "0x80000120",
+          "previousValid": false,
+          "ftq": 2096,
+          "prefix": 0,
+          "restartPc": "0x40000000",
+          "insideCurrent": true,
+          "insidePrevious": false
+        }
+      ],
+      "bpuRecoveryEvidence": [
+        {
+          "line": 334151,
+          "text": "8022000: system.cpu0.branchPred: Predecode false BTB slot: target=2096 restart=0x40000000 prefix_insts=0 invalid_slots=1"
+        }
+      ],
+      "demandFaultEvidence": [
+        {
+          "line": 339072,
+          "text": "8100000: system.cpu0.fetch: [tid:0] Demand fetch fault: pc=0x40000000 missing=0x40000000 request=0x40000000 cause=1",
+          "pc": "0x40000000",
+          "missing": "0x40000000",
+          "request": "0x40000000",
+          "cause": 1
+        }
+      ],
+      "lastFenceIFetch": {
+        "line": 328047,
+        "text": "7827000: system.cpu0.fetch: [tid:0] Instruction is: fence_i"
+      },
+      "mappedCreationCount": 7,
+      "model09Comparison": {
+        "sameFirmware": true,
+        "model09ArchitecturalPass": true,
+        "model09PredecodeRecoveryCount": 1,
+        "sameRecoveryShape": true
+      },
+      "selectedMappedCreations": [
+        {
+          "line": 334240,
+          "text": "8027000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000000=>0x40000004).(0=>1) created [sn:5111].",
+          "pc": "0x40000000",
+          "nextPc": "0x40000004",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 5111,
+          "mnemonic": "addi a0, a0, 1"
+        },
+        {
+          "line": 334249,
+          "text": "8027000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000004=>0x40000008).(0=>1) created [sn:5112].",
+          "pc": "0x40000004",
+          "nextPc": "0x40000008",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 5112,
+          "mnemonic": "jalr zero, 0(ra)"
+        },
+        {
+          "line": 339074,
+          "text": "8100000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000000=>0x40000004).(0=>1) created [sn:5350].",
+          "pc": "0x40000000",
+          "nextPc": "0x40000004",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 5350,
+          "mnemonic": "gem5 nop"
+        }
+      ],
+      "selectedDeliveryEvidence": [
+        {
+          "line": 334312,
+          "text": "8027000: system.cpu0.fetch: [tid:0] [sn:5111] Sending instruction to decode from fetch queue. Fetch queue size: 6."
+        },
+        {
+          "line": 334313,
+          "text": "8027000: system.cpu0.fetch: [tid:0] [sn:5112] Sending instruction to decode from fetch queue. Fetch queue size: 5."
+        },
+        {
+          "line": 334680,
+          "text": "8030000: system.cpu0.decode: [tid:0] Processing instruction [sn:5111] with PC (0x40000000=>0x40000004).(0=>1)"
+        },
+        {
+          "line": 334681,
+          "text": "8030000: system.cpu0.decode: [tid:0] Processing instruction [sn:5112] with PC (0x40000004=>0x40000008).(0=>1)"
+        }
+      ]
+    },
+    {
+      "case": "control-interior",
+      "architecturalPass": true,
+      "hostReturnCode": 0,
+      "simulatorExit": {
+        "tick": "25208000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "gem5Sha256": "7aba95946686c49c763e54d1876670e4e737c90ed843fb0a4905f400c326309a"
+      },
+      "firmwareSha256": "999187515c1778e6fc2af6b3d96c871cef7fba118112898bb2892642765f34ec",
+      "predictWidths": [
+        64,
+        64,
+        64,
+        64
+      ],
+      "artifacts": {
+        "fetch-stream-result.json": {
+          "bytes": 1613,
+          "sha256": "0fe24a904715885d0000144257da229f41cf6ce14fc0fda8b8c9f587a326976d",
+          "stableDuringRead": true
+        },
+        "execution-plan.json": {
+          "bytes": 20378,
+          "sha256": "4c27209ea19e2317bee3709282c91d600fe0ed30fbc47e88f877ff1e155afdfd",
+          "stableDuringRead": true
+        },
+        "native-linux-result.json": {
+          "bytes": 1530,
+          "sha256": "3176c94a061c13704b5ef629dea4021a2f035921ad1390f2acd00844a23dbac9",
+          "stableDuringRead": true
+        },
+        "host-exit-code.txt": {
+          "bytes": 2,
+          "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+          "stableDuringRead": true
+        },
+        "config.ini": {
+          "bytes": 247999,
+          "sha256": "8cd72f2f4a5cea0d83422eee4ccc9066c4b99b49d01b603408636030656f7af6",
+          "stableDuringRead": true
+        },
+        "system.platform.terminal": {
+          "bytes": 172,
+          "sha256": "dbb399ebfb56955bb01fa343606c9f01ed26b2094e65237f122b2ebe9cf5ec2d",
+          "stableDuringRead": true
+        },
+        "run.log": {
+          "bytes": 12280,
+          "sha256": "27d23577c6e8143f22b879706215d7c5183f6045f87bbeb0d7214fc5f953b6db",
+          "stableDuringRead": true
+        },
+        "fetch-stream-debug.log": {
+          "bytes": 37782323,
+          "sha256": "fa355d6321d7ca73a8629e7782f363f81ace478a41275439ffa7340d93c27263",
+          "lines": 516071,
+          "stableDuringRead": true,
+          "copied": false
+        }
+      },
+      "serial": "FETCH_STREAM_BEGIN case=control-interior\nFETCH_STREAM_RESULT {\"case\":\"control-interior\",\"passed\":true,\"trainingChecked\":true,\"mappedCodeChecked\":true,\"trapPcChecked\":true}\n",
+      "predecodeRecoveryCount": 1,
+      "predecodeEvidence": [
+        {
+          "line": 338045,
+          "text": "8411000: system.cpu0.fetch: [tid:0] Predecode invalid BTB slot 0x40000002: decoded [0x40000000,0x40000004), previous [0x8000005c,0x80000060) valid=0, ftq=2099 prefix=0; refetch 0x40000000",
+          "tick": "8411000",
+          "invalidPc": "0x40000002",
+          "decodedStart": "0x40000000",
+          "decodedEnd": "0x40000004",
+          "previousStart": "0x8000005c",
+          "previousEnd": "0x80000060",
+          "previousValid": false,
+          "ftq": 2099,
+          "prefix": 0,
+          "restartPc": "0x40000000",
+          "insideCurrent": true,
+          "insidePrevious": false
+        }
+      ],
+      "bpuRecoveryEvidence": [
+        {
+          "line": 338046,
+          "text": "8411000: system.cpu0.branchPred: Predecode false BTB slot: target=2099 restart=0x40000000 prefix_insts=0 invalid_slots=1"
+        }
+      ],
+      "demandFaultEvidence": [
+        {
+          "line": 345386,
+          "text": "8564000: system.cpu0.fetch: [tid:0] Demand fetch fault: pc=0x40000000 missing=0x40000000 request=0x40000000 cause=1",
+          "pc": "0x40000000",
+          "missing": "0x40000000",
+          "request": "0x40000000",
+          "cause": 1
+        }
+      ],
+      "lastFenceIFetch": {
+        "line": 332258,
+        "text": "8216000: system.cpu0.fetch: [tid:0] Instruction is: fence_i"
+      },
+      "mappedCreationCount": 33,
+      "model09Comparison": {
+        "sameFirmware": true,
+        "model09ArchitecturalPass": true,
+        "model09PredecodeRecoveryCount": 1,
+        "sameRecoveryShape": true
+      },
+      "selectedMappedCreations": [
+        {
+          "line": 338131,
+          "text": "8414000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000000=>0x40000004).(0=>1) created [sn:5019].",
+          "pc": "0x40000000",
+          "nextPc": "0x40000004",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 5019,
+          "mnemonic": "jal zero, 160"
+        },
+        {
+          "line": 338140,
+          "text": "8414000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000004=>0x40000008).(0=>1) created [sn:5020].",
+          "pc": "0x40000004",
+          "nextPc": "0x40000008",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 5020,
+          "mnemonic": "addi a0, a0, 32"
+        },
+        {
+          "line": 345388,
+          "text": "8564000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000000=>0x40000004).(0=>1) created [sn:5284].",
+          "pc": "0x40000000",
+          "nextPc": "0x40000004",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 5284,
+          "mnemonic": "gem5 nop"
+        }
+      ],
+      "selectedDeliveryEvidence": [
+        {
+          "line": 338290,
+          "text": "8414000: system.cpu0.fetch: [tid:0] [sn:5019] Sending instruction to decode from fetch queue. Fetch queue size: 16."
+        },
+        {
+          "line": 338291,
+          "text": "8414000: system.cpu0.fetch: [tid:0] [sn:5020] Sending instruction to decode from fetch queue. Fetch queue size: 15."
+        },
+        {
+          "line": 338338,
+          "text": "8417000: system.cpu0.decode: [tid:0] Processing instruction [sn:5019] with PC (0x40000000=>0x40000004).(0=>1)"
+        }
+      ]
+    },
+    {
+      "case": "cross-stale",
+      "architecturalPass": true,
+      "hostReturnCode": 0,
+      "simulatorExit": {
+        "tick": "26182000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "gem5Sha256": "7aba95946686c49c763e54d1876670e4e737c90ed843fb0a4905f400c326309a"
+      },
+      "firmwareSha256": "0cdfd7aef41951d5baf85b7377c9c0e3c4211509ccff8ca3a521637c0319757b",
+      "predictWidths": [
+        64,
+        64,
+        64,
+        64
+      ],
+      "artifacts": {
+        "fetch-stream-result.json": {
+          "bytes": 1603,
+          "sha256": "9aee4ab31400b238cab505620cf658bde252e05a0650eb85f8a0702dd265f576",
+          "stableDuringRead": true
+        },
+        "execution-plan.json": {
+          "bytes": 20368,
+          "sha256": "fdf6f7dad4cb2f8035f749f8a79933ff98c6940bf197ad17911c8ae258f20aad",
+          "stableDuringRead": true
+        },
+        "native-linux-result.json": {
+          "bytes": 1520,
+          "sha256": "c0fe979e92de4043123e995de3607de9343500a98c6fd30c346bc9655cc0a6f3",
+          "stableDuringRead": true
+        },
+        "host-exit-code.txt": {
+          "bytes": 2,
+          "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+          "stableDuringRead": true
+        },
+        "config.ini": {
+          "bytes": 247989,
+          "sha256": "c2e0b5ffc44c875ed4c1c00456c2be3254e8577bb390d4c0e0a621f3ea7146fe",
+          "stableDuringRead": true
+        },
+        "system.platform.terminal": {
+          "bytes": 162,
+          "sha256": "f1b6a86dca851d4b88e45aae8586368ffff90cc1b0929c03f535d173de220af2",
+          "stableDuringRead": true
+        },
+        "run.log": {
+          "bytes": 12076,
+          "sha256": "82aeb030a4fbb10bc9e3368ce935cf160d6430b281198dd4b706ad1458acf5e2",
+          "stableDuringRead": true
+        },
+        "fetch-stream-debug.log": {
+          "bytes": 59865949,
+          "sha256": "e4e0b37ff0beb6803761f43f3097361daff5e6da353dedb6b531fb70cc4ecf1c",
+          "lines": 765746,
+          "stableDuringRead": true,
+          "copied": false
+        }
+      },
+      "serial": "FETCH_STREAM_BEGIN case=cross-stale\nFETCH_STREAM_RESULT {\"case\":\"cross-stale\",\"passed\":true,\"trainingChecked\":true,\"mappedCodeChecked\":true,\"trapPcChecked\":true}\n",
+      "predecodeRecoveryCount": 1,
+      "predecodeEvidence": [
+        {
+          "line": 595021,
+          "text": "10095000: system.cpu0.fetch: [tid:0] Predecode invalid BTB slot 0x40000040: decoded [0x40000042,0x40000046), previous [0x4000003e,0x40000042) valid=1, ftq=2607 prefix=0; refetch 0x40000042",
+          "tick": "10095000",
+          "invalidPc": "0x40000040",
+          "decodedStart": "0x40000042",
+          "decodedEnd": "0x40000046",
+          "previousStart": "0x4000003e",
+          "previousEnd": "0x40000042",
+          "previousValid": true,
+          "ftq": 2607,
+          "prefix": 0,
+          "restartPc": "0x40000042",
+          "insideCurrent": false,
+          "insidePrevious": true
+        }
+      ],
+      "bpuRecoveryEvidence": [
+        {
+          "line": 595022,
+          "text": "10095000: system.cpu0.branchPred: Predecode false BTB slot: target=2607 restart=0x40000042 prefix_insts=0 invalid_slots=1"
+        }
+      ],
+      "demandFaultEvidence": [
+        {
+          "line": 600012,
+          "text": "10162000: system.cpu0.fetch: [tid:0] Demand fetch fault: pc=0x40000000 missing=0x40000000 request=0x40000000 cause=1",
+          "pc": "0x40000000",
+          "missing": "0x40000000",
+          "request": "0x40000000",
+          "cause": 1
+        }
+      ],
+      "lastFenceIFetch": {
+        "line": 588535,
+        "text": "9821000: system.cpu0.fetch: [tid:0] Instruction is: fence_i"
+      },
+      "mappedCreationCount": 48,
+      "model09Comparison": {
+        "sameFirmware": true,
+        "model09ArchitecturalPass": true,
+        "model09PredecodeRecoveryCount": 1,
+        "sameRecoveryShape": true
+      },
+      "selectedMappedCreations": [
+        {
+          "line": 594271,
+          "text": "10016000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000000=>0x40000004).(0=>1) created [sn:20503].",
+          "pc": "0x40000000",
+          "nextPc": "0x40000004",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 20503,
+          "mnemonic": "addi a1, a1, 3"
+        },
+        {
+          "line": 594280,
+          "text": "10016000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000004=>0x40000006).(0=>1) created [sn:20504].",
+          "pc": "0x40000004",
+          "nextPc": "0x40000006",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 20504,
+          "mnemonic": "c_addi zero, 0"
+        },
+        {
+          "line": 594554,
+          "text": "10017000: system.cpu0.fetch: [tid:0] Instruction PC (0x4000003e=>0x40000042).(0=>1) created [sn:20533].",
+          "pc": "0x4000003e",
+          "nextPc": "0x40000042",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 20533,
+          "mnemonic": "addi a0, a0, 1"
+        },
+        {
+          "line": 595107,
+          "text": "10098000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000042=>0x40000046).(0=>1) created [sn:20534].",
+          "pc": "0x40000042",
+          "nextPc": "0x40000046",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 20534,
+          "mnemonic": "jalr zero, 0(ra)"
+        },
+        {
+          "line": 600014,
+          "text": "10162000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000000=>0x40000004).(0=>1) created [sn:20783].",
+          "pc": "0x40000000",
+          "nextPc": "0x40000004",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 20783,
+          "mnemonic": "gem5 nop"
+        }
+      ],
+      "selectedDeliveryEvidence": [
+        {
+          "line": 594413,
+          "text": "10016000: system.cpu0.fetch: [tid:0] [sn:20503] Sending instruction to decode from fetch queue. Fetch queue size: 16."
+        },
+        {
+          "line": 594414,
+          "text": "10016000: system.cpu0.fetch: [tid:0] [sn:20504] Sending instruction to decode from fetch queue. Fetch queue size: 15."
+        },
+        {
+          "line": 594597,
+          "text": "10019000: system.cpu0.decode: [tid:0] Processing instruction [sn:20503] with PC (0x40000000=>0x40000004).(0=>1)"
+        },
+        {
+          "line": 594598,
+          "text": "10019000: system.cpu0.decode: [tid:0] Processing instruction [sn:20504] with PC (0x40000004=>0x40000006).(0=>1)"
+        },
+        {
+          "line": 594639,
+          "text": "10021000: system.cpu0.fetch: [tid:0] [sn:20533] Sending instruction to decode from fetch queue. Fetch queue size: 1."
+        },
+        {
+          "line": 594669,
+          "text": "10024000: system.cpu0.decode: [tid:0] Processing instruction [sn:20533] with PC (0x4000003e=>0x40000042).(0=>1)"
+        },
+        {
+          "line": 595251,
+          "text": "10098000: system.cpu0.fetch: [tid:0] [sn:20534] Sending instruction to decode from fetch queue. Fetch queue size: 16."
+        },
+        {
+          "line": 595298,
+          "text": "10101000: system.cpu0.decode: [tid:0] Processing instruction [sn:20534] with PC (0x40000042=>0x40000046).(0=>1)"
+        }
+      ]
+    },
+    {
+      "case": "cross-clean",
+      "architecturalPass": true,
+      "hostReturnCode": 0,
+      "simulatorExit": {
+        "tick": "25963000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "gem5Sha256": "7aba95946686c49c763e54d1876670e4e737c90ed843fb0a4905f400c326309a"
+      },
+      "firmwareSha256": "6d76b5205f8e2133d4d8f5b28c2c4a89e1c658277c6296dc4ec34f48560adcde",
+      "predictWidths": [
+        64,
+        64,
+        64,
+        64
+      ],
+      "artifacts": {
+        "fetch-stream-result.json": {
+          "bytes": 1603,
+          "sha256": "a20ef5118d34bf83867c9d355951d331d7db711b41cea6cf7cb94d54e552feb3",
+          "stableDuringRead": true
+        },
+        "execution-plan.json": {
+          "bytes": 20368,
+          "sha256": "b705e95eaf9da30023f9431cadf9c25ffef42246d3b4d938d6d1708f96c85ebc",
+          "stableDuringRead": true
+        },
+        "native-linux-result.json": {
+          "bytes": 1520,
+          "sha256": "71178ba6e7d8549462a455cb875d8c35c71fae6f915a61576ca42045723f0b9c",
+          "stableDuringRead": true
+        },
+        "host-exit-code.txt": {
+          "bytes": 2,
+          "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+          "stableDuringRead": true
+        },
+        "config.ini": {
+          "bytes": 247989,
+          "sha256": "868698d7c23e195da788e92556428e679dd7b1808a6009ee86784ea11cba2ac1",
+          "stableDuringRead": true
+        },
+        "system.platform.terminal": {
+          "bytes": 162,
+          "sha256": "5b902e26c788226c84829797f433fdac4d1821151c39eeb810aa67afa7eead44",
+          "stableDuringRead": true
+        },
+        "run.log": {
+          "bytes": 12240,
+          "sha256": "ada37463afc147fea2835bc08c8c6bff0b8334f0637410f406cc9182fab11722",
+          "stableDuringRead": true
+        },
+        "fetch-stream-debug.log": {
+          "bytes": 55544934,
+          "sha256": "875a8cfd7feef5d48bc0da3793a4c6a83df109469e3890219689a30652c491dc",
+          "lines": 711153,
+          "stableDuringRead": true,
+          "copied": false
+        }
+      },
+      "serial": "FETCH_STREAM_BEGIN case=cross-clean\nFETCH_STREAM_RESULT {\"case\":\"cross-clean\",\"passed\":true,\"trainingChecked\":true,\"mappedCodeChecked\":true,\"trapPcChecked\":true}\n",
+      "predecodeRecoveryCount": 0,
+      "predecodeEvidence": [],
+      "bpuRecoveryEvidence": [],
+      "demandFaultEvidence": [
+        {
+          "line": 545266,
+          "text": "9943000: system.cpu0.fetch: [tid:0] Demand fetch fault: pc=0x40000000 missing=0x40000000 request=0x40000000 cause=1",
+          "pc": "0x40000000",
+          "missing": "0x40000000",
+          "request": "0x40000000",
+          "cause": 1
+        }
+      ],
+      "lastFenceIFetch": {
+        "line": 533502,
+        "text": "9608000: system.cpu0.fetch: [tid:0] Instruction is: fence_i"
+      },
+      "mappedCreationCount": 33,
+      "model09Comparison": {
+        "sameFirmware": true,
+        "model09ArchitecturalPass": true,
+        "model09PredecodeRecoveryCount": 0,
+        "sameRecoveryShape": true
+      },
+      "selectedMappedCreations": [
+        {
+          "line": 539289,
+          "text": "9803000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000000=>0x40000004).(0=>1) created [sn:19458].",
+          "pc": "0x40000000",
+          "nextPc": "0x40000004",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 19458,
+          "mnemonic": "addi a1, a1, 3"
+        },
+        {
+          "line": 539298,
+          "text": "9803000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000004=>0x40000006).(0=>1) created [sn:19459].",
+          "pc": "0x40000004",
+          "nextPc": "0x40000006",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 19459,
+          "mnemonic": "c_addi zero, 0"
+        },
+        {
+          "line": 539572,
+          "text": "9804000: system.cpu0.fetch: [tid:0] Instruction PC (0x4000003e=>0x40000042).(0=>1) created [sn:19488].",
+          "pc": "0x4000003e",
+          "nextPc": "0x40000042",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 19488,
+          "mnemonic": "addi a0, a0, 1"
+        },
+        {
+          "line": 540039,
+          "text": "9882000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000042=>0x40000046).(0=>1) created [sn:19489].",
+          "pc": "0x40000042",
+          "nextPc": "0x40000046",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 19489,
+          "mnemonic": "jalr zero, 0(ra)"
+        },
+        {
+          "line": 545268,
+          "text": "9943000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000000=>0x40000004).(0=>1) created [sn:19766].",
+          "pc": "0x40000000",
+          "nextPc": "0x40000004",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 19766,
+          "mnemonic": "gem5 nop"
+        }
+      ],
+      "selectedDeliveryEvidence": [
+        {
+          "line": 539431,
+          "text": "9803000: system.cpu0.fetch: [tid:0] [sn:19458] Sending instruction to decode from fetch queue. Fetch queue size: 16."
+        },
+        {
+          "line": 539432,
+          "text": "9803000: system.cpu0.fetch: [tid:0] [sn:19459] Sending instruction to decode from fetch queue. Fetch queue size: 15."
+        },
+        {
+          "line": 539615,
+          "text": "9806000: system.cpu0.decode: [tid:0] Processing instruction [sn:19458] with PC (0x40000000=>0x40000004).(0=>1)"
+        },
+        {
+          "line": 539616,
+          "text": "9806000: system.cpu0.decode: [tid:0] Processing instruction [sn:19459] with PC (0x40000004=>0x40000006).(0=>1)"
+        },
+        {
+          "line": 539657,
+          "text": "9808000: system.cpu0.fetch: [tid:0] [sn:19488] Sending instruction to decode from fetch queue. Fetch queue size: 1."
+        },
+        {
+          "line": 539687,
+          "text": "9811000: system.cpu0.decode: [tid:0] Processing instruction [sn:19488] with PC (0x4000003e=>0x40000042).(0=>1)"
+        },
+        {
+          "line": 540066,
+          "text": "9882000: system.cpu0.fetch: [tid:0] [sn:19489] Sending instruction to decode from fetch queue. Fetch queue size: 1."
+        },
+        {
+          "line": 540430,
+          "text": "9885000: system.cpu0.decode: [tid:0] Processing instruction [sn:19489] with PC (0x40000042=>0x40000046).(0=>1)"
+        }
+      ]
+    },
+    {
+      "case": "prefix-interior",
+      "architecturalPass": true,
+      "hostReturnCode": 0,
+      "simulatorExit": {
+        "tick": "24873000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "gem5Sha256": "7aba95946686c49c763e54d1876670e4e737c90ed843fb0a4905f400c326309a"
+      },
+      "firmwareSha256": "2da4956583dd401b1a1fe8176d357a957474054727aaf2e1e45ca42124e938e8",
+      "predictWidths": [
+        64,
+        64,
+        64,
+        64
+      ],
+      "artifacts": {
+        "fetch-stream-result.json": {
+          "bytes": 1611,
+          "sha256": "71d60c2dd205851601cd6ba7263a70c2c759816ccea3460ad66664c89e9f0e68",
+          "stableDuringRead": true
+        },
+        "execution-plan.json": {
+          "bytes": 20376,
+          "sha256": "6d79cbcff3df74e22b5a38d21c96e60e7d990ceabdf74b2e809aeca242c0e62a",
+          "stableDuringRead": true
+        },
+        "native-linux-result.json": {
+          "bytes": 1528,
+          "sha256": "e2fde9f5854ece85e8da99487f519ab6747e1148d64f1861d4d82a10a270d929",
+          "stableDuringRead": true
+        },
+        "host-exit-code.txt": {
+          "bytes": 2,
+          "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+          "stableDuringRead": true
+        },
+        "config.ini": {
+          "bytes": 247997,
+          "sha256": "5217c25e76299e006565800adca8e759772c6b06cc7d616ccad6588635ae2f1c",
+          "stableDuringRead": true
+        },
+        "system.platform.terminal": {
+          "bytes": 170,
+          "sha256": "e46efaaf15b3735d2a07eaa7e59ca9b1522cbb5ce6d51d9c28f13b8246ec0dec",
+          "stableDuringRead": true
+        },
+        "run.log": {
+          "bytes": 12108,
+          "sha256": "4dad33b32857ae1dd45dfa969bee1e0f7d6648686600010210a0da34e6bff003",
+          "stableDuringRead": true
+        },
+        "fetch-stream-debug.log": {
+          "bytes": 38247481,
+          "sha256": "0c83000c074510f9edad9d62f67bdc257ead45da01a632bd951690ff1d1119b1",
+          "lines": 520086,
+          "stableDuringRead": true,
+          "copied": false
+        }
+      },
+      "serial": "FETCH_STREAM_BEGIN case=prefix-interior\nFETCH_STREAM_RESULT {\"case\":\"prefix-interior\",\"passed\":true,\"trainingChecked\":true,\"mappedCodeChecked\":true,\"trapPcChecked\":true}\n",
+      "predecodeRecoveryCount": 1,
+      "predecodeEvidence": [
+        {
+          "line": 344575,
+          "text": "8280000: system.cpu0.fetch: [tid:0] Predecode invalid BTB slot 0x40000006: decoded [0x40000004,0x40000008), previous [0x40000000,0x40000004) valid=1, ftq=2098 prefix=1; refetch 0x40000004",
+          "tick": "8280000",
+          "invalidPc": "0x40000006",
+          "decodedStart": "0x40000004",
+          "decodedEnd": "0x40000008",
+          "previousStart": "0x40000000",
+          "previousEnd": "0x40000004",
+          "previousValid": true,
+          "ftq": 2098,
+          "prefix": 1,
+          "restartPc": "0x40000004",
+          "insideCurrent": true,
+          "insidePrevious": false
+        }
+      ],
+      "bpuRecoveryEvidence": [
+        {
+          "line": 344576,
+          "text": "8280000: system.cpu0.branchPred: Predecode false BTB slot: target=2098 restart=0x40000004 prefix_insts=1 invalid_slots=1"
+        }
+      ],
+      "demandFaultEvidence": [
+        {
+          "line": 349534,
+          "text": "8349000: system.cpu0.fetch: [tid:0] Demand fetch fault: pc=0x40000000 missing=0x40000000 request=0x40000000 cause=1",
+          "pc": "0x40000000",
+          "missing": "0x40000000",
+          "request": "0x40000000",
+          "cause": 1
+        }
+      ],
+      "lastFenceIFetch": {
+        "line": 338779,
+        "text": "8085000: system.cpu0.fetch: [tid:0] Instruction is: fence_i"
+      },
+      "mappedCreationCount": 17,
+      "model09Comparison": {
+        "sameFirmware": true,
+        "model09ArchitecturalPass": true,
+        "model09PredecodeRecoveryCount": 1,
+        "sameRecoveryShape": true
+      },
+      "selectedMappedCreations": [
+        {
+          "line": 344566,
+          "text": "8280000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000000=>0x40000004).(0=>1) created [sn:5576].",
+          "pc": "0x40000000",
+          "nextPc": "0x40000004",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 5576,
+          "mnemonic": "addi a1, a1, 3"
+        },
+        {
+          "line": 344665,
+          "text": "8283000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000004=>0x40000008).(0=>1) created [sn:5577].",
+          "pc": "0x40000004",
+          "nextPc": "0x40000008",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 5577,
+          "mnemonic": "addi a0, a0, 1"
+        },
+        {
+          "line": 349536,
+          "text": "8349000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000000=>0x40000004).(0=>1) created [sn:5825].",
+          "pc": "0x40000000",
+          "nextPc": "0x40000004",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 5825,
+          "mnemonic": "gem5 nop"
+        }
+      ],
+      "selectedDeliveryEvidence": [
+        {
+          "line": 344581,
+          "text": "8280000: system.cpu0.fetch: [tid:0] [sn:5576] Sending instruction to decode from fetch queue. Fetch queue size: 1."
+        },
+        {
+          "line": 344634,
+          "text": "8283000: system.cpu0.decode: [tid:0] Processing instruction [sn:5576] with PC (0x40000000=>0x40000004).(0=>1)"
+        },
+        {
+          "line": 344815,
+          "text": "8283000: system.cpu0.fetch: [tid:0] [sn:5577] Sending instruction to decode from fetch queue. Fetch queue size: 15."
+        },
+        {
+          "line": 344862,
+          "text": "8286000: system.cpu0.decode: [tid:0] Processing instruction [sn:5577] with PC (0x40000004=>0x40000008).(0=>1)"
+        }
+      ],
+      "validPrefixProof": {
+        "oneActualAddiCreated": true,
+        "sn": 5576,
+        "recoveryPreservesOneInstruction": true,
+        "restartAtInvalidInstructionStart": true,
+        "finalValueCheckedByFrozenGuest": true,
+        "note": "Later gem5 nop at same PC is speculative fault carrier, not a duplicate addi."
+      }
+    },
+    {
+      "case": "amo-cross-stale",
+      "architecturalPass": true,
+      "hostReturnCode": 0,
+      "simulatorExit": {
+        "tick": "27191000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "gem5Sha256": "7aba95946686c49c763e54d1876670e4e737c90ed843fb0a4905f400c326309a"
+      },
+      "firmwareSha256": "80f38b758380412006a04c389b36008990f6f5a179efaf65a521ad056b62b0ff",
+      "predictWidths": [
+        64,
+        64,
+        64,
+        64
+      ],
+      "artifacts": {
+        "fetch-stream-result.json": {
+          "bytes": 1611,
+          "sha256": "24a4d2ba45ebd34112d2c672726693ada4a8025c58ae2ff7e91ba8986745f362",
+          "stableDuringRead": true
+        },
+        "execution-plan.json": {
+          "bytes": 20376,
+          "sha256": "321570019522a1122bf770c8da849369e887d93163c7992602bed71d15df5457",
+          "stableDuringRead": true
+        },
+        "native-linux-result.json": {
+          "bytes": 1528,
+          "sha256": "a13e014fe129b5b65922a284e79cfd832140d02cf0aa0417906f904e8facabfb",
+          "stableDuringRead": true
+        },
+        "host-exit-code.txt": {
+          "bytes": 2,
+          "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+          "stableDuringRead": true
+        },
+        "config.ini": {
+          "bytes": 247997,
+          "sha256": "b9bc134f8dd9043bbb825dd9bf30b847d6c9927f5ffe104a70dc9859c51cb08c",
+          "stableDuringRead": true
+        },
+        "system.platform.terminal": {
+          "bytes": 170,
+          "sha256": "372a1762d52a75de11537c603278035e9ba297d832de2e4062b5f9b96adc6da0",
+          "stableDuringRead": true
+        },
+        "run.log": {
+          "bytes": 12271,
+          "sha256": "e5abc13633c934b952110da82c0ebc56b65352ff01efad6298b35bbecdd7c03f",
+          "stableDuringRead": true
+        },
+        "fetch-stream-debug.log": {
+          "bytes": 60521106,
+          "sha256": "ccd36145bd80e6411cb26c05a18393b422022378ab305e8fbe5d6b40f9c30acd",
+          "lines": 774633,
+          "stableDuringRead": true,
+          "copied": false
+        }
+      },
+      "serial": "FETCH_STREAM_BEGIN case=amo-cross-stale\nFETCH_STREAM_RESULT {\"case\":\"amo-cross-stale\",\"passed\":true,\"trainingChecked\":true,\"mappedCodeChecked\":true,\"trapPcChecked\":true}\n",
+      "predecodeRecoveryCount": 1,
+      "predecodeEvidence": [
+        {
+          "line": 599691,
+          "text": "10602000: system.cpu0.fetch: [tid:0] Predecode invalid BTB slot 0x40000040: decoded [0x40000042,0x40000046), previous [0x4000003e,0x40000042) valid=1, ftq=2611 prefix=0; refetch 0x40000042",
+          "tick": "10602000",
+          "invalidPc": "0x40000040",
+          "decodedStart": "0x40000042",
+          "decodedEnd": "0x40000046",
+          "previousStart": "0x4000003e",
+          "previousEnd": "0x40000042",
+          "previousValid": true,
+          "ftq": 2611,
+          "prefix": 0,
+          "restartPc": "0x40000042",
+          "insideCurrent": false,
+          "insidePrevious": true
+        }
+      ],
+      "bpuRecoveryEvidence": [
+        {
+          "line": 599692,
+          "text": "10602000: system.cpu0.branchPred: Predecode false BTB slot: target=2611 restart=0x40000042 prefix_insts=0 invalid_slots=1"
+        }
+      ],
+      "demandFaultEvidence": [
+        {
+          "line": 605148,
+          "text": "10671000: system.cpu0.fetch: [tid:0] Demand fetch fault: pc=0x40000000 missing=0x40000000 request=0x40000000 cause=1",
+          "pc": "0x40000000",
+          "missing": "0x40000000",
+          "request": "0x40000000",
+          "cause": 1
+        }
+      ],
+      "lastFenceIFetch": {
+        "line": 593171,
+        "text": "10326000: system.cpu0.fetch: [tid:0] Instruction is: fence_i"
+      },
+      "mappedCreationCount": 50,
+      "model09Comparison": {
+        "sameFirmware": true,
+        "model09ArchitecturalPass": true,
+        "model09PredecodeRecoveryCount": 1,
+        "sameRecoveryShape": true
+      },
+      "selectedMappedCreations": [
+        {
+          "line": 598907,
+          "text": "10521000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000000=>0x40000004).(0=>1) created [sn:20540].",
+          "pc": "0x40000000",
+          "nextPc": "0x40000004",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 20540,
+          "mnemonic": "addi a1, a1, 3"
+        },
+        {
+          "line": 598916,
+          "text": "10521000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000004=>0x40000006).(0=>1) created [sn:20541].",
+          "pc": "0x40000004",
+          "nextPc": "0x40000006",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 20541,
+          "mnemonic": "c_addi zero, 0"
+        },
+        {
+          "line": 599192,
+          "text": "10522000: system.cpu0.fetch: [tid:0] Instruction PC (0x4000003e=>0x40000042).(0=>1) created [sn:20570].",
+          "pc": "0x4000003e",
+          "nextPc": "0x40000042",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 20570,
+          "mnemonic": "0x075a362f fence"
+        },
+        {
+          "line": 599198,
+          "text": "10522000: system.cpu0.fetch: [tid:0] Instruction PC (0x4000003e=>0x40000042).(1=>2) created [sn:20571].",
+          "pc": "0x4000003e",
+          "nextPc": "0x40000042",
+          "microPc": 1,
+          "nextMicroPc": 2,
+          "sn": 20571,
+          "mnemonic": "amoadd_d[l] a2, s5, (s4)"
+        },
+        {
+          "line": 599217,
+          "text": "10523000: system.cpu0.fetch: [tid:0] Instruction PC (0x4000003e=>0x40000042).(2=>3) created [sn:20572].",
+          "pc": "0x4000003e",
+          "nextPc": "0x40000042",
+          "microPc": 2,
+          "nextMicroPc": 3,
+          "sn": 20572,
+          "mnemonic": "0x075a362f fence"
+        },
+        {
+          "line": 599779,
+          "text": "10605000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000042=>0x40000046).(0=>1) created [sn:20573].",
+          "pc": "0x40000042",
+          "nextPc": "0x40000046",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 20573,
+          "mnemonic": "add a0, a2, s5"
+        },
+        {
+          "line": 605150,
+          "text": "10671000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000000=>0x40000004).(0=>1) created [sn:20853].",
+          "pc": "0x40000000",
+          "nextPc": "0x40000004",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 20853,
+          "mnemonic": "gem5 nop"
+        }
+      ],
+      "selectedDeliveryEvidence": [
+        {
+          "line": 599049,
+          "text": "10521000: system.cpu0.fetch: [tid:0] [sn:20540] Sending instruction to decode from fetch queue. Fetch queue size: 16."
+        },
+        {
+          "line": 599050,
+          "text": "10521000: system.cpu0.fetch: [tid:0] [sn:20541] Sending instruction to decode from fetch queue. Fetch queue size: 15."
+        },
+        {
+          "line": 599251,
+          "text": "10524000: system.cpu0.decode: [tid:0] Processing instruction [sn:20540] with PC (0x40000000=>0x40000004).(0=>1)"
+        },
+        {
+          "line": 599252,
+          "text": "10524000: system.cpu0.decode: [tid:0] Processing instruction [sn:20541] with PC (0x40000004=>0x40000006).(0=>1)"
+        },
+        {
+          "line": 599293,
+          "text": "10526000: system.cpu0.fetch: [tid:0] [sn:20570] Sending instruction to decode from fetch queue. Fetch queue size: 3."
+        },
+        {
+          "line": 599294,
+          "text": "10526000: system.cpu0.fetch: [tid:0] [sn:20571] Sending instruction to decode from fetch queue. Fetch queue size: 2."
+        },
+        {
+          "line": 599295,
+          "text": "10526000: system.cpu0.fetch: [tid:0] [sn:20572] Sending instruction to decode from fetch queue. Fetch queue size: 1."
+        },
+        {
+          "line": 599325,
+          "text": "10529000: system.cpu0.decode: [tid:0] Processing instruction [sn:20570] with PC (0x4000003e=>0x40000042).(0=>1)"
+        },
+        {
+          "line": 599326,
+          "text": "10529000: system.cpu0.decode: [tid:0] Processing instruction [sn:20571] with PC (0x4000003e=>0x40000042).(1=>2)"
+        },
+        {
+          "line": 599327,
+          "text": "10529000: system.cpu0.decode: [tid:0] Processing instruction [sn:20572] with PC (0x4000003e=>0x40000042).(2=>3)"
+        },
+        {
+          "line": 599923,
+          "text": "10605000: system.cpu0.fetch: [tid:0] [sn:20573] Sending instruction to decode from fetch queue. Fetch queue size: 16."
+        },
+        {
+          "line": 599971,
+          "text": "10608000: system.cpu0.decode: [tid:0] Processing instruction [sn:20573] with PC (0x40000042=>0x40000046).(0=>1)"
+        }
+      ],
+      "amoMicroopProof": {
+        "threeSequentialMicroopsCreated": true,
+        "allThreeSentToDecodeAndDecodedBeforeRecovery": true,
+        "serialNumbers": [
+          20570,
+          20571,
+          20572
+        ],
+        "architecturalRmwCheckedByFrozenGuest": true,
+        "scope": "Creation and Decode delivery plus final effective RMW self-check; no Commit debug and no multi-hart AMO ordering proof."
+      }
+    },
+    {
+      "case": "legal-taken",
+      "architecturalPass": true,
+      "hostReturnCode": 0,
+      "simulatorExit": {
+        "tick": "23941000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "gem5Sha256": "7aba95946686c49c763e54d1876670e4e737c90ed843fb0a4905f400c326309a"
+      },
+      "firmwareSha256": "16fa5849192988c548cb92be76fe8547e9c279c4ecaae13c80f4f3cafb2d97ac",
+      "predictWidths": [
+        64,
+        64,
+        64,
+        64
+      ],
+      "artifacts": {
+        "fetch-stream-result.json": {
+          "bytes": 1603,
+          "sha256": "88e2b26ad75643e8bba294b0456a36bdb36633e3a65f60819b4e0e388f733f15",
+          "stableDuringRead": true
+        },
+        "execution-plan.json": {
+          "bytes": 20368,
+          "sha256": "40ca9cd576063a4d2a2d4be48e9ba76963d987e1343746b5f7e3f03da4ba0b8f",
+          "stableDuringRead": true
+        },
+        "native-linux-result.json": {
+          "bytes": 1520,
+          "sha256": "6b0b4488527cf6a10c2da550724783092383afc32342086dc32e6fe60e6a03a3",
+          "stableDuringRead": true
+        },
+        "host-exit-code.txt": {
+          "bytes": 2,
+          "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+          "stableDuringRead": true
+        },
+        "config.ini": {
+          "bytes": 247989,
+          "sha256": "5cec156adbeb05dae547c84bf6bdaddc93e8ad0bbaa054badf80c397a11dc481",
+          "stableDuringRead": true
+        },
+        "system.platform.terminal": {
+          "bytes": 162,
+          "sha256": "f98cbb93a1bb870dbb905c3249fe7928f2ed808f8248b9cd94c1e5fe27850023",
+          "stableDuringRead": true
+        },
+        "run.log": {
+          "bytes": 12076,
+          "sha256": "0ac3017d7280393a9b06778396c76f7743102803d46a2a1c5da0b36391d6c7b3",
+          "stableDuringRead": true
+        },
+        "fetch-stream-debug.log": {
+          "bytes": 37015126,
+          "sha256": "8b1e2cc1502fe629331e83ff57a15ad12960030193e790c471d5179f0801c751",
+          "lines": 505185,
+          "stableDuringRead": true,
+          "copied": false
+        }
+      },
+      "serial": "FETCH_STREAM_BEGIN case=legal-taken\nFETCH_STREAM_RESULT {\"case\":\"legal-taken\",\"passed\":true,\"trainingChecked\":true,\"mappedCodeChecked\":true,\"trapPcChecked\":true}\n",
+      "predecodeRecoveryCount": 0,
+      "predecodeEvidence": [],
+      "bpuRecoveryEvidence": [],
+      "demandFaultEvidence": [
+        {
+          "line": 338042,
+          "text": "7921000: system.cpu0.fetch: [tid:0] Demand fetch fault: pc=0x40000000 missing=0x40000000 request=0x40000000 cause=1",
+          "pc": "0x40000000",
+          "missing": "0x40000000",
+          "request": "0x40000000",
+          "cause": 1
+        }
+      ],
+      "lastFenceIFetch": {
+        "line": 326647,
+        "text": "7580000: system.cpu0.fetch: [tid:0] Instruction is: fence_i"
+      },
+      "mappedCreationCount": 5,
+      "model09Comparison": {
+        "sameFirmware": true,
+        "model09ArchitecturalPass": true,
+        "model09PredecodeRecoveryCount": 0,
+        "sameRecoveryShape": true
+      },
+      "selectedMappedCreations": [
+        {
+          "line": 332434,
+          "text": "7775000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000000=>0x40000002).(0=>1) created [sn:4992].",
+          "pc": "0x40000000",
+          "nextPc": "0x40000002",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 4992,
+          "mnemonic": "c_addi zero, 0"
+        },
+        {
+          "line": 332443,
+          "text": "7775000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000002=>0x40000004).(0=>1) created [sn:4993].",
+          "pc": "0x40000002",
+          "nextPc": "0x40000004",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 4993,
+          "mnemonic": "c_j 126"
+        },
+        {
+          "line": 338044,
+          "text": "7921000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000000=>0x40000004).(0=>1) created [sn:5272].",
+          "pc": "0x40000000",
+          "nextPc": "0x40000004",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 5272,
+          "mnemonic": "gem5 nop"
+        }
+      ],
+      "selectedDeliveryEvidence": [
+        {
+          "line": 332470,
+          "text": "7775000: system.cpu0.fetch: [tid:0] [sn:4992] Sending instruction to decode from fetch queue. Fetch queue size: 2."
+        },
+        {
+          "line": 332471,
+          "text": "7775000: system.cpu0.fetch: [tid:0] [sn:4993] Sending instruction to decode from fetch queue. Fetch queue size: 1."
+        },
+        {
+          "line": 332481,
+          "text": "7778000: system.cpu0.decode: [tid:0] Processing instruction [sn:4992] with PC (0x40000000=>0x40000002).(0=>1)"
+        },
+        {
+          "line": 332482,
+          "text": "7778000: system.cpu0.decode: [tid:0] Processing instruction [sn:4993] with PC (0x40000002=>0x40000004).(0=>1)"
+        }
+      ]
+    },
+    {
+      "case": "page-tail-return",
+      "architecturalPass": true,
+      "hostReturnCode": 0,
+      "simulatorExit": {
+        "tick": "47691000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "gem5Sha256": "7aba95946686c49c763e54d1876670e4e737c90ed843fb0a4905f400c326309a"
+      },
+      "firmwareSha256": "5ec79e1e7fa3a9a722cee1f4be0c1f3b1545641e3115aca6855456dead356c03",
+      "predictWidths": [
+        64,
+        64,
+        64,
+        64
+      ],
+      "artifacts": {
+        "fetch-stream-result.json": {
+          "bytes": 1768,
+          "sha256": "84a9848efc5ebfe67603acd3f167393b315e92b5766c2b5aeb199d30a30de2ec",
+          "stableDuringRead": true
+        },
+        "execution-plan.json": {
+          "bytes": 6529,
+          "sha256": "92bc689be7bcd57c9a08a3231e2df701229511bfb255a5be59f4c64a98a63476",
+          "stableDuringRead": true
+        },
+        "native-linux-result.json": {
+          "bytes": 1530,
+          "sha256": "a859fd207b3040305cb56b5a53faf44c29a7b2403b7dcb12c7ac57cb4865550f",
+          "stableDuringRead": true
+        },
+        "host-exit-code.txt": {
+          "bytes": 2,
+          "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+          "stableDuringRead": true
+        },
+        "config.ini": {
+          "bytes": 247995,
+          "sha256": "47356db9b640cf28c02a2ab18c193a74151110ba7710580903315dc2e1f5ff63",
+          "stableDuringRead": true
+        },
+        "system.platform.terminal": {
+          "bytes": 363,
+          "sha256": "5d4eb722d059c39dd19b2d5699b5f5df7674ea0bf36f68ceff798039de1bf644",
+          "stableDuringRead": true
+        },
+        "run.log": {
+          "bytes": 11887,
+          "sha256": "098a50877ef55ee291cf99f3f842791f969cea55cff91c99bb6032498c60f100",
+          "stableDuringRead": true
+        },
+        "fetch-stream-debug.log": {
+          "bytes": 47470549,
+          "sha256": "c5ba04335d0f3b4cbc91913f59db897c7d7764b9a73a68cbfcd7c2f5027530d9",
+          "lines": 671139,
+          "stableDuringRead": true,
+          "copied": false
+        }
+      },
+      "serial": "FETCH_STREAM_BEGIN case=page-tail-return\nFETCH_PAGE_TRAP cause=0x0000000000000009 epc=0x00000000800000a0 tval=0x0000000000000000 a0=0x000000000000002a\nFETCH_STREAM_RESULT {\"case\":\"page-tail-return\",\"passed\":true,\"causeChecked\":true,\"trapPcChecked\":true,\"tvalChecked\":true,\"returnValueChecked\":true,\"returnAddressChecked\":true,\"expectedTrap\":9,\"returnedValue\":42}\n",
+      "predecodeRecoveryCount": 0,
+      "predecodeEvidence": [],
+      "bpuRecoveryEvidence": [],
+      "demandFaultEvidence": [],
+      "lastFenceIFetch": {
+        "line": 103151,
+        "text": "6061000: system.cpu0.fetch: [tid:0] Instruction is: fence_i"
+      },
+      "mappedCreationCount": 0,
+      "model09Comparison": {
+        "directory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-page/model09-page-tail-return-01",
+        "sameFirmware": true,
+        "model09ArchitecturalPass": false,
+        "model09HostReturnCode": 1,
+        "serial": "FETCH_STREAM_BEGIN case=page-tail-return\nFETCH_PAGE_TRAP cause=0x000000000000000c epc=0x0000000040000fc0 tval=0x0000000040001000 a0=0x000000000000002a\nFETCH_STREAM_RESULT {\"case\":\"page-tail-return\",\"passed\":false}\n",
+        "artifacts": {
+          "fetch-stream-result.json": {
+            "bytes": 1545,
+            "sha256": "8e7efe93449db2b9aef7ea32b5af4ba91a76c14c620b12a83acbffb3baa18174",
+            "stableDuringRead": true
+          },
+          "system.platform.terminal": {
+            "bytes": 214,
+            "sha256": "265ee872789469bee5ca51c3851dd04f147c807f35df37e7a9ecc42e08eef22b",
+            "stableDuringRead": true
+          },
+          "host-exit-code.txt": {
+            "bytes": 2,
+            "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+            "stableDuringRead": true
+          }
+        }
+      },
+      "actualTrap": {
+        "cause": "0x9",
+        "epc": "0x800000a0",
+        "tval": "0x0",
+        "a0": "0x2a"
+      },
+      "selectedMappedCreations": [],
+      "selectedDeliveryEvidence": []
+    },
+    {
+      "case": "last-halfword-return",
+      "architecturalPass": true,
+      "hostReturnCode": 0,
+      "simulatorExit": {
+        "tick": "48699000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "gem5Sha256": "7aba95946686c49c763e54d1876670e4e737c90ed843fb0a4905f400c326309a"
+      },
+      "firmwareSha256": "4ece21c00c097fa07d24c364eb74bb1c23574337c35a8b11996042908c9f923a",
+      "predictWidths": [
+        64,
+        64,
+        64,
+        64
+      ],
+      "artifacts": {
+        "fetch-stream-result.json": {
+          "bytes": 1776,
+          "sha256": "7ee71f78adf3174876e071be3cd5ceaa807c77070d0069c95172a499f046c020",
+          "stableDuringRead": true
+        },
+        "execution-plan.json": {
+          "bytes": 6537,
+          "sha256": "f94e6fa686a1621745ce302db83de726861d52d04215db2ed167e9b2a6de2b36",
+          "stableDuringRead": true
+        },
+        "native-linux-result.json": {
+          "bytes": 1538,
+          "sha256": "ccca178503f964ae872f6e6b2e57ea81d646811ccc15273b0fecbcef433ae006",
+          "stableDuringRead": true
+        },
+        "host-exit-code.txt": {
+          "bytes": 2,
+          "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+          "stableDuringRead": true
+        },
+        "config.ini": {
+          "bytes": 248003,
+          "sha256": "9a4755d6d851d0f0bd82da973cefe38a38b6d8ed47e51b5ed9a19e7f87f12fbb",
+          "stableDuringRead": true
+        },
+        "system.platform.terminal": {
+          "bytes": 371,
+          "sha256": "97a44cbf2bf7b85dad1272aa7cd641b8373d5ca8b3033be6390eb3b28d47d461",
+          "stableDuringRead": true
+        },
+        "run.log": {
+          "bytes": 11919,
+          "sha256": "87640a8f6627a146ad3e79b71d986e853c1df98813ca3d7d17abd50493cbe362",
+          "stableDuringRead": true
+        },
+        "fetch-stream-debug.log": {
+          "bytes": 48085902,
+          "sha256": "e4d85577e736a8e0d282a9829fd83c519902d4f0b560439725ebd8d912fadeff",
+          "lines": 679839,
+          "stableDuringRead": true,
+          "copied": false
+        }
+      },
+      "serial": "FETCH_STREAM_BEGIN case=last-halfword-return\nFETCH_PAGE_TRAP cause=0x0000000000000009 epc=0x00000000800000a0 tval=0x0000000000000000 a0=0x000000000000002a\nFETCH_STREAM_RESULT {\"case\":\"last-halfword-return\",\"passed\":true,\"causeChecked\":true,\"trapPcChecked\":true,\"tvalChecked\":true,\"returnValueChecked\":true,\"returnAddressChecked\":true,\"expectedTrap\":9,\"returnedValue\":42}\n",
+      "predecodeRecoveryCount": 0,
+      "predecodeEvidence": [],
+      "bpuRecoveryEvidence": [],
+      "demandFaultEvidence": [
+        {
+          "line": 104400,
+          "text": "6528000: system.cpu0.fetch: [tid:0] Demand fetch fault: pc=0x40001000 missing=0x40001000 request=0x40001000 cause=12",
+          "pc": "0x40001000",
+          "missing": "0x40001000",
+          "request": "0x40001000",
+          "cause": 12
+        }
+      ],
+      "lastFenceIFetch": {
+        "line": 107493,
+        "text": "6567000: system.cpu0.fetch: [tid:0] Instruction is: fence_i"
+      },
+      "mappedCreationCount": 0,
+      "model09Comparison": {
+        "directory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-page/model09-last-halfword-return-01",
+        "sameFirmware": true,
+        "model09ArchitecturalPass": false,
+        "model09HostReturnCode": 1,
+        "serial": "FETCH_STREAM_BEGIN case=last-halfword-return\nFETCH_PAGE_TRAP cause=0x000000000000000c epc=0x0000000040000ffe tval=0x0000000040001000 a0=0x000000000000002a\nFETCH_STREAM_RESULT {\"case\":\"last-halfword-return\",\"passed\":false}\n",
+        "artifacts": {
+          "fetch-stream-result.json": {
+            "bytes": 1553,
+            "sha256": "15af46b3b9f2cbd08aab3c93b8a6bd3d0601323b46583afd28ad7f4d6ec97036",
+            "stableDuringRead": true
+          },
+          "system.platform.terminal": {
+            "bytes": 222,
+            "sha256": "dec82dcb960175d69048a5c9698d32acd97fbacb1b669f842cec42b5d0c2ed15",
+            "stableDuringRead": true
+          },
+          "host-exit-code.txt": {
+            "bytes": 2,
+            "sha256": "4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865",
+            "stableDuringRead": true
+          }
+        }
+      },
+      "actualTrap": {
+        "cause": "0x9",
+        "epc": "0x800000a0",
+        "tval": "0x0",
+        "a0": "0x2a"
+      },
+      "selectedMappedCreations": [],
+      "selectedDeliveryEvidence": [],
+      "speculativeFaultBoundary": "A later speculative fall-through at PC 0x40001000 produces a demand fault carrier; final architectural trap is supervisor ecall cause9 at 0x800000a0, return value42. This carrier does not falsify successful compressed return."
+    },
+    {
+      "case": "straddling-instruction-fault",
+      "architecturalPass": true,
+      "hostReturnCode": 0,
+      "simulatorExit": {
+        "tick": "41665000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "gem5Sha256": "7aba95946686c49c763e54d1876670e4e737c90ed843fb0a4905f400c326309a"
+      },
+      "firmwareSha256": "2a511101c14b7eec96c2d0ee30983b15d3dc5461d45bc9de60494620f16a7b01",
+      "predictWidths": [
+        64,
+        64,
+        64,
+        64
+      ],
+      "artifacts": {
+        "fetch-stream-result.json": {
+          "bytes": 1642,
+          "sha256": "942d98f5f83aa8ad5951c1a32819a4754bb34472ab1b8085cc6ad5a85b6eaeea",
+          "stableDuringRead": true
+        },
+        "execution-plan.json": {
+          "bytes": 6553,
+          "sha256": "c1b4db87d1997906b4f4c772bbb739252b4d99c9334ea88c5ea56511a4aaae9e",
+          "stableDuringRead": true
+        },
+        "native-linux-result.json": {
+          "bytes": 1554,
+          "sha256": "a9e800c5fd6d66c3b9a5973246e8c41e999952dcb53332faea9f2852d15c92ea",
+          "stableDuringRead": true
+        },
+        "host-exit-code.txt": {
+          "bytes": 2,
+          "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+          "stableDuringRead": true
+        },
+        "config.ini": {
+          "bytes": 248019,
+          "sha256": "db3450b0545d525c15fb1177560cb81b4ac6b14735ffdae2ac344d73bfd80fe9",
+          "stableDuringRead": true
+        },
+        "system.platform.terminal": {
+          "bytes": 315,
+          "sha256": "29bfe35bb2f43be9da6c0223bc18837af6c6b996b3f40b219ee535320a5fd923",
+          "stableDuringRead": true
+        },
+        "run.log": {
+          "bytes": 11983,
+          "sha256": "987119aaac3a677e0e876135ce6086962c72f1bd7cbfca48f88824696939dd52",
+          "stableDuringRead": true
+        },
+        "fetch-stream-debug.log": {
+          "bytes": 42556217,
+          "sha256": "bd6a5a25bf2b34417e71ca2c98dd05eab51f7702b3e9c9a67289e78cc8589006",
+          "lines": 603949,
+          "stableDuringRead": true,
+          "copied": false
+        }
+      },
+      "serial": "FETCH_STREAM_BEGIN case=straddling-instruction-fault\nFETCH_PAGE_TRAP cause=0x000000000000000c epc=0x0000000040000ffe tval=0x0000000040001000 a0=0x000000000000002a\nFETCH_STREAM_RESULT {\"case\":\"straddling-instruction-fault\",\"passed\":true,\"causeChecked\":true,\"trapPcChecked\":true,\"tvalChecked\":true,\"expectedTrap\":12}\n",
+      "predecodeRecoveryCount": 0,
+      "predecodeEvidence": [],
+      "bpuRecoveryEvidence": [],
+      "demandFaultEvidence": [
+        {
+          "line": 115469,
+          "text": "7531000: system.cpu0.fetch: [tid:0] Demand fetch fault: pc=0x40000ffe missing=0x40001000 request=0x40001000 cause=12",
+          "pc": "0x40000ffe",
+          "missing": "0x40001000",
+          "request": "0x40001000",
+          "cause": 12
+        }
+      ],
+      "lastFenceIFetch": {
+        "line": 110250,
+        "text": "7207000: system.cpu0.fetch: [tid:0] Instruction is: fence_i"
+      },
+      "mappedCreationCount": 1,
+      "model09Comparison": {
+        "directory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-page/model09-straddling-instruction-fault-01",
+        "sameFirmware": true,
+        "model09ArchitecturalPass": true,
+        "model09HostReturnCode": 0,
+        "serial": "FETCH_STREAM_BEGIN case=straddling-instruction-fault\nFETCH_PAGE_TRAP cause=0x000000000000000c epc=0x0000000040000ffe tval=0x0000000040001000 a0=0x000000000000002a\nFETCH_STREAM_RESULT {\"case\":\"straddling-instruction-fault\",\"passed\":true,\"causeChecked\":true,\"trapPcChecked\":true,\"tvalChecked\":true,\"expectedTrap\":12}\n",
+        "artifacts": {
+          "fetch-stream-result.json": {
+            "bytes": 1642,
+            "sha256": "93e2396475fe3f86817cb37cc2e1c9fbef4aaf8dde7d5c4d220111426005e39c",
+            "stableDuringRead": true
+          },
+          "system.platform.terminal": {
+            "bytes": 315,
+            "sha256": "29bfe35bb2f43be9da6c0223bc18837af6c6b996b3f40b219ee535320a5fd923",
+            "stableDuringRead": true
+          },
+          "host-exit-code.txt": {
+            "bytes": 2,
+            "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+            "stableDuringRead": true
+          }
+        }
+      },
+      "actualTrap": {
+        "cause": "0xc",
+        "epc": "0x40000ffe",
+        "tval": "0x40001000",
+        "a0": "0x2a"
+      },
+      "selectedMappedCreations": [
+        {
+          "line": 115471,
+          "text": "7531000: system.cpu0.fetch: [tid:0] Instruction PC (0x40000ffe=>0x40001002).(0=>1) created [sn:1297].",
+          "pc": "0x40000ffe",
+          "nextPc": "0x40001002",
+          "microPc": 0,
+          "nextMicroPc": 1,
+          "sn": 1297,
+          "mnemonic": "gem5 nop"
+        }
+      ],
+      "selectedDeliveryEvidence": [
+        {
+          "line": 115480,
+          "text": "7531000: system.cpu0.fetch: [tid:0] [sn:1297] Sending instruction to decode from fetch queue. Fetch queue size: 1."
+        },
+        {
+          "line": 115490,
+          "text": "7534000: system.cpu0.decode: [tid:0] Processing instruction [sn:1297] with PC (0x40000ffe=>0x40001002).(0=>1)"
+        }
+      ]
+    }
+  ],
+  "findings": [],
+  "scope": "Eleven completed bare-FS cases, four configured KMH/native L2 cores with hart0 active. Actual debug/serial/result identities reviewed; no simulator launched. No Linux PASS, no full driver completion claim, no global ISA proof. Speculative demand-fault carriers are not architectural traps; final trap is independently checked from guest output. Debug logs hashed and excerpts only; no full debug copies.",
+  "summary": {
+    "architecturalCasesPassed": 11,
+    "predecodeCasesExactlyOne": 5,
+    "legalPredecodeControlsZero": 3,
+    "pageCasesPassed": 3,
+    "twoModel09FalsePageFaultsNowReturn": true,
+    "expectedStraddlingFaultStillPreserved": true,
+    "strictClockOrGlobalStatsEquivalenceClaim": false,
+    "amoThreeMicroopsAndValidPrefixVerified": true
+  }
+}

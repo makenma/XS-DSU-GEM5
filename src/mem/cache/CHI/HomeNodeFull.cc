@@ -26,6 +26,7 @@ HomeNodeFull::HomeNodeFull(const HomeNodeFullParams& p)
             p.enable_retry);
     linklayer.setRxPort(&rxport);
     cc.setSlcsf(&slcsf->service());
+    cc.setSnHashMasks(p.sn_hash_masks);
     linklayer.setCc(&cc);
     slcsf->setFutureWakeupCallback([this](Tick earliest) {
         ruby::Consumer::scheduleEventAbsolute(earliest);

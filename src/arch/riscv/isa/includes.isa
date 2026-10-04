@@ -97,6 +97,7 @@ output exec {{
 #include <vector>
 
 #include "arch/generic/memhelpers.hh"
+#include "arch/riscv/cbo.hh"
 #include "arch/riscv/faults.hh"
 #include "arch/riscv/fp_inst.hh"
 #include "arch/riscv/mmu.hh"

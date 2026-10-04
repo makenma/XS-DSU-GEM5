@@ -173,6 +173,7 @@ class AheadBTB : public TimedBaseBTBPredictor
      *  2. Adds new entries if necessary
      *  3. Updates MRU information
      */
+    void invalidateBTBEntry(Addr pc) override;
     void update(const FetchTarget &stream) override;
 
 

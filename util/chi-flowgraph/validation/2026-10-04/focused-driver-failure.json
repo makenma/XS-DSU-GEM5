@@ -1,0 +1,14 @@
+{
+  "sessionId": 29321,
+  "toolResult": {
+    "chunk_id": "64dcf0",
+    "wall_time_seconds": 0.0000088,
+    "exit_code": 1,
+    "original_token_count": 146,
+    "output": "{\"starting\": \"fetch-straddling-instruction-fault\"}\n{\"finished\": \"fetch-straddling-instruction-fault\", \"hostExitCode\": 0}\n{\"starting\": \"cbo-clean\"}\n{\"finished\": \"cbo-clean\", \"hostExitCode\": 0}\n{\"starting\": \"cbo-flush\"}\n{\"finished\": \"cbo-flush\", \"hostExitCode\": 0}\n{\"starting\": \"cbo-inval\"}\n{\"finished\": \"cbo-inval\", \"hostExitCode\": 0}\n{\"starting\": \"cbo-flush-fault\"}\n{\"finished\": \"cbo-flush-fault\", \"hostExitCode\": 0}\n{\"starting\": \"se-rtl-on\"}\n{\"finished\": \"se-rtl-on\", \"hostExitCode\": 0}\n{\"starting\": \"se-rtl-on-equivalence\"}\n{\"finished\": \"se-rtl-on-equivalence\", \"hostExitCode\": 1}\n"
+  },
+  "runDirectory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model10-regressions-01",
+  "gem5Sha256": "7aba95946686c49c763e54d1876670e4e737c90ed843fb0a4905f400c326309a",
+  "result": "strict-se-statistics-differ",
+  "linuxAcceptance": false
+}

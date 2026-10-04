@@ -1,0 +1,1225 @@
+{
+  "scope": "Selected verbatim evidence from actual completed diag03. Unit fixtures are not new CPU test results.",
+  "sourcePaths": [
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-se-fetch-fault-diagnostic-03/model09",
+    "/root/chi-flowgraph-work/linux-validation/runs/model10-se-fetch-fault-diagnostic-03/model10"
+  ],
+  "statistics": [
+    {
+      "system.cpu0.numCycles": [
+        "21561"
+      ],
+      "system.cpu0.committedInsts": [
+        "63670"
+      ],
+      "system.cpu0.frontendBound": [
+        "0.084589"
+      ],
+      "system.cpu0.frontendBandwidthBound": [
+        "0.003285"
+      ],
+      "system.cpu0.backendBound": [
+        "0.296577"
+      ],
+      "system.cpu0.coreBound": [
+        "0.254148"
+      ],
+      "system.cpu0.memoryBound": [
+        "0.042429"
+      ],
+      "system.cpu0.l1Bound": [
+        "0.004678"
+      ],
+      "system.cpu0.commit.recovery_bubble": [
+        "7734"
+      ],
+      "system.cpu0.decode.runCycles": [
+        "12668"
+      ],
+      "system.cpu0.decode.decodedInsts": [
+        "73473"
+      ],
+      "system.cpu0.fetch.cycles": [
+        "19010"
+      ],
+      "system.cpu0.fetch.fetchStatusDist::Running": [
+        "19064",
+        "88.42%",
+        "88.42%"
+      ],
+      "system.cpu0.fetch.fetchStatusDist::Idle": [
+        "0",
+        "0.00%",
+        "88.42%"
+      ],
+      "system.cpu0.fetch.fetchStatusDist::Squashing": [
+        "277",
+        "1.28%",
+        "89.70%"
+      ],
+      "system.cpu0.fetch.fetchStatusDist::Blocked": [
+        "0",
+        "0.00%",
+        "89.70%"
+      ],
+      "system.cpu0.fetch.fetchStatusDist::TrapPending": [
+        "6",
+        "0.03%",
+        "89.73%"
+      ],
+      "system.cpu0.fetch.fetchStatusDist::WaitingCache": [
+        "2214",
+        "10.27%",
+        "100.00%"
+      ],
+      "system.cpu0.fetch.fetchStatusDist::total": [
+        "21561"
+      ],
+      "system.cpu0.fetch.fetchBubbles": [
+        "10943"
+      ],
+      "system.cpu0.fetch.fetchBubbles_max": [
+        "1753"
+      ],
+      "system.cpu0.fetch.frontendBound": [
+        "0.084589"
+      ],
+      "system.cpu0.fetch.frontendBandwidthBound": [
+        "0.003285"
+      ],
+      "system.cpu0.iew.dispatchedInsts": [
+        "72322"
+      ],
+      "system.cpu0.iew.fetchStallReason::NoStall": [
+        "103438",
+        "79.98%",
+        "79.98%"
+      ],
+      "system.cpu0.iew.fetchStallReason::IcacheStall": [
+        "1206",
+        "0.93%",
+        "80.91%"
+      ],
+      "system.cpu0.iew.fetchStallReason::ITlbStall": [
+        "0",
+        "0.00%",
+        "80.91%"
+      ],
+      "system.cpu0.iew.fetchStallReason::DTlbStall": [
+        "0",
+        "0.00%",
+        "80.91%"
+      ],
+      "system.cpu0.iew.fetchStallReason::BpStall": [
+        "1638",
+        "1.27%",
+        "82.18%"
+      ],
+      "system.cpu0.iew.fetchStallReason::IntStall": [
+        "0",
+        "0.00%",
+        "82.18%"
+      ],
+      "system.cpu0.iew.fetchStallReason::TrapStall": [
+        "0",
+        "0.00%",
+        "82.18%"
+      ],
+      "system.cpu0.iew.fetchStallReason::FTQBubble": [
+        "0",
+        "0.00%",
+        "82.18%"
+      ],
+      "system.cpu0.iew.fetchStallReason::FetchFragStall": [
+        "518",
+        "0.40%",
+        "82.58%"
+      ],
+      "system.cpu0.iew.fetchStallReason::OtherFetchStall": [
+        "10332",
+        "7.99%",
+        "90.56%"
+      ],
+      "system.cpu0.iew.fetchStallReason::OtherFragStall": [
+        "0",
+        "0.00%",
+        "90.56%"
+      ],
+      "system.cpu0.iew.fetchStallReason::SquashStall": [
+        "0",
+        "0.00%",
+        "90.56%"
+      ],
+      "system.cpu0.iew.fetchStallReason::FetchBufferInvalid": [
+        "0",
+        "0.00%",
+        "90.56%"
+      ],
+      "system.cpu0.iew.fetchStallReason::InstMisPred": [
+        "0",
+        "0.00%",
+        "90.56%"
+      ],
+      "system.cpu0.iew.fetchStallReason::InstSquashed": [
+        "0",
+        "0.00%",
+        "90.56%"
+      ],
+      "system.cpu0.iew.fetchStallReason::SerializeStall": [
+        "0",
+        "0.00%",
+        "90.56%"
+      ],
+      "system.cpu0.iew.fetchStallReason::ScalarLongExecute": [
+        "834",
+        "0.64%",
+        "91.21%"
+      ],
+      "system.cpu0.iew.fetchStallReason::VectorLongExecute": [
+        "0",
+        "0.00%",
+        "91.21%"
+      ],
+      "system.cpu0.iew.fetchStallReason::InstNotReady": [
+        "42",
+        "0.03%",
+        "91.24%"
+      ],
+      "system.cpu0.iew.fetchStallReason::LoadL1Bound": [
+        "162",
+        "0.13%",
+        "91.37%"
+      ],
+      "system.cpu0.iew.fetchStallReason::LoadL2Bound": [
+        "138",
+        "0.11%",
+        "91.47%"
+      ],
+      "system.cpu0.iew.fetchStallReason::LoadL3Bound": [
+        "0",
+        "0.00%",
+        "91.47%"
+      ],
+      "system.cpu0.iew.fetchStallReason::LoadMemBound": [
+        "0",
+        "0.00%",
+        "91.47%"
+      ],
+      "system.cpu0.iew.fetchStallReason::StoreL1Bound": [
+        "12",
+        "0.01%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.fetchStallReason::StoreL2Bound": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.fetchStallReason::StoreL3Bound": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.fetchStallReason::StoreMemBound": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.fetchStallReason::MemSquashed": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.fetchStallReason::MemNotReady": [
+        "12",
+        "0.01%",
+        "91.49%"
+      ],
+      "system.cpu0.iew.fetchStallReason::MemCommitRateLimit": [
+        "0",
+        "0.00%",
+        "91.49%"
+      ],
+      "system.cpu0.iew.fetchStallReason::Atomic": [
+        "0",
+        "0.00%",
+        "91.49%"
+      ],
+      "system.cpu0.iew.fetchStallReason::OtherMemStall": [
+        "0",
+        "0.00%",
+        "91.49%"
+      ],
+      "system.cpu0.iew.fetchStallReason::MemDQBandwidth": [
+        "0",
+        "0.00%",
+        "91.49%"
+      ],
+      "system.cpu0.iew.fetchStallReason::IntDQBandwidth": [
+        "0",
+        "0.00%",
+        "91.49%"
+      ],
+      "system.cpu0.iew.fetchStallReason::FVDQBandwidth": [
+        "0",
+        "0.00%",
+        "91.49%"
+      ],
+      "system.cpu0.iew.fetchStallReason::VectorReadyButNotIssued": [
+        "0",
+        "0.00%",
+        "91.49%"
+      ],
+      "system.cpu0.iew.fetchStallReason::ScalarReadyButNotIssued": [
+        "0",
+        "0.00%",
+        "91.49%"
+      ],
+      "system.cpu0.iew.fetchStallReason::ResumeUnblock": [
+        "0",
+        "0.00%",
+        "91.49%"
+      ],
+      "system.cpu0.iew.fetchStallReason::CommitSquash": [
+        "1350",
+        "1.04%",
+        "92.54%"
+      ],
+      "system.cpu0.iew.fetchStallReason::ROBFull": [
+        "8358",
+        "6.46%",
+        "99.00%"
+      ],
+      "system.cpu0.iew.fetchStallReason::RegFull": [
+        "1296",
+        "1.00%",
+        "100.00%"
+      ],
+      "system.cpu0.iew.fetchStallReason::OtherStall": [
+        "0",
+        "0.00%",
+        "100.00%"
+      ],
+      "system.cpu0.iew.fetchStallReason::total": [
+        "129336"
+      ],
+      "system.cpu0.iew.decodeStallReason::NoStall": [
+        "114525",
+        "88.54%",
+        "88.54%"
+      ],
+      "system.cpu0.iew.decodeStallReason::IcacheStall": [
+        "0",
+        "0.00%",
+        "88.54%"
+      ],
+      "system.cpu0.iew.decodeStallReason::ITlbStall": [
+        "0",
+        "0.00%",
+        "88.54%"
+      ],
+      "system.cpu0.iew.decodeStallReason::DTlbStall": [
+        "0",
+        "0.00%",
+        "88.54%"
+      ],
+      "system.cpu0.iew.decodeStallReason::BpStall": [
+        "0",
+        "0.00%",
+        "88.54%"
+      ],
+      "system.cpu0.iew.decodeStallReason::IntStall": [
+        "0",
+        "0.00%",
+        "88.54%"
+      ],
+      "system.cpu0.iew.decodeStallReason::TrapStall": [
+        "0",
+        "0.00%",
+        "88.54%"
+      ],
+      "system.cpu0.iew.decodeStallReason::FTQBubble": [
+        "0",
+        "0.00%",
+        "88.54%"
+      ],
+      "system.cpu0.iew.decodeStallReason::FetchFragStall": [
+        "441",
+        "0.34%",
+        "88.88%"
+      ],
+      "system.cpu0.iew.decodeStallReason::OtherFetchStall": [
+        "21",
+        "0.02%",
+        "88.89%"
+      ],
+      "system.cpu0.iew.decodeStallReason::OtherFragStall": [
+        "0",
+        "0.00%",
+        "88.89%"
+      ],
+      "system.cpu0.iew.decodeStallReason::SquashStall": [
+        "0",
+        "0.00%",
+        "88.89%"
+      ],
+      "system.cpu0.iew.decodeStallReason::FetchBufferInvalid": [
+        "0",
+        "0.00%",
+        "88.89%"
+      ],
+      "system.cpu0.iew.decodeStallReason::InstMisPred": [
+        "240",
+        "0.19%",
+        "89.08%"
+      ],
+      "system.cpu0.iew.decodeStallReason::InstSquashed": [
+        "1902",
+        "1.47%",
+        "90.55%"
+      ],
+      "system.cpu0.iew.decodeStallReason::SerializeStall": [
+        "0",
+        "0.00%",
+        "90.55%"
+      ],
+      "system.cpu0.iew.decodeStallReason::ScalarLongExecute": [
+        "834",
+        "0.64%",
+        "91.19%"
+      ],
+      "system.cpu0.iew.decodeStallReason::VectorLongExecute": [
+        "0",
+        "0.00%",
+        "91.19%"
+      ],
+      "system.cpu0.iew.decodeStallReason::InstNotReady": [
+        "42",
+        "0.03%",
+        "91.23%"
+      ],
+      "system.cpu0.iew.decodeStallReason::LoadL1Bound": [
+        "162",
+        "0.13%",
+        "91.35%"
+      ],
+      "system.cpu0.iew.decodeStallReason::LoadL2Bound": [
+        "138",
+        "0.11%",
+        "91.46%"
+      ],
+      "system.cpu0.iew.decodeStallReason::LoadL3Bound": [
+        "0",
+        "0.00%",
+        "91.46%"
+      ],
+      "system.cpu0.iew.decodeStallReason::LoadMemBound": [
+        "0",
+        "0.00%",
+        "91.46%"
+      ],
+      "system.cpu0.iew.decodeStallReason::StoreL1Bound": [
+        "12",
+        "0.01%",
+        "91.47%"
+      ],
+      "system.cpu0.iew.decodeStallReason::StoreL2Bound": [
+        "0",
+        "0.00%",
+        "91.47%"
+      ],
+      "system.cpu0.iew.decodeStallReason::StoreL3Bound": [
+        "0",
+        "0.00%",
+        "91.47%"
+      ],
+      "system.cpu0.iew.decodeStallReason::StoreMemBound": [
+        "0",
+        "0.00%",
+        "91.47%"
+      ],
+      "system.cpu0.iew.decodeStallReason::MemSquashed": [
+        "0",
+        "0.00%",
+        "91.47%"
+      ],
+      "system.cpu0.iew.decodeStallReason::MemNotReady": [
+        "12",
+        "0.01%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.decodeStallReason::MemCommitRateLimit": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.decodeStallReason::Atomic": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.decodeStallReason::OtherMemStall": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.decodeStallReason::MemDQBandwidth": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.decodeStallReason::IntDQBandwidth": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.decodeStallReason::FVDQBandwidth": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.decodeStallReason::VectorReadyButNotIssued": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.decodeStallReason::ScalarReadyButNotIssued": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.decodeStallReason::ResumeUnblock": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.decodeStallReason::CommitSquash": [
+        "1371",
+        "1.06%",
+        "92.54%"
+      ],
+      "system.cpu0.iew.decodeStallReason::ROBFull": [
+        "8358",
+        "6.46%",
+        "99.00%"
+      ],
+      "system.cpu0.iew.decodeStallReason::RegFull": [
+        "1296",
+        "1.00%",
+        "100.00%"
+      ],
+      "system.cpu0.iew.decodeStallReason::OtherStall": [
+        "0",
+        "0.00%",
+        "100.00%"
+      ],
+      "system.cpu0.iew.decodeStallReason::total": [
+        "129354"
+      ],
+      "system.cpu0.scheduler.exec_stall_cycle": [
+        "21494"
+      ],
+      "system.cpu0.scheduler.memstall_any_load": [
+        "2224"
+      ],
+      "system.cpu0.scheduler.memstall_any_store": [
+        "851"
+      ],
+      "system.cpu0.scheduler.memstall_l1miss": [
+        "1885"
+      ],
+      "system.cpu0.scheduler.memstall_l2miss": [
+        "0"
+      ],
+      "system.cpu0.scheduler.memstall_l3miss": [
+        "0"
+      ],
+      "system.cpu1.committedInsts": [
+        "59172"
+      ]
+    },
+    {
+      "system.cpu0.numCycles": [
+        "21561"
+      ],
+      "system.cpu0.committedInsts": [
+        "63670"
+      ],
+      "system.cpu0.frontendBound": [
+        "0.084597"
+      ],
+      "system.cpu0.frontendBandwidthBound": [
+        "0.003293"
+      ],
+      "system.cpu0.backendBound": [
+        "0.296569"
+      ],
+      "system.cpu0.coreBound": [
+        "0.254141"
+      ],
+      "system.cpu0.memoryBound": [
+        "0.042428"
+      ],
+      "system.cpu0.l1Bound": [
+        "0.004677"
+      ],
+      "system.cpu0.commit.recovery_bubble": [
+        "7734"
+      ],
+      "system.cpu0.decode.runCycles": [
+        "12667"
+      ],
+      "system.cpu0.decode.decodedInsts": [
+        "73471"
+      ],
+      "system.cpu0.fetch.cycles": [
+        "19011"
+      ],
+      "system.cpu0.fetch.fetchStatusDist::Running": [
+        "19065",
+        "88.42%",
+        "88.42%"
+      ],
+      "system.cpu0.fetch.fetchStatusDist::Idle": [
+        "0",
+        "0.00%",
+        "88.42%"
+      ],
+      "system.cpu0.fetch.fetchStatusDist::Squashing": [
+        "277",
+        "1.28%",
+        "89.71%"
+      ],
+      "system.cpu0.fetch.fetchStatusDist::Blocked": [
+        "0",
+        "0.00%",
+        "89.71%"
+      ],
+      "system.cpu0.fetch.fetchStatusDist::TrapPending": [
+        "5",
+        "0.02%",
+        "89.73%"
+      ],
+      "system.cpu0.fetch.fetchStatusDist::WaitingCache": [
+        "2214",
+        "10.27%",
+        "100.00%"
+      ],
+      "system.cpu0.fetch.fetchStatusDist::total": [
+        "21561"
+      ],
+      "system.cpu0.fetch.fetchBubbles": [
+        "10944"
+      ],
+      "system.cpu0.fetch.fetchBubbles_max": [
+        "1753"
+      ],
+      "system.cpu0.fetch.frontendBound": [
+        "0.084597"
+      ],
+      "system.cpu0.fetch.frontendBandwidthBound": [
+        "0.003293"
+      ],
+      "system.cpu0.iew.dispatchedInsts": [
+        "72322"
+      ],
+      "system.cpu0.iew.fetchStallReason::NoStall": [
+        "103437",
+        "79.98%",
+        "79.98%"
+      ],
+      "system.cpu0.iew.fetchStallReason::IcacheStall": [
+        "1206",
+        "0.93%",
+        "80.91%"
+      ],
+      "system.cpu0.iew.fetchStallReason::ITlbStall": [
+        "6",
+        "0.00%",
+        "80.91%"
+      ],
+      "system.cpu0.iew.fetchStallReason::DTlbStall": [
+        "0",
+        "0.00%",
+        "80.91%"
+      ],
+      "system.cpu0.iew.fetchStallReason::BpStall": [
+        "1638",
+        "1.27%",
+        "82.18%"
+      ],
+      "system.cpu0.iew.fetchStallReason::IntStall": [
+        "0",
+        "0.00%",
+        "82.18%"
+      ],
+      "system.cpu0.iew.fetchStallReason::TrapStall": [
+        "0",
+        "0.00%",
+        "82.18%"
+      ],
+      "system.cpu0.iew.fetchStallReason::FTQBubble": [
+        "0",
+        "0.00%",
+        "82.18%"
+      ],
+      "system.cpu0.iew.fetchStallReason::FetchFragStall": [
+        "519",
+        "0.40%",
+        "82.58%"
+      ],
+      "system.cpu0.iew.fetchStallReason::OtherFetchStall": [
+        "10326",
+        "7.98%",
+        "90.56%"
+      ],
+      "system.cpu0.iew.fetchStallReason::OtherFragStall": [
+        "0",
+        "0.00%",
+        "90.56%"
+      ],
+      "system.cpu0.iew.fetchStallReason::SquashStall": [
+        "0",
+        "0.00%",
+        "90.56%"
+      ],
+      "system.cpu0.iew.fetchStallReason::FetchBufferInvalid": [
+        "0",
+        "0.00%",
+        "90.56%"
+      ],
+      "system.cpu0.iew.fetchStallReason::InstMisPred": [
+        "0",
+        "0.00%",
+        "90.56%"
+      ],
+      "system.cpu0.iew.fetchStallReason::InstSquashed": [
+        "0",
+        "0.00%",
+        "90.56%"
+      ],
+      "system.cpu0.iew.fetchStallReason::SerializeStall": [
+        "0",
+        "0.00%",
+        "90.56%"
+      ],
+      "system.cpu0.iew.fetchStallReason::ScalarLongExecute": [
+        "834",
+        "0.64%",
+        "91.21%"
+      ],
+      "system.cpu0.iew.fetchStallReason::VectorLongExecute": [
+        "0",
+        "0.00%",
+        "91.21%"
+      ],
+      "system.cpu0.iew.fetchStallReason::InstNotReady": [
+        "42",
+        "0.03%",
+        "91.24%"
+      ],
+      "system.cpu0.iew.fetchStallReason::LoadL1Bound": [
+        "162",
+        "0.13%",
+        "91.37%"
+      ],
+      "system.cpu0.iew.fetchStallReason::LoadL2Bound": [
+        "138",
+        "0.11%",
+        "91.47%"
+      ],
+      "system.cpu0.iew.fetchStallReason::LoadL3Bound": [
+        "0",
+        "0.00%",
+        "91.47%"
+      ],
+      "system.cpu0.iew.fetchStallReason::LoadMemBound": [
+        "0",
+        "0.00%",
+        "91.47%"
+      ],
+      "system.cpu0.iew.fetchStallReason::StoreL1Bound": [
+        "12",
+        "0.01%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.fetchStallReason::StoreL2Bound": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.fetchStallReason::StoreL3Bound": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.fetchStallReason::StoreMemBound": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.fetchStallReason::MemSquashed": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.fetchStallReason::MemNotReady": [
+        "12",
+        "0.01%",
+        "91.49%"
+      ],
+      "system.cpu0.iew.fetchStallReason::MemCommitRateLimit": [
+        "0",
+        "0.00%",
+        "91.49%"
+      ],
+      "system.cpu0.iew.fetchStallReason::Atomic": [
+        "0",
+        "0.00%",
+        "91.49%"
+      ],
+      "system.cpu0.iew.fetchStallReason::OtherMemStall": [
+        "0",
+        "0.00%",
+        "91.49%"
+      ],
+      "system.cpu0.iew.fetchStallReason::MemDQBandwidth": [
+        "0",
+        "0.00%",
+        "91.49%"
+      ],
+      "system.cpu0.iew.fetchStallReason::IntDQBandwidth": [
+        "0",
+        "0.00%",
+        "91.49%"
+      ],
+      "system.cpu0.iew.fetchStallReason::FVDQBandwidth": [
+        "0",
+        "0.00%",
+        "91.49%"
+      ],
+      "system.cpu0.iew.fetchStallReason::VectorReadyButNotIssued": [
+        "0",
+        "0.00%",
+        "91.49%"
+      ],
+      "system.cpu0.iew.fetchStallReason::ScalarReadyButNotIssued": [
+        "0",
+        "0.00%",
+        "91.49%"
+      ],
+      "system.cpu0.iew.fetchStallReason::ResumeUnblock": [
+        "0",
+        "0.00%",
+        "91.49%"
+      ],
+      "system.cpu0.iew.fetchStallReason::CommitSquash": [
+        "1350",
+        "1.04%",
+        "92.54%"
+      ],
+      "system.cpu0.iew.fetchStallReason::ROBFull": [
+        "8358",
+        "6.46%",
+        "99.00%"
+      ],
+      "system.cpu0.iew.fetchStallReason::RegFull": [
+        "1296",
+        "1.00%",
+        "100.00%"
+      ],
+      "system.cpu0.iew.fetchStallReason::OtherStall": [
+        "0",
+        "0.00%",
+        "100.00%"
+      ],
+      "system.cpu0.iew.fetchStallReason::total": [
+        "129336"
+      ],
+      "system.cpu0.iew.decodeStallReason::NoStall": [
+        "114529",
+        "88.54%",
+        "88.54%"
+      ],
+      "system.cpu0.iew.decodeStallReason::IcacheStall": [
+        "0",
+        "0.00%",
+        "88.54%"
+      ],
+      "system.cpu0.iew.decodeStallReason::ITlbStall": [
+        "0",
+        "0.00%",
+        "88.54%"
+      ],
+      "system.cpu0.iew.decodeStallReason::DTlbStall": [
+        "0",
+        "0.00%",
+        "88.54%"
+      ],
+      "system.cpu0.iew.decodeStallReason::BpStall": [
+        "0",
+        "0.00%",
+        "88.54%"
+      ],
+      "system.cpu0.iew.decodeStallReason::IntStall": [
+        "0",
+        "0.00%",
+        "88.54%"
+      ],
+      "system.cpu0.iew.decodeStallReason::TrapStall": [
+        "0",
+        "0.00%",
+        "88.54%"
+      ],
+      "system.cpu0.iew.decodeStallReason::FTQBubble": [
+        "0",
+        "0.00%",
+        "88.54%"
+      ],
+      "system.cpu0.iew.decodeStallReason::FetchFragStall": [
+        "437",
+        "0.34%",
+        "88.88%"
+      ],
+      "system.cpu0.iew.decodeStallReason::OtherFetchStall": [
+        "21",
+        "0.02%",
+        "88.89%"
+      ],
+      "system.cpu0.iew.decodeStallReason::OtherFragStall": [
+        "0",
+        "0.00%",
+        "88.89%"
+      ],
+      "system.cpu0.iew.decodeStallReason::SquashStall": [
+        "0",
+        "0.00%",
+        "88.89%"
+      ],
+      "system.cpu0.iew.decodeStallReason::FetchBufferInvalid": [
+        "0",
+        "0.00%",
+        "88.89%"
+      ],
+      "system.cpu0.iew.decodeStallReason::InstMisPred": [
+        "240",
+        "0.19%",
+        "89.08%"
+      ],
+      "system.cpu0.iew.decodeStallReason::InstSquashed": [
+        "1902",
+        "1.47%",
+        "90.55%"
+      ],
+      "system.cpu0.iew.decodeStallReason::SerializeStall": [
+        "0",
+        "0.00%",
+        "90.55%"
+      ],
+      "system.cpu0.iew.decodeStallReason::ScalarLongExecute": [
+        "834",
+        "0.64%",
+        "91.19%"
+      ],
+      "system.cpu0.iew.decodeStallReason::VectorLongExecute": [
+        "0",
+        "0.00%",
+        "91.19%"
+      ],
+      "system.cpu0.iew.decodeStallReason::InstNotReady": [
+        "42",
+        "0.03%",
+        "91.23%"
+      ],
+      "system.cpu0.iew.decodeStallReason::LoadL1Bound": [
+        "162",
+        "0.13%",
+        "91.35%"
+      ],
+      "system.cpu0.iew.decodeStallReason::LoadL2Bound": [
+        "138",
+        "0.11%",
+        "91.46%"
+      ],
+      "system.cpu0.iew.decodeStallReason::LoadL3Bound": [
+        "0",
+        "0.00%",
+        "91.46%"
+      ],
+      "system.cpu0.iew.decodeStallReason::LoadMemBound": [
+        "0",
+        "0.00%",
+        "91.46%"
+      ],
+      "system.cpu0.iew.decodeStallReason::StoreL1Bound": [
+        "12",
+        "0.01%",
+        "91.47%"
+      ],
+      "system.cpu0.iew.decodeStallReason::StoreL2Bound": [
+        "0",
+        "0.00%",
+        "91.47%"
+      ],
+      "system.cpu0.iew.decodeStallReason::StoreL3Bound": [
+        "0",
+        "0.00%",
+        "91.47%"
+      ],
+      "system.cpu0.iew.decodeStallReason::StoreMemBound": [
+        "0",
+        "0.00%",
+        "91.47%"
+      ],
+      "system.cpu0.iew.decodeStallReason::MemSquashed": [
+        "0",
+        "0.00%",
+        "91.47%"
+      ],
+      "system.cpu0.iew.decodeStallReason::MemNotReady": [
+        "12",
+        "0.01%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.decodeStallReason::MemCommitRateLimit": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.decodeStallReason::Atomic": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.decodeStallReason::OtherMemStall": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.decodeStallReason::MemDQBandwidth": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.decodeStallReason::IntDQBandwidth": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.decodeStallReason::FVDQBandwidth": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.decodeStallReason::VectorReadyButNotIssued": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.decodeStallReason::ScalarReadyButNotIssued": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.decodeStallReason::ResumeUnblock": [
+        "0",
+        "0.00%",
+        "91.48%"
+      ],
+      "system.cpu0.iew.decodeStallReason::CommitSquash": [
+        "1371",
+        "1.06%",
+        "92.54%"
+      ],
+      "system.cpu0.iew.decodeStallReason::ROBFull": [
+        "8358",
+        "6.46%",
+        "99.00%"
+      ],
+      "system.cpu0.iew.decodeStallReason::RegFull": [
+        "1296",
+        "1.00%",
+        "100.00%"
+      ],
+      "system.cpu0.iew.decodeStallReason::OtherStall": [
+        "0",
+        "0.00%",
+        "100.00%"
+      ],
+      "system.cpu0.iew.decodeStallReason::total": [
+        "129354"
+      ],
+      "system.cpu0.scheduler.exec_stall_cycle": [
+        "21494"
+      ],
+      "system.cpu0.scheduler.memstall_any_load": [
+        "2224"
+      ],
+      "system.cpu0.scheduler.memstall_any_store": [
+        "851"
+      ],
+      "system.cpu0.scheduler.memstall_l1miss": [
+        "1885"
+      ],
+      "system.cpu0.scheduler.memstall_l2miss": [
+        "0"
+      ],
+      "system.cpu0.scheduler.memstall_l3miss": [
+        "0"
+      ],
+      "system.cpu1.committedInsts": [
+        "59172"
+      ]
+    }
+  ],
+  "episodes": [
+    "21342000: system.cpu0.decode: [tid:0] [sn:81773] Updating predictions: Wrong predicted target: (0x105cc=>0x105d0).(0=>1) PredPC: (0xfffffffffffcc662=>0xfffffffffffcc666).(0=>1)\n21343000: system.cpu0.branchPred: Control squash: ftq_id=6608, control_pc=0x105c8, real_target=0xfffffffffffcc662, is_conditional=0, is_indirect=0, actually_taken=1, branch seq: 81773\n21343000: system.cpu0.branchPred: After squash, fsqId(next alloc)=6609, fetchHeadFsqId=6602, s0pc=0xfffffffffffcc662\n21343000: system.cpu0.fetch: Squashing from decode with PC = (0xfffffffffffcc662=>0xfffffffffffcc666).(0=>1)\n21343000: system.cpu0.fetch: [tid:0] Squashing, setting PC to: (0xfffffffffffcc662=>0xfffffffffffcc666).(0=>1). seqNum: 81773\n21344000: system.cpu0.branchPred: bbStart: 0xfffffffffffcc662, btbEntry:\n21344000: system.cpu0.branchPred: bbStart: 0xfffffffffffcc662, btbEntry:\n21344000: system.cpu0.branchPred: bbStart: 0xfffffffffffcc662, btbEntry:\n21344000: system.cpu0.branchPred: bbStart: 0xfffffffffffcc662, btbEntry:\n21344000: system.cpu0.branchPred: bbStart: 0xfffffffffffcc662, btbEntry:\n21344000: system.cpu0.branchPred: Creating new prediction for PC 0xfffffffffffcc662\n21344000: system.cpu0.branchPred: Inserted fetch target 6609 starting at PC 0xfffffffffffcc662\n21344000: system.cpu0.fetch: [tid:0] Issuing a pipelined I-cache access for new FSQ entry, starting at PC 0xfffffffffffcc662 (endPC 0xfffffffffffcc6a0; original PC (0xfffffffffffcc662=>0xfffffffffffcc666).(0=>1))\n21344000: system.cpu0.fetch: [tid:0] Fetching cache line 0xfffffffffffcc662 for addr 0xfffffffffffcc662, pc=0xfffffffffffcc662\n21344000: system.cpu0.fetch: [tid:0] Handling multi-cacheline fetch for addr 0xfffffffffffcc662, pc=0xfffffffffffcc662\n21344000: system.cpu0.fetch: [tid:0] Creating first cache line request: addr=0xfffffffffffcc662, size=30\n21344000: system.cpu0.fetch: [tid:0] Translation completed for addr 0xfffffffffffcc662\n21344000: system.cpu0.fetch: fault, mem_req.addr=0xfffffffffffcc662\n21344000: system.cpu0.fetch: [tid:0] Got back req with addr 0xfffffffffffcc662 but expected base addr 0xfffffffffffcc662\n21344000: system.cpu0.fetch: [tid:0] Instruction PC (0xfffffffffffcc662=>0xfffffffffffcc666).(0=>1) created [sn:81808].\n21344000: system.cpu0.fetch: Set instruction 81808 with fetch id 6609\n21344000: system.cpu0.fetch: [tid:0] fault (Generic page table fault) detected @ PC (0xfffffffffffcc662=>0xfffffffffffcc666).(0=>1).\n21344000: system.cpu0.fetch: fault, mem_req.addr=0xfffffffffffcc680\n21344000: system.cpu0.fetch: [tid:0] Instruction PC (0xfffffffffffcc662=>0xfffffffffffcc666).(0=>1) created [sn:81809].\n21344000: system.cpu0.fetch: Set instruction 81809 with fetch id 6609\n21344000: system.cpu0.fetch: [tid:0] fault (Generic page table fault) detected @ PC (0xfffffffffffcc662=>0xfffffffffffcc666).(0=>1).\n21344000: system.cpu0.fetch: [tid:0] [sn:81808] Sending instruction to decode from fetch queue. Fetch queue size: 2.\n21344000: system.cpu0.fetch: [tid:0] [sn:81809] Sending instruction to decode from fetch queue. Fetch queue size: 1.\n21347000: system.cpu0.commit: [tid:0] Squashing due to branch mispred PC:0x105b0 [sn:81764]\n21347000: system.cpu0.commit: [tid:0] Redirecting to PC (0x10000=>0x10004).(0=>1)\n21347000: system.cpu0.decode: [tid:0] Processing instruction [sn:81808] with PC (0xfffffffffffcc662=>0xfffffffffffcc666).(0=>1)\n21347000: system.cpu0.decode: [tid:0] Processing instruction [sn:81809] with PC (0xfffffffffffcc662=>0xfffffffffffcc666).(0=>1)\n21348000: system.cpu0.decode: [tid:0] Squashing instructions due to squash from commit.\n21350000: system.cpu0.fetch: [tid:0] Squashing instructions due to squash from commit.\n21350000: system.cpu0.fetch: [tid:0] Squash caused by inst at PC: (0x105b0=>0x10000).(0=>1), seqNum: 81764\n21350000: system.cpu0.branchPred: Control squash: ftq_id=6608, control_pc=0x105b0, real_target=0x10000, is_conditional=0, is_indirect=1, actually_taken=1, branch seq: 81764\n",
+    "21342000: system.cpu0.decode: [tid:0] [sn:81773] Updating predictions: Wrong predicted target: (0x105cc=>0x105d0).(0=>1) PredPC: (0xfffffffffffcc662=>0xfffffffffffcc666).(0=>1)\n21343000: system.cpu0.branchPred: Control squash: ftq_id=6608, control_pc=0x105c8, real_target=0xfffffffffffcc662, is_conditional=0, is_indirect=0, actually_taken=1, branch seq: 81773\n21343000: system.cpu0.branchPred: After squash, fsqId(next alloc)=6609, fetchHeadFsqId=6602, s0pc=0xfffffffffffcc662\n21343000: system.cpu0.fetch: Squashing from decode with PC = (0xfffffffffffcc662=>0xfffffffffffcc666).(0=>1)\n21343000: system.cpu0.fetch: [tid:0] Squashing, setting PC to: (0xfffffffffffcc662=>0xfffffffffffcc666).(0=>1). seqNum: 81773\n21344000: system.cpu0.branchPred: bbStart: 0xfffffffffffcc662, btbEntry:\n21344000: system.cpu0.branchPred: bbStart: 0xfffffffffffcc662, btbEntry:\n21344000: system.cpu0.branchPred: bbStart: 0xfffffffffffcc662, btbEntry:\n21344000: system.cpu0.branchPred: bbStart: 0xfffffffffffcc662, btbEntry:\n21344000: system.cpu0.branchPred: bbStart: 0xfffffffffffcc662, btbEntry:\n21344000: system.cpu0.branchPred: Creating new prediction for PC 0xfffffffffffcc662\n21344000: system.cpu0.branchPred: Inserted fetch target 6609 starting at PC 0xfffffffffffcc662\n21344000: system.cpu0.fetch: [tid:0] Issuing a pipelined I-cache access for new FSQ entry, starting at PC 0xfffffffffffcc662 (endPC 0xfffffffffffcc6a0; original PC (0xfffffffffffcc662=>0xfffffffffffcc666).(0=>1))\n21344000: system.cpu0.fetch: [tid:0] Fetching cache line 0xfffffffffffcc662 for addr 0xfffffffffffcc662, pc=0xfffffffffffcc662\n21344000: system.cpu0.fetch: [tid:0] Handling multi-cacheline fetch for addr 0xfffffffffffcc662, pc=0xfffffffffffcc662\n21344000: system.cpu0.fetch: [tid:0] Translation completed for addr 0xfffffffffffcc662\n21344000: system.cpu0.fetch: fault, mem_req.addr=0xfffffffffffcc662\n21344000: system.cpu0.fetch: fault, mem_req.addr=0xfffffffffffcc680\n21345000: system.cpu0.fetch: [tid:0] Demand fetch fault: pc=0xfffffffffffcc662 missing=0xfffffffffffcc662 request=0xfffffffffffcc662 cause=0\n21345000: system.cpu0.fetch: [tid:0] Instruction PC (0xfffffffffffcc662=>0xfffffffffffcc666).(0=>1) created [sn:81808].\n21345000: system.cpu0.fetch: Set instruction 81808 with fetch id 6609\n21345000: system.cpu0.fetch: [tid:0] fault (Generic page table fault) detected @ PC (0xfffffffffffcc662=>0xfffffffffffcc666).(0=>1).\n21345000: system.cpu0.fetch: [tid:0] [sn:81808] Sending instruction to decode from fetch queue. Fetch queue size: 1.\n21347000: system.cpu0.commit: [tid:0] Squashing due to branch mispred PC:0x105b0 [sn:81764]\n21347000: system.cpu0.commit: [tid:0] Redirecting to PC (0x10000=>0x10004).(0=>1)\n21348000: system.cpu0.decode: [tid:0] Squashing instructions due to squash from commit.\n21350000: system.cpu0.fetch: [tid:0] Squashing instructions due to squash from commit.\n21350000: system.cpu0.fetch: [tid:0] Squash caused by inst at PC: (0x105b0=>0x10000).(0=>1), seqNum: 81764\n21350000: system.cpu0.branchPred: Control squash: ftq_id=6608, control_pc=0x105b0, real_target=0x10000, is_conditional=0, is_indirect=1, actually_taken=1, branch seq: 81764\n"
+  ],
+  "plans": [
+    {
+      "schemaVersion": 1,
+      "createdAtUtc": "2026-10-04T04:03:04.914246+00:00",
+      "gem5Sha256": "0e45dfb345200506be4940e0a940a0ada4bc82905f1f1ae22059f3a96f044597",
+      "programManifestSha256": "881aa515e8d919447f73086903eb89d0b219a26ead464b5eed024547bd9b9ed3",
+      "configSha256": "2253ac152559e3bfc812ad6106d8e2c594af018907e5599a086011b1b92a4ec5",
+      "command": [
+        "/root/chi-flowgraph-work/linux-validation/artifacts/fs-model-09-fetch-boundary-candidate01/gem5.opt",
+        "--outdir=/root/chi-flowgraph-work/linux-validation/runs/model10-se-fetch-fault-diagnostic-03/model09",
+        "--debug-flags=FetchFault,Fetch,Decode,Commit,DecoupleBP",
+        "--debug-start=21335000",
+        "--debug-end=21365000",
+        "--debug-file=fetch-fault-debug.log",
+        "/mnt/d/proj/chi_flowgraph/native/gem5/native_l2_run.py",
+        "--elf-dir",
+        "/mnt/d/proj/chi_flowgraph/build/native-rtl-program",
+        "--seed",
+        "1",
+        "--max-ticks",
+        "2000000000",
+        "--tail-ticks",
+        "1000000"
+      ],
+      "trace": "on",
+      "binaries": [
+        {
+          "hart": 0,
+          "file": "native-l2-0.elf",
+          "sha256": "78a99915bd9f0158892c8be416b082b26284102962e1e590961ccbbd4762ea8c"
+        },
+        {
+          "hart": 1,
+          "file": "native-l2-1.elf",
+          "sha256": "8993a4df07cd365f9fefa68e88b64fa6cc721b7e8f52cc399f6be03acde28914"
+        },
+        {
+          "hart": 2,
+          "file": "native-l2-2.elf",
+          "sha256": "a66d837cdb771ba4097dfcffa456a18c63777a4b9debf5c387168801f9bf7547"
+        },
+        {
+          "hart": 3,
+          "file": "native-l2-3.elf",
+          "sha256": "9c6d146bc61f5789a8cfda26a5f29a715e3c23b34cdede0fdfac9c58708fae2a"
+        }
+      ],
+      "scope": "Four-core host statistics regression; not Linux suite acceptance.",
+      "diagnosticOnly": true
+    },
+    {
+      "schemaVersion": 1,
+      "createdAtUtc": "2026-10-04T04:03:04.914246+00:00",
+      "gem5Sha256": "7aba95946686c49c763e54d1876670e4e737c90ed843fb0a4905f400c326309a",
+      "programManifestSha256": "881aa515e8d919447f73086903eb89d0b219a26ead464b5eed024547bd9b9ed3",
+      "configSha256": "2253ac152559e3bfc812ad6106d8e2c594af018907e5599a086011b1b92a4ec5",
+      "command": [
+        "/root/chi-flowgraph-work/linux-validation/artifacts/fs-model-10-fetch-demand-fault-candidate02/gem5.opt",
+        "--outdir=/root/chi-flowgraph-work/linux-validation/runs/model10-se-fetch-fault-diagnostic-03/model10",
+        "--debug-flags=FetchFault,Fetch,Decode,Commit,DecoupleBP",
+        "--debug-start=21335000",
+        "--debug-end=21365000",
+        "--debug-file=fetch-fault-debug.log",
+        "/mnt/d/proj/chi_flowgraph/native/gem5/native_l2_run.py",
+        "--elf-dir",
+        "/mnt/d/proj/chi_flowgraph/build/native-rtl-program",
+        "--seed",
+        "1",
+        "--max-ticks",
+        "2000000000",
+        "--tail-ticks",
+        "1000000"
+      ],
+      "trace": "on",
+      "binaries": [
+        {
+          "hart": 0,
+          "file": "native-l2-0.elf",
+          "sha256": "78a99915bd9f0158892c8be416b082b26284102962e1e590961ccbbd4762ea8c"
+        },
+        {
+          "hart": 1,
+          "file": "native-l2-1.elf",
+          "sha256": "8993a4df07cd365f9fefa68e88b64fa6cc721b7e8f52cc399f6be03acde28914"
+        },
+        {
+          "hart": 2,
+          "file": "native-l2-2.elf",
+          "sha256": "a66d837cdb771ba4097dfcffa456a18c63777a4b9debf5c387168801f9bf7547"
+        },
+        {
+          "hart": 3,
+          "file": "native-l2-3.elf",
+          "sha256": "9c6d146bc61f5789a8cfda26a5f29a715e3c23b34cdede0fdfac9c58708fae2a"
+        }
+      ],
+      "scope": "Four-core host statistics regression; not Linux suite acceptance.",
+      "diagnosticOnly": true
+    }
+  ],
+  "results": [
+    {
+      "tick": "22699000",
+      "cause": "exiting with last active thread context",
+      "exitCode": 0,
+      "cpuExitTick": "21699000",
+      "drainEndTick": "22699000",
+      "tailTicksRequested": 1000000,
+      "tailCause": "simulate() limit reached",
+      "sharedPhysical": "0xc000",
+      "sharedBytes": 65536,
+      "uncachedMapping": {
+        "virtual": "0x200000000",
+        "physical": "0x1c000",
+        "bytes": 4096,
+        "kind": "normal-noncacheable-ram",
+        "cacheableAlias": false
+      },
+      "timedCpuPath": "KMH CPU -> classic L1 -> ChiNativeL2 -> CHI NoC -> HN -> ChiNativeMemory",
+      "protocolOpcodeInjection": false,
+      "simulationSeed": 1,
+      "pass": true
+    },
+    {
+      "tick": "22699000",
+      "cause": "exiting with last active thread context",
+      "exitCode": 0,
+      "cpuExitTick": "21699000",
+      "drainEndTick": "22699000",
+      "tailTicksRequested": 1000000,
+      "tailCause": "simulate() limit reached",
+      "sharedPhysical": "0xc000",
+      "sharedBytes": 65536,
+      "uncachedMapping": {
+        "virtual": "0x200000000",
+        "physical": "0x1c000",
+        "bytes": 4096,
+        "kind": "normal-noncacheable-ram",
+        "cacheableAlias": false
+      },
+      "timedCpuPath": "KMH CPU -> classic L1 -> ChiNativeL2 -> CHI NoC -> HN -> ChiNativeMemory",
+      "protocolOpcodeInjection": false,
+      "simulationSeed": 1,
+      "pass": true
+    }
+  ]
+}

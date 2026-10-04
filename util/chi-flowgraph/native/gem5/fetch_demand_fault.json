@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "patch": "fetch_demand_fault.patch",
+  "patchSha256": "abde4494dc7369ba7fbc6e859a433649b9100dbe9aff341082d6461d1ac408ad",
+  "commit": "65f3241a6cd486dffddaca251536f5c691af9a1f",
+  "sourceDependency": "Apply after exact model09 Fetch predecode-boundary and BPU predecode-boundary sources. The ten BPU files and two bounded phase-storage prerequisites are checked unchanged. Earlier exact Fetch installers must not be rerun on these post-patch files.",
+  "defaultInstallerIntegrated": false,
+  "sourceFrozen": true,
+  "compiled": false,
+  "simulationValidated": false,
+  "validationScope": "RV64 non-virtualized Sv39; CHI Issue H is unchanged. RISC-V Hypervisor extension GPA offset cases are not validated; preserve the MMU GPA unchanged.",
+  "files": [
+    {
+      "path": "src/cpu/o3/fetch.cc",
+      "beforeSha256": "e071d0df661cf2c1ceb249709c38a01bdf13b45cd2e71c40a9f4fc4fc3bfcce2",
+      "afterSha256": "049796868de510de3aec155dd364cf88271434f6165314b873738aa0dafe0852"
+    },
+    {
+      "path": "src/cpu/o3/fetch.hh",
+      "beforeSha256": "4b46ec1f323200b6f52f74d3f2e46fc9652e281a6c32e7474797fdd25c320f97",
+      "afterSha256": "ff0409362e5bc81f1dc57baf6028e030247938872eb0f9bfb3beb6f4a768a4b2"
+    }
+  ],
+  "requiredUnchangedFiles": [
+    {
+      "path": "src/cpu/pred/btb/common.hh",
+      "sha256": "070b3b029f2e6e26e57e6153f52aea7e63047f5ed62d002c71708931d029ae29"
+    },
+    {
+      "path": "src/cpu/pred/btb/timed_base_pred.hh",
+      "sha256": "daca012da5d4f46f56a7976a5d2d2b51f71064871c14b9ac434b3f9f882eab5a"
+    },
+    {
+      "path": "src/cpu/pred/btb/decoupled_bpred.hh",
+      "sha256": "7727e1e732243e27f9b1140be1a06e63d810539f5ab59b79f4a4b4f4df3e3c0e"
+    },
+    {
+      "path": "src/cpu/pred/btb/decoupled_bpred.cc",
+      "sha256": "a3a0eb353843afad0c1df12811ce6279a38eb3e4d2ca4a4f5a0fae52639a9b66"
+    },
+    {
+      "path": "src/cpu/pred/btb/btb_ubtb.hh",
+      "sha256": "49471ab1426e4b5774b7e0f5fdc2f37921dddcc5bc1fff63af3b1a2ad44bf22f"
+    },
+    {
+      "path": "src/cpu/pred/btb/btb_ubtb.cc",
+      "sha256": "5479e5088c275e9ed8e268a00c35519b9d7b2ff53c39bc70a75d2d74cb6d60c7"
+    },
+    {
+      "path": "src/cpu/pred/btb/abtb.hh",
+      "sha256": "6acae9e4dbfb750c5720e323b48599cd56e940010a55cf54337dd87357fdf1c6"
+    },
+    {
+      "path": "src/cpu/pred/btb/abtb.cc",
+      "sha256": "cb06df733322938ba6b81300012f522647a016e571dc960f2c81c7c5b49c90c7"
+    },
+    {
+      "path": "src/cpu/pred/btb/mbtb.hh",
+      "sha256": "729deca9128a40c0d9f028ed008ba8e566b8f36541d59ac8e604650931a46eda"
+    },
+    {
+      "path": "src/cpu/pred/btb/mbtb.cc",
+      "sha256": "c56b61cff2918626417a82e67e25589e3983dba9e0196cf0fee86a3b700e0696"
+    },
+    {
+      "path": "src/cpu/pred/btb/decoupled_bpred_stats.cc",
+      "sha256": "7a4b64e4044773829052002dcfecbcccbfcd5257dc960bdd4bb8ba84c0d15e23"
+    },
+    {
+      "path": "src/cpu/pred/btb/BpuPhaseSpool.hh",
+      "sha256": "6b40cb9e287c5da6439503dd5ea15c3964a8e70ad5072b000ff04390f2f589fa"
+    }
+  ]
+}

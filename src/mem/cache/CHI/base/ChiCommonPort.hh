@@ -1,3 +1,4 @@
+#include "mem/cache/CHI/FlowGraphTrace.hh"
 #ifndef __CHICOMMONPORT__HH__
 #define __CHICOMMONPORT__HH__
 
@@ -217,14 +218,17 @@ private:
         auto* queues = dst.queueArray(kind);
         if (kind == QueueKind::Rx && dst.rxAdmissionCallback &&
             !dst.rxAdmissionCallback(ch, f)) {
+            FlowGraphTrace::get().port(ch,f,name(),dst.name(),false,queues[idx].size(),creditLimit[idx],"endpoint_admission");
             return false;
         }
         if (credit[idx] == 0) {
+            FlowGraphTrace::get().port(ch,f,name(),dst.name(),false,queues[idx].size(),creditLimit[idx]);
             return false;
         }
         credit[idx]--;
         assert(credit[idx] <= creditLimit[idx] && "CHI credit overflow!");
         queues[idx].push_back(f);
+        FlowGraphTrace::get().port(ch,f,name(),dst.name(),true,queues[idx].size(),creditLimit[idx]);
         assert(dst.m_consumer && "ChiCommonPort m_consumer is null");
         dst.m_consumer->scheduleEvent(Cycles(1));
         return true;

@@ -419,6 +419,15 @@ void
 MBTB::getAndSetNewBTBEntry(FetchTarget &stream)
 {
     DPRINTF(BTB, "getAndSetNewBTBEntry called for pc %#lx\n", stream.startPC);
+    // A predecode correction ends BEFORE the refetched instruction. It is
+    // not an executed control transfer, even if prediction metadata has one.
+    if (stream.squashType == SQUASH_PREDECODE) {
+        BTBEntry no_entry;
+        no_entry.isDirect = false;
+        stream.updateNewBTBEntry = no_entry;
+        stream.updateIsOldEntry = true;
+        return;
+    }
     // Get prediction metadata from previous stages
     auto meta = std::static_pointer_cast<BTBMeta>(stream.predMetas[getComponentIdx()]);
     auto &predBTBEntries = meta->hit_entries;
@@ -427,7 +436,7 @@ MBTB::getAndSetNewBTBEntry(FetchTarget &stream)
     bool pred_branch_hit = false;
     BTBEntry entry_to_write = BTBEntry();
     for (auto &e: predBTBEntries) {
-        if (stream.exeBranchInfo == e) {
+        if (stream.exeBranchInfo == e && !stream.isFalseHitPC(e.pc)) {
             pred_branch_hit = true;
             entry_to_write = e;
             break;
@@ -680,6 +689,24 @@ MBTB::commitToVictimCache(int vc_idx, const TickedBTBEntry &ticked_entry)
  * 4. Update existing entries or create new ones
  * 5. Update MRU information
  */
+void
+MBTB::invalidateBTBEntry(Addr pc)
+{
+    for (auto *sram : {&sram0, &sram1}) {
+        for (auto &set : *sram) {
+            for (auto &entry : set) {
+                if (entry.valid && entry.pc == pc)
+                    entry.valid = false;
+            }
+        }
+    }
+    // Invalidate every copy, rather than only the first victim match.
+    for (auto &entry : victimCache) {
+        if (entry.valid && entry.pc == pc)
+            entry.valid = false;
+    }
+}
+
 void
 MBTB::update(const FetchTarget &stream)
 {

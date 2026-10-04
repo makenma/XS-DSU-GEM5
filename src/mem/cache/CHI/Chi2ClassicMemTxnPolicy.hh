@@ -1,3 +1,4 @@
+#include "mem/cache/CHI/FlowGraphTrace.hh"
 #ifndef __MEM_CACHE_CHI_CHI2CLASSICMEMTXNPOLICY_HH__
 #define __MEM_CACHE_CHI_CHI2CLASSICMEMTXNPOLICY_HH__
 
@@ -72,6 +73,7 @@ class Chi2ClassicMemTxnPolicy
     static bool
     isWriteNoSnpFull(const RawReq& req, uint32_t block_size)
     {
+        if(req.opcode==0x1c) return req.size && req.size<=block_size && !(req.size&(req.size-1)) && !(req.addr%req.size) && (req.addr%block_size)+req.size<=block_size;
         return block_size != 0 &&
             req.opcode == WriteNoSnpFullOpcode &&
             decodeReq(req.opcode).minor == ReqMinor::WriteNoSnp &&
@@ -100,7 +102,7 @@ class Chi2ClassicMemTxnPolicy
             dat.qos == req.qos && dat.last && dat.dataid == 0 &&
             dat.beatOffset == 0 && dat.data.size() == expected_bytes &&
             dat.byteEnable.size() == expected_bytes &&
-            allNonZero(dat.byteEnable) &&
+            (req.opcode==0x1c || allNonZero(dat.byteEnable)) &&
             dat.chunkValid.size() == (expected_bytes + 7) / 8 &&
             allNonZero(dat.chunkValid);
     }
@@ -158,6 +160,7 @@ class Chi2ClassicMemTxnPolicy
         rsp.resp = RespSC;
         rsp.respErr = error ? 1 : 0;
         rsp.pcrdtype = req.pcrdtype;
+        rsp.flow=req.flow; rsp.flow.messageId.clear(); FlowGraphTrace::get().stamp(rsp);
         return rsp;
     }
 

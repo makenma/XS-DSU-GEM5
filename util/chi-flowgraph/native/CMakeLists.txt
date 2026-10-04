@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.20)
+project(chi_flowgraph LANGUAGES CXX)
+add_executable(chi-refine refine.cpp)
+target_compile_features(chi-refine PRIVATE cxx_std_20)
+target_include_directories(chi-refine PRIVATE ../vendor/chiron ../vendor/json)
+target_compile_options(chi-refine PRIVATE -Wall -Wextra)

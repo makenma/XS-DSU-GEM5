@@ -1,0 +1,14 @@
+{
+  "gem5": {
+    "url": "https://github.com/makenma/XS-DSU-GEM5.git",
+    "ref": "agent/linux-checkpoint-restore-fix",
+    "commit": "65f3241a6cd486dffddaca251536f5c691af9a1f"
+  },
+  "chiron": {
+    "url": "https://github.com/RISMicroDevices/CHIron.git",
+    "commit": "55cd1e1d92142960af2b57c686fc9f35ce7286be"
+  },
+  "protocol": "ARM IHI 0050 Issue H",
+  "schemaVersion": "1.0",
+  "profile": "h-core-256"
+}

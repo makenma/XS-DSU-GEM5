@@ -265,6 +265,8 @@ enum MiscRegIndex
     // non-maskable-interrupt-pending: NMI version of xIP
     MISCREG_NMIP,
 
+    // Appended to preserve all existing checkpoint register indices.
+    MISCREG_SENVCFG,
     NUM_MISCREGS
 };
 
@@ -311,6 +313,7 @@ enum CSRIndex
     CSR_SIE = 0x104,
     CSR_STVEC = 0x105,
     CSR_SCOUNTEREN = 0x106,
+    CSR_SENVCFG = 0x10A,
     CSR_SSCRATCH = 0x140,
     CSR_SEPC = 0x141,
     CSR_SCAUSE = 0x142,
@@ -566,6 +569,7 @@ const std::map<int, CSRMetadata> CSRData = {
     {CSR_SIE, {"sie", MISCREG_IE}},
     {CSR_STVEC, {"stvec", MISCREG_STVEC}},
     {CSR_SCOUNTEREN, {"scounteren", MISCREG_SCOUNTEREN}},
+    {CSR_SENVCFG, {"senvcfg", MISCREG_SENVCFG}},
     {CSR_SSCRATCH, {"sscratch", MISCREG_SSCRATCH}},
     {CSR_SEPC, {"sepc", MISCREG_SEPC}},
     {CSR_SCAUSE, {"scause", MISCREG_SCAUSE}},

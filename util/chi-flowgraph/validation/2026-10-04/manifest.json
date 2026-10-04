@@ -1,0 +1,91 @@
+{
+  "scope": "Historical local evidence; paths and executable SHA identify the original runs. They do not authorize or certify a new server build.",
+  "linuxAcceptance": false,
+  "files": [
+    {
+      "file": "build-candidate01-failure.json",
+      "bytes": 356,
+      "sha256": "48866a7838a1872f94dcd8ad182459b5b521bfc49a3f5a6057a45b68dc5fcbdf"
+    },
+    {
+      "file": "build-candidate02-success.json",
+      "bytes": 687,
+      "sha256": "8a1ad1c1425e2ef544d5c0520b6d154d13d4cd8b0a1712316d361d6d6dd23516"
+    },
+    {
+      "file": "focused-driver-failure.json",
+      "bytes": 1106,
+      "sha256": "e5e3c016b31551207379d2476c587b7f92a5812151392607e74559c9eb52a0c1"
+    },
+    {
+      "file": "focused-summary.json",
+      "bytes": 14966,
+      "sha256": "b4669dd6ffa2e0d4e5ed988cccad50141acd65a0ef444d9e1174aa8a3c5ddbf5"
+    },
+    {
+      "file": "fetch-coverage-audit.json",
+      "bytes": 67724,
+      "sha256": "c255c6aaa8341fb983ecd18065edf15a6acc4bdd979a8c3d030ec7cfffa3bdca"
+    },
+    {
+      "file": "rtl-strict-failure.json",
+      "bytes": 5047,
+      "sha256": "e97173bd557422243b5b5703574f4524c34ba7b19df52a8133aa71d0e28cff79"
+    },
+    {
+      "file": "bpu-strict-failure.json",
+      "bytes": 5331,
+      "sha256": "0cdcf058d79b97f0340e009c43ec29cf10d2868aa42919a4df3b6506b58112fe"
+    },
+    {
+      "file": "fs-strict-failure.json",
+      "bytes": 13616,
+      "sha256": "2893378bb0872d60bf338872a49a2f9db48a69759d8d9d455b9a648cf005b422"
+    },
+    {
+      "file": "fs-driver-completion.json",
+      "bytes": 693,
+      "sha256": "6e46bb42202a199d4c15c504cfa0cf086315969e8dbc93a646f028468fd9630a"
+    },
+    {
+      "file": "rtl-trace-invariance.json",
+      "bytes": 1313,
+      "sha256": "ae331657a41e999b45b4e72036cdd736d0d7945f6fc4a7e2c311343c1b7df1e1"
+    },
+    {
+      "file": "bpu-trace-invariance.json",
+      "bytes": 4524,
+      "sha256": "262ed91f8046e05c15e1c96e27014934aa197b9b6b8e6891e5ec8f183b93e481"
+    },
+    {
+      "file": "rtl-corrected-fault-behavior.json",
+      "bytes": 14553,
+      "sha256": "00f5f254d8639e7f029f8ce4322e5525463f9e01fea83a796317de5e746e96e6"
+    },
+    {
+      "file": "bpu-fault-diagnostic.json",
+      "bytes": 60049,
+      "sha256": "7bf7196cd9bdbc8ef469db7ed1f4641ea3e67f7330d54e3a82f7a8400f28d7ba"
+    },
+    {
+      "file": "previous-boot-walltime.json",
+      "bytes": 3475,
+      "sha256": "68844004a3c2c9b371b2db1d0a8c0ddcc77110686c473cfcad54c92d3a6d59c7"
+    },
+    {
+      "file": "fs-fault-diagnostic.json",
+      "bytes": 13732,
+      "sha256": "626951a78b7fcfbc4bc0ac07c18dce27f8ae506c126488288cccb2d4a12e7697"
+    },
+    {
+      "file": "fs-fault-diagnostic-notes.md",
+      "bytes": 4293,
+      "sha256": "203a4492ceb83a0b8800f6290909e5c340d335175c3474c132b15ce2ece00f0b"
+    },
+    {
+      "file": "fs-fault-diagnostic-completion.json",
+      "bytes": 898,
+      "sha256": "7136433b79132c781525e60b10978f610ce5b3d1394b1d6391437833c600a419"
+    }
+  ]
+}

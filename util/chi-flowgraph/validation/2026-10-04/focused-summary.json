@@ -1,0 +1,363 @@
+{
+  "schemaVersion": 1,
+  "status": "STRICT_REGRESSION_FAILED",
+  "passed": false,
+  "complete": false,
+  "knownFailure": true,
+  "linuxAcceptance": false,
+  "launchReady": false,
+  "archivedAtUtc": "2026-10-04T04:16:10.001932+00:00",
+  "gem5Sha256": "7aba95946686c49c763e54d1876670e4e737c90ed843fb0a4905f400c326309a",
+  "actualDriverSession": 29321,
+  "actualDriverExitCode": 1,
+  "originalRunDirectory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model10-regressions-01",
+  "plannedDriverSteps": 23,
+  "executedDriverSteps": 17,
+  "successfulCpuRuns": 16,
+  "fetchFirmwareCasesPassed": 11,
+  "cboFirmwareCasesPassed": 4,
+  "fourHartSeSelfCheckRunsPassed": 1,
+  "strictEquivalenceChecksRun": 1,
+  "strictEquivalenceChecksPassed": 0,
+  "strictFailure": {
+    "report": "se-rtl-on-equivalence.json",
+    "reportSha256": "0c39d5acb5e79af922086ec31490d1304a58cd2989bd69a30817e66a6eb88614",
+    "baseline": "model08",
+    "statisticsPerRun": 8936,
+    "statisticDifferenceCount": 22,
+    "differentKeys": [
+      "system.cpu0.backendBound",
+      "system.cpu0.coreBound",
+      "system.cpu0.decode.decodedInsts",
+      "system.cpu0.decode.runCycles",
+      "system.cpu0.fetch.cycles",
+      "system.cpu0.fetch.fetchBubbles",
+      "system.cpu0.fetch.fetchStatusDist::Blocked",
+      "system.cpu0.fetch.fetchStatusDist::Running",
+      "system.cpu0.fetch.fetchStatusDist::Squashing",
+      "system.cpu0.fetch.fetchStatusDist::TrapPending",
+      "system.cpu0.fetch.frontendBandwidthBound",
+      "system.cpu0.fetch.frontendBound",
+      "system.cpu0.frontendBandwidthBound",
+      "system.cpu0.frontendBound",
+      "system.cpu0.iew.decodeStallReason::FetchFragStall",
+      "system.cpu0.iew.decodeStallReason::NoStall",
+      "system.cpu0.iew.fetchStallReason::FetchFragStall",
+      "system.cpu0.iew.fetchStallReason::ITlbStall",
+      "system.cpu0.iew.fetchStallReason::NoStall",
+      "system.cpu0.iew.fetchStallReason::OtherFetchStall",
+      "system.cpu0.l1Bound",
+      "system.cpu0.memoryBound"
+    ],
+    "actualCpuSelfChecksPassed": true,
+    "fourHartPassOrder": [
+      3,
+      1,
+      0,
+      2
+    ],
+    "cpuExitTicks": [
+      "21699000",
+      "21699000"
+    ],
+    "drainEndTicks": [
+      "22699000",
+      "22699000"
+    ],
+    "fileSha256": {
+      "config.ini": [
+        "af4e329ac6c627598ba4e501a4fcd5bd84445c790baff6431e65eba4eda1796e",
+        "af4e329ac6c627598ba4e501a4fcd5bd84445c790baff6431e65eba4eda1796e"
+      ],
+      "flowgraph-config.json": [
+        "5409d53f0da22f2f296d43f37f16b36a9a11544ead2e0b7943df1105102522be",
+        "5409d53f0da22f2f296d43f37f16b36a9a11544ead2e0b7943df1105102522be"
+      ],
+      "raw.jsonl": [
+        "4802ef3dcd5aa2cdc80b1796657f79bc1d4cfd3830a756d5573b72e2892aa902",
+        "4802ef3dcd5aa2cdc80b1796657f79bc1d4cfd3830a756d5573b72e2892aa902"
+      ]
+    },
+    "boundary": "Raw/config/ticks equality does not override the failed strict all-non-host-statistics comparison."
+  },
+  "notExecuted": [
+    "se-rtl-off",
+    "se-rtl-off-equivalence",
+    "se-bpu-phase-on",
+    "se-bpu-phase-on-equivalence",
+    "se-bpu-phase-off",
+    "se-bpu-phase-off-equivalence"
+  ],
+  "remainingCpuRuns": 3,
+  "remainingEquivalenceChecks": 3,
+  "runs": [
+    {
+      "label": "fetch-same-layout",
+      "sourceDirectory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model10-regressions-01/fetch-same-layout",
+      "hostExitCode": 0,
+      "hostExitEvidence": "host-exit-code.txt + fetch-stream-result.json hostReturnCode",
+      "result": "fetch-same-layout/fetch-stream-result.json",
+      "resultSha256": "e793301bf0550bc4b9d5cc23d39d085b5d13ccbb741f9cc5be7f9ac104b7b95a",
+      "passed": true,
+      "simulatorExit": {
+        "tick": "23707000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "cpuExitTick": null,
+        "drainEndTick": null
+      }
+    },
+    {
+      "label": "fetch-changed-layout",
+      "sourceDirectory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model10-regressions-01/fetch-changed-layout",
+      "hostExitCode": 0,
+      "hostExitEvidence": "host-exit-code.txt + fetch-stream-result.json hostReturnCode",
+      "result": "fetch-changed-layout/fetch-stream-result.json",
+      "resultSha256": "6fa461eac278831cf91dcdd07a5cca105b29558bf82f24a323eb016e61e85c64",
+      "passed": true,
+      "simulatorExit": {
+        "tick": "24480000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "cpuExitTick": null,
+        "drainEndTick": null
+      }
+    },
+    {
+      "label": "fetch-control-interior",
+      "sourceDirectory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model10-regressions-01/fetch-control-interior",
+      "hostExitCode": 0,
+      "hostExitEvidence": "host-exit-code.txt + fetch-stream-result.json hostReturnCode",
+      "result": "fetch-control-interior/fetch-stream-result.json",
+      "resultSha256": "0fe24a904715885d0000144257da229f41cf6ce14fc0fda8b8c9f587a326976d",
+      "passed": true,
+      "simulatorExit": {
+        "tick": "25208000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "cpuExitTick": null,
+        "drainEndTick": null
+      }
+    },
+    {
+      "label": "fetch-cross-stale",
+      "sourceDirectory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model10-regressions-01/fetch-cross-stale",
+      "hostExitCode": 0,
+      "hostExitEvidence": "host-exit-code.txt + fetch-stream-result.json hostReturnCode",
+      "result": "fetch-cross-stale/fetch-stream-result.json",
+      "resultSha256": "9aee4ab31400b238cab505620cf658bde252e05a0650eb85f8a0702dd265f576",
+      "passed": true,
+      "simulatorExit": {
+        "tick": "26182000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "cpuExitTick": null,
+        "drainEndTick": null
+      }
+    },
+    {
+      "label": "fetch-cross-clean",
+      "sourceDirectory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model10-regressions-01/fetch-cross-clean",
+      "hostExitCode": 0,
+      "hostExitEvidence": "host-exit-code.txt + fetch-stream-result.json hostReturnCode",
+      "result": "fetch-cross-clean/fetch-stream-result.json",
+      "resultSha256": "a20ef5118d34bf83867c9d355951d331d7db711b41cea6cf7cb94d54e552feb3",
+      "passed": true,
+      "simulatorExit": {
+        "tick": "25963000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "cpuExitTick": null,
+        "drainEndTick": null
+      }
+    },
+    {
+      "label": "fetch-prefix-interior",
+      "sourceDirectory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model10-regressions-01/fetch-prefix-interior",
+      "hostExitCode": 0,
+      "hostExitEvidence": "host-exit-code.txt + fetch-stream-result.json hostReturnCode",
+      "result": "fetch-prefix-interior/fetch-stream-result.json",
+      "resultSha256": "71d60c2dd205851601cd6ba7263a70c2c759816ccea3460ad66664c89e9f0e68",
+      "passed": true,
+      "simulatorExit": {
+        "tick": "24873000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "cpuExitTick": null,
+        "drainEndTick": null
+      }
+    },
+    {
+      "label": "fetch-amo-cross-stale",
+      "sourceDirectory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model10-regressions-01/fetch-amo-cross-stale",
+      "hostExitCode": 0,
+      "hostExitEvidence": "host-exit-code.txt + fetch-stream-result.json hostReturnCode",
+      "result": "fetch-amo-cross-stale/fetch-stream-result.json",
+      "resultSha256": "24a4d2ba45ebd34112d2c672726693ada4a8025c58ae2ff7e91ba8986745f362",
+      "passed": true,
+      "simulatorExit": {
+        "tick": "27191000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "cpuExitTick": null,
+        "drainEndTick": null
+      }
+    },
+    {
+      "label": "fetch-legal-taken",
+      "sourceDirectory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model10-regressions-01/fetch-legal-taken",
+      "hostExitCode": 0,
+      "hostExitEvidence": "host-exit-code.txt + fetch-stream-result.json hostReturnCode",
+      "result": "fetch-legal-taken/fetch-stream-result.json",
+      "resultSha256": "88e2b26ad75643e8bba294b0456a36bdb36633e3a65f60819b4e0e388f733f15",
+      "passed": true,
+      "simulatorExit": {
+        "tick": "23941000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "cpuExitTick": null,
+        "drainEndTick": null
+      }
+    },
+    {
+      "label": "fetch-page-tail-return",
+      "sourceDirectory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model10-regressions-01/fetch-page-tail-return",
+      "hostExitCode": 0,
+      "hostExitEvidence": "host-exit-code.txt + fetch-stream-result.json hostReturnCode",
+      "result": "fetch-page-tail-return/fetch-stream-result.json",
+      "resultSha256": "84a9848efc5ebfe67603acd3f167393b315e92b5766c2b5aeb199d30a30de2ec",
+      "passed": true,
+      "simulatorExit": {
+        "tick": "47691000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "cpuExitTick": null,
+        "drainEndTick": null
+      }
+    },
+    {
+      "label": "fetch-last-halfword-return",
+      "sourceDirectory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model10-regressions-01/fetch-last-halfword-return",
+      "hostExitCode": 0,
+      "hostExitEvidence": "host-exit-code.txt + fetch-stream-result.json hostReturnCode",
+      "result": "fetch-last-halfword-return/fetch-stream-result.json",
+      "resultSha256": "7ee71f78adf3174876e071be3cd5ceaa807c77070d0069c95172a499f046c020",
+      "passed": true,
+      "simulatorExit": {
+        "tick": "48699000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "cpuExitTick": null,
+        "drainEndTick": null
+      }
+    },
+    {
+      "label": "fetch-straddling-instruction-fault",
+      "sourceDirectory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model10-regressions-01/fetch-straddling-instruction-fault",
+      "hostExitCode": 0,
+      "hostExitEvidence": "host-exit-code.txt + fetch-stream-result.json hostReturnCode",
+      "result": "fetch-straddling-instruction-fault/fetch-stream-result.json",
+      "resultSha256": "942d98f5f83aa8ad5951c1a32819a4754bb34472ab1b8085cc6ad5a85b6eaeea",
+      "passed": true,
+      "simulatorExit": {
+        "tick": "41665000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "cpuExitTick": null,
+        "drainEndTick": null
+      }
+    },
+    {
+      "label": "cbo-clean",
+      "sourceDirectory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model10-regressions-01/cbo-clean",
+      "hostExitCode": 0,
+      "hostExitEvidence": "cbo-tlb-result.json actual process.wait hostReturnCode (this runner has no separate host-exit-code.txt)",
+      "result": "cbo-clean/cbo-tlb-result.json",
+      "resultSha256": "6cdd282eb9c849479edf1007457b0e618dc921a844dc65cdf875b1b5bd817e3b",
+      "passed": true,
+      "simulatorExit": {
+        "tick": "13934000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "cpuExitTick": null,
+        "drainEndTick": null
+      }
+    },
+    {
+      "label": "cbo-flush",
+      "sourceDirectory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model10-regressions-01/cbo-flush",
+      "hostExitCode": 0,
+      "hostExitEvidence": "cbo-tlb-result.json actual process.wait hostReturnCode (this runner has no separate host-exit-code.txt)",
+      "result": "cbo-flush/cbo-tlb-result.json",
+      "resultSha256": "708c97570f0822b51d818444af049f18c31000746beb0b491257b46bb76eb363",
+      "passed": true,
+      "simulatorExit": {
+        "tick": "13934000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "cpuExitTick": null,
+        "drainEndTick": null
+      }
+    },
+    {
+      "label": "cbo-inval",
+      "sourceDirectory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model10-regressions-01/cbo-inval",
+      "hostExitCode": 0,
+      "hostExitEvidence": "cbo-tlb-result.json actual process.wait hostReturnCode (this runner has no separate host-exit-code.txt)",
+      "result": "cbo-inval/cbo-tlb-result.json",
+      "resultSha256": "e359c47f74b9325594050f5d976c4242c7d1bf20852f2c2c542255a09108071a",
+      "passed": true,
+      "simulatorExit": {
+        "tick": "13934000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "cpuExitTick": null,
+        "drainEndTick": null
+      }
+    },
+    {
+      "label": "cbo-flush-fault",
+      "sourceDirectory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model10-regressions-01/cbo-flush-fault",
+      "hostExitCode": 0,
+      "hostExitEvidence": "cbo-tlb-result.json actual process.wait hostReturnCode (this runner has no separate host-exit-code.txt)",
+      "result": "cbo-flush-fault/cbo-tlb-result.json",
+      "resultSha256": "4757f2fa2477d12b8f0d307a1e33d7091cd9746cd1c2a73830ecf0c91fa78050",
+      "passed": true,
+      "simulatorExit": {
+        "tick": "17204000",
+        "cause": "m5_exit instruction encountered when simulating XS",
+        "exitCode": 0,
+        "cpuExitTick": null,
+        "drainEndTick": null
+      }
+    },
+    {
+      "label": "se-rtl-on",
+      "sourceDirectory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model10-regressions-01/se-rtl-on",
+      "hostExitCode": 0,
+      "hostExitEvidence": "host-exit-code.txt + native-l2-result.json",
+      "result": "se-rtl-on/native-l2-result.json",
+      "resultSha256": "ccdb0e97000184c511f6cd1f78c2c527293ee6ea3f7f8f6d1effda50e63bb04a",
+      "passed": true,
+      "simulatorExit": {
+        "tick": "22699000",
+        "cause": "exiting with last active thread context",
+        "exitCode": 0,
+        "cpuExitTick": "21699000",
+        "drainEndTick": "22699000"
+      }
+    }
+  ],
+  "retainedLargeArtifacts": {
+    "directory": "/root/chi-flowgraph-work/linux-validation/runs/fetch-stream/model10-regressions-01",
+    "copied": false,
+    "names": [
+      "raw.jsonl",
+      "fetch-stream-debug.log",
+      "cbo-tlb-debug.log",
+      "stats.txt"
+    ],
+    "note": "Large original evidence remains in D-backed WSL. Raw equality/hash above is from the unchanged original strict comparator report."
+  },
+  "scope": "Actual bare-FS and four-hart SE diagnostics only. 16 CPU runs completed with host exit 0; strict SE comparison failed and stopped the driver. Not formal Linux execution, readiness, exhaustive correctness, or proof of the original Linux failure cause."
+}

@@ -1,3 +1,4 @@
+#include "mem/cache/CHI/FlowGraphTrace.hh"
 #include "mem/cache/CHI/ChiRouterRefModel.hh"
 
 #include <algorithm>
@@ -1761,6 +1762,7 @@ ChiRouterRefModel::sendToInternal(ChannelType ch, int router, OutPort out,
     panic_if(direction < 0,
              "%s internal send used non-directional output %s\n",
              name(), outPortName(out));
+    FlowGraphTrace::get().route(flit.flit,name(),direction);
     stats.internalSentFlits[chIdx(ch)][direction]++;
 
     DPRINTF(ChiRouterRefModel,
