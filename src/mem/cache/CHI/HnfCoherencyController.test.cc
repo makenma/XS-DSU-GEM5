@@ -241,7 +241,7 @@ TEST(HnfCoherencyControllerTest, DirtyVictimDataSurvivesWriteback)
 {
     HnfSLCSF slcsf(BlockSize, 1, 1, 1, 1);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4, false);
+        BlockSize, BeatSize, 8, SnNode, false, 4, false, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const auto victim_data = lineData(0x91);
@@ -317,7 +317,7 @@ TEST(HnfCoherencyControllerTest,
 {
     HnfSLCSF slcsf(BlockSize, 1, 1, 1, 1);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4, false);
+        BlockSize, BeatSize, 8, SnNode, false, 4, false, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     slcsf.writeLine(
@@ -340,7 +340,7 @@ TEST(HnfCoherencyControllerTest, DirtyVictimTxBackpressureMakesProgress)
 {
     HnfSLCSF slcsf(BlockSize, 1, 1, 1, 1);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const auto victim_data = lineData(0xb1);
@@ -393,7 +393,7 @@ TEST(HnfCoherencyControllerTest,
 {
     HnfSLCSF slcsf(BlockSize, 1, 1, 1, 1);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4, true);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const auto victim_data = lineData(0xc8);
@@ -477,7 +477,7 @@ TEST(HnfCoherencyControllerTest,
 {
     HnfSLCSF slcsf(BlockSize, 1, 1, 1, 1);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const auto victim_data = lineData(0xca);
@@ -526,7 +526,7 @@ TEST(HnfCoherencyControllerTest,
 {
     HnfSLCSF slcsf(BlockSize, 1, 1, 1, 1);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     slcsf.writeLine(
@@ -552,7 +552,7 @@ TEST(HnfCoherencyControllerTest, DirtyVictimCompletionMatchesVictimId)
 {
     HnfSLCSF slcsf(BlockSize, 1, 1, 1, 1);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     slcsf.writeLine(
@@ -604,7 +604,7 @@ TEST(HnfCoherencyControllerTest,
     config.respQueueEntries = 2;
     HnfSLCSF slcsf(BlockSize, 1, 1, 1, 1, 8, config);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     slcsf.writeLine(
@@ -638,7 +638,7 @@ TEST(HnfCoherencyControllerTest,
 {
     HnfSLCSF slcsf(BlockSize, 1, 1, 1, 1);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const auto victim_data = lineData(0xf1);
@@ -690,7 +690,7 @@ TEST(HnfCoherencyControllerTest,
 {
     HnfSLCSF slcsf(BlockSize, 1, 1, 1, 1);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     slcsf.writeLine(
@@ -744,7 +744,7 @@ class DirtyVictimAddressHazardTest : public ::testing::TestWithParam<int>
 TEST_P(DirtyVictimAddressHazardTest, BlocksSameLineUntilWritebackRetires)
 {
     HnfSLCSF slcsf(BlockSize, 1, 1, 16, 4);
-    HnfCoherencyController cc(BlockSize, BeatSize, 8, SnNode, false, 4);
+    HnfCoherencyController cc(BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
     const auto dirty_data = lineData(0x91);
     slcsf.writeLine(
@@ -884,7 +884,7 @@ TEST(HnfCoherencyControllerTest, RetireWakesOneSameAddressSleeper)
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const auto first = cc.acceptLinkReq(makeRead(0, 1, 0, 11, 0x01), 0);
@@ -924,7 +924,7 @@ TEST(HnfCoherencyControllerTest,
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const auto data = lineData(0x31);
@@ -975,7 +975,7 @@ TEST(HnfCoherencyControllerTest, ReadUniqueSnoopsAllOtherSharers)
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const auto data = lineData(0x40);
@@ -1023,7 +1023,7 @@ TEST(HnfCoherencyControllerTest,
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const auto data = lineData(0x47);
@@ -1081,7 +1081,7 @@ TEST(HnfCoherencyControllerTest,
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const auto old_data = lineData(0x51);
@@ -1130,7 +1130,7 @@ TEST(HnfCoherencyControllerTest, SeqDoesNotRetireBeforeCompleteSfEvictResponse)
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 1, 1, 2);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const uint64_t victimAddr = TestAddr;
@@ -1184,7 +1184,7 @@ TEST(HnfCoherencyControllerTest,
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 1, 1, 2);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const uint64_t victimAddr = TestAddr;
@@ -1240,7 +1240,7 @@ TEST(HnfCoherencyControllerTest, SeqPocqPreservesDirtySnoopData)
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 1, 1, 2);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const uint64_t victimAddr = TestAddr;
@@ -1286,7 +1286,7 @@ TEST(HnfCoherencyControllerTest,
     config.replayPenalty = 3;
     HnfSLCSF slcsf(BlockSize, 1, 1, 1, 1, 4, config);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4, false);
+        BlockSize, BeatSize, 8, SnNode, false, 4, false, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const uint64_t first_victim_addr = TestAddr;
@@ -1367,7 +1367,7 @@ TEST(HnfCoherencyControllerTest, ReadNoSnpReturnsWithoutAllocatingSlcSf)
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const auto admitted =
@@ -1400,7 +1400,7 @@ TEST(HnfCoherencyControllerTest,
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     HnfLinkToCcReq partial =
@@ -1419,7 +1419,7 @@ TEST(HnfCoherencyControllerTest,
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     ASSERT_TRUE(cc.acceptLinkReq(
@@ -1446,7 +1446,7 @@ TEST(HnfCoherencyControllerTest,
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     ASSERT_TRUE(cc.acceptLinkReq(
@@ -1486,7 +1486,7 @@ TEST(HnfCoherencyControllerTest,
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     ASSERT_TRUE(cc.acceptLinkReq(
@@ -1515,7 +1515,7 @@ TEST(HnfCoherencyControllerTest,
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
     const auto data = lineData(0xa7);
     Tick tick = 0;
@@ -1560,7 +1560,7 @@ TEST(HnfCoherencyControllerTest, SeqPocqSleepsForMainAddressHazard)
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 1, 1, 2);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const uint64_t victimAddr = TestAddr;
@@ -1600,7 +1600,7 @@ TEST(HnfCoherencyControllerTest, SeqPocqIgnoresYoungerSleepingWaiters)
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 1, 1, 2);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const uint64_t victimAddr = TestAddr;
@@ -1644,7 +1644,7 @@ TEST(HnfCoherencyControllerTest, SeqReservationReplayMakesProgress)
 {
     HnfSLCSF slcsf(BlockSize, 8, 2, 2, 1, 1);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const uint64_t set0A = TestAddr;
@@ -1696,7 +1696,7 @@ TEST(HnfCoherencyControllerTest,
     config.reqQueueEntries = 1;
     HnfSLCSF slcsf(BlockSize, 4, 2, 1, 1, 2, config);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const uint64_t victimAddr = TestAddr;
@@ -1800,7 +1800,7 @@ TEST(HnfCoherencyControllerTest, EverySupportedTransactionCompletes)
         SCOPED_TRACE(test.name);
         HnfSLCSF slcsf(BlockSize, 8, 4, 8, 4, 2);
         HnfCoherencyController cc(
-            BlockSize, BeatSize, 8, SnNode, false, 4);
+            BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
         cc.setSlcsf(&slcsf);
 
         const uint32_t requester = 0;
@@ -1889,7 +1889,7 @@ TEST(HnfCoherencyControllerTest, WriteDoesNotRetireBeforeUpdateResponse)
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     ASSERT_TRUE(cc.acceptLinkReq(
@@ -1927,7 +1927,7 @@ TEST(HnfCoherencyControllerTest, DeferredWriteRetiresTokenExactlyOnce)
     config.maxInflight = 1;
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8, config);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     ASSERT_TRUE(cc.acceptLinkReq(
@@ -2020,7 +2020,7 @@ TEST(HnfCoherencyControllerTest,
         SCOPED_TRACE(cases[i].name);
         HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8);
         HnfCoherencyController cc(
-            BlockSize, BeatSize, 8, SnNode, false, 4);
+            BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
         cc.setSlcsf(&slcsf);
 
         const auto oldData = lineData(0x20 + i);
@@ -2081,7 +2081,7 @@ TEST(HnfCoherencyControllerTest,
         config.replayPenalty = 3;
         HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8, config);
         HnfCoherencyController cc(
-            BlockSize, BeatSize, 8, SnNode, false, 4);
+            BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
         cc.setSlcsf(&slcsf);
 
         const uint64_t sequence = 8250 + i;
@@ -2172,7 +2172,7 @@ TEST(HnfCoherencyControllerTest,
         SCOPED_TRACE(cases[i].name);
         HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8);
         HnfCoherencyController cc(
-            BlockSize, BeatSize, 8, SnNode, false, 4);
+            BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
         cc.setSlcsf(&slcsf);
 
         const uint64_t sequence = 8300 + i;
@@ -2275,7 +2275,7 @@ TEST(HnfCoherencyControllerTest, EvictWaitsForRemoveSharerResponse)
     slcsf.commitRead(
         TestAddr, 4, PocqTxnKind::ReadShared, data, false);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     ASSERT_TRUE(cc.acceptLinkReq(
@@ -2312,7 +2312,7 @@ TEST(HnfCoherencyControllerTest, UpdateNoCreditEventuallyProgresses)
     slcsf.commitRead(
         TestAddr, 4, PocqTxnKind::ReadShared, data, false);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     ASSERT_TRUE(cc.acceptLinkReq(
@@ -2386,7 +2386,7 @@ TEST(HnfCoherencyControllerTest, EvictReplayRestartsFromFreshLookup)
     slcsf.commitRead(
         TestAddr, 4, PocqTxnKind::ReadShared, data, false);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     ASSERT_TRUE(cc.acceptLinkReq(
@@ -2436,7 +2436,7 @@ TEST(HnfCoherencyControllerTest, LookupNoCreditEventuallyProgresses)
     config.maxInflight = 1;
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8, config);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     RawReq blockerRaw{};
@@ -2489,7 +2489,7 @@ TEST(HnfCoherencyControllerTest, DrainDoesNotLoseIssuePendingIntent)
     config.maxInflight = 1;
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8, config);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     RawReq blockerRaw{};
@@ -2539,7 +2539,7 @@ TEST(HnfCoherencyControllerTest, DrainKeepsProtocolCompletionsEnabled)
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     ASSERT_TRUE(cc.acceptLinkReq(
@@ -2572,7 +2572,7 @@ TEST(HnfCoherencyControllerTest, WaitingLookupIsNotIssuedTwice)
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     ASSERT_TRUE(cc.acceptLinkReq(
@@ -2598,7 +2598,7 @@ TEST(HnfCoherencyControllerTest, LookupResponseIsConsumedInLaterCcCycle)
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const auto expectedData = lineData(0xf0);
@@ -2656,7 +2656,7 @@ TEST(HnfCoherencyControllerTest, ResponseConsumeWidthLimitsEachCcCycle)
     config.responseConsumeWidth = 1;
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8, config);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     ASSERT_TRUE(cc.acceptLinkReq(
@@ -2697,7 +2697,7 @@ TEST(HnfCoherencyControllerTest, ResponseConsumeWidthUsesConfiguredBudget)
     config.enableSetLock = true;
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8, config);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     ASSERT_TRUE(cc.acceptLinkReq(
@@ -2727,7 +2727,7 @@ TEST(HnfCoherencyControllerTest, MaintenanceResponseWaitsForSlcSfCommit)
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     slcsf.commitRead(TestAddr, 0, PocqTxnKind::ReadShared,
@@ -2779,7 +2779,7 @@ TEST(HnfCoherencyControllerTest,
     config.maxInflight = 1;
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8, config);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     slcsf.commitRead(TestAddr, 0, PocqTxnKind::ReadShared,
@@ -2843,7 +2843,7 @@ TEST(HnfCoherencyControllerTest,
     config.replayPenalty = 3;
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8, config);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     slcsf.commitRead(TestAddr, 0, PocqTxnKind::ReadShared,
@@ -2899,7 +2899,7 @@ TEST(HnfCoherencyControllerTest, ReadResponseWaitsForSlcSfCommit)
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const auto data = lineData(0x31);
@@ -2936,7 +2936,7 @@ TEST(HnfCoherencyControllerTest, ReadUpdateNoCreditRetriesWithoutDuplicate)
     config.maxInflight = 1;
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8, config);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const auto data = lineData(0x39);
@@ -3008,7 +3008,7 @@ TEST(HnfCoherencyControllerTest,
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const auto data = lineData(0x41);
@@ -3048,7 +3048,7 @@ TEST(HnfCoherencyControllerTest, FreshLookupAfterStaleReplayCommits)
     config.replayPenalty = 3;
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8, config);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const auto data = lineData(0x51);
@@ -3117,7 +3117,7 @@ TEST(HnfCoherencyControllerTest,
     config.replayPenalty = 1;
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8, config);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const auto data = lineData(0x61);
@@ -3161,7 +3161,7 @@ TEST(HnfCoherencyControllerTest, LookupReplayUsesSleepGraphAndDeadline)
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     ASSERT_TRUE(cc.acceptLinkReq(
@@ -3222,7 +3222,7 @@ TEST(HnfCoherencyControllerTest,
     config.replayPenalty = 100;
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8, config);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
 
     const auto data = lineData(0x71);
@@ -3281,7 +3281,7 @@ TEST(HnfCoherencyControllerTest, MismatchedLookupResponseIsRejected)
 {
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     cc.setSlcsf(&slcsf);
     ASSERT_TRUE(cc.acceptLinkReq(
         makeRead(0, 6001, 0, 96, 0x01), 0).accepted);
@@ -3313,7 +3313,7 @@ TEST(HnfCoherencyControllerTest,
      CheckpointContentIncludesControllerRequestIdentity)
 {
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     std::ostringstream checkpoint;
 
     ASSERT_NO_THROW(cc.serializeSlcsfIdentityState(checkpoint));
@@ -3328,7 +3328,7 @@ TEST(HnfCoherencyControllerTest,
 TEST_F(HnfCcCheckpointTest, RestorePreservesControllerRequestIdentity)
 {
     HnfCoherencyController original(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     std::ostringstream checkpoint;
     {
         Serializable::ScopedCheckpointSection section(checkpoint, "cc");
@@ -3343,7 +3343,7 @@ TEST_F(HnfCcCheckpointTest, RestorePreservesControllerRequestIdentity)
 
     HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
     HnfCoherencyController restored(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     CheckpointIn input(getDirName());
     {
         Serializable::ScopedCheckpointSection section(input, "cc");
@@ -3358,7 +3358,7 @@ TEST_F(HnfCcCheckpointTest, RestorePreservesControllerRequestIdentity)
 TEST_F(HnfCcCheckpointTest, ExhaustedControllerIdentitiesRoundTrip)
 {
     HnfCoherencyController original(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     std::ostringstream checkpoint;
     {
         Serializable::ScopedCheckpointSection section(checkpoint, "cc");
@@ -3390,7 +3390,7 @@ TEST_F(HnfCcCheckpointTest, ExhaustedControllerIdentitiesRoundTrip)
     simulateSerialization(contents);
 
     HnfCoherencyController restored(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     {
         CheckpointIn input(getDirName());
         Serializable::ScopedCheckpointSection section(input, "cc");
@@ -3411,7 +3411,7 @@ TEST_F(HnfCcCheckpointTest,
        RestoredExhaustedControllerAllocatorsFailBeforeReuse)
 {
     HnfCoherencyController original(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     std::ostringstream checkpoint;
     {
         Serializable::ScopedCheckpointSection section(checkpoint, "cc");
@@ -3431,7 +3431,7 @@ TEST_F(HnfCcCheckpointTest,
         simulateSerialization(contents);
 
         HnfCoherencyController restored(
-            BlockSize, BeatSize, 8, SnNode, false, 4);
+            BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
         {
             CheckpointIn input(getDirName());
             Serializable::ScopedCheckpointSection section(input, "cc");
@@ -3501,7 +3501,7 @@ TEST_F(HnfCcCheckpointTest,
 TEST_F(HnfCcCheckpointTest, RestoreRejectsInvalidControllerIdentityBounds)
 {
     HnfCoherencyController original(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     std::ostringstream checkpoint;
     {
         Serializable::ScopedCheckpointSection section(checkpoint, "cc");
@@ -3540,7 +3540,7 @@ TEST_F(HnfCcCheckpointTest, RestoreRejectsInvalidControllerIdentityBounds)
         simulateSerialization(contents);
 
         HnfCoherencyController restored(
-            BlockSize, BeatSize, 8, SnNode, false, 4);
+            BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
         EXPECT_ANY_THROW({
             CheckpointIn input(getDirName());
             Serializable::ScopedCheckpointSection section(input, "cc");
@@ -3552,7 +3552,7 @@ TEST_F(HnfCcCheckpointTest, RestoreRejectsInvalidControllerIdentityBounds)
 TEST_F(HnfCcCheckpointTest, RestoreRejectsIdentityRewindOverUsedController)
 {
     HnfCoherencyController cc(
-        BlockSize, BeatSize, 8, SnNode, false, 4);
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, /*mc_receipts_expected=*/false);
     std::ostringstream old_checkpoint;
     {
         Serializable::ScopedCheckpointSection section(old_checkpoint, "cc");
@@ -3591,6 +3591,175 @@ TEST_F(HnfCcCheckpointTest, RestoreRejectsIdentityRewindOverUsedController)
     ASSERT_NO_THROW(cc.serializeSlcsfIdentityState(current));
     EXPECT_NE(current.str().find("nextMcTransactionId=2\n"),
               std::string::npos);
+}
+
+
+// ---------------------------------------------------------------------------
+// ReadReceipt lifecycle regressions (review V2/V3).  These model an SN
+// whose ReadReceipts are visible to the HNF (mc_receipts_expected=true)
+// unless stated otherwise, and drive the public API only.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+
+// Drive one ReadNoSnp through MC issue and (optionally) its data beats.
+// Returns the MC transaction id the HNF allocated.
+uint32_t
+issueMcReadAndMaybeData(HnfCoherencyController& cc, HnfSLCSF& slcsf,
+                        Tick& tick, bool deliver_data)
+{
+    const unsigned requester = 1;
+    static uint32_t next_txn = 100;
+    const uint32_t rn_txn = next_txn++;
+    // ASSERT_* returns on failure and is only legal in void functions;
+    // this helper reports with EXPECT and lets the caller's ASSERTs guard.
+    EXPECT_TRUE(cc.acceptLinkReq(
+        makeRead(requester, rn_txn, 0, rn_txn + 10, 0x04), tick).accepted);
+    pumpLookup(cc, slcsf, 0, tick);
+    EXPECT_TRUE(cc.hasTxReq());
+    const auto out = cc.frontTxReq();
+    cc.popTxReq();
+    cc.notifyTxReqSent(out);
+    if (deliver_data) {
+        const auto data = lineData(rn_txn);
+        cc.acceptRxDat(makeCompData(out.req.txnid, 0, false, data));
+        EXPECT_TRUE(
+            cc.acceptRxDat(makeCompData(out.req.txnid, BeatSize, true, data)));
+        while (cc.hasTxDat())
+            cc.popTxDat();
+    }
+    return out.req.txnid;
+}
+
+} // namespace
+
+TEST(HnfReceiptLifecycleTest, DataThenReceiptReachesIdle)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, true);
+    cc.setSlcsf(&slcsf);
+    Tick tick = 0;
+    const uint32_t mc_txn = issueMcReadAndMaybeData(cc, slcsf, tick, true);
+    EXPECT_TRUE(cc.hasWork());      // receipt still owed
+    EXPECT_NO_THROW(cc.acceptRxRsp(makeRsp(SnNode, mc_txn, 0x08)));
+    EXPECT_FALSE(cc.hasWork());     // the owed event completed the work
+}
+
+TEST(HnfReceiptLifecycleTest, ReceiptThenDataReachesIdle)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, true);
+    cc.setSlcsf(&slcsf);
+    Tick tick = 0;
+    // Receipt first: consumes the live entry's receipt, data still owed.
+    const uint32_t mc_txn = issueMcReadAndMaybeData(cc, slcsf, tick, false);
+    EXPECT_NO_THROW(cc.acceptRxRsp(makeRsp(SnNode, mc_txn, 0x08)));
+    const auto data = lineData(0x42);
+    cc.acceptRxDat(makeCompData(mc_txn, 0, false, data));
+    ASSERT_TRUE(cc.acceptRxDat(makeCompData(mc_txn, BeatSize, true, data)));
+    while (cc.hasTxDat())
+        cc.popTxDat();
+    EXPECT_FALSE(cc.hasWork());     // no pending identity was created
+}
+
+TEST(HnfReceiptLifecycleTest, PendingBlocksCheckpointUntilReceipt)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, true);
+    cc.setSlcsf(&slcsf);
+    Tick tick = 0;
+    const uint32_t mc_txn = issueMcReadAndMaybeData(cc, slcsf, tick, true);
+    std::ostringstream blocked;
+    EXPECT_ANY_THROW(cc.serializeSlcsfIdentityState(blocked));
+    EXPECT_NO_THROW(cc.acceptRxRsp(makeRsp(SnNode, mc_txn, 0x08)));
+    std::ostringstream open;
+    EXPECT_NO_THROW(cc.serializeSlcsfIdentityState(open));
+    EXPECT_FALSE(cc.hasWork());
+}
+
+TEST(HnfReceiptLifecycleTest, AdapterOwnerIsIdleAfterDataAlone)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, false);
+    cc.setSlcsf(&slcsf);
+    Tick tick = 0;
+    issueMcReadAndMaybeData(cc, slcsf, tick, true);
+    EXPECT_FALSE(cc.hasWork());     // adapter consumed the receipt
+    std::ostringstream checkpoint;
+    EXPECT_NO_THROW(cc.serializeSlcsfIdentityState(checkpoint));
+}
+
+TEST(HnfReceiptLifecycleTest, LateReceiptAfterManyCompletedReads)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, true);
+    cc.setSlcsf(&slcsf);
+    Tick tick = 0;
+    uint32_t first_txn = 0;
+    for (unsigned i = 0; i < 65; ++i) {
+        const uint32_t txn = issueMcReadAndMaybeData(cc, slcsf, tick, true);
+        if (i == 0)
+            first_txn = txn;
+        EXPECT_TRUE(cc.hasWork());  // still owes this receipt
+    }
+    EXPECT_NO_THROW(cc.acceptRxRsp(makeRsp(SnNode, first_txn, 0x08)));
+}
+
+TEST(HnfReceiptLifecycleTest, DuplicateReceiptAfterDataFails)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 4, true, true);
+    cc.setSlcsf(&slcsf);
+    Tick tick = 0;
+    const uint32_t mc_txn = issueMcReadAndMaybeData(cc, slcsf, tick, false);
+    EXPECT_NO_THROW(cc.acceptRxRsp(makeRsp(SnNode, mc_txn, 0x08)));  // 1st
+    const auto data = lineData(0x52);
+    cc.acceptRxDat(makeCompData(mc_txn, 0, false, data));
+    ASSERT_TRUE(cc.acceptRxDat(makeCompData(mc_txn, BeatSize, true, data)));
+    while (cc.hasTxDat())
+        cc.popTxDat();
+    EXPECT_ANY_THROW(cc.acceptRxRsp(makeRsp(SnNode, mc_txn, 0x08)));  // dup
+}
+
+TEST(HnfCoherencyControllerTest, LateWriteCompFollowsCommittedPayload)
+{
+    HnfSLCSF slcsf(BlockSize, 4, 2, 4, 2, 8);
+    HnfCoherencyController cc(
+        BlockSize, BeatSize, 8, SnNode, false, 1, true, false, true);
+    cc.setSlcsf(&slcsf);
+    const auto oldData = lineData(0x20);
+    const auto newData = lineData(0xa0);
+    slcsf.commitRead(TestAddr, 0, PocqTxnKind::ReadOnce,
+                     oldData, false, HnfNode);
+    ASSERT_TRUE(cc.acceptLinkReq(makeRead(0, 1, 0, 42, 0x59), 0).accepted);
+    ASSERT_TRUE(cc.hasTxRsp());
+    EXPECT_EQ(cc.frontTxRsp().rsp.opcode, 0x06);
+    cc.popTxRsp();
+    EXPECT_FALSE(cc.hasTxRsp());
+    EXPECT_FALSE(cc.acceptRxDat(makeWriteData(0, 42, 0, false, 0x03, newData)));
+    EXPECT_FALSE(cc.hasTxRsp());
+    // Reverse beat order is covered separately by the existing assembler tests.
+    EXPECT_FALSE(cc.acceptRxDat(makeWriteData(0, 42, BeatSize, true, 0x03, newData)));
+    EXPECT_FALSE(cc.hasTxRsp());
+    Tick tick = 100;
+    pumpLookup(cc, slcsf, 0, tick);
+    EXPECT_FALSE(cc.hasTxRsp());
+    pumpUpdate(cc, slcsf, 0, tick);
+    ASSERT_TRUE(cc.hasTxRsp());
+    EXPECT_EQ(cc.frontTxRsp().rsp.opcode, 0x04);
+    EXPECT_EQ(cc.frontTxRsp().rsp.txnid, 42);
+    EXPECT_TRUE(cc.frontTxRsp().retire.has_value());
+    EXPECT_FALSE(cc.hasDeferredRetire());
+    EXPECT_EQ(lookup(slcsf, 0, PocqTxnKind::ReadOnce).data, newData);
+    cc.popTxRsp();
+    EXPECT_FALSE(cc.hasTxRsp());
 }
 
 } // namespace gem5::Chi

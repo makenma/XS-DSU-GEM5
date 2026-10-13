@@ -2258,6 +2258,12 @@ TLB::translate(const RequestPtr &req, ThreadContext *tc,
         if (fault != NoFault)
             return fault;
 
+        // Process::map(cacheable=false) records this attribute in the SE
+        // page table; the generic translation only provides the address.
+        const auto *pte = p->pTable->lookup(req->getVaddr());
+        if (pte->flags & EmulationPageTable::Uncacheable)
+            req->setFlags(Request::UNCACHEABLE | Request::STRICT_ORDER);
+
         return NoFault;
     }
 }

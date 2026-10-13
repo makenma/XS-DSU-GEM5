@@ -271,6 +271,7 @@ class Cache2ChiBridge : public ClockedObject, public ruby::Consumer
 
     /** ============ Ports ============ */
     CacheSidePort cachePort;
+    bool memReqBlocked = false;
 
     // CHI side（你已经在 CHI 文件夹里写了）
     ChiCommonPort chiPort;

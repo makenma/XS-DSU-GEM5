@@ -42,6 +42,15 @@ typings
 /*debug*
 /*build*
 /*test*
+!/tests/
+/tests/*
+!/tests/gem5/
+/tests/gem5/*
+!/tests/gem5/dma/
+!/tests/test-progs/
+/tests/test-progs/*
+!/tests/test-progs/simple_dma/
+/tests/test-progs/simple_dma/simple_dma
 /*txt*
 /ext/dramsim3/DRAMsim3/
 .cache

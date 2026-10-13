@@ -1,0 +1,16 @@
+Global frequency set at 1000000000000 ticks per second
+warn: No dot file generated. Please install pydot to generate the dot file and pdf.
+build/RISCV/base/statistics.hh:281: warn: One of the stats is a legacy stat. Legacy stat is a stat that does not belong to any statistics::Group. Legacy stat is deprecated.
+build/RISCV/mem/coherent_xbar.cc:172: warn: CoherentXBar system.membus has no snooping ports attached!
+gem5 Simulator System.  https://www.gem5.org
+gem5 is copyrighted software; use the --copyright option for details.
+
+gem5 version [DEVELOP-FOR-22.1]
+gem5 compiled Sep 30 2026 14:54:15
+gem5 started Sep 30 2026 14:55:21
+gem5 executing on open06, pid 3281
+command line: /nfs/home/majunhong/project/chiron/XS-DSU-GEM5/build/RISCV/gem5.opt --outdir=/nfs/home/majunhong/project/chiron/XS-DSU-GEM5/results/dma-baseline/regression/directed-io --debug-flags=DmaPath --debug-file=path.trace tests/gem5/dma/directed.py --io
+
+info: Standard input is not a terminal, disabling listeners.
+build/RISCV/sim/simulate.cc:194: info: Entering event queue @ 0.  Starting simulation...
+build/RISCV/mem/cache/CHI/DmaPathTester.cc:87: info: PASS directed MMIO reordered=0

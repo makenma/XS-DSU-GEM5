@@ -568,11 +568,13 @@ Chi2ClassicMemBridge::sendPendingDat()
                 dat.txnid, dat.dataid,
                 static_cast<unsigned>(dat.data.size()), dat.last,
                 dat.srcid, dat.tgtid);
+        const bool last = dat.last;
+        const uint32_t txnid = dat.txnid;
         txDatQ.pop_front();
-        if (dat.last) {
+        if (last) {
             panic_if(*next != TxnEntry::Phase::Complete,
                      "%s retained accepted read response txnid=%u\n",
-                     name(), dat.txnid);
+                     name(), txnid);
             txns.erase(txn);
         }
     }

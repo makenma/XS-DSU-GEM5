@@ -1,0 +1,17 @@
+{
+  "tick": 372808000,
+  "cause": "exiting with last active thread context",
+  "exit_code": 0,
+  "mode": "dma_copy",
+  "length": 129,
+  "chunk_bytes": 33,
+  "parallel_chunks": 1,
+  "classification": "software adapters; not RTL cycle accurate",
+  "cacheable_buffers": false,
+  "cpu": "timing",
+  "rni_idle": true,
+  "hni_idle": true,
+  "rnf_uncached_idle": true,
+  "dma_idle": true,
+  "hnf_idle": true
+}

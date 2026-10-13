@@ -13,7 +13,8 @@ HomeNodeFull::HomeNodeFull(const HomeNodeFullParams& p)
     Consumer(this),
     slcsf(p.slcsf),
     cc(p.block_size, p.data_beat_bytes, p.num_poc_entries, p.sn_node_id,
-       p.direct_sn_fake_data, p.rnf_slices, p.enable_retry),
+       p.direct_sn_fake_data, p.rnf_slices, p.enable_retry,
+       p.mc_receipts_expected, p.late_write_comp),
     linklayer(this, p.block_size, p.data_beat_bytes, p.num_poc_entries,
               p.enable_retry),
     rxport(p.name + ".rxport", static_cast<ruby::Consumer*>(this),/*PortID*/ 0)
@@ -26,6 +27,8 @@ HomeNodeFull::HomeNodeFull(const HomeNodeFullParams& p)
             p.enable_retry);
     linklayer.setRxPort(&rxport);
     cc.setSlcsf(&slcsf->service());
+    cc.setReverseCompDataForTest(p.test_reverse_comp_data,
+                                p.test_reverse_comp_data_source);
     linklayer.setCc(&cc);
     slcsf->setFutureWakeupCallback([this](Tick earliest) {
         ruby::Consumer::scheduleEventAbsolute(earliest);

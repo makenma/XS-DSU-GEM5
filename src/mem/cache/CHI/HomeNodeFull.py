@@ -1,4 +1,5 @@
 from m5.params import *
+from m5.SimObject import PyBindMethod
 from m5.proxy import *
 
 # Inherit parameters (x/y/port/device/node_type) from BasicChiComponent.
@@ -12,6 +13,7 @@ class HomeNodeFull(BasicChiComponent):
     type = "HomeNodeFull"
     cxx_header = "mem/cache/CHI/HomeNodeFull.hh"
     cxx_class = "gem5::Chi::HomeNodeFull"
+    cxx_exports = [PyBindMethod("hasLinkWork")]
 
     rxport = SlavePort("CHI RX port")
     slcsf = Param.SlcSnoopFilter(
@@ -21,6 +23,18 @@ class HomeNodeFull(BasicChiComponent):
     data_beat_bytes = Param.UInt32(32, "Bytes carried by one CHI DAT beat")
     num_poc_entries = Param.UInt32(32, "Minimal HNF transaction entries")
     enable_retry = Param.Bool(True, "Enable RetryAck/PCrdGrant flow")
+    late_write_comp = Param.Bool(
+        False, "Use DBIDResp then Comp after committed SLC write")
+    test_reverse_comp_data = Param.Bool(
+        False, "Directed-test hook: reverse legal CompData beats within a transaction")
+    test_reverse_comp_data_source = Param.UInt32(
+        0xffffffff, "Directed-test requester to reverse; all by default")
+    mc_receipts_expected = Param.Bool(
+        False,
+        "Endpoint contract: whether ReadReceipts for downstream MC reads"
+        " are visible to this HNF (receipt_owner=hnf). When False the"
+        " boundary adapter consumes them and no receipt identity is"
+        " retained after data completion.")
     sn_node_id = Param.UInt32(0, "Default SN node id used for HNF TXREQ")
     direct_sn_fake_data = Param.Bool(
         True,

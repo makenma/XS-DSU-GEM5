@@ -1,0 +1,13 @@
+[
+  "/nfs/home/majunhong/project/chiron/XS-DSU-GEM5/build/RISCV/gem5.opt",
+  "--outdir=/nfs/home/majunhong/project/chiron/XS-DSU-GEM5/results/dma-baseline/regression/mixed-p4",
+  "configs/example/chi_dma.py",
+  "--mode",
+  "mixed",
+  "--length",
+  "64",
+  "--iterations",
+  "16",
+  "--parallel-chunks",
+  "4"
+]

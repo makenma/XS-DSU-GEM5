@@ -53,6 +53,8 @@ class Decoder : public InstDecoder
     //The extended machine instruction being generated
     ExtMachInst emi;
     uint32_t machInst;
+    // TimingSimpleCPU supplies aligned fetch words; O3 starts at the PC.
+    bool partialInst = false;
 
     bool vtypeReady = true;
     VTYPE machVtype;

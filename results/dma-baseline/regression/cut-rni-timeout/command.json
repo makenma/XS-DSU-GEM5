@@ -1,0 +1,9 @@
+[
+  "/nfs/home/majunhong/project/chiron/XS-DSU-GEM5/build/RISCV/gem5.opt",
+  "--outdir=/nfs/home/majunhong/project/chiron/XS-DSU-GEM5/results/dma-baseline/regression/cut-rni-timeout",
+  "configs/example/chi_dma.py",
+  "--cut-path",
+  "rni",
+  "--poll-limit",
+  "4"
+]

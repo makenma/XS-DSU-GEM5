@@ -46,6 +46,7 @@ void Decoder::reset()
     emi = 0;
     instDone = false;
     outOfBytes = true;
+    partialInst = false;
 }
 
 void
@@ -57,14 +58,26 @@ Decoder::moreBytes(const PCStateBase &pc, Addr fetchPC)
     DPRINTF(Decode, "Requesting bytes 0x%08x from address %#x\n", inst,
         fetchPC);
 
-    // We assume fetchPC is always the actual instruction address,
-    // so we can directly work with the instruction
-    emi.instBits = inst;
+    if (partialInst) {
+        emi.instBits |= (inst & 0xffff) << 16;
+        partialInst = false;
+    } else {
+        const unsigned offset = pc.instAddr() - fetchPC;
+        panic_if(offset != 0 && offset != 2,
+                 "RISC-V decoder fetch word does not contain instruction");
+        emi.instBits = inst >> (offset * 8);
+        if (offset == 2 && !compressed(emi)) {
+            partialInst = true;
+            instDone = false;
+            outOfBytes = true;
+            return;
+        }
+    }
 
     // For compressed instruction, we only need the lower 16 bits
-    if (compressed(inst)) {
+    if (compressed(emi)) {
         constexpr size_t mid_bit = sizeof(machInst) * 4 - 1; // 15 for 32-bit machInst
-        emi.instBits = bits(inst, mid_bit, 0);
+        emi.instBits = bits(emi.instBits, mid_bit, 0);
     }
 
     // For any instruction (compressed or not), we've received enough data
@@ -72,7 +85,7 @@ Decoder::moreBytes(const PCStateBase &pc, Addr fetchPC)
 
     // For 32-bit instructions, we still need all 4 bytes
     // For 16-bit instructions, we already have enough bytes
-    outOfBytes = !compressed(emi); // not used !!!
+    outOfBytes = true;
 }
 
 StaticInstPtr

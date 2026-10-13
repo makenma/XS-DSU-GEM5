@@ -1,0 +1,21 @@
+[
+  "/nfs/home/majunhong/project/chiron/XS-DSU-GEM5/build/RISCV/gem5.opt",
+  "--outdir=/nfs/home/majunhong/project/chiron/XS-DSU-GEM5/results/dma-baseline/regression/repeat-stalls",
+  "--debug-flags=DmaPath",
+  "--debug-file=path.trace",
+  "configs/example/chi_dma.py",
+  "--length",
+  "129",
+  "--iterations",
+  "3",
+  "--parallel-chunks",
+  "4",
+  "--chunk-bytes",
+  "31",
+  "--rni-entries",
+  "2",
+  "--hnf-entries",
+  "8",
+  "--stalls",
+  "--reverse-data"
+]

@@ -1,0 +1,12 @@
+make: Entering directory '/nfs/home/majunhong/project/chiron/XS-DSU-GEM5/tests/test-progs/simple_dma'
+make: 'simple_dma' is up to date.
+make: Leaving directory '/nfs/home/majunhong/project/chiron/XS-DSU-GEM5/tests/test-progs/simple_dma'
+RUN smoke64
+RUN directed-rni
+PASS directed-rni
+RUN repeat-stalls
+PASS smoke64
+RUN dma-error
+PASS repeat-stalls
+PASS dma-error
+PASS 4 cases; evidence: /nfs/home/majunhong/project/chiron/XS-DSU-GEM5/results/dma-baseline/regression

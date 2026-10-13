@@ -1,0 +1,11 @@
+[
+  "/nfs/home/majunhong/project/chiron/XS-DSU-GEM5/build/RISCV/gem5.opt",
+  "--outdir=/nfs/home/majunhong/project/chiron/XS-DSU-GEM5/results/dma-baseline/regression/boundary-1-p4",
+  "configs/example/chi_dma.py",
+  "--length",
+  "1",
+  "--parallel-chunks",
+  "4",
+  "--chunk-bytes",
+  "33"
+]

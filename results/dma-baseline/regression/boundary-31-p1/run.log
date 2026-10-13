@@ -1,0 +1,36 @@
+build/RISCV/base/loader/image_file_data.cc:104: info: Loading file /nfs/home/majunhong/project/chiron/XS-DSU-GEM5/tests/test-progs/simple_dma/simple_dma
+build/RISCV/base/loader/image_file_data.cc:124: info: File size is 564792 bytes
+build/RISCV/base/loader/image_file_data.cc:130: info: First 4 bytes are 0x7f 0x45 0x4c 0x46
+build/RISCV/base/loader/image_file_data.cc:132: info: Mapped start address is ELF, 0x73d1f9776000
+Global frequency set at 1000000000000 ticks per second
+warn: No dot file generated. Please install pydot to generate the dot file and pdf.
+build/RISCV/base/loader/image_file_data.cc:104: info: Loading file /nfs/home/majunhong/project/chiron/XS-DSU-GEM5/tests/test-progs/simple_dma/simple_dma
+build/RISCV/base/loader/image_file_data.cc:124: info: File size is 564792 bytes
+build/RISCV/base/loader/image_file_data.cc:130: info: First 4 bytes are 0x7f 0x45 0x4c 0x46
+build/RISCV/base/loader/image_file_data.cc:132: info: Mapped start address is ELF, 0x73d1d9776000
+build/RISCV/cpu/base.cc:243: warn: Difftest is disabled
+build/RISCV/base/remote_gdb.cc:381: warn: Sockets disabled, not accepting gdb connections
+build/RISCV/mem/coherent_xbar.cc:172: warn: CoherentXBar system.membus has no snooping ports attached!
+gem5 Simulator System.  https://www.gem5.org
+gem5 is copyrighted software; use the --copyright option for details.
+
+gem5 version [DEVELOP-FOR-22.1]
+gem5 compiled Sep 30 2026 14:54:15
+gem5 started Sep 30 2026 14:55:32
+gem5 executing on open06, pid 3288
+command line: /nfs/home/majunhong/project/chiron/XS-DSU-GEM5/build/RISCV/gem5.opt --outdir=/nfs/home/majunhong/project/chiron/XS-DSU-GEM5/results/dma-baseline/regression/boundary-31-p1 configs/example/chi_dma.py --length 31 --parallel-chunks 1 --chunk-bytes 33
+
+info: Standard input is not a terminal, disabling listeners.
+Attach 1 decoders to thread with addr: <orphan System>.cpu.decoder
+build/RISCV/sim/simulate.cc:194: info: Entering event queue @ 0.  Starting simulation...
+build/RISCV/sim/syscall_emul.cc:85: warn: ignoring syscall set_robust_list(...)
+      (further warnings will be suppressed)
+build/RISCV/sim/syscall_emul.hh:1015: warn: readlink() called on '/proc/self/exe' may yield unexpected results in various settings.
+      Returning '/nfs/home/majunhong/project/chiron/XS-DSU-GEM5/tests/test-progs/simple_dma/simple_dma'
+build/RISCV/sim/mem_state.cc:443: info: Increasing stack size by one page.
+build/RISCV/sim/syscall_emul.cc:74: warn: ignoring syscall mprotect(...)
+PASS length=31 src_offset=3 dst_offset=29 cycles=341
+BENCH,dma_copy,31,1,341
+PASS mode=dma_copy timeouts=0
+build/RISCV/sim/simulate.cc:194: info: Entering event queue @ 360929000.  Starting simulation...
+DMA_RESULT {"tick": 360929000, "cause": "exiting with last active thread context", "exit_code": 0, "mode": "dma_copy", "length": 31, "chunk_bytes": 33, "parallel_chunks": 1, "classification": "software adapters; not RTL cycle accurate", "cacheable_buffers": false, "cpu": "timing", "rni_idle": true, "hni_idle": true, "rnf_uncached_idle": true, "dma_idle": true, "hnf_idle": true}

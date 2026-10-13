@@ -2,6 +2,11 @@
 
 Import("*")
 
+# RawDat/RawRsp grew ABI v2 metadata members; GCC's -Wmaybe-uninitialized
+# mis-fires on std::variant move construction over them (every member has
+# a default initializer).  Silence it for this directory only.
+env.Append(CCFLAGS=["-Wno-maybe-uninitialized"])
+
 
 SimObject('Cache2ChiBridge.py',sim_objects=['Cache2ChiBridge'])
 SimObject('Chi2ClassicMemBridge.py',sim_objects=['Chi2ClassicMemBridge'])
@@ -101,3 +106,13 @@ DebugFlag('HnfCC')
 DebugFlag('HnfDirtyVictimE2E')
 DebugFlag('HnfSLCSF')
 DebugFlag('SlcSnoopFilter')
+
+SimObject('RniDmaAdapter.py', sim_objects=['RniDmaAdapter'])
+SimObject('HniIoAdapter.py', sim_objects=['HniIoAdapter'])
+Source('RniDmaAdapter.cc')
+Source('HniIoAdapter.cc')
+DebugFlag('DmaPath')
+SimObject('DmaTimingStall.py', sim_objects=['DmaTimingStall'])
+Source('DmaTimingStall.cc')
+SimObject('DmaPathTester.py', sim_objects=['DmaPathTester'])
+Source('DmaPathTester.cc')

@@ -1,0 +1,17 @@
+NotImplementedError: RTL HNI/RNI requires BFM and CHI proxies
+
+At:
+  configs/example/chi_dma.py(16): build_dma_path
+  configs/example/chi_dma.py(143): main
+  configs/example/chi_dma.py(237): <module>
+  build/RISCV/python/m5/main.py(433): main
+gem5 Simulator System.  https://www.gem5.org
+gem5 is copyrighted software; use the --copyright option for details.
+
+gem5 version [DEVELOP-FOR-22.1]
+gem5 compiled Sep 30 2026 14:54:15
+gem5 started Sep 30 2026 14:56:06
+gem5 executing on open06, pid 3313
+command line: /nfs/home/majunhong/project/chiron/XS-DSU-GEM5/build/RISCV/gem5.opt --outdir=/nfs/home/majunhong/project/chiron/XS-DSU-GEM5/results/dma-baseline/regression/rtl-unimplemented configs/example/chi_dma.py --backend rtl
+
+info: Standard input is not a terminal, disabling listeners.

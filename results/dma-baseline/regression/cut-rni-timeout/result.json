@@ -1,0 +1,12 @@
+{
+  "tick": 340480000,
+  "cause": "exiting with last active thread context",
+  "exit_code": 1,
+  "mode": "dma_copy",
+  "length": 64,
+  "chunk_bytes": 64,
+  "parallel_chunks": 1,
+  "classification": "software adapters; not RTL cycle accurate",
+  "cacheable_buffers": false,
+  "cpu": "timing"
+}

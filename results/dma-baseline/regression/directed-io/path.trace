@@ -1,0 +1,71 @@
+   1000: system.test_adapter: PACKET parent=1 addr=0x40000030 bytes=4 io=1 write=1
+   2000: system.test_adapter: REQ parent=1 child=1 opcode=0x5a addr=0x40000030
+  12000: system.hni: HNI_RECV seq=1 src=8 txn=1 addr=0x40000030 bytes=4 write=1
+  60000: system.dma: PIO job=0 addr=0x40000030 bytes=4 write=1 status=0
+  60000: system.hni: PIO_ACCEPT seq=1 src=8 txn=1
+  80000: system.test_adapter: CHI_DONE parent=1 child=1 write=1
+ 131000: system.test_adapter: RESPONSE parent=1 elapsed=130000
+ 132000: system.test_adapter: PACKET parent=2 addr=0x40000034 bytes=4 io=1 write=1
+ 133000: system.test_adapter: REQ parent=2 child=2 opcode=0x5a addr=0x40000034
+ 143000: system.hni: HNI_RECV seq=2 src=8 txn=2 addr=0x40000034 bytes=4 write=1
+ 191000: system.dma: PIO job=0 addr=0x40000034 bytes=4 write=1 status=0
+ 191000: system.hni: PIO_ACCEPT seq=2 src=8 txn=2
+ 211000: system.test_adapter: CHI_DONE parent=2 child=2 write=1
+ 262000: system.test_adapter: RESPONSE parent=2 elapsed=130000
+ 263000: system.test_adapter: PACKET parent=3 addr=0x40000030 bytes=8 io=1 write=0
+ 264000: system.test_adapter: REQ parent=3 child=3 opcode=0x4 addr=0x40000030
+ 274000: system.hni: HNI_RECV seq=3 src=8 txn=3 addr=0x40000030 bytes=8 write=0
+ 305000: system.dma: PIO job=0 addr=0x40000030 bytes=8 write=0 status=0
+ 305000: system.hni: PIO_ACCEPT seq=3 src=8 txn=3
+ 324000: system.test_adapter: DAT parent=3 child=3 offset=0 bytes=8
+ 324000: system.test_adapter: CHI_DONE parent=3 child=3 write=0
+ 375000: system.test_adapter: RESPONSE parent=3 elapsed=112000
+ 376000: system.test_adapter: PACKET parent=4 addr=0x40000030 bytes=1 io=1 write=1
+ 377000: system.test_adapter: REQ parent=4 child=4 opcode=0x5a addr=0x40000030
+ 387000: system.hni: HNI_RECV seq=4 src=8 txn=4 addr=0x40000030 bytes=1 write=1
+ 435000: system.hni: PIO_ACCEPT seq=4 src=8 txn=4
+ 455000: system.test_adapter: CHI_DONE parent=4 child=4 write=1
+ 506000: system.test_adapter: RESPONSE parent=4 elapsed=130000
+ 507000: system.test_adapter: PACKET parent=5 addr=0x4000002c bytes=4 io=1 write=0
+ 508000: system.test_adapter: REQ parent=5 child=5 opcode=0x4 addr=0x4000002c
+ 518000: system.hni: HNI_RECV seq=5 src=8 txn=5 addr=0x4000002c bytes=4 write=0
+ 549000: system.hni: PIO_ACCEPT seq=5 src=8 txn=5
+ 568000: system.test_adapter: DAT parent=5 child=5 offset=0 bytes=4
+ 568000: system.test_adapter: CHI_DONE parent=5 child=5 write=0
+ 619000: system.test_adapter: RESPONSE parent=5 elapsed=112000
+ 620000: system.test_adapter: PACKET parent=6 addr=0x40000010 bytes=8 io=1 write=1
+ 621000: system.test_adapter: REQ parent=6 child=6 opcode=0x5a addr=0x40000010
+ 631000: system.hni: HNI_RECV seq=6 src=8 txn=6 addr=0x40000010 bytes=8 write=1
+ 679000: system.dma: PIO job=0 addr=0x40000010 bytes=8 write=1 status=4
+ 679000: system.hni: PIO_ACCEPT seq=6 src=8 txn=6
+ 699000: system.test_adapter: CHI_DONE parent=6 child=6 write=1
+ 750000: system.test_adapter: RESPONSE parent=6 elapsed=130000
+ 751000: system.test_adapter: PACKET parent=7 addr=0x40000018 bytes=4 io=1 write=1
+ 752000: system.test_adapter: REQ parent=7 child=7 opcode=0x5a addr=0x40000018
+ 762000: system.hni: HNI_RECV seq=7 src=8 txn=7 addr=0x40000018 bytes=4 write=1
+ 810000: system.dma: PIO job=1 addr=0x40000018 bytes=4 write=1 status=2
+ 810000: system.hni: PIO_ACCEPT seq=7 src=8 txn=7
+ 830000: system.test_adapter: CHI_DONE parent=7 child=7 write=1
+ 881000: system.test_adapter: RESPONSE parent=7 elapsed=130000
+ 882000: system.test_adapter: PACKET parent=8 addr=0x4000001c bytes=4 io=1 write=0
+ 883000: system.test_adapter: REQ parent=8 child=8 opcode=0x4 addr=0x4000001c
+ 893000: system.hni: HNI_RECV seq=8 src=8 txn=8 addr=0x4000001c bytes=4 write=0
+ 924000: system.dma: PIO job=1 addr=0x4000001c bytes=4 write=0 status=2
+ 924000: system.hni: PIO_ACCEPT seq=8 src=8 txn=8
+ 943000: system.test_adapter: DAT parent=8 child=8 offset=0 bytes=4
+ 943000: system.test_adapter: CHI_DONE parent=8 child=8 write=0
+ 994000: system.test_adapter: RESPONSE parent=8 elapsed=112000
+ 995000: system.test_adapter: PACKET parent=9 addr=0x40000020 bytes=8 io=1 write=0
+ 996000: system.test_adapter: REQ parent=9 child=9 opcode=0x4 addr=0x40000020
+1006000: system.hni: HNI_RECV seq=9 src=8 txn=9 addr=0x40000020 bytes=8 write=0
+1037000: system.dma: PIO job=1 addr=0x40000020 bytes=8 write=0 status=2
+1037000: system.hni: PIO_ACCEPT seq=9 src=8 txn=9
+1056000: system.test_adapter: DAT parent=9 child=9 offset=0 bytes=8
+1056000: system.test_adapter: CHI_DONE parent=9 child=9 write=0
+1107000: system.test_adapter: RESPONSE parent=9 elapsed=112000
+1108000: system.test_adapter: PACKET parent=10 addr=0x40000018 bytes=4 io=1 write=1
+1109000: system.test_adapter: REQ parent=10 child=10 opcode=0x5a addr=0x40000018
+1119000: system.hni: HNI_RECV seq=10 src=8 txn=10 addr=0x40000018 bytes=4 write=1
+1167000: system.hni: PIO_ACCEPT seq=10 src=8 txn=10
+1187000: system.test_adapter: CHI_DONE parent=10 child=10 write=1
+1238000: system.test_adapter: RESPONSE parent=10 elapsed=130000

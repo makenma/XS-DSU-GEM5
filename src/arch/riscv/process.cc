@@ -101,8 +101,15 @@ RiscvProcess64::initState()
     Process::initState();
 
     argsInit<uint64_t>(PageBytes);
-    for (ContextID ctx: contextIds)
-        system->threads[ctx]->setMiscRegNoEffect(MISCREG_PRV, PRV_U);
+    for (ContextID ctx: contextIds) {
+        auto *tc = system->threads[ctx];
+        tc->setMiscRegNoEffect(MISCREG_PRV, PRV_U);
+        // SE stands in for the OS delegation of simulated cycle/instret
+        // counters. TIME is deliberately not delegated: this fork's TIME
+        // implementation does not provide a simulated clock.
+        tc->setMiscRegNoEffect(MISCREG_MCOUNTEREN, 0x5);
+        tc->setMiscRegNoEffect(MISCREG_SCOUNTEREN, 0x5);
+    }
 }
 
 void
@@ -114,6 +121,8 @@ RiscvProcess32::initState()
     for (ContextID ctx: contextIds) {
         auto *tc = system->threads[ctx];
         tc->setMiscRegNoEffect(MISCREG_PRV, PRV_U);
+        tc->setMiscRegNoEffect(MISCREG_MCOUNTEREN, 0x5);
+        tc->setMiscRegNoEffect(MISCREG_SCOUNTEREN, 0x5);
         PCState pc = tc->pcState().as<PCState>();
         pc.rv32(true);
         tc->pcState(pc);

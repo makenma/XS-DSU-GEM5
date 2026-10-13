@@ -1,0 +1,872 @@
+   1000: system.test_adapter: PACKET parent=1 addr=0x10000000 bytes=256 io=0 write=1
+   1000: system.test_adapter: PACKET parent=2 addr=0x10000100 bytes=256 io=0 write=1
+   2000: system.test_adapter: REQ parent=1 child=1 opcode=0x59 addr=0x10000000
+   2000: system.test_adapter: REQ parent=2 child=2 opcode=0x59 addr=0x10000100
+  60000: global: HNF_COMP src=8 txn=1 addr=0x10000000
+  72000: system.test_adapter: CHI_DONE parent=1 child=1 write=1
+  73000: system.test_adapter: REQ parent=1 child=3 opcode=0x59 addr=0x10000040
+ 132000: global: HNF_COMP src=8 txn=2 addr=0x10000100
+ 144000: system.test_adapter: CHI_DONE parent=2 child=2 write=1
+ 145000: system.test_adapter: REQ parent=2 child=4 opcode=0x59 addr=0x10000140
+ 204000: global: HNF_COMP src=8 txn=3 addr=0x10000040
+ 216000: system.test_adapter: CHI_DONE parent=1 child=3 write=1
+ 217000: system.test_adapter: REQ parent=1 child=5 opcode=0x59 addr=0x10000080
+ 276000: global: HNF_COMP src=8 txn=4 addr=0x10000140
+ 288000: system.test_adapter: CHI_DONE parent=2 child=4 write=1
+ 289000: system.test_adapter: REQ parent=2 child=6 opcode=0x59 addr=0x10000180
+ 348000: global: HNF_COMP src=8 txn=5 addr=0x10000080
+ 360000: system.test_adapter: CHI_DONE parent=1 child=5 write=1
+ 361000: system.test_adapter: REQ parent=1 child=7 opcode=0x59 addr=0x100000c0
+ 420000: global: HNF_COMP src=8 txn=6 addr=0x10000180
+ 432000: system.test_adapter: CHI_DONE parent=2 child=6 write=1
+ 433000: system.test_adapter: REQ parent=2 child=8 opcode=0x59 addr=0x100001c0
+ 492000: global: HNF_COMP src=8 txn=7 addr=0x100000c0
+ 504000: system.test_adapter: CHI_DONE parent=1 child=7 write=1
+ 555000: system.test_adapter: RESPONSE parent=1 elapsed=554000
+ 556000: system.test_adapter: PACKET parent=3 addr=0x10000200 bytes=256 io=0 write=1
+ 557000: system.test_adapter: REQ parent=3 child=9 opcode=0x59 addr=0x10000200
+ 564000: global: HNF_COMP src=8 txn=8 addr=0x100001c0
+ 576000: system.test_adapter: CHI_DONE parent=2 child=8 write=1
+ 616000: global: HNF_COMP src=8 txn=9 addr=0x10000200
+ 627000: system.test_adapter: RESPONSE parent=2 elapsed=626000
+ 628000: system.test_adapter: CHI_DONE parent=3 child=9 write=1
+ 628000: system.test_adapter: PACKET parent=4 addr=0x10000300 bytes=256 io=0 write=1
+ 629000: system.test_adapter: REQ parent=3 child=10 opcode=0x59 addr=0x10000240
+ 629000: system.test_adapter: REQ parent=4 child=11 opcode=0x59 addr=0x10000300
+ 687000: global: HNF_COMP src=8 txn=10 addr=0x10000240
+ 699000: system.test_adapter: CHI_DONE parent=3 child=10 write=1
+ 700000: system.test_adapter: REQ parent=3 child=12 opcode=0x59 addr=0x10000280
+ 759000: global: HNF_COMP src=8 txn=11 addr=0x10000300
+ 771000: system.test_adapter: CHI_DONE parent=4 child=11 write=1
+ 772000: system.test_adapter: REQ parent=4 child=13 opcode=0x59 addr=0x10000340
+ 831000: global: HNF_COMP src=8 txn=12 addr=0x10000280
+ 843000: system.test_adapter: CHI_DONE parent=3 child=12 write=1
+ 844000: system.test_adapter: REQ parent=3 child=14 opcode=0x59 addr=0x100002c0
+ 903000: global: HNF_COMP src=8 txn=13 addr=0x10000340
+ 915000: system.test_adapter: CHI_DONE parent=4 child=13 write=1
+ 916000: system.test_adapter: REQ parent=4 child=15 opcode=0x59 addr=0x10000380
+ 975000: global: HNF_COMP src=8 txn=14 addr=0x100002c0
+ 987000: system.test_adapter: CHI_DONE parent=3 child=14 write=1
+1038000: system.test_adapter: RESPONSE parent=3 elapsed=482000
+1039000: system.test_adapter: PACKET parent=5 addr=0x10000400 bytes=256 io=0 write=1
+1040000: system.test_adapter: REQ parent=5 child=16 opcode=0x59 addr=0x10000400
+1047000: global: HNF_COMP src=8 txn=15 addr=0x10000380
+1059000: system.test_adapter: CHI_DONE parent=4 child=15 write=1
+1060000: system.test_adapter: REQ parent=4 child=17 opcode=0x59 addr=0x100003c0
+1098000: global: HNF_COMP src=8 txn=16 addr=0x10000400
+1109000: system.test_adapter: CHI_DONE parent=5 child=16 write=1
+1110000: system.test_adapter: REQ parent=5 child=18 opcode=0x59 addr=0x10000440
+1169000: global: HNF_COMP src=8 txn=17 addr=0x100003c0
+1181000: system.test_adapter: CHI_DONE parent=4 child=17 write=1
+1232000: system.test_adapter: RESPONSE parent=4 elapsed=604000
+1233000: system.test_adapter: PACKET parent=6 addr=0x10000500 bytes=256 io=0 write=1
+1234000: system.test_adapter: REQ parent=6 child=19 opcode=0x59 addr=0x10000500
+1241000: global: HNF_COMP src=8 txn=18 addr=0x10000440
+1253000: system.test_adapter: CHI_DONE parent=5 child=18 write=1
+1254000: system.test_adapter: REQ parent=5 child=20 opcode=0x59 addr=0x10000480
+1292000: global: HNF_COMP src=8 txn=19 addr=0x10000500
+1303000: system.test_adapter: CHI_DONE parent=6 child=19 write=1
+1304000: system.test_adapter: REQ parent=6 child=21 opcode=0x59 addr=0x10000540
+1363000: global: HNF_COMP src=8 txn=20 addr=0x10000480
+1375000: system.test_adapter: CHI_DONE parent=5 child=20 write=1
+1376000: system.test_adapter: REQ parent=5 child=22 opcode=0x59 addr=0x100004c0
+1435000: global: HNF_COMP src=8 txn=21 addr=0x10000540
+1447000: system.test_adapter: CHI_DONE parent=6 child=21 write=1
+1448000: system.test_adapter: REQ parent=6 child=23 opcode=0x59 addr=0x10000580
+1507000: global: HNF_COMP src=8 txn=22 addr=0x100004c0
+1519000: system.test_adapter: CHI_DONE parent=5 child=22 write=1
+1570000: system.test_adapter: RESPONSE parent=5 elapsed=531000
+1571000: system.test_adapter: PACKET parent=7 addr=0x10000600 bytes=256 io=0 write=1
+1572000: system.test_adapter: REQ parent=7 child=24 opcode=0x59 addr=0x10000600
+1579000: global: HNF_COMP src=8 txn=23 addr=0x10000580
+1591000: system.test_adapter: CHI_DONE parent=6 child=23 write=1
+1592000: system.test_adapter: REQ parent=6 child=25 opcode=0x59 addr=0x100005c0
+1630000: global: HNF_COMP src=8 txn=24 addr=0x10000600
+1641000: system.test_adapter: CHI_DONE parent=7 child=24 write=1
+1642000: system.test_adapter: REQ parent=7 child=26 opcode=0x59 addr=0x10000640
+1701000: global: HNF_COMP src=8 txn=25 addr=0x100005c0
+1713000: system.test_adapter: CHI_DONE parent=6 child=25 write=1
+1764000: system.test_adapter: RESPONSE parent=6 elapsed=531000
+1765000: system.test_adapter: PACKET parent=8 addr=0x10000700 bytes=256 io=0 write=1
+1766000: system.test_adapter: REQ parent=8 child=27 opcode=0x59 addr=0x10000700
+1773000: global: HNF_COMP src=8 txn=26 addr=0x10000640
+1785000: system.test_adapter: CHI_DONE parent=7 child=26 write=1
+1786000: system.test_adapter: REQ parent=7 child=28 opcode=0x59 addr=0x10000680
+1824000: global: HNF_COMP src=8 txn=27 addr=0x10000700
+1835000: system.test_adapter: CHI_DONE parent=8 child=27 write=1
+1836000: system.test_adapter: REQ parent=8 child=29 opcode=0x59 addr=0x10000740
+1895000: global: HNF_COMP src=8 txn=28 addr=0x10000680
+1907000: system.test_adapter: CHI_DONE parent=7 child=28 write=1
+1908000: system.test_adapter: REQ parent=7 child=30 opcode=0x59 addr=0x100006c0
+1967000: global: HNF_COMP src=8 txn=29 addr=0x10000740
+1979000: system.test_adapter: CHI_DONE parent=8 child=29 write=1
+1980000: system.test_adapter: REQ parent=8 child=31 opcode=0x59 addr=0x10000780
+2039000: global: HNF_COMP src=8 txn=30 addr=0x100006c0
+2051000: system.test_adapter: CHI_DONE parent=7 child=30 write=1
+2102000: system.test_adapter: RESPONSE parent=7 elapsed=531000
+2103000: system.test_adapter: PACKET parent=9 addr=0x10000800 bytes=256 io=0 write=1
+2104000: system.test_adapter: REQ parent=9 child=32 opcode=0x59 addr=0x10000800
+2111000: global: HNF_COMP src=8 txn=31 addr=0x10000780
+2123000: system.test_adapter: CHI_DONE parent=8 child=31 write=1
+2124000: system.test_adapter: REQ parent=8 child=33 opcode=0x59 addr=0x100007c0
+2162000: global: HNF_COMP src=8 txn=32 addr=0x10000800
+2173000: system.test_adapter: CHI_DONE parent=9 child=32 write=1
+2174000: system.test_adapter: REQ parent=9 child=34 opcode=0x59 addr=0x10000840
+2233000: global: HNF_COMP src=8 txn=33 addr=0x100007c0
+2245000: system.test_adapter: CHI_DONE parent=8 child=33 write=1
+2296000: system.test_adapter: RESPONSE parent=8 elapsed=531000
+2297000: system.test_adapter: PACKET parent=10 addr=0x10000900 bytes=256 io=0 write=1
+2298000: system.test_adapter: REQ parent=10 child=35 opcode=0x59 addr=0x10000900
+2305000: global: HNF_COMP src=8 txn=34 addr=0x10000840
+2317000: system.test_adapter: CHI_DONE parent=9 child=34 write=1
+2318000: system.test_adapter: REQ parent=9 child=36 opcode=0x59 addr=0x10000880
+2356000: global: HNF_COMP src=8 txn=35 addr=0x10000900
+2367000: system.test_adapter: CHI_DONE parent=10 child=35 write=1
+2368000: system.test_adapter: REQ parent=10 child=37 opcode=0x59 addr=0x10000940
+2427000: global: HNF_COMP src=8 txn=36 addr=0x10000880
+2439000: system.test_adapter: CHI_DONE parent=9 child=36 write=1
+2440000: system.test_adapter: REQ parent=9 child=38 opcode=0x59 addr=0x100008c0
+2499000: global: HNF_COMP src=8 txn=37 addr=0x10000940
+2511000: system.test_adapter: CHI_DONE parent=10 child=37 write=1
+2512000: system.test_adapter: REQ parent=10 child=39 opcode=0x59 addr=0x10000980
+2571000: global: HNF_COMP src=8 txn=38 addr=0x100008c0
+2583000: system.test_adapter: CHI_DONE parent=9 child=38 write=1
+2634000: system.test_adapter: RESPONSE parent=9 elapsed=531000
+2635000: system.test_adapter: PACKET parent=11 addr=0x10000a00 bytes=256 io=0 write=1
+2636000: system.test_adapter: REQ parent=11 child=40 opcode=0x59 addr=0x10000a00
+2643000: global: HNF_COMP src=8 txn=39 addr=0x10000980
+2655000: system.test_adapter: CHI_DONE parent=10 child=39 write=1
+2656000: system.test_adapter: REQ parent=10 child=41 opcode=0x59 addr=0x100009c0
+2694000: global: HNF_COMP src=8 txn=40 addr=0x10000a00
+2705000: system.test_adapter: CHI_DONE parent=11 child=40 write=1
+2706000: system.test_adapter: REQ parent=11 child=42 opcode=0x59 addr=0x10000a40
+2765000: global: HNF_COMP src=8 txn=41 addr=0x100009c0
+2777000: system.test_adapter: CHI_DONE parent=10 child=41 write=1
+2828000: system.test_adapter: RESPONSE parent=10 elapsed=531000
+2829000: system.test_adapter: PACKET parent=12 addr=0x10000b00 bytes=256 io=0 write=1
+2830000: system.test_adapter: REQ parent=12 child=43 opcode=0x59 addr=0x10000b00
+2837000: global: HNF_COMP src=8 txn=42 addr=0x10000a40
+2849000: system.test_adapter: CHI_DONE parent=11 child=42 write=1
+2850000: system.test_adapter: REQ parent=11 child=44 opcode=0x59 addr=0x10000a80
+2888000: global: HNF_COMP src=8 txn=43 addr=0x10000b00
+2899000: system.test_adapter: CHI_DONE parent=12 child=43 write=1
+2900000: system.test_adapter: REQ parent=12 child=45 opcode=0x59 addr=0x10000b40
+2959000: global: HNF_COMP src=8 txn=44 addr=0x10000a80
+2971000: system.test_adapter: CHI_DONE parent=11 child=44 write=1
+2972000: system.test_adapter: REQ parent=11 child=46 opcode=0x59 addr=0x10000ac0
+3031000: global: HNF_COMP src=8 txn=45 addr=0x10000b40
+3043000: system.test_adapter: CHI_DONE parent=12 child=45 write=1
+3044000: system.test_adapter: REQ parent=12 child=47 opcode=0x59 addr=0x10000b80
+3103000: global: HNF_COMP src=8 txn=46 addr=0x10000ac0
+3115000: system.test_adapter: CHI_DONE parent=11 child=46 write=1
+3166000: system.test_adapter: RESPONSE parent=11 elapsed=531000
+3167000: system.test_adapter: PACKET parent=13 addr=0x10000c00 bytes=256 io=0 write=1
+3168000: system.test_adapter: REQ parent=13 child=48 opcode=0x59 addr=0x10000c00
+3175000: global: HNF_COMP src=8 txn=47 addr=0x10000b80
+3187000: system.test_adapter: CHI_DONE parent=12 child=47 write=1
+3188000: system.test_adapter: REQ parent=12 child=49 opcode=0x59 addr=0x10000bc0
+3226000: global: HNF_COMP src=8 txn=48 addr=0x10000c00
+3237000: system.test_adapter: CHI_DONE parent=13 child=48 write=1
+3238000: system.test_adapter: REQ parent=13 child=50 opcode=0x59 addr=0x10000c40
+3297000: global: HNF_COMP src=8 txn=49 addr=0x10000bc0
+3309000: system.test_adapter: CHI_DONE parent=12 child=49 write=1
+3360000: system.test_adapter: RESPONSE parent=12 elapsed=531000
+3361000: system.test_adapter: PACKET parent=14 addr=0x10000d00 bytes=256 io=0 write=1
+3362000: system.test_adapter: REQ parent=14 child=51 opcode=0x59 addr=0x10000d00
+3369000: global: HNF_COMP src=8 txn=50 addr=0x10000c40
+3381000: system.test_adapter: CHI_DONE parent=13 child=50 write=1
+3382000: system.test_adapter: REQ parent=13 child=52 opcode=0x59 addr=0x10000c80
+3420000: global: HNF_COMP src=8 txn=51 addr=0x10000d00
+3431000: system.test_adapter: CHI_DONE parent=14 child=51 write=1
+3432000: system.test_adapter: REQ parent=14 child=53 opcode=0x59 addr=0x10000d40
+3491000: global: HNF_COMP src=8 txn=52 addr=0x10000c80
+3503000: system.test_adapter: CHI_DONE parent=13 child=52 write=1
+3504000: system.test_adapter: REQ parent=13 child=54 opcode=0x59 addr=0x10000cc0
+3563000: global: HNF_COMP src=8 txn=53 addr=0x10000d40
+3575000: system.test_adapter: CHI_DONE parent=14 child=53 write=1
+3576000: system.test_adapter: REQ parent=14 child=55 opcode=0x59 addr=0x10000d80
+3635000: global: HNF_COMP src=8 txn=54 addr=0x10000cc0
+3647000: system.test_adapter: CHI_DONE parent=13 child=54 write=1
+3698000: system.test_adapter: RESPONSE parent=13 elapsed=531000
+3699000: system.test_adapter: PACKET parent=15 addr=0x10000e00 bytes=256 io=0 write=1
+3700000: system.test_adapter: REQ parent=15 child=56 opcode=0x59 addr=0x10000e00
+3707000: global: HNF_COMP src=8 txn=55 addr=0x10000d80
+3719000: system.test_adapter: CHI_DONE parent=14 child=55 write=1
+3720000: system.test_adapter: REQ parent=14 child=57 opcode=0x59 addr=0x10000dc0
+3758000: global: HNF_COMP src=8 txn=56 addr=0x10000e00
+3769000: system.test_adapter: CHI_DONE parent=15 child=56 write=1
+3770000: system.test_adapter: REQ parent=15 child=58 opcode=0x59 addr=0x10000e40
+3829000: global: HNF_COMP src=8 txn=57 addr=0x10000dc0
+3841000: system.test_adapter: CHI_DONE parent=14 child=57 write=1
+3892000: system.test_adapter: RESPONSE parent=14 elapsed=531000
+3893000: system.test_adapter: PACKET parent=16 addr=0x10000f00 bytes=256 io=0 write=1
+3894000: system.test_adapter: REQ parent=16 child=59 opcode=0x59 addr=0x10000f00
+3901000: global: HNF_COMP src=8 txn=58 addr=0x10000e40
+3913000: system.test_adapter: CHI_DONE parent=15 child=58 write=1
+3914000: system.test_adapter: REQ parent=15 child=60 opcode=0x59 addr=0x10000e80
+3952000: global: HNF_COMP src=8 txn=59 addr=0x10000f00
+3963000: system.test_adapter: CHI_DONE parent=16 child=59 write=1
+3964000: system.test_adapter: REQ parent=16 child=61 opcode=0x59 addr=0x10000f40
+4023000: global: HNF_COMP src=8 txn=60 addr=0x10000e80
+4035000: system.test_adapter: CHI_DONE parent=15 child=60 write=1
+4036000: system.test_adapter: REQ parent=15 child=62 opcode=0x59 addr=0x10000ec0
+4095000: global: HNF_COMP src=8 txn=61 addr=0x10000f40
+4107000: system.test_adapter: CHI_DONE parent=16 child=61 write=1
+4108000: system.test_adapter: REQ parent=16 child=63 opcode=0x59 addr=0x10000f80
+4167000: global: HNF_COMP src=8 txn=62 addr=0x10000ec0
+4179000: system.test_adapter: CHI_DONE parent=15 child=62 write=1
+4230000: system.test_adapter: RESPONSE parent=15 elapsed=531000
+4239000: global: HNF_COMP src=8 txn=63 addr=0x10000f80
+4251000: system.test_adapter: CHI_DONE parent=16 child=63 write=1
+4252000: system.test_adapter: REQ parent=16 child=64 opcode=0x59 addr=0x10000fc0
+4310000: global: HNF_COMP src=8 txn=64 addr=0x10000fc0
+4322000: system.test_adapter: CHI_DONE parent=16 child=64 write=1
+4373000: system.test_adapter: RESPONSE parent=16 elapsed=480000
+4374000: system.test_adapter: PACKET parent=17 addr=0x1000001d bytes=130 io=0 write=1
+4374000: system.test_adapter: PACKET parent=18 addr=0x1000011d bytes=130 io=0 write=1
+4375000: system.test_adapter: REQ parent=17 child=65 opcode=0x3 addr=0x10000000
+4375000: system.test_adapter: REQ parent=18 child=66 opcode=0x3 addr=0x10000100
+4406000: global: HNF_DATA src=8 txn=65 addr=0x10000000 bytes=64
+4417000: system.test_adapter: DAT parent=17 child=65 offset=32 bytes=32
+4419000: system.test_adapter: DAT parent=17 child=65 offset=0 bytes=32
+4419000: system.test_adapter: CHI_DONE parent=17 child=65 write=0
+4420000: system.test_adapter: REQ parent=17 child=67 opcode=0x59 addr=0x10000000
+4478000: global: HNF_DATA src=8 txn=66 addr=0x10000100 bytes=64
+4489000: system.test_adapter: DAT parent=18 child=66 offset=32 bytes=32
+4491000: system.test_adapter: DAT parent=18 child=66 offset=0 bytes=32
+4491000: system.test_adapter: CHI_DONE parent=18 child=66 write=0
+4492000: system.test_adapter: REQ parent=18 child=68 opcode=0x59 addr=0x10000100
+4577000: global: HNF_COMP src=8 txn=67 addr=0x10000000
+4589000: system.test_adapter: CHI_DONE parent=17 child=67 write=1
+4590000: system.test_adapter: REQ parent=17 child=69 opcode=0x3 addr=0x10000040
+4649000: global: HNF_COMP src=8 txn=68 addr=0x10000100
+4661000: system.test_adapter: CHI_DONE parent=18 child=68 write=1
+4662000: system.test_adapter: REQ parent=18 child=70 opcode=0x3 addr=0x10000140
+4694000: global: HNF_DATA src=8 txn=69 addr=0x10000040 bytes=64
+4705000: system.test_adapter: DAT parent=17 child=69 offset=32 bytes=32
+4707000: system.test_adapter: DAT parent=17 child=69 offset=0 bytes=32
+4707000: system.test_adapter: CHI_DONE parent=17 child=69 write=0
+4708000: system.test_adapter: REQ parent=17 child=71 opcode=0x59 addr=0x10000040
+4766000: global: HNF_DATA src=8 txn=70 addr=0x10000140 bytes=64
+4777000: system.test_adapter: DAT parent=18 child=70 offset=32 bytes=32
+4779000: system.test_adapter: DAT parent=18 child=70 offset=0 bytes=32
+4779000: system.test_adapter: CHI_DONE parent=18 child=70 write=0
+4780000: system.test_adapter: REQ parent=18 child=72 opcode=0x59 addr=0x10000140
+4865000: global: HNF_COMP src=8 txn=71 addr=0x10000040
+4877000: system.test_adapter: CHI_DONE parent=17 child=71 write=1
+4878000: system.test_adapter: REQ parent=17 child=73 opcode=0x3 addr=0x10000080
+4937000: global: HNF_COMP src=8 txn=72 addr=0x10000140
+4949000: system.test_adapter: CHI_DONE parent=18 child=72 write=1
+4950000: system.test_adapter: REQ parent=18 child=74 opcode=0x3 addr=0x10000180
+4982000: global: HNF_DATA src=8 txn=73 addr=0x10000080 bytes=64
+4993000: system.test_adapter: DAT parent=17 child=73 offset=32 bytes=32
+4995000: system.test_adapter: DAT parent=17 child=73 offset=0 bytes=32
+4995000: system.test_adapter: CHI_DONE parent=17 child=73 write=0
+4996000: system.test_adapter: REQ parent=17 child=75 opcode=0x59 addr=0x10000080
+5054000: global: HNF_DATA src=8 txn=74 addr=0x10000180 bytes=64
+5065000: system.test_adapter: DAT parent=18 child=74 offset=32 bytes=32
+5067000: system.test_adapter: DAT parent=18 child=74 offset=0 bytes=32
+5067000: system.test_adapter: CHI_DONE parent=18 child=74 write=0
+5068000: system.test_adapter: REQ parent=18 child=76 opcode=0x59 addr=0x10000180
+5153000: global: HNF_COMP src=8 txn=75 addr=0x10000080
+5165000: system.test_adapter: CHI_DONE parent=17 child=75 write=1
+5216000: system.test_adapter: RESPONSE parent=17 elapsed=842000
+5217000: system.test_adapter: PACKET parent=19 addr=0x1000021d bytes=130 io=0 write=1
+5218000: system.test_adapter: REQ parent=19 child=77 opcode=0x3 addr=0x10000200
+5225000: global: HNF_COMP src=8 txn=76 addr=0x10000180
+5237000: system.test_adapter: CHI_DONE parent=18 child=76 write=1
+5249000: global: HNF_DATA src=8 txn=77 addr=0x10000200 bytes=64
+5261000: system.test_adapter: DAT parent=19 child=77 offset=32 bytes=32
+5261000: system.test_adapter: DAT parent=19 child=77 offset=0 bytes=32
+5261000: system.test_adapter: CHI_DONE parent=19 child=77 write=0
+5262000: system.test_adapter: REQ parent=19 child=78 opcode=0x59 addr=0x10000200
+5288000: system.test_adapter: RESPONSE parent=18 elapsed=914000
+5289000: system.test_adapter: PACKET parent=20 addr=0x1000031d bytes=130 io=0 write=1
+5290000: system.test_adapter: REQ parent=20 child=79 opcode=0x3 addr=0x10000300
+5347000: global: HNF_COMP src=8 txn=78 addr=0x10000200
+5359000: system.test_adapter: CHI_DONE parent=19 child=78 write=1
+5360000: system.test_adapter: REQ parent=19 child=80 opcode=0x3 addr=0x10000240
+5392000: global: HNF_DATA src=8 txn=79 addr=0x10000300 bytes=64
+5403000: system.test_adapter: DAT parent=20 child=79 offset=32 bytes=32
+5405000: system.test_adapter: DAT parent=20 child=79 offset=0 bytes=32
+5405000: system.test_adapter: CHI_DONE parent=20 child=79 write=0
+5406000: system.test_adapter: REQ parent=20 child=81 opcode=0x59 addr=0x10000300
+5464000: global: HNF_DATA src=8 txn=80 addr=0x10000240 bytes=64
+5475000: system.test_adapter: DAT parent=19 child=80 offset=32 bytes=32
+5477000: system.test_adapter: DAT parent=19 child=80 offset=0 bytes=32
+5477000: system.test_adapter: CHI_DONE parent=19 child=80 write=0
+5478000: system.test_adapter: REQ parent=19 child=82 opcode=0x59 addr=0x10000240
+5563000: global: HNF_COMP src=8 txn=81 addr=0x10000300
+5575000: system.test_adapter: CHI_DONE parent=20 child=81 write=1
+5576000: system.test_adapter: REQ parent=20 child=83 opcode=0x3 addr=0x10000340
+5635000: global: HNF_COMP src=8 txn=82 addr=0x10000240
+5647000: system.test_adapter: CHI_DONE parent=19 child=82 write=1
+5648000: system.test_adapter: REQ parent=19 child=84 opcode=0x3 addr=0x10000280
+5680000: global: HNF_DATA src=8 txn=83 addr=0x10000340 bytes=64
+5691000: system.test_adapter: DAT parent=20 child=83 offset=32 bytes=32
+5693000: system.test_adapter: DAT parent=20 child=83 offset=0 bytes=32
+5693000: system.test_adapter: CHI_DONE parent=20 child=83 write=0
+5694000: system.test_adapter: REQ parent=20 child=85 opcode=0x59 addr=0x10000340
+5752000: global: HNF_DATA src=8 txn=84 addr=0x10000280 bytes=64
+5763000: system.test_adapter: DAT parent=19 child=84 offset=32 bytes=32
+5765000: system.test_adapter: DAT parent=19 child=84 offset=0 bytes=32
+5765000: system.test_adapter: CHI_DONE parent=19 child=84 write=0
+5766000: system.test_adapter: REQ parent=19 child=86 opcode=0x59 addr=0x10000280
+5851000: global: HNF_COMP src=8 txn=85 addr=0x10000340
+5863000: system.test_adapter: CHI_DONE parent=20 child=85 write=1
+5864000: system.test_adapter: REQ parent=20 child=87 opcode=0x3 addr=0x10000380
+5923000: global: HNF_COMP src=8 txn=86 addr=0x10000280
+5935000: system.test_adapter: CHI_DONE parent=19 child=86 write=1
+5968000: global: HNF_DATA src=8 txn=87 addr=0x10000380 bytes=64
+5979000: system.test_adapter: DAT parent=20 child=87 offset=32 bytes=32
+5981000: system.test_adapter: DAT parent=20 child=87 offset=0 bytes=32
+5981000: system.test_adapter: CHI_DONE parent=20 child=87 write=0
+5982000: system.test_adapter: REQ parent=20 child=88 opcode=0x59 addr=0x10000380
+5986000: system.test_adapter: RESPONSE parent=19 elapsed=769000
+5987000: system.test_adapter: PACKET parent=21 addr=0x1000041d bytes=130 io=0 write=1
+5988000: system.test_adapter: REQ parent=21 child=89 opcode=0x3 addr=0x10000400
+6066000: global: HNF_COMP src=8 txn=88 addr=0x10000380
+6078000: system.test_adapter: CHI_DONE parent=20 child=88 write=1
+6111000: global: HNF_DATA src=8 txn=89 addr=0x10000400 bytes=64
+6122000: system.test_adapter: DAT parent=21 child=89 offset=32 bytes=32
+6124000: system.test_adapter: DAT parent=21 child=89 offset=0 bytes=32
+6124000: system.test_adapter: CHI_DONE parent=21 child=89 write=0
+6125000: system.test_adapter: REQ parent=21 child=90 opcode=0x59 addr=0x10000400
+6129000: system.test_adapter: RESPONSE parent=20 elapsed=840000
+6130000: system.test_adapter: PACKET parent=22 addr=0x1000051d bytes=130 io=0 write=1
+6131000: system.test_adapter: REQ parent=22 child=91 opcode=0x3 addr=0x10000500
+6209000: global: HNF_COMP src=8 txn=90 addr=0x10000400
+6221000: system.test_adapter: CHI_DONE parent=21 child=90 write=1
+6222000: system.test_adapter: REQ parent=21 child=92 opcode=0x3 addr=0x10000440
+6254000: global: HNF_DATA src=8 txn=91 addr=0x10000500 bytes=64
+6265000: system.test_adapter: DAT parent=22 child=91 offset=32 bytes=32
+6267000: system.test_adapter: DAT parent=22 child=91 offset=0 bytes=32
+6267000: system.test_adapter: CHI_DONE parent=22 child=91 write=0
+6268000: system.test_adapter: REQ parent=22 child=93 opcode=0x59 addr=0x10000500
+6326000: global: HNF_DATA src=8 txn=92 addr=0x10000440 bytes=64
+6337000: system.test_adapter: DAT parent=21 child=92 offset=32 bytes=32
+6339000: system.test_adapter: DAT parent=21 child=92 offset=0 bytes=32
+6339000: system.test_adapter: CHI_DONE parent=21 child=92 write=0
+6340000: system.test_adapter: REQ parent=21 child=94 opcode=0x59 addr=0x10000440
+6425000: global: HNF_COMP src=8 txn=93 addr=0x10000500
+6437000: system.test_adapter: CHI_DONE parent=22 child=93 write=1
+6438000: system.test_adapter: REQ parent=22 child=95 opcode=0x3 addr=0x10000540
+6497000: global: HNF_COMP src=8 txn=94 addr=0x10000440
+6509000: system.test_adapter: CHI_DONE parent=21 child=94 write=1
+6510000: system.test_adapter: REQ parent=21 child=96 opcode=0x3 addr=0x10000480
+6542000: global: HNF_DATA src=8 txn=95 addr=0x10000540 bytes=64
+6553000: system.test_adapter: DAT parent=22 child=95 offset=32 bytes=32
+6555000: system.test_adapter: DAT parent=22 child=95 offset=0 bytes=32
+6555000: system.test_adapter: CHI_DONE parent=22 child=95 write=0
+6556000: system.test_adapter: REQ parent=22 child=97 opcode=0x59 addr=0x10000540
+6614000: global: HNF_DATA src=8 txn=96 addr=0x10000480 bytes=64
+6625000: system.test_adapter: DAT parent=21 child=96 offset=32 bytes=32
+6627000: system.test_adapter: DAT parent=21 child=96 offset=0 bytes=32
+6627000: system.test_adapter: CHI_DONE parent=21 child=96 write=0
+6628000: system.test_adapter: REQ parent=21 child=98 opcode=0x59 addr=0x10000480
+6713000: global: HNF_COMP src=8 txn=97 addr=0x10000540
+6725000: system.test_adapter: CHI_DONE parent=22 child=97 write=1
+6726000: system.test_adapter: REQ parent=22 child=99 opcode=0x3 addr=0x10000580
+6785000: global: HNF_COMP src=8 txn=98 addr=0x10000480
+6797000: system.test_adapter: CHI_DONE parent=21 child=98 write=1
+6830000: global: HNF_DATA src=8 txn=99 addr=0x10000580 bytes=64
+6841000: system.test_adapter: DAT parent=22 child=99 offset=32 bytes=32
+6843000: system.test_adapter: DAT parent=22 child=99 offset=0 bytes=32
+6843000: system.test_adapter: CHI_DONE parent=22 child=99 write=0
+6844000: system.test_adapter: REQ parent=22 child=100 opcode=0x59 addr=0x10000580
+6848000: system.test_adapter: RESPONSE parent=21 elapsed=861000
+6849000: system.test_adapter: PACKET parent=23 addr=0x1000061d bytes=130 io=0 write=1
+6850000: system.test_adapter: REQ parent=23 child=101 opcode=0x3 addr=0x10000600
+6928000: global: HNF_COMP src=8 txn=100 addr=0x10000580
+6940000: system.test_adapter: CHI_DONE parent=22 child=100 write=1
+6973000: global: HNF_DATA src=8 txn=101 addr=0x10000600 bytes=64
+6984000: system.test_adapter: DAT parent=23 child=101 offset=32 bytes=32
+6986000: system.test_adapter: DAT parent=23 child=101 offset=0 bytes=32
+6986000: system.test_adapter: CHI_DONE parent=23 child=101 write=0
+6987000: system.test_adapter: REQ parent=23 child=102 opcode=0x59 addr=0x10000600
+6991000: system.test_adapter: RESPONSE parent=22 elapsed=861000
+6992000: system.test_adapter: PACKET parent=24 addr=0x1000071d bytes=130 io=0 write=1
+6993000: system.test_adapter: REQ parent=24 child=103 opcode=0x3 addr=0x10000700
+7071000: global: HNF_COMP src=8 txn=102 addr=0x10000600
+7083000: system.test_adapter: CHI_DONE parent=23 child=102 write=1
+7084000: system.test_adapter: REQ parent=23 child=104 opcode=0x3 addr=0x10000640
+7116000: global: HNF_DATA src=8 txn=103 addr=0x10000700 bytes=64
+7127000: system.test_adapter: DAT parent=24 child=103 offset=32 bytes=32
+7129000: system.test_adapter: DAT parent=24 child=103 offset=0 bytes=32
+7129000: system.test_adapter: CHI_DONE parent=24 child=103 write=0
+7130000: system.test_adapter: REQ parent=24 child=105 opcode=0x59 addr=0x10000700
+7188000: global: HNF_DATA src=8 txn=104 addr=0x10000640 bytes=64
+7199000: system.test_adapter: DAT parent=23 child=104 offset=32 bytes=32
+7201000: system.test_adapter: DAT parent=23 child=104 offset=0 bytes=32
+7201000: system.test_adapter: CHI_DONE parent=23 child=104 write=0
+7202000: system.test_adapter: REQ parent=23 child=106 opcode=0x59 addr=0x10000640
+7287000: global: HNF_COMP src=8 txn=105 addr=0x10000700
+7299000: system.test_adapter: CHI_DONE parent=24 child=105 write=1
+7300000: system.test_adapter: REQ parent=24 child=107 opcode=0x3 addr=0x10000740
+7359000: global: HNF_COMP src=8 txn=106 addr=0x10000640
+7371000: system.test_adapter: CHI_DONE parent=23 child=106 write=1
+7372000: system.test_adapter: REQ parent=23 child=108 opcode=0x3 addr=0x10000680
+7404000: global: HNF_DATA src=8 txn=107 addr=0x10000740 bytes=64
+7415000: system.test_adapter: DAT parent=24 child=107 offset=32 bytes=32
+7417000: system.test_adapter: DAT parent=24 child=107 offset=0 bytes=32
+7417000: system.test_adapter: CHI_DONE parent=24 child=107 write=0
+7418000: system.test_adapter: REQ parent=24 child=109 opcode=0x59 addr=0x10000740
+7476000: global: HNF_DATA src=8 txn=108 addr=0x10000680 bytes=64
+7487000: system.test_adapter: DAT parent=23 child=108 offset=32 bytes=32
+7489000: system.test_adapter: DAT parent=23 child=108 offset=0 bytes=32
+7489000: system.test_adapter: CHI_DONE parent=23 child=108 write=0
+7490000: system.test_adapter: REQ parent=23 child=110 opcode=0x59 addr=0x10000680
+7575000: global: HNF_COMP src=8 txn=109 addr=0x10000740
+7587000: system.test_adapter: CHI_DONE parent=24 child=109 write=1
+7588000: system.test_adapter: REQ parent=24 child=111 opcode=0x3 addr=0x10000780
+7647000: global: HNF_COMP src=8 txn=110 addr=0x10000680
+7659000: system.test_adapter: CHI_DONE parent=23 child=110 write=1
+7692000: global: HNF_DATA src=8 txn=111 addr=0x10000780 bytes=64
+7703000: system.test_adapter: DAT parent=24 child=111 offset=32 bytes=32
+7705000: system.test_adapter: DAT parent=24 child=111 offset=0 bytes=32
+7705000: system.test_adapter: CHI_DONE parent=24 child=111 write=0
+7706000: system.test_adapter: REQ parent=24 child=112 opcode=0x59 addr=0x10000780
+7710000: system.test_adapter: RESPONSE parent=23 elapsed=861000
+7711000: system.test_adapter: PACKET parent=25 addr=0x1000081d bytes=130 io=0 write=1
+7712000: system.test_adapter: REQ parent=25 child=113 opcode=0x3 addr=0x10000800
+7790000: global: HNF_COMP src=8 txn=112 addr=0x10000780
+7802000: system.test_adapter: CHI_DONE parent=24 child=112 write=1
+7835000: global: HNF_DATA src=8 txn=113 addr=0x10000800 bytes=64
+7846000: system.test_adapter: DAT parent=25 child=113 offset=32 bytes=32
+7848000: system.test_adapter: DAT parent=25 child=113 offset=0 bytes=32
+7848000: system.test_adapter: CHI_DONE parent=25 child=113 write=0
+7849000: system.test_adapter: REQ parent=25 child=114 opcode=0x59 addr=0x10000800
+7853000: system.test_adapter: RESPONSE parent=24 elapsed=861000
+7854000: system.test_adapter: PACKET parent=26 addr=0x1000091d bytes=130 io=0 write=1
+7855000: system.test_adapter: REQ parent=26 child=115 opcode=0x3 addr=0x10000900
+7933000: global: HNF_COMP src=8 txn=114 addr=0x10000800
+7945000: system.test_adapter: CHI_DONE parent=25 child=114 write=1
+7946000: system.test_adapter: REQ parent=25 child=116 opcode=0x3 addr=0x10000840
+7978000: global: HNF_DATA src=8 txn=115 addr=0x10000900 bytes=64
+7989000: system.test_adapter: DAT parent=26 child=115 offset=32 bytes=32
+7991000: system.test_adapter: DAT parent=26 child=115 offset=0 bytes=32
+7991000: system.test_adapter: CHI_DONE parent=26 child=115 write=0
+7992000: system.test_adapter: REQ parent=26 child=117 opcode=0x59 addr=0x10000900
+8050000: global: HNF_DATA src=8 txn=116 addr=0x10000840 bytes=64
+8061000: system.test_adapter: DAT parent=25 child=116 offset=32 bytes=32
+8063000: system.test_adapter: DAT parent=25 child=116 offset=0 bytes=32
+8063000: system.test_adapter: CHI_DONE parent=25 child=116 write=0
+8064000: system.test_adapter: REQ parent=25 child=118 opcode=0x59 addr=0x10000840
+8149000: global: HNF_COMP src=8 txn=117 addr=0x10000900
+8161000: system.test_adapter: CHI_DONE parent=26 child=117 write=1
+8162000: system.test_adapter: REQ parent=26 child=119 opcode=0x3 addr=0x10000940
+8221000: global: HNF_COMP src=8 txn=118 addr=0x10000840
+8233000: system.test_adapter: CHI_DONE parent=25 child=118 write=1
+8234000: system.test_adapter: REQ parent=25 child=120 opcode=0x3 addr=0x10000880
+8266000: global: HNF_DATA src=8 txn=119 addr=0x10000940 bytes=64
+8277000: system.test_adapter: DAT parent=26 child=119 offset=32 bytes=32
+8279000: system.test_adapter: DAT parent=26 child=119 offset=0 bytes=32
+8279000: system.test_adapter: CHI_DONE parent=26 child=119 write=0
+8280000: system.test_adapter: REQ parent=26 child=121 opcode=0x59 addr=0x10000940
+8338000: global: HNF_DATA src=8 txn=120 addr=0x10000880 bytes=64
+8349000: system.test_adapter: DAT parent=25 child=120 offset=32 bytes=32
+8351000: system.test_adapter: DAT parent=25 child=120 offset=0 bytes=32
+8351000: system.test_adapter: CHI_DONE parent=25 child=120 write=0
+8352000: system.test_adapter: REQ parent=25 child=122 opcode=0x59 addr=0x10000880
+8437000: global: HNF_COMP src=8 txn=121 addr=0x10000940
+8449000: system.test_adapter: CHI_DONE parent=26 child=121 write=1
+8450000: system.test_adapter: REQ parent=26 child=123 opcode=0x3 addr=0x10000980
+8509000: global: HNF_COMP src=8 txn=122 addr=0x10000880
+8521000: system.test_adapter: CHI_DONE parent=25 child=122 write=1
+8554000: global: HNF_DATA src=8 txn=123 addr=0x10000980 bytes=64
+8565000: system.test_adapter: DAT parent=26 child=123 offset=32 bytes=32
+8567000: system.test_adapter: DAT parent=26 child=123 offset=0 bytes=32
+8567000: system.test_adapter: CHI_DONE parent=26 child=123 write=0
+8568000: system.test_adapter: REQ parent=26 child=124 opcode=0x59 addr=0x10000980
+8572000: system.test_adapter: RESPONSE parent=25 elapsed=861000
+8573000: system.test_adapter: PACKET parent=27 addr=0x10000a1d bytes=130 io=0 write=1
+8574000: system.test_adapter: REQ parent=27 child=125 opcode=0x3 addr=0x10000a00
+8652000: global: HNF_COMP src=8 txn=124 addr=0x10000980
+8664000: system.test_adapter: CHI_DONE parent=26 child=124 write=1
+8697000: global: HNF_DATA src=8 txn=125 addr=0x10000a00 bytes=64
+8708000: system.test_adapter: DAT parent=27 child=125 offset=32 bytes=32
+8710000: system.test_adapter: DAT parent=27 child=125 offset=0 bytes=32
+8710000: system.test_adapter: CHI_DONE parent=27 child=125 write=0
+8711000: system.test_adapter: REQ parent=27 child=126 opcode=0x59 addr=0x10000a00
+8715000: system.test_adapter: RESPONSE parent=26 elapsed=861000
+8716000: system.test_adapter: PACKET parent=28 addr=0x10000b1d bytes=130 io=0 write=1
+8717000: system.test_adapter: REQ parent=28 child=127 opcode=0x3 addr=0x10000b00
+8795000: global: HNF_COMP src=8 txn=126 addr=0x10000a00
+8807000: system.test_adapter: CHI_DONE parent=27 child=126 write=1
+8808000: system.test_adapter: REQ parent=27 child=128 opcode=0x3 addr=0x10000a40
+8840000: global: HNF_DATA src=8 txn=127 addr=0x10000b00 bytes=64
+8851000: system.test_adapter: DAT parent=28 child=127 offset=32 bytes=32
+8853000: system.test_adapter: DAT parent=28 child=127 offset=0 bytes=32
+8853000: system.test_adapter: CHI_DONE parent=28 child=127 write=0
+8854000: system.test_adapter: REQ parent=28 child=129 opcode=0x59 addr=0x10000b00
+8912000: global: HNF_DATA src=8 txn=128 addr=0x10000a40 bytes=64
+8923000: system.test_adapter: DAT parent=27 child=128 offset=32 bytes=32
+8925000: system.test_adapter: DAT parent=27 child=128 offset=0 bytes=32
+8925000: system.test_adapter: CHI_DONE parent=27 child=128 write=0
+8926000: system.test_adapter: REQ parent=27 child=130 opcode=0x59 addr=0x10000a40
+9011000: global: HNF_COMP src=8 txn=129 addr=0x10000b00
+9023000: system.test_adapter: CHI_DONE parent=28 child=129 write=1
+9024000: system.test_adapter: REQ parent=28 child=131 opcode=0x3 addr=0x10000b40
+9083000: global: HNF_COMP src=8 txn=130 addr=0x10000a40
+9095000: system.test_adapter: CHI_DONE parent=27 child=130 write=1
+9096000: system.test_adapter: REQ parent=27 child=132 opcode=0x3 addr=0x10000a80
+9128000: global: HNF_DATA src=8 txn=131 addr=0x10000b40 bytes=64
+9139000: system.test_adapter: DAT parent=28 child=131 offset=32 bytes=32
+9141000: system.test_adapter: DAT parent=28 child=131 offset=0 bytes=32
+9141000: system.test_adapter: CHI_DONE parent=28 child=131 write=0
+9142000: system.test_adapter: REQ parent=28 child=133 opcode=0x59 addr=0x10000b40
+9200000: global: HNF_DATA src=8 txn=132 addr=0x10000a80 bytes=64
+9211000: system.test_adapter: DAT parent=27 child=132 offset=32 bytes=32
+9213000: system.test_adapter: DAT parent=27 child=132 offset=0 bytes=32
+9213000: system.test_adapter: CHI_DONE parent=27 child=132 write=0
+9214000: system.test_adapter: REQ parent=27 child=134 opcode=0x59 addr=0x10000a80
+9299000: global: HNF_COMP src=8 txn=133 addr=0x10000b40
+9311000: system.test_adapter: CHI_DONE parent=28 child=133 write=1
+9312000: system.test_adapter: REQ parent=28 child=135 opcode=0x3 addr=0x10000b80
+9371000: global: HNF_COMP src=8 txn=134 addr=0x10000a80
+9383000: system.test_adapter: CHI_DONE parent=27 child=134 write=1
+9416000: global: HNF_DATA src=8 txn=135 addr=0x10000b80 bytes=64
+9427000: system.test_adapter: DAT parent=28 child=135 offset=32 bytes=32
+9429000: system.test_adapter: DAT parent=28 child=135 offset=0 bytes=32
+9429000: system.test_adapter: CHI_DONE parent=28 child=135 write=0
+9430000: system.test_adapter: REQ parent=28 child=136 opcode=0x59 addr=0x10000b80
+9434000: system.test_adapter: RESPONSE parent=27 elapsed=861000
+9435000: system.test_adapter: PACKET parent=29 addr=0x10000c1d bytes=130 io=0 write=1
+9436000: system.test_adapter: REQ parent=29 child=137 opcode=0x3 addr=0x10000c00
+9514000: global: HNF_COMP src=8 txn=136 addr=0x10000b80
+9526000: system.test_adapter: CHI_DONE parent=28 child=136 write=1
+9559000: global: HNF_DATA src=8 txn=137 addr=0x10000c00 bytes=64
+9570000: system.test_adapter: DAT parent=29 child=137 offset=32 bytes=32
+9572000: system.test_adapter: DAT parent=29 child=137 offset=0 bytes=32
+9572000: system.test_adapter: CHI_DONE parent=29 child=137 write=0
+9573000: system.test_adapter: REQ parent=29 child=138 opcode=0x59 addr=0x10000c00
+9577000: system.test_adapter: RESPONSE parent=28 elapsed=861000
+9578000: system.test_adapter: PACKET parent=30 addr=0x10000d1d bytes=130 io=0 write=1
+9579000: system.test_adapter: REQ parent=30 child=139 opcode=0x3 addr=0x10000d00
+9657000: global: HNF_COMP src=8 txn=138 addr=0x10000c00
+9669000: system.test_adapter: CHI_DONE parent=29 child=138 write=1
+9670000: system.test_adapter: REQ parent=29 child=140 opcode=0x3 addr=0x10000c40
+9702000: global: HNF_DATA src=8 txn=139 addr=0x10000d00 bytes=64
+9713000: system.test_adapter: DAT parent=30 child=139 offset=32 bytes=32
+9715000: system.test_adapter: DAT parent=30 child=139 offset=0 bytes=32
+9715000: system.test_adapter: CHI_DONE parent=30 child=139 write=0
+9716000: system.test_adapter: REQ parent=30 child=141 opcode=0x59 addr=0x10000d00
+9774000: global: HNF_DATA src=8 txn=140 addr=0x10000c40 bytes=64
+9785000: system.test_adapter: DAT parent=29 child=140 offset=32 bytes=32
+9787000: system.test_adapter: DAT parent=29 child=140 offset=0 bytes=32
+9787000: system.test_adapter: CHI_DONE parent=29 child=140 write=0
+9788000: system.test_adapter: REQ parent=29 child=142 opcode=0x59 addr=0x10000c40
+9873000: global: HNF_COMP src=8 txn=141 addr=0x10000d00
+9885000: system.test_adapter: CHI_DONE parent=30 child=141 write=1
+9886000: system.test_adapter: REQ parent=30 child=143 opcode=0x3 addr=0x10000d40
+9945000: global: HNF_COMP src=8 txn=142 addr=0x10000c40
+9957000: system.test_adapter: CHI_DONE parent=29 child=142 write=1
+9958000: system.test_adapter: REQ parent=29 child=144 opcode=0x3 addr=0x10000c80
+9990000: global: HNF_DATA src=8 txn=143 addr=0x10000d40 bytes=64
+10001000: system.test_adapter: DAT parent=30 child=143 offset=32 bytes=32
+10003000: system.test_adapter: DAT parent=30 child=143 offset=0 bytes=32
+10003000: system.test_adapter: CHI_DONE parent=30 child=143 write=0
+10004000: system.test_adapter: REQ parent=30 child=145 opcode=0x59 addr=0x10000d40
+10062000: global: HNF_DATA src=8 txn=144 addr=0x10000c80 bytes=64
+10073000: system.test_adapter: DAT parent=29 child=144 offset=32 bytes=32
+10075000: system.test_adapter: DAT parent=29 child=144 offset=0 bytes=32
+10075000: system.test_adapter: CHI_DONE parent=29 child=144 write=0
+10076000: system.test_adapter: REQ parent=29 child=146 opcode=0x59 addr=0x10000c80
+10161000: global: HNF_COMP src=8 txn=145 addr=0x10000d40
+10173000: system.test_adapter: CHI_DONE parent=30 child=145 write=1
+10174000: system.test_adapter: REQ parent=30 child=147 opcode=0x3 addr=0x10000d80
+10233000: global: HNF_COMP src=8 txn=146 addr=0x10000c80
+10245000: system.test_adapter: CHI_DONE parent=29 child=146 write=1
+10278000: global: HNF_DATA src=8 txn=147 addr=0x10000d80 bytes=64
+10289000: system.test_adapter: DAT parent=30 child=147 offset=32 bytes=32
+10291000: system.test_adapter: DAT parent=30 child=147 offset=0 bytes=32
+10291000: system.test_adapter: CHI_DONE parent=30 child=147 write=0
+10292000: system.test_adapter: REQ parent=30 child=148 opcode=0x59 addr=0x10000d80
+10296000: system.test_adapter: RESPONSE parent=29 elapsed=861000
+10297000: system.test_adapter: PACKET parent=31 addr=0x10000e1d bytes=130 io=0 write=1
+10298000: system.test_adapter: REQ parent=31 child=149 opcode=0x3 addr=0x10000e00
+10376000: global: HNF_COMP src=8 txn=148 addr=0x10000d80
+10388000: system.test_adapter: CHI_DONE parent=30 child=148 write=1
+10421000: global: HNF_DATA src=8 txn=149 addr=0x10000e00 bytes=64
+10432000: system.test_adapter: DAT parent=31 child=149 offset=32 bytes=32
+10434000: system.test_adapter: DAT parent=31 child=149 offset=0 bytes=32
+10434000: system.test_adapter: CHI_DONE parent=31 child=149 write=0
+10435000: system.test_adapter: REQ parent=31 child=150 opcode=0x59 addr=0x10000e00
+10439000: system.test_adapter: RESPONSE parent=30 elapsed=861000
+10440000: system.test_adapter: PACKET parent=32 addr=0x10000f1d bytes=130 io=0 write=1
+10441000: system.test_adapter: REQ parent=32 child=151 opcode=0x3 addr=0x10000f00
+10519000: global: HNF_COMP src=8 txn=150 addr=0x10000e00
+10531000: system.test_adapter: CHI_DONE parent=31 child=150 write=1
+10532000: system.test_adapter: REQ parent=31 child=152 opcode=0x3 addr=0x10000e40
+10564000: global: HNF_DATA src=8 txn=151 addr=0x10000f00 bytes=64
+10575000: system.test_adapter: DAT parent=32 child=151 offset=32 bytes=32
+10577000: system.test_adapter: DAT parent=32 child=151 offset=0 bytes=32
+10577000: system.test_adapter: CHI_DONE parent=32 child=151 write=0
+10578000: system.test_adapter: REQ parent=32 child=153 opcode=0x59 addr=0x10000f00
+10636000: global: HNF_DATA src=8 txn=152 addr=0x10000e40 bytes=64
+10647000: system.test_adapter: DAT parent=31 child=152 offset=32 bytes=32
+10649000: system.test_adapter: DAT parent=31 child=152 offset=0 bytes=32
+10649000: system.test_adapter: CHI_DONE parent=31 child=152 write=0
+10650000: system.test_adapter: REQ parent=31 child=154 opcode=0x59 addr=0x10000e40
+10735000: global: HNF_COMP src=8 txn=153 addr=0x10000f00
+10747000: system.test_adapter: CHI_DONE parent=32 child=153 write=1
+10748000: system.test_adapter: REQ parent=32 child=155 opcode=0x3 addr=0x10000f40
+10807000: global: HNF_COMP src=8 txn=154 addr=0x10000e40
+10819000: system.test_adapter: CHI_DONE parent=31 child=154 write=1
+10820000: system.test_adapter: REQ parent=31 child=156 opcode=0x3 addr=0x10000e80
+10852000: global: HNF_DATA src=8 txn=155 addr=0x10000f40 bytes=64
+10863000: system.test_adapter: DAT parent=32 child=155 offset=32 bytes=32
+10865000: system.test_adapter: DAT parent=32 child=155 offset=0 bytes=32
+10865000: system.test_adapter: CHI_DONE parent=32 child=155 write=0
+10866000: system.test_adapter: REQ parent=32 child=157 opcode=0x59 addr=0x10000f40
+10924000: global: HNF_DATA src=8 txn=156 addr=0x10000e80 bytes=64
+10935000: system.test_adapter: DAT parent=31 child=156 offset=32 bytes=32
+10937000: system.test_adapter: DAT parent=31 child=156 offset=0 bytes=32
+10937000: system.test_adapter: CHI_DONE parent=31 child=156 write=0
+10938000: system.test_adapter: REQ parent=31 child=158 opcode=0x59 addr=0x10000e80
+11023000: global: HNF_COMP src=8 txn=157 addr=0x10000f40
+11035000: system.test_adapter: CHI_DONE parent=32 child=157 write=1
+11036000: system.test_adapter: REQ parent=32 child=159 opcode=0x3 addr=0x10000f80
+11095000: global: HNF_COMP src=8 txn=158 addr=0x10000e80
+11107000: system.test_adapter: CHI_DONE parent=31 child=158 write=1
+11140000: global: HNF_DATA src=8 txn=159 addr=0x10000f80 bytes=64
+11151000: system.test_adapter: DAT parent=32 child=159 offset=32 bytes=32
+11153000: system.test_adapter: DAT parent=32 child=159 offset=0 bytes=32
+11153000: system.test_adapter: CHI_DONE parent=32 child=159 write=0
+11154000: system.test_adapter: REQ parent=32 child=160 opcode=0x59 addr=0x10000f80
+11158000: system.test_adapter: RESPONSE parent=31 elapsed=861000
+11239000: global: HNF_COMP src=8 txn=160 addr=0x10000f80
+11251000: system.test_adapter: CHI_DONE parent=32 child=160 write=1
+11302000: system.test_adapter: RESPONSE parent=32 elapsed=862000
+11303000: system.test_adapter: PACKET parent=33 addr=0x10000000 bytes=256 io=0 write=0
+11303000: system.test_adapter: PACKET parent=34 addr=0x10000100 bytes=64 io=0 write=0
+11304000: system.test_adapter: REQ parent=33 child=161 opcode=0x3 addr=0x10000000
+11304000: system.test_adapter: REQ parent=34 child=162 opcode=0x3 addr=0x10000100
+11335000: global: HNF_DATA src=8 txn=161 addr=0x10000000 bytes=64
+11346000: system.test_adapter: DAT parent=33 child=161 offset=32 bytes=32
+11348000: system.test_adapter: DAT parent=33 child=161 offset=0 bytes=32
+11348000: system.test_adapter: CHI_DONE parent=33 child=161 write=0
+11349000: system.test_adapter: REQ parent=33 child=163 opcode=0x3 addr=0x10000040
+11407000: global: HNF_DATA src=8 txn=162 addr=0x10000100 bytes=64
+11418000: system.test_adapter: DAT parent=34 child=162 offset=32 bytes=32
+11420000: system.test_adapter: DAT parent=34 child=162 offset=0 bytes=32
+11420000: system.test_adapter: CHI_DONE parent=34 child=162 write=0
+11471000: system.test_adapter: RESPONSE parent=34 elapsed=168000
+11472000: system.test_adapter: PACKET parent=35 addr=0x10000200 bytes=256 io=0 write=0
+11473000: system.test_adapter: REQ parent=35 child=164 opcode=0x3 addr=0x10000200
+11479000: global: HNF_DATA src=8 txn=163 addr=0x10000040 bytes=64
+11490000: system.test_adapter: DAT parent=33 child=163 offset=32 bytes=32
+11492000: system.test_adapter: DAT parent=33 child=163 offset=0 bytes=32
+11492000: system.test_adapter: CHI_DONE parent=33 child=163 write=0
+11493000: system.test_adapter: REQ parent=33 child=165 opcode=0x3 addr=0x10000080
+11551000: global: HNF_DATA src=8 txn=164 addr=0x10000200 bytes=64
+11562000: system.test_adapter: DAT parent=35 child=164 offset=32 bytes=32
+11564000: system.test_adapter: DAT parent=35 child=164 offset=0 bytes=32
+11564000: system.test_adapter: CHI_DONE parent=35 child=164 write=0
+11565000: system.test_adapter: REQ parent=35 child=166 opcode=0x3 addr=0x10000240
+11623000: global: HNF_DATA src=8 txn=165 addr=0x10000080 bytes=64
+11634000: system.test_adapter: DAT parent=33 child=165 offset=32 bytes=32
+11636000: system.test_adapter: DAT parent=33 child=165 offset=0 bytes=32
+11636000: system.test_adapter: CHI_DONE parent=33 child=165 write=0
+11637000: system.test_adapter: REQ parent=33 child=167 opcode=0x3 addr=0x100000c0
+11695000: global: HNF_DATA src=8 txn=166 addr=0x10000240 bytes=64
+11706000: system.test_adapter: DAT parent=35 child=166 offset=32 bytes=32
+11708000: system.test_adapter: DAT parent=35 child=166 offset=0 bytes=32
+11708000: system.test_adapter: CHI_DONE parent=35 child=166 write=0
+11709000: system.test_adapter: REQ parent=35 child=168 opcode=0x3 addr=0x10000280
+11767000: global: HNF_DATA src=8 txn=167 addr=0x100000c0 bytes=64
+11778000: system.test_adapter: DAT parent=33 child=167 offset=32 bytes=32
+11780000: system.test_adapter: DAT parent=33 child=167 offset=0 bytes=32
+11780000: system.test_adapter: CHI_DONE parent=33 child=167 write=0
+11831000: system.test_adapter: RESPONSE parent=33 elapsed=528000
+11832000: system.test_adapter: PACKET parent=36 addr=0x10000300 bytes=64 io=0 write=0
+11833000: system.test_adapter: REQ parent=36 child=169 opcode=0x3 addr=0x10000300
+11839000: global: HNF_DATA src=8 txn=168 addr=0x10000280 bytes=64
+11850000: system.test_adapter: DAT parent=35 child=168 offset=32 bytes=32
+11852000: system.test_adapter: DAT parent=35 child=168 offset=0 bytes=32
+11852000: system.test_adapter: CHI_DONE parent=35 child=168 write=0
+11853000: system.test_adapter: REQ parent=35 child=170 opcode=0x3 addr=0x100002c0
+11911000: global: HNF_DATA src=8 txn=169 addr=0x10000300 bytes=64
+11922000: system.test_adapter: DAT parent=36 child=169 offset=32 bytes=32
+11924000: system.test_adapter: DAT parent=36 child=169 offset=0 bytes=32
+11924000: system.test_adapter: CHI_DONE parent=36 child=169 write=0
+11975000: system.test_adapter: RESPONSE parent=36 elapsed=143000
+11976000: system.test_adapter: PACKET parent=37 addr=0x10000400 bytes=256 io=0 write=0
+11977000: system.test_adapter: REQ parent=37 child=171 opcode=0x3 addr=0x10000400
+11983000: global: HNF_DATA src=8 txn=170 addr=0x100002c0 bytes=64
+11994000: system.test_adapter: DAT parent=35 child=170 offset=32 bytes=32
+11996000: system.test_adapter: DAT parent=35 child=170 offset=0 bytes=32
+11996000: system.test_adapter: CHI_DONE parent=35 child=170 write=0
+12047000: system.test_adapter: RESPONSE parent=35 elapsed=575000
+12048000: system.test_adapter: PACKET parent=38 addr=0x10000500 bytes=64 io=0 write=0
+12049000: system.test_adapter: REQ parent=38 child=172 opcode=0x3 addr=0x10000500
+12055000: global: HNF_DATA src=8 txn=171 addr=0x10000400 bytes=64
+12066000: system.test_adapter: DAT parent=37 child=171 offset=32 bytes=32
+12068000: system.test_adapter: DAT parent=37 child=171 offset=0 bytes=32
+12068000: system.test_adapter: CHI_DONE parent=37 child=171 write=0
+12069000: system.test_adapter: REQ parent=37 child=173 opcode=0x3 addr=0x10000440
+12127000: global: HNF_DATA src=8 txn=172 addr=0x10000500 bytes=64
+12138000: system.test_adapter: DAT parent=38 child=172 offset=32 bytes=32
+12140000: system.test_adapter: DAT parent=38 child=172 offset=0 bytes=32
+12140000: system.test_adapter: CHI_DONE parent=38 child=172 write=0
+12191000: system.test_adapter: RESPONSE parent=38 elapsed=143000
+12192000: system.test_adapter: PACKET parent=39 addr=0x10000600 bytes=256 io=0 write=0
+12193000: system.test_adapter: REQ parent=39 child=174 opcode=0x3 addr=0x10000600
+12199000: global: HNF_DATA src=8 txn=173 addr=0x10000440 bytes=64
+12210000: system.test_adapter: DAT parent=37 child=173 offset=32 bytes=32
+12212000: system.test_adapter: DAT parent=37 child=173 offset=0 bytes=32
+12212000: system.test_adapter: CHI_DONE parent=37 child=173 write=0
+12213000: system.test_adapter: REQ parent=37 child=175 opcode=0x3 addr=0x10000480
+12271000: global: HNF_DATA src=8 txn=174 addr=0x10000600 bytes=64
+12282000: system.test_adapter: DAT parent=39 child=174 offset=32 bytes=32
+12284000: system.test_adapter: DAT parent=39 child=174 offset=0 bytes=32
+12284000: system.test_adapter: CHI_DONE parent=39 child=174 write=0
+12285000: system.test_adapter: REQ parent=39 child=176 opcode=0x3 addr=0x10000640
+12343000: global: HNF_DATA src=8 txn=175 addr=0x10000480 bytes=64
+12354000: system.test_adapter: DAT parent=37 child=175 offset=32 bytes=32
+12356000: system.test_adapter: DAT parent=37 child=175 offset=0 bytes=32
+12356000: system.test_adapter: CHI_DONE parent=37 child=175 write=0
+12357000: system.test_adapter: REQ parent=37 child=177 opcode=0x3 addr=0x100004c0
+12415000: global: HNF_DATA src=8 txn=176 addr=0x10000640 bytes=64
+12426000: system.test_adapter: DAT parent=39 child=176 offset=32 bytes=32
+12428000: system.test_adapter: DAT parent=39 child=176 offset=0 bytes=32
+12428000: system.test_adapter: CHI_DONE parent=39 child=176 write=0
+12429000: system.test_adapter: REQ parent=39 child=178 opcode=0x3 addr=0x10000680
+12487000: global: HNF_DATA src=8 txn=177 addr=0x100004c0 bytes=64
+12498000: system.test_adapter: DAT parent=37 child=177 offset=32 bytes=32
+12500000: system.test_adapter: DAT parent=37 child=177 offset=0 bytes=32
+12500000: system.test_adapter: CHI_DONE parent=37 child=177 write=0
+12551000: system.test_adapter: RESPONSE parent=37 elapsed=575000
+12552000: system.test_adapter: PACKET parent=40 addr=0x10000700 bytes=64 io=0 write=0
+12553000: system.test_adapter: REQ parent=40 child=179 opcode=0x3 addr=0x10000700
+12559000: global: HNF_DATA src=8 txn=178 addr=0x10000680 bytes=64
+12570000: system.test_adapter: DAT parent=39 child=178 offset=32 bytes=32
+12572000: system.test_adapter: DAT parent=39 child=178 offset=0 bytes=32
+12572000: system.test_adapter: CHI_DONE parent=39 child=178 write=0
+12573000: system.test_adapter: REQ parent=39 child=180 opcode=0x3 addr=0x100006c0
+12631000: global: HNF_DATA src=8 txn=179 addr=0x10000700 bytes=64
+12642000: system.test_adapter: DAT parent=40 child=179 offset=32 bytes=32
+12644000: system.test_adapter: DAT parent=40 child=179 offset=0 bytes=32
+12644000: system.test_adapter: CHI_DONE parent=40 child=179 write=0
+12695000: system.test_adapter: RESPONSE parent=40 elapsed=143000
+12696000: system.test_adapter: PACKET parent=41 addr=0x10000800 bytes=256 io=0 write=0
+12697000: system.test_adapter: REQ parent=41 child=181 opcode=0x3 addr=0x10000800
+12703000: global: HNF_DATA src=8 txn=180 addr=0x100006c0 bytes=64
+12714000: system.test_adapter: DAT parent=39 child=180 offset=32 bytes=32
+12716000: system.test_adapter: DAT parent=39 child=180 offset=0 bytes=32
+12716000: system.test_adapter: CHI_DONE parent=39 child=180 write=0
+12767000: system.test_adapter: RESPONSE parent=39 elapsed=575000
+12768000: system.test_adapter: PACKET parent=42 addr=0x10000900 bytes=64 io=0 write=0
+12769000: system.test_adapter: REQ parent=42 child=182 opcode=0x3 addr=0x10000900
+12775000: global: HNF_DATA src=8 txn=181 addr=0x10000800 bytes=64
+12786000: system.test_adapter: DAT parent=41 child=181 offset=32 bytes=32
+12788000: system.test_adapter: DAT parent=41 child=181 offset=0 bytes=32
+12788000: system.test_adapter: CHI_DONE parent=41 child=181 write=0
+12789000: system.test_adapter: REQ parent=41 child=183 opcode=0x3 addr=0x10000840
+12847000: global: HNF_DATA src=8 txn=182 addr=0x10000900 bytes=64
+12858000: system.test_adapter: DAT parent=42 child=182 offset=32 bytes=32
+12860000: system.test_adapter: DAT parent=42 child=182 offset=0 bytes=32
+12860000: system.test_adapter: CHI_DONE parent=42 child=182 write=0
+12911000: system.test_adapter: RESPONSE parent=42 elapsed=143000
+12912000: system.test_adapter: PACKET parent=43 addr=0x10000a00 bytes=256 io=0 write=0
+12913000: system.test_adapter: REQ parent=43 child=184 opcode=0x3 addr=0x10000a00
+12919000: global: HNF_DATA src=8 txn=183 addr=0x10000840 bytes=64
+12930000: system.test_adapter: DAT parent=41 child=183 offset=32 bytes=32
+12932000: system.test_adapter: DAT parent=41 child=183 offset=0 bytes=32
+12932000: system.test_adapter: CHI_DONE parent=41 child=183 write=0
+12933000: system.test_adapter: REQ parent=41 child=185 opcode=0x3 addr=0x10000880
+12991000: global: HNF_DATA src=8 txn=184 addr=0x10000a00 bytes=64
+13002000: system.test_adapter: DAT parent=43 child=184 offset=32 bytes=32
+13004000: system.test_adapter: DAT parent=43 child=184 offset=0 bytes=32
+13004000: system.test_adapter: CHI_DONE parent=43 child=184 write=0
+13005000: system.test_adapter: REQ parent=43 child=186 opcode=0x3 addr=0x10000a40
+13063000: global: HNF_DATA src=8 txn=185 addr=0x10000880 bytes=64
+13074000: system.test_adapter: DAT parent=41 child=185 offset=32 bytes=32
+13076000: system.test_adapter: DAT parent=41 child=185 offset=0 bytes=32
+13076000: system.test_adapter: CHI_DONE parent=41 child=185 write=0
+13077000: system.test_adapter: REQ parent=41 child=187 opcode=0x3 addr=0x100008c0
+13135000: global: HNF_DATA src=8 txn=186 addr=0x10000a40 bytes=64
+13146000: system.test_adapter: DAT parent=43 child=186 offset=32 bytes=32
+13148000: system.test_adapter: DAT parent=43 child=186 offset=0 bytes=32
+13148000: system.test_adapter: CHI_DONE parent=43 child=186 write=0
+13149000: system.test_adapter: REQ parent=43 child=188 opcode=0x3 addr=0x10000a80
+13207000: global: HNF_DATA src=8 txn=187 addr=0x100008c0 bytes=64
+13218000: system.test_adapter: DAT parent=41 child=187 offset=32 bytes=32
+13220000: system.test_adapter: DAT parent=41 child=187 offset=0 bytes=32
+13220000: system.test_adapter: CHI_DONE parent=41 child=187 write=0
+13271000: system.test_adapter: RESPONSE parent=41 elapsed=575000
+13272000: system.test_adapter: PACKET parent=44 addr=0x10000b00 bytes=64 io=0 write=0
+13273000: system.test_adapter: REQ parent=44 child=189 opcode=0x3 addr=0x10000b00
+13279000: global: HNF_DATA src=8 txn=188 addr=0x10000a80 bytes=64
+13290000: system.test_adapter: DAT parent=43 child=188 offset=32 bytes=32
+13292000: system.test_adapter: DAT parent=43 child=188 offset=0 bytes=32
+13292000: system.test_adapter: CHI_DONE parent=43 child=188 write=0
+13293000: system.test_adapter: REQ parent=43 child=190 opcode=0x3 addr=0x10000ac0
+13351000: global: HNF_DATA src=8 txn=189 addr=0x10000b00 bytes=64
+13362000: system.test_adapter: DAT parent=44 child=189 offset=32 bytes=32
+13364000: system.test_adapter: DAT parent=44 child=189 offset=0 bytes=32
+13364000: system.test_adapter: CHI_DONE parent=44 child=189 write=0
+13415000: system.test_adapter: RESPONSE parent=44 elapsed=143000
+13416000: system.test_adapter: PACKET parent=45 addr=0x10000c00 bytes=256 io=0 write=0
+13417000: system.test_adapter: REQ parent=45 child=191 opcode=0x3 addr=0x10000c00
+13423000: global: HNF_DATA src=8 txn=190 addr=0x10000ac0 bytes=64
+13434000: system.test_adapter: DAT parent=43 child=190 offset=32 bytes=32
+13436000: system.test_adapter: DAT parent=43 child=190 offset=0 bytes=32
+13436000: system.test_adapter: CHI_DONE parent=43 child=190 write=0
+13487000: system.test_adapter: RESPONSE parent=43 elapsed=575000
+13488000: system.test_adapter: PACKET parent=46 addr=0x10000d00 bytes=64 io=0 write=0
+13489000: system.test_adapter: REQ parent=46 child=192 opcode=0x3 addr=0x10000d00
+13495000: global: HNF_DATA src=8 txn=191 addr=0x10000c00 bytes=64
+13506000: system.test_adapter: DAT parent=45 child=191 offset=32 bytes=32
+13508000: system.test_adapter: DAT parent=45 child=191 offset=0 bytes=32
+13508000: system.test_adapter: CHI_DONE parent=45 child=191 write=0
+13509000: system.test_adapter: REQ parent=45 child=193 opcode=0x3 addr=0x10000c40
+13567000: global: HNF_DATA src=8 txn=192 addr=0x10000d00 bytes=64
+13578000: system.test_adapter: DAT parent=46 child=192 offset=32 bytes=32
+13580000: system.test_adapter: DAT parent=46 child=192 offset=0 bytes=32
+13580000: system.test_adapter: CHI_DONE parent=46 child=192 write=0
+13631000: system.test_adapter: RESPONSE parent=46 elapsed=143000
+13632000: system.test_adapter: PACKET parent=47 addr=0x10000e00 bytes=256 io=0 write=0
+13633000: system.test_adapter: REQ parent=47 child=194 opcode=0x3 addr=0x10000e00
+13639000: global: HNF_DATA src=8 txn=193 addr=0x10000c40 bytes=64
+13650000: system.test_adapter: DAT parent=45 child=193 offset=32 bytes=32
+13652000: system.test_adapter: DAT parent=45 child=193 offset=0 bytes=32
+13652000: system.test_adapter: CHI_DONE parent=45 child=193 write=0
+13653000: system.test_adapter: REQ parent=45 child=195 opcode=0x3 addr=0x10000c80
+13711000: global: HNF_DATA src=8 txn=194 addr=0x10000e00 bytes=64
+13722000: system.test_adapter: DAT parent=47 child=194 offset=32 bytes=32
+13724000: system.test_adapter: DAT parent=47 child=194 offset=0 bytes=32
+13724000: system.test_adapter: CHI_DONE parent=47 child=194 write=0
+13725000: system.test_adapter: REQ parent=47 child=196 opcode=0x3 addr=0x10000e40
+13783000: global: HNF_DATA src=8 txn=195 addr=0x10000c80 bytes=64
+13794000: system.test_adapter: DAT parent=45 child=195 offset=32 bytes=32
+13796000: system.test_adapter: DAT parent=45 child=195 offset=0 bytes=32
+13796000: system.test_adapter: CHI_DONE parent=45 child=195 write=0
+13797000: system.test_adapter: REQ parent=45 child=197 opcode=0x3 addr=0x10000cc0
+13855000: global: HNF_DATA src=8 txn=196 addr=0x10000e40 bytes=64
+13866000: system.test_adapter: DAT parent=47 child=196 offset=32 bytes=32
+13868000: system.test_adapter: DAT parent=47 child=196 offset=0 bytes=32
+13868000: system.test_adapter: CHI_DONE parent=47 child=196 write=0
+13869000: system.test_adapter: REQ parent=47 child=198 opcode=0x3 addr=0x10000e80
+13927000: global: HNF_DATA src=8 txn=197 addr=0x10000cc0 bytes=64
+13938000: system.test_adapter: DAT parent=45 child=197 offset=32 bytes=32
+13940000: system.test_adapter: DAT parent=45 child=197 offset=0 bytes=32
+13940000: system.test_adapter: CHI_DONE parent=45 child=197 write=0
+13991000: system.test_adapter: RESPONSE parent=45 elapsed=575000
+13992000: system.test_adapter: PACKET parent=48 addr=0x10000f00 bytes=64 io=0 write=0
+13993000: system.test_adapter: REQ parent=48 child=199 opcode=0x3 addr=0x10000f00
+13999000: global: HNF_DATA src=8 txn=198 addr=0x10000e80 bytes=64
+14010000: system.test_adapter: DAT parent=47 child=198 offset=32 bytes=32
+14012000: system.test_adapter: DAT parent=47 child=198 offset=0 bytes=32
+14012000: system.test_adapter: CHI_DONE parent=47 child=198 write=0
+14013000: system.test_adapter: REQ parent=47 child=200 opcode=0x3 addr=0x10000ec0
+14071000: global: HNF_DATA src=8 txn=199 addr=0x10000f00 bytes=64
+14082000: system.test_adapter: DAT parent=48 child=199 offset=32 bytes=32
+14084000: system.test_adapter: DAT parent=48 child=199 offset=0 bytes=32
+14084000: system.test_adapter: CHI_DONE parent=48 child=199 write=0
+14135000: system.test_adapter: RESPONSE parent=48 elapsed=143000
+14143000: global: HNF_DATA src=8 txn=200 addr=0x10000ec0 bytes=64
+14154000: system.test_adapter: DAT parent=47 child=200 offset=32 bytes=32
+14156000: system.test_adapter: DAT parent=47 child=200 offset=0 bytes=32
+14156000: system.test_adapter: CHI_DONE parent=47 child=200 write=0
+14207000: system.test_adapter: RESPONSE parent=47 elapsed=575000

@@ -5,6 +5,7 @@
 #include "base/logging.hh"
 #include "base/trace.hh"
 #include "debug/HnfCC.hh"
+#include "debug/DmaPath.hh"
 #include "debug/HnfDirtyVictimE2E.hh"
 #include "mem/cache/CHI/Chi2ClassicMemTxnPolicy.hh"
 #include "mem/cache/CHI/HnfSLCSF.hh"
@@ -125,7 +126,7 @@ requesterTraceKey(uint32_t srcid, uint32_t txnid)
 HnfCoherencyController::HnfCoherencyController(
     uint32_t block_size, uint32_t data_beat_bytes, uint32_t num_entries,
     uint32_t sn_node_id, bool direct_sn_fake_data, uint32_t rnf_slices,
-    bool enable_retry)
+    bool enable_retry, bool mc_receipts_expected, bool late_write_comp)
     : blockSize(block_size),
       dataBeatBytes(data_beat_bytes),
       maxEntries(num_entries),
@@ -133,7 +134,9 @@ HnfCoherencyController::HnfCoherencyController(
       directSnFakeData(direct_sn_fake_data),
       dirtyVictimRetryEnabled(enable_retry),
       rnfSlices(rnf_slices),
-      entries(num_entries)
+      entries(num_entries),
+      mcReceiptsExpected(mc_receipts_expected),
+      lateWriteComp(late_write_comp)
 {
     fatal_if(blockSize == 0 || (blockSize & (blockSize - 1)) != 0,
              "HnfCC block_size must be a non-zero power of two\n");
@@ -271,6 +274,10 @@ HnfCoherencyController::executePocqAction(uint32_t entryId,
               static_cast<unsigned>(action));
 
       case PocqActionKind::Retire:
+        if (lateWriteComp && entry.expectsWriteData) {
+            queueComp(entryId);
+            return std::nullopt;
+        }
         return retireEntry(entryId);
 
       case PocqActionKind::SleepForReplay:
@@ -786,7 +793,11 @@ HnfCoherencyController::queueMcRead(uint32_t entryId)
         entry.req.addr : entry.blockAddr;
     req.size = expectedDataBytes(entry.req);
     req.ReturnNid = entry.req.tgtid;
-    req.order = entry.req.order;
+    // Explicit downstream order (F02): Order=1 asks the SN-F for a
+    // ReadReceipt.  An adapter-owned (v1/adapter-mode) boundary simply
+    // overrides it; in hnf-visible mode the receipt reaches
+    // acceptRxRsp and only marks "accepted, no retry".
+    req.order = 1;
     req.memattr = entry.req.memattr;
     req.snpattr = 0;
     req.expCompAck = false;
@@ -853,9 +864,18 @@ HnfCoherencyController::queueCompData(uint32_t entryId,
         txDatQ.push_back(out);
     }
 
+    if (reverseCompDataForTest &&
+        (reverseCompDataSource == UINT32_MAX ||
+         reverseCompDataSource == entry.req.srcid)) {
+        const size_t beats = (bytes + dataBeatBytes - 1) / dataBeatBytes;
+        std::reverse(txDatQ.end() - beats, txDatQ.end());
+    }
+
     DPRINTF(HnfCC,
             "CC entry=%u queues CompData beats bytes=%u requester=%u txn=%u\n",
             entryId, bytes, entry.req.srcid, entry.req.txnid);
+    DPRINTF(DmaPath, "HNF_DATA src=%u txn=%u addr=%#llx bytes=%u\n",
+            entry.req.srcid, entry.req.txnid, entry.blockAddr, bytes);
 }
 
 void
@@ -883,6 +903,7 @@ HnfCoherencyController::queueComp(uint32_t entryId)
     const uint64_t addr = entry.blockAddr;
     const uint32_t srcid = entry.req.srcid;
     const uint32_t txnid = entry.req.txnid;
+    DPRINTF(DmaPath, "HNF_COMP src=%u txn=%u addr=%#llx\n", srcid, txnid, addr);
     entry = Entry{};
     wakeSleepingEntries(addr);
 
@@ -903,7 +924,7 @@ HnfCoherencyController::queueCompDBIDResp(uint32_t entryId)
     rsp.srcid = entry.req.tgtid;
     rsp.tgtid = entry.req.srcid;
     rsp.txnid = entry.req.txnid;
-    rsp.opcode = RspOp::CompDBIDResp;
+    rsp.opcode = lateWriteComp ? 0x06 : RspOp::CompDBIDResp;
     rsp.dbid = static_cast<uint8_t>(entryId + 1);
     panic_if(rsp.dbid == 0, "HnfCC entry=%u generated reserved DBID zero\n",
              entryId);
@@ -1243,6 +1264,11 @@ HnfCoherencyController::acceptRxDat(const RawDat& dat)
     const bool complete = acceptDataBeat(
         entry.mcDataAssembly, entry.readData, dat, "MC entry", entryId);
 
+    panic_if(dat.respErr != 0 || dat.poison != 0,
+             "HnfCC entry=%u MC read failed: txn=%u dataid=%u respErr=%u"
+             " poison=%u -- poisoned/error data must never fill the cache"
+             " or reach the requester as good data\n",
+             entryId, dat.txnid, dat.dataid, dat.respErr, dat.poison);
     DPRINTF(HnfCC,
             "CC entry=%u got real SN CompData src=%u txn=%u dataid=%u "
             "offset=%u bytes=%u received=%u/%u last=%u\n",
@@ -1258,6 +1284,19 @@ HnfCoherencyController::acceptRxDat(const RawDat& dat)
     panic_if(mcTxnToEntry.erase(dat.txnid) != 1,
              "HnfCC entry=%u lost completed MC transaction=%u\n",
              entryId, dat.txnid);
+    // V2-01/R05: a ReadReceipt may legally follow the last data beat, so
+    // the identity survives data completion *while the receipt is still
+    // owed*.  Identities are removed only by their own receipt -- never
+    // by capacity.  Starvation fails deterministically instead of
+    // silently dropping an owed receipt identity.
+    if (mcReceiptsExpected && !entry.mcReceiptSeen) {
+        constexpr size_t kMcPendingSanity = 4096;
+        panic_if(mcPendingReceiptTxns.size() >= kMcPendingSanity,
+                 "HnfCC %lu MC reads starved of ReadReceipts -- pending"
+                 " identity would be lost; failing deterministically\n",
+                 (unsigned long)mcPendingReceiptTxns.size());
+        mcPendingReceiptTxns.insert(dat.txnid);
+    }
     entry.mcTxnId = 0;
     entry.mcDataAssembly = DataAssembly{};
     entry.responseDataDirty = false;
@@ -1458,6 +1497,51 @@ HnfCoherencyController::acceptRxRsp(const RawRsp& rsp)
                  static_cast<unsigned long long>(
                      entry.snoopPendingTargets));
         completeSnoopTarget(snoopIt->second, rsp.srcid, false);
+        return std::nullopt;
+    }
+
+    if (decoded.minor == RspMinor::ReadReceipt) {
+        // Downstream ReadReceipt for an MC read (F02): the SN-F accepted
+        // the read and will not retry it.  It never completes the read
+        // (data still has to arrive) and never touches dirty-victim or
+        // write-back paths.
+        panic_if(rsp.srcid != snNodeId,
+                 "HnfCC ReadReceipt from non-SN source=%u txn=%u\n",
+                 rsp.srcid, rsp.txnid);
+        auto mcIt = mcTxnToEntry.find(rsp.txnid);
+        if (mcIt == mcTxnToEntry.end()) {
+            // V2-01/R05: the data may have completed before this receipt.
+            // Only an identity whose receipt is genuinely owed may match;
+            // anything else is a duplicate (receipt already consumed
+            // before data completion) or an unknown id -- both fail.
+            panic_if(mcPendingReceiptTxns.erase(rsp.txnid) != 1,
+                     "HnfCC ReadReceipt txn=%u matches no MC read owing a"
+                     " receipt (duplicate or unknown; pending=%lu)\n",
+                     rsp.txnid,
+                     (unsigned long)mcPendingReceiptTxns.size());
+            DPRINTF(HnfCC,
+                    "CC MC txn=%u receipt arrived after data completion"
+                    " (accepted, no retry)\n", rsp.txnid);
+            // One-line evidence in the normal log that the data-before-
+            // receipt ordering was exercised at G level (see REVIEW_V3).
+            inform_once("HnfCC late ReadReceipt consumed after data"
+                        " completion\n");
+            return std::nullopt;
+        }
+        Entry& entry = entries[mcIt->second];
+        panic_if(entry.mcTxnId != rsp.txnid,
+                 "HnfCC ReadReceipt txn=%u maps to stale entry=%u\n",
+                 rsp.txnid, mcIt->second);
+        panic_if(entry.mcReceiptSeen,
+                 "HnfCC duplicate ReadReceipt txn=%u entry=%u\n",
+                 rsp.txnid, mcIt->second);
+        entry.mcReceiptSeen = true;
+        inform_once("HnfCC downstream ReadReceipt accepted (hnf-visible"
+                    " mode)\n");
+        DPRINTF(HnfCC,
+                "CC entry=%u MC read txn=%u receipt seen (accepted, no"
+                " retry)\n",
+                mcIt->second, rsp.txnid);
         return std::nullopt;
     }
 
@@ -2627,7 +2711,13 @@ HnfCoherencyController::hasWork() const
     if (hasTxWork() || hasDeferredRetire()) {
         return true;
     }
-    return !mcTxnToEntry.empty() || !dirtyVictimTxns.empty() ||
+    // V3-01: identities still owing a ReadReceipt are protocol work --
+    // the parent's drain completion and the checkpoint precondition both
+    // route through hasWork(), so a pending receipt must keep both gates
+    // closed until the receipt actually arrives (whatever the data/receipt
+    // ordering was).
+    return !mcTxnToEntry.empty() || !mcPendingReceiptTxns.empty() ||
+        !dirtyVictimTxns.empty() ||
         seqPocqEntry.valid ||
         (slcsfUnit && slcsfUnit->hasPendingSeq()) ||
         std::any_of(entries.begin(), entries.end(),

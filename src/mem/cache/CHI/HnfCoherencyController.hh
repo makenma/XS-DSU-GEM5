@@ -54,9 +54,13 @@ class HnfCoherencyController
                            uint32_t num_entries, uint32_t sn_node_id,
                            bool direct_sn_fake_data,
                            uint32_t rnf_slices,
-                           bool enable_retry = true);
+                           bool enable_retry = true,
+                           bool mc_receipts_expected = true,
+                           bool late_write_comp = false);
 
     void setSlcsf(HnfSLCSF* slcsf) { slcsfUnit = slcsf; }
+    void setReverseCompDataForTest(bool value, uint32_t source = UINT32_MAX)
+    { reverseCompDataForTest = value; reverseCompDataSource = source; }
 
     HnfCcAdmitResult acceptLinkReq(const HnfLinkToCcReq& req,
                                    uint64_t cycle);
@@ -161,6 +165,11 @@ class HnfCoherencyController
         bool isStatic = false;
         bool mcReadIssued = false;
         uint32_t mcTxnId = 0;
+        /** ReadReceipt from the SN-F for the downstream MC read (F02):
+         *  marks "downstream accepted / will not retry".  Never completes
+         *  the read by itself -- data and receipt are accounted
+         *  independently. */
+        bool mcReceiptSeen = false;
         uint8_t writeDbid = 0;
         bool needsCompAck = false;
         bool expectsWriteData = false;
@@ -247,6 +256,10 @@ class HnfCoherencyController
     POCQ_StateGraph pocqGraph;
     SEQ_POCQ_StateGraph seqPocqGraph;
     std::vector<Entry> entries;
+    bool mcReceiptsExpected;
+    const bool lateWriteComp;
+    bool reverseCompDataForTest = false;
+    uint32_t reverseCompDataSource = UINT32_MAX;
     SeqPocqEntry seqPocqEntry;
     std::deque<HnfCcTxReq> txReqQ;
     std::deque<HnfCcTxSnp> txSnpQ;
@@ -254,6 +267,19 @@ class HnfCoherencyController
     std::deque<HnfCcTxRsp> txRspQ;
     std::deque<HnfCcRetireInfo> deferredRetireQ;
     std::unordered_map<uint32_t, uint32_t> mcTxnToEntry;
+    /**
+     * MC transaction ids whose data completed while their ReadReceipt is
+     * still owed (V2-01/R05).  A receipt may legally arrive after the
+     * last data beat, so the identity must survive data completion and
+     * entry retirement.  Membership is protocol-driven -- an id enters
+     * only when a receipt is genuinely expected and has not arrived, and
+     * leaves only when its receipt does -- never evicted by capacity.
+     * Starvation (receipts stop arriving) fails deterministically at the
+     * sanity bound instead of silently dropping an owed identity.  When
+     * the boundary adapter owns receipts (mc_receipts_expected == false)
+     * nothing ever enters this set.
+     */
+    std::unordered_set<uint32_t> mcPendingReceiptTxns;
     std::unordered_map<uint32_t, uint32_t> snoopTxnToEntry;
     std::unordered_map<uint64_t, DirtyVictimTxn> dirtyVictimTxns;
     std::unordered_map<uint32_t, uint64_t> dirtyVictimTxnIds;

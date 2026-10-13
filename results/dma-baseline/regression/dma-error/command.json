@@ -1,0 +1,12 @@
+[
+  "/nfs/home/majunhong/project/chiron/XS-DSU-GEM5/build/RISCV/gem5.opt",
+  "--outdir=/nfs/home/majunhong/project/chiron/XS-DSU-GEM5/results/dma-baseline/regression/dma-error",
+  "configs/example/chi_dma.py",
+  "--mode",
+  "dma_error",
+  "--dma-error",
+  "--parallel-chunks",
+  "4",
+  "--chunk-bytes",
+  "33"
+]

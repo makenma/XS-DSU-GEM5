@@ -1,0 +1,904 @@
+{
+    "type": "Root",
+    "cxx_class": "gem5::Root",
+    "name": null,
+    "path": "root",
+    "eventq_index": 0,
+    "full_system": false,
+    "sim_quantum": 0,
+    "time_sync_enable": false,
+    "time_sync_period": 100000000000,
+    "time_sync_spin_threshold": 100000000,
+    "system": {
+        "type": "System",
+        "cxx_class": "gem5::System",
+        "name": "system",
+        "path": "system",
+        "arch_db": null,
+        "auto_unlink_shared_backstore": false,
+        "cache_line_size": 64,
+        "enable_difftest": false,
+        "enable_h_gcpt": false,
+        "enable_mem_dedup": false,
+        "enable_riscv_vector": false,
+        "eventq_index": 0,
+        "exit_on_work_items": false,
+        "gcpt_file": "",
+        "gcpt_restorer_file": "",
+        "gcpt_restorer_size_limit": 1792,
+        "init_param": 0,
+        "m5ops_base": 0,
+        "map_to_raw_cpt": false,
+        "mem_mode": "timing",
+        "mem_ranges": [
+            "0:536870912"
+        ],
+        "memories": [
+            "system.memory"
+        ],
+        "mmap_using_noreserve": false,
+        "multi_thread": false,
+        "num_cpus": 1,
+        "num_work_ids": 16,
+        "readfile": "",
+        "redirect_paths": [],
+        "restore_from_gcpt": false,
+        "shadow_rom_ranges": [],
+        "shared_backstore": "",
+        "symbolfile": "",
+        "thermal_components": [],
+        "thermal_model": null,
+        "work_begin_ckpt_count": 0,
+        "work_begin_cpu_id_exit": -1,
+        "work_begin_exit_count": 0,
+        "work_cpus_ckpt_count": 0,
+        "work_end_ckpt_count": 0,
+        "work_end_exit_count": 0,
+        "work_item_id": -1,
+        "workload": {
+            "type": "StubWorkload",
+            "cxx_class": "gem5::StubWorkload",
+            "name": "workload",
+            "path": "system.workload",
+            "byte_order": "little",
+            "entry": 0,
+            "eventq_index": 0,
+            "wait_for_remote_gdb": false
+        },
+        "xiangshan_system": false,
+        "clk_domain": {
+            "type": "SrcClockDomain",
+            "cxx_class": "gem5::SrcClockDomain",
+            "name": "clk_domain",
+            "path": "system.clk_domain",
+            "clock": [
+                1000
+            ],
+            "domain_id": -1,
+            "eventq_index": 0,
+            "init_perf_level": 0,
+            "voltage_domain": {
+                "type": "VoltageDomain",
+                "cxx_class": "gem5::VoltageDomain",
+                "name": "voltage_domain",
+                "path": "system.clk_domain.voltage_domain",
+                "eventq_index": 0,
+                "voltage": [
+                    1.0
+                ]
+            }
+        },
+        "dma": {
+            "type": "SimpleDma",
+            "cxx_class": "gem5::SimpleDma",
+            "name": "dma",
+            "path": "system.dma",
+            "chunk_bytes": 33,
+            "clk_domain": "system.clk_domain",
+            "dma_range": "268435456:272629760",
+            "eventq_index": 0,
+            "parallel_chunks": 4,
+            "pio_addr": 1073741824,
+            "pio_latency": 10000,
+            "pio_size": 4096,
+            "power_model": [],
+            "power_state": {
+                "type": "PowerState",
+                "cxx_class": "gem5::PowerState",
+                "name": "power_state",
+                "path": "system.dma.power_state",
+                "clk_gate_bins": 20,
+                "clk_gate_max": 1000000000000,
+                "clk_gate_min": 1000,
+                "default_state": "UNDEFINED",
+                "eventq_index": 0,
+                "leaders": [],
+                "possible_states": []
+            },
+            "sid": 0,
+            "ssid": 0,
+            "system": "system",
+            "dma": {
+                "role": "GEM5 REQUESTOR",
+                "peer": "system.dma_stall.upstream",
+                "is_source": "True"
+            },
+            "pio": {
+                "role": "GEM5 RESPONDER",
+                "peer": "system.pio_stall.downstream",
+                "is_source": "False"
+            }
+        },
+        "dma_stall": {
+            "type": "DmaTimingStall",
+            "cxx_class": "gem5::Chi::DmaTimingStall",
+            "name": "dma_stall",
+            "path": "system.dma_stall",
+            "clk_domain": "system.clk_domain",
+            "eventq_index": 0,
+            "power_model": [],
+            "power_state": {
+                "type": "PowerState",
+                "cxx_class": "gem5::PowerState",
+                "name": "power_state",
+                "path": "system.dma_stall.power_state",
+                "clk_gate_bins": 20,
+                "clk_gate_max": 1000000000000,
+                "clk_gate_min": 1000,
+                "default_state": "UNDEFINED",
+                "eventq_index": 0,
+                "leaders": [],
+                "possible_states": []
+            },
+            "reject_requests": false,
+            "reject_responses": true,
+            "stall_cycles": 50,
+            "downstream": {
+                "role": "GEM5 REQUESTOR",
+                "peer": "system.rni.dma_side",
+                "is_source": "True"
+            },
+            "upstream": {
+                "role": "GEM5 RESPONDER",
+                "peer": "system.dma.dma",
+                "is_source": "False"
+            }
+        },
+        "dvfs_handler": {
+            "type": "DVFSHandler",
+            "cxx_class": "gem5::DVFSHandler",
+            "name": "dvfs_handler",
+            "path": "system.dvfs_handler",
+            "domains": [],
+            "enable": false,
+            "eventq_index": 0,
+            "sys_clk_domain": "system.clk_domain",
+            "transition_latency": 100000000
+        },
+        "hnf": {
+            "type": "HomeNodeFull",
+            "cxx_class": "gem5::Chi::HomeNodeFull",
+            "name": "hnf",
+            "path": "system.hnf",
+            "block_size": 64,
+            "clk_domain": "system.clk_domain",
+            "data_beat_bytes": 32,
+            "device": 0,
+            "direct_sn_fake_data": false,
+            "enable_retry": true,
+            "eventq_index": 0,
+            "late_write_comp": true,
+            "mc_receipts_expected": false,
+            "node_type": "hnf",
+            "num_poc_entries": 2,
+            "port": 0,
+            "power_model": [],
+            "power_state": {
+                "type": "PowerState",
+                "cxx_class": "gem5::PowerState",
+                "name": "power_state",
+                "path": "system.hnf.power_state",
+                "clk_gate_bins": 20,
+                "clk_gate_max": 1000000000000,
+                "clk_gate_min": 1000,
+                "default_state": "UNDEFINED",
+                "eventq_index": 0,
+                "leaders": [],
+                "possible_states": []
+            },
+            "rnf_slices": 1,
+            "seq_entries": 8,
+            "sf_num_sets": 1024,
+            "sf_num_ways": 16,
+            "slc_num_sets": 1024,
+            "slc_num_ways": 16,
+            "slc_replacement_policy": "lru",
+            "slc_replacement_seed": 1,
+            "slc_restore_allow_policy_override": false,
+            "slcsf": {
+                "type": "SlcSnoopFilter",
+                "cxx_class": "gem5::Chi::SlcSnoopFilter",
+                "name": "slcsf",
+                "path": "system.hnf.slcsf",
+                "block_size": 64,
+                "clk_domain": "system.clk_domain",
+                "eventq_index": 0,
+                "exit_on_slc_full": false,
+                "init_latency": 16,
+                "power_model": [],
+                "power_state": {
+                    "type": "PowerState",
+                    "cxx_class": "gem5::PowerState",
+                    "name": "power_state",
+                    "path": "system.hnf.slcsf.power_state",
+                    "clk_gate_bins": 20,
+                    "clk_gate_max": 1000000000000,
+                    "clk_gate_min": 1000,
+                    "default_state": "UNDEFINED",
+                    "eventq_index": 0,
+                    "leaders": [],
+                    "possible_states": []
+                },
+                "seq_entries": 8,
+                "sf_num_sets": 1024,
+                "sf_num_ways": 16,
+                "slc_num_sets": 1024,
+                "slc_num_ways": 16,
+                "slc_replacement_policy": "lru",
+                "slc_replacement_seed": 1,
+                "slc_restore_allow_policy_override": false,
+                "slcsf_enable_set_lock": false,
+                "slcsf_fill_issue_width": 1,
+                "slcsf_fill_latency": 4,
+                "slcsf_lookup_issue_width": 1,
+                "slcsf_lookup_latency": 4,
+                "slcsf_max_inflight": 1,
+                "slcsf_replay_penalty": 2,
+                "slcsf_req_queue_entries": 8,
+                "slcsf_resp_queue_entries": 8,
+                "slcsf_response_consume_width": 1,
+                "slcsf_sf_evict_latency": 2,
+                "slcsf_update_issue_width": 1,
+                "slcsf_update_latency": 3,
+                "slcsf_victim_buffer_entries": 2,
+                "slcsf_victim_latency": 3
+            },
+            "slcsf_enable_set_lock": false,
+            "slcsf_fill_issue_width": 1,
+            "slcsf_fill_latency": 4,
+            "slcsf_lookup_issue_width": 1,
+            "slcsf_lookup_latency": 4,
+            "slcsf_max_inflight": 1,
+            "slcsf_replay_penalty": 2,
+            "slcsf_req_queue_entries": 8,
+            "slcsf_resp_queue_entries": 8,
+            "slcsf_response_consume_width": 1,
+            "slcsf_sf_evict_latency": 2,
+            "slcsf_update_issue_width": 1,
+            "slcsf_update_latency": 3,
+            "slcsf_victim_buffer_entries": 2,
+            "slcsf_victim_latency": 3,
+            "sn_node_id": 128,
+            "test_reverse_comp_data": true,
+            "test_reverse_comp_data_source": 4294967295,
+            "x": 1,
+            "y": 1,
+            "rxport": {
+                "role": "GEM5 RESPONDER",
+                "peer": "system.routers3.local_ports[0]",
+                "is_source": "False"
+            }
+        },
+        "hni": {
+            "type": "HniIoAdapter",
+            "cxx_class": "gem5::Chi::HniIoAdapter",
+            "name": "hni",
+            "path": "system.hni",
+            "clk_domain": "system.clk_domain",
+            "eventq_index": 0,
+            "io_range": "1073741824:1073745920",
+            "node_id": 20,
+            "power_model": [],
+            "power_state": {
+                "type": "PowerState",
+                "cxx_class": "gem5::PowerState",
+                "name": "power_state",
+                "path": "system.hni.power_state",
+                "clk_gate_bins": 20,
+                "clk_gate_max": 1000000000000,
+                "clk_gate_min": 1000,
+                "default_state": "UNDEFINED",
+                "eventq_index": 0,
+                "leaders": [],
+                "possible_states": []
+            },
+            "system": "system",
+            "chi_side": {
+                "role": "GEM5 RESPONDER",
+                "peer": "system.routers2.local_ports[4]",
+                "is_source": "False"
+            },
+            "pio_side": {
+                "role": "GEM5 REQUESTOR",
+                "peer": "system.pio_stall.upstream",
+                "is_source": "True"
+            }
+        },
+        "membus": {
+            "type": "CoherentXBar",
+            "cxx_class": "gem5::CoherentXBar",
+            "name": "membus",
+            "path": "system.membus",
+            "clk_domain": "system.clk_domain",
+            "eventq_index": 0,
+            "forward_latency": 4,
+            "frontend_latency": 3,
+            "header_latency": 1,
+            "hint_wakeup_ahead_cycles": 0,
+            "layer_bandwidth_configs": [],
+            "max_outstanding_snoops": 512,
+            "max_routing_table_size": 512,
+            "point_of_coherency": true,
+            "point_of_unification": true,
+            "power_model": [],
+            "power_state": {
+                "type": "PowerState",
+                "cxx_class": "gem5::PowerState",
+                "name": "power_state",
+                "path": "system.membus.power_state",
+                "clk_gate_bins": 20,
+                "clk_gate_max": 1000000000000,
+                "clk_gate_min": 1000,
+                "default_state": "UNDEFINED",
+                "eventq_index": 0,
+                "leaders": [],
+                "possible_states": []
+            },
+            "response_latency": 2,
+            "snoop_filter": {
+                "type": "SnoopFilter",
+                "cxx_class": "gem5::SnoopFilter",
+                "name": "snoop_filter",
+                "path": "system.membus.snoop_filter",
+                "eventq_index": 0,
+                "lookup_latency": 1,
+                "max_capacity": 8388608,
+                "system": "system"
+            },
+            "snoop_response_latency": 4,
+            "system": "system",
+            "use_default_range": false,
+            "width": 16,
+            "cpu_side_ports": {
+                "role": "GEM5 RESPONDER",
+                "peer": [
+                    "system.system_port",
+                    "system.snf.mem_side"
+                ],
+                "is_source": "False"
+            },
+            "mem_side_ports": {
+                "role": "GEM5 REQUESTOR",
+                "peer": [
+                    "system.memory.port"
+                ],
+                "is_source": "True"
+            }
+        },
+        "memory": {
+            "type": "SimpleMemory",
+            "cxx_class": "gem5::memory::SimpleMemory",
+            "name": "memory",
+            "path": "system.memory",
+            "bandwidth": "73.000000",
+            "clk_domain": "system.clk_domain",
+            "conf_table_reported": true,
+            "eventq_index": 0,
+            "image_file": "",
+            "in_addr_map": true,
+            "kvm_map": true,
+            "latency": 30000,
+            "latency_var": 80000,
+            "null": false,
+            "power_model": [],
+            "power_state": {
+                "type": "PowerState",
+                "cxx_class": "gem5::PowerState",
+                "name": "power_state",
+                "path": "system.memory.power_state",
+                "clk_gate_bins": 20,
+                "clk_gate_max": 1000000000000,
+                "clk_gate_min": 1000,
+                "default_state": "UNDEFINED",
+                "eventq_index": 0,
+                "leaders": [],
+                "possible_states": []
+            },
+            "range": "0:536870912",
+            "port": {
+                "role": "GEM5 RESPONDER",
+                "peer": "system.membus.mem_side_ports[0]",
+                "is_source": "False"
+            }
+        },
+        "pio_stall": {
+            "type": "DmaTimingStall",
+            "cxx_class": "gem5::Chi::DmaTimingStall",
+            "name": "pio_stall",
+            "path": "system.pio_stall",
+            "clk_domain": "system.clk_domain",
+            "eventq_index": 0,
+            "power_model": [],
+            "power_state": {
+                "type": "PowerState",
+                "cxx_class": "gem5::PowerState",
+                "name": "power_state",
+                "path": "system.pio_stall.power_state",
+                "clk_gate_bins": 20,
+                "clk_gate_max": 1000000000000,
+                "clk_gate_min": 1000,
+                "default_state": "UNDEFINED",
+                "eventq_index": 0,
+                "leaders": [],
+                "possible_states": []
+            },
+            "reject_requests": true,
+            "reject_responses": false,
+            "stall_cycles": 30,
+            "downstream": {
+                "role": "GEM5 REQUESTOR",
+                "peer": "system.dma.pio",
+                "is_source": "True"
+            },
+            "upstream": {
+                "role": "GEM5 RESPONDER",
+                "peer": "system.hni.pio_side",
+                "is_source": "False"
+            }
+        },
+        "rni": {
+            "type": "RniDmaAdapter",
+            "cxx_class": "gem5::Chi::RniDmaAdapter",
+            "name": "rni",
+            "path": "system.rni",
+            "allow_io": false,
+            "clk_domain": "system.clk_domain",
+            "eventq_index": 0,
+            "home_node_id": 144,
+            "io_node_id": 20,
+            "io_range": "1073741824:1073745920",
+            "max_chi": 2,
+            "max_entries": 2,
+            "memory_range": "268435456:272629760",
+            "node_id": 16,
+            "power_model": [],
+            "power_state": {
+                "type": "PowerState",
+                "cxx_class": "gem5::PowerState",
+                "name": "power_state",
+                "path": "system.rni.power_state",
+                "clk_gate_bins": 20,
+                "clk_gate_max": 1000000000000,
+                "clk_gate_min": 1000,
+                "default_state": "UNDEFINED",
+                "eventq_index": 0,
+                "leaders": [],
+                "possible_states": []
+            },
+            "test_hold_rx_cycles": 0,
+            "upstream_ranges": [],
+            "chi_side": {
+                "role": "GEM5 REQUESTOR",
+                "peer": "system.routers2.device_ports[0]",
+                "is_source": "True"
+            },
+            "dma_side": {
+                "role": "GEM5 RESPONDER",
+                "peer": "system.dma_stall.downstream",
+                "is_source": "False"
+            }
+        },
+        "routers": [
+            {
+                "type": "ChiRouterRefModel",
+                "cxx_class": "gem5::Chi::ChiRouterRefModel",
+                "name": "routers0",
+                "path": "system.routers0",
+                "clk_domain": "system.clk_domain",
+                "device": 0,
+                "dnum": 4,
+                "dual_lane_dat": false,
+                "dual_lane_req": false,
+                "dual_lane_rsp": false,
+                "dual_lane_snp": false,
+                "eventq_index": 0,
+                "internal_ports_num": 8,
+                "local_x": 0,
+                "local_y": 0,
+                "multi_flit_out": false,
+                "node_type": "router",
+                "p_cand_depth": 2,
+                "p_tx_depth": 4,
+                "pnum": 4,
+                "port": 0,
+                "power_model": [],
+                "power_state": {
+                    "type": "PowerState",
+                    "cxx_class": "gem5::PowerState",
+                    "name": "power_state",
+                    "path": "system.routers0.power_state",
+                    "clk_gate_bins": 20,
+                    "clk_gate_max": 1000000000000,
+                    "clk_gate_min": 1000,
+                    "default_state": "UNDEFINED",
+                    "eventq_index": 0,
+                    "leaders": [],
+                    "possible_states": []
+                },
+                "route_table": [],
+                "x": 0,
+                "y": 0,
+                "y_inc_is_north": true,
+                "device_ports": {
+                    "role": "GEM5 RESPONDER",
+                    "peer": [
+                        "None",
+                        "None",
+                        "None",
+                        "None",
+                        "None",
+                        "None",
+                        "None",
+                        "None",
+                        "system.test_adapter.chi_side"
+                    ],
+                    "is_source": "False"
+                },
+                "internal_peer_ports": {
+                    "role": "GEM5 RESPONDER",
+                    "peer": [
+                        "system.routers1.internal_ports[2]",
+                        "None",
+                        "None",
+                        "system.routers2.internal_ports[1]"
+                    ],
+                    "is_source": "False"
+                },
+                "internal_ports": {
+                    "role": "GEM5 REQUESTOR",
+                    "peer": [
+                        "system.routers1.internal_peer_ports[2]",
+                        "None",
+                        "None",
+                        "system.routers2.internal_peer_ports[1]"
+                    ],
+                    "is_source": "True"
+                }
+            },
+            {
+                "type": "ChiRouterRefModel",
+                "cxx_class": "gem5::Chi::ChiRouterRefModel",
+                "name": "routers1",
+                "path": "system.routers1",
+                "clk_domain": "system.clk_domain",
+                "device": 0,
+                "dnum": 4,
+                "dual_lane_dat": false,
+                "dual_lane_req": false,
+                "dual_lane_rsp": false,
+                "dual_lane_snp": false,
+                "eventq_index": 0,
+                "internal_ports_num": 8,
+                "local_x": 1,
+                "local_y": 0,
+                "multi_flit_out": false,
+                "node_type": "router",
+                "p_cand_depth": 2,
+                "p_tx_depth": 4,
+                "pnum": 4,
+                "port": 0,
+                "power_model": [],
+                "power_state": {
+                    "type": "PowerState",
+                    "cxx_class": "gem5::PowerState",
+                    "name": "power_state",
+                    "path": "system.routers1.power_state",
+                    "clk_gate_bins": 20,
+                    "clk_gate_max": 1000000000000,
+                    "clk_gate_min": 1000,
+                    "default_state": "UNDEFINED",
+                    "eventq_index": 0,
+                    "leaders": [],
+                    "possible_states": []
+                },
+                "route_table": [],
+                "x": 0,
+                "y": 0,
+                "y_inc_is_north": true,
+                "internal_peer_ports": {
+                    "role": "GEM5 RESPONDER",
+                    "peer": [
+                        "None",
+                        "None",
+                        "system.routers0.internal_ports[0]",
+                        "system.routers3.internal_ports[1]"
+                    ],
+                    "is_source": "False"
+                },
+                "internal_ports": {
+                    "role": "GEM5 REQUESTOR",
+                    "peer": [
+                        "None",
+                        "None",
+                        "system.routers0.internal_peer_ports[0]",
+                        "system.routers3.internal_peer_ports[1]"
+                    ],
+                    "is_source": "True"
+                },
+                "local_ports": {
+                    "role": "GEM5 REQUESTOR",
+                    "peer": [
+                        "system.snf.chi_side"
+                    ],
+                    "is_source": "True"
+                }
+            },
+            {
+                "type": "ChiRouterRefModel",
+                "cxx_class": "gem5::Chi::ChiRouterRefModel",
+                "name": "routers2",
+                "path": "system.routers2",
+                "clk_domain": "system.clk_domain",
+                "device": 0,
+                "dnum": 4,
+                "dual_lane_dat": false,
+                "dual_lane_req": false,
+                "dual_lane_rsp": false,
+                "dual_lane_snp": false,
+                "eventq_index": 0,
+                "internal_ports_num": 8,
+                "local_x": 0,
+                "local_y": 1,
+                "multi_flit_out": false,
+                "node_type": "router",
+                "p_cand_depth": 2,
+                "p_tx_depth": 4,
+                "pnum": 4,
+                "port": 0,
+                "power_model": [],
+                "power_state": {
+                    "type": "PowerState",
+                    "cxx_class": "gem5::PowerState",
+                    "name": "power_state",
+                    "path": "system.routers2.power_state",
+                    "clk_gate_bins": 20,
+                    "clk_gate_max": 1000000000000,
+                    "clk_gate_min": 1000,
+                    "default_state": "UNDEFINED",
+                    "eventq_index": 0,
+                    "leaders": [],
+                    "possible_states": []
+                },
+                "route_table": [],
+                "x": 0,
+                "y": 0,
+                "y_inc_is_north": true,
+                "device_ports": {
+                    "role": "GEM5 RESPONDER",
+                    "peer": [
+                        "system.rni.chi_side"
+                    ],
+                    "is_source": "False"
+                },
+                "internal_peer_ports": {
+                    "role": "GEM5 RESPONDER",
+                    "peer": [
+                        "system.routers3.internal_ports[2]",
+                        "system.routers0.internal_ports[3]"
+                    ],
+                    "is_source": "False"
+                },
+                "internal_ports": {
+                    "role": "GEM5 REQUESTOR",
+                    "peer": [
+                        "system.routers3.internal_peer_ports[2]",
+                        "system.routers0.internal_peer_ports[3]"
+                    ],
+                    "is_source": "True"
+                },
+                "local_ports": {
+                    "role": "GEM5 REQUESTOR",
+                    "peer": [
+                        "None",
+                        "None",
+                        "None",
+                        "None",
+                        "system.hni.chi_side"
+                    ],
+                    "is_source": "True"
+                }
+            },
+            {
+                "type": "ChiRouterRefModel",
+                "cxx_class": "gem5::Chi::ChiRouterRefModel",
+                "name": "routers3",
+                "path": "system.routers3",
+                "clk_domain": "system.clk_domain",
+                "device": 0,
+                "dnum": 4,
+                "dual_lane_dat": false,
+                "dual_lane_req": false,
+                "dual_lane_rsp": false,
+                "dual_lane_snp": false,
+                "eventq_index": 0,
+                "internal_ports_num": 8,
+                "local_x": 1,
+                "local_y": 1,
+                "multi_flit_out": false,
+                "node_type": "router",
+                "p_cand_depth": 2,
+                "p_tx_depth": 4,
+                "pnum": 4,
+                "port": 0,
+                "power_model": [],
+                "power_state": {
+                    "type": "PowerState",
+                    "cxx_class": "gem5::PowerState",
+                    "name": "power_state",
+                    "path": "system.routers3.power_state",
+                    "clk_gate_bins": 20,
+                    "clk_gate_max": 1000000000000,
+                    "clk_gate_min": 1000,
+                    "default_state": "UNDEFINED",
+                    "eventq_index": 0,
+                    "leaders": [],
+                    "possible_states": []
+                },
+                "route_table": [],
+                "x": 0,
+                "y": 0,
+                "y_inc_is_north": true,
+                "internal_peer_ports": {
+                    "role": "GEM5 RESPONDER",
+                    "peer": [
+                        "None",
+                        "system.routers1.internal_ports[3]",
+                        "system.routers2.internal_ports[0]"
+                    ],
+                    "is_source": "False"
+                },
+                "internal_ports": {
+                    "role": "GEM5 REQUESTOR",
+                    "peer": [
+                        "None",
+                        "system.routers1.internal_peer_ports[3]",
+                        "system.routers2.internal_peer_ports[0]"
+                    ],
+                    "is_source": "True"
+                },
+                "local_ports": {
+                    "role": "GEM5 REQUESTOR",
+                    "peer": [
+                        "system.hnf.rxport"
+                    ],
+                    "is_source": "True"
+                }
+            }
+        ],
+        "snf": {
+            "type": "Chi2ClassicMemBridge",
+            "cxx_class": "gem5::Chi::Chi2ClassicMemBridge",
+            "name": "snf",
+            "path": "system.snf",
+            "block_size": 64,
+            "clk_domain": "system.clk_domain",
+            "data_beat_bytes": 32,
+            "eventq_index": 0,
+            "hnf_node_id": 144,
+            "max_outstanding": 32,
+            "node_id": 128,
+            "power_model": [],
+            "power_state": {
+                "type": "PowerState",
+                "cxx_class": "gem5::PowerState",
+                "name": "power_state",
+                "path": "system.snf.power_state",
+                "clk_gate_bins": 20,
+                "clk_gate_max": 1000000000000,
+                "clk_gate_min": 1000,
+                "default_state": "UNDEFINED",
+                "eventq_index": 0,
+                "leaders": [],
+                "possible_states": []
+            },
+            "system": "system",
+            "chi_side": {
+                "role": "GEM5 RESPONDER",
+                "peer": "system.routers1.local_ports[0]",
+                "is_source": "False"
+            },
+            "mem_side": {
+                "role": "GEM5 REQUESTOR",
+                "peer": "system.membus.cpu_side_ports[1]",
+                "is_source": "True"
+            }
+        },
+        "test_adapter": {
+            "type": "RniDmaAdapter",
+            "cxx_class": "gem5::Chi::RniDmaAdapter",
+            "name": "test_adapter",
+            "path": "system.test_adapter",
+            "allow_io": false,
+            "clk_domain": "system.clk_domain",
+            "eventq_index": 0,
+            "home_node_id": 144,
+            "io_node_id": 20,
+            "io_range": "1073741824:1073745920",
+            "max_chi": 2,
+            "max_entries": 2,
+            "memory_range": "268435456:272629760",
+            "node_id": 8,
+            "power_model": [],
+            "power_state": {
+                "type": "PowerState",
+                "cxx_class": "gem5::PowerState",
+                "name": "power_state",
+                "path": "system.test_adapter.power_state",
+                "clk_gate_bins": 20,
+                "clk_gate_max": 1000000000000,
+                "clk_gate_min": 1000,
+                "default_state": "UNDEFINED",
+                "eventq_index": 0,
+                "leaders": [],
+                "possible_states": []
+            },
+            "test_hold_rx_cycles": 0,
+            "upstream_ranges": [],
+            "chi_side": {
+                "role": "GEM5 REQUESTOR",
+                "peer": "system.routers0.device_ports[8]",
+                "is_source": "True"
+            },
+            "dma_side": {
+                "role": "GEM5 RESPONDER",
+                "peer": "system.tester.port",
+                "is_source": "False"
+            }
+        },
+        "tester": {
+            "type": "DmaPathTester",
+            "cxx_class": "gem5::Chi::DmaPathTester",
+            "name": "tester",
+            "path": "system.tester",
+            "clk_domain": "system.clk_domain",
+            "eventq_index": 0,
+            "io_burst": false,
+            "io_test": false,
+            "power_model": [],
+            "power_state": {
+                "type": "PowerState",
+                "cxx_class": "gem5::PowerState",
+                "name": "power_state",
+                "path": "system.tester.power_state",
+                "clk_gate_bins": 20,
+                "clk_gate_max": 1000000000000,
+                "clk_gate_min": 1000,
+                "default_state": "UNDEFINED",
+                "eventq_index": 0,
+                "leaders": [],
+                "possible_states": []
+            },
+            "system": "system",
+            "port": {
+                "role": "GEM5 REQUESTOR",
+                "peer": "system.test_adapter.dma_side",
+                "is_source": "True"
+            }
+        },
+        "system_port": {
+            "role": "GEM5 REQUESTOR",
+            "peer": "system.membus.cpu_side_ports[0]",
+            "is_source": "True"
+        }
+    }
+}

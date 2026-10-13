@@ -816,6 +816,7 @@ HomeLinkLayer::doStageRsp(PipeEntry& entry, RawRsp& rsp)
                  decoded.minor != RspMinor::DBIDRespOrd &&
                  decoded.minor != RspMinor::RetryAck &&
                  decoded.minor != RspMinor::PCrdGrant &&
+                 decoded.minor != RspMinor::ReadReceipt &&
                  decoded.minor != RspMinor::SnpResp &&
                  decoded.minor != RspMinor::SnpRespFwded,
              "HNF RXRSP unsupported opcode=0x%x txn=%u\n",

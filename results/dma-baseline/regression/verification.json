@@ -1,0 +1,9 @@
+{
+  "verified_cases": 37,
+  "positive_cases": 34,
+  "expected_negative_cases": 3,
+  "hnf_unit_tests": 77,
+  "verification": "Checked saved actual commands, PASS/exit status, complete responses, path counters and quiescence; see per-case logs.",
+  "repair_log": "../repair-regression.log",
+  "full_run_log": "../full-regression-fixed.log"
+}

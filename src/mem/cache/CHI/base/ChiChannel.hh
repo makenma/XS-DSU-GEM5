@@ -67,17 +67,28 @@ namespace Chi
         // Internal provenance carried losslessly with the modeled flit. This
         // is not inferred from transaction-number ranges or CHI attributes.
         bool        hnfDirtyVictim = false;
+        // ---- co-sim ABI v2 fields (ChiCosimBridge socket protocol) -------
+        // CHI ReturnTxnID: independent of txnid; wide enough for the
+        // producer's full transaction id (the SN-F adapter virtualizes it
+        // onto the 12-bit wire).  returnTxnIdValid separates "field
+        // absent" from the perfectly legal value 0.
+        uint32_t    ReturnTxnID = 0;
+        bool        returnTxnIdValid = false;
+        bool        nonSecure = false;
+        uint8_t     user = 0;       // 4-bit C2XM user field
     };
 
     struct RawRsp:BaseFlit
     {
-        uint8_t     dbid = 0;
+        // 12-bit wire DBID identifier (C2XM slot / HNF return tag for DMT).
+        uint16_t    dbid = 0;
         uint8_t     resp = 0;
         uint8_t     respErr = 0;
         uint8_t     pcrdtype = 0;
         RspKind     rspKind = RspKind::MainPath;
         uint64_t    originSeq = 0;
         uint64_t    originCycle = 0;
+        bool        traceTag = false;
     };
 
 
@@ -91,13 +102,25 @@ namespace Chi
     {
         uint8_t     last = 0;
         uint32_t    HomeNID = 0;
-        uint8_t     dbid = 0;
+        // 12-bit wire DBID identifier; 0 is a valid DBID value.
+        uint16_t    dbid = 0;
         uint8_t     dataid = 0;
         uint8_t     resp = 0;
         uint32_t    beatOffset = 0;
         std::vector<uint8_t> byteEnable;
         std::vector<uint8_t> chunkValid;
         std::vector<uint8_t> data;
+
+        // ---- co-sim ABI v2 fields (error / metadata preservation) --------
+        uint8_t     respErr = 0;
+        uint8_t     dataSource = 0;
+        // Poison granularity for this C2XM profile: one bit per 8-byte chunk
+        // of the 32-byte beat (4 bits).
+        uint8_t     poison = 0;
+        uint8_t     ccid = 0;
+        bool        traceTag = false;
+        // DataCheck bytes, one per 8-byte chunk when present (empty = none).
+        std::vector<uint8_t> dataCheck;
 
         size_t
         byteLength() const

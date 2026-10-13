@@ -810,7 +810,10 @@ Cache2ChiBridge::pump()
     while (!pendingReqPkts.empty()) {
         PacketPtr pkt = pendingReqPkts.front();
         if (pkt->req->isUncacheable()) {
+            if (memReqBlocked)
+                break;
             if (!memPort.sendTimingReq(pkt)) {
+                memReqBlocked = true;
                 DPRINTF(Cache2ChiBridge,
                         "uncacheable classic bypass blocked cmd=%s "
                         "addr=%#llx bytes=%u\n",
@@ -1634,6 +1637,8 @@ void
 Cache2ChiBridge::memSidePortRecvReqRetry()
 {
     DPRINTF(Cache2ChiBridge, "Got req retry from memory side\n");
+    memReqBlocked = false;
+    schedulePump();
 }
 
 void

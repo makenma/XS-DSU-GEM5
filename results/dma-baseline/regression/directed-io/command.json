@@ -1,0 +1,8 @@
+[
+  "/nfs/home/majunhong/project/chiron/XS-DSU-GEM5/build/RISCV/gem5.opt",
+  "--outdir=/nfs/home/majunhong/project/chiron/XS-DSU-GEM5/results/dma-baseline/regression/directed-io",
+  "--debug-flags=DmaPath",
+  "--debug-file=path.trace",
+  "tests/gem5/dma/directed.py",
+  "--io"
+]

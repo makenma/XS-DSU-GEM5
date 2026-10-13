@@ -1,0 +1,12 @@
+{
+  "tick": 2000000000,
+  "cause": "simulate() limit reached",
+  "exit_code": 0,
+  "mode": "dma_copy",
+  "length": 64,
+  "chunk_bytes": 64,
+  "parallel_chunks": 1,
+  "classification": "software adapters; not RTL cycle accurate",
+  "cacheable_buffers": false,
+  "cpu": "timing"
+}

@@ -42,6 +42,7 @@
 #define __DEV_DMA_DEVICE_HH__
 
 #include <deque>
+#include <functional>
 #include <memory>
 
 #include "base/addr_range_map.hh"
@@ -185,6 +186,10 @@ class DmaPort : public RequestPort, public Drainable
   public:
 
     DmaPort(ClockedObject *dev, System *s, uint32_t sid=0, uint32_t ssid=0);
+
+    // Optional device error notification before the normal completion event.
+    // The callback must not delete the Packet or alter its SenderState.
+    std::function<void(PacketPtr)> errorCallback;
 
     void
     dmaAction(Packet::Command cmd, Addr addr, int size, Event *event,
