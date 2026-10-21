@@ -6,6 +6,7 @@
 #include <optional>
 #include <set>
 #include <vector>
+#include "base/checkpoint_fields.hh"
 
 #include "dev/ai_mesh/agent_plan_image.hh"
 
@@ -16,6 +17,7 @@ namespace ai_mesh
 
 struct AgentSubmissionIntent
 {
+    GEM5_CHECKPOINT_FIELDS(requestId)
     uint64_t requestId = 0;
     uint64_t completionCookie = 0;
     uint64_t targetRequestId = 0;
@@ -27,6 +29,8 @@ struct AgentSubmissionIntent
     uint64_t parameterAddress = 0;
     uint64_t parameterCapacityBytes = 0;
     uint64_t outputMetadataAddress = 0;
+    uint64_t workspaceAddress = 0;
+    uint64_t workspaceCapacityBytes = 0;
     uint64_t kvHandle = 0;
     uint64_t kvGeneration = 0;
     uint64_t controlSessionId = 0;
@@ -66,6 +70,9 @@ class AgentRequestSource
 
 std::optional<AgentSubmissionIntent>
 buildGenerateIntent(const AgentPlanImage &image, size_t commandIndex);
+
+std::optional<AgentSubmissionIntent>
+buildControlCommandIntent(const AgentPlanImage &image, size_t commandIndex);
 
 std::optional<AgentSubmissionIntent>
 buildControlIntent(const AgentPlanImage &image, size_t controlIndex);

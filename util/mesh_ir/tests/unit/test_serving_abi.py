@@ -15,11 +15,12 @@ from mesh_ir.abi.decoder import (
     decode_section_dir,
 )
 from mesh_ir.abi.encoder import encode_program
-from mesh_ir.abi.verifier import verify_program
-from mesh_ir.builder import load_arch
+from mesh_ir.scheduled.verify import verify_program
+from mesh_ir.architecture import load_arch
 from mesh_ir.generated import abi as A
 from mesh_ir.golden_programs import build_single_core_program
 from mesh_ir.model import MeshIrError
+from mesh_ir.canonical import semantic_sha256
 from mesh_ir.serving_programs import serving_program
 
 REPO = Path(__file__).resolve().parents[4]
@@ -30,6 +31,7 @@ SERVING_RECORDS = {
     "AGENT_INSTANCE_PROFILES": 96,
     "AGENT_SOURCE_CORE_MAP": 4,
     "AGENT_INSTANCE_MEMBER_BINDINGS": 24,
+    "AGENT_INSTANCE_TENSOR_BINDINGS": 32,
     "AGENT_REQUEST_BINDING_REQUIREMENTS": 16,
     "AGENT_PUBLISH_SURROGATE_BINDINGS": 28,
 }
@@ -39,6 +41,7 @@ SERVING_SECTIONS = (
     "AGENT_INSTANCE_PROFILES",
     "AGENT_SOURCE_CORE_MAP",
     "AGENT_INSTANCE_MEMBER_BINDINGS",
+    "AGENT_INSTANCE_TENSOR_BINDINGS",
     "AGENT_REQUEST_BINDING_REQUIREMENTS",
     "AGENT_PUBLISH_SURROGATE_BINDINGS",
 )
@@ -55,18 +58,19 @@ def arch():
 
 
 def test_agent_serving_abi_surface_is_frozen_by_contract():
-    assert A.AGENT_SERVING_V1 == 0x2
-    assert A.KNOWN_FEATURE_MASK == 0x7
+    assert A.AGENT_SERVING_V1 == 0x4
+    assert A.KNOWN_FEATURE_MASK == 0xf
     assert A.FEATURE_MIN_WRITER_MINOR == {
-        "DYNAMIC_MOE_V1": 1, "AGENT_SERVING_V1": 1,
-        "PROFILE_SCOPED_EXECUTION_V1": 3}
-    assert A.SECTION_TYPE.PROFILE_STREAM_RANGES == 16
+        "SCHEDULED_SEMANTICS": 0, "DYNAMIC_MOE_V1": 0,
+        "AGENT_SERVING_V1": 0, "PROFILE_SCOPED_EXECUTION_V1": 0}
+    assert A.SECTION_TYPE.PROFILE_STREAM_RANGES == 0x400a
     assert A.SECTION_TYPE.AGENT_REQUEST_PROFILES == 0x4004
     assert A.SECTION_TYPE.AGENT_INSTANCE_PROFILES == 0x4005
     assert A.SECTION_TYPE.AGENT_SOURCE_CORE_MAP == 0x4006
     assert A.SECTION_TYPE.AGENT_INSTANCE_MEMBER_BINDINGS == 0x4007
     assert A.SECTION_TYPE.AGENT_REQUEST_BINDING_REQUIREMENTS == 0x4008
     assert A.SECTION_TYPE.AGENT_PUBLISH_SURROGATE_BINDINGS == 0x4009
+    assert A.SECTION_TYPE.AGENT_INSTANCE_TENSOR_BINDINGS == 0x400b
     for name, size in SERVING_RECORDS.items():
         assert getattr(A, f"{name}_BYTES") == size, name
     assert A.DMA_FILL_RUNTIME_BOUND_SENTINEL == 0x52554E54494D4531
@@ -87,6 +91,7 @@ def test_agent_serving_abi_surface_is_frozen_by_contract():
         A.SECTION_TYPE.AGENT_INSTANCE_MEMBER_BINDINGS,
         A.SECTION_TYPE.AGENT_REQUEST_BINDING_REQUIREMENTS,
         A.SECTION_TYPE.AGENT_PUBLISH_SURROGATE_BINDINGS,
+        A.SECTION_TYPE.AGENT_INSTANCE_TENSOR_BINDINGS,
     )
     assert A.SECTION_REQUIRED_FEATURES[
         A.SECTION_TYPE.AGENT_PUBLISH_SURROGATE_BINDINGS] == A.AGENT_SERVING_V1
@@ -120,6 +125,9 @@ def test_agent_serving_records_follow_the_declared_wire_order():
             "instance_profile_id", "member_ordinal", "reserved0",
             "static_input_symbol_id", "static_output_symbol_id",
             "static_kv_symbol_id", "expected_logical_source_rank"],
+        "AGENT_INSTANCE_TENSOR_BINDINGS": [
+            "instance_profile_id", "member_ordinal", "binding_kind",
+            "static_symbol_id", "request_symbol_id", "offset_bytes", "span_bytes"],
         "AGENT_REQUEST_BINDING_REQUIREMENTS": [
             "request_program_id", "request_profile_id", "binding_kind",
             "binding_flags", "symbol_id", "reserved"],
@@ -143,7 +151,7 @@ def test_serving_program_round_trips_byte_identically(arch):
     blob = encode_program(program)
     decoded = decode_program(blob)
     assert decoded.required_features == (
-        A.AGENT_SERVING_V1 | A.PROFILE_SCOPED_EXECUTION_V1)
+        A.SCHEDULED_SEMANTICS | A.AGENT_SERVING_V1 | A.PROFILE_SCOPED_EXECUTION_V1)
     assert encode_program(decoded) == blob
     assert decoded.agent_request_profiles == program.agent_request_profiles
     assert decoded.agent_instance_profiles == program.agent_instance_profiles
@@ -193,7 +201,7 @@ def _install(blob: bytes, name: str, offset: int, raw: bytes) -> bytes:
 def test_reader_rejects_serving_sections_without_the_feature_bit(arch):
     blob = encode_program(serving_program(arch))
     image = bytearray(blob)
-    image[104:112] = (0).to_bytes(8, "little")
+    image[104:112] = A.SCHEDULED_SEMANTICS.to_bytes(8, "little")
     with pytest.raises(MeshIrError) as err:
         decode_program(bytes(image))
     assert err.value.code == "E_ABI_FEATURE"
@@ -202,24 +210,24 @@ def test_reader_rejects_serving_sections_without_the_feature_bit(arch):
 def test_reader_rejects_the_feature_bit_without_every_section(arch):
     base = encode_program(build_single_core_program(arch))
     header = decode_header(base)
-    header["required_features"] = A.AGENT_SERVING_V1
+    header["required_features"] = A.SCHEDULED_SEMANTICS | A.AGENT_SERVING_V1 | A.PROFILE_SCOPED_EXECUTION_V1
     with pytest.raises(MeshIrError) as err:
         decode_section_dir(base, header)
-    assert err.value.code == "E_ABI_SECTION_RANGE"
+    assert err.value.code == "E_ABI_FEATURE"
 
 
 def test_writer_rejects_serving_sections_without_the_bit(arch):
     program = dataclasses.replace(
-        serving_program(arch), required_features=0)
+        serving_program(arch), required_features=A.SCHEDULED_SEMANTICS)
     with pytest.raises(MeshIrError) as err:
         encode_program(program)
     assert err.value.code == "E_ABI_FEATURE"
 
 
-def test_feature_bit_below_writer_minor_is_rejected(arch):
+def test_serving_abi1_writer_is_rejected(arch):
     blob = encode_program(serving_program(arch))
     image = bytearray(blob)
-    image[10:12] = (0).to_bytes(2, "little")
+    image[8:10] = (1).to_bytes(2, "little")
     image[72:104] = hashlib.sha256(bytes(image[A.HEADER_BYTES:])).digest()
     with pytest.raises(MeshIrError) as err:
         decode_program(bytes(image))
@@ -229,9 +237,10 @@ def test_feature_bit_below_writer_minor_is_rejected(arch):
 def test_combined_feature_bits_round_trip(arch):
     program = dataclasses.replace(
         serving_program(arch),
-        required_features=(A.AGENT_SERVING_V1 |
+        required_features=(A.SCHEDULED_SEMANTICS | A.AGENT_SERVING_V1 |
                            A.PROFILE_SCOPED_EXECUTION_V1 |
                            A.DYNAMIC_MOE_V1))
+    program = dataclasses.replace(program, semantic_sha256=semantic_sha256(program.semantic_dict()))
     blob = encode_program(program)
     header = decode_header(blob)
     payloads = decode_section_dir(blob, header)
@@ -240,17 +249,17 @@ def test_combined_feature_bits_round_trip(arch):
         assert getattr(A.SECTION_TYPE, name) in payloads, name
     decoded = decode_program(blob)
     assert decoded.required_features == (
-        A.AGENT_SERVING_V1 | A.PROFILE_SCOPED_EXECUTION_V1 |
+        A.SCHEDULED_SEMANTICS | A.AGENT_SERVING_V1 | A.PROFILE_SCOPED_EXECUTION_V1 |
         A.DYNAMIC_MOE_V1)
     assert encode_program(decoded) == blob
     serving_only = decode_program(encode_program(serving_program(arch)))
-    assert decoded.semantic_sha256() != serving_only.semantic_sha256()
+    assert decoded.semantic_sha256 != serving_only.semantic_sha256
 
 
 def test_serving_only_feature_does_not_enable_dynamic_moe(arch):
     blob = encode_program(serving_program(arch))
     program = decode_program(blob)
-    assert program.moe_layer_specs == []
+    assert program.moe_layer_specs == ()
     assert not program.required_features & A.DYNAMIC_MOE_V1
 
 
@@ -287,15 +296,16 @@ def test_u32_instance_profile_id_round_trips(arch):
     program = serving_program(arch)
     program = dataclasses.replace(
         program,
-        agent_instance_profiles=[
+        agent_instance_profiles=tuple([
             dataclasses.replace(record, instance_profile_id=0xFFFFFFFF)
             for record in program.agent_instance_profiles
-        ],
-        agent_instance_member_bindings=[
+        ]),
+        agent_instance_member_bindings=tuple([
             dataclasses.replace(record, instance_profile_id=0xFFFFFFFF)
             for record in program.agent_instance_member_bindings
-        ],
+        ]),
     )
+    program = dataclasses.replace(program, semantic_sha256=semantic_sha256(program.semantic_dict()))
     decoded = decode_program(encode_program(program))
     assert decoded.agent_instance_profiles[0].instance_profile_id == 0xFFFFFFFF
 
@@ -355,7 +365,7 @@ FIXTURE = REPO / "tests/gem5/ai_mesh/fixtures/gate6"
 
 
 def test_serving_fixture_matches_the_cross_language_expected():
-    from mesh_ir.model import canonical
+    from mesh_ir.model import to_canonical
     from mesh_ir.serving_profiles import (
         program_profile_key_base_digest,
         serving_capacity_required,
@@ -365,12 +375,12 @@ def test_serving_fixture_matches_the_cross_language_expected():
     expected = json.loads((FIXTURE / "serving_min_expected.json").read_text())
     program = decode_program(blob)
     assert encode_program(program) == blob
-    assert program.abi_major == expected["abi_major"] == 1
+    assert program.abi_major == expected["abi_major"] == 2
     assert program.abi_minor == expected["abi_minor"]
     assert program.required_features == expected["required_features"]
     assert program.required_features == (
-        A.AGENT_SERVING_V1 | A.PROFILE_SCOPED_EXECUTION_V1)
-    assert program.semantic_sha256() == expected["semantic_sha256"]
+        A.SCHEDULED_SEMANTICS | A.AGENT_SERVING_V1 | A.PROFILE_SCOPED_EXECUTION_V1)
+    assert program.semantic_sha256 == expected["semantic_sha256"]
     assert program_profile_key_base_digest(program).hex() == \
         expected["profile_key_base_digest"]
     assert serving_capacity_required(program).fields() == \
@@ -380,12 +390,12 @@ def test_serving_fixture_matches_the_cross_language_expected():
             "agent_source_core_map", "agent_instance_member_bindings",
             "agent_request_binding_requirements",
             "agent_publish_surrogate_bindings"):
-        actual = [canonical(record) for record in getattr(program, name)]
+        actual = [to_canonical(record) for record in getattr(program, name)]
         assert actual == expected[name], name
 
 
 def test_full_view_fixture_matches_the_cross_language_expected():
-    from mesh_ir.model import canonical
+    from mesh_ir.model import to_canonical
 
     blob = (FIXTURE / "serving_fullview.mshb").read_bytes()
     expected = json.loads(
@@ -393,13 +403,13 @@ def test_full_view_fixture_matches_the_cross_language_expected():
     program = decode_program(blob)
     assert encode_program(program) == blob
     assert program.required_features == (
-        A.AGENT_SERVING_V1 | A.PROFILE_SCOPED_EXECUTION_V1)
-    assert program.semantic_sha256() == expected["semantic_sha256"]
+        A.SCHEDULED_SEMANTICS | A.AGENT_SERVING_V1 | A.PROFILE_SCOPED_EXECUTION_V1)
+    assert program.semantic_sha256 == expected["semantic_sha256"]
     for name in (
             "agent_request_profiles", "agent_instance_profiles",
             "agent_source_core_map", "agent_instance_member_bindings",
             "agent_request_binding_requirements",
             "agent_publish_surrogate_bindings"):
-        actual = [canonical(record) for record in getattr(program, name)]
+        actual = [to_canonical(record) for record in getattr(program, name)]
         assert actual == expected[name], name
     verify_program(program, load_arch(ARCH_PATH))

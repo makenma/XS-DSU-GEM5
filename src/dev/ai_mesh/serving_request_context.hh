@@ -16,8 +16,6 @@ namespace gem5
 namespace ai_mesh
 {
 
-uint32_t pathKindOfSqFlags(uint16_t sq_flags);
-
 struct ServingRequestIdentity
 {
     uint64_t request_id = 0;
@@ -26,10 +24,13 @@ struct ServingRequestIdentity
     uint32_t generation = 0;
     uint32_t program_id = 0;
     uint32_t profile_id = 0;
+    uint32_t logical_source_rank = 0;
     uint32_t path_kind = 0;
     uint32_t cached_tokens = 0;
     uint16_t kv_flags = 0;
     uint16_t repair_round = 0;
+    uint64_t deadline_tick = UINT64_MAX;
+    uint8_t qos = 0;
     uint64_t requested_profile_key = 0;
     uint64_t input_bytes = 0;
     uint32_t input_tokens = 0;
@@ -61,7 +62,9 @@ class ServingRequestContext
     ServingRequestContext(const DecodedProgram &program,
                           const ServingRequestIdentity &identity);
 
-    bool resolve(std::string &reason);
+    bool validate(std::string &reason) const;
+    bool usesKv() const;
+    bool resolve(KvPath path, std::string &reason);
     uint32_t rejectDetail() const { return reject_detail; }
     const ServingRequestIdentity &identity() const
     {
@@ -78,7 +81,7 @@ class ServingRequestContext
     const mesh_abi::AgentInstanceProfile *instanceProfile() const;
 
     KvAdmissionIntent admissionIntent(uint64_t tick) const;
-    void beginPhase(KvEdgeInputs &edge);
+    void beginPhase(KvEdgeInputs &edge, uint32_t member_ordinal = 0);
     void noteCoreDrain() { core_drained = true; }
     void noteAppendTerminal(std::vector<bool> tokens_ok,
                             std::optional<std::array<uint8_t, 32>> digest);
@@ -94,7 +97,7 @@ class ServingRequestContext
                                                  std::string &reason) const;
     bool validatePrefill(const mesh_abi::AgentRequestProfile &request,
                          const mesh_abi::AgentInstanceProfile &instance,
-                         uint32_t tokens, uint64_t host_input,
+                         uint32_t tokens,
                          std::string &reason) const;
     bool validateDecode(const mesh_abi::AgentRequestProfile &request,
                         const mesh_abi::AgentInstanceProfile &instance,

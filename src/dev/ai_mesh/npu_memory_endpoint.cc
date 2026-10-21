@@ -18,7 +18,9 @@ NpuMemoryEndpoint::NpuMemoryEndpoint(const Params &p)
     : ClockedObject(p),
       adapter(p.adapter),
       seed_json_path(p.seed_json),
-      verify_json_path(p.verify_json)
+      verify_json_path(p.verify_json),
+      verify_bytes_limit(p.verify_bytes_limit),
+      sentinel_json_path(p.sentinel_json)
 {}
 
 void
@@ -64,6 +66,10 @@ NpuMemoryEndpoint::startup()
         }
     }
 
+    sentinel_spans.load(sentinel_json_path);
+    if (!sentinel_spans.empty())
+        sentinel_spans.sample(*adapter);
+
     if (!verify_json_path.empty()) {
         // Line format: <address-hex> <size>
         std::ifstream in(verify_json_path);
@@ -79,10 +85,21 @@ NpuMemoryEndpoint::startup()
             VerifyRow verify;
             verify.address = std::stoull(address_hex, nullptr, 0);
             verify.size = size;
-            fatal_if(verify.size == 0, "verify row with zero size");
+            fatal_if(!containsMemoryRange(verify.address, verify.size),
+                     "verify row escapes endpoint memory");
             verifies.push_back(verify);
         }
     }
+}
+
+bool
+NpuMemoryEndpoint::writeBytes(uint64_t address, uint64_t size, const uint8_t *data)
+{
+    if (!containsMemoryRange(address, size))
+        return false;
+    for (uint64_t i = 0; i < size; ++i)
+        adapter->writeMemoryByte(address + i, data[i]);
+    return true;
 }
 
 void
@@ -94,8 +111,7 @@ NpuMemoryEndpoint::seed(uint64_t address, uint64_t size, uint8_t pattern)
 void
 NpuMemoryEndpoint::seedBytes(uint64_t address, uint64_t size, uint8_t pattern)
 {
-    fatal_if(!adapter->containsMemoryAddress(address) ||
-             !adapter->containsMemoryAddress(address + size - 1),
+    fatal_if(!containsMemoryRange(address, size),
              "seed range [%#llx,%#llx) escapes the endpoint memory",
              (unsigned long long)address,
              (unsigned long long)(address + size));
@@ -106,9 +122,7 @@ NpuMemoryEndpoint::seedBytes(uint64_t address, uint64_t size, uint8_t pattern)
 bool
 NpuMemoryEndpoint::containsMemoryRange(uint64_t address, uint64_t size) const
 {
-    return size != 0 && size <= UINT64_MAX - address &&
-        adapter->containsMemoryAddress(address) &&
-        adapter->containsMemoryAddress(address + size - 1);
+    return adapter->containsMemoryRange(address, size);
 }
 
 std::string
@@ -122,9 +136,20 @@ NpuMemoryEndpoint::rangeDigest(uint64_t address, uint64_t size) const
     return dualFnvDigest(bytes.data(), bytes.size());
 }
 
+bool
+NpuMemoryEndpoint::readBytes(uint64_t address, uint64_t size, uint8_t *out) const
+{
+    if (!containsMemoryRange(address, size))
+        return false;
+    for (uint64_t i = 0; i < size; i++)
+        out[i] = adapter->readMemoryByte(address + i);
+    return true;
+}
+
 void
 NpuMemoryEndpoint::computeVerifyDigests()
 {
+    sentinels = sentinel_spans.compare(*adapter);
     for (auto &verify : verifies) {
         std::vector<uint8_t> bytes(verify.size);
         for (uint64_t i = 0; i < verify.size; i++)
@@ -133,6 +158,14 @@ NpuMemoryEndpoint::computeVerifyDigests()
         const uint64_t after = verify.size > 16 ? verify.size - 16 : 0;
         verify.after_digest =
             dualFnvDigest(bytes.data() + (verify.size - after), after);
+        if (verify_bytes_limit != 0 && verify.size <= verify_bytes_limit) {
+            static const char *hex = "0123456789abcdef";
+            verify.bytes_hex.resize(verify.size * 2);
+            for (uint64_t i = 0; i < verify.size; i++) {
+                verify.bytes_hex[2 * i] = hex[bytes[i] >> 4];
+                verify.bytes_hex[2 * i + 1] = hex[bytes[i] & 0xF];
+            }
+        }
     }
 }
 

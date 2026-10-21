@@ -4,8 +4,10 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include "base/checkpoint_fields.hh"
 #include <cstring>
 #include <map>
+#include <numeric>
 #include <optional>
 #include <vector>
 
@@ -47,7 +49,7 @@ class TensorSram
           write_bytes_per_cycle(write_bytes_per_cycle),
           read_ports(read_ports), write_ports(write_ports),
           line_tick(line_tick), bank_queue_depth(bank_queue_depth),
-          bank_reads(banks, 0), bank_writes(banks, 0)
+          bank_read_bytes(banks, 0), bank_write_bytes(banks, 0)
     {
         fatal_if(bytes == 0, "TensorSram: bytes must be nonzero");
         fatal_if(banks == 0, "TensorSram: banks must be nonzero");
@@ -64,6 +66,11 @@ class TensorSram
         read_request_ledger.resize(banks);
         write_request_ledger.resize(banks);
     }
+
+    GEM5_CHECKPOINT_FIELDS(storage, allocations, partitions, views,
+        read_reservation_rejection_attempts, write_reservation_rejection_attempts,
+        read_busy, write_busy, read_request_ledger, write_request_ledger,
+        bank_read_bytes, bank_write_bytes)
 
     void setBacking(SramBacking *backing) { external_backing = backing; }
 
@@ -206,9 +213,9 @@ class TensorSram
                 done_at = busy_pool[bank][chosen];
             result.service_ticks += service;
             if (is_write)
-                bank_writes[bank]++;
+                bank_write_bytes[bank] += seg_bytes;
             else
-                bank_reads[bank]++;
+                bank_read_bytes[bank] += seg_bytes;
         }
         auto &ledger = is_write ? write_request_ledger : read_request_ledger;
         for (uint32_t bank = 0; bank < banks; ++bank) {
@@ -234,6 +241,15 @@ class TensorSram
 
     uint64_t capacity() const { return storage.size(); }
     uint32_t bankCount() const { return banks; }
+    const std::vector<uint64_t> &bankBytes(bool write) const
+    {
+        return write ? bank_write_bytes : bank_read_bytes;
+    }
+    uint64_t trafficBytes(bool write) const
+    {
+        const auto &bytes = bankBytes(write);
+        return std::accumulate(bytes.begin(), bytes.end(), uint64_t(0));
+    }
     uint32_t baseAlignment() const { return alignment; }
     uint64_t reservationRejectionAttempts(bool is_write) const
     {
@@ -245,6 +261,7 @@ class TensorSram
     // allocation that was never written are poison and must fault.
     struct AllocationState
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         uint64_t offset = 0;
         uint64_t size = 0;
         bool valid = false;
@@ -255,6 +272,7 @@ class TensorSram
 
     struct PartitionState
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         uint64_t base = 0;
         uint64_t bytes = 0;
         uint32_t alignment = 0;
@@ -267,12 +285,14 @@ class TensorSram
 
     struct ViewSlice
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         uint64_t offset = 0;
         uint64_t extent = 0;
     };
 
     struct ViewState
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         uint32_t allocationId = 0;
         uint8_t rank = 0;
         std::array<ViewSlice, MAX_VIEW_RANK> slices{};
@@ -454,8 +474,8 @@ class TensorSram
     std::vector<std::vector<uint64_t>> write_busy;
     std::vector<std::vector<uint64_t>> read_request_ledger;
     std::vector<std::vector<uint64_t>> write_request_ledger;
-    std::vector<uint64_t> bank_reads;
-    std::vector<uint64_t> bank_writes;
+    std::vector<uint64_t> bank_read_bytes;
+    std::vector<uint64_t> bank_write_bytes;
 };
 
 } // namespace ai_mesh

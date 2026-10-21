@@ -50,7 +50,9 @@ SimObject('SimpleNetwork.py', sim_objects=['SimpleNetwork', 'BaseRoutingUnit',
 Source('PerfectSwitch.cc')
 Source('SimpleLink.cc')
 Source('SimpleNetwork.cc')
+Source('AggregateNetwork.cc')
 Source('Switch.cc')
+Source('SwitchCheckpoint.cc')
 Source('Throttle.cc')
 
 Source('routing/WeightBased.cc')

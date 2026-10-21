@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import struct
 
+from mesh_ir.generated import agent_abi as AG
+
 from mesh_ir.agent_planning import (
     ArenaRegion,
     build_command_identity_plan,
@@ -14,7 +16,7 @@ from mesh_ir.agent_workload import ControlPlan, PlanError, WorkloadPlan
 from mesh_ir.host_bindings import request_binding_counts
 
 MAGIC = b"AGPI"
-VERSION = 1
+VERSION = 5
 
 _SECTION_WORKLOAD = 1
 _SECTION_COMMAND_IDENTITY = 2
@@ -23,6 +25,7 @@ _SECTION_ARENA = 4
 _SECTION_SURROGATE = 5
 _SECTION_CONTROL = 6
 _SECTION_REQUEST_BINDINGS = 7
+_SECTION_INPUT_PAYLOADS = 8
 
 _KV_POLICY = {"INITIAL": 0, "REQUIRE_REUSE": 1, "ALLOW_REPREFILL": 2}
 _OUTCOME = {"SUCCESS": 0, "FAIL": 1, "NONE": 2}
@@ -71,6 +74,8 @@ def _stage(stage) -> bytes:
 def _round(round_) -> bytes:
     data = (
         _u32(round_.workload_plan_item_id)
+        + _u32(round_.logical_source_rank)
+        + _u8(round_.batch_replay)
         + _u16(round_.repair_round)
         + _u8(_KV_POLICY[round_.kv_policy])
         + _u8(round_.deadline_tick is not None)
@@ -144,6 +149,11 @@ def _decode_stage(data: bytes, offset: int) -> tuple[dict, int]:
 def _decode_round(data: bytes, offset: int) -> tuple[dict, int]:
     value = {}
     value["workload_plan_item_id"], offset = _read(data, offset, 4)
+    value["logical_source_rank"], offset = _read(data, offset, 4)
+    replay, offset = _read(data, offset, 1)
+    if replay not in (0, 1):
+        raise PlanError("E_AGENT_PLAN", "$.batch_replay", "invalid boolean wire value")
+    value["batch_replay"] = bool(replay)
     value["repair_round"], offset = _read(data, offset, 2)
     value["kv_policy"], offset = _read(data, offset, 1)
     value["has_deadline"], offset = _read(data, offset, 1)
@@ -211,17 +221,26 @@ def verify_workload_projection(workload: WorkloadPlan, blob: bytes) -> None:
     section_count = struct.unpack_from("<I", blob, 8)[0]
     offset = 76
     payload = None
+    inputs = None
+    seen = set()
     for _ in range(section_count):
         if offset + 10 > len(blob):
             raise _failed("$", "plan image section table is truncated")
         section_type = struct.unpack_from("<H", blob, offset)[0]
+        if section_type in seen:
+            raise _failed('$', 'duplicate plan image section')
+        seen.add(section_type)
         length = struct.unpack_from("<Q", blob, offset + 2)[0]
         offset += 10
         if offset + length > len(blob):
             raise _failed("$", "plan image section escapes the image")
         if section_type == _SECTION_WORKLOAD:
             payload = blob[offset:offset + length]
+        elif section_type == _SECTION_INPUT_PAYLOADS:
+            inputs = blob[offset:offset + length]
         offset += length
+    if inputs != _input_payload_section(workload):
+        raise _failed('$.input_payloads', 'input payload section differs from the frozen workload')
     if payload is None:
         raise _failed("$", "plan image has no workload section")
     cursor = 0
@@ -254,6 +273,9 @@ def verify_workload_projection(workload: WorkloadPlan, blob: bytes) -> None:
                 prefix = "$.tasks.rounds[%d]" % index
                 _compare(prefix + ".item", decoded["workload_plan_item_id"],
                          round_.workload_plan_item_id)
+                _compare(prefix + ".logical_source_rank", decoded["logical_source_rank"],
+                         round_.logical_source_rank)
+                _compare(prefix + ".batch_replay", decoded["batch_replay"], round_.batch_replay)
                 _compare(prefix + ".repair_round", decoded["repair_round"],
                          round_.repair_round)
                 _compare(prefix + ".kv_policy", decoded["kv_policy"],
@@ -361,7 +383,7 @@ def _host_task_section(document: dict) -> bytes:
 
 
 def _arena_section(document: dict) -> bytes:
-    arena_kind = {"INPUT": 0, "PARAMETER": 1, "OUTPUT": 2, "METADATA": 3}
+    arena_kind = AG.ENUM_VALUES['arena_kind']
     data = _u32(len(document["records"]))
     for record in document["records"]:
         data += (
@@ -406,8 +428,10 @@ def encode_request_binding_section(kv_session_slot_bytes, plans) -> bytes:
             + _u32(plan.primary_input_symbol_id)
             + _u32(plan.primary_output_symbol_id)
             + _u32(plan.primary_kv_symbol_id)
+            + _u32(plan.publish_chunk_bytes)
             + _u32(len(plan.requirements))
-            + _u32(plan.instance_count)
+            + _u32(len(plan.instance_counts))
+            + b"".join(_u32(count) for count in plan.instance_counts)
         )
         for requirement in plan.requirements:
             data += (
@@ -415,7 +439,7 @@ def encode_request_binding_section(kv_session_slot_bytes, plans) -> bytes:
                 + _u16(requirement.kind)
                 + _u16(requirement.flags)
                 + _u64(requirement.platform_address)
-                + _u64(requirement.platform_bytes)
+                + _u64(requirement.required_bytes)
             )
     return data
 
@@ -429,9 +453,11 @@ def decode_request_binding_section(blob: bytes) -> dict:
     plans = []
     for _ in range(count):
         program_id, profile_id, primary_input, primary_output, primary_kv, \
-            requirement_count, instance_count = struct.unpack_from(
-                "<HHIIIII", blob, offset)
-        offset += 24
+            publish_chunk_bytes, requirement_count, instance_count_count = struct.unpack_from(
+                "<HHIIIIII", blob, offset)
+        offset += 28
+        instance_counts = list(struct.unpack_from(f"<{instance_count_count}I", blob, offset))
+        offset += 4 * instance_count_count
         requirements = []
         for _ in range(requirement_count):
             symbol_id, kind, flags, address, bytes_ = struct.unpack_from(
@@ -439,14 +465,15 @@ def decode_request_binding_section(blob: bytes) -> dict:
             offset += 24
             requirements.append({
                 "symbol_id": symbol_id, "kind": kind, "flags": flags,
-                "platform_address": address, "platform_bytes": bytes_,
+                "platform_address": address, "required_bytes": bytes_,
             })
         plans.append({
             "program_id": program_id, "profile_id": profile_id,
             "primary_input_symbol_id": primary_input,
             "primary_output_symbol_id": primary_output,
             "primary_kv_symbol_id": primary_kv,
-            "instance_count": instance_count,
+            "publish_chunk_bytes": publish_chunk_bytes,
+            "instance_counts": instance_counts,
             "requirements": requirements,
         })
     if offset != len(blob):
@@ -490,6 +517,21 @@ def _control_section(control: ControlPlan) -> bytes:
     return data
 
 
+def _input_payload_section(workload: WorkloadPlan) -> bytes | None:
+    rounds = [round_ for user in workload.users for task in user.tasks
+              for round_ in task.rounds if round_.input_payload is not None]
+    if not rounds:
+        return None
+    rows = [_u32(len(rounds))]
+    for round_ in rounds:
+        payload = round_.input_payload
+        if (len(payload) != round_.full_context_bytes or not payload or
+                hashlib.sha256(payload).hexdigest() != round_.input_content_digest):
+            raise _failed('$.input_payloads', 'input payload size or content identity differs')
+        rows.extend((_u32(round_.workload_plan_item_id), _u64(len(payload)), payload))
+    return b''.join(rows)
+
+
 def build_agent_plan_image(
     workload: WorkloadPlan,
     control: ControlPlan | None,
@@ -508,7 +550,7 @@ def build_agent_plan_image(
             for plan in binding_plans
         }
     arena = build_host_arena_object_plan(workload, control, release_policy,
-                                         regions, binding_counts)
+                                         regions, binding_counts, binding_plans=binding_plans or ())
     sections = [
         (_SECTION_WORKLOAD, _workload_section(workload)),
         (_SECTION_COMMAND_IDENTITY, _command_section(identity)),
@@ -523,6 +565,9 @@ def build_agent_plan_image(
         sections.append((_SECTION_SURROGATE, _surrogate_section(surrogate_registry)))
     if control is not None:
         sections.append((_SECTION_CONTROL, _control_section(control)))
+    inputs = _input_payload_section(workload)
+    if inputs is not None:
+        sections.append((_SECTION_INPUT_PAYLOADS, inputs))
     from mesh_ir.agent_workload import null_control_plan_digest
 
     body = (

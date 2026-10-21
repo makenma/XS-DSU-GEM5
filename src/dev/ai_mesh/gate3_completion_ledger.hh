@@ -39,6 +39,7 @@ enum class AckDisposition : uint8_t
 
 struct CompletionObligation
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     CqObligationId id;
     SqSeq sqSequence;
     RequestId requestId;
@@ -52,6 +53,7 @@ struct CompletionObligation
 
 struct MsiNotifyRecord
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     MsiIssueOrdinal issueOrdinal;
     CqSeq cqSequence;
     uint64_t tail = 0;
@@ -63,6 +65,15 @@ class Gate3CompletionLedger
 {
   public:
     explicit Gate3CompletionLedger(uint32_t cqDepth);
+    template<class Archive> void serialize(Archive &archive, unsigned)
+    {
+        if (_fatalCut || liveCount() || msiRobEntries())
+            throw std::runtime_error("E_CHECKPOINT_BOUNDARY: completion ledger is active");
+        checkpoint::fields(archive, _nextCqSequence, _nextObligationId,
+            _nextMsiOrdinal, _issuedSequence, _notifiedSequence,
+            _ackReceivedSequence, _obligations, _msiRecords, _liveMsiIds);
+    }
+
 
     std::optional<CqObligationId> reserve(
         SqSeq sqSequence, RequestId requestId, CompletionCookie cookie);

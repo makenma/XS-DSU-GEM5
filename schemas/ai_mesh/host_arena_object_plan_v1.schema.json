@@ -57,7 +57,7 @@
         "task_seq": {"$ref": "#/$defs/u32"},
         "repair_round_or_ffff": {"$ref": "#/$defs/u16"},
         "command_kind": {"enum": ["GENERATE", "RELEASE_SESSION", "CANCEL"]},
-        "arena_kind": {"enum": ["INPUT", "PARAMETER", "OUTPUT", "METADATA"]},
+        "arena_kind": {"enum": ["INPUT", "PARAMETER", "OUTPUT", "METADATA", "WORKSPACE"]},
         "per_user_command_seq": {"$ref": "#/$defs/positiveU32"},
         "request_id": {"$ref": "#/$defs/u64Json"},
         "base": {"$ref": "#/$defs/u64Json"},

@@ -1,8 +1,9 @@
 import json
-import os
 import re
 import subprocess
 from pathlib import Path
+
+from mesh_ir.runtime_environment import runtime_environment
 
 REPO = Path(__file__).resolve().parents[4]
 GEM5 = REPO / "build" / "AXI_MESH" / "gem5.opt"
@@ -23,11 +24,7 @@ PAYLOAD_FIELDS = (
 
 
 def run(outdir, extra):
-    environment = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith("AI_MESH_")
-    }
+    environment = runtime_environment()
     result = subprocess.run(
         [
             str(GEM5),

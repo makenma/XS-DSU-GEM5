@@ -7,6 +7,9 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <sstream>
+#include <boost/archive/binary_iarchive.hpp>
+#include <boost/archive/binary_oarchive.hpp>
 
 #include "dev/ai_mesh/agent_plan_image.hh"
 #include "dev/ai_mesh/agent_workload_manager.hh"
@@ -695,6 +698,28 @@ TEST(AgentWorkloadManager, MaterializedControlIntentIsOfferedByNextBatch)
     EXPECT_FALSE(manager.anchorForRequest((1ull << 32) | 2, user, task, round));
 }
 
+TEST(AgentWorkloadManager, PausedGeneratePreservesReadyTasksAndDrainsControls)
+{
+    auto image = loadImage("agent_plan_image_ctrl_cancel_live.bin");
+    ASSERT_TRUE(image.has_value());
+    Facts facts;
+    AgentWorkloadManager manager(std::move(*image), defaultConfig(), facts.sink());
+    manager.pauseGenerate({});
+    manager.onEdge(kThinkTick);
+    EXPECT_TRUE(manager.nextBatch({}, 0, 4).empty());
+    manager.materializeControlAction(0);
+    const auto controls = manager.nextBatch({}, 0, 4);
+    ASSERT_EQ(controls.size(), 1u);
+    EXPECT_EQ(controls[0].commandKind, gem5::ai_mesh::kAgentCommandCancel);
+    EXPECT_FALSE(manager.controlIntentsPending());
+    EXPECT_TRUE(manager.nextBatch({}, 0, 4).empty());
+    manager.resumeGenerate();
+    const auto resumed = manager.nextBatch({}, 0, 4);
+    ASSERT_EQ(resumed.size(), 1u);
+    EXPECT_EQ(resumed[0].commandKind, gem5::ai_mesh::kAgentCommandGenerate);
+    EXPECT_NE(resumed[0].requestId, controls[0].requestId);
+}
+
 TEST(AgentWorkloadManager, ControlAnchorSuppressedOnlyAfterRunCutoff)
 {
     auto liveImage = loadImage("agent_plan_image_ctrl_cancel_live.bin");
@@ -719,4 +744,78 @@ TEST(AgentWorkloadManager, ControlAnchorSuppressedOnlyAfterRunCutoff)
     EXPECT_TRUE(cut.exhausted(0));
     EXPECT_EQ(cutFacts.ofKind("TASK_SUPPRESSED").size(), 2u);
     EXPECT_TRUE(cut.controlAnchorSuppressed(0));
+}
+
+TEST(AgentWorkloadManager, AutoReleaseWaitsForSuccessBeforeFinalizingTheTask)
+{
+    auto image = loadImage("agent_plan_image_auto_release.bin");
+    ASSERT_TRUE(image);
+    Facts facts;
+    auto config = defaultConfig();
+    config.hostReleaseWaiterEntries = 1;
+    AgentWorkloadManager manager(std::move(*image), config, facts.sink());
+    uint64_t now = 0;
+    bool saw_release = false;
+    for (unsigned iteration = 0; iteration < 200 && !manager.allTasksTerminal(); ++iteration) {
+        now = std::max(now + 1, manager.nextWakeTick().value_or(now + 1));
+        manager.onEdge(now);
+        for (const auto &intent : manager.nextBatch({}, 0, 8)) {
+            if (intent.commandKind == gem5::ai_mesh::kAgentCommandGenerate) {
+                manager.observeSessionAdmitted(intent.requestId, true);
+                manager.onGenerateTerminal(intent.requestId, true, now);
+            } else {
+                saw_release = true;
+                EXPECT_FALSE(manager.allTasksTerminal());
+                const auto finished = facts.ofKind("TASK_LIFECYCLE_FINAL").size();
+                EXPECT_FALSE(manager.onReleaseTerminal(intent, agent_abi::kCqStatusNOT_FOUND, now));
+                EXPECT_EQ(facts.ofKind("TASK_LIFECYCLE_FINAL").size(), finished);
+                ASSERT_TRUE(manager.onReleaseTerminal(intent, agent_abi::kCqStatusSUCCESS, now));
+                EXPECT_EQ(facts.ofKind("TASK_LIFECYCLE_FINAL").size(), finished + 1);
+            }
+        }
+    }
+    EXPECT_TRUE(saw_release);
+    EXPECT_TRUE(manager.allTasksTerminal());
+    EXPECT_EQ(facts.metrics["host_release_waiters"], 0u);
+}
+
+TEST(AgentWorkloadManager, CheckpointPreservesRunningServiceAndFutureArrivals)
+{
+    auto image = loadImage("agent_plan_image_two_user.bin");
+    auto restoredImage = loadImage("agent_plan_image_two_user.bin");
+    ASSERT_TRUE(image);
+    ASSERT_TRUE(restoredImage);
+    Facts expected, actual;
+    AgentWorkloadManager running(std::move(*image), defaultConfig(), expected.sink());
+    AgentWorkloadManager restored(std::move(*restoredImage), defaultConfig(), actual.sink());
+    running.onEdge(kThinkTick);
+    for (const auto &intent : running.nextBatch({}, 0, 4))
+        running.onGenerateTerminal(intent.requestId, true, kThinkTick + 500);
+    running.onEdge(kCompileStartTick);
+    running.pauseGenerate({});
+    std::stringstream bytes;
+    {
+        boost::archive::binary_oarchive archive(bytes);
+        archive << running;
+    }
+    {
+        boost::archive::binary_iarchive archive(bytes);
+        archive >> restored;
+    }
+    EXPECT_TRUE(restored.generateIsPaused());
+    EXPECT_EQ(running.nextWakeTick(), restored.nextWakeTick());
+    EXPECT_EQ(running.hostResources().availableTokens(), restored.hostResources().availableTokens());
+    expected.semantics.clear();
+    actual.semantics.clear();
+    running.resumeGenerate();
+    restored.resumeGenerate();
+    EXPECT_EQ(runToCompletion(running, kCompileStartTick), runToCompletion(restored, kCompileStartTick));
+    EXPECT_EQ(expected.metrics, actual.metrics);
+    ASSERT_EQ(expected.semantics.size(), actual.semantics.size());
+    for (size_t index = 0; index < expected.semantics.size(); ++index) {
+        const auto &left = expected.semantics[index];
+        const auto &right = actual.semantics[index];
+        EXPECT_EQ(std::tie(left.kind, left.object, left.requestId, left.status),
+                  std::tie(right.kind, right.object, right.requestId, right.status));
+    }
 }

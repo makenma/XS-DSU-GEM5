@@ -12,16 +12,16 @@ from __future__ import annotations
 from mesh_ir.generated import abi as A
 from mesh_ir.generated import agent_abi as AG
 from mesh_ir.model import MeshIrError
+from mesh_ir.serving_tensor_bindings import ServingTensorBindingCatalog
 from mesh_ir.serving_profiles import (
     HOST_STORE,
-    attributed_descriptors,
     coverage_gaps,
-    member_slot_base,
+    ServingInstanceIo,
     selector_tuple,
-    _relocation,
     verify_instance_io,
     verify_path_closure,
     verify_request_profile_keys,
+    verify_request_phase_mode,
 )
 
 READ = AG.BINDING_FLAGS.READ
@@ -35,6 +35,7 @@ EXACT_BINDING_FLAGS = {
     AG.BINDING_KIND.KV_EXTERNAL:
         READ | WRITE | PERSISTENT | RESOLVE_BY_HANDLE,
     AG.BINDING_KIND.WEIGHT_EXTERNAL: READ | PERSISTENT,
+    AG.BINDING_KIND.REQUEST_WORKSPACE: READ | WRITE,
 }
 
 PHASE_ACCESS = {
@@ -60,22 +61,16 @@ def _serving_tables(program):
         program.agent_instance_profiles,
         program.agent_source_core_map,
         program.agent_instance_member_bindings,
+        program.agent_instance_tensor_bindings,
         program.agent_request_binding_requirements,
         program.agent_publish_surrogate_bindings,
     )
 
 
 def verify_serving_v1(program, arch, views) -> None:
-    unknown = program.required_features & ~A.KNOWN_FEATURE_MASK
-    if unknown:
-        _fail("E_ABI_FEATURE", "unknown required feature bits",
-              features=hex(unknown))
     if not program.required_features & A.AGENT_SERVING_V1:
-        if any(_serving_tables(program)):
-            _fail("E_ABI_FEATURE",
-                  "Agent serving sections without the feature bit")
         return
-    if any(not table for table in _serving_tables(program)[:5]):
+    if any(not table for table in _serving_tables(program)[:6]):
         _fail("E_ABI_BOUNDS",
               "Agent serving feature requires every conditional section")
     requests = program.agent_request_profiles
@@ -86,16 +81,20 @@ def verify_serving_v1(program, arch, views) -> None:
     _verify_source_core_map(program, arch, requests)
     _verify_member_bindings(program, requests, instances)
     _verify_requirements(program, requests)
+    catalog = ServingTensorBindingCatalog(program)
     _verify_symbol_classification(program)
     _verify_publish_bindings(program, requests, instances, views)
     for request in requests:
         verify_path_closure(program, request)
+        if not request.flags & A.AGENT_REQUEST_FLAGS.HAS_KV:
+            from mesh_ir.serving_workspace import verify_workspace_publication
+            verify_workspace_publication(program, request, catalog)
     for instance in instances:
         request = next(
             r for r in requests
             if (r.program_id, r.profile_id) ==
             (instance.request_program_id, instance.request_profile_id))
-        verify_instance_io(program, request, instance)
+        verify_instance_io(program, request, instance, catalog)
 
 
 def _profile_key(record) -> tuple:
@@ -127,21 +126,16 @@ def _verify_request_profiles(program, arch, requests) -> None:
         if key in keys:
             _fail("E_ABI_DUPLICATE", "duplicate request profile", key=key)
         keys.add(key)
-        if request.flags != A.AGENT_REQUEST_FLAGS.HAS_KV:
-            _fail("E_REQUEST_PROFILE",
-                  "serving request profile requires HAS_KV", key=key)
+        uses_kv = verify_request_phase_mode(program, request)
         if request.path_mask == 0 or request.path_mask & ~PATH_MASK:
             _fail("E_REQUEST_PROFILE", "path_mask is not a legal path set",
                   key=key)
-        if request.kv_bytes_per_token == 0:
-            _fail("E_REQUEST_PROFILE", "kv_bytes_per_token must be positive",
-                  key=key)
-        if kv_bytes_per_token is None:
+        if uses_kv and kv_bytes_per_token is None:
             kv_bytes_per_token = request.kv_bytes_per_token
-        elif kv_bytes_per_token != request.kv_bytes_per_token:
+        elif uses_kv and kv_bytes_per_token != request.kv_bytes_per_token:
             _fail("E_REQUEST_PROFILE",
                   "kv_bytes_per_token must match across the program", key=key)
-        if (request.full_input_dma_bytes != request.input_binding_bytes or
+        if (request.full_input_dma_bytes > request.input_binding_bytes or
                 request.delta_input_dma_bytes == 0 or
                 request.delta_input_dma_bytes > request.full_input_dma_bytes):
             _fail("E_HOST_IO_SIZE_MISMATCH",
@@ -156,7 +150,7 @@ def _verify_request_profiles(program, arch, requests) -> None:
                 request.publish_chunk_bytes > request.host_output_bytes):
             _fail("E_OUTPUT_CHUNK_MISMATCH",
                   "publish_chunk_bytes is not AXI-aligned in range", key=key)
-        if request.host_output_bytes == 0 or request.output_tokens == 0:
+        if request.host_output_bytes == 0:
             _fail("E_HOST_IO_SIZE_MISMATCH",
                   "request output size/tokens must be positive", key=key)
         if request.source_rank_count == 0:
@@ -205,7 +199,7 @@ def _verify_instance_profiles(program, requests, instances) -> None:
                   selector=selector)
         selectors.add(selector)
         _verify_instance_mesh_binding(program, entrypoints, profiles, instance)
-        _verify_instance_phase_matrix(instance)
+        _verify_instance_phase_matrix(program, instance)
         _verify_instance_byte_relation(program, instance)
 
 
@@ -239,8 +233,11 @@ def _verify_instance_mesh_binding(program, entrypoints, profiles,
               instance_profile_id=instance.instance_profile_id)
 
 
-def _verify_instance_phase_matrix(instance) -> None:
+def _verify_instance_phase_matrix(program, instance) -> None:
     input_present, output_present, kv_present = PHASE_ACCESS[instance.phase]
+    request = next(row for row in program.agent_request_profiles
+                   if (row.program_id, row.profile_id) == _profile_key(instance))
+    kv_present = kv_present and bool(request.flags & A.AGENT_REQUEST_FLAGS.HAS_KV)
     if (instance.primary_input_symbol_id != 0) != input_present:
         _fail("E_BINDING_ROLE", "instance primary input symbol role mismatch",
               instance_profile_id=instance.instance_profile_id)
@@ -323,7 +320,8 @@ def _verify_member_bindings(program, requests, instances) -> None:
     role_of_symbol = {}
     for instance in instances:
         request = requests_by_key[_profile_key(instance)]
-        access = PHASE_ACCESS[instance.phase]
+        input_present, output_present, kv_present = PHASE_ACCESS[instance.phase]
+        access = (input_present, output_present, kv_present and bool(request.flags & A.AGENT_REQUEST_FLAGS.HAS_KV))
         symbols = []
         for offset in _member_span(program, instance):
             record = program.agent_instance_member_bindings[offset]
@@ -461,13 +459,7 @@ def _require_kind(table, symbol_id, kind, key) -> None:
 def _verify_symbol_classification(program) -> None:
     requirement_symbols = {
         r.symbol_id for r in program.agent_request_binding_requirements}
-    member_symbols = set()
-    for record in program.agent_instance_member_bindings:
-        for symbol_id in (record.static_input_symbol_id,
-                          record.static_output_symbol_id,
-                          record.static_kv_symbol_id):
-            if symbol_id:
-                member_symbols.add(symbol_id)
+    member_symbols = {record.static_symbol_id for record in program.agent_instance_tensor_bindings}
     overlap = requirement_symbols & member_symbols
     if overlap:
         _fail("E_BINDING_ROLE",
@@ -569,7 +561,8 @@ def _verify_publish_bindings(program, requests, instances,
                    if r.instance_profile_id == instance.instance_profile_id]
         exposed = [by_instance.get((instance.instance_profile_id, ordinal))
                    for ordinal in range(instance.member_count)]
-        if instance.phase != A.PHASE.PUBLISH:
+        request = requests_by_key[(instance.request_program_id, instance.request_profile_id)]
+        if instance.phase != A.PHASE.PUBLISH or not request.flags & A.AGENT_REQUEST_FLAGS.HAS_KV:
             if records:
                 _fail("E_BINDING_ROLE",
                       "non-PUBLISH profile carries publish bindings",
@@ -671,8 +664,7 @@ def _verify_publish_record(program, request, instance, ordinal,
         _fail("E_BINDING_ROLE",
               "publish producer is not in the PUBLISH profile closure",
               command_id=command.command_id)
-    gaps = coverage_gaps(producer_fill, allocation.offset_bytes,
-                         allocation.offset_bytes + allocation.size_bytes)
+    gaps = coverage_gaps(producer_fill, 0, allocation.size_bytes)
     if gaps:
         _fail("E_BINDING_ROLE",
               "publish producer must fill the bound allocation exactly: " +
@@ -697,28 +689,21 @@ def _endpoint_rows(endpoint, stride, rows, row_bytes) -> list:
 
 def _verify_publish_store_chain(program, request, instance, ordinal, record,
                                 producer) -> None:
-    output = member_slot_base(program, instance, ordinal, HOST_STORE)
-    if output is None:
-        _fail("E_BINDING_ROLE",
-              "PUBLISH member has no output slot view",
-              instance_profile_id=instance.instance_profile_id)
-    output_tensor = output.tensor_id
-    output_base = output.offset_bytes
+    io = ServingInstanceIo(program, request, instance)
+    attribution = io.attribution()
     allocation = next((a for a in program.allocations
                        if a.allocation_id == record.allocation_id), None)
     if allocation is None:
         _fail("E_BINDING_ROLE", "publish allocation is missing",
               allocation_id=record.allocation_id)
-    stores = [descriptor for descriptor in
-              attributed_descriptors(program, request, instance, ordinal,
-                                     HOST_STORE)
-              if descriptor.kind == A.DMA_KIND.STORE and
-              descriptor.dst.tensor_id == output_tensor]
+    stores = [descriptor for descriptor in io.descriptors
+              if attribution.get((descriptor.descriptor_id, HOST_STORE)) == ordinal]
     if not stores:
         _fail("E_BINDING_ROLE",
               "publish surrogate allocation has no output store",
               allocation_id=record.allocation_id)
     for descriptor in stores:
+        output_offset = io.matches[(descriptor.descriptor_id, HOST_STORE)][0].tensor.mapping.offset_bytes
         if _endpoint_allocation(program, descriptor.src) != \
                 record.allocation_id:
             _fail("E_BINDING_ROLE",
@@ -736,8 +721,7 @@ def _verify_publish_store_chain(program, request, instance, ordinal, record,
                 index * descriptor.src_stride_bytes
             target_start = descriptor.dst.offset_bytes + \
                 index * descriptor.dst_stride_bytes
-            if source_start - allocation.offset_bytes != \
-                    target_start - output_base:
+            if source_start != target_start + output_offset:
                 _fail("E_BINDING_ROLE",
                       "publish store source must match the member output "
                       "offset", descriptor_id=descriptor.descriptor_id)

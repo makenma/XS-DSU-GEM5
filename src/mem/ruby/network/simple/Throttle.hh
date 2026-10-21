@@ -51,8 +51,11 @@
 #define __MEM_RUBY_NETWORK_SIMPLE_THROTTLE_HH__
 
 #include <iostream>
+#include <memory>
 #include <string>
 #include <vector>
+
+#include "mem/ruby/network/simple/NetworkSnapshot.hh"
 
 #include "mem/ruby/common/Consumer.hh"
 #include "mem/ruby/network/Network.hh"
@@ -64,6 +67,7 @@ namespace gem5
 namespace ruby
 {
 
+class Message;
 class MessageBuffer;
 class Switch;
 
@@ -88,12 +92,16 @@ class Throttle : public Consumer
     void addLinks(const std::vector<MessageBuffer*>& in_vec,
                   const std::vector<MessageBuffer*>& out_vec);
     void wakeup();
+    template<class Archive> void serialize(Archive &archive, unsigned);
 
     // The average utilization (a fraction) since last clearStats()
     const statistics::Formula & getUtilization() const
     { return throttleStats.link_utilization; }
     const statistics::Vector & getMsgCount(unsigned int type) const
     { return *(throttleStats.msg_counts[type]); }
+
+    const statistics::Vector &getMsgBytes(unsigned int type) const
+    { return *throttleStats.msg_bytes[type]; }
 
     int getLinkBandwidth(int vnet) const;
 
@@ -103,6 +111,10 @@ class Throttle : public Consumer
 
     Cycles getLatency() const { return m_link_latency; }
 
+    bool functionalRead(Packet *packet);
+    bool functionalRead(Packet *packet, WriteMask &mask);
+    uint32_t functionalWrite(Packet *packet);
+    SimpleNetworkSnapshot quiescenceSnapshot() const;
     void print(std::ostream& out) const;
 
   private:
@@ -120,6 +132,7 @@ class Throttle : public Consumer
     std::vector<MessageBuffer*> m_out;
     unsigned int m_vnets;
     std::vector<std::vector<int>> m_units_remaining;
+    std::vector<std::vector<std::shared_ptr<Message>>> m_pending;
 
     const int m_switch_id;
     Switch *m_switch;
@@ -141,7 +154,7 @@ class Throttle : public Consumer
         statistics::Scalar acc_link_utilization;
         statistics::Formula link_utilization;
         statistics::Vector* msg_counts[MessageSizeType_NUM];
-        statistics::Formula* msg_bytes[MessageSizeType_NUM];
+        statistics::Vector* msg_bytes[MessageSizeType_NUM];
 
         statistics::Scalar total_msg_count;
         statistics::Scalar total_msg_bytes;

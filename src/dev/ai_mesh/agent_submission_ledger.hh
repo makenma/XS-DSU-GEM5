@@ -36,6 +36,15 @@ class SubmissionLedger
   public:
     SubmissionLedger(uint32_t depth, size_t requestIdCapacity);
 
+    template<class Archive> void serialize(Archive &archive, unsigned)
+    {
+        if (_pending)
+            throw std::runtime_error("E_CHECKPOINT_BOUNDARY: SQ publication is pending");
+        checkpoint::fields(archive, _issuedRequestIds, _tentativeProducer,
+            _committedProducer, _observedHead, _reusableHead);
+    }
+
+
     std::optional<SqSeq> reserve(RequestId requestId);
     std::optional<SqSeq> reserveBatch(
         const std::vector<RequestId> &requestIds);

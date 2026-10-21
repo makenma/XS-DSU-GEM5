@@ -19,11 +19,12 @@ from mesh_ir.abi.dependency import (
     prerequisite_closure,
 )
 from mesh_ir.abi.encoder import encode_program
-from mesh_ir.builder import load_arch
+from mesh_ir.canonical import semantic_sha256
+from mesh_ir.architecture import load_arch
 from mesh_ir.generated import abi as A
-from mesh_ir.abi.verifier import verify_program
+from mesh_ir.scheduled.verify import verify_program
 from mesh_ir.golden_programs import build_single_core_program
-from mesh_ir.model import MeshIrError, canonical
+from mesh_ir.model import MeshIrError, to_canonical
 from mesh_ir.weight_registry import (
     load_model_weight_image,
     load_program_weight_registry,
@@ -45,17 +46,17 @@ def fixture():
 
 def test_gate5_fixture_header_and_feature_bits(fixture):
     blob, program, expected = fixture
-    assert program.abi_major == expected["abi_major"] == 1
-    assert program.abi_minor == expected["abi_minor"] == 1
+    assert program.abi_major == expected["abi_major"] == 2
+    assert program.abi_minor == expected["abi_minor"] == 0
     assert program.required_features == expected["required_features"]
-    assert program.required_features == A.DYNAMIC_MOE_V1
+    assert program.required_features == A.SCHEDULED_SEMANTICS | A.DYNAMIC_MOE_V1
 
 
 def test_gate5_fixture_records_match_expected_values(fixture):
     _, program, expected = fixture
     for name in ("content_digests", "moe_layer_specs", "moe_expert_specs",
                  "moe_dynamic_regions", "moe_kernel_specs"):
-        actual = [canonical(record) for record in getattr(program, name)]
+        actual = [to_canonical(record) for record in getattr(program, name)]
         assert actual == expected[name], name
 
 
@@ -72,7 +73,7 @@ def test_gate5_fixture_weight_binding_is_external_read_only(fixture):
     assert weight.flags & A.TENSOR_FLAGS.HAS_CONTENT_SHA256
     assert weight.content_sha256.hex() == expected["weight_digest_hex"]
     digest = program.content_digests[expert.weight_digest_index]
-    assert digest.object_kind == A.TENSOR_ROLE.WEIGHT
+    assert digest.object_kind == A.CONTENT_DIGEST_OBJECT_KIND["TENSOR"]
     assert digest.object_id == weight.tensor_id
     assert digest.digest == weight.content_sha256
     for expert_spec in program.moe_expert_specs:
@@ -112,12 +113,12 @@ def test_gate5_fixture_region_lands_inside_static_lifecycle(fixture):
 def test_gate5_fixture_reencodes_byte_identically(fixture):
     blob, program, expected = fixture
     assert encode_program(program) == blob
-    assert program.semantic_sha256() == expected["semantic_sha256"]
+    assert program.semantic_sha256 == expected["semantic_sha256"]
 
 
 def _strip_feature(blob: bytes) -> bytes:
     image = bytearray(blob)
-    image[104:112] = (0).to_bytes(8, "little")
+    image[104:112] = (A.SCHEDULED_SEMANTICS).to_bytes(8, "little")
     return bytes(image)
 
 
@@ -131,15 +132,15 @@ def test_gate5_sections_are_rejected_without_the_feature_bit(fixture):
 def test_gate5_feature_requires_every_conditional_section():
     base = encode_program(build_single_core_program(load_arch(ARCH_PATH)))
     header = decode_header(base)
-    header["required_features"] = A.DYNAMIC_MOE_V1
+    header["required_features"] = A.SCHEDULED_SEMANTICS | A.DYNAMIC_MOE_V1
     with pytest.raises(MeshIrError) as err:
         decode_section_dir(base, header)
-    assert err.value.code == "E_ABI_SECTION_RANGE"
+    assert err.value.code == "E_ABI_FEATURE"
 
 
 def test_gate5_writer_rejects_feature_sections_without_the_bit(fixture):
     _, program, _ = fixture
-    stripped = replace(program, required_features=0)
+    stripped = replace(program, required_features=A.SCHEDULED_SEMANTICS)
     with pytest.raises(MeshIrError) as err:
         encode_program(stripped)
     assert err.value.code == "E_ABI_FEATURE"
@@ -259,7 +260,8 @@ def test_gate5_verifier_rejects_semantic_violations(fixture, arch, table,
     _, program, _ = fixture
     records = list(getattr(program, table))
     records[index] = replace(records[index], **{field: value})
-    broken = replace(program, **{table: records})
+    broken = replace(program, **{table: tuple(records)})
+    broken = replace(broken, semantic_sha256=semantic_sha256(broken.semantic_dict()))
     with pytest.raises(MeshIrError) as err:
         verify_program(broken, arch)
     assert err.value.code == code, f"{table}.{field}"
@@ -270,7 +272,8 @@ def test_gate5_region_gate_must_sit_inside_the_request_body(fixture, arch):
     region = replace(program.moe_dynamic_regions[0],
                      insert_after_command_id=6, resume_before_command_id=7,
                      entry_event_id=6)
-    broken = replace(program, moe_dynamic_regions=[region])
+    broken = replace(program, moe_dynamic_regions=(region,))
+    broken = replace(broken, semantic_sha256=semantic_sha256(broken.semantic_dict()))
     with pytest.raises(MeshIrError) as err:
         verify_program(broken, arch)
     assert err.value.code == "E_LIFECYCLE"
@@ -280,7 +283,7 @@ def test_gate5_region_gate_must_sit_inside_the_request_body(fixture, arch):
 def test_gate5_fixture_passes_the_full_verifier(fixture, arch):
     _, program, expected = fixture
     verify_program(program, arch)
-    assert program.semantic_sha256() == expected["semantic_sha256"]
+    assert program.semantic_sha256 == expected["semantic_sha256"]
 
 
 MULTI_FIXTURE = FIXTURE / "moe_multi.mshb"
@@ -347,15 +350,15 @@ def test_gate5_dual_core_region_gate_needs_a_cross_core_prerequisite(arch):
                             if c.core_id == 1 and c.opcode == A.OPCODE.HALT))
 
 
-def test_gate5_dual_core_region_gate_rejects_an_independent_core(arch):
+def test_gate5_dual_core_region_gate_rejects_detached_wait_projection(arch):
     program = decode_program(DUAL_FIXTURE.read_bytes())
     commands = [replace(c, wait_count=0) if c.core_id == 1 else c
                 for c in program.commands]
-    broken = replace(program, commands=commands)
+    broken = replace(program, commands=tuple(commands))
+    broken = replace(broken, semantic_sha256=semantic_sha256(broken.semantic_dict()))
     with pytest.raises(MeshIrError) as err:
         verify_program(broken, arch)
-    assert err.value.code == "E_LIFECYCLE"
-    assert "request begin must precede the region gate" in err.value.message
+    assert err.value.code == "E_EVENT_NO_PRODUCER"
 
 
 def test_gate5_weight_registry_covers_both_fixture_programs(arch):

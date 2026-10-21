@@ -1,0 +1,780 @@
+{
+ "cases": [
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/dma_basic-instances1",
+   "case": "dma_basic",
+   "cause": "MESH_PROGRAM_DONE: b1_m64n64k64",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "fa2821d3879fe37e00a451e5a2e745776a2256672911c81b39f9745e14990d39",
+    "command.json": "abfd52b306d7e784620b9e077e4f15c52955db976acf75811c5923f3788a596c",
+    "gate5_oracle.json": "bffb84606205fc3443af9d9abbaf4c603831a84a401007bf6e3885d0b8f6d971",
+    "identity.json": "1a88750e5b8383c2e29f5db1b8baa66414a7aea3b4d3842a594be5e92de14f64",
+    "run.log": "55eef5fb07ec96b500ee779a67c4015c4c1244655804e588b2edd9ea1f42692d",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "single",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/dma_basic-instances2",
+   "case": "dma_basic",
+   "cause": "MESH_PROGRAM_DONE: b1_m64n64k64",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "8eae6e63549da8b15dbc4d04bdd6392aca95c40ac5e5dfd99fdf25697439009b",
+    "command.json": "9ab784c7850f6b35620b9da51d567c30cd3c2cdba4174a744d18bb1faf159130",
+    "gate5_oracle.json": "13549062e51a3ecd9b23e81c89b7c502da1c5f18b1287f6bf730e9c79e29a2dd",
+    "identity.json": "1a88750e5b8383c2e29f5db1b8baa66414a7aea3b4d3842a594be5e92de14f64",
+    "run.log": "6bc2821fefe3dc47c3d1788e2ee97e5ce8ff930335c9d26c989260714ba23c89",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "single",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/dma_basic-instances3",
+   "case": "dma_basic",
+   "cause": "MESH_PROGRAM_DONE: b1_m64n64k64",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "b582695bef2930e87d3fa8f52b684a81e2f597905bd4b5eb7a9e7cda28c9fd75",
+    "command.json": "0dee80eb2179fde337803c0c6f7c3d32fe5f5dd2bc0f82ff0ff5c0bf1ae35abb",
+    "gate5_oracle.json": "c2d1cfbee63ce20741b9940c9e39f6a74e933f4ea65c6dd8f1c6ab9022843d88",
+    "identity.json": "1a88750e5b8383c2e29f5db1b8baa66414a7aea3b4d3842a594be5e92de14f64",
+    "run.log": "c93ce42f4f4b391fe70f7a0ea24f842fd6c6228b460fe8edaccab5f83247c28f",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "single",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/drain_deferred",
+   "case": "drain_deferred",
+   "cause": "MESH_PROGRAM_DONE: b1_m64n64k64",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "21c26a7637d0fa3e4f80b09110d734a226ab8c5d9f2594b1715ff854eee54cfa",
+    "command.json": "e89292ca6434d7ba4af250159f92589ba5466ad26f8544953f304f421a2afd91",
+    "gate5_oracle.json": "d06faedb5868842a5a9971961b0106b145149780d0433c38d66031effa9a3e95",
+    "identity.json": "1a88750e5b8383c2e29f5db1b8baa66414a7aea3b4d3842a594be5e92de14f64",
+    "run.log": "e5a17e30d15aab359279fe919c698d20b6ec8d93465091db78cc43a8b24cf14b",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "single",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/region_edge",
+   "case": "region_edge",
+   "cause": "MESH_PROGRAM_DONE: b1_m64n64k64",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "9c37f71d744ed4d6ca7fee9d624a38484761c84cf1fcaa98dd4bfcff784aae78",
+    "command.json": "53c6efdc7611cda8fbaba3f66f6eaf9fbc9a3b181e012edbaac47451d3af4d85",
+    "gate5_oracle.json": "547ae7fb4e6e36fb57e64e87fb989d44f97ccc2dd887863c9b9a0a510bc3c25c",
+    "identity.json": "ae2ceb357aca1bf745c346f0ff0157b2302016c0854ebbe0dbd079ce0f99bcb2",
+    "run.log": "54a33eca43012637dc0acb83374a5c902f19302a3177faf21b45005f51425003",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "region_edge",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/dma_edge",
+   "case": "dma_edge",
+   "cause": "MESH_PROGRAM_DONE: dma_edge",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "cf801d4ae6d86818480b08de7910f30f8bcdd1025c55f7d8727a4c4d9a46bc2f",
+    "command.json": "4fa4e62a1ab679f1c1baf57a5c5bcb22d8030b17c9ef9442e72765e18fe696c4",
+    "gate5_oracle.json": "44d79beb1b3fc39acabf376405c7a47659e139cf89a832447aceaa2857a42ef2",
+    "identity.json": "319b6f82660b67c46947f1f27d033ee10d5b6a127b01a815580533449bcbf1b1",
+    "run.log": "b0554f43656c879053262be1b3c99ff3b84a38e71b45bd9bd70cc79a61768414",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "dma_edge",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/p2p_basic",
+   "case": "p2p_basic",
+   "cause": "MESH_PROGRAM_DONE: b1_m64n64k64_tp2",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "b651ec609de5a35a7fe5de63d36144117d84eff5d8b2b9aa474b3bf2dd532143",
+    "command.json": "6d69c1fafbe70c071d32ac3c0bea22ed9e6df045b77fce98f3c55c966a0eb5ff",
+    "identity.json": "5f8c3d365eb8c9e51f303757cc0fe87d22ba4c58eb49d5297a21b25b27e579f1",
+    "run.log": "6260adb291e3d6319e90066b527fa3bff5bf5c7313531155e1c6a3f8cd371ce4",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "dual",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/p2p_delayed",
+   "case": "p2p_delayed",
+   "cause": "MESH_PROGRAM_DONE: b1_m64n64k64_tp2",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "c2aace8f670678f73adc9267b391591438451bfd8a5db90631b93d50931e3c5c",
+    "command.json": "817fa79348054d29b6ae31f41468299dbf4a167b5b309650643c4fb83ea45cc6",
+    "identity.json": "5f8c3d365eb8c9e51f303757cc0fe87d22ba4c58eb49d5297a21b25b27e579f1",
+    "run.log": "1e69b92a15e97228b9c8d78f4429fc1f9616d32c1e9363697cf06cffacaebd73",
+    "scenario.json": "91e981c91ea2d17f68a8b717165c2def7d91cbebc7bf816823b5bcd9c7b4cfbe"
+   },
+   "program": "dual",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/p2p_persist",
+   "case": "p2p_persist",
+   "cause": "MESH_PROGRAM_DONE: b1_m64n64k64_tp2",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "95399287abe85cfbb0bc62e3f7d50a62215c151a2f1d02b3832281991b5aa745",
+    "command.json": "0f1ac0c099af57a3bdb263e7ab26b64e383075fdda6ebfc3d8262d41d5e72795",
+    "identity.json": "5f8c3d365eb8c9e51f303757cc0fe87d22ba4c58eb49d5297a21b25b27e579f1",
+    "run.log": "f5daebc270d83bafc18efda7bdb621143e9d37d65b11b127dbf697558ceeebdb",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "dual",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/p2p_reuse",
+   "case": "p2p_reuse",
+   "cause": "MESH_PROGRAM_DONE: p2p",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "20b3422f17f0ccfb036f4a4e98cf8b8453a27b85a45fb03621aad8e649f0eadd",
+    "command.json": "d1314147193b22d8532918f3619d5c0c82f361a6f1ad238581ef64aa94223d4a",
+    "identity.json": "cd71a7d04049c5838992f9383ad8583bfe2754a9d41f6842c59ea1d48a40b617",
+    "run.log": "6336e40ecc644945fd8cdf1585229701c0b3448a1b4a65da8ee7a8d959fd66c2",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "p2p_reuse",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/constrained",
+   "case": "constrained",
+   "cause": "MESH_PROGRAM_DONE: b1_m64n64k64_tp2",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "881ec2fcb21bf16d6e51e4cf3e62819ccffff1ad3854d01dde923e85de7fa348",
+    "command.json": "4ed9a9a706ed6748f81c588425307240ae3d744ab92e829d294b875418b49d06",
+    "identity.json": "8125fd5c12430098ca33d09dc092bb07827510ddb7bb9089af9780200338a400",
+    "run.log": "6b87811be30934e968b4b8659bcf2d04fe7b5b4fb9ced418f410d0c3877f396f",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "dual",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/dma_shapes",
+   "case": "dma_shapes",
+   "cause": "MESH_PROGRAM_DONE: dma_shapes",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "db66770ee06c7e3df9e8851fb4ca96e6971721f46f7871710dbb9497627f3734",
+    "command.json": "52bad8d1c2075e99b1829883057789ae2d9c23ddf4aa10d8425dc0c8332057fe",
+    "gate5_oracle.json": "cdcdd5fbd2bf6fc32043867549775f1b815637e7f981e72e9054077b6fd1b12a",
+    "identity.json": "bd138cb1486fb97bb0b7cb092db09eb60beb253dc359dad71cb7318d3b11c779",
+    "run.log": "dbe7a83fab442b7fceb697dfa022621ea1ea1ad5ee1e0aad4ab3aa2c64b4db1c",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "dma_shapes",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/read_outstanding_window",
+   "case": "read_outstanding_window",
+   "cause": "MESH_PROGRAM_DONE: dma",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "77ffcd0bd48530ad2b112b6f787317fa9183dfc9eebc98df3edaf1fa92af7d58",
+    "command.json": "5b024894417de0172104ffdefb6b9d568d8539c05745e21982a0bd3cf8608eff",
+    "identity.json": "3dca5befb257cd7c1cd723d8746092fa22cecb50f6520f0e88ddb68b42eec791",
+    "run.log": "27747866df50b708bee985aa32f3838a17412818d7dfa5faae7e742464abf748",
+    "scenario.json": "daae36288a2e3053e804d2811285db54a0960c607c3a569b0eb2a341ce01d420"
+   },
+   "program": "read_window",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/read_reorder",
+   "case": "read_reorder",
+   "cause": "MESH_PROGRAM_DONE: dma",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "b0cab029875c9c6f375ee8ac82e656a4df075b6c6960973cc804eda917c3abb4",
+    "command.json": "258c16d61dd8b72c96f24c3c3a1a3085ed91c4cc670c38f9773716a14c172dbe",
+    "gate5_oracle.json": "8b8559cf957478830ea77e3bc61a1c89ca488be4ea07bc2fde155eb873647953",
+    "identity.json": "3dca5befb257cd7c1cd723d8746092fa22cecb50f6520f0e88ddb68b42eec791",
+    "run.log": "c8e7739f6d1d72a328a26b64287e0c8ac541fd2d9e5075db80150d3aa9eb4903",
+    "scenario.json": "389154f365deb04e30ea982c2933357a6ca92b9c7591d02bf286309d1b62aef4"
+   },
+   "program": "read_window",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/delayed_b",
+   "case": "delayed_b",
+   "cause": "MESH_PROGRAM_DONE: b1_m64n64k64",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "a8f7c7a3afbc8c2b40b3e480de71650b18d75d80129718c42662125a3224e260",
+    "command.json": "c9ff244c587444856c7a5126f28f8ea6f27d60fdd903ef4341f6e0490a254a52",
+    "identity.json": "1a88750e5b8383c2e29f5db1b8baa66414a7aea3b4d3842a594be5e92de14f64",
+    "run.log": "d9d115bd43ff8db16c8d54da01c878ab4ed6265e91df288418e37e9681427a6a",
+    "scenario.json": "ba080e234d9a2d2ba33844d3390283acca8af28fc391b6343911fe4144d20109"
+   },
+   "program": "single",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/delayed_b_ejection",
+   "case": "delayed_b_ejection",
+   "cause": "MESH_PROGRAM_DONE: b1_m64n64k64",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "8f3c6b8f0eff175986e7bb26a6ae96c204418041317049ae9f1d9a854e1e0071",
+    "command.json": "feb7e196ae8ad770ca2eaead5b3b18c7f9a9adfd370e1a78140016cee6ebe2a8",
+    "identity.json": "1a88750e5b8383c2e29f5db1b8baa66414a7aea3b4d3842a594be5e92de14f64",
+    "run.log": "4986956bb8c168410048d26022812d9ec4737212af821a6da249a1fdfbc474f7",
+    "scenario.json": "9b82666735c83e589e72b70c8e4a9e9adaa25d578e0efb67bf718f3a28c01931"
+   },
+   "program": "single",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/fence",
+   "case": "fence",
+   "cause": "MESH_PROGRAM_DONE: dma_fence",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "501396f96343c3761822489d55a785309ca9693e6ad1e6a3f7237f10d80c1022",
+    "command.json": "866974f42bb922243fa7636529d9eeb8bbf02cfbae00bf0f7b5fac9d096e6aa8",
+    "identity.json": "6934b8b471696a6a86eac7008ed88e6cb4b31fb113c94cd6335d05109b4117c6",
+    "run.log": "5a48e015a554ee271e31005bc5264f2c16023966d982cb0f388e9308835d1abf",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "dma_fence",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/fence_scopes",
+   "case": "fence_scopes",
+   "cause": "MESH_PROGRAM_DONE: fence_scopes",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "b7eac1a11f8849884c143e31c3870d4e5ca0e1bd8983fcc815c7daedd64e7fb0",
+    "command.json": "89ba8f40cb5cea11e0feb26f4d63fe26c360610aed0622a58f9d6daf5c480625",
+    "identity.json": "5676144f2da332a63cd67852ab52668473b85d2459be912f6a4c2744508bebfe",
+    "run.log": "8743f07dd1f93e10f971b39c9f9603828e2222312d4357d1015f60e61c27a50f",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "fence_scopes",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/pin",
+   "case": "pin",
+   "cause": "MESH_PROGRAM_DONE: dma_pin",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "1b4239e06f6f68c3ca312a1d9643d2a5dedf54096a36c767bfdbc559bb32ccdd",
+    "command.json": "cc53e555f805a7aa48ee8aaae3cc6e2d3b781e49ec2db6d8d3e059969b71afea",
+    "gate5_oracle.json": "a9025f799844cdf5da78a57253f1e27a267e8ead918464451207fdb03dadbca3",
+    "identity.json": "6542c4457f97d2ff1309b35a7ab78eedb5764c820fbb8f4d6032ec317eedefe3",
+    "run.log": "fad78f27cf706e486b637363ffc65de6ed1dece1381f2cc8d0cceb4b987585c3",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "dma_pin",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/dma_zero",
+   "case": "dma_zero",
+   "cause": "MESH_PROGRAM_DONE: zero_dma",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "52f0c91b0acd2a04304ec59e7474ac9a634bcc8fbe80644995109a0a4a4c3477",
+    "command.json": "dd35dec21d555c9356bd83ee94e8184417a1191f6e2f414e87646a52f38805de",
+    "identity.json": "8fa5fa7ebb1cef14db1d5196bb86905149ed9700d1cf7a202c5f82c476bd7bad",
+    "run.log": "7a139dc2456137e8eb675b35c6956b4836c618ba036f5dad3d7ecf9813b38a40",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "zero_dma",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/sram_persist",
+   "case": "sram_persist",
+   "cause": "MESH_PROGRAM_DONE: b1_m64n64k64_tp2",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "95399287abe85cfbb0bc62e3f7d50a62215c151a2f1d02b3832281991b5aa745",
+    "command.json": "b8bb7ca02a4e294420c21837e662ba894ceec9b98b65b8a450f9f80c92e7dfeb",
+    "gate5_oracle.json": "c95cac65bcb939fde775251652ca606be774c0841c659fa74ddd1e778c58453c",
+    "identity.json": "5f8c3d365eb8c9e51f303757cc0fe87d22ba4c58eb49d5297a21b25b27e579f1",
+    "run.log": "a116fdb4ff9917df7fed7a89a0e2d19ff596f714aaabe91b588c204d23bb0eb3",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "dual",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/load_saturation_contiguous",
+   "case": "load_saturation_contiguous",
+   "cause": "MESH_PROGRAM_DONE: dma",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "646b179f5d22496d319c7cf291e1c4cb775df9771543daca35b52b1ad49dccab",
+    "command.json": "abbbe9a5d8620d7ebc90a7b74f3a3e0bb209581e129e79b569551fd90e87b0dd",
+    "identity.json": "f6e353d4c97574e7fcf7d95a4ecd6cc849a7108b33a2bef146329ad089f2ebea",
+    "run.log": "245e2525a5ae1f23f47f1055def922d06eb62bff6ba32f9149902c64a531ad40",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "load_saturation_contiguous",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/read_error",
+   "case": "read_error",
+   "cause": "MESH_PROGRAM_ERROR_DRAINED: b1_m8n8k8",
+   "expect": "error_drained",
+   "files": {
+    "actual_result.json": "0f6a096d911ef163600d738d4bc733461b0303c1054deb33e052e51ff6177f52",
+    "command.json": "db1de78407d57472a7ab8f3e3745e96bf96865de085bd38c5ea843e9553cae9e",
+    "gate5_oracle.json": "a9fef4d1d5dee15b9b48de7180cf87d5030ed8b460553f121bfd3e487631300b",
+    "identity.json": "7dc4e91f9019d0c8b2f34005e676cc96c0e9667f7369830046e891022e310a7d",
+    "run.log": "9e694b33f73778464ae2575f8118229f3ab161fefd0b7e14923db8ea7cbd9da7",
+    "runtime_diagnostics.jsonl": "0efd14f9eafebd39c368f6b9e316d27ba41ef5ef35eba6586584feb6b82476ae",
+    "scenario.json": "146c1abf98f7e09a282492dc5633a21091845a0faf0eea6e020df8b89562777d"
+   },
+   "program": "dma_error",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/read_error_middle",
+   "case": "read_error_middle",
+   "cause": "MESH_PROGRAM_ERROR_DRAINED: b1_m64n64k64",
+   "expect": "error_drained",
+   "files": {
+    "actual_result.json": "b01a3dcbffd69e47a616d120ea7597faa900ac579b733d0ad52961650982bfd7",
+    "command.json": "6c3e776d11219781c4fc4fdbc4ba6a8bc7094937f3bd7290ab64a31331871fd1",
+    "gate5_oracle.json": "afb066f039712d9d0b14298ad7b9292288ef9fe776084d6426157b491a34cb9c",
+    "identity.json": "1a88750e5b8383c2e29f5db1b8baa66414a7aea3b4d3842a594be5e92de14f64",
+    "run.log": "118d0f606090c804b40733044765c3a1e3f08319ef4f44899513849d19478061",
+    "runtime_diagnostics.jsonl": "e700e85d2236dfcebaece656171aa646a03ecb807fa438aec5163917cdcae024",
+    "scenario.json": "58537aca6b1c607c0470958b2371183f2f66e2712dbbd92161c3f071c4a25116"
+   },
+   "program": "single",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/write_error",
+   "case": "write_error",
+   "cause": "MESH_PROGRAM_ERROR_DRAINED: dma_write_error",
+   "expect": "error_drained",
+   "files": {
+    "actual_result.json": "a997d275add65ba7a1547e01dddd27b901dfcb68c15f84a7573a266b79609513",
+    "command.json": "7e5cdcee13cda89d3b7341776c451cd5ebb798ad360544cb70615871ebde39c9",
+    "gate5_oracle.json": "aff60f468c30b570b7dbf6c3f50877914c42da597fda78aca2dc9ebb8c193a60",
+    "identity.json": "9638802c2882e289a54a0bfaedc09f1629d96e423c51555017d0ca0ea132c932",
+    "run.log": "fd6b03d7b052ff3212253754acd2de08ea09d504d3031e90426945d6b8355357",
+    "runtime_diagnostics.jsonl": "48a644e7c2a1ff0c753a7afb842a4aace278a8486f1ab4dda4f7ebb1089b0c4d",
+    "scenario.json": "c88a608e4bae451f10c5efd4463648bc0eee172ad33b4164a7de55846dfcb852"
+   },
+   "program": "dma_write_error",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/write_error_post_commit",
+   "case": "write_error_post_commit",
+   "cause": "MESH_PROGRAM_ERROR_DRAINED: b1_m64n64k64",
+   "expect": "error_drained",
+   "files": {
+    "actual_result.json": "389563f0bb1364f4366f20f924ae129be1a658dc015973a540d6c418caa54b75",
+    "command.json": "d3ada1e41b0da5b71be00078f9cd1d4452e0bf09b24f1b7ea1c62f5e9b8c0f79",
+    "gate5_oracle.json": "266a0fbd7ee109f5547f7c3eba407296531e06333d684a9ca1da5ca1dee83219",
+    "identity.json": "1a88750e5b8383c2e29f5db1b8baa66414a7aea3b4d3842a594be5e92de14f64",
+    "run.log": "65908575c55d9bfdf2d1925d8f3226faad09a514cf86452aab53398510f96256",
+    "runtime_diagnostics.jsonl": "de0714dffc931115e0cbaad72d9f1731293afe23144d838cb9d39ec6392b85f4",
+    "scenario.json": "77ef315a1fed40fb271142c2a7ec6e806a68b41e18d6122cdb0e717c8492d834"
+   },
+   "program": "single",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/cross_error",
+   "case": "cross_error",
+   "cause": "MESH_PROGRAM_ERROR_DRAINED: cross_fault",
+   "expect": "error_drained",
+   "files": {
+    "actual_result.json": "1f61fa9097991281eb3940b4a8846b9274fa9d28f28052a8216514b668cc8b2c",
+    "command.json": "6f2461fde6b55b6dad0a9e367bf152d16d650116b49519e95df314629cce6c5b",
+    "gate5_oracle.json": "eab7eb3f3a3bcf824d45861f665b8025f14f1d71ce9d3e9ee90787d4652221c3",
+    "identity.json": "5bc67a154f8758958facfef77edb7db72f4fb9b72b7e95fca2a3d00154650ebc",
+    "run.log": "ac9b3c986b1e8f3161905afe64c19f1c336dee7c708ce2ab8c971658d73c8540",
+    "runtime_diagnostics.jsonl": "0efd14f9eafebd39c368f6b9e316d27ba41ef5ef35eba6586584feb6b82476ae",
+    "scenario.json": "146c1abf98f7e09a282492dc5633a21091845a0faf0eea6e020df8b89562777d"
+   },
+   "program": "cross_fault",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/cross_error_first_instance-instances2",
+   "case": "cross_error_first_instance",
+   "cause": "MESH_PROGRAM_ERROR_DRAINED: cross_fault",
+   "expect": "error_drained",
+   "files": {
+    "actual_result.json": "d2ec6d692afa3c25a2a877b5f7aea28b32c1857b515deca492e2b90d4f41c154",
+    "command.json": "6b9bb496b577714fde9f10bf9c10dc383740c58c6a8d33dd6ac8fd59bec39340",
+    "gate5_oracle.json": "220fe18f59c0e39111dd9837041a866796ecdf7fa93bba69fc4c2ba86f9c986f",
+    "identity.json": "5bc67a154f8758958facfef77edb7db72f4fb9b72b7e95fca2a3d00154650ebc",
+    "run.log": "1a8bc9ba5e199038f5de23567302196fe3f1412f9d2156ee47ad4de687d3acb9",
+    "runtime_diagnostics.jsonl": "0efd14f9eafebd39c368f6b9e316d27ba41ef5ef35eba6586584feb6b82476ae",
+    "scenario.json": "146c1abf98f7e09a282492dc5633a21091845a0faf0eea6e020df8b89562777d"
+   },
+   "program": "cross_fault",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/repeat_error",
+   "case": "repeat_error",
+   "cause": "MESH_PROGRAM_ERROR_DRAINED: repeat_error",
+   "expect": "error_drained",
+   "files": {
+    "actual_result.json": "d06db45f3d317dd8d83575376e2d3bce26de9e9cc12e77a96bf39cca5027a2b6",
+    "command.json": "3cbd15ceaa85947afa34cd440f2a9e77def1cc1c4aa0e39d71bd37fea7529946",
+    "gate5_oracle.json": "763c64b9f8010b4e8de4efa108ff261aa42cd485409992fc75802f22e9778402",
+    "identity.json": "f28a5ad93428f76af593aeff9efc023b9bc5a81774c63072cea0e0b457ec1d10",
+    "run.log": "654ecbe12c561029507ef0082aa2bea1671fbd318bc9cbae657129fea03067d9",
+    "runtime_diagnostics.jsonl": "48a644e7c2a1ff0c753a7afb842a4aace278a8486f1ab4dda4f7ebb1089b0c4d",
+    "scenario.json": "c88a608e4bae451f10c5efd4463648bc0eee172ad33b4164a7de55846dfcb852"
+   },
+   "program": "repeat_error",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/p2p_partial_abandon",
+   "case": "p2p_partial_abandon",
+   "cause": "MESH_PROGRAM_ERROR_DRAINED: b1_m64n64k64_tp2",
+   "expect": "error_drained",
+   "files": {
+    "actual_result.json": "5f0cd818c7f0a2fc468346f92d7020d754674019b706bef6fbb90d57f2ab9a17",
+    "command.json": "cffd662a35cdf77901920aae13a49dd17dfc0d8e74c4a023d5508fbcd17ec165",
+    "gate5_oracle.json": "d9e4a43424fd31a4687b4d0f2c7c87c9f85058b1ef6ecea311bb6915d63bc09b",
+    "identity.json": "5f8c3d365eb8c9e51f303757cc0fe87d22ba4c58eb49d5297a21b25b27e579f1",
+    "run.log": "55545a5326586df03cc6b594f55880ac3ec2dc9201d9431eb5040eaa2b45a888",
+    "runtime_diagnostics.jsonl": "6b2ae34f8ee727e4f6c88fc8691a83522081853cbeba8b7cd2f88ba647a5f635",
+    "scenario.json": "02411fa6713c803aa09882e7480c890a97f7b20162fa548e1044957ae89a4660"
+   },
+   "program": "dual",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/p2p_prefilled",
+   "case": "p2p_prefilled",
+   "cause": "MESH_PROGRAM_DONE: p2p_prefilled_destination",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "c95f6d04f06393a607bc49d89d7d99dfa23ab6c118fc05eb7ab33bdc22edec92",
+    "command.json": "2c0cd29e4aefc8b82df2ca8ae0ac0929c8cdfd91f3d9f15bca42bd66313ed3f7",
+    "gate5_oracle.json": "d19ae05c17f9fa8f4985eafcc82a257a806f6603f681a746d0991587052fe0fe",
+    "identity.json": "ea577e677efde73c37f27efbe977737858d8db97a802f1b034dee7f0663df9e5",
+    "run.log": "fe9a0f103d7c5de0488ee2dd49a7258c7a9b94b6880382f49382e67cf31b27ba",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "p2p_prefilled_destination",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/p2p_prefilled_incomplete",
+   "case": "p2p_prefilled_incomplete",
+   "cause": "MESH_PROGRAM_ERROR_DRAINED: p2p_prefilled_destination",
+   "expect": "error_drained",
+   "files": {
+    "actual_result.json": "3a71791412063e31daa675f84d4dcf0fd9fdecc24bccf03db46f37f0b17c2063",
+    "command.json": "1297d29e345ac85864c1b2bb9a393ab33ad94af9dddd36bb29047373cbd3954a",
+    "gate5_oracle.json": "a95c1c6a3f9b36e0ac496c42a8ea1e344060184d3516232f31b62df1518c8050",
+    "identity.json": "ea577e677efde73c37f27efbe977737858d8db97a802f1b034dee7f0663df9e5",
+    "run.log": "40252c07bc0f4017443711cd8da1b4925d8acfb44bc5c38e27b91ebcc64fffd6",
+    "runtime_diagnostics.jsonl": "4b64485014c5a4f28d1cc02ea9740753f1e9142b0b6a09d47010d2d1a55bb931",
+    "scenario.json": "5d975ccaf34b6d07cc05ce96844912a06ce6fb94cd72c6578b184c041d851251"
+   },
+   "program": "p2p_prefilled_destination",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/p2p_peer_edge",
+   "case": "p2p_peer_edge",
+   "cause": "MESH_PROGRAM_DONE: p2p_cancel",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "f0ed117f827b6ce67d46eb6771de0e105e2b94d6f404e83ca9472951a8dc1afd",
+    "command.json": "781c51977ba2e652ceb4fbc5835bd81126244125d3f4d6d368e0acc36afdbaff",
+    "gate5_oracle.json": "64748d2c025b886a0c880838956be369b4308d67a340e03e77f7da85c14bd5e8",
+    "identity.json": "af03d002fa75a54ef63392051d55e11f60bf9c6973c5e8b149f20288b795351f",
+    "run.log": "5fcbcdbc4cc8b00d9ee74987148ef9c834ffb7fc8e5429233a335db8239526fa",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "p2p_cancel",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/p2p_frames-instances1",
+   "case": "p2p_frames",
+   "cause": "MESH_PROGRAM_DONE: b1_m64n64k64_tp2",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "b651ec609de5a35a7fe5de63d36144117d84eff5d8b2b9aa474b3bf2dd532143",
+    "command.json": "f71ab5e02657d87a725429a70eb05b0a800c3f00edb4aea8a21f27c57c5edb7e",
+    "gate5_oracle.json": "da5a237f3a69f161bef92981aba3a5f606a0b799db5572689f8274bf0cc08363",
+    "identity.json": "5f8c3d365eb8c9e51f303757cc0fe87d22ba4c58eb49d5297a21b25b27e579f1",
+    "run.log": "9f06eb47c33c83088dfd79472b29bc838f3021de4e47dadc620f551b9d38f93f",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "dual",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/p2p_frames-instances2",
+   "case": "p2p_frames",
+   "cause": "MESH_PROGRAM_DONE: b1_m64n64k64_tp2",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "95399287abe85cfbb0bc62e3f7d50a62215c151a2f1d02b3832281991b5aa745",
+    "command.json": "f4c22bb8969f1c692322233c55cc9c2017dcedcdfe523042071e9cd891afd4ef",
+    "gate5_oracle.json": "8c74a8617fc6c3c2301711e2c5d37df05f365dfdc5234ffc221c75a794be81b0",
+    "identity.json": "5f8c3d365eb8c9e51f303757cc0fe87d22ba4c58eb49d5297a21b25b27e579f1",
+    "run.log": "9d617fcb12134ab5276bb509624012d0a436703caa149b22f5efd7f09d6885f4",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "dual",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/p2p_frames-instances3",
+   "case": "p2p_frames",
+   "cause": "MESH_PROGRAM_DONE: b1_m64n64k64_tp2",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "de4ea193412910736f0baacc2bc71e5efa636de46b3f92f47619f9b0ca6374b9",
+    "command.json": "64fbfb02a825854609b67ec9296f6dc1ac285e02fb72ca0d8e66079530c92ab6",
+    "gate5_oracle.json": "080379140f843fa976a98d7d27b3be2abe6e03ce8f04bac289fd71947c4f8ba8",
+    "identity.json": "5f8c3d365eb8c9e51f303757cc0fe87d22ba4c58eb49d5297a21b25b27e579f1",
+    "run.log": "0e65ca46ba729403b22856cab4a24e63234f9f6cb9c809920c4a908c2545f806",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "dual",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/dma_basic_shallow-instances1",
+   "case": "dma_basic_shallow",
+   "cause": "MESH_PROGRAM_DONE: b1_m64n64k64",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "c57b3e5850ef66310b9872905237a23d9d84a9fe60f54f956c732fb41d1bd7f6",
+    "command.json": "0783c1f9dc032233f571d3c8200047759111c231768ff887367944cfea85f36e",
+    "gate5_oracle.json": "4f04e0c50f64df2379d455e181373ad6cef56462a44651176fe71d3c30db0ecf",
+    "identity.json": "17aabf47a9d5574f259945a1a2fcc823716085fddfb3f2bd4fb7925bee5f5e14",
+    "run.log": "4c68cabdcde7757f17e6551f6be8c7c1f489ef0829e3958082d1813eda623bed",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "single",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/dma_basic_shallow-instances2",
+   "case": "dma_basic_shallow",
+   "cause": "MESH_PROGRAM_DONE: b1_m64n64k64",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "2af47da04f4b84444c5e3f5ef90d52124427b18c9fe50f376aa25ea1b46a3862",
+    "command.json": "398e43818e8b8c30b6e68d086f8bf213b4b6e58d1a24de8dcce407e35d73c78f",
+    "gate5_oracle.json": "1e22139f6a8801c3f6711a9ac70a3c6a5fb33ec7036208413df7d3e54e77b7f7",
+    "identity.json": "17aabf47a9d5574f259945a1a2fcc823716085fddfb3f2bd4fb7925bee5f5e14",
+    "run.log": "2e754dd7301f6f5f72ed99b477be836785318af11f0121570dc512eb1ba395ec",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "single",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/dma_basic_shallow-instances3",
+   "case": "dma_basic_shallow",
+   "cause": "MESH_PROGRAM_DONE: b1_m64n64k64",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "2304084334ff9ff5db3dd5870f952ef83da155d21b8f0d92203d476454b0c66d",
+    "command.json": "696d7c5d821a970ffad044e4f80ff57fb11ac877976fbdeec1221ffb4dfa3942",
+    "gate5_oracle.json": "69a41316faa527dac44611448e6bf07e1d760256f22aa40312bf0f91ce323611",
+    "identity.json": "17aabf47a9d5574f259945a1a2fcc823716085fddfb3f2bd4fb7925bee5f5e14",
+    "run.log": "174fb6d4a5001a853b12c379b563e3f0e30561ae6bf3f3a50168e9c161fa66e7",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "single",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/p2p_frames_shallow-instances1",
+   "case": "p2p_frames_shallow",
+   "cause": "MESH_PROGRAM_DONE: b1_m64n64k64_tp2",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "3a4be329f5246e75679ab1510c8b03303a18f9eeb15d920f42cf1f091f8981c2",
+    "command.json": "5759e113c1f96bf27bc7036a37a314402eb60d2cd1074b127a106c08d046c52b",
+    "gate5_oracle.json": "b2671471854b054d8d3e169a73d5acd557f27306e3dbf235b816aa9745602f33",
+    "identity.json": "a5fe22b9ee76fee852972b0d74fb5c49ba912459ecc86aba49674d0b9355fd5f",
+    "run.log": "f0e36080a3377238f01e3d036157849a66a303c59bb51ac4337c152a0653d9bc",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "dual",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/p2p_frames_shallow-instances2",
+   "case": "p2p_frames_shallow",
+   "cause": "MESH_PROGRAM_DONE: b1_m64n64k64_tp2",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "67ee3dcb052fadb008918de2322114b0a6ff86bb5c0cad59524038917286e644",
+    "command.json": "3db33ba3cbdfe237555d7155a2c0fb3da993bc4a77e1996d4a05cb27ce53e66f",
+    "gate5_oracle.json": "e98846bd8ed34dad5c39ee5da22df4385f503634e080ed49d9d4dcac71dced92",
+    "identity.json": "a5fe22b9ee76fee852972b0d74fb5c49ba912459ecc86aba49674d0b9355fd5f",
+    "run.log": "4b8843dbb23f4fd6333d0198982ec7dbcc08746560ebe002ad02dc0880816c11",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "dual",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/p2p_frames_shallow-instances3",
+   "case": "p2p_frames_shallow",
+   "cause": "MESH_PROGRAM_DONE: b1_m64n64k64_tp2",
+   "expect": "done",
+   "files": {
+    "actual_result.json": "0e3787c2c7a1b6f2a497702468b5c77a19dde803ed88d0440ad6d7500f607fff",
+    "command.json": "ab5e483376ee3e6e67a0084a77437d14f1472498ba5b47dffa32bf7c2a7d7feb",
+    "gate5_oracle.json": "78c4492b2f0f4855ff6d73ca3ad717481f279f7dee61bead799db20e4982e3e8",
+    "identity.json": "a5fe22b9ee76fee852972b0d74fb5c49ba912459ecc86aba49674d0b9355fd5f",
+    "run.log": "01d7aa1a33838e9d63f60a772b960ce1b484a12139b033c6f4c77e9b131e64ea",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "dual",
+   "returncode": 0,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/lost_response",
+   "case": "lost_response",
+   "cause": "E_RUNTIME_DEADLOCK: no runtime progress within 2000000 ticks",
+   "expect": "fail_closed",
+   "files": {
+    "command.json": "c251ea4202a2e5cc7efdfcc26048c01f3c4d538beb09400e8d1336a9b8ebe0a5",
+    "identity.json": "07c0e26a8711111bc0478a72151352f385364d44b1a2b5b7c28343af742ef6f8",
+    "run.log": "93b65af633fee7e0fd314ba1aae839aaf99b5987a8d65bdb7fc0328d6fcbbe16",
+    "runtime_diagnostics.jsonl": "af0d31dbc7c46067518ef71d929743e22089cf08b7370594c47e11ca12b31dbb",
+    "scenario.json": "761f18dd25aec0195ad97b39fb171ee12142d76928e9baa410e442363035702a"
+   },
+   "program": "dma_error",
+   "returncode": 1,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/p2p_basic_redirect",
+   "case": "p2p_basic",
+   "cause": "E_RUNTIME_DEADLOCK: no runtime progress within 3000000 ticks",
+   "expect": "fail_closed",
+   "files": {
+    "command.json": "a198ccbf261fb3d7c355165ef1d399bac4b0db1a841e04a359d0bd755cdc099a",
+    "identity.json": "c2232d36774887baa466ffdd38ac174ea7372d0f749e1f1d69ca865f255c0d44",
+    "run.log": "afd8e790d9441dee8fd562124ec130b7fc151e2f5fc48545c6279310d750f442",
+    "runtime_diagnostics.jsonl": "895e5e5325365f55268a90aaf25dc8f5ec5d3627b4d7a75524c8028e4ba0126c",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "dual",
+   "returncode": 1,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/p2p_basic_drop",
+   "case": "p2p_basic",
+   "cause": "E_RUNTIME_DEADLOCK: no runtime progress within 3000000 ticks",
+   "expect": "fail_closed",
+   "files": {
+    "command.json": "c4d7d559f803327ebaa68f7f6fdc1d4d3e1d6c4a9a89dd0b9c8101dd0be048a9",
+    "identity.json": "c2232d36774887baa466ffdd38ac174ea7372d0f749e1f1d69ca865f255c0d44",
+    "run.log": "d18d3857db9fb99d2dce742b06a36e6733cd9185af157dc617929057901b010e",
+    "runtime_diagnostics.jsonl": "895e5e5325365f55268a90aaf25dc8f5ec5d3627b4d7a75524c8028e4ba0126c",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "dual",
+   "returncode": 1,
+   "verdict": "PASS"
+  },
+  {
+   "archive": ".tmp/docs/torch-gate-5-implementation/matrix/drain_stalled",
+   "case": "drain_stalled",
+   "cause": "E_RUNTIME_DEADLOCK: the drain made no progress within 3000000 ticks",
+   "expect": "fail_closed",
+   "files": {
+    "command.json": "ece8933e2f445c59c44e2b6b8306523c7f4587b80f6cb3ba29b8c6deace49df9",
+    "identity.json": "307ec5395d1942ff1ea5af17cbe704700779fff84908667e27f2356a94ba25f2",
+    "run.log": "9e03e18f803fc23264652041543282f9de78ddffbea19298b798712195c32591",
+    "runtime_diagnostics.jsonl": "535fe28ab8716e815137955abb76cceeab27c074cc7184c3f8fb109f77993a68",
+    "scenario.json": "d929998e269c0c93ea55d50d152885b9062ec6fec69100501a1c35a9365ff9f5"
+   },
+   "program": "single",
+   "returncode": 1,
+   "verdict": "PASS"
+  }
+ ],
+ "failures": []
+}

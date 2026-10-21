@@ -21,6 +21,7 @@ struct AxiBurst
     uint64_t useful_bytes = 0;
     uint32_t beats = 0;
     uint32_t row = 0;
+    uint64_t row_offset = 0;
 };
 
 std::vector<AxiBurst> splitBursts(uint64_t address, uint64_t useful, uint32_t width,
@@ -32,12 +33,31 @@ struct DmaPlan
     uint64_t beats = 0;
 };
 
+struct IndexedRowPlan
+{
+    uint64_t bursts = 0;
+    uint64_t beats = 0;
+    bool exact = true;
+};
+
+IndexedRowPlan planIndexedRows(uint64_t base, uint64_t stride,
+                               uint64_t row_bytes, uint64_t table_rows,
+                               uint32_t width, uint32_t max_beats);
+
 DmaPlan planDescriptor(const DecodedDmaDescriptor &descriptor, uint32_t width);
 
 // Burst plan shaped by the REMOTE endpoint: source for reads (LOAD/
 // PREFETCH), destination for writes (STORE/P2P).  The local side follows
 // the same logical bytes but its address alignment does not shape bursts.
 DmaPlan planDescriptorRemote(const DecodedDmaDescriptor &descriptor, uint32_t width);
+
+// The same remote plan but anchored at the runtime-resolved remote address
+// (region base, per-core tile base, binding offset and shard offset already
+// folded in).  Dispatch bindings change the real 4 KiB burst split, so the
+// engines must use this entry point.
+DmaPlan planDescriptorRemoteAt(uint64_t remote_base,
+                               const DecodedDmaDescriptor &descriptor,
+                               uint32_t width);
 
 // Serialized single-engine DMA latency in CYCLES: setup + per-burst base
 // latency + one cycle per beat.  Kept pure so both the engine and the unit

@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "version",
+    "workload_plan_digest",
+    "mesh_program_digest",
+    "batches"
+  ],
+  "properties": {
+    "schema": {
+      "const": "serving_batch_replay_v1"
+    },
+    "version": {
+      "const": 1
+    },
+    "workload_plan_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "mesh_program_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "batches": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/batch"
+      }
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "member": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workload_plan_item_id",
+        "user_id",
+        "task_seq",
+        "repair_round",
+        "sequence_ordinal_begin",
+        "valid_token_count",
+        "logical_source_rank"
+      ],
+      "properties": {
+        "workload_plan_item_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "user_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "task_seq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "repair_round": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "sequence_ordinal_begin": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "valid_token_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "logical_source_rank": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      }
+    },
+    "batch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "batch_ordinal",
+        "phase",
+        "decode_iteration",
+        "concrete_profile_id",
+        "members"
+      ],
+      "properties": {
+        "batch_ordinal": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "phase": {
+          "enum": [
+            "PREFILL",
+            "DECODE",
+            "PUBLISH"
+          ]
+        },
+        "decode_iteration": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "concrete_profile_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "members": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/member"
+          }
+        }
+      }
+    }
+  }
+}

@@ -193,7 +193,7 @@ If compiling gem5 on Ubuntu 22.04, or related Linux distributions, you may insta
 ``` shell
 sudo apt install build-essential git m4 scons zlib1g zlib1g-dev \
     libprotobuf-dev protobuf-compiler libprotoc-dev libgoogle-perftools-dev \
-    python3-dev libboost-all-dev pkg-config libsqlite3-dev zstd libzstd-dev
+    python3-dev libboost-all-dev pkg-config libsqlite3-dev zstd libzstd-dev libisl-dev
 ```
 
 ### Setup on Ubuntu 20.04
@@ -202,7 +202,7 @@ If compiling gem5 on Ubuntu 20.04, or related Linux distributions, you may insta
 ``` shell
 sudo apt install build-essential git m4 scons zlib1g zlib1g-dev \
     libprotobuf-dev protobuf-compiler libprotoc-dev libgoogle-perftools-dev \
-    python3-dev python-is-python3 libboost-all-dev pkg-config libsqlite3-dev zstd libzstd-dev
+    python3-dev python-is-python3 libboost-all-dev pkg-config libsqlite3-dev zstd libzstd-dev libisl-dev
 ```
 
 ### Setup using [Nix](https://github.com/NixOS/nix)

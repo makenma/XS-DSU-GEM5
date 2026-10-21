@@ -1,4 +1,5 @@
-import os
+from mesh_ir.runtime_environment import runtime_environment
+
 import subprocess
 import sys
 from pathlib import Path
@@ -22,11 +23,7 @@ from gate3_acceptance import parse_facts_tsv as parse_gate3_facts
 
 
 def test_gate4_plan_mode_replays_all_generates_over_real_axi(tmp_path):
-    environment = {
-        name: value
-        for name, value in os.environ.items()
-        if not name.startswith("AI_MESH_")
-    }
+    environment = runtime_environment()
     run = subprocess.run(
         [
             str(GEM5),

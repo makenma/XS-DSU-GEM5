@@ -11,9 +11,10 @@ from mesh_ir.agent_workload import (
     validate_against_schema,
 )
 from mesh_ir.model import canonical_json_bytes
+from mesh_ir.generated import agent_abi as AG
 
 _STAGE_KIND_ORDER = {"COMPILE": 0, "TEST": 1, "LOG_PARSE": 2}
-_ARENA_KIND_ORDER = {"INPUT": 0, "PARAMETER": 1, "OUTPUT": 2, "METADATA": 3}
+_ARENA_KIND_ORDER = AG.ENUM_VALUES['arena_kind']
 _PARAMETER_HEADER_BYTES = 160
 _PARAMETER_TLV_BYTES = {
     "INPUT_DIGEST": 40,
@@ -60,9 +61,9 @@ def capacity_counts(
     task_tuples = {
         (task.session_id, task.kv_handle, task.initial_kv_generation)
         for user in workload.users
-        for task in user.tasks
+        for task in user.tasks if task.kv_handle
     }
-    tasks_total = sum(len(user.tasks) for user in workload.users)
+    tasks_total = len(task_tuples)
     cancel_actions = 0
     release_actions = 0
     release_tuples = set()
@@ -178,6 +179,8 @@ def build_command_identity_plan(
                 )
         if release_policy == "AUTO_PER_TASK":
             for task in user.tasks:
+                if not task.kv_handle:
+                    continue
                 seq += 1
                 records.append(
                     _record(
@@ -393,9 +396,22 @@ def build_host_arena_object_plan(
     release_policy: str,
     regions,
     binding_counts=None,
+    *, binding_plans=(),
 ) -> dict:
-    if {region.kind for region in regions} != set(_ARENA_KIND_ORDER):
-        raise PlanError("E_ADDRESS_PLAN", "regions", "exactly four arena kinds required")
+    kinds = [region.kind for region in regions]
+    required = set(_ARENA_KIND_ORDER) - {'WORKSPACE'}
+    if len(kinds) != len(set(kinds)) or not required <= set(kinds) <= set(_ARENA_KIND_ORDER):
+        raise PlanError('E_ADDRESS_PLAN', 'regions', 'arena kinds must be unique and cover Host request storage')
+    workspace_sizes = {(plan.program_id, plan.profile_id): plan.workspace_bytes for plan in binding_plans}
+    if any(workspace_sizes.values()) and 'WORKSPACE' not in kinds:
+        raise PlanError('E_ADDRESS_PLAN', 'regions', 'request workspace has no arena')
+    if len(workspace_sizes) != len(binding_plans):
+        raise PlanError('E_ADDRESS_PLAN', 'binding_plans', 'request profile is duplicated')
+    if binding_plans:
+        derived_counts = {(plan.program_id, plan.profile_id): len(plan.requirements) for plan in binding_plans}
+        if binding_counts is not None and binding_counts != derived_counts:
+            raise PlanError('E_ADDRESS_PLAN', 'binding_counts', 'binding counts differ from their source plans')
+        binding_counts = derived_counts
     _check_disjoint(regions)
     allocators = {
         region.kind: ArenaAllocator(region.base, region.bytes, region.alignment, region.kind)
@@ -424,6 +440,9 @@ def build_host_arena_object_plan(
                 ("OUTPUT", round_.output_capacity_bytes, 0),
                 ("METADATA", round_.output_metadata_capacity_bytes, 0),
             )
+            workspace = workspace_sizes.get((round_.program_id, round_.profile_id), 0)
+            if workspace:
+                demands += (('WORKSPACE', workspace, 0),)
         else:
             demands = (("PARAMETER", _CONTROL_PARAMETER_BYTES, _CONTROL_PARAMETER_BYTES),)
         for kind, size, initial_valid in sorted(

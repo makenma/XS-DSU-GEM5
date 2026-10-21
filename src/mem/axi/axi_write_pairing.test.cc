@@ -139,6 +139,20 @@ TEST(AxiWritePairingTest, PairsAwFirst)
               source.frontWPacket().meta.txnUid);
 }
 
+TEST(AxiWritePairingTest, BindingFailureKeepsStagedValidationOnLaterAdvance)
+{
+    AxiInitiatorState source(sourceConfig(4, 32, 1));
+    ASSERT_TRUE(source.tryAcceptW(sourceBeat(true), 1));
+    EXPECT_ANY_THROW(source.tryAcceptAw(addressRequest(0x100, 2), 2));
+    EXPECT_EQ(source.pairedBursts(), 0u);
+    EXPECT_EQ(source.occupancy().unboundBursts, 1u);
+    EXPECT_EQ(source.occupancy().unboundBeats, 1u);
+    EXPECT_ANY_THROW(source.advance());
+    EXPECT_NO_THROW(source.advance());
+    EXPECT_EQ(source.occupancy().w, 0u);
+    EXPECT_EQ(source.occupancy().unboundBeats, 1u);
+}
+
 TEST(AxiWritePairingTest, PairsWFirst)
 {
     AxiInitiatorState source(sourceConfig());

@@ -82,7 +82,7 @@ TEST(KvTokenLedger, PartialTokenStopsThePrefixAndKeepsTheFault)
     ASSERT_TRUE(tokens.acceptDescriptor(4, 0, 8));
     tokens.noteBurst(4, 0, 48, true, std::nullopt);
     EXPECT_EQ(tokens.completePrefix(), 3u);
-    KvErrorCandidate candidate;
+    ErrorCandidate candidate;
     candidate.tick = 55;
     candidate.code = 9;
     candidate.source.domain = 4;
@@ -250,7 +250,7 @@ TEST(KvTokenLedger, FaultAfterAFullTokenKeepsTheCommittedPrefix)
     ASSERT_TRUE(tokens.acceptDescriptor(7, 0, 8));
     tokens.noteBurst(7, 0, 16, true, std::nullopt);
     EXPECT_EQ(tokens.completePrefix(), 1u);
-    KvErrorCandidate candidate;
+    ErrorCandidate candidate;
     candidate.tick = 300;
     candidate.code = 9;
     tokens.noteBurst(7, 16, 16, false, candidate);

@@ -1,0 +1,27 @@
+schema_version: mesh-compile-v1
+entrypoints:
+- forward
+shape_profiles:
+  forward:
+  - profile_id: static
+parallelism:
+  tensor_parallel: 1
+  pipeline_parallel: 1
+  expert_parallel: 1
+  data_parallel: 1
+placement:
+  core_order: row_major_yx
+  allowed_cores:
+  - 0
+  reserve_cores: []
+tiling:
+  gemm_m: 16
+  gemm_n: 64
+  gemm_k: 64
+  double_buffer: true
+collectives:
+  all_reduce_algorithm: ring
+  chunk_bytes: 4096
+runtime_model:
+  mode: FULL_TIMING
+  tensor_data: FUNCTIONAL_BYTES

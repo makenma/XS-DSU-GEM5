@@ -54,11 +54,6 @@ bool duplicateIds(const std::vector<uint64_t> &ids)
     return false;
 }
 
-bool abiEnumValid(uint32_t value, uint32_t mask)
-{
-    return value < 32 && ((mask >> value) & 1u) != 0;
-}
-
 bool emptyRecord(const KvRecord &record)
 {
     return record.session_id == 0 && record.kv_handle == 0 &&
@@ -84,8 +79,7 @@ bool duplicateTuple(const std::vector<std::pair<uint64_t, uint64_t>> &keys)
 void appendSource(std::vector<uint64_t> &out,
                   const mesh_abi::ErrorSourceKey &source)
 {
-    uint8_t wire[mesh_abi::kErrorSourceKeysBytes];
-    mesh_abi::writeErrorSourceKey(wire, source);
+    const auto wire = mesh_abi::encodeErrorSourceKey(source);
     for (size_t word = 0; word < 5; ++word) {
         uint64_t value = 0;
         for (size_t byte = 0; byte < 8; ++byte) {
@@ -157,12 +151,9 @@ KvRecord::gaps(const KvGeometry &geometry, bool live) const
                 (diagnostic_prefix_tokens || diagnostic_prefix_digest))
             problems.push_back("diagnostic prefix only belongs to ERROR");
         if (first_error &&
-                (!abiEnumValid(first_error->source.error_class,
-                               mesh_abi::kMoeErrorClassValuesMask) ||
-                 !abiEnumValid(first_error->source.domain,
-                               mesh_abi::kMeshObjectDomainValuesMask) ||
-                 !abiEnumValid(first_error->source.object_kind,
-                               mesh_abi::kMeshObjectKindValuesMask)))
+                (!mesh_abi::validMoeErrorClass(first_error->source.error_class) ||
+                 !mesh_abi::validMeshObjectDomain(first_error->source.domain) ||
+                 !mesh_abi::validErrorSourceObjectKind(first_error->source.object_kind)))
             problems.push_back(
                 "first error source is outside the closed enums");
     }
@@ -631,21 +622,40 @@ MeshKvManager::validate() const
     return problems;
 }
 
-KvPersistentState
-MeshKvManager::savePersistent() const
+bool
+MeshKvManager::persistentReady(std::string &reason) const
 {
-    KvPersistentState state;
+    const auto problems = validate();
+    if (fatal_ || !problems.empty()) {
+        reason = fatal_ ? *fatal_ : problems.front();
+        return false;
+    }
+    if (!waiters.empty() || !pins.empty() || !release_waiters.empty() ||
+            !appends.empty() || !evicting.empty()) {
+        reason = "persistent state requires all KV owners to be drained";
+        return false;
+    }
+    return true;
+}
+
+bool
+MeshKvManager::savePersistent(KvPersistentState &state, std::string &reason) const
+{
+    if (!persistentReady(reason))
+        return false;
     state.slot_owners = slot_owners;
     state.records = records;
     state.tombstones = tombstones;
     state.next_kv_use_epoch = next_kv_use_epoch;
-    return state;
+    return true;
 }
 
 bool
 MeshKvManager::loadPersistent(const KvPersistentState &state,
                               std::string &reason)
 {
+    if (!persistentReady(reason))
+        return false;
     if (state.records.size() > capacity_.record_entries) {
         reason = "restore exceeds the record capacity";
         return false;

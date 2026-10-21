@@ -105,9 +105,9 @@ KvReleaseIntent release(uint64_t request_id, uint64_t session_id,
     return intent;
 }
 
-KvErrorCandidate candidate(uint64_t tick, uint32_t ordinal = 0)
+ErrorCandidate candidate(uint64_t tick, uint32_t ordinal = 0)
 {
-    KvErrorCandidate value;
+    ErrorCandidate value;
     value.tick = tick;
     value.source.error_class = 2;
     value.source.core_id_or_ffff = 0xFFFF;

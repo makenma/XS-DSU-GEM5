@@ -1,0 +1,17 @@
+# Tensor payloads
+
+[Tensor payload schema](../../util/mesh_ir/mesh_ir/schemas/mesh_tensor_payload_v1.schema.json) defines normalized little-endian source content. [Torch export writer](../../util/mesh_ir/mesh_ir/torch_compat.py) owns extraction; [TensorPayload](../../util/mesh_ir/mesh_ir/tensor_payload.py) owns bounded validation and projection through [ProgramBindingCatalog](../../util/mesh_ir/mesh_ir/scheduled/binding_catalog.py). Source roles are shared with canonicalization through [INPUT_ROLES](../../util/mesh_ir/mesh_ir/compat.py).
+
+The projection produces an immutable-source memory image and a packed input layout. Applying the input member offsets to a Serving request is a separate binding operation; producing the layout does not establish driver admission.
+
+[Invocation schema](../../util/mesh_ir/mesh_ir/schemas/mesh_invocation_v1.schema.json) records a separate binding identity for an immutable Program. [Runtime invocation projection](../../util/mesh_ir/mesh_ir/runtime_invocation.py) uses [bind_invocation](../../util/mesh_ir/mesh_ir/scheduled/addressing.py) for validation and traffic, and supplies the existing native loader binding parameters. `run_mesh_dma_garnet.py --invocation` consumes that record together with the corresponding memory image. Fault prediction consumes the resolved traffic addresses through [fault_plan](../../util/mesh_ir/mesh_ir/fault_plan.py).
+
+[Balanced binding layout](../../util/mesh_ir/mesh_ir/binding_layout.py) supplies an optional deterministic allocation policy. It operates within declared owner ranges and permissions; an allocation failure reports this policy's failure to place the next slot, not a proof that every possible layout is infeasible. The caller validates the resulting bindings through the same invocation API.
+
+[Compiled prefill preparation](prefill_smoke.md) uses this policy for Serving. Its model invocation is shared by the payload image and Host binding plan; native execution receives those addresses through the frozen request bindings.
+
+[Memory file schema](../../util/mesh_ir/mesh_ir/schemas/mesh_memory_file_image_v1.schema.json), [native loader](../../src/dev/ai_mesh/mesh_memory_image.cc) and [Python source oracle](../../util/mesh_ir/mesh_ir/runtime_memory.py) own file-backed initialization and independent source-byte reconciliation. `run_mesh_dma_garnet.py --memory-file-image` uses the file image as its initialization source.
+
+[Compiled integration tests](../../util/mesh_ir/tests/integration/test_tensor_payload.py) exercise actual parameters, a buffer, multiple inputs, relocation and two HBM owners. [Binding layout tests](../../util/mesh_ir/tests/unit/test_binding_layout.py) cover five-owner allocation, permissions and capacity. [Memory oracle tests](../../util/mesh_ir/tests/unit/test_runtime_memory.py) cover adjacent source ranges, gaps and invalid identities. Qwen evidence is indexed by [the smoke report](qwen3_8b_smoke.md).
+
+Serving uses the persistent `WEIGHT_EXTERNAL` binding for immutable model parameters and buffers while preserving their tensor roles. [Binding catalog](../../util/mesh_ir/mesh_ir/scheduled/binding_catalog.py) owns Python eligibility, shared by Host planning and Serving admission; [native admission](../../src/dev/ai_mesh/mesh_serving_tensor_bindings.cc) mirrors the contract. [Cross-language tests](../../util/mesh_ir/tests/unit/test_persistent_model_bindings.py) and [driver tests](../../util/mesh_ir/tests/integration/test_prefill_driver_runtime.py) cover this boundary.

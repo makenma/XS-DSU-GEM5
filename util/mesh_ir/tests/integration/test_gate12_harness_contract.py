@@ -139,3 +139,20 @@ def test_success_exit_without_child_report_is_not_accepted(tmp_path, monkeypatch
         tmp_path / "results",
     )
     assert not accepted
+
+
+def test_gem5_child_uses_locked_python_dependencies_with_exact_environment(tmp_path):
+    document = yaml.safe_load(MANIFEST_PATH.read_text())
+    subcase = next(case["subcases"][0] for case in document["cases"] if case["id"] == "E2E-D")
+    execution = subcase["execution"]
+    _, _, command, _ = SELECTOR.build_command(execution, subcase["timeout"], tmp_path, tmp_path)
+    script_index = command.index(execution["config_script"])
+    probe = tmp_path / "dependency_probe.py"
+    probe.write_text("import jsonschema, referencing\nprint('LOCKED_RUNTIME_DEPENDENCIES_OK')\n")
+    environment = SELECTOR._child_environment("E2E-D", "default", tmp_path)
+    assert set(environment) == set(SELECTOR.CHILD_ENV_BASE) | {
+        "AI_MESH_CASE_ID", "AI_MESH_SUBCASE", "AI_MESH_ARTIFACT_DIR", "AI_MESH_CHILD_REPORT"}
+    result = subprocess.run([*command[:script_index], str(probe)], cwd=REPO,
+                            env=environment, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "LOCKED_RUNTIME_DEPENDENCIES_OK" in result.stdout

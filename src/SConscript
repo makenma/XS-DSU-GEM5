@@ -47,6 +47,7 @@ import re
 import sys
 
 import SCons
+import gem5_scons
 
 from gem5_scons import Transform, warning, error, ToValue, FromValue
 from gem5_scons.sources import *
@@ -57,6 +58,16 @@ Export(SourceFilter.factories)
 # based on variable settings in the 'env' build environment.
 
 Import('*')
+
+if env['CONF']['RUBY']:
+    with gem5_scons.Configure(env.Clone(LIBS=[])) as conf:
+        if not conf.CheckLibWithHeader('boost_serialization',
+                'boost/archive/binary_oarchive.hpp', 'C++'):
+            error('Boost.Serialization development library is required.')
+        if not conf.CheckCXXHeader('boost/pfr/core.hpp'):
+            error('Boost.PFR headers are required.')
+    env.AppendUnique(LIBS=['boost_serialization'])
+
 
 if env['CONF']['USE_EFENCE']:
     env.Append(LIBS=['efence'])

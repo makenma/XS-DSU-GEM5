@@ -46,6 +46,7 @@
 #include <string>
 
 #include "base/logging.hh"
+#include "base/random.hh"
 #include "sim/cur_tick.hh"
 
 namespace gem5
@@ -60,12 +61,14 @@ Globals::serialize(CheckpointOut &cp) const
 {
     paramOut(cp, "curTick", curTick());
     SERIALIZE_CONTAINER(version_tags);
+    random_mt.serialize(cp);
 }
 
 void
 Globals::unserialize(CheckpointIn &cp)
 {
     paramIn(cp, "curTick", unserializedCurTick);
+    random_mt.unserialize(cp);
 
     const std::string divider =
         "**********************************************************\n";

@@ -44,6 +44,9 @@
 #include <iostream>
 #include <vector>
 
+#include "mem/ruby/network/simple/NetworkSnapshot.hh"
+#include "mem/ruby/network/simple/SimpleNetworkConfig.hh"
+
 #include "mem/ruby/network/Network.hh"
 #include "params/SimpleNetwork.hh"
 
@@ -67,14 +70,12 @@ class SimpleNetwork : public Network
     ~SimpleNetwork() = default;
 
     void init();
+    bool isQuiescent() const override { return quiescenceSnapshot().empty(); }
 
-    int getBufferSize() { return m_buffer_size; }
-    int getEndpointBandwidth() { return m_endpoint_bandwidth; }
+    bool requiresFiniteBuffers() const { return params().require_finite_buffers; }
 
     void collateStats();
     void regStats();
-
-    bool isVNetOrdered(int vnet) const { return m_ordered[vnet]; }
 
     // Methods used by Topology to setup the network
     void makeExtOutLink(SwitchID src, NodeID dest, BasicLink* link,
@@ -86,6 +87,8 @@ class SimpleNetwork : public Network
                           PortDirection src_outport,
                           PortDirection dst_inport);
 
+    SimpleNetworkSnapshot quiescenceSnapshot() const;
+    SimpleNetworkSnapshot endpointSnapshot() const;
     void print(std::ostream& out) const;
 
     bool functionalRead(Packet *pkt);
@@ -93,6 +96,7 @@ class SimpleNetwork : public Network
     uint32_t functionalWrite(Packet *pkt);
 
   private:
+    SimpleNetworkConfig switch_config;
     void addLink(SwitchID src, SwitchID dest, int link_latency);
     void makeLink(SwitchID src, SwitchID dest,
         const NetDest& routing_table_entry, int link_latency);
@@ -103,9 +107,8 @@ class SimpleNetwork : public Network
     SimpleNetwork& operator=(const SimpleNetwork& obj);
 
     std::unordered_map<int, Switch*> m_switches;
+    std::vector<const Throttle *> endpoint_throttles;
     std::vector<MessageBuffer*> m_int_link_buffers;
-    const int m_buffer_size;
-    const int m_endpoint_bandwidth;
 
 
     struct NetworkStats : public statistics::Group

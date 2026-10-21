@@ -1,4 +1,5 @@
 from pathlib import Path
+import runpy
 
 import pytest
 
@@ -8,10 +9,18 @@ from mesh_ir.agent_surrogate import (
     load_surrogate_profiles,
     validate_surrogate_profiles,
 )
-from mesh_ir.agent_workload import load_control_plan, load_workload_plan
+from mesh_ir.agent_workload import load_control_plan, load_workload_plan, validate_against_schema
 
 FIXTURES = Path(__file__).resolve().parents[4] / "tests/gem5/ai_mesh/fixtures/gate4"
 SINGLE_USER_IMAGES = ("first_pass", "compile_repair", "test_repair", "repair_limit")
+
+
+def test_runtime_config_generator_satisfies_the_current_schema():
+    generator = runpy.run_path(str(FIXTURES / 'build_gate4_single_user_images.py'))
+    for case in generator['RUNTIME_CONFIGS']:
+        document = generator['runtime_config_document'](
+            *case[1:4], profile_name=case[4] if len(case) > 4 else None)
+        validate_against_schema('agent_runtime_config_v1.schema.json', document)
 
 
 def regions():

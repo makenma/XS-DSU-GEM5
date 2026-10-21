@@ -58,9 +58,12 @@ matchingRequest()
 class RecordingSink : public gem5::ai_mesh::NpuCompletionSink
 {
   public:
-    void onCoreStart(uint64_t requestId) override
+    void onSessionAdmitted(uint64_t) override {}
+    void onBatchFrozen(uint64_t) override {}
+    void onPublishSegment(const gem5::ai_mesh::PublishSegmentFact &, bool) override {}
+    void onCoreStart(const gem5::ai_mesh::NpuExecutionRequest &request) override
     {
-        core_starts.push_back(requestId);
+        core_starts.push_back(request.requestId);
     }
 
     void onRequestComplete(
@@ -101,6 +104,7 @@ TEST(NpuProtocolProbeExecutor, SubmitOnlyReportsAdmissionAndCoreStart)
         executor.completionFor(request);
     EXPECT_TRUE(completion.outputPayload.empty());
     EXPECT_EQ(completion.outputBytes, 0u);
+    EXPECT_EQ(completion.outcome, gem5::ai_mesh::NpuExecutionOutcome::Success);
     EXPECT_EQ(completion.semanticDigest, (std::array<uint8_t, 32>{}));
 }
 
@@ -120,6 +124,7 @@ TEST(FullContextSurrogateExecutor, SubmitAdmitsWithoutFabricatingCompletion)
     const gem5::ai_mesh::NpuExecutionCompletion completion =
         executor.completionFor(request);
     EXPECT_EQ(completion.outputBytes, 4096u);
+    EXPECT_EQ(completion.outcome, gem5::ai_mesh::NpuExecutionOutcome::Success);
     ASSERT_EQ(completion.outputPayload.size(), 4096u);
     EXPECT_EQ(completion.semanticDigest.size(), 32u);
     EXPECT_FALSE(completion.coreStarted);
@@ -155,13 +160,13 @@ TEST(FullContextSurrogateExecutor, RejectsUnknownProfileIdentity)
 {
     auto registry = registryFromSection();
     ASSERT_TRUE(registry.has_value());
-    gem5::ai_mesh::FullContextSurrogateExecutor executor(
-        std::move(*registry));
+    gem5::ai_mesh::FullContextSurrogateExecutor executor(*registry);
     gem5::ai_mesh::NpuExecutionRequest request;
     request.requestId = 2;
     request.programId = 9;
     request.profileId = 9;
-    EXPECT_EQ(executor.profileFor(request), nullptr);
+    EXPECT_EQ(gem5::ai_mesh::FullContextSurrogateExecutor::profileFor(
+                  *registry, request), nullptr);
     const gem5::ai_mesh::NpuAdmission admission = executor.submit(request);
     EXPECT_FALSE(admission.admitted);
     EXPECT_EQ(admission.rejectDetail,

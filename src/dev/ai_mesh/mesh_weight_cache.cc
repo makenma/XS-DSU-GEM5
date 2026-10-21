@@ -112,67 +112,34 @@ weightFillTrafficId(const mesh_abi::WeightFillKey &key)
     return out;
 }
 
-std::array<uint8_t, mesh_abi::kErrorSourceKeysBytes>
-errorSourceKeyBytes(const mesh_abi::ErrorSourceKey &key)
-{
-    std::array<uint8_t, mesh_abi::kErrorSourceKeysBytes> out{};
-    putU16(out.data() + mesh_abi::kErrorSourceKeysErrorClassOffset,
-           key.error_class);
-    putU16(out.data() + mesh_abi::kErrorSourceKeysCoreIdOrFfffOffset,
-           key.core_id_or_ffff);
-    out[mesh_abi::kErrorSourceKeysDomainOffset] = key.domain;
-    out[mesh_abi::kErrorSourceKeysObjectKindOffset] = key.object_kind;
-    putU32(out.data() + mesh_abi::kErrorSourceKeysRegionGroupIdOffset,
-           key.region_group_id);
-    putU32(out.data() + mesh_abi::kErrorSourceKeysRegionIdOffset,
-           key.region_id);
-    putU32(out.data() + mesh_abi::kErrorSourceKeysOrdinalOffset, key.ordinal);
-    putU32(out.data() + mesh_abi::kErrorSourceKeysGenerationOffset,
-           key.generation);
-    std::memcpy(out.data() + mesh_abi::kErrorSourceKeysAuxKeyOffset,
-                key.aux_key.data(), key.aux_key.size());
-    return out;
-}
-
 mesh_abi::ErrorSourceKey
 weightFillSource(const mesh_abi::WeightFillKey &key)
 {
     mesh_abi::ErrorSourceKey source;
     source.error_class = mesh_abi::kMoeErrorClassWEIGHT_FILL;
-    source.core_id_or_ffff = 0xFFFF;
+    source.core_id_or_ffff = key.core_id;
     source.domain = mesh_abi::kMeshObjectDomainWEIGHT_FILL;
-    source.object_kind = mesh_abi::kMeshObjectKindWEIGHT_FILL_OBLIGATION;
-    source.generation = key.fill_incarnation;
+    source.object_kind = mesh_abi::kErrorSourceObjectKindWEIGHT_FILL_OBLIGATION;
     source.aux_key = weightFillKeyBytes(key);
     return source;
 }
 
-const char *
+std::optional<agent_abi::DetailCode>
 weightFillFailureDetail(uint16_t site)
 {
     switch (site) {
     case mesh_abi::kWeightFillFailureSiteCACHE_FILL_AXI_R:
-        return "E_AXI_RESPONSE";
+        return agent_abi::E_AXI_RESPONSE;
     case mesh_abi::kWeightFillFailureSiteCACHE_FILL_SRAM_BOUNDS:
-        return "E_DCORE_SRAM_BOUNDS";
+        return agent_abi::E_DCORE_SRAM_BOUNDS;
     case mesh_abi::kWeightFillFailureSiteCACHE_FILL_SRAM_COMMIT:
-        return "E_DCORE_ENGINE";
+        return agent_abi::E_DCORE_ENGINE;
     case mesh_abi::kWeightFillFailureSiteCACHE_FILL_SOURCE_VALIDITY:
-        return "E_DCORE_POISON_READ";
+        return agent_abi::E_DCORE_POISON_READ;
     default:
-        return nullptr;
+        return std::nullopt;
     }
 }
-
-namespace
-{
-
-std::string u64Text(uint64_t value)
-{
-    return std::to_string(value);
-}
-
-} // anonymous namespace
 
 MoeWeightCache::MoeWeightCache(const Config &config) : config(config)
 {
@@ -211,7 +178,18 @@ MoeWeightCache::slotBase(uint32_t slot_id) const
 bool
 MoeWeightCache::hasTombstone(const mesh_abi::WeightCacheBaseKey &key) const
 {
-    return tombstoned_tags.count(tagOf(key)) != 0;
+    return failure_records.count(tagOf(key)) != 0;
+}
+
+std::optional<ErrorCandidate>
+MoeWeightCache::failure(uint32_t tag) const
+{
+    const auto active = obligations_value.find(tag);
+    if (active != obligations_value.end() && active->second.first_error)
+        return active->second.first_error;
+    const auto retired = failure_records.find(tag);
+    return retired == failure_records.end() ? std::nullopt :
+        std::optional<ErrorCandidate>{retired->second};
 }
 
 MoeCacheSlot *
@@ -349,12 +327,15 @@ MoeWeightCache::prepare(uint64_t batch_id,
         plan.status = ReserveStatus::COMMITTED;
         return plan;
     }
-    for (const auto &key : keys)
-        if (hasTombstone(key)) {
+    for (const auto &key : keys) {
+        const auto obligation = obligations_value.find(key.weight_tag_index);
+        if (hasTombstone(key) || (obligation != obligations_value.end() &&
+                obligation->second.state == mesh_abi::kCacheObligationStateFAILED_DRAINING)) {
             plan.status = ReserveStatus::FAILED;
             plan.layers.clear();
             return plan;
         }
+    }
     uint32_t occurrences = 0;
     for (const auto &entry : plan.layers)
         occurrences += uint32_t(entry.second.size());
@@ -464,21 +445,18 @@ MoeWeightCache::commit(const ReservePlan &plan, uint64_t tick)
         MoeCacheSlot &slot = slots_value[slot_id];
         const std::vector<uint32_t> layers = layers_of(key.weight_tag_index);
         for (uint32_t index = 0; index < layers.size(); index++) {
-            slot.last_use_epoch = epoch++;
-            slot.has_epoch = true;
             slot.pins++;
             MoeCacheToken token;
-            token.token_id = next_token_id++;
+            token.token_id = 0;
             token.batch_id = batch_id;
             token.layer_id = layers[index];
             token.base = key;
-            token.outcome = index == 0 ? outcome
+            token.outcome = index == 0 || outcome == mesh_abi::kCacheResidencyOutcomeHIT ? outcome
                                        : mesh_abi::kCacheResidencyOutcomeATTACH;
             token.slot_id = slot_id;
             token.has_fill = has_fill;
             token.fill = fill;
-            tokens_value[token.token_id] = token;
-            tokens_created++;
+
             tokens.push_back(token);
         }
     };
@@ -492,7 +470,12 @@ MoeWeightCache::commit(const ReservePlan &plan, uint64_t tick)
         emit_tokens(entry.first, obligation.slot_id, true, obligation.key,
                     mesh_abi::kCacheResidencyOutcomeATTACH);
     }
-    for (const auto &fill : plan.fills) {
+    auto fills = plan.fills;
+    std::sort(fills.begin(), fills.end(), [&](const auto &a, const auto &b) {
+        return std::make_pair(plan.layers.at(a.base.weight_tag_index).front(), a.base.weight_tag_index) <
+               std::make_pair(plan.layers.at(b.base.weight_tag_index).front(), b.base.weight_tag_index);
+    });
+    for (const auto &fill : fills) {
         mesh_abi::WeightFillKey key;
         key.core_id = fill.base.core_id;
         key.cache_partition_id = fill.base.cache_partition_id;
@@ -520,6 +503,19 @@ MoeWeightCache::commit(const ReservePlan &plan, uint64_t tick)
         emit_tokens(fill.base, fill.slot_id, true, key,
                     mesh_abi::kCacheResidencyOutcomeNEW_FILL);
     }
+    std::sort(tokens.begin(), tokens.end(), [](const auto &a, const auto &b) {
+        return std::tie(a.layer_id, a.base.weight_tag_index) < std::tie(b.layer_id, b.base.weight_tag_index);
+    });
+    for (auto &token : tokens) {
+        token.token_id = next_token_id++;
+        auto &slot = slots_value[token.slot_id];
+        if (token.outcome != mesh_abi::kCacheResidencyOutcomeATTACH) {
+            slot.last_use_epoch = epoch++;
+            slot.has_epoch = true;
+        }
+        tokens_value[token.token_id] = token;
+        ++tokens_created;
+    }
     next_use_epoch = epoch;
     next_fill_incarnation = incarnation;
     return tokens;
@@ -537,19 +533,27 @@ MoeWeightCache::reserve(uint64_t batch_id, uint32_t layer_id,
     return ReserveStatus::COMMITTED;
 }
 
+MoeCacheObligation &
+MoeWeightCache::obligationFor(const mesh_abi::WeightFillKey &key)
+{
+    const auto found = obligations_value.find(key.weight_tag_index);
+    fatal_if(found == obligations_value.end() ||
+             weightFillKeyBytes(found->second.key) != weightFillKeyBytes(key),
+             "fill key does not identify the active obligation");
+    return found->second;
+}
+
 void
 MoeWeightCache::markFilling(const mesh_abi::WeightFillKey &key)
 {
-    auto obligation = obligations_value.find(key.weight_tag_index);
-    if (obligation == obligations_value.end())
-        fatal("fill without an active obligation");
-    MoeCacheSlot &slot = slots_value[obligation->second.slot_id];
+    auto &entry = obligationFor(key);
+    MoeCacheSlot &slot = slots_value[entry.slot_id];
     if (slot.state != kCacheSlotFreeReserved &&
         slot.state != kCacheSlotEvictingReserved)
         fatal("slot is not reserved");
     slot.state = kCacheSlotFilling;
     slot.valid_bytes = 0;
-    obligation->second.eligible_engine_edge = engine_edge + 1;
+    entry.eligible_engine_edge = engine_edge + 1;
 }
 
 void
@@ -598,26 +602,23 @@ MoeWeightCache::dmaEligible() const
 void
 MoeWeightCache::markIssued(const mesh_abi::WeightFillKey &key)
 {
-    auto obligation = obligations_value.find(key.weight_tag_index);
-    if (obligation == obligations_value.end())
-        fatal("fill has no active obligation");
+    auto &entry = obligationFor(key);
     bool eligible = false;
     for (const auto &candidate : dmaEligible())
-        if (candidate.fill_incarnation == key.fill_incarnation)
+        if (weightFillKeyBytes(candidate) == weightFillKeyBytes(key))
             eligible = true;
     if (!eligible)
         fatal("fill is not eligible on this engine edge");
-    obligation->second.state = mesh_abi::kCacheObligationStateISSUING;
+    entry.state = mesh_abi::kCacheObligationStateISSUING;
 }
 
 void
 MoeWeightCache::markInFlight(const mesh_abi::WeightFillKey &key)
 {
-    auto obligation = obligations_value.find(key.weight_tag_index);
-    if (obligation == obligations_value.end() ||
-        obligation->second.state != mesh_abi::kCacheObligationStateISSUING)
+    auto &entry = obligationFor(key);
+    if (entry.state != mesh_abi::kCacheObligationStateISSUING)
         fatal("fill was never issued");
-    obligation->second.state = mesh_abi::kCacheObligationStateIN_FLIGHT;
+    entry.state = mesh_abi::kCacheObligationStateIN_FLIGHT;
 }
 
 void
@@ -625,12 +626,9 @@ MoeWeightCache::noteFillSuccess(const mesh_abi::WeightFillKey &key,
                                 uint64_t valid_bytes,
                                 uint64_t completion_tick)
 {
-    auto obligation = obligations_value.find(key.weight_tag_index);
-    if (obligation == obligations_value.end())
-        fatal("fill has no active obligation");
+    auto &entry = obligationFor(key);
     if (valid_bytes > config.slot_bytes)
         fatal("fill exceeds the slot size");
-    MoeCacheObligation &entry = obligation->second;
     if (entry.state == mesh_abi::kCacheObligationStateFAILED_DRAINING) {
         entry.drained_bytes = valid_bytes;
         return;
@@ -645,6 +643,7 @@ MoeWeightCache::noteFillSuccess(const mesh_abi::WeightFillKey &key,
         entry.consumed_eviction = false;
     }
     entry.completed = true;
+    entry.descriptor_drained = true;
     FillLogEntry logged;
     logged.key = key;
     logged.slot_id = entry.slot_id;
@@ -668,22 +667,17 @@ MoeWeightCache::noteFillSuccess(const mesh_abi::WeightFillKey &key,
 void
 MoeWeightCache::noteFillFailure(const mesh_abi::WeightFillKey &key,
                                 uint16_t site, uint64_t tick,
-                                const mesh_abi::ErrorSourceKey &source)
+                                const mesh_abi::ErrorSourceKey &source, bool descriptor_drained)
 {
-    auto obligation = obligations_value.find(key.weight_tag_index);
-    if (obligation == obligations_value.end())
-        fatal("fill has no active obligation");
-    const char *detail = weightFillFailureDetail(site);
-    if (detail == nullptr)
+    auto &entry = obligationFor(key);
+    const auto detail = weightFillFailureDetail(site);
+    if (!detail)
         fatal("failure site is outside the detail closure");
-    MoeCacheObligation &entry = obligation->second;
-    if (!entry.has_first_error || tick < entry.first_error_tick) {
-        entry.has_first_error = true;
-        entry.first_error_tick = tick;
-        entry.first_error_source = source;
-        entry.first_error_code = detail;
-    }
+    const ErrorCandidate candidate{tick, source, uint32_t(*detail)};
+    if (!entry.first_error || errorCandidateLess(candidate, *entry.first_error))
+        entry.first_error = candidate;
     entry.state = mesh_abi::kCacheObligationStateFAILED_DRAINING;
+    entry.descriptor_drained |= descriptor_drained;
     MoeCacheSlot &slot = slots_value[entry.slot_id];
     slot.state = kCacheSlotErrorHeld;
     slot.valid_bytes = 0;
@@ -692,6 +686,15 @@ MoeWeightCache::noteFillFailure(const mesh_abi::WeightFillKey &key,
             mesh_abi::kCacheSubscriberStateWAITING)
             subscriber.second.state =
                 mesh_abi::kCacheSubscriberStateFAIL_NOTIFIED;
+}
+
+void
+MoeWeightCache::noteFillDrained(const mesh_abi::WeightFillKey &key)
+{
+    auto &entry = obligationFor(key);
+    fatal_if(!entry.first_error, "failure drain has no failed response");
+    entry.descriptor_drained = true;
+    releaseFaultedBatches();
 }
 
 void
@@ -707,31 +710,12 @@ MoeWeightCache::releaseFaultedBatches()
 }
 
 bool
-MoeWeightCache::subscriberTombstoned(const MoeCacheToken &token) const
-{
-    const auto obligation = obligations_value.find(token.fill.weight_tag_index);
-    if (obligation == obligations_value.end())
-        return true;
-    const auto subscriber = obligation->second.subscribers.find(
-        {token.batch_id, token.layer_id});
-    if (subscriber == obligation->second.subscribers.end())
-        return true;
-    return subscriber->second.state ==
-           mesh_abi::kCacheSubscriberStateTERMINAL_TOMBSTONED;
-}
-
-bool
 MoeWeightCache::fillTerminal(const MoeCacheToken &token) const
 {
     const auto obligation = obligations_value.find(token.fill.weight_tag_index);
     if (obligation == obligations_value.end())
         return true;
-    if (obligation->second.completed)
-        return true;
-    return obligation->second.state ==
-               mesh_abi::kCacheObligationStateFAILED_DRAINING ||
-           obligation->second.state ==
-               mesh_abi::kCacheObligationStateFAILED_RETIRED;
+    return obligation->second.descriptor_drained;
 }
 
 bool
@@ -751,8 +735,7 @@ MoeWeightCache::releaseTokenIfOwned(uint64_t token_id)
             return false;
         if (fault->second.started && !fault->second.owned_drained)
             return false;
-        if (token.has_fill && subscriberTombstoned(token) &&
-            !fillTerminal(token))
+        if (token.has_fill && !fillTerminal(token))
             return false;
     }
     releaseToken(token_id);
@@ -875,11 +858,11 @@ MoeWeightCache::retireIfSettled(MoeCacheObligation &obligation)
             mesh_abi::kCacheSubscriberStateRELEASED)
             return;
     if (obligation.state == mesh_abi::kCacheObligationStateFAILED_DRAINING) {
-        if (!obligation.has_first_error)
+        if (!obligation.descriptor_drained)
+            return;
+        if (!obligation.first_error)
             fatal("failed fill has no first error");
-        tombstoned_tags.insert(obligation.key.weight_tag_index);
-        failure_detail[obligation.key.weight_tag_index] =
-            obligation.first_error_code;
+        failure_records.emplace(obligation.key.weight_tag_index, *obligation.first_error);
         MoeCacheSlot &slot = slots_value[obligation.slot_id];
         slot.state = kCacheSlotFree;
         slot.weight_tag_index = 0;
@@ -967,60 +950,6 @@ MoeWeightCache::abortBeforeStart(uint64_t batch_id)
         }
     }
     releaseBatchTokens(batch_id);
-}
-
-std::string
-MoeWeightCache::snapshotJson() const
-{
-    for (const auto &slot : slots_value)
-        if (slot.state != kCacheSlotFree && slot.state != kCacheSlotValid)
-            fatal("only a quiescent cache can be serialized");
-    for (const auto &entry : obligations_value)
-        if (!entry.second.subscribers.empty())
-            fatal("active subscribers cannot be serialized");
-    std::vector<const MoeCacheSlot *> valid;
-    for (const auto &slot : slots_value)
-        if (slot.state == kCacheSlotValid)
-            valid.push_back(&slot);
-    std::sort(valid.begin(), valid.end(),
-              [](const MoeCacheSlot *left, const MoeCacheSlot *right) {
-                  return std::make_pair(left->last_use_epoch,
-                                        left->weight_tag_index) <
-                         std::make_pair(right->last_use_epoch,
-                                        right->weight_tag_index);
-              });
-    std::map<uint32_t, uint32_t> ranks;
-    for (uint32_t rank = 0; rank < valid.size(); rank++)
-        ranks[valid[rank]->slot_id] = rank;
-    std::string out = "{\"core_id\":" + u64Text(config.core_id) +
-                      ",\"cache_generation\":" +
-                      u64Text(cache_generation) +
-                      ",\"next_fill_incarnation\":" +
-                      u64Text(next_fill_incarnation) + ",\"slots\":[";
-    bool first = true;
-    for (const auto &slot : slots_value) {
-        if (!first)
-            out += ",";
-        first = false;
-        const bool is_valid = slot.state == kCacheSlotValid;
-        out += "{\"slot_id\":" + u64Text(slot.slot_id) + ",\"state\":" +
-               (is_valid ? "1" : "0") + ",\"weight_tag_index\":";
-        out += is_valid ? u64Text(slot.weight_tag_index) : "null";
-        out += ",\"valid_bytes\":" +
-               u64Text(is_valid ? slot.valid_bytes : 0) + ",\"lru_rank\":";
-        out += is_valid ? u64Text(ranks[slot.slot_id]) : "null";
-        out += "}";
-    }
-    out += "],\"failure_tombstones\":[";
-    first = true;
-    for (uint32_t tag : tombstoned_tags) {
-        if (!first)
-            out += ",";
-        first = false;
-        out += "{\"weight_tag_index\":" + u64Text(tag) + "}";
-    }
-    out += "]}";
-    return out;
 }
 
 } // namespace ai_mesh

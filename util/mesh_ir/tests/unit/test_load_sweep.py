@@ -17,14 +17,14 @@ def check_window(result):
     path = REPO / "configs/example/ai_mesh/run_mesh_dma_garnet.py"
     node = next(node for node in ast.parse(path.read_text()).body
                 if isinstance(node, ast.FunctionDef) and node.name == "check_read_window_slides")
-    def fatal_if(condition, message, *args):
-        if condition:
-            raise AssertionError(message % args if args else message)
+    def fatal(message, *args):
+        raise AssertionError(message % args if args else message)
     namespace = {"EFFECTIVE_ARCH": SimpleNamespace(dma_read_outstanding=4),
-                 "fatal_if": fatal_if}
+                 "fatal": fatal}
     exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), "exec"), namespace)
     out = []
-    namespace["check_read_window_slides"](None, result, None, out)
+    namespace["check_read_window_slides"](
+        SimpleNamespace(arch={"axi_data_bytes": 32}), result, None, out)
     return out
 
 
@@ -47,6 +47,11 @@ def test_cycle_units():
 def window_fixture():
     return {
         "bridges": [{"peak_read_outstanding": 4}],
+        "read_window": {
+            "segment_peak": 4,
+            "ar_accept_ticks": [1, 2, 3, 4, 60],
+            "first_credit_release_tick": 40,
+        },
         "burst_timings": [
             {"core_id": 0, "ordinal": i, "channel": "AR", "axi_id": i % 4,
              "address": 4096 + 256 * i, "beats": 8, "beat_bytes": 32,
@@ -57,7 +62,8 @@ def window_fixture():
 
 
 def test_window_validates_real_bursts():
-    assert check_window(window_fixture()) == ["read window slides: PASS"]
+    assert check_window(window_fixture()) == [
+        "read window slides: PASS (5 bursts, window 4, first credit at 40)"]
 
 
 def test_fifth_ar_after_first_commit_is_rejected():

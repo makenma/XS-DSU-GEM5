@@ -15,6 +15,8 @@ exactBindingFlags(uint16_t kind)
         return agent_abi::kBindingFlagsREAD;
       case agent_abi::kBindingKindHOST_OUTPUT:
         return agent_abi::kBindingFlagsWRITE;
+      case agent_abi::kBindingKindREQUEST_WORKSPACE:
+        return agent_abi::kBindingFlagsREAD | agent_abi::kBindingFlagsWRITE;
       case agent_abi::kBindingKindKV_EXTERNAL:
         return agent_abi::kBindingFlagsREAD | agent_abi::kBindingFlagsWRITE |
             agent_abi::kBindingFlagsPERSISTENT |
@@ -167,9 +169,15 @@ verifyHostBindingRequest(
                 return HostBindingVerdict::Mismatch;
             }
             break;
+          case agent_abi::kBindingKindREQUEST_WORKSPACE:
+            if (requirement.platformAddress || !binding.address || binding.bytes != requirement.requiredBytes) {
+                reason = "workspace binding differs from its request capacity";
+                return HostBindingVerdict::Mismatch;
+            }
+            break;
           case agent_abi::kBindingKindWEIGHT_EXTERNAL:
             if (binding.address != requirement.platformAddress ||
-                    binding.bytes != requirement.platformBytes) {
+                    binding.bytes != requirement.requiredBytes) {
                 reason = "WEIGHT binding differs from the platform range";
                 return HostBindingVerdict::Mismatch;
             }
@@ -202,11 +210,11 @@ verifyHostBindingRequest(
             }
     }
     std::vector<RequestRange> ranges;
-    for (const AgentHostBindingRequirement &requirement : plan.requirements)
-        if (requirement.kind == agent_abi::kBindingKindWEIGHT_EXTERNAL) {
+    for (const auto &binding : bindings)
+        if (binding.kind == agent_abi::kBindingKindWEIGHT_EXTERNAL ||
+                binding.kind == agent_abi::kBindingKindREQUEST_WORKSPACE) {
             const HostBindingVerdict verdict = noteRangeCollect(
-                aliasRange(requirement.platformAddress,
-                           requirement.platformBytes, ranges), reason);
+                aliasRange(binding.address, binding.bytes, ranges), reason);
             if (verdict != HostBindingVerdict::Match)
                 return verdict;
         }
@@ -281,6 +289,7 @@ verifyHostBindingRequirements(
             }
             break;
           case agent_abi::kBindingKindWEIGHT_EXTERNAL:
+          case agent_abi::kBindingKindREQUEST_WORKSPACE:
             break;
           default:
             reason = "E_BINDING_ROLE: binding uses an unknown kind";
@@ -289,7 +298,8 @@ verifyHostBindingRequirements(
     }
     std::vector<RequestRange> ranges;
     for (const agent_abi::BindingRecord &binding : bindings)
-        if (binding.kind == agent_abi::kBindingKindWEIGHT_EXTERNAL) {
+        if (binding.kind == agent_abi::kBindingKindWEIGHT_EXTERNAL ||
+                binding.kind == agent_abi::kBindingKindREQUEST_WORKSPACE) {
             const HostBindingVerdict verdict =
                 noteRangeCollect(aliasRange(binding.address, binding.bytes,
                                             ranges), reason);

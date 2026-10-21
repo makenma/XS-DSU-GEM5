@@ -31,6 +31,8 @@
 #ifndef __MEM_RUBY_NETWORK_GARNET_0_OUTVCSTATE_HH__
 #define __MEM_RUBY_NETWORK_GARNET_0_OUTVCSTATE_HH__
 
+#include "base/checkpoint_fields.hh"
+
 #include "mem/ruby/network/garnet/CommonTypes.hh"
 
 namespace gem5
@@ -45,6 +47,7 @@ namespace garnet
 class OutVcState
 {
   public:
+    GEM5_CHECKPOINT_FIELDS(m_time, m_vc_state, m_credit_count, m_sent_count, m_returned_count)
     OutVcState(int id, unsigned vnet, uint32_t depth);
 
     uint32_t get_credit_count() const { return m_credit_count; }

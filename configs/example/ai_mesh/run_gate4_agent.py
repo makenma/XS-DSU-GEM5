@@ -46,6 +46,8 @@ from gate4_runtime import (
 def _plan_documents(args):
     config_path = Path(args.runtime_config).resolve()
     config = load_agent_runtime_config(config_path)
+    if config.document["runtime"]["mode"] != "FULL_TIMING":
+        fatal("FAST_EVENT requires run_gate6_serving.py")
     agent = config.document["agent"]
     if agent["mode"] != "replay_plan":
         fatal("Gate4 agent runtime only accepts agent.mode=replay_plan")

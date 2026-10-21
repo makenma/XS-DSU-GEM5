@@ -237,7 +237,7 @@ NetworkInterface::wakeup()
     // can pick up a message/cycle for each virtual net
     for (int vnet = 0; vnet < inNode_ptr.size(); ++vnet) {
         MessageBuffer *b = inNode_ptr[vnet];
-        if (b == nullptr) {
+        if (b == nullptr || b->getConsumer() != this) {
             continue;
         }
 
@@ -717,7 +717,7 @@ void
 NetworkInterface::checkReschedule()
 {
     for (const auto& it : inNode_ptr) {
-        if (it == nullptr) {
+        if (it == nullptr || it->getConsumer() != this) {
             continue;
         }
 

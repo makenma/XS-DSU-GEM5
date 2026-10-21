@@ -2,6 +2,7 @@
 #define DEV_AI_MESH_AXI_GARNET_BRIDGE_HH
 
 #include <cstdint>
+#include "base/checkpoint_fields.hh"
 #include <deque>
 #include <map>
 #include <vector>
@@ -51,6 +52,7 @@ class AxiGarnetBridge : public ClockedObject
 
     struct Counters
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         uint64_t awAccepted = 0;
         uint64_t wAccepted = 0;
         uint64_t peakWAcceptedPerCycle = 0;
@@ -64,6 +66,7 @@ class AxiGarnetBridge : public ClockedObject
     };
     const Counters &counters() const { return ctr; }
     uint32_t peakOutstandingReads() const;
+    uint32_t peakOutstandingWrites() const { return peak_live_writes; }
     std::vector<Tick> arAcceptTicks() const;
     Tick firstCreditReleaseTick() const;
     axi::AxiEndpointQueueHighWater queueHighWater() const;
@@ -82,6 +85,7 @@ class AxiGarnetBridge : public ClockedObject
 
     struct OrdinalTicks
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         bool read = false;
         uint32_t axi_id = 0;
         uint64_t address = 0;
@@ -106,7 +110,16 @@ class AxiGarnetBridge : public ClockedObject
 
     bool idle() const;
 
+    // Instance boundary guard: the bridge must be drained and must not keep
+    // per-response bookkeeping that could match the next instance.
+    void beginInstance();
+
     void startup() override;
+    void serialize(CheckpointOut &cp) const override;
+    void unserialize(CheckpointIn &cp) override;
+    void drainResume() override;
+    template<class Archive> void serialize(Archive &archive, unsigned);
+
 
   private:
     struct PendingRead
@@ -145,8 +158,6 @@ class AxiGarnetBridge : public ClockedObject
     const uint32_t aw_queue_depth;
     const uint32_t ar_queue_depth;
     const uint32_t w_beats_per_cycle;
-    const uint32_t max_axi_ids;
-    const uint16_t axi_id_base;
     uint64_t w_accept_cycle = 0;
     uint64_t w_accepted_this_cycle = 0;
 
@@ -165,11 +176,12 @@ class AxiGarnetBridge : public ClockedObject
     std::map<uint16_t, ReadHead> read_head_by_id;
     std::map<uint64_t, uint32_t> read_beats_of_ordinal;
     std::map<uint64_t, PendingWrite> live_writes;
+    uint32_t peak_live_writes = 0;
     std::map<uint64_t, PendingRead> live_reads;
     uint64_t next_ordinal = 0;
-    uint16_t id_cursor = 0;
 
     Counters ctr;
+    std::string checkpointState;
     TickEvent tick_event;
 
     void *read_sink_ctx = nullptr;

@@ -131,9 +131,13 @@ resolveHostBindings(const AgentHostBindingPlan &plan,
             record.address = 0;
             record.bytes = kvSessionSlotBytes;
             break;
+          case agent_abi::kBindingKindREQUEST_WORKSPACE:
+            record.address = addresses.workspaceBase;
+            record.bytes = requirement.requiredBytes;
+            break;
           case agent_abi::kBindingKindWEIGHT_EXTERNAL:
             record.address = requirement.platformAddress;
-            record.bytes = requirement.platformBytes;
+            record.bytes = requirement.requiredBytes;
             break;
           default:
             fatal("binding requirement %u uses unknown kind %u",

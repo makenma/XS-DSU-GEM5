@@ -38,6 +38,9 @@ FACTS_FINAL_FIELDS = (
 
 
 SERVING_PHASE_FIELDS = (
+    "request_id",
+    "request_generation",
+    "instance_generation",
     "phase",
     "instance_profile_id",
     "mesh_profile_id",
@@ -58,6 +61,8 @@ class FactsDocument:
     metrics: dict = field(default_factory=dict)
     fatal: dict | None = None
     serving_phases: list = field(default_factory=list)
+    publish_segments: list = field(default_factory=list)
+    cancel_sources: dict = field(default_factory=dict)
 
 
 def _optional(value):
@@ -70,6 +75,8 @@ def read_facts_document(path: Path) -> FactsDocument:
     fatal = None
     final = None
     serving_phases = []
+    publish_segments = []
+    cancel_sources = {}
     fatal_sq_intakes = []
     fatal_cq_obligations = []
     fatal_ack_records = []
@@ -205,6 +212,21 @@ def read_facts_document(path: Path) -> FactsDocument:
                 "candidate_key_wire": fields[12],
                 "physical_source_token_wire": fields[13],
             }
+        elif fields[0] == "CANCEL_SOURCE":
+            if len(fields) != 4:
+                raise ContractError("CANCEL_SOURCE field count mismatch")
+            request, instance, phase = map(int, fields[1:])
+            if request <= 0 or request in cancel_sources or instance < 0 or phase < 0 or (instance == 0 and phase):
+                raise ContractError("invalid or duplicate CANCEL_SOURCE")
+            cancel_sources[request] = dict(instance=instance, phase=phase)
+        elif fields[0] == "PUBLISH_SEGMENT":
+            if len(fields) != 8:
+                raise ContractError("Gate3 facts PUBLISH_SEGMENT field count mismatch")
+            row = dict(zip(('request', 'instance', 'descriptor', 'offset', 'bytes', 'tick', 'kind'),
+                           map(int, fields[1:])))
+            if row['kind'] not in range(4) or any(value < 0 for value in row.values()):
+                raise ContractError("invalid PUBLISH_SEGMENT fields")
+            publish_segments.append(row)
         elif fields[0] == "SERVING_PHASE":
             if len(fields) != len(SERVING_PHASE_FIELDS) + 1:
                 raise ContractError(
@@ -267,7 +289,7 @@ def read_facts_document(path: Path) -> FactsDocument:
         event.pop("source_ordinal")
         event["ordinal"] = ordinal
     return FactsDocument(events=events, final=final, metrics=metrics,
-                         fatal=fatal, serving_phases=serving_phases)
+                         fatal=fatal, serving_phases=serving_phases, publish_segments=publish_segments, cancel_sources=cancel_sources)
 
 
 def parse_facts_tsv(path: Path):

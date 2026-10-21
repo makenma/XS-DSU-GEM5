@@ -247,6 +247,12 @@ def _scenario(options, config_document=None):
     }
 
 
+def configure_remote_host_target(target, config_document):
+    memory = config_document['agent_axi_driver']['remote_host_memory']
+    target.service_depths = [memory['target_request_queue_depth']] * 2
+    target.response_ready_depths = [memory['target_response_queue_depth']] * 2
+
+
 def config_hardware(config_document: dict, accepted_queue_entries=None) -> dict:
     serving = config_document["serving"]
     address_map = serving["address_map"]
@@ -278,6 +284,7 @@ def config_hardware(config_document: dict, accepted_queue_entries=None) -> dict:
             "host_available_fraction_q16"
         ],
         "host_compile_slots": services["compile_slots"],
+        "host_release_waiter_entries": services["release_waiter_entries"],
         "host_test_slots": services["test_slots"],
         "host_log_parse_slots": services["log_parse_slots"],
         "host_weight_compile": services["scheduler_weights"]["compile"],
@@ -345,6 +352,7 @@ def _config_driver_params(hardware):
             "host_available_fraction_q16"
         ],
         "host_compile_slots": hardware["host_compile_slots"],
+        "host_release_waiter_entries": hardware["host_release_waiter_entries"],
         "host_test_slots": hardware["host_test_slots"],
         "host_log_parse_slots": hardware["host_log_parse_slots"],
         "host_weight_compile": hardware["host_weight_compile"],
@@ -417,6 +425,8 @@ def assemble(
     )
     Ruby.create_system(args, False, system, cpus=[])
     system.ruby.clk_domain = system.clk_domain
+    if config_document is not None:
+        configure_remote_host_target(system.ruby.axi_target_adapter1, config_document)
 
     facts_path = artifact_dir / facts_name
     system.gate3_recorder = Gate3ObservationRecorder(

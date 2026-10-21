@@ -5,10 +5,10 @@ from __future__ import annotations
 import dataclasses
 
 from mesh_ir.generated import abi as A
-from mesh_ir.golden_programs import hbm_endpoint, sram_endpoint
 from mesh_ir.model import (
     StringEntry,
     AgentInstanceMemberBinding,
+    AgentInstanceTensorBinding,
     AgentInstanceProfile,
     AgentPublishSurrogateBinding,
     AgentRequestBindingRequirement,
@@ -51,8 +51,36 @@ OUT_BASE = 0x300000
 KV_BASE = 0x400000
 
 
-def serving_program(arch, output_tokens=1, kv_splits=1):
-    return _serving_program(arch, output_tokens, dual=False, kv_splits=kv_splits)
+def project_member_tensor_bindings(program):
+    from mesh_ir.generated import agent_abi as AG
+    from mesh_ir.scheduled.binding_catalog import ProgramBindingCatalog
+
+    catalog = ProgramBindingCatalog(program)
+    rows = []
+    for instance in program.agent_instance_profiles:
+        for member in program.agent_instance_member_bindings[instance.member_binding_first:
+                instance.member_binding_first + instance.member_binding_count]:
+            for kind, symbol, root in (
+                (AG.BINDING_KIND.HOST_INPUT, member.static_input_symbol_id, instance.primary_input_symbol_id),
+                (AG.BINDING_KIND.HOST_OUTPUT, member.static_output_symbol_id, instance.primary_output_symbol_id),
+                (AG.BINDING_KIND.KV_EXTERNAL, member.static_kv_symbol_id, instance.primary_kv_symbol_id),
+            ):
+                if not symbol:
+                    continue
+                binding = catalog.binding(instance.mesh_entrypoint_id, instance.mesh_profile_id,
+                    program.strings[symbol - 1].value)
+                rows.append(AgentInstanceTensorBinding(instance.instance_profile_id,
+                    member.member_ordinal, kind, symbol, root, 0, binding.slot.required_allocation_bytes))
+    return tuple(sorted(rows, key=lambda row: (row.instance_profile_id, row.member_ordinal, row.static_symbol_id)))
+
+
+def serving_program(arch, output_tokens=1, kv_splits=1, *, publish_max_burst_beats=None, input_parts=1):
+    return _serving_program(arch, output_tokens, dual=False, kv_splits=kv_splits,
+        publish_max_burst_beats=publish_max_burst_beats, input_parts=input_parts)
+
+
+def repair_serving_program(arch):
+    return _serving_program(arch, 2, dual=False, repair=True)
 
 
 def split_kv_serving_program(arch):
@@ -65,421 +93,289 @@ def keyed_serving_program(arch):
     return apply_request_profile_keys(serving_program(arch))
 
 
-def full_view_serving_program(arch):
-    return _serving_program(arch, 1, dual=True)
+def full_view_serving_program(arch, output_tokens=1, padding_tokens=0):
+    return _serving_program(arch, output_tokens, dual=True, padding_tokens=padding_tokens)
 
 
-def _serving_program(arch, output_tokens, dual, kv_splits=1):
+def moe_full_view_serving_program(arch, output_tokens=1, padding_tokens=0, *, publish_max_burst_beats=None):
+    return _serving_program(arch, output_tokens, dual=True, dynamic_moe=True,
+                            padding_tokens=padding_tokens, publish_max_burst_beats=publish_max_burst_beats)
+
+
+@dataclasses.dataclass(frozen=True)
+class ServingPhase:
+    instance_id: int
+    name: str
+    phase: int
+    member_count: int
+    kv_before: int
+    valid_tokens: int
+    input_bytes: int
+    input_offset: int = 0
+    request_profile: int = 1
+    path: int = A.PATH_KIND.INITIAL_PREFILL
+
+
+def _serving_program(arch, output_tokens, dual, kv_splits=1, dynamic_moe=False, repair=False,
+                     padding_tokens=0, publish_max_burst_beats=None, input_parts=1):
+    from mesh_ir.authoring import AuthoredMemory
     from mesh_ir.builder import ProgramBuilder
+    from mesh_ir.canonical import semantic_sha256
+    from mesh_ir.execution_view import semantic_profile_ranges
+    from mesh_ir.ir.common import DType, MemorySpace, StorageClass, TensorRole
+    from mesh_ir.ir.kernel_ir import ElementRegion
+    from mesh_ir.moe_programs import synthetic_weight_digest
+    from mesh_ir.scheduled.model import AuthoredProgramOrigin, HaltAttrs, KernelCommandSource, LocalAllocationBacking, RequestBeginAttrs, RequestEndAttrs
 
+    if type(output_tokens) is not int or output_tokens <= 0 or type(kv_splits) is not int or kv_splits <= 0 or PREFILL_TOKENS % kv_splits:
+        raise ValueError('serving token and split counts must be positive and exactly divisible')
+    if type(padding_tokens) is not int or padding_tokens < 0:
+        raise ValueError('serving padding must be nonnegative')
+    if type(input_parts) is not int or input_parts < 1 or INPUT_BINDING_BYTES % (input_parts * arch.axi_data_bytes):
+        raise ValueError('input parts must divide the aligned input capacity')
     output_bytes = output_tokens * OUTPUT_BYTES
-    kv_alloc_bytes = (PREFILL_TOKENS + output_tokens) * KV_BYTES_PER_TOKEN
-    chunk_count = (output_bytes + PUBLISH_CHUNK_BYTES - 1) // \
-        PUBLISH_CHUNK_BYTES
-    builder = ProgramBuilder(arch, "gate6_serving")
-    align = arch.sram_base_alignment_bytes
-
-    t_in = builder.tensor("input", A.TENSOR_ROLE.INPUT, FP16,
-                          A.STORAGE_CLASS.EXTERNAL, RO, (HIDDEN, INTERMEDIATE))
-    t_w = builder.tensor("weight", A.TENSOR_ROLE.WEIGHT, FP16,
-                         A.STORAGE_CLASS.EXTERNAL, RO,
-                         (INTERMEDIATE, HIDDEN))
-    t_kv = builder.tensor("kv", A.TENSOR_ROLE.KV_CACHE, A.DTYPE.INT8,
-                          A.STORAGE_CLASS.EXTERNAL, RW, (kv_alloc_bytes,))
-    t_act = builder.tensor("activation", A.TENSOR_ROLE.ACTIVATION, FP16,
-                           A.STORAGE_CLASS.CORE_SRAM, RW,
-                           (HIDDEN, INTERMEDIATE))
-    t_sur = builder.tensor("surrogate", A.TENSOR_ROLE.ACTIVATION, FP16,
-                           A.STORAGE_CLASS.CORE_SRAM, RW,
-                           (HIDDEN, INTERMEDIATE * output_tokens))
-    t_out = builder.tensor("output", A.TENSOR_ROLE.OUTPUT, FP16,
-                           A.STORAGE_CLASS.EXTERNAL, RW,
-                           (HIDDEN, INTERMEDIATE * output_tokens))
-
-    symbols = {}
-    for name, tensor, offset in (
-            ("input", t_in, IN_BASE),
-            ("weight", t_w, W_BASE),
-            ("kv", t_kv, KV_BASE),
-            ("output", t_out, OUT_BASE),
-            ("in_slot_0", t_in, IN_BASE),
-            ("kv_slot_0", t_kv, KV_BASE),
-            ("out_slot_0", t_out, OUT_BASE)):
-        builder.relocation(name, A.RELOCATION_KIND.TENSOR_BASE, HBM_REGION,
-                           tensor, offset)
-        symbols[name] = builder.string(name)
-
-    ordinal_one = {}
-    if dual:
-        for field, slot, tensor, offset in (
-                ("static_input_symbol_id", "in_slot_0", t_in, IN_BASE),
-                ("static_output_symbol_id", "out_slot_0", t_out, OUT_BASE),
-                ("static_kv_symbol_id", "kv_slot_0", t_kv, KV_BASE)):
-            name = "full_view_ordinal1_" + field
-            builder.relocation(name, A.RELOCATION_KIND.TENSOR_BASE,
-                               HBM_REGION, tensor,
-                               offset + FULL_VIEW_SLOT_SHIFT)
-            ordinal_one[field] = builder.string(name)
-
-    def make_set(sram_shift):
-        allocations = {
-            "in": builder.allocation(0, IN_OFFSET + sram_shift,
-                                     INPUT_BINDING_BYTES, align),
-            "w": builder.allocation(0, W_OFFSET + sram_shift,
-                                    WEIGHT_BYTES, align),
-            "kv": builder.allocation(0, KV_OFFSET + sram_shift,
-                                     kv_alloc_bytes, align),
-            "act": builder.allocation(0, ACT_OFFSET + sram_shift,
-                                      OUTPUT_BYTES, align),
-            "pub": builder.allocation(0, PUB_OFFSET + sram_shift,
-                                      output_bytes, align),
-        }
-        shards = {
-            "in": builder.shard(t_in, 0, allocations["in"],
-                                (HIDDEN, INTERMEDIATE),
-                                INPUT_BINDING_BYTES),
-            "w": builder.shard(t_w, 0, allocations["w"],
-                               (INTERMEDIATE, HIDDEN), WEIGHT_BYTES),
-            "kv": builder.shard(t_kv, 0, allocations["kv"],
-                                (kv_alloc_bytes,), kv_alloc_bytes),
-            "act": builder.shard(t_act, 0, allocations["act"],
-                                 (HIDDEN, INTERMEDIATE), OUTPUT_BYTES),
-            "sur": builder.shard(t_sur, 0, allocations["pub"],
-                                 (HIDDEN, INTERMEDIATE * output_tokens),
-                                 output_bytes),
-            "out": builder.shard(t_out, 0, allocations["pub"],
-                                 (HIDDEN, INTERMEDIATE * output_tokens),
-                                 output_bytes),
-        }
-        return {"allocations": allocations, "shards": shards,
-                "sram_shift": sram_shift}
-
-    set0 = make_set(0)
-    set1 = make_set(0x10000) if dual else None
-    set2 = make_set(0x20000) if dual else None
-
-    stream = builder.stream(
-        0, 0, flags=A.STREAM_FLAGS.IS_LIFECYCLE |
-        A.STREAM_FLAGS.IS_LOCAL_CONTROL)
-    fill_attr = builder.fill_attr(A.DMA_FILL_RUNTIME_BOUND_SENTINEL)
-
-    def alloc_of(member, kind):
-        return member["allocations"][kind]
-
-    def shard_of(member, kind):
-        return member["shards"][kind]
-
-    def sram(tensor, member, kind, offset):
-        return sram_endpoint(tensor, shard_of(member, kind), 0,
-                             offset + member["sram_shift"])
-
-    def emit_prefill(profile, entrypoint, members):
-        e_begin = builder.event()
-        stream.command(A.OPCODE.REQUEST_BEGIN, signal_event=e_begin,
-                       profile_id=profile)
-        terminals = []
-        for member in members:
-            shift = member["hbm_shift"]
-            e_in = builder.event()
-            e_w = builder.event()
-            e_gemm = builder.event()
-            e_fill = builder.event()
-            cmd_in = stream.command(
-                A.OPCODE.DMA_LOAD, waits=(e_begin,),
-                operands=((t_in, shard_of(member, "in"),
-                           alloc_of(member, "in"), RO),), profile_id=profile)
-            d_in = builder.dma(
-                cmd_in, A.DMA_KIND.LOAD,
-                src=hbm_endpoint(t_in, shard_of(member, "in"),
-                                 IN_BASE + shift),
-                dst=sram(t_in, member, "in", IN_OFFSET),
-                rows=1, row_bytes=INPUT_BINDING_BYTES,
-                src_stride=INPUT_BINDING_BYTES,
-                dst_stride=INPUT_BINDING_BYTES, completion_event=e_in)
-            builder.oracle(entrypoint, profile, d_in, cmd_in.command_id,
-                           A.DMA_KIND.LOAD, IN_BASE + shift, 1,
-                           INPUT_BINDING_BYTES, INPUT_BINDING_BYTES)
-            cmd_w = stream.command(
-                A.OPCODE.DMA_LOAD, waits=(e_begin,),
-                operands=((t_w, shard_of(member, "w"),
-                           alloc_of(member, "w"), RO),), profile_id=profile)
-            d_w = builder.dma(
-                cmd_w, A.DMA_KIND.LOAD,
-                src=hbm_endpoint(t_w, shard_of(member, "w"),
-                                 W_BASE + shift),
-                dst=sram(t_w, member, "w", W_OFFSET),
-                rows=1, row_bytes=WEIGHT_BYTES,
-                src_stride=WEIGHT_BYTES, dst_stride=WEIGHT_BYTES,
-                completion_event=e_w)
-            builder.oracle(entrypoint, profile, d_w, cmd_w.command_id,
-                           A.DMA_KIND.LOAD, W_BASE + shift, 1,
-                           WEIGHT_BYTES, WEIGHT_BYTES)
-            gemm_attr = builder.gemm_attr(1, HIDDEN, INTERMEDIATE, HIDDEN,
-                                          FP16, A.DTYPE.FP32)
-            stream.command(
-                A.OPCODE.GEMM, waits=(e_in, e_w),
-                operands=((t_in, shard_of(member, "in"),
-                           alloc_of(member, "in"), RO),
-                          (t_w, shard_of(member, "w"),
-                           alloc_of(member, "w"), RO),
-                          (t_act, shard_of(member, "act"),
-                           alloc_of(member, "act"), RW)),
-                signal_event=e_gemm, attr_index=gemm_attr, profile_id=profile)
-            cmd_fill = stream.command(
-                A.OPCODE.DMA_FILL, waits=(e_gemm,),
-                operands=((t_kv, shard_of(member, "kv"),
-                           alloc_of(member, "kv"), RW),),
-                attr_index=fill_attr, profile_id=profile)
-            d_fill = builder.dma(
-                cmd_fill, A.DMA_KIND.LOCAL_FILL,
-                src=sram(t_kv, member, "kv", KV_OFFSET),
-                dst=sram(t_kv, member, "kv", KV_OFFSET),
-                rows=1, row_bytes=KV_BYTES, src_stride=KV_BYTES,
-                dst_stride=KV_BYTES, completion_event=e_fill)
-            builder.oracle(entrypoint, profile, d_fill, cmd_fill.command_id,
-                           A.DMA_KIND.LOCAL_FILL,
-                           KV_OFFSET + member["sram_shift"], 1, KV_BYTES,
-                           KV_BYTES)
-            part_bytes = KV_BYTES // kv_splits
-            assert part_bytes * kv_splits == KV_BYTES
-            assert part_bytes % KV_BYTES_PER_TOKEN == 0
-            for part in range(kv_splits):
-                part_offset = part * part_bytes
-                part_event = builder.event()
-                cmd_store = stream.command(
-                    A.OPCODE.DMA_STORE, waits=(e_fill,),
-                    operands=((t_kv, shard_of(member, "kv"),
-                               alloc_of(member, "kv"), RW),), profile_id=profile)
-                d_store = builder.dma(
-                    cmd_store, A.DMA_KIND.STORE,
-                    src=sram(t_kv, member, "kv", KV_OFFSET + part_offset),
-                    dst=hbm_endpoint(t_kv, shard_of(member, "kv"),
-                                     KV_BASE + shift + part_offset),
-                    rows=1, row_bytes=part_bytes, src_stride=part_bytes,
-                    dst_stride=part_bytes, completion_event=part_event)
-                builder.oracle(entrypoint, profile, d_store,
-                               cmd_store.command_id, A.DMA_KIND.STORE,
-                               KV_BASE + shift + part_offset, 1, part_bytes,
-                               part_bytes)
-                terminals.append(part_event)
-        e_end = builder.event()
-        stream.command(A.OPCODE.REQUEST_END, waits=tuple(terminals),
-                       signal_event=e_end, profile_id=profile)
-        stream.command(A.OPCODE.HALT, waits=(e_end,), profile_id=profile)
-
-    def emit_decode(profile, entrypoint, members, index):
-        e_begin = builder.event()
-        stream.command(A.OPCODE.REQUEST_BEGIN, signal_event=e_begin,
-                       profile_id=profile)
-        prefix = PREFILL_TOKENS + index
-        read_bytes = prefix * KV_BYTES_PER_TOKEN
-        terminals = []
-        for member in members:
-            shift = member["hbm_shift"]
-            e_load = builder.event()
-            e_fill = builder.event()
-            cmd_load = stream.command(
-                A.OPCODE.DMA_LOAD, waits=(e_begin,),
-                operands=((t_kv, shard_of(member, "kv"),
-                           alloc_of(member, "kv"), RW),), profile_id=profile)
-            d_load = builder.dma(
-                cmd_load, A.DMA_KIND.LOAD,
-                src=hbm_endpoint(t_kv, shard_of(member, "kv"),
-                                 KV_BASE + shift),
-                dst=sram(t_kv, member, "kv", KV_OFFSET),
-                rows=1, row_bytes=read_bytes, src_stride=read_bytes,
-                dst_stride=read_bytes, completion_event=e_load)
-            builder.oracle(entrypoint, profile, d_load, cmd_load.command_id,
-                           A.DMA_KIND.LOAD, KV_BASE + shift, 1, read_bytes,
-                           read_bytes)
-            append = KV_OFFSET + member["sram_shift"] + read_bytes
-            cmd_fill = stream.command(
-                A.OPCODE.DMA_FILL, waits=(e_load,),
-                operands=((t_kv, shard_of(member, "kv"),
-                           alloc_of(member, "kv"), RW),),
-                attr_index=fill_attr, profile_id=profile)
-            d_fill = builder.dma(
-                cmd_fill, A.DMA_KIND.LOCAL_FILL,
-                src=sram_endpoint(t_kv, shard_of(member, "kv"), 0, append),
-                dst=sram_endpoint(t_kv, shard_of(member, "kv"), 0, append),
-                rows=1, row_bytes=KV_BYTES_PER_TOKEN,
-                src_stride=KV_BYTES_PER_TOKEN,
-                dst_stride=KV_BYTES_PER_TOKEN, completion_event=e_fill)
-            builder.oracle(entrypoint, profile, d_fill, cmd_fill.command_id,
-                           A.DMA_KIND.LOCAL_FILL, append, 1,
-                           KV_BYTES_PER_TOKEN, KV_BYTES_PER_TOKEN)
-            cmd_store = stream.command(
-                A.OPCODE.DMA_STORE, waits=(e_fill,),
-                operands=((t_kv, shard_of(member, "kv"),
-                           alloc_of(member, "kv"), RW),), profile_id=profile)
-            e_store = builder.event()
-            d_store = builder.dma(
-                cmd_store, A.DMA_KIND.STORE,
-                src=sram_endpoint(t_kv, shard_of(member, "kv"), 0, append),
-                dst=hbm_endpoint(t_kv, shard_of(member, "kv"),
-                                 KV_BASE + shift + read_bytes),
-                rows=1, row_bytes=KV_BYTES_PER_TOKEN,
-                src_stride=KV_BYTES_PER_TOKEN,
-                dst_stride=KV_BYTES_PER_TOKEN, completion_event=e_store)
-            builder.oracle(entrypoint, profile, d_store, cmd_store.command_id,
-                           A.DMA_KIND.STORE, KV_BASE + shift + read_bytes, 1,
-                           KV_BYTES_PER_TOKEN, KV_BYTES_PER_TOKEN)
-            terminals.append(e_store)
-        e_end = builder.event()
-        stream.command(A.OPCODE.REQUEST_END, waits=tuple(terminals),
-                       signal_event=e_end, profile_id=profile)
-        stream.command(A.OPCODE.HALT, waits=(e_end,), profile_id=profile)
-
-    def emit_publish(profile, entrypoint, members):
-        e_begin = builder.event()
-        stream.command(A.OPCODE.REQUEST_BEGIN, signal_event=e_begin,
-                       profile_id=profile)
-        producers = []
-        terminals = []
-        for member in members:
-            shift = member["hbm_shift"]
-            e_fill = builder.event()
-            cmd_fill = stream.command(
-                A.OPCODE.DMA_FILL, waits=(e_begin,),
-                operands=((t_sur, shard_of(member, "sur"),
-                           alloc_of(member, "pub"), RW),),
-                attr_index=fill_attr, profile_id=profile)
-            d_fill = builder.dma(
-                cmd_fill, A.DMA_KIND.LOCAL_FILL,
-                src=sram(t_sur, member, "sur", PUB_OFFSET),
-                dst=sram(t_sur, member, "sur", PUB_OFFSET),
-                rows=1, row_bytes=output_bytes, src_stride=output_bytes,
-                dst_stride=output_bytes, completion_event=e_fill)
-            builder.oracle(entrypoint, profile, d_fill, cmd_fill.command_id,
-                           A.DMA_KIND.LOCAL_FILL,
-                           PUB_OFFSET + member["sram_shift"], 1, output_bytes,
-                           output_bytes)
-            for chunk in range(chunk_count):
-                offset = chunk * PUBLISH_CHUNK_BYTES
-                size = min(PUBLISH_CHUNK_BYTES, output_bytes - offset)
-                e_out = builder.event()
-                cmd_out = stream.command(
-                    A.OPCODE.DMA_STORE, waits=(e_fill,),
-                    operands=((t_out, shard_of(member, "out"),
-                               alloc_of(member, "pub"), RW),),
-                    profile_id=profile)
-                d_out = builder.dma(
-                    cmd_out, A.DMA_KIND.STORE,
-                    src=sram(t_out, member, "out", PUB_OFFSET + offset),
-                    dst=hbm_endpoint(t_out, shard_of(member, "out"),
-                                     OUT_BASE + shift + offset),
-                    rows=1, row_bytes=size, src_stride=size, dst_stride=size,
-                    completion_event=e_out)
-                builder.oracle(entrypoint, profile, d_out, cmd_out.command_id,
-                               A.DMA_KIND.STORE, OUT_BASE + shift + offset, 1,
-                               size, size)
-                terminals.append(e_out)
-            producers.append((alloc_of(member, "pub"), cmd_fill.command_id,
-                              e_fill))
-        e_end = builder.event()
-        stream.command(A.OPCODE.REQUEST_END, waits=tuple(terminals),
-                       signal_event=e_end, profile_id=profile)
-        stream.command(A.OPCODE.HALT, waits=(e_end,), profile_id=profile)
-        return producers
-
-    def add_phase(name, dual_name):
-        entrypoint = builder.entrypoint(name, name, 0, 0)
-        profile = len(builder.profiles)
-        dual_entrypoint = dual_profile = 0
-        if dual:
-            dual_entrypoint = builder.entrypoint(dual_name, dual_name, 0, 0)
-            dual_profile = len(builder.profiles)
-        return (entrypoint, profile), (dual_entrypoint, dual_profile)
-
-    prefill_single, prefill_dual = add_phase("serving_prefill",
-                                             "serving_prefill_ordinal1")
-    decode_singles = []
-    decode_duals = []
-    for index in range(output_tokens):
-        single, doubling = add_phase(f"serving_decode_{index}",
-                                     f"serving_decode_{index}_ordinal1")
-        decode_singles.append(single)
-        decode_duals.append(doubling)
-    publish_single, publish_dual = add_phase("serving_publish",
-                                             "serving_publish_ordinal1")
-
-    emit_prefill(prefill_single[1], prefill_single[0],
-                 [dict(set0, hbm_shift=0)])
-    for index in range(output_tokens):
-        emit_decode(decode_singles[index][1], decode_singles[index][0],
-                    [dict(set0, hbm_shift=0)], index)
-    publish_producers = emit_publish(publish_single[1], publish_single[0],
-                                     [dict(set0, hbm_shift=0)])
-
-    instances = []
-    bindings = []
-    publishes = []
-
-    def add_instance(instance_id, selector, phase, member_count,
-                     kv_tokens_before):
-        bindings_first = len(bindings)
-        instances.append(_instance_profile(
-            instance_id, selector, phase, member_count, bindings_first,
-            kv_tokens_before, output_bytes, symbols))
-        for ordinal in range(member_count):
-            bindings.append(_member_binding(instance_id, ordinal, phase,
-                                            symbols, ordinal_one))
-
-    add_instance(11, prefill_single, A.PHASE.PREFILL, 1, 0)
-    for index in range(output_tokens):
-        add_instance(12 + index, decode_singles[index], A.PHASE.DECODE, 1,
-                     PREFILL_TOKENS + index)
-    add_instance(12 + output_tokens, publish_single, A.PHASE.PUBLISH, 1,
-                 PREFILL_TOKENS + output_tokens)
-
-    if dual:
-        emit_prefill(prefill_dual[1], prefill_dual[0],
-                     [dict(set1, hbm_shift=0),
-                      dict(set2, hbm_shift=FULL_VIEW_SLOT_SHIFT)])
+    input_capacity = INPUT_BINDING_BYTES * (2 if repair else 1)
+    full_tokens = 2 * PREFILL_TOKENS + output_tokens if repair else PREFILL_TOKENS
+    kv_bytes = (full_tokens + output_tokens) * KV_BYTES_PER_TOKEN
+    phases = []
+    for member_count, base in (((1, 11), (2, 111)) if dual else ((1, 11),)):
+        suffix = '' if member_count == 1 else '_ordinal1'
+        phases.append(ServingPhase(base, 'serving_prefill' + suffix, A.PHASE.PREFILL,
+            member_count, 0, PREFILL_TOKENS, INPUT_BINDING_BYTES))
         for index in range(output_tokens):
-            emit_decode(decode_duals[index][1], decode_duals[index][0],
-                        [dict(set1, hbm_shift=0),
-                         dict(set2, hbm_shift=FULL_VIEW_SLOT_SHIFT)], index)
-        dual_publish = emit_publish(
-            publish_dual[1], publish_dual[0],
-            [dict(set1, hbm_shift=0),
-             dict(set2, hbm_shift=FULL_VIEW_SLOT_SHIFT)])
-        add_instance(111, prefill_dual, A.PHASE.PREFILL, 2, 0)
-        for index in range(output_tokens):
-            add_instance(112 + index, decode_duals[index], A.PHASE.DECODE, 2,
-                         PREFILL_TOKENS + index)
-        add_instance(112 + output_tokens, publish_dual, A.PHASE.PUBLISH, 2,
-                     PREFILL_TOKENS + output_tokens)
-        for ordinal in range(2):
-            allocation, command, event = dual_publish[ordinal]
-            publishes.append(AgentPublishSurrogateBinding(
-                instance_profile_id=112 + output_tokens,
-                member_ordinal=ordinal, reserved0=0,
-                allocation_id=allocation, producer_command_id=command,
-                completion_event_id=event, fill_kind=1, allocation_role=1,
-                digest_source=0, reserved1=0))
-
+            phases.append(ServingPhase(base + 1 + index, f'serving_decode_{index}{suffix}',
+                A.PHASE.DECODE, member_count, PREFILL_TOKENS + index, 1, 0))
+        phases.append(ServingPhase(base + 1 + output_tokens, 'serving_publish' + suffix,
+            A.PHASE.PUBLISH, member_count, PREFILL_TOKENS + output_tokens, 0, 0))
+    if repair:
+        for path in (A.PATH_KIND.KV_REUSE, A.PATH_KIND.REPREFILL):
+            before = PREFILL_TOKENS + output_tokens if path == A.PATH_KIND.KV_REUSE else 0
+            for index in range(output_tokens + 2):
+                phase = A.PHASE.PREFILL if index == 0 else A.PHASE.DECODE if index <= output_tokens else A.PHASE.PUBLISH
+                consumed = INPUT_BINDING_BYTES if before else input_capacity
+                phases.append(ServingPhase(200 + path * 10 + index, f'repair_{path}_{index}', phase, 1,
+                    before if index == 0 else full_tokens + min(index - 1, output_tokens),
+                    (PREFILL_TOKENS if before else full_tokens) if index == 0 else 1 if phase == A.PHASE.DECODE else 0,
+                    consumed if index == 0 else 0, input_capacity - consumed if index == 0 else 0, 2, path))
+    builder = ProgramBuilder(arch, AuthoredProgramOrigin('serving', 'request-lifecycle', 2))
+    authored = []
+    input_mappings = []
+    fill_pattern = A.DMA_FILL_RUNTIME_BOUND_SENTINEL.to_bytes(8, 'little')
+    for phase in phases:
+        memory = AuthoredMemory(arch, arch.core_ids[0])
+        members = []
+        for ordinal in range(phase.member_count):
+            hbm_shift = ordinal * FULL_VIEW_SLOT_SHIFT
+            sram_shift = 0 if phase.member_count == 1 else (ordinal + 1) * 0x10000
+            names = {kind: f'{kind}_slot_0' if ordinal == 0 else f'full_view_ordinal1_static_{kind}_symbol_id'
+                     for kind in ('in', 'out', 'kv')}
+            if ordinal:
+                names['in'] = 'full_view_ordinal1_static_input_symbol_id'
+                names['out'] = 'full_view_ordinal1_static_output_symbol_id'
+            member = {}
+            if phase.phase == A.PHASE.PREFILL:
+                input_rows = (phase.input_offset + phase.input_bytes) // TOKEN_BYTES
+                rows = input_rows + padding_tokens
+                input_capacity_bytes = ((input_rows * TOKEN_BYTES + arch.axi_data_bytes - 1) // arch.axi_data_bytes) * arch.axi_data_bytes
+                if input_parts > 1:
+                    part_rows = input_rows // input_parts
+                    member['in'] = memory.buffer(f'input-stage:{ordinal}', TensorRole.INPUT, DType.FP16,
+                        (rows, HIDDEN), MemorySpace.CORE_SRAM, IN_OFFSET + sram_shift,
+                        storage_class=StorageClass.EXTERNAL)
+                    member['input_views'] = tuple(memory.view(member['in'], f'input-part:{ordinal}:{part}',
+                        part * part_rows * HIDDEN, (part_rows, HIDDEN)) for part in range(input_parts))
+                    member['inputs'] = tuple(memory.stage(view, names['in'] if part == 0 else f"{names['in']}:part:{part}",
+                        IN_BASE + hbm_shift + part * part_rows * TOKEN_BYTES, space=MemorySpace.HOST_SHARED)
+                        for part, view in enumerate(member['input_views']))
+                    input_mappings.extend((phase.instance_id, ordinal, part,
+                        names['in'] if part == 0 else f"{names['in']}:part:{part}", part_rows * TOKEN_BYTES)
+                        for part in range(input_parts))
+                elif padding_tokens:
+                    member['in'] = memory.buffer(f'input-stage:{ordinal}', TensorRole.INPUT, DType.FP16,
+                        (rows, HIDDEN), MemorySpace.CORE_SRAM, IN_OFFSET + sram_shift,
+                        storage_class=StorageClass.EXTERNAL)
+                    valid = memory.view(member['in'], f'input-valid:{ordinal}', 0, (input_rows, HIDDEN))
+                    member['input'] = memory.stage(valid, names['in'], IN_BASE + hbm_shift,
+                        space=MemorySpace.HOST_SHARED, capacity_bytes=input_capacity_bytes)
+                else:
+                    member['input'] = memory.buffer(names['in'], TensorRole.INPUT, DType.FP16,
+                        (input_rows, HIDDEN), MemorySpace.HOST_SHARED, IN_BASE + hbm_shift,
+                        capacity_bytes=input_capacity_bytes)
+                    member['in'] = memory.stage(member['input'], f'input-stage:{ordinal}', IN_OFFSET + sram_shift)
+                if ordinal == 0:
+                    weight = memory.buffer('weight', TensorRole.WEIGHT, DType.FP16, (HIDDEN, INTERMEDIATE),
+                        MemorySpace.HBM, W_BASE, content_sha256=synthetic_weight_digest().hex())
+                member['weight'] = weight
+                member['w'] = memory.stage(weight, f'weight-stage:{ordinal}', W_OFFSET + sram_shift)
+                member['act'] = memory.buffer(f'activation:{ordinal}', TensorRole.ACTIVATION, DType.FP16,
+                    (rows, INTERMEDIATE), MemorySpace.CORE_SRAM, ACT_OFFSET + sram_shift)
+            if phase.phase in (A.PHASE.PREFILL, A.PHASE.DECODE):
+                member['external_kv'] = memory.buffer(names['kv'], TensorRole.KV_CACHE, DType.INT8, (kv_bytes,),
+                    MemorySpace.HBM, KV_BASE + hbm_shift,
+                    capacity_bytes=((kv_bytes + arch.axi_data_bytes - 1) // arch.axi_data_bytes) * arch.axi_data_bytes)
+                member['kv'] = memory.stage(member['external_kv'], f'kv-stage:{ordinal}', KV_OFFSET + sram_shift)
+            else:
+                member['output'] = memory.buffer(names['out'], TensorRole.OUTPUT, DType.INT8, (output_bytes,),
+                    MemorySpace.HOST_SHARED, OUT_BASE + hbm_shift)
+                member['pub'] = memory.stage(member['output'], f'publish-stage:{ordinal}', PUB_OFFSET + sram_shift)
+            members.append(member)
+        publishes = []
+        loads = []
+        for ordinal, member in enumerate(members):
+            if phase.phase == A.PHASE.PREFILL:
+                rows = (phase.input_offset + phase.input_bytes) // TOKEN_BYTES + padding_tokens
+                if phase.input_offset:
+                    prefix = ElementRegion((0, 0), (phase.input_offset // TOKEN_BYTES, HIDDEN), (1, 1))
+                    memory.fill(f'input-prefix:{ordinal}', member['in'], bytes(8), region=prefix)
+                if padding_tokens:
+                    padding = ElementRegion(((phase.input_offset + phase.input_bytes) // TOKEN_BYTES, 0),
+                        (padding_tokens, HIDDEN), (1, 1))
+                    memory.fill(f'input-padding:{ordinal}', member['in'], bytes(8), region=padding)
+                region = ElementRegion((phase.input_offset // TOKEN_BYTES, 0), (phase.input_bytes // TOKEN_BYTES, HIDDEN), (1, 1))
+                if input_parts > 1:
+                    for part, (source, destination) in enumerate(zip(member['inputs'], member['input_views'])):
+                        loads.append(memory.copy(f'load-input:{ordinal}:{part}', source, destination))
+                else:
+                    loads.append(memory.copy(f'load-input:{ordinal}', member['input'], member['in'], source_region=region, destination_region=region))
+                gate_dependencies = tuple(loads) if dynamic_moe and ordinal == len(members) - 1 else ()
+                loads.append(memory.copy(f'load-weight:{ordinal}', member['weight'], member['w'], after=gate_dependencies))
+        for ordinal, member in enumerate(members):
+            after = ()
+            if phase.phase == A.PHASE.PREFILL:
+                after = (memory.matmul(f'compute:{ordinal}', member['in'], member['w'], member['act']),)
+            if phase.phase in (A.PHASE.PREFILL, A.PHASE.DECODE):
+                prefix_bytes = phase.kv_before * KV_BYTES_PER_TOKEN
+                if prefix_bytes:
+                    prefix = ElementRegion((0,), (prefix_bytes,), (1,))
+                    memory.copy(f'load-kv:{ordinal}', member['external_kv'], member['kv'], source_region=prefix, destination_region=prefix)
+                size = phase.valid_tokens * KV_BYTES_PER_TOKEN
+                region = ElementRegion((prefix_bytes,), (size,), (1,))
+                memory.fill(f'append-kv:{ordinal}', member['kv'], fill_pattern, region=region, after=after)
+                split_count = kv_splits if phase.phase == A.PHASE.PREFILL else 1
+                part_bytes = size // split_count
+                for part in range(split_count):
+                    part_region = ElementRegion((prefix_bytes + part * part_bytes,), (part_bytes,), (1,))
+                    memory.copy(f'store-kv:{ordinal}:{part}', member['kv'], member['external_kv'],
+                        source_region=part_region, destination_region=part_region)
+            else:
+                fill = memory.fill(f'publish-fill:{ordinal}', member['pub'], fill_pattern)
+                chunks = tuple(ElementRegion((offset,), (min(PUBLISH_CHUNK_BYTES, output_bytes - offset),), (1,))
+                    for offset in range(0, output_bytes, PUBLISH_CHUNK_BYTES))
+                memory.copy_regions(f'publish-store:{ordinal}', member['pub'], member['output'], tuple((chunk, chunk) for chunk in chunks), max_burst_beats=publish_max_burst_beats)
+                publishes.append((member['pub'].object_id, fill.op_id))
+        variant = builder.variant(phase.name, phase.name, phase.name, records=memory.records(),
+            allocations=memory.allocations, external_backings=memory.external_backings, binding_slots=memory.binding_slots)
+        stream = variant.stream(arch.core_ids[0], 0, A.STREAM_FLAGS.IS_LIFECYCLE | A.STREAM_FLAGS.IS_LOCAL_CONTROL)
+        stream.control_command(RequestBeginAttrs())
+        for operation in memory.effects:
+            stream.kernel_command(operation.op_id)
+        stream.control_command(RequestEndAttrs())
+        stream.control_command(HaltAttrs())
+        authored.append((phase, publishes))
     program = builder.build()
-    publish_allocation, publish_command, publish_event = publish_producers[0]
-    return dataclasses.replace(
-        program,
-        required_features=A.AGENT_SERVING_V1 |
-        A.PROFILE_SCOPED_EXECUTION_V1,
-        agent_request_profiles=[
-            _request_profile(symbols, output_tokens, output_bytes)],
-        agent_instance_profiles=instances,
-        agent_source_core_map=[AgentSourceCoreMap(core_id=0, reserved=0)],
-        agent_instance_member_bindings=bindings,
-        agent_request_binding_requirements=_requirements(symbols),
-        agent_publish_surrogate_bindings=[
-            AgentPublishSurrogateBinding(
-                instance_profile_id=12 + output_tokens, member_ordinal=0,
-                reserved0=0, allocation_id=publish_allocation,
-                producer_command_id=publish_command,
-                completion_event_id=publish_event, fill_kind=1,
-                allocation_role=1, digest_source=0, reserved1=0),
-        ] + publishes,
-    )
+    strings = list(program.strings)
+    names = {entry.value: index for index, entry in enumerate(strings, 1)}
+    for name in ('input', 'output', 'kv'):
+        if name not in names:
+            strings.append(StringEntry(name))
+            names[name] = len(strings)
+    instances, bindings, publishes = [], [], []
+    ordinal_one = {f'static_{kind}_symbol_id': names.get(f'full_view_ordinal1_static_{kind}_symbol_id', 0)
+                   for kind in ('input', 'output', 'kv')}
+    for variant, (phase, sources) in zip(program.semantics.variants, authored, strict=True):
+        row = _instance_profile(phase.instance_id, (variant.entrypoint_id, variant.profile_id), phase.phase,
+            phase.member_count, len(bindings), phase.kv_before, output_bytes, names)
+        row = dataclasses.replace(row, request_profile_id=phase.request_profile, path_kind=phase.path,
+            valid_tokens_per_member=phase.valid_tokens, host_input_dma_bytes_per_member=phase.input_bytes,
+            local_padded_tokens_per_member=padding_tokens if phase.phase == A.PHASE.PREFILL else 0,
+            kv_read_bytes_per_member=phase.kv_before * KV_BYTES_PER_TOKEN if phase.phase != A.PHASE.PUBLISH else 0,
+            kv_write_bytes_per_member=phase.valid_tokens * KV_BYTES_PER_TOKEN if phase.phase != A.PHASE.PUBLISH else 0)
+        instances.append(row)
+        for ordinal in range(phase.member_count):
+            bindings.append(_member_binding(phase.instance_id, ordinal, phase.phase, names, ordinal_one))
+        for ordinal, (object_id, operation_id) in enumerate(sources):
+            global_object = variant.membership.objects.first_id + object_id - 1
+            backing = next(item.backing for item in program.semantics.object_backings if item.object_id == global_object)
+            if type(backing) is not LocalAllocationBacking:
+                raise ValueError('PUBLISH producer is not backed by SRAM')
+            global_operation = variant.membership.kernel_ops.first_id + operation_id - 1
+            command_id = next(item.command_id for item in program.semantics.command_semantics
+                if type(item.source) is KernelCommandSource and item.source.kernel_op_id == global_operation)
+            events = {item.completion_event for item in program.dma_descriptors if item.command_id == command_id}
+            if len(events) != 1:
+                raise ValueError('PUBLISH producer has no unique completion event')
+            publishes.append(AgentPublishSurrogateBinding(phase.instance_id, ordinal, 0, backing.allocation_id,
+                command_id, events.pop(), 1, 1, 0, 0))
+    requests = [_request_profile(names, output_tokens, output_bytes)]
+    requirements = _requirements(names)
+    if repair:
+        requests.append(dataclasses.replace(requests[0], profile_id=2, expected_cached_tokens=PREFILL_TOKENS + output_tokens,
+            full_input_tokens=full_tokens, input_binding_bytes=input_capacity, full_input_dma_bytes=input_capacity, path_mask=6))
+        requirements.extend(dataclasses.replace(item, request_profile_id=2) for item in tuple(requirements))
+    program = dataclasses.replace(program, strings=tuple(strings),
+        required_features=program.required_features | A.AGENT_SERVING_V1 | A.PROFILE_SCOPED_EXECUTION_V1,
+        profile_stream_ranges=semantic_profile_ranges(program.semantics), agent_request_profiles=tuple(requests),
+        agent_instance_profiles=tuple(instances), agent_source_core_map=(AgentSourceCoreMap(arch.core_ids[0], 0),),
+        agent_instance_member_bindings=tuple(bindings), agent_request_binding_requirements=tuple(requirements),
+        agent_publish_surrogate_bindings=tuple(publishes))
+    if dynamic_moe:
+        program = attach_serving_moe(program, arch)
+    mappings = list(project_member_tensor_bindings(program))
+    if input_mappings:
+        from mesh_ir.generated import agent_abi as AG
+        for instance_id, ordinal, part, symbol, size in input_mappings:
+            if part:
+                instance = next(row for row in instances if row.instance_profile_id == instance_id)
+                mappings.append(AgentInstanceTensorBinding(instance_id, ordinal, AG.BINDING_KIND.HOST_INPUT,
+                    names[symbol], instance.primary_input_symbol_id, part * size, size))
+    program = dataclasses.replace(program, agent_instance_tensor_bindings=tuple(sorted(mappings,
+        key=lambda row: (row.instance_profile_id, row.member_ordinal, row.static_symbol_id))))
+    return dataclasses.replace(program, semantic_sha256=program.computed_semantic_sha256)
+
+
+def attach_serving_moe(program, arch):
+    from mesh_ir.execution_view import build_execution_views
+    from mesh_ir.model import ContentDigest, MoeDynamicRegion, MoeExpertSpec, MoeKernelSpec, MoeLayerSpec
+    from mesh_ir.scheduled.binding_catalog import ProgramBindingCatalog
+
+    scratch = arch.partition(A.SRAM_PARTITION_KIND.RUNTIME_SCRATCH)
+    if scratch is None:
+        raise ValueError('serving MoE requires an explicit runtime scratch partition')
+    catalog = ProgramBindingCatalog(program)
+    views = build_execution_views(program)
+    layers, experts, regions, kernels = [], [], [], []
+    digests = list(program.content_digests)
+    weight_symbol = next(index for index, item in enumerate(program.strings, 1) if item.value == 'weight')
+    for instance in program.agent_instance_profiles:
+        if instance.phase != A.PHASE.PREFILL:
+            continue
+        view = views.for_instance(instance.mesh_entrypoint_id, instance.mesh_profile_id)
+        commands = [program.commands[index] for index in view.command_indices]
+        compute_index = next(index for index, item in enumerate(commands) if item.opcode == A.OPCODE.GEMM)
+        insert, resume = commands[compute_index - 1:compute_index + 1]
+        binding = catalog.binding(instance.mesh_entrypoint_id, instance.mesh_profile_id, 'weight')
+        tensor = program.tensors[binding.tensor.tensor_id - 1]
+        digest = ContentDigest(A.CONTENT_DIGEST_OBJECT_KIND['TENSOR'], 0, tensor.tensor_id, tensor.content_sha256)
+        if digest not in digests:
+            digests.append(digest)
+        index, layer = len(layers), len(layers) + 1
+        scratch_bytes = 0x10000
+        if (index + 1) * scratch_bytes > scratch.bytes:
+            raise ValueError('serving MoE layers exceed admitted runtime scratch')
+        layers.append(MoeLayerSpec(layer, index, 2 * index, 2, 2, TOKEN_BYTES, KV_BYTES_PER_TOKEN,
+            65536, A.MOE_OVERFLOW_POLICY.DROP, A.MOE_TRANSPORT_MODE.VARIABLE_ALL_TO_ALL_V,
+            index, 1, 16, 2, 32, 64, 32, 8, 8, 0, 65))
+        experts.extend(MoeExpertSpec(layer, expert, 0, insert.core_id, 0, weight_symbol, 0,
+            WEIGHT_BYTES, digests.index(digest)) for expert in range(2))
+        regions.append(MoeDynamicRegion(1, layer, insert.core_id, insert.stream_id,
+            insert.command_id, resume.command_id, insert.signal_event,
+            scratch.base + index * scratch_bytes, scratch_bytes, scratch.alignment, 63, 64, 32, 8, 8, 0))
+        kernels.append(MoeKernelSpec(layer, A.OPCODE.GEMM, FP16, A.DTYPE.FP32, FP16,
+            1, HIDDEN, HIDDEN, 0, A.MOE_COMBINE_KIND.LOCAL_REDUCE, 1, 65536, 4, 2,
+            TOKEN_BYTES, KV_BYTES_PER_TOKEN, 0, WEIGHT_BYTES, 64, 16, 2, 1, 0))
+    return dataclasses.replace(program, required_features=program.required_features | A.DYNAMIC_MOE_V1,
+        content_digests=tuple(digests), moe_layer_specs=tuple(layers), moe_expert_specs=tuple(experts),
+        moe_dynamic_regions=tuple(regions), moe_kernel_specs=tuple(kernels))
 
 
 def _instance_profile(instance_id, selector, phase, member_count,
@@ -601,89 +497,42 @@ def _requirements(symbols):
 
 
 def dual_member_ranks_program(arch, ranks):
-    program = serving_program(arch)
-    strings = list(program.strings)
-    relocations = list(program.relocations)
+    from mesh_ir.canonical import semantic_sha256
 
-    def sid_of(name):
-        for index, entry in enumerate(program.strings):
-            if entry.value == name:
-                return index + 1
-        raise KeyError(name)
+    if len(ranks) != 2 or any(type(rank) is not int or rank not in (0, 1) for rank in ranks):
+        raise ValueError('dual member ranks require two ranks from the source core map')
+    from mesh_ir.serving_profiles import member_rank_vector
 
-    def tensor_of(name):
-        symbol = sid_of(name)
-        return next(r.tensor_id for r in program.relocations
-                    if r.symbol_sid == symbol)
-
-    def add_slot(name, tensor_id, offset):
-        strings.append(type(program.strings[0])(name))
-        symbol = len(strings)
-        relocations.append(type(program.relocations[0])(
-            relocation_id=len(relocations) + 1, symbol_sid=symbol,
-            kind=A.RELOCATION_KIND.TENSOR_BASE, region_id=HBM_REGION,
-            tensor_id=tensor_id, reserved=0, offset_bytes=offset,
-            reserved2=0))
-        return symbol
-
-    in_1 = add_slot("in_slot_1", tensor_of("input"), IN_BASE)
-    kv_1 = add_slot("kv_slot_1", tensor_of("kv"), KV_BASE)
-    out_1 = add_slot("out_slot_1", tensor_of("output"), OUT_BASE)
-    slots = {
-        A.PHASE.PREFILL: ((sid_of("in_slot_0"), sid_of("kv_slot_0")),
-                          (in_1, kv_1)),
-        A.PHASE.DECODE: ((0, sid_of("kv_slot_0")), (0, kv_1)),
-        A.PHASE.PUBLISH: ((0, sid_of("out_slot_0")), (0, out_1)),
-    }
-    bindings = []
-    instances = []
-    first = 0
+    program = ranked_full_view_serving_program(arch)
+    instances, members = [], []
     for instance in program.agent_instance_profiles:
-        rows = []
-        for ordinal in range(2):
-            input_symbol, kv_symbol = slots[instance.phase][ordinal]
-            if instance.phase == A.PHASE.PUBLISH:
-                output_symbol = sid_of("out_slot_0") if ordinal == 0 else out_1
-            else:
-                output_symbol = 0
-            rows.append(AgentInstanceMemberBinding(
-                instance_profile_id=instance.instance_profile_id,
-                member_ordinal=ordinal, reserved0=0,
-                static_input_symbol_id=input_symbol,
-                static_output_symbol_id=output_symbol,
-                static_kv_symbol_id=kv_symbol,
-                expected_logical_source_rank=ranks[ordinal]))
-        bindings.extend(rows)
-        instances.append(dataclasses.replace(
-            instance, member_count=2, member_binding_first=first,
-            member_binding_count=2))
-        first += 2
-    request = dataclasses.replace(program.agent_request_profiles[0],
-                                 source_rank_count=2)
-    return dataclasses.replace(
-        program,
-        strings=strings,
-        relocations=relocations,
-        agent_request_profiles=[request],
-        agent_instance_profiles=instances,
-        agent_source_core_map=[AgentSourceCoreMap(core_id=0, reserved=0),
-                               AgentSourceCoreMap(core_id=1, reserved=0)],
-        agent_instance_member_bindings=bindings,
-    )
+        if instance.member_count == 2 and member_rank_vector(program, instance) != tuple(ranks):
+            continue
+        first = len(members)
+        members.extend(row
+            for row in program.agent_instance_member_bindings[
+                instance.member_binding_first:instance.member_binding_first + instance.member_binding_count])
+        instances.append(dataclasses.replace(instance, member_binding_first=first))
+    ids = {row.instance_profile_id for row in instances}
+    program = dataclasses.replace(program,
+        agent_request_profiles=(dataclasses.replace(program.agent_request_profiles[0], source_rank_count=2),),
+        agent_source_core_map=program.agent_source_core_map,
+        agent_instance_profiles=tuple(instances), agent_instance_member_bindings=tuple(members),
+        agent_publish_surrogate_bindings=tuple(row for row in program.agent_publish_surrogate_bindings
+            if row.instance_profile_id in ids))
+    program = dataclasses.replace(program, agent_instance_tensor_bindings=project_member_tensor_bindings(program))
+    return dataclasses.replace(program, semantic_sha256=program.computed_semantic_sha256)
 
 
 def full_view_alias_program(program):
-    slot = next(r for r in program.relocations
-                if program.strings[r.symbol_sid - 1].value ==
-                "full_view_ordinal1_static_input_symbol_id")
-    return dataclasses.replace(
-        program,
-        relocations=[
-            dataclasses.replace(record,
-                                offset_bytes=record.offset_bytes -
-                                FULL_VIEW_SLOT_SHIFT)
-            if record.symbol_sid == slot.symbol_sid else record
-            for record in program.relocations])
+    members = list(program.agent_instance_member_bindings)
+    for instance in program.agent_instance_profiles:
+        if instance.member_count == 2 and instance.phase == A.PHASE.PREFILL:
+            first = instance.member_binding_first
+            members[first + 1] = dataclasses.replace(members[first + 1],
+                static_input_symbol_id=members[first].static_input_symbol_id)
+    program = dataclasses.replace(program, agent_instance_member_bindings=tuple(members))
+    return dataclasses.replace(program, agent_instance_tensor_bindings=project_member_tensor_bindings(program))
 
 
 def full_view_crossed_publish_program(program):
@@ -703,4 +552,38 @@ def full_view_crossed_publish_program(program):
             producer_command_id=other.producer_command_id,
             completion_event_id=other.completion_event_id))
     return dataclasses.replace(program,
-                               agent_publish_surrogate_bindings=crossed)
+                               agent_publish_surrogate_bindings=tuple(crossed))
+
+
+def ranked_full_view_serving_program(arch, output_tokens=1):
+    from mesh_ir.canonical import semantic_sha256
+
+    program = full_view_serving_program(arch, output_tokens)
+    instances = list(program.agent_instance_profiles)
+    members = list(program.agent_instance_member_bindings)
+    publish = list(program.agent_publish_surrogate_bindings)
+    for ranks in ((1,), (0, 1), (1, 0), (1, 1)):
+        for source in program.agent_instance_profiles:
+            if source.member_count != len(ranks):
+                continue
+            instance_id = 100000 + len(instances)
+            first = len(members)
+            for ordinal, rank in enumerate(ranks):
+                members.append(dataclasses.replace(
+                    program.agent_instance_member_bindings[source.member_binding_first + ordinal],
+                    instance_profile_id=instance_id, expected_logical_source_rank=rank))
+            instances.append(dataclasses.replace(source, instance_profile_id=instance_id,
+                                                  member_binding_first=first))
+            publish.extend(dataclasses.replace(row, instance_profile_id=instance_id)
+                           for row in program.agent_publish_surrogate_bindings
+                           if row.instance_profile_id == source.instance_profile_id)
+    program = dataclasses.replace(
+        program,
+        agent_request_profiles=(dataclasses.replace(program.agent_request_profiles[0],
+                                                   source_rank_count=2),),
+        agent_source_core_map=(AgentSourceCoreMap(core_id=arch.core_ids[0], reserved=0),
+                               AgentSourceCoreMap(core_id=arch.core_ids[0], reserved=0)),
+        agent_instance_profiles=tuple(instances), agent_instance_member_bindings=tuple(members),
+        agent_publish_surrogate_bindings=tuple(publish))
+    program = dataclasses.replace(program, agent_instance_tensor_bindings=project_member_tensor_bindings(program))
+    return dataclasses.replace(program, semantic_sha256=program.computed_semantic_sha256)

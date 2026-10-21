@@ -11,7 +11,11 @@ import dataclasses
 import hashlib
 
 from mesh_ir.execution_view import build_execution_views
+from mesh_ir.canonical import semantic_sha256
 from mesh_ir.generated import abi as A
+from mesh_ir.generated import agent_abi as AG
+from mesh_ir.serving_tensor_bindings import ResolvedMemberTensorBinding, ServingTensorBindingCatalog
+from mesh_ir.scheduled.model import EndpointSide
 from mesh_ir.model import MeshIrError, Program, canonical_json_bytes
 
 KEY_BASE_DOMAIN = b"AGENT_PROFILE_KEY_BASE_V1\0"
@@ -21,7 +25,7 @@ KEY_FIELD = "requested_profile_key"
 
 
 def program_profile_key_base_bytes(program: Program) -> bytes:
-    projection = canonical_json_bytes(_zeroed(program).canonical_dict())
+    projection = canonical_json_bytes(_zeroed(program).semantic_dict())
     return KEY_BASE_DOMAIN + projection
 
 
@@ -50,11 +54,12 @@ def apply_request_profile_keys(program: Program) -> Program:
     if any(key == 0 for key in keys):
         raise MeshIrError("E_REQUEST_PROFILE_KEY",
                           "request profile key must be nonzero")
-    records = [
+    records = tuple(
         dataclasses.replace(record, requested_profile_key=key)
         for record, key in zip(program.agent_request_profiles, keys)
-    ]
-    return dataclasses.replace(program, agent_request_profiles=records)
+    )
+    result = dataclasses.replace(program, agent_request_profiles=records)
+    return dataclasses.replace(result, semantic_sha256=semantic_sha256(result.semantic_dict()))
 
 
 def verify_request_profile_keys(program: Program) -> None:
@@ -80,10 +85,10 @@ def verify_request_profile_keys(program: Program) -> None:
 
 
 def _zeroed(program: Program) -> Program:
-    records = [
+    records = tuple(
         dataclasses.replace(record, **{KEY_FIELD: 0})
         for record in program.agent_request_profiles
-    ]
+    )
     return dataclasses.replace(program, agent_request_profiles=records)
 
 
@@ -110,6 +115,8 @@ HOST_LOAD = "host_input"
 HOST_STORE = "host_output"
 KV_LOAD = "kv_read"
 KV_STORE = "kv_write"
+WORKSPACE_LOAD = "workspace_read"
+WORKSPACE_STORE = "workspace_write"
 
 
 def member_records(program: Program, instance) -> tuple:
@@ -210,8 +217,39 @@ def declared_decode_chunk(program: Program, request, path_kind: int,
     return max(sizes) if sizes else 0
 
 
-def planned_instance_sequence(program: Program, request, path_kind: int
-                              ) -> tuple:
+def verify_request_phase_mode(program: Program, request) -> bool:
+    if request.flags not in (0, A.AGENT_REQUEST_FLAGS.HAS_KV):
+        raise MeshIrError('E_REQUEST_PROFILE', 'unknown request mode')
+    uses_kv = request.flags == A.AGENT_REQUEST_FLAGS.HAS_KV
+    if uses_kv:
+        if not (request.primary_kv_symbol_id and request.kv_bytes_per_token and request.output_tokens):
+            raise MeshIrError('E_REQUEST_PROFILE', 'generation requires KV and output tokens')
+    else:
+        if (request.primary_kv_symbol_id or request.kv_bytes_per_token or
+                request.output_tokens or request.expected_cached_tokens or
+                request.path_mask != 1 << A.PATH_KIND.INITIAL_PREFILL or
+                any((row.request_program_id, row.request_profile_id) == (request.program_id, request.profile_id)
+                    and row.binding_kind == AG.BINDING_KIND.KV_EXTERNAL
+                    for row in program.agent_request_binding_requirements)):
+            raise MeshIrError('E_REQUEST_PROFILE', 'prefill-only request carries KV or generation state')
+        for instance in program.agent_instance_profiles:
+            if (instance.request_program_id, instance.request_profile_id) != (request.program_id, request.profile_id):
+                continue
+            if (instance.phase not in (A.PHASE.PREFILL, A.PHASE.PUBLISH) or
+                    instance.path_kind != A.PATH_KIND.INITIAL_PREFILL or
+                    instance.primary_kv_symbol_id or instance.kv_tokens_before or
+                    instance.kv_read_bytes_per_member or instance.kv_write_bytes_per_member or
+                    instance.decode_chunk_tokens or
+                    any(row.instance_profile_id == instance.instance_profile_id and
+                        row.binding_kind == AG.BINDING_KIND.KV_EXTERNAL
+                        for row in program.agent_instance_tensor_bindings) or
+                    any(row.static_kv_symbol_id for row in member_records(program, instance))):
+                raise MeshIrError('E_REQUEST_PROFILE', 'prefill-only instance carries KV or generation state')
+    return uses_kv
+
+
+def planned_instance_sequence(program: Program, request, path_kind: int,
+                              ranks: tuple = (0,)) -> tuple:
     """Derive the executed instance sequence of one request.
 
     The frozen plan is walked the way the serving runtime walks it: one PREFILL
@@ -221,32 +259,33 @@ def planned_instance_sequence(program: Program, request, path_kind: int
     the sequence itself comes from the selector, the cursor and the decode
     chunk, never from a record count.
     """
+    verify_path_closure(program, request)
     index = SelectorIndex(program)
-    prefill = _request_instances(program, request, path_kind, A.PHASE.PREFILL)
-    publish = _request_instances(program, request, path_kind, A.PHASE.PUBLISH)
+    prefill = tuple(row for row in _request_instances(program, request, path_kind, A.PHASE.PREFILL)
+                    if member_rank_vector(program, row) == ranks)
+    publish = tuple(row for row in _request_instances(program, request, path_kind, A.PHASE.PUBLISH)
+                    if member_rank_vector(program, row) == ranks)
     if len(prefill) != 1 or len(publish) != 1:
-        raise PlanError("E_REQUEST_PROFILE", "instances",
-                        "request needs exactly one PREFILL and one PUBLISH")
+        raise MeshIrError("E_REQUEST_PROFILE", "rank vector needs exactly one PREFILL and one PUBLISH")
     chunk = prefill[0].decode_chunk_tokens
     if chunk == 0:
         candidates = [instance.decode_chunk_tokens for instance in
                       _request_instances(program, request, path_kind,
-                                         A.PHASE.DECODE)]
+                                         A.PHASE.DECODE)
+                      if member_rank_vector(program, instance) == ranks]
         chunk = max(candidates) if candidates else 0
-    if chunk == 0:
-        raise PlanError("E_REQUEST_PROFILE", "decode_chunk_tokens",
-                        "request declares no decode chunk")
+    if chunk == 0 and request.output_tokens:
+        raise MeshIrError("E_REQUEST_PROFILE", "request declares no decode chunk")
     sequence = [prefill[0]]
     for size, produced in decode_sequence(request.output_tokens, chunk):
         selector = expected_selector(
             request.program_id, request.profile_id, path_kind,
             A.PHASE.DECODE, size,
-            prefill[0].valid_tokens_per_member + produced, size,
+            request.full_input_tokens + produced, size,
             member_rank_vector(program, prefill[0]))
         matched = index.select(selector)
         if matched is None:
-            raise PlanError("E_REQUEST_PROFILE", "instance selector",
-                            "decode step has no matching instance")
+            raise MeshIrError("E_REQUEST_PROFILE", "decode step has no matching instance")
         sequence.append(matched)
     sequence.append(publish[0])
     return tuple(sequence)
@@ -257,6 +296,7 @@ def planned_instance_count(program: Program, request, path_kind: int) -> int:
 
 
 def verify_path_closure(program: Program, request) -> None:
+    uses_kv = verify_request_phase_mode(program, request)
     index = SelectorIndex(program)
     for path_kind in _declared_paths(request):
         prefills = _request_instances(program, request, path_kind,
@@ -300,7 +340,7 @@ def verify_path_closure(program: Program, request) -> None:
             index.select(expected_selector(
                 request.program_id, request.profile_id, path_kind,
                 A.PHASE.PUBLISH, 0,
-                request.full_input_tokens + request.output_tokens, 0, ranks))
+                request.full_input_tokens + request.output_tokens if uses_kv else 0, 0, ranks))
 
 
 def _declared_paths(request) -> tuple:
@@ -309,247 +349,149 @@ def _declared_paths(request) -> tuple:
         A.PATH_KIND.REPREFILL) if request.path_mask & (1 << path_kind))
 
 
-def _relocation(program: Program, symbol_id: int):
-    for relocation in program.relocations:
-        if relocation.symbol_sid == symbol_id:
-            return relocation
-    raise MeshIrError("E_RELOCATION", "symbol is not relocated",
-                      symbol_id=symbol_id)
-
-
-MEMBER_KIND_SYMBOLS = (
-    (HOST_LOAD, "static_input_symbol_id", "primary_input_symbol_id"),
-    (HOST_STORE, "static_output_symbol_id", "primary_output_symbol_id"),
-    (KV_LOAD, "static_kv_symbol_id", "primary_kv_symbol_id"),
-)
-
-MEMBER_ROLE_BYTES = {
-    HOST_LOAD: "host_input_dma_bytes_per_member",
-    HOST_STORE: "host_output_dma_bytes_per_member",
-    KV_LOAD: "kv_write_bytes_per_member",
-}
-
-ROLE_READS = {
-    HOST_LOAD: True,
-    HOST_STORE: False,
-    KV_LOAD: True,
-    KV_STORE: False,
+ROLE_READS = {HOST_LOAD: True, HOST_STORE: False, KV_LOAD: True, KV_STORE: False,
+              WORKSPACE_LOAD: True, WORKSPACE_STORE: False}
+ROLE_KINDS = {
+    HOST_LOAD: AG.BINDING_KIND.HOST_INPUT,
+    HOST_STORE: AG.BINDING_KIND.HOST_OUTPUT,
+    KV_LOAD: AG.BINDING_KIND.KV_EXTERNAL,
+    KV_STORE: AG.BINDING_KIND.KV_EXTERNAL,
+    WORKSPACE_LOAD: AG.BINDING_KIND.REQUEST_WORKSPACE,
+    WORKSPACE_STORE: AG.BINDING_KIND.REQUEST_WORKSPACE,
 }
 
 
-def _request_kind_tensors(program: Program, request) -> dict:
-    tensors = {HOST_LOAD: 0, HOST_STORE: 0, KV_LOAD: 0, KV_STORE: 0}
-    for role, symbol_id in (
-            (HOST_LOAD, request.primary_input_symbol_id),
-            (HOST_STORE, request.primary_output_symbol_id)):
-        if symbol_id:
-            tensors[role] = _relocation(program, symbol_id).tensor_id
-    if request.primary_kv_symbol_id:
-        tensor_id = _relocation(program,
-                                request.primary_kv_symbol_id).tensor_id
-        tensors[KV_LOAD] = tensor_id
-        tensors[KV_STORE] = tensor_id
-    return tensors
+@dataclasses.dataclass(frozen=True)
+class MemberIoWindow:
+    tensor: ResolvedMemberTensorBinding
+    start: int
+    end: int
 
 
-def _verify_member_symbol_roles(program, request, instance, ordinal):
-    record = member_records(program, instance)[ordinal]
-    for role, field, primary_field in MEMBER_KIND_SYMBOLS:
-        symbol_id = getattr(record, field)
-        if symbol_id == 0:
-            continue
-        primary_symbol = getattr(request, primary_field)
-        if primary_symbol == 0:
-            _fail("E_BINDING_ROLE",
-                  "member slot is present in a forbidden phase kind",
-                  instance_profile_id=instance.instance_profile_id,
-                  member_ordinal=ordinal, role=role)
-        relocation = _relocation(program, symbol_id)
-        primary = _relocation(program, primary_symbol)
-        if relocation.tensor_id != primary.tensor_id:
-            _fail("E_BINDING_ROLE",
-                  "member slot must view the request primary tensor",
-                  instance_profile_id=instance.instance_profile_id,
-                  member_ordinal=ordinal, role=role)
+class ServingInstanceIo:
+    def __init__(self, program: Program, request, instance, catalog=None):
+        self.program, self.request, self.instance = program, request, instance
+        self.catalog = catalog if catalog is not None else ServingTensorBindingCatalog(program)
+        if instance not in program.agent_instance_profiles:
+            _fail('E_BINDING_ROLE', 'phase I/O profile differs from its admitted mapping')
+        self.descriptors = tuple(instance_descriptors(program, instance))
+        self.cores = tuple(member_source_core(program, request, instance, ordinal)
+                           for ordinal in range(instance.member_count))
+        self.windows = {(ordinal, role): [] for ordinal in range(instance.member_count) for role in ROLE_READS}
+        for tensor in self.catalog.for_instance(instance.instance_profile_id):
+            mapping = tensor.mapping
+            for role, kind in ROLE_KINDS.items():
+                if kind != mapping.binding_kind:
+                    continue
+                if role == HOST_LOAD:
+                    begin = request.full_input_dma_bytes - request.delta_input_dma_bytes if instance.path_kind == A.PATH_KIND.KV_REUSE else 0
+                    end = request.full_input_dma_bytes
+                elif role == HOST_STORE:
+                    begin, end = 0, instance.host_output_dma_bytes_per_member
+                elif role == KV_LOAD:
+                    begin, end = 0, instance.kv_tokens_before * request.kv_bytes_per_token
+                elif role == KV_STORE:
+                    begin = instance.kv_tokens_before * request.kv_bytes_per_token
+                    end = begin + instance.kv_write_bytes_per_member
+                else:
+                    begin = mapping.offset_bytes
+                    end = begin + tensor.binding.object.footprint_bytes
+                start = max(begin, mapping.offset_bytes) - mapping.offset_bytes
+                stop = min(end, mapping.offset_bytes + mapping.span_bytes) - mapping.offset_bytes
+                if stop < start:
+                    start = stop = 0
+                if stop > tensor.binding.object.footprint_bytes:
+                    _fail('E_BINDING_ROLE', 'member access exceeds its admitted object', role=role)
+                self.windows[(mapping.member_ordinal, role)].append(MemberIoWindow(tensor, start, stop))
+        self.matches = {}
+        self.intervals = {(ordinal, role): [] for ordinal in range(instance.member_count) for role in ROLE_READS}
+        kinds = {row.binding.slot.slot_id: row.mapping.binding_kind
+                 for row in self.catalog.for_instance(instance.instance_profile_id)}
+        for descriptor in self.descriptors:
+            for role, read in ROLE_READS.items():
+                if descriptor.kind not in ((A.DMA_KIND.LOAD, A.DMA_KIND.PREFETCH) if read else (A.DMA_KIND.STORE,)):
+                    continue
+                binding = self.catalog.slots.descriptor_binding(descriptor.descriptor_id,
+                    EndpointSide.SRC if read else EndpointSide.DST)
+                if binding is None or kinds.get(binding.slot.slot_id) != ROLE_KINDS[role]:
+                    continue
+                endpoint = descriptor.src if read else descriptor.dst
+                stride = descriptor.src_stride_bytes if read else descriptor.dst_stride_bytes
+                rows = [(endpoint.offset_bytes + row * stride, endpoint.offset_bytes + row * stride + descriptor.row_bytes)
+                        for row in range(descriptor.rows)]
+                matches = []
+                for ordinal in range(instance.member_count):
+                    for window in self.windows[(ordinal, role)]:
+                        if (binding.slot.slot_id == window.tensor.binding.slot.slot_id and
+                                all(window.start <= start and end <= window.end for start, end in rows)):
+                            matches.append(window)
+                            offset = window.tensor.mapping.offset_bytes
+                            self.intervals[(ordinal, role)].extend((start + offset, end + offset) for start, end in rows)
+                self.matches[(descriptor.descriptor_id, role)] = tuple(matches)
+
+    def attribution(self) -> dict:
+        result = {}
+        for key, windows in self.matches.items():
+            if len(windows) != 1:
+                _fail('E_BINDING_ROLE', 'descriptor must belong to exactly one member slot',
+                      instance_profile_id=self.instance.instance_profile_id, descriptor_id=key[0], role=key[1])
+            result[key] = windows[0].tensor.mapping.member_ordinal
+        return result
+
+    def member_io(self, ordinal: int) -> dict:
+        self.attribution()
+        for descriptor in self.descriptors:
+            if any((descriptor.descriptor_id, role) in self.matches for role in ROLE_READS):
+                if not descriptor.rows or descriptor.useful_bytes != descriptor.rows * descriptor.row_bytes:
+                    _fail('E_HOST_IO_SIZE_MISMATCH', 'descriptor row geometry is inconsistent', descriptor_id=descriptor.descriptor_id)
+        return {'intervals': {role: self.intervals[(ordinal, role)] for role in ROLE_READS},
+                'bases': {role: 0 for role in ROLE_READS}}
+
+    def verify_ownership(self) -> None:
+        for left in range(self.instance.member_count):
+            for right in range(left + 1, self.instance.member_count):
+                if self.cores[left] != self.cores[right]:
+                    continue
+                for role in ROLE_READS:
+                    for lhs in self.windows[(left, role)]:
+                        for rhs in self.windows[(right, role)]:
+                            a, b = lhs.tensor.binding.slot.reference_binding, rhs.tensor.binding.slot.reference_binding
+                            if ((a.region_id, a.owner_core) == (b.region_id, b.owner_core) and
+                                    a.allocation_offset_bytes + lhs.start < b.allocation_offset_bytes + rhs.end and
+                                    b.allocation_offset_bytes + rhs.start < a.allocation_offset_bytes + lhs.end):
+                                _fail('E_BINDING_ROLE', 'member slots alias on one core',
+                                      instance_profile_id=self.instance.instance_profile_id, member_ordinal=left)
 
 
 def member_slot_base(program: Program, instance, ordinal: int, role: str):
-    field = dict((item[0], item[1]) for item in MEMBER_KIND_SYMBOLS)[role]
-    record = member_records(program, instance)[ordinal]
-    symbol_id = getattr(record, field)
-    if symbol_id == 0:
-        return None
-    return _relocation(program, symbol_id)
+    rows = [row for row in ServingTensorBindingCatalog(program).for_instance(instance.instance_profile_id)
+            if row.mapping.member_ordinal == ordinal and row.mapping.binding_kind == ROLE_KINDS[role]]
+    if len(rows) > 1:
+        _fail('E_BINDING_ROLE', 'singular slot query has multiple tensor mappings')
+    return rows[0].binding if rows else None
 
 
-def member_intervals(program: Program, request, instance,
-                     ordinal: int) -> dict:
-    record = member_records(program, instance)[ordinal]
-    windows = {}
-    for role, field, _ in MEMBER_KIND_SYMBOLS:
-        symbol_id = getattr(record, field)
-        if symbol_id == 0:
-            windows[role] = None
-            if role == KV_LOAD:
-                windows[KV_STORE] = None
-            continue
-        relocation = _relocation(program, symbol_id)
-        base = relocation.offset_bytes
-        if role == HOST_LOAD:
-            if instance.path_kind == A.PATH_KIND.KV_REUSE:
-                base += request.input_binding_bytes - \
-                    request.delta_input_dma_bytes
-            size = instance.host_input_dma_bytes_per_member
-            windows[role] = (relocation.tensor_id, base, base + size)
-        elif role == HOST_STORE:
-            size = instance.host_output_dma_bytes_per_member
-            windows[role] = (relocation.tensor_id, base, base + size)
-        else:
-            valid = instance.kv_tokens_before * request.kv_bytes_per_token
-            windows[KV_LOAD] = (relocation.tensor_id, base, base + valid)
-            append = base + valid
-            windows[KV_STORE] = (
-                relocation.tensor_id, append,
-                append + instance.kv_write_bytes_per_member)
-    return windows
-
-
-def _same_tensor_overlap(left, right) -> bool:
-    if left is None or right is None:
-        return False
-    if left[0] != right[0]:
-        return False
-    return left[1] < right[2] and right[1] < left[2]
-
-
-def _descriptor_rows(endpoint, stride, rows, row_bytes):
-    return [(endpoint.offset_bytes + index * stride,
-             endpoint.offset_bytes + index * stride + row_bytes)
-            for index in range(rows)]
+def member_intervals(program: Program, request, instance, ordinal: int) -> dict:
+    io = ServingInstanceIo(program, request, instance)
+    return {role: tuple((window.tensor.binding.object.object_id, window.start, window.end)
+                        for window in io.windows[(ordinal, role)]) for role in ROLE_READS}
 
 
 def instance_descriptors(program: Program, instance):
-    view = build_execution_views(program).for_instance(
-        instance.mesh_entrypoint_id, instance.mesh_profile_id)
-    return [descriptor for descriptor in program.dma_descriptors
-            if descriptor.descriptor_id in view.descriptor_ids]
-
-
-def _profile_descriptors(program: Program, instance):
-    return instance_descriptors(program, instance)
-
-
-def _rows_fit(endpoint, stride, rows, row_bytes, view) -> bool:
-    if view is None or endpoint.tensor_id != view[0]:
-        return False
-    for item_start, item_end in _descriptor_rows(endpoint, stride, rows,
-                                                 row_bytes):
-        if item_start < view[1] or item_end > view[2]:
-            return False
-    return True
-
-
-def _role_endpoint(descriptor, role):
-    if role in (HOST_LOAD, KV_LOAD):
-        return descriptor.src, descriptor.src_stride_bytes
-    return descriptor.dst, descriptor.dst_stride_bytes
-
-
-def descriptor_role_matches(program, request, descriptor, role) -> bool:
-    reads = ROLE_READS[role]
-    if reads and descriptor.kind != A.DMA_KIND.LOAD:
-        return False
-    if not reads and descriptor.kind != A.DMA_KIND.STORE:
-        return False
-    kind_tensors = _request_kind_tensors(program, request)
-    wanted = kind_tensors[KV_STORE] if role in (KV_LOAD, KV_STORE) \
-        else kind_tensors[role]
-    if wanted == 0:
-        return False
-    endpoint, _ = _role_endpoint(descriptor, role)
-    return endpoint.tensor_id == wanted
-
-
-def descriptor_candidates(program, request, instance, descriptor,
-                          role) -> tuple:
-    if not descriptor_role_matches(program, request, descriptor, role):
-        return ()
-    endpoint, stride = _role_endpoint(descriptor, role)
-    matches = []
-    for ordinal in range(instance.member_count):
-        core = member_source_core(program, request, instance, ordinal)
-        if descriptor.owner_core != core:
-            continue
-        view = member_intervals(program, request, instance, ordinal)[role]
-        if _rows_fit(endpoint, stride, descriptor.rows, descriptor.row_bytes,
-                     view):
-            matches.append(ordinal)
-    return tuple(matches)
+    view = build_execution_views(program).for_instance(instance.mesh_entrypoint_id, instance.mesh_profile_id)
+    return [descriptor for descriptor in program.dma_descriptors if descriptor.descriptor_id in view.descriptor_ids]
 
 
 def descriptor_attribution(program, request, instance) -> dict:
-    attribution = {}
-    for descriptor in _profile_descriptors(program, instance):
-        for role in (HOST_LOAD, HOST_STORE, KV_LOAD, KV_STORE):
-            if not descriptor_role_matches(program, request, descriptor,
-                                           role):
-                continue
-            candidates = descriptor_candidates(program, request, instance,
-                                               descriptor, role)
-            if len(candidates) != 1:
-                _fail("E_BINDING_ROLE",
-                      "descriptor must belong to exactly one member slot",
-                      instance_profile_id=instance.instance_profile_id,
-                      descriptor_id=descriptor.descriptor_id, role=role)
-            attribution[(descriptor.descriptor_id, role)] = candidates[0]
-    return attribution
+    return ServingInstanceIo(program, request, instance).attribution()
 
 
 def verify_descriptor_attribution(program, request, instance) -> None:
     descriptor_attribution(program, request, instance)
 
 
-def attributed_descriptors(program, request, instance, ordinal,
-                           role) -> tuple:
-    out = []
-    for descriptor in _profile_descriptors(program, instance):
-        if ordinal in descriptor_candidates(program, request, instance,
-                                            descriptor, role):
-            out.append(descriptor)
-    return tuple(out)
-
-
-def instance_io_intervals(program: Program, request, instance,
-                          ordinal: int = 0) -> dict:
-    _verify_member_symbol_roles(program, request, instance, ordinal)
-    intervals = {HOST_LOAD: [], HOST_STORE: [], KV_LOAD: [], KV_STORE: []}
-    for role in (HOST_LOAD, HOST_STORE, KV_LOAD, KV_STORE):
-        for descriptor in attributed_descriptors(program, request, instance,
-                                                 ordinal, role):
-            if descriptor.rows == 0 or \
-                    descriptor.useful_bytes != descriptor.rows * \
-                    descriptor.row_bytes:
-                _fail("E_HOST_IO_SIZE_MISMATCH",
-                      "descriptor row geometry is inconsistent",
-                      descriptor_id=descriptor.descriptor_id)
-            endpoint, stride = _role_endpoint(descriptor, role)
-            intervals[role].extend(_descriptor_rows(
-                endpoint, stride, descriptor.rows, descriptor.row_bytes))
-    bases = {}
-    for role, field, _ in MEMBER_KIND_SYMBOLS:
-        record = member_records(program, instance)[ordinal]
-        symbol_id = getattr(record, field)
-        bases[role] = _relocation(program, symbol_id).offset_bytes \
-            if symbol_id else 0
-        if role == KV_LOAD:
-            bases[KV_STORE] = bases[KV_LOAD]
-    return {"intervals": intervals, "bases": bases}
-
-
-def _collect(intervals, role, tensors, descriptor, endpoint, stride) -> None:
-    if tensors[role] and endpoint.tensor_id == tensors[role]:
-        intervals[role].extend(_descriptor_rows(
-            endpoint, stride, descriptor.rows, descriptor.row_bytes))
+def instance_io_intervals(program: Program, request, instance, ordinal: int = 0) -> dict:
+    return ServingInstanceIo(program, request, instance).member_io(ordinal)
 
 
 def _relative(intervals, base):
@@ -583,37 +525,67 @@ def coverage_gaps(intervals, start, end) -> tuple:
 
 
 def verify_member_ownership(program: Program, request, instance) -> None:
-    windows = [member_intervals(program, request, instance, ordinal)
-               for ordinal in range(instance.member_count)]
-    cores = [member_source_core(program, request, instance, ordinal)
-             for ordinal in range(instance.member_count)]
-    for left in range(instance.member_count):
-        for right in range(left + 1, instance.member_count):
-            if cores[left] != cores[right]:
+    ServingInstanceIo(program, request, instance).verify_ownership()
+
+
+def verify_instance_io(program: Program, request, instance, catalog=None) -> None:
+    if instance.phase == A.PHASE.PUBLISH and request.flags & A.AGENT_REQUEST_FLAGS.HAS_KV:
+        view = build_execution_views(program).for_profile(instance.mesh_profile_id)
+        commands = [program.commands[index] for index in view.command_indices]
+        retired = {d.completion_event for d in program.dma_descriptors
+                   if d.command_id in view.command_ids and d.kind == A.DMA_KIND.STORE}
+        allowed = {A.OPCODE.REQUEST_END, A.OPCODE.HALT, A.OPCODE.EVENT_WAIT,
+                   A.OPCODE.EVENT_SIGNAL, A.OPCODE.BARRIER, A.OPCODE.AXI_FENCE}
+        pending = list(commands)
+        while pending:
+            reached = [c for c in pending if retired.intersection(
+                (w.event_id for w in program.command_waits[c.wait_begin:c.wait_begin + c.wait_count]))]
+            if not reached:
+                break
+            for command in reached:
+                if command.opcode not in allowed or command.operand_count:
+                    _fail("E_BINDING_ROLE", "suppressed PUBLISH event reaches a data consumer",
+                          instance_profile_id=instance.instance_profile_id)
+                if command.signal_event:
+                    retired.add(command.signal_event)
+                retired.update(e.event_id for e in program.events
+                               if e.producer_command_id == command.command_id)
+                pending.remove(command)
+    io = ServingInstanceIo(program, request, instance, catalog)
+    io.verify_ownership()
+    attribution = io.attribution()
+    descriptors = io.descriptors
+    commands = {row.command_id: row for row in program.commands}
+    for descriptor in descriptors:
+        producer = commands[descriptor.command_id]
+        if descriptor.kind != A.DMA_KIND.LOCAL_FILL or not producer.attr_index:
+            continue
+        attr = program.op_attrs[producer.attr_index - 1]
+        if attr.kind != A.ATTR_KIND.FILL_V1 or attr.payload_dict()['pattern'] != A.DMA_FILL_RUNTIME_BOUND_SENTINEL:
+            continue
+        if not producer.operand_count:
+            _fail('E_BINDING_ROLE', 'runtime fill has no unique member STORE')
+        allocation = program.command_operands[producer.operand_begin + producer.operand_count - 1].allocation_id
+        owners = set()
+        for consumer in descriptors:
+            command = commands[consumer.command_id]
+            if consumer.kind != A.DMA_KIND.STORE or not command.operand_count or \
+                    program.command_operands[command.operand_begin].allocation_id != allocation:
                 continue
-            for role in (HOST_LOAD, HOST_STORE, KV_LOAD, KV_STORE):
-                if _same_tensor_overlap(windows[left][role],
-                                        windows[right][role]):
-                    _fail("E_BINDING_ROLE",
-                          "member slots alias on one core",
-                          instance_profile_id=instance.instance_profile_id,
-                          member_ordinal=left)
-
-
-def verify_instance_io(program: Program, request, instance) -> None:
-    verify_member_ownership(program, request, instance)
-    verify_descriptor_attribution(program, request, instance)
+            owners.update(attribution[(consumer.descriptor_id, role)] for role in (HOST_STORE, KV_STORE)
+                          if (consumer.descriptor_id, role) in attribution)
+        if len(owners) != 1:
+            _fail('E_BINDING_ROLE', 'runtime fill has no unique member STORE')
     for ordinal in range(instance.member_count):
-        _verify_member_io(program, request, instance, ordinal)
+        _verify_member_io(request, instance, io.member_io(ordinal))
 
 
-def _verify_member_io(program, request, instance, ordinal) -> None:
-    io = instance_io_intervals(program, request, instance, ordinal)
+def _verify_member_io(request, instance, io) -> None:
     reads = _relative(io["intervals"][HOST_LOAD], io["bases"][HOST_LOAD])
     writes = _relative(io["intervals"][HOST_STORE], io["bases"][HOST_STORE])
     kv_reads = _relative(io["intervals"][KV_LOAD], io["bases"][KV_LOAD])
     kv_writes = _relative(io["intervals"][KV_STORE], io["bases"][KV_STORE])
-    for name, intervals in (("host input", reads), ("host output", writes),
+    for name, intervals in (("host output", writes),
                             ("kv read", kv_reads), ("kv write", kv_writes)):
         gaps = _overlap_gaps(intervals)
         if gaps:
@@ -734,13 +706,6 @@ CAPACITY_FIELDS = (
     "batch_interval_entries_per_context",
 )
 
-PHASE_ROLE_COUNT = {
-    A.PHASE.PREFILL: 2,
-    A.PHASE.DECODE: 1,
-    A.PHASE.PUBLISH: 1,
-}
-
-
 @dataclasses.dataclass(frozen=True)
 class ServingCapacity:
     batch_weight_binding_entries_per_context: int
@@ -767,11 +732,18 @@ def instance_profile_capacity(program: Program, instance) -> dict:
         (instance.request_program_id, instance.request_profile_id))
     weights = unique_weight_symbols(program, request)
     members = instance.member_count
-    role_count = PHASE_ROLE_COUNT[instance.phase]
+    bindings = sum(row.instance_profile_id == instance.instance_profile_id
+                   for row in program.agent_instance_tensor_bindings)
+    if not bindings:
+        _fail('E_CAPACITY_PLAN', 'instance has no tensor mappings')
+    uses_kv = bool(request.flags & A.AGENT_REQUEST_FLAGS.HAS_KV)
+    workspaces = sum(row.binding_kind == AG.BINDING_KIND.REQUEST_WORKSPACE
+        for row in program.agent_request_binding_requirements
+        if (row.request_program_id, row.request_profile_id) == (request.program_id, request.profile_id))
     return {
-        "instance_member_binding_entries": members * role_count,
+        "instance_member_binding_entries": bindings,
         "batch_weight_binding_entries": weights,
-        "batch_interval_entries": 4 * members + weights,
+        "batch_interval_entries": (3 + uses_kv + workspaces) * members + weights,
     }
 
 

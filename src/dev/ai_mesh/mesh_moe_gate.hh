@@ -2,6 +2,7 @@
 #define DEV_AI_MESH_MESH_MOE_GATE_HH
 
 #include <cstdint>
+#include "base/checkpoint_fields.hh"
 #include <map>
 #include <string>
 #include <vector>
@@ -19,8 +20,10 @@ namespace ai_mesh
 class MoeInsertionGate
 {
   public:
+    GEM5_CHECKPOINT_FIELDS(regions, order)
     struct RegionSpec
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         uint32_t layer_id = 0;
         uint32_t region_id = 0;
         uint32_t insert_after_command_id = 0;
@@ -61,6 +64,7 @@ class MoeInsertionGate
   private:
     struct Region
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         RegionSpec spec;
         RegionPhase phase = RegionPhase::IDLE;
     };

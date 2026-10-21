@@ -19,7 +19,7 @@ JUnit `junit_gate<N>.xml`、`summary.json`/`run_manifest.json`（selector 输出
 `driver_mode=mesh_program` 场景模式）：`AxiInitiatorAdapter::tryAcceptAw/W/Ar` +
 `tryConsumeB/R`（真实 SLICC/Garnet 注入）、per-ID B/R ROB（B 乱序可观测）、
 `AxiTargetAdapter`+`AxiSimpleMemory`（HBM endpoint 与 SRAM aperture 功能后端）、
-per-UID extra-latency/fault plan（UID 由 `dma_uid_predict.py` 从 schedule 确定性预测）、
+per-UID extra-latency/fault plan（UID 由 [`fault_plan.py`](../../util/mesh_ir/mesh_ir/fault_plan.py) 从 schedule 确定性预测）、
 decoder miss→default error target（DECERR）、`GarnetNetwork::quiescenceSnapshot()`。
 
 ## 3. 组件（src/dev/ai_mesh/）

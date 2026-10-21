@@ -9,6 +9,8 @@ import pytest
 REPO = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO / "util" / "mesh_ir"))
 
+from mesh_ir.runtime_environment import embedded_python_path
+
 GEM5 = REPO / "build/AXI_MESH/gem5.opt"
 RUNNER = "configs/example/ai_mesh/run_dummy_core_agent.py"
 ARCH = "configs/example/ai_mesh/arch/mesh_4x4_moe.yaml"
@@ -40,7 +42,7 @@ def build_program_dir(root: Path, program: str = "moe_quad",
 def run_case(root: Path, program_dir: Path, index: int) -> Path:
     outdir = root / ("run%d" % index)
     outdir.mkdir(parents=True, exist_ok=True)
-    env = {**os.environ, "AI_MESH_ARTIFACT_DIR": str(outdir)}
+    env = {**os.environ, "AI_MESH_ARTIFACT_DIR": str(outdir), "PYTHONPATH": embedded_python_path()}
     env.pop("AI_MESH_CHILD_REPORT", None)
     result = subprocess.run(
         [str(GEM5), "--outdir=%s" % outdir, RUNNER, "--case", "moe_quad",
@@ -74,7 +76,7 @@ DUAL_ARCH = "configs/example/ai_mesh/arch/mesh_1x2_moe.yaml"
 def run_cached_case(root: Path, program_dir: Path) -> dict:
     outdir = root / "cached"
     outdir.mkdir(parents=True, exist_ok=True)
-    env = {**os.environ, "AI_MESH_ARTIFACT_DIR": str(outdir)}
+    env = {**os.environ, "AI_MESH_ARTIFACT_DIR": str(outdir), "PYTHONPATH": embedded_python_path()}
     env.pop("AI_MESH_CHILD_REPORT", None)
     result = subprocess.run(
         [str(GEM5), "--outdir=%s" % outdir, RUNNER, "--case",

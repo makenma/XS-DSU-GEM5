@@ -57,8 +57,7 @@ TEST(AgentPlanImage, ParsesFrozenTwoUserFixture)
         image.data(), image.size());
     ASSERT_TRUE(parsed.has_value());
     EXPECT_EQ(hexOf(parsed->imageDigest()),
-              "e917bd290cf4de0a0ead22424267c2d50e644dae95f64084fc76210a458"
-              "0593d");
+              "a8b58eaccd20ff83811c91641e2636435a862fd66d26640ffea2224eaa16b844");
     EXPECT_EQ(hexOf(parsed->workloadPlanDigest()),
               "afc9cc56e7bed3228009e27e99b42cff882cdf580430f47a4016c786"
               "c6113e5e");
@@ -73,6 +72,7 @@ TEST(AgentPlanImage, ParsesFrozenTwoUserFixture)
     EXPECT_EQ(firstUser.tasks[0].kvHandle, 1u);
     EXPECT_EQ(firstUser.tasks[0].effectiveCap, 1u);
     ASSERT_EQ(firstUser.tasks[0].rounds.size(), 2u);
+    EXPECT_EQ(firstUser.tasks[0].rounds[0].logicalSourceRank, 0u);
 
     const auto &round0 = firstUser.tasks[0].rounds[0];
     EXPECT_EQ(round0.itemId, 1u);
@@ -158,8 +158,7 @@ TEST(AgentPlanImage, ParsesControlActionsFromScenarioFixture)
         image.data(), image.size());
     ASSERT_TRUE(parsed.has_value());
     EXPECT_EQ(hexOf(parsed->imageDigest()),
-              "ec0f8d1fc3dfb47f2a0817fab540f28e48046d8bf365eebb3329a32fdc0"
-              "48a09");
+              "22181b522302071f90520061809a2dd4b1476897d3eee4893521cbf3bf6347eb");
     ASSERT_EQ(parsed->controlActions().size(), 1u);
     const gem5::ai_mesh::AgentControlAction &action =
         parsed->controlActions()[0];
@@ -228,29 +227,49 @@ TEST(AgentPlanImage, FrozenServingBindingSectionDecodes)
     const auto &plan = parsed->hostBindingPlans()[0];
     EXPECT_EQ(plan.programId, 1u);
     EXPECT_EQ(plan.profileId, 1u);
-    EXPECT_EQ(plan.primaryInputSymbolId, 1u);
-    EXPECT_EQ(plan.primaryOutputSymbolId, 6u);
-    EXPECT_EQ(plan.primaryKvSymbolId, 3u);
-    EXPECT_EQ(plan.instanceCount, 4u);
+    EXPECT_EQ(plan.primaryInputSymbolId, 10u);
+    EXPECT_EQ(plan.primaryOutputSymbolId, 11u);
+    EXPECT_EQ(plan.primaryKvSymbolId, 12u);
+    EXPECT_EQ(plan.instanceCounts, std::vector<uint32_t>({4}));
     ASSERT_EQ(plan.requirements.size(), 4u);
-    EXPECT_EQ(plan.requirements[0].symbolId, 1u);
+    EXPECT_EQ(plan.requirements[0].symbolId, 6u);
     EXPECT_EQ(plan.requirements[0].kind,
-              gem5::ai_mesh::agent_abi::kBindingKindHOST_INPUT);
-    EXPECT_EQ(plan.requirements[0].flags,
-              gem5::ai_mesh::agent_abi::kBindingFlagsREAD);
-    EXPECT_EQ(plan.requirements[0].platformAddress, 0u);
-    EXPECT_EQ(plan.requirements[0].platformBytes, 0u);
-    EXPECT_EQ(plan.requirements[1].symbolId, 2u);
-    EXPECT_EQ(plan.requirements[1].kind,
               gem5::ai_mesh::agent_abi::kBindingKindWEIGHT_EXTERNAL);
-    EXPECT_EQ(plan.requirements[1].platformAddress, 34361835520ull);
-    EXPECT_EQ(plan.requirements[1].platformBytes, 128u);
-    EXPECT_EQ(plan.requirements[2].symbolId, 3u);
+    EXPECT_EQ(plan.requirements[0].platformAddress, 34361835520ull);
+    EXPECT_EQ(plan.requirements[0].requiredBytes, 128u);
+    EXPECT_EQ(plan.requirements[1].symbolId, plan.primaryInputSymbolId);
+    EXPECT_EQ(plan.requirements[1].kind,
+              gem5::ai_mesh::agent_abi::kBindingKindHOST_INPUT);
+    EXPECT_EQ(plan.requirements[1].flags,
+              gem5::ai_mesh::agent_abi::kBindingFlagsREAD);
+    EXPECT_EQ(plan.requirements[1].platformAddress, 0u);
+    EXPECT_EQ(plan.requirements[1].requiredBytes, 0u);
+    EXPECT_EQ(plan.requirements[2].symbolId, plan.primaryOutputSymbolId);
     EXPECT_EQ(plan.requirements[2].kind,
-              gem5::ai_mesh::agent_abi::kBindingKindKV_EXTERNAL);
-    EXPECT_EQ(plan.requirements[2].platformAddress, 0u);
-    EXPECT_EQ(plan.requirements[2].platformBytes, 0u);
-    EXPECT_EQ(plan.requirements[3].symbolId, 6u);
-    EXPECT_EQ(plan.requirements[3].kind,
               gem5::ai_mesh::agent_abi::kBindingKindHOST_OUTPUT);
+    EXPECT_EQ(plan.requirements[3].symbolId, plan.primaryKvSymbolId);
+    EXPECT_EQ(plan.requirements[3].kind,
+              gem5::ai_mesh::agent_abi::kBindingKindKV_EXTERNAL);
+    EXPECT_EQ(plan.requirements[3].platformAddress, 0u);
+    EXPECT_EQ(plan.requirements[3].requiredBytes, 0u);
+}
+
+TEST(AgentPlanImage, BatchReplayAuthorityHasAnExactBooleanWireValue)
+{
+    for (uint8_t flag : {0, 1, 2}) {
+        auto image = loadFixture();
+        constexpr size_t roundReplayOffset = 76 + 10 + 12 + 38 + 8;
+        ASSERT_GT(image.size(), roundReplayOffset + 32);
+        image[roundReplayOffset] = flag;
+        const std::vector<uint8_t> body(image.begin(), image.end() - 32);
+        const auto digest = gem5::ai_mesh::agentSha256(body);
+        std::copy(digest.begin(), digest.end(), image.end() - 32);
+        const auto parsed = gem5::ai_mesh::AgentPlanImage::parse(image.data(), image.size());
+        if (flag > 1) {
+            EXPECT_FALSE(parsed);
+        } else {
+            ASSERT_TRUE(parsed);
+            EXPECT_EQ(parsed->users()[0].tasks[0].rounds[0].batchReplay, flag == 1);
+        }
+    }
 }

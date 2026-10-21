@@ -304,15 +304,15 @@ std::vector<uint8_t> MoeOverlayImage::encode(const MoeOverlayGraph &graph,
         for (uint32_t ref = 0; ref < kRefsPerObject; ref++)
             for (uint32_t field = 0; field < MoeOverlayEntry::kRefFields;
                  field++)
-                putU32(body, entry.wait_refs[ref][field]);
+                putU32(body, ref < entry.wait_count ? entry.wait_refs[ref][field] : UINT32_MAX);
         for (uint32_t ref = 0; ref < kRefsPerObject; ref++)
             for (uint32_t field = 0; field < MoeOverlayEntry::kRefFields;
                  field++)
-                putU32(body, entry.signal_refs[ref][field]);
+                putU32(body, ref < entry.signal_count ? entry.signal_refs[ref][field] : UINT32_MAX);
         for (uint32_t ref = 0; ref < kRefsPerObject; ref++)
             for (uint32_t field = 0; field < MoeOverlayEntry::kRefFields;
                  field++)
-                putU32(body, entry.view_refs[ref][field]);
+                putU32(body, ref < entry.view_count ? entry.view_refs[ref][field] : UINT32_MAX);
     }
     const auto &scratch_rows = graph.scratch();
     for (const auto &interval : scratch_rows) {

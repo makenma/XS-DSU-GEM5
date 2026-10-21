@@ -7,7 +7,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from mesh_ir.abi.decoder import decode_program
-from mesh_ir.builder import load_arch
+from mesh_ir.architecture import load_arch
 from mesh_ir.generated import abi as A
 from mesh_ir.generated import agent_abi as G
 from mesh_ir.model import MeshIrError
@@ -395,7 +395,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from mesh_ir.abi.decoder import decode_program
-from mesh_ir.builder import load_arch
+from mesh_ir.architecture import load_arch
 from mesh_ir.generated import abi as A
 from mesh_ir.generated import agent_abi as G
 from mesh_ir.model import MeshIrError
@@ -784,3 +784,15 @@ def test_gate5_member_rows_must_match_the_layer_token_rows(program_layer):
         build(program_layer, tokens, members, [1, 1, 1, 1])
     assert err.value.code == "E_MOE_MATERIALIZATION_V"
     assert "member rows must match" in err.value.message
+
+
+def test_remote_chunk_tie_uses_numeric_semantic_identity():
+    from mesh_ir.moe_materializer import RowMove, _coalesce
+
+    moves = [RowMove(A.MOE_TRANSFER_PHASE.DISPATCH, 0, 1, 0,
+                     SemanticTokenUid(item, 0, 0, 0, 1, 0, 0).encode(),
+                     item, 0, 0, index * 64, 64)
+             for index, item in enumerate((1, 256))]
+    chunks = _coalesce(moves, 128, A.MOE_TRANSFER_PHASE.DISPATCH)
+    assert [SemanticTokenUid.decode(row['token_refs'][0]).workload_plan_item_id
+            for row in chunks] == [1, 256]

@@ -47,7 +47,7 @@
 #include "base/random.hh"
 #include "debug/RubyNetwork.hh"
 #include "mem/ruby/network/MessageBuffer.hh"
-#include "mem/ruby/network/simple/SimpleNetwork.hh"
+#include "mem/ruby/network/simple/SimpleNetworkConfig.hh"
 #include "mem/ruby/network/simple/Switch.hh"
 #include "mem/ruby/slicc_interface/Message.hh"
 
@@ -68,7 +68,7 @@ PerfectSwitch::PerfectSwitch(SwitchID sid, Switch *sw, uint32_t virt_nets)
 }
 
 void
-PerfectSwitch::init(SimpleNetwork *network_ptr)
+PerfectSwitch::init(const SimpleNetworkConfig *network_ptr)
 {
     m_network_ptr = network_ptr;
 
@@ -78,14 +78,15 @@ PerfectSwitch::init(SimpleNetwork *network_ptr)
 }
 
 void
-PerfectSwitch::addInPort(const std::vector<MessageBuffer*>& in)
+PerfectSwitch::addInPort(const std::vector<MessageBuffer*>& in, bool connect)
 {
     NodeID port = m_in.size();
     m_in.push_back(in);
 
     for (int i = 0; i < in.size(); ++i) {
         if (in[i] != nullptr) {
-            in[i]->setConsumer(this);
+            if (connect)
+                in[i]->setConsumer(this);
             in[i]->setIncomingLink(port);
             in[i]->setVnet(i);
             updatePriorityGroups(i, in[i]);
@@ -185,6 +186,8 @@ PerfectSwitch::operateVnet(int vnet)
 void
 PerfectSwitch::operateMessageBuffer(MessageBuffer *buffer, int vnet)
 {
+    if (buffer->getConsumer() != this)
+        return;
     MsgPtr msg_ptr;
     Message *net_msg_ptr = NULL;
 

@@ -59,6 +59,7 @@ ready-to-run/
 compile_commands.json
 .direnv
 .cursor/
+/.tmp/
 
 # for use npm to install claude-code locally
 CLAUDE.md
@@ -81,3 +82,8 @@ tests/*
 !tests/gem5/
 tests/gem5/*
 !tests/gem5/ai_mesh/
+!tests/gem5/axi_garnet/
+
+# Local profiling and optimization runs
+/results/axi-endpoint-optimization-20261019/
+/results/noc-5x5-dual-profile-20261019/

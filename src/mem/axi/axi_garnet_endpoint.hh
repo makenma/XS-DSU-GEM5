@@ -33,6 +33,7 @@ namespace axi
 
 struct AxiEndpointQueueHighWater
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     std::array<size_t, 5> localFifo{};
     std::array<size_t, 5> messageBuffer{};
     std::array<size_t, 5> adapterIngress{};
@@ -41,6 +42,7 @@ struct AxiEndpointQueueHighWater
 
 struct AxiInitiatorAdapterProgress
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     AxiInitiatorProgress core;
     uint64_t bEjectionStallCycles = 0;
     uint64_t rEjectionStallCycles = 0;
@@ -60,6 +62,11 @@ class AxiInitiatorAdapter : public ClockedObject, public ruby::Consumer
 
     void init() override;
     void startup() override;
+    void serialize(CheckpointOut &cp) const override;
+    void unserialize(CheckpointIn &cp) override;
+    void drainResume() override;
+    template<class Archive> void serialize(Archive &archive, unsigned);
+
     void wakeup() override;
     void print(std::ostream &out) const override;
 
@@ -119,6 +126,7 @@ class AxiInitiatorAdapter : public ClockedObject, public ruby::Consumer
     bool exitRequested = false;
 
     std::map<uint32_t, ruby::AbstractController *> targetsByNode;
+    std::string checkpointState;
     std::unique_ptr<AxiInitiatorState> functionalState;
     BoundedFifo<AxiBPacket> bIngress;
     BoundedFifo<AxiDataPacket> rIngress;
@@ -141,6 +149,11 @@ class AxiTargetAdapter : public ClockedObject, public ruby::Consumer
 
     void init() override;
     void startup() override;
+    void serialize(CheckpointOut &cp) const override;
+    void unserialize(CheckpointIn &cp) override;
+    void drainResume() override;
+    template<class Archive> void serialize(Archive &archive, unsigned);
+
     void wakeup() override;
     void print(std::ostream &out) const override;
 
@@ -151,6 +164,8 @@ class AxiTargetAdapter : public ClockedObject, public ruby::Consumer
     AxiEndpointQueueHighWater functionalQueueHighWater() const;
     uint8_t readMemoryByte(uint64_t address) const;
     bool containsMemoryAddress(uint64_t address) const;
+    bool containsMemoryRange(uint64_t address, uint64_t size) const;
+    const std::vector<AxiRange> &memoryRanges() const;
     void writeMemoryByte(uint64_t address, uint8_t value);
     bool functionalIdle() const;
 
@@ -189,6 +204,7 @@ class AxiTargetAdapter : public ClockedObject, public ruby::Consumer
     bool holdStarted = false;
     Tick holdUntilTick = 0;
 
+    std::string checkpointState;
     std::unique_ptr<AxiTargetState> functionalState;
     BoundedFifo<AxiAddressPacket> awIngress;
     BoundedFifo<AxiDataPacket> wIngress;

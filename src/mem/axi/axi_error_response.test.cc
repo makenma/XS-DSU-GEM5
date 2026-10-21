@@ -85,6 +85,45 @@ targetConfig(uint32_t node, bool with_memory)
 
 } // anonymous namespace
 
+TEST(AxiErrorResponseTest, SharedBackingNotifiesEveryObserver)
+{
+    struct Observer : AxiWriteCommitObserver
+    {
+        std::vector<AxiResp> responses;
+        std::vector<uint8_t> payloads;
+
+        void onAxiWriteCommitted(const AxiAddressRequest &,
+            const std::vector<AxiDataPacket> &beats, AxiResp response) override
+        {
+            responses.push_back(response);
+            payloads.push_back(beats.front().functionalData.front());
+        }
+    } first, second;
+    auto config = targetConfig(1, true);
+    AxiTargetState target(config);
+    target.registerWriteCommitObserver(&first);
+    target.registerWriteCommitObserver(&second);
+    EXPECT_ANY_THROW(target.registerWriteCommitObserver(&first));
+    EXPECT_ANY_THROW(target.registerWriteCommitObserver(nullptr));
+    for (uint64_t uid = 1; uid <= 2; ++uid) {
+        const auto response = uid == 1 ? AxiResp::Okay : AxiResp::DecErr;
+        auto aw = addressPacket(uid, 1, request(0x100), response);
+        aw.meta.targetSeq = uid - 1;
+        target.acceptAw(aw, uid);
+        target.acceptW(wPacket(aw, 0, uint8_t(uid)), uid);
+        target.advance(uid);
+        ASSERT_TRUE(target.hasBPacket());
+        EXPECT_EQ(target.frontBPacket().resp, response);
+        target.popBPacket();
+    }
+    EXPECT_EQ(first.responses, (std::vector<AxiResp>{AxiResp::Okay, AxiResp::DecErr}));
+    EXPECT_EQ(first.responses, second.responses);
+    EXPECT_EQ(first.payloads, (std::vector<uint8_t>{1, 2}));
+    EXPECT_EQ(first.payloads, second.payloads);
+    EXPECT_EQ(target.memory().readByte(0x100), 1);
+    EXPECT_EQ(target.completedWrites(), 2);
+}
+
 TEST(AxiErrorResponseTest, DecodeMissReadFullDecerr)
 {
     const AxiAddressRequest req = request(0x3000, 4);

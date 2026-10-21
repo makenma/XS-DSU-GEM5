@@ -10,6 +10,7 @@
 #include "dev/ai_mesh/agent_plan_codec.hh"
 #include "dev/ai_mesh/agent_plan_image.hh"
 #include "dev/ai_mesh/agent_sha256.hh"
+#include "dev/ai_mesh/serving_host_bindings.hh"
 
 namespace
 {
@@ -330,4 +331,50 @@ TEST(AgentPlanCodec, PlannedLengthMatchesEncodedBlob)
                 << "round " << roundIndex << " count " << count;
         }
     }
+}
+
+TEST(AgentPlanCodec, WorkspaceUsesRequestArenaAndRequiredCapacity)
+{
+    using namespace gem5::ai_mesh;
+    AgentHostBindingPlan plan;
+    plan.requirements.push_back({3, agent_abi::kBindingKindREQUEST_WORKSPACE,
+        agent_abi::kBindingFlagsREAD | agent_abi::kBindingFlagsWRITE, 0, 4861952});
+    PlanWireAddresses addresses;
+    addresses.workspaceBase = 0x800000000;
+    AgentPlanRound round;
+    const auto bindings = resolveHostBindings(plan, addresses, round, 0);
+    ASSERT_EQ(bindings.size(), 1u);
+    EXPECT_EQ(bindings.front().address, addresses.workspaceBase);
+    EXPECT_EQ(bindings.front().bytes, 4861952u);
+    EXPECT_EQ(bindings.front().flags,
+        agent_abi::kBindingFlagsREAD | agent_abi::kBindingFlagsWRITE);
+}
+
+TEST(AgentPlanCodec, WorkspaceBindingRejectsAliasesCapacityAndPersistence)
+{
+    using namespace gem5::ai_mesh;
+    AgentHostBindingPlan plan;
+    plan.requirements.push_back({3, agent_abi::kBindingKindREQUEST_WORKSPACE,
+        exactBindingFlags(agent_abi::kBindingKindREQUEST_WORKSPACE), 0, 4096});
+    PlanWireAddresses addresses;
+    addresses.workspaceBase = 0x800000000;
+    AgentPlanRound round;
+    const auto original = resolveHostBindings(plan, addresses, round, 0);
+    std::string reason;
+    const auto verify = [&](const auto &bindings) {
+        return verifyHostBindingRequest(bindings, plan, 0x1000, 128, 0x2000, 128,
+            0x3000, 128, 0, 0, 0, reason);
+    };
+    EXPECT_EQ(verify(original), HostBindingVerdict::Match) << reason;
+    for (const auto address : {uint64_t(0), uint64_t(0x1000), UINT64_MAX - 63}) {
+        auto changed = original;
+        changed.front().address = address;
+        EXPECT_NE(verify(changed), HostBindingVerdict::Match);
+    }
+    auto changed = original;
+    --changed.front().bytes;
+    EXPECT_NE(verify(changed), HostBindingVerdict::Match);
+    changed = original;
+    changed.front().flags |= agent_abi::kBindingFlagsPERSISTENT;
+    EXPECT_NE(verify(changed), HostBindingVerdict::Match);
 }

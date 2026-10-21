@@ -85,6 +85,12 @@
             "HOST_STAGE_DONE",
             "TASK_THINK_READY",
             "TASK_TERMINAL",
+            "BUSINESS_TERMINAL",
+            "TASK_LIFECYCLE_FINAL",
+            "SESSION_ADMITTED",
+            "RELEASE_SUBMITTING",
+            "RELEASE_WAIT_CQ",
+            "RELEASE_SUCCESS",
             "TASK_SUPPRESSED",
             "HOST_FAULT",
             "CONTROL_READY",
@@ -124,6 +130,7 @@
                 "OBJECT_PRODUCE",
                 "OBJECT_READ",
                 "CONTROL_WAITER",
+                "SESSION_RELEASE_WAITER",
                 "CQ_TAIL",
                 "SQ_HEAD"
               ]

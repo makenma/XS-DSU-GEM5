@@ -142,7 +142,8 @@
         "expected_cached_tokens": {"$ref": "#/$defs/u32"},
         "expected_cached_context_bytes": {"$ref": "#/$defs/u64Json"},
         "input_content_digest": {"$ref": "#/$defs/hex64"},
-        "output_tokens": {"$ref": "#/$defs/positiveU32"},
+        "input_payload_file": {"type": "string", "minLength": 1},
+        "output_tokens": {"$ref": "#/$defs/u32"},
         "generated_code_bytes": {"$ref": "#/$defs/positiveU64Json"},
         "output_capacity_bytes": {"$ref": "#/$defs/u64Json"},
         "output_metadata_capacity_bytes": {"$ref": "#/$defs/u32"},
@@ -206,7 +207,7 @@
         "think_time_ns": {"$ref": "#/$defs/u64Json"},
         "session_id": {"$ref": "#/$defs/u64Json"},
         "kv_handle": {"$ref": "#/$defs/u64Json"},
-        "initial_kv_generation": {"const": 1},
+        "initial_kv_generation": {"enum": [0, 1]},
         "max_repair_rounds": {"$ref": "#/$defs/u16"},
         "rounds": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/roundPlan"}}
       }

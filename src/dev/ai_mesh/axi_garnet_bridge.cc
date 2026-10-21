@@ -20,8 +20,6 @@ AxiGarnetBridge::AxiGarnetBridge(const Params &p)
       aw_queue_depth(p.aw_queue_depth),
       ar_queue_depth(p.ar_queue_depth),
       w_beats_per_cycle(p.w_beats_per_cycle),
-      max_axi_ids(p.axi_id_count),
-      axi_id_base(p.axi_id_base),
       tick_event(this)
 {
     adapter = p.adapter;
@@ -120,6 +118,8 @@ void AxiGarnetBridge::driveWrites()
         ctr.awAccepted++;
         write_ordinal_by_id[write.aw.axiId].push_back(write.ordinal);
         live_writes.emplace(write.ordinal, PendingWrite{});
+        if (live_writes.size() > peak_live_writes)
+            peak_live_writes = uint32_t(live_writes.size());
         DPRINTF(AiMesh, "bridge aw ordinal %llu addr=%#llx beats=%u id=%u\n",
                 (unsigned long long)write.ordinal,
                 (unsigned long long)write.aw.address, write.aw.beatCount,
@@ -324,6 +324,13 @@ AxiGarnetBridge::idle() const
     return pending_aw.empty() && pending_ar.empty() && live_writes.empty() &&
            live_reads.empty() && write_ordinal_by_id.empty() &&
            read_head_by_id.empty();
+}
+
+void
+AxiGarnetBridge::beginInstance()
+{
+    fatal_if(!idle(), "%s: bridge is not idle at instance begin", name());
+    read_beats_of_ordinal.clear();
 }
 
 void AxiGarnetBridge::scheduleTick()

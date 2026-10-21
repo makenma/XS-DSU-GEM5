@@ -1,7 +1,8 @@
+from mesh_ir.runtime_environment import runtime_environment
+
 import configparser
 import dataclasses
 import json
-import os
 import re
 import subprocess
 import sys
@@ -34,11 +35,7 @@ ARENA_REGIONS = (
 
 
 def run_gem5(script, outdir, arguments):
-    environment = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith("AI_MESH_")
-    }
+    environment = runtime_environment()
     return subprocess.run(
         [str(GEM5), f"--outdir={outdir}", str(script), *arguments],
         cwd=REPO,

@@ -139,7 +139,8 @@ class MoeOverlayDmaPort
 struct MoeOverlayAddressSpace
 {
     std::map<uint32_t, std::pair<uint64_t, uint64_t>> allocations;
-    std::map<uint32_t, std::pair<uint64_t, uint64_t>> expert_weights;
+    std::map<std::pair<uint32_t, uint32_t>,
+             std::pair<mesh_abi::DmaEndpoint, uint64_t>> expert_weights;
     uint16_t hbm_region = 0;
     uint16_t sram_region = 0;
     uint32_t max_burst_beats = 0;
@@ -150,6 +151,7 @@ class MoeOverlayExecutor
   public:
     struct Config
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         uint16_t core_id = 0;
         uint32_t dma_setup_cycles = 2;
         uint32_t dma_bytes_per_cycle = 32;
@@ -282,7 +284,33 @@ class MoeOverlayExecutor
 
     void setBus(MoeOverlayEventBus *event_bus) { bus = event_bus; }
 
+    MoeOverlayExecutor(const MoeOverlayExecutor &) = delete;
+    MoeOverlayExecutor &operator=(const MoeOverlayExecutor &) = delete;
     void reset();
+    template<class Archive> void serialize(Archive &archive, unsigned)
+    {
+        if constexpr (Archive::is_saving::value)
+            if (started() && !drained())
+                throw std::runtime_error("E_CHECKPOINT_BOUNDARY: overlay is active");
+        checkpoint::fields(archive, config, layer_id_value, instance_value);
+        if constexpr (Archive::is_loading::value) {
+            MoeOverlayGraph graph;
+            archive & graph;
+            reset();
+            load(layer_id_value, instance_value, graph);
+        } else {
+            archive & graph_storage;
+        }
+        checkpoint::fields(archive, finished, signal_log, completion_log, now,
+            issued_commands, completed_commands, sram_read_bytes, sram_write_bytes,
+            sram_service_cycles, sram_bank_conflicts, compute_cycles, compute_commits,
+            copy_through_commands, local_reduce_commands, committed_views,
+            sram_region_bytes, sram_region_kind_bytes, started_value, loaded,
+            failed_value, failure_status, failed_command, failure_reason);
+        if (started() && !drained())
+            throw std::runtime_error("E_CHECKPOINT_STATE: overlay is not drained");
+    }
+
 
   private:
     // Compute commands walk read service -> engine window -> output write
@@ -359,7 +387,7 @@ class MoeOverlayExecutor
     TensorSram *sram = nullptr;
     const MoeOverlayEventBus *bus = nullptr;
     const MoeOverlayAddressSpace *addresses = nullptr;
-    const MoeOverlayGraph *graph_ref = nullptr;
+    MoeOverlayGraph graph_storage;
     MoeOverlayDmaPort *dma = nullptr;
     MoeOverlayComputePort *compute = nullptr;
     std::map<std::pair<uint32_t, uint32_t>, const MoeOverlayEntry *>

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "files": [
+    "axi_behavior_trace.test.cc",
+    "axi_behavior_trace_support.cc",
+    "axi_behavior_trace_support.hh",
+    "axi_initiator_b_response_trace.test.cc",
+    "axi_initiator_behavior_trace.test.cc",
+    "axi_target_read_commit_trace.test.cc",
+    "axi_target_read_generation_trace.test.cc",
+    "axi_target_service_admission_trace.test.cc",
+    "axi_target_write_commit_trace.test.cc"
+  ]
+}

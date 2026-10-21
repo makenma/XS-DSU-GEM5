@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-#include "dev/ai_mesh/mesh_binary.hh"
+#include "dev/ai_mesh/mesh_ir_semantic_context.hh"
 
 namespace gem5
 {
@@ -19,16 +19,17 @@ struct ProfileStreamRangeView
     uint16_t stream_id = 0;
     uint32_t command_begin = 0;
     uint32_t command_count = 0;
+    std::vector<uint32_t> command_ids;
 };
 
 struct ProfileExecutionView
 {
     uint32_t profile_id = 0;
     uint32_t entrypoint_id = 0;
-    bool whole_program = false;
     std::vector<ProfileStreamRangeView> ranges;
 
     std::vector<ProfileStreamRangeView> rangesForCore(uint16_t core_id) const;
+    uint64_t commandCount(uint16_t core_id) const;
     const ProfileStreamRangeView *rangeFor(uint16_t core_id,
                                            uint16_t stream_id) const;
 };
@@ -36,24 +37,27 @@ struct ProfileExecutionView
 class ExecutionViewSet
 {
   public:
-    static ExecutionViewSet fromVerified(const DecodedProgram &program);
-
-    bool wholeProgram() const { return whole_program_value; }
-    const ProfileExecutionView &wholeProgramView() const
+    bool wholeProgram() const { return by_instance.size() == 1; }
+    const ProfileExecutionView *wholeProgramView() const
     {
-        return whole_view;
+        return wholeProgram() ? &by_instance.begin()->second : nullptr;
     }
     const ProfileExecutionView *forInstance(uint32_t entrypoint_id,
                                             uint32_t profile_id) const;
 
   private:
-    bool whole_program_value = true;
-    ProfileExecutionView whole_view;
     std::map<std::pair<uint32_t, uint32_t>, ProfileExecutionView>
         by_instance;
+    friend bool buildExecutionViews(
+        const DecodedProgram &, const ProgramSemanticContext &,
+        ExecutionViewSet &, MeshLoadError &);
 };
 
-} // namespace ai_mesh
-} // namespace gem5
+bool buildExecutionViews(
+    const DecodedProgram &, const ProgramSemanticContext &,
+    ExecutionViewSet &, MeshLoadError &);
+
+}
+}
 
 #endif

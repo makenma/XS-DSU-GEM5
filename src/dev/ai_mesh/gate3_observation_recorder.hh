@@ -2,12 +2,16 @@
 #define DEV_AI_MESH_GATE3_OBSERVATION_RECORDER_HH
 
 #include <cstdint>
+#include "base/checkpoint_fields.hh"
 #include <map>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include "dev/ai_mesh/agent_runtime_types.hh"
+#include "dev/ai_mesh/serving_phase_fact.hh"
+#include "dev/ai_mesh/mesh_error_candidate.hh"
+#include "dev/ai_mesh/publish_segment_ledger.hh"
 #include "dev/ai_mesh/gate3_fatal_reducer.hh"
 #include "sim/eventq.hh"
 #include "sim/sim_object.hh"
@@ -22,6 +26,7 @@ namespace ai_mesh
 
 struct Gate3Event
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     Tick tick = 0;
     uint8_t phase = 0;
     std::string kind;
@@ -73,6 +78,7 @@ class Gate3PhaseParticipant
     virtual ~Gate3PhaseParticipant() = default;
     virtual void onGate3FatalCut(Tick tick) = 0;
     virtual void onGate3NormalCommit(Tick tick) = 0;
+    virtual void onGate3DrainComplete() {}
 };
 
 class Gate3ObservationRecorder : public SimObject
@@ -81,8 +87,14 @@ class Gate3ObservationRecorder : public SimObject
     using Params = Gate3ObservationRecorderParams;
 
     explicit Gate3ObservationRecorder(const Params &p);
+    void serialize(CheckpointOut &cp) const override;
+    void unserialize(CheckpointIn &cp) override;
+    void drainResume() override;
+    template<class Archive> void serialize(Archive &archive, unsigned);
+
 
     void registerPhaseParticipant(Gate3PhaseParticipant *participant);
+    void notifyDrainComplete();
     void requestNormalCommit();
 
     void record(Gate3Event event);
@@ -104,6 +116,7 @@ class Gate3ObservationRecorder : public SimObject
     bool fatalRecorded() const { return _fatalRecorded; }
     struct FatalSqIntake
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         uint64_t intakeId = 0;
         uint64_t expectedSqSeq = 0;
         uint64_t readTag = 0;
@@ -114,6 +127,7 @@ class Gate3ObservationRecorder : public SimObject
 
     struct FatalCqObligation
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         uint64_t id = 0;
         uint64_t sqSequence = 0;
         uint64_t requestId = 0;
@@ -124,6 +138,7 @@ class Gate3ObservationRecorder : public SimObject
 
     struct FatalControlRecord
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         uint64_t issueOrdinal = 0;
         uint64_t sequence = 0;
         uint32_t axiId = 0;
@@ -136,6 +151,7 @@ class Gate3ObservationRecorder : public SimObject
 
     struct FatalPublicationRecord
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         uint64_t publicationId = 0;
         uint64_t doorbellIssueOrdinal = 0;
         uint64_t baseSequence = 0;
@@ -149,21 +165,24 @@ class Gate3ObservationRecorder : public SimObject
         std::string responseTokenWire;
     };
 
-    struct ServingPhaseRow
+    struct ServingTerminalProjection
     {
-        uint32_t phase = 0;
-        uint32_t instanceProfileId = 0;
-        uint32_t meshProfileId = 0;
-        uint32_t kvTokensBefore = 0;
-        uint32_t appendTokens = 0;
-        uint32_t acceptedDescriptors = 0;
-        uint32_t terminalDescriptors = 0;
-        uint64_t coreDrainTick = 0;
-        uint64_t appendTerminalTick = 0;
-        uint64_t commitTick = 0;
+        uint32_t tokens = 0;
+        uint32_t instances = 0;
+        uint64_t bytes = 0;
     };
-
-    void recordServingPhase(ServingPhaseRow row);
+    ServingTerminalProjection servingProjection(uint64_t request) const;
+    void recordPublishSegment(PublishSegmentFact fact) { _publishSegments.push_back(fact); }
+    void recordServingPhase(ServingPhaseFact row);
+    void recordServingFailure(uint64_t request, const ErrorCandidate &failure);
+    void recordServingCancellation(uint64_t request, RequestTerminalPosition position);
+    RequestTerminalPosition servingCancellation(uint64_t request) const;
+    std::optional<ErrorCandidate> servingFailure(uint64_t request) const
+    {
+        const auto found = _servingFailures.find(request);
+        return found == _servingFailures.end() ? std::nullopt :
+            std::optional<ErrorCandidate>{found->second};
+    }
     void recordFatalSqIntake(FatalSqIntake intake);
     void updateFatalSqIntakeTerminal(
         SqIntakeId intakeId, const std::string &terminalEvidence);
@@ -199,8 +218,11 @@ class Gate3ObservationRecorder : public SimObject
     void setMetric(const std::string &name, uint64_t value);
     uint64_t metric(const std::string &name) const;
     void write(const Gate3FinalState &final) const;
+    void setKvPersistentManifest(const std::string &json) { kvPersistentManifest = json; }
 
   private:
+    std::string checkpointState;
+    std::string kvPersistentManifest;
     struct PhaseBarrierEvent : public Event
     {
         Gate3ObservationRecorder *owner;
@@ -229,7 +251,10 @@ class Gate3ObservationRecorder : public SimObject
     std::map<uint64_t, FatalControlRecord> _msiRecords;
     std::map<uint64_t, uint64_t> _msiTransactionOrdinals;
     std::map<uint64_t, FatalPublicationRecord> _fatalPublications;
-    std::vector<ServingPhaseRow> _servingPhases;
+    std::vector<ServingPhaseFact> _servingPhases;
+    std::vector<PublishSegmentFact> _publishSegments;
+    std::map<uint64_t, ErrorCandidate> _servingFailures;
+    std::map<uint64_t, RequestTerminalPosition> _servingCancellations;
     Gate3FatalReducer fatalReducer;
 };
 

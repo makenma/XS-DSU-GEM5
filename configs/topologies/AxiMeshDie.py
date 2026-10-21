@@ -23,7 +23,7 @@ class AxiMeshDie(SimpleTopology):
 
         routers = [
             Router(router_id=i, latency=options.router_latency,
-                   dual_lane=dual_lane)
+                   **({"dual_lane": dual_lane} if options.network == "garnet" else {}))
             for i in range(num_routers)
         ]
         network.routers = routers

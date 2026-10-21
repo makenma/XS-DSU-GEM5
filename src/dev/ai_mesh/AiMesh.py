@@ -1,6 +1,6 @@
 from m5.objects.ClockedObject import ClockedObject
 from m5.params import *
-from m5.SimObject import SimObject
+from m5.SimObject import PyBindMethod, SimObject
 
 
 class DmaEngineBase(ClockedObject):
@@ -10,7 +10,34 @@ class DmaEngineBase(ClockedObject):
     cxx_class = "gem5::ai_mesh::DmaEngineBase"
 
 
+class AxiGarnetBridge(ClockedObject):
+    type = "AxiGarnetBridge"
+    cxx_header = "dev/ai_mesh/axi_garnet_bridge.hh"
+    cxx_class = "gem5::ai_mesh::AxiGarnetBridge"
+
+    adapter = Param.AxiInitiatorAdapter(
+        NULL, "Initiator adapter injecting into the NPU Garnet"
+    )
+    data_bus_bytes = Param.UInt32(32, "AXI data bus width in bytes")
+    aw_queue_depth = Param.UInt32(8, "Finite pending write-burst queue depth")
+    ar_queue_depth = Param.UInt32(8, "Finite pending read-burst queue depth")
+    w_beats_per_cycle = Param.UInt32(
+        0, "Local W acceptance per cycle; zero retains legacy burst admission"
+    )
+
+
 class MeshProgramLoader(SimObject):
+    memory_file_image = Param.String("", "Binary startup memory image manifest")
+    weight_runtime_image = Param.String("", "Verified weight registry projection")
+    weight_image_digest = Param.String("", "Installed model weight image identity")
+    cache_state_replay = Param.String("", "Initial quiescent cache artifact")
+    memory_endpoints = VectorParam.NpuMemoryEndpoint([], "Physical memory owners")
+    strict_replay_serial_batches = Param.Bool(False, "Prove cold union capacity before execution")
+    cxx_exports = [PyBindMethod("setServingMoeProvider")]
+    moe_master_seed = Param.UInt64(0, "Runtime MoE keyed RNG seed")
+    batch_weight_binding_entries_per_context = Param.UInt32(0, "Batch weight table capacity")
+    instance_member_binding_entries_per_context = Param.UInt32(0, "Batch member table capacity")
+    batch_interval_entries_per_context = Param.UInt32(0, "Batch interval table capacity")
     type = "MeshProgramLoader"
     cxx_header = "dev/ai_mesh/mesh_program_loader.hh"
     cxx_class = "gem5::ai_mesh::MeshProgramLoader"
@@ -21,6 +48,8 @@ class MeshProgramLoader(SimObject):
     weight_policy = Param.String(
         "streamed", "MoE weight policy: streamed or cached")
     cores = VectorParam.MeshDummyCore([], "Participating dummy cores")
+    entrypoint_id = Param.UInt32(0, "Selected entrypoint id; 0 selects the unique variant")
+    profile_id = Param.UInt32(0, "Selected profile id; 0 selects the unique variant")
     transport = Param.MockAxiTransport(
         NULL, "Mock AXI transport (mock runtime only)"
     )
@@ -30,6 +59,7 @@ class MeshProgramLoader(SimObject):
     arch_digest = Param.String("", "Canonical SHA-256 of the runtime architecture manifest")
     effective_arch_digest = Param.String("", "SHA-256 of the effective architecture (overrides included)")
     core_ids = VectorParam.UInt32([], "Architecture core id list")
+    command_rom_entries = Param.UInt64("Per-core command ROM capacity")
     sram_bytes = Param.UInt64(0, "Per-core SRAM capacity in bytes")
     sram_banks = Param.UInt32(0, "SRAM bank count")
     sram_alignment = Param.UInt32(0, "SRAM base alignment in bytes")
@@ -49,15 +79,36 @@ class MeshProgramLoader(SimObject):
         0, "WEIGHT_CACHE equal slot size in bytes")
     axi_data_bytes = Param.UInt32(0, "AXI data bus width in bytes")
     axi_max_burst_beats = Param.UInt32(0, "Maximum AXI burst beats")
+    axi_address_bits = Param.UInt32(64, "AXI address width in bits")
     region_ids = VectorParam.UInt32([], "Memory region index per region")
     region_bases = VectorParam.UInt64([], "Physical base address per region")
     region_bytes = VectorParam.UInt64([], "Size in bytes per region")
     region_tile_strides = VectorParam.UInt64([], "Per-core tile stride for SRAM apertures")
     region_tile_bytes = VectorParam.UInt64([], "Per-core tile size for SRAM apertures")
     region_kinds = VectorParam.UInt32([], "Region kind: 0=HBM, 1=HOST_SHARED, 2=SRAM_APERTURE")
+    binding_slot_ids = VectorParam.UInt32([], "Dispatch binding slot id per binding")
+    binding_region_ids = VectorParam.UInt32([], "Dispatch binding region id per binding")
+    binding_owner_cores = VectorParam.UInt32([], "Dispatch binding owner core per binding")
+    binding_offsets = VectorParam.UInt64([], "Dispatch binding allocation offset per binding")
+    binding_sizes = VectorParam.UInt64([], "Dispatch binding allocation size per binding")
+    binding_alignments = VectorParam.UInt32([], "Dispatch binding allocation alignment per binding")
+    binding_accesses = VectorParam.UInt32([], "Dispatch binding access kind per binding")
+    fabric_target_names = VectorParam.String([], "Fabric target name per address range")
+    fabric_range_region_ids = VectorParam.UInt32([], "Fabric address-range region id per range")
+    fabric_range_owner_cores = VectorParam.UInt32([], "Fabric address-range owner core per range")
+    fabric_range_offsets = VectorParam.UInt64([], "Fabric address-range offset per range")
+    fabric_range_sizes = VectorParam.UInt64([], "Fabric address-range size per range")
+    fabric_range_writable = VectorParam.UInt32([], "Fabric address-range writable flag per range")
+    network = Param.RubyNetwork(
+        NULL, "NPU Garnet network observed across the loader install window"
+    )
+    bridges = VectorParam.AxiGarnetBridge(
+        [], "Per-core AXI bridges observed across the loader install window"
+    )
 
 
 class MockAxiTransport(ClockedObject):
+    cxx_exports = [PyBindMethod("initializeMemoryBytes"), PyBindMethod("memoryBytes")]
     type = "MockAxiTransport"
     cxx_header = "dev/ai_mesh/mock_axi_transport.hh"
     cxx_class = "gem5::ai_mesh::MockAxiTransport"
@@ -66,6 +117,17 @@ class MockAxiTransport(ClockedObject):
     burst_base_latency = Param.Cycles(2, "Fixed latency per accepted burst")
     sram_region_base = Param.UInt64(0, "Physical base of the SRAM aperture region")
     sram_tile_stride = Param.UInt64(0, "Per-core SRAM tile stride")
+    error_descriptors = VectorParam.UInt32(
+        [], "Descriptor ids that complete with an injected AXI error"
+    )
+    lost_descriptors = VectorParam.UInt32(
+        [], "Descriptor ids whose completion is dropped (watchdog injection)"
+    )
+    fault_occurrence = Param.UInt32(
+        0,
+        "Which completion of an injected descriptor faults; 0 faults every "
+        "completion, so a REPEAT window can be faulted on a later replay pass",
+    )
 
 
 class TensorDmaEngine(DmaEngineBase):
@@ -78,24 +140,6 @@ class TensorDmaEngine(DmaEngineBase):
     descriptor_queue_depth = Param.UInt32(16, "Finite descriptor queue depth")
     max_outstanding = Param.UInt32(16, "Outstanding transfer limit")
     transport = Param.MockAxiTransport("Functional mock AXI transport")
-
-
-class AxiGarnetBridge(ClockedObject):
-    type = "AxiGarnetBridge"
-    cxx_header = "dev/ai_mesh/axi_garnet_bridge.hh"
-    cxx_class = "gem5::ai_mesh::AxiGarnetBridge"
-
-    adapter = Param.AxiInitiatorAdapter(
-        NULL, "Initiator adapter injecting into the NPU Garnet"
-    )
-    data_bus_bytes = Param.UInt32(32, "AXI data bus width in bytes")
-    aw_queue_depth = Param.UInt32(8, "Finite pending write-burst queue depth")
-    ar_queue_depth = Param.UInt32(8, "Finite pending read-burst queue depth")
-    axi_id_count = Param.UInt32(8, "Round-robin AXI ID pool size")
-    axi_id_base = Param.UInt16(0, "First AXI ID of the pool")
-    w_beats_per_cycle = Param.UInt32(
-        0, "Local W acceptance per cycle; zero retains legacy burst admission"
-    )
 
 
 class AxiTensorDmaEngine(DmaEngineBase):
@@ -112,6 +156,9 @@ class AxiTensorDmaEngine(DmaEngineBase):
         "Per-direction segment/read-return queue capacity (burst issued to "
         "SRAM commit); not the AXI outstanding window")
     axi_id_count = Param.UInt32(8, "Round-robin AXI ID pool size")
+    source_bytes_limit = Param.UInt64(
+        0, "Dump the raw local source rows of write descriptors up to this "
+           "size; 0 disables the dump")
 
 
 class PeerSramAperture(ClockedObject):
@@ -123,6 +170,16 @@ class PeerSramAperture(ClockedObject):
     core_id = Param.UInt16(0, "Owning core id")
     sram_base = Param.UInt64(0, "Absolute base address of this SRAM tile")
     sram_bytes = Param.UInt64(0, "SRAM tile capacity in bytes")
+    sentinel_json = Param.String(
+        "", "Sentinel spans sampled before cycle 0 and re-read at drain"
+    )
+    replay_commit_uid = Param.UInt64(
+        0xFFFFFFFFFFFFFFFF,
+        "Test-only: re-deliver this write commit once a later expectation arms",
+    )
+    replay_commit_delay = Param.Tick(
+        0, "Test-only: delay of the re-delivered write commit"
+    )
 
 
 class NpuMemoryEndpoint(ClockedObject):
@@ -133,6 +190,12 @@ class NpuMemoryEndpoint(ClockedObject):
     adapter = Param.AxiTargetAdapter("Memory target adapter on the NPU Garnet")
     seed_json = Param.String("", "Pre-simulation seed ranges file")
     verify_json = Param.String("", "Drain-time verify ranges file")
+    verify_bytes_limit = Param.UInt64(
+        0, "Dump the raw committed bytes of verify rows up to this size; 0 disables"
+    )
+    sentinel_json = Param.String(
+        "", "Sentinel spans sampled before cycle 0 and re-read at drain"
+    )
 
 
 class Gate3ObservationRecorder(SimObject):
@@ -148,6 +211,7 @@ class AgentAxiDriver(ClockedObject):
     cxx_header = "dev/ai_mesh/agent_axi_driver.hh"
     cxx_class = "gem5::ai_mesh::AgentAxiDriver"
 
+    network = Param.RubyNetwork(NULL, "Fabric included in the terminal drain barrier")
     master = Param.AxiInitiatorAdapter("Driver AXI initiator")
     target = Param.AxiTargetAdapter("Driver host-memory target")
     recorder = Param.Gate3ObservationRecorder("Gate3 observation recorder")
@@ -174,6 +238,8 @@ class AgentAxiDriver(ClockedObject):
     request_count = Param.UInt32(1, "Logical requests to execute")
     local_visibility_delay = Param.Cycles(0, "Local visibility delay")
     request_id_capacity = Param.UInt32(8, "Finite request ID capacity")
+    submission_wire_patches = VectorParam.UInt64(
+        [], "Fault injection tuples: SQ sequence, record kind (SQ 0, parameter 1), byte offset, byte value")
     drain_cycles = Param.Cycles(8, "Drain interval before exit")
     doorbell_axi_id = Param.UInt32(16, "Fixed SQ doorbell AXI ID")
     ack_axi_id = Param.UInt32(17, "Fixed CQ ACK AXI ID")
@@ -190,6 +256,7 @@ class AgentAxiDriver(ClockedObject):
     cancel_join_entries = Param.UInt32(4,
                      "bounded concurrent cancel join records")
     host_log_parse_slots = Param.UInt32(4, "Log-parse service slots")
+    host_release_waiter_entries = Param.UInt32(64, "Host RELEASE waiter capacity")
     host_service_queue_depth = Param.UInt32(
         64, "Per-kind host service queue depth"
     )
@@ -248,6 +315,11 @@ class AgentAxiDriver(ClockedObject):
 
 
 class NpuServingFrontend(ClockedObject):
+    cxx_exports = [PyBindMethod("requestProgramBoundary"),
+                   PyBindMethod("programBoundaryReady"),
+                   PyBindMethod("resumeProgramBoundary"),
+                   PyBindMethod("switchProgramTiming")]
+    seen_request_id_entries = Param.UInt32(64, "Run lifetime SQ identity table entries")
     type = "NpuServingFrontend"
     cxx_header = "dev/ai_mesh/npu_serving_frontend.hh"
     cxx_class = "gem5::ai_mesh::NpuServingFrontend"
@@ -288,6 +360,8 @@ class NpuServingFrontend(ClockedObject):
     serving_dispatcher = Param.MeshDispatcher(
         NULL, "Dispatcher driven by the serving mesh executor"
     )
+    batch_replay_artifact = Param.String("", "Frozen batch replay artifact")
+    strict_replay_serial_batches = Param.Bool(False, "Serialize replay batch terminal joins")
     serving_weight_image_digest = Param.String(
         "", "Verified model weight image digest for the serving contract"
     )
@@ -325,6 +399,24 @@ class NpuServingFrontend(ClockedObject):
     control_cq_first = Param.Bool(
         False, "Publish the cancel command CQ before the target CQ"
     )
+    scheduler_max_active_sequences = Param.UInt64(
+        4, "Serving scheduler concurrent sequence cap"
+    )
+    scheduler_max_batch_tokens = Param.UInt64(
+        64, "Serving scheduler per-batch token cap"
+    )
+    scheduler_max_prefill_tokens_per_batch = Param.UInt64(
+        64, "Serving scheduler per-batch prefill token cap"
+    )
+    scheduler_max_decode_sequences_per_batch = Param.UInt64(
+        4, "Serving scheduler per-batch decode sequence cap"
+    )
+    scheduler_batch_wait_cycles = Param.UInt64(
+        0, "Serving scheduler batch wait window in cycles"
+    )
+    scheduler_prefill_starvation_cycles = Param.UInt64(
+        0, "Serving scheduler prefill starvation threshold in cycles"
+    )
 
 
 class MeshDummyCore(ClockedObject):
@@ -359,10 +451,14 @@ class MeshDummyCore(ClockedObject):
     sram_write_ports = Param.UInt32(1, "Write ports per bank")
     sram_read_bytes_per_cycle = Param.UInt32(32, "Read bytes per cycle per bank")
     sram_write_bytes_per_cycle = Param.UInt32(32, "Write bytes per cycle per bank")
+    compute_bytes_limit = Param.UInt64(
+        0, "Dump the raw result rows of compute outputs up to this size; "
+           "0 disables the dump")
     dma = Param.DmaEngineBase("Owned DMA engine")
 
 
 class MeshDispatcher(ClockedObject):
+    batch_failure_record_entries = Param.UInt32(1, "Frozen batch failure record capacity")
     type = "MeshDispatcher"
     cxx_header = "dev/ai_mesh/mesh_dispatcher.hh"
     cxx_class = "gem5::ai_mesh::MeshDispatcher"
@@ -375,7 +471,6 @@ class MeshDispatcher(ClockedObject):
     apertures = VectorParam.PeerSramAperture(
         [], "Per-core SRAM apertures (real Garnet runtime)"
     )
-    endpoint = Param.NpuMemoryEndpoint(NULL, "HBM memory endpoint")
     output_span_base = Param.UInt64(0, "Published output span base")
     output_span_bytes = Param.UInt64(0, "Published output span bytes")
     network = Param.RubyNetwork(NULL, "NPU Garnet network for quiescence")
@@ -385,3 +480,17 @@ class MeshDispatcher(ClockedObject):
         True, "Dispatch the first instance at startup"
     )
     watchdog_ticks = Param.UInt64(0, "Progress watchdog bound, 0 disables")
+    receiver_fault = Param.String(
+        "", "Test-only receiver notification fault injection"
+    )
+    residency_fault = Param.String(
+        "",
+        "Test-only residency installation fault: skip_pre_resident withholds "
+        "the compiler-declared initial residency",
+    )
+    drain_fault = Param.String(
+        "", "Test-only drain-phase fault: drop_credit"
+    )
+    destination_bytes_limit = Param.UInt64(
+        0, "Dump this many raw bytes of every admitted destination segment"
+    )

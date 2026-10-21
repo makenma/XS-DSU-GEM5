@@ -11,7 +11,9 @@ import struct
 from dataclasses import dataclass
 
 from mesh_ir.generated import abi as A
+from mesh_ir.generated.agent_abi import DETAIL_CODE
 from mesh_ir.model import MeshIrError
+from mesh_ir.agent_workload import u64_value
 
 WEIGHT_CACHE_PARTITION_ID = 1
 FILL_TRAFFIC_DOMAIN = b"AI_MESH_WEIGHT_FILL_V1\0"
@@ -153,7 +155,7 @@ class ErrorSourceKey:
             problems.append("error class outside the enum")
         if self.domain not in enum_values(A.MESH_OBJECT_DOMAIN):
             problems.append("domain outside the enum")
-        if self.object_kind not in enum_values(A.MESH_OBJECT_KIND):
+        if self.object_kind not in enum_values(A.ERROR_SOURCE_OBJECT_KIND):
             problems.append("object kind outside the enum")
         return tuple(problems)
 
@@ -189,11 +191,11 @@ class ErrorSourceKey:
 
 def weight_fill_source(weight_fill_key: WeightFillKey) -> ErrorSourceKey:
     return ErrorSourceKey(
-        error_class=A.MOE_ERROR_CLASS.WEIGHT_FILL, core_id_or_ffff=0xFFFF,
+        error_class=A.MOE_ERROR_CLASS.WEIGHT_FILL, core_id_or_ffff=weight_fill_key.base.core_id,
         domain=A.MESH_OBJECT_DOMAIN.WEIGHT_FILL,
-        object_kind=A.MESH_OBJECT_KIND.WEIGHT_FILL_OBLIGATION,
+        object_kind=A.ERROR_SOURCE_OBJECT_KIND.WEIGHT_FILL_OBLIGATION,
         region_group_id=0, region_id=0, ordinal=0,
-        generation=weight_fill_key.fill_incarnation,
+        generation=0,
         aux_key=weight_fill_key.wire_bytes())
 
 
@@ -780,14 +782,14 @@ class CacheReservationCoordinator:
 
     def snapshot(self):
         for slot in self.slots:
-            if slot.state not in REPLAY_VALID_STATES:
+            if slot.state not in REPLAY_VALID_STATES or slot.pins:
                 raise MeshIrError("E_MOE_CACHE",
                                   "only a quiescent cache can be serialized",
                                   slot_id=slot.slot_id)
-        if any(obligation.subscribers for obligation in
-               self.obligations.values()):
-            raise MeshIrError("E_MOE_CACHE",
-                              "active subscribers cannot be serialized")
+        if (self.obligations or any(not token.released for token in self.tokens.values()) or
+                (self.mshr_free, self.eviction_free, self.obligation_free, self.subscriber_free) !=
+                (self.mshr_slots, self.eviction_slots, self.obligation_slots, self.subscriber_slots)):
+            raise MeshIrError("E_MOE_CACHE", "cache has live owners or resources")
         valid = [slot for slot in self.slots if slot.state == SLOT_VALID]
         ordered = sorted(valid, key=lambda slot: (
             slot.last_use_epoch if slot.last_use_epoch is not None else 0,
@@ -809,10 +811,11 @@ class CacheReservationCoordinator:
         tombstones = [
             {"weight_tag_index": tombstone.weight_tag_index,
              "first_error": {
-                 "tick": tombstone.first_error_tick,
+                 "tick": (tombstone.first_error_tick if tombstone.first_error_tick <= (1 << 53) - 1
+                          else f"0x{tombstone.first_error_tick:016x}"),
                  "source_key_wire":
                      tombstone.first_error_source.wire_bytes().hex(),
-                 "error_code": tombstone.first_error_code}}
+                 "error_code": DETAIL_CODE[tombstone.first_error_code]}}
             for tombstone in sorted(self.failure_table.values(),
                                     key=lambda entry:
                                     entry.weight_tag_index)]
@@ -1103,49 +1106,66 @@ def apply_cache_state_replay(coord, document) -> None:
     from mesh_ir.acceptance import validate_schema
 
     validate_schema("cache_state_replay.schema.json", document)
+    coord.snapshot()
+    if len(document["cores"]) != 1:
+        raise MeshIrError("E_MOE_CACHE", "single-core owner requires exactly one core")
     core = document["cores"][0]
-    if core["core_id"] != coord.core_id:
-        raise MeshIrError("E_MOE_CACHE", "replay artifact is for another core",
-                          core_id=core["core_id"])
-    if core["cache_generation"] != coord.cache_generation:
-        raise MeshIrError("E_MOE_CACHE",
-                          "replay artifact is for another cache generation")
-    ranks = []
-    for slot in core["slots"]:
-        target = coord.slots[slot["slot_id"]]
-        if slot["state"] == A.CACHE_SLOT_STATE.INVALID:
-            if slot["weight_tag_index"] is not None or slot["valid_bytes"]:
-                raise MeshIrError("E_MOE_CACHE",
-                                  "an invalid replay slot carries no tag")
-            continue
-        if slot["weight_tag_index"] not in coord.cacheable_tags:
-            raise MeshIrError("E_MOE_CACHE",
-                              "replay artifact holds an uncacheable tag")
-        target.state = SLOT_VALID
-        target.weight_tag_index = slot["weight_tag_index"]
-        target.valid_bytes = slot["valid_bytes"]
-        target.last_use_epoch = slot["lru_rank"]
-        ranks.append(slot["lru_rank"])
+    if core["core_id"] != coord.core_id or core["cache_generation"] != coord.cache_generation:
+        raise MeshIrError("E_MOE_CACHE", "cache replay owner identity differs")
+    if [slot["slot_id"] for slot in core["slots"]] != list(range(len(coord.slots))):
+        raise MeshIrError("E_MOE_CACHE", "replay slots must exactly cover the owner in order")
+    slots = []
+    tags, ranks = set(), []
+    for row in core["slots"]:
+        target = CacheSlot(slot_id=row["slot_id"])
+        if row["state"] == A.CACHE_SLOT_STATE.INVALID:
+            if row["weight_tag_index"] is not None or row["valid_bytes"] or row["lru_rank"] is not None:
+                raise MeshIrError("E_MOE_CACHE", "invalid replay slot carries metadata")
+        else:
+            tag = row["weight_tag_index"]
+            if tag not in coord.cacheable_tags or tag in tags or not 0 < row["valid_bytes"] <= coord.slot_bytes:
+                raise MeshIrError("E_MOE_CACHE", "replay has invalid tag or bytes")
+            if row["lru_rank"] is None:
+                raise MeshIrError("E_MOE_CACHE", "valid replay slot has no LRU rank")
+            tags.add(tag)
+            ranks.append(row["lru_rank"])
+            target.state = SLOT_VALID
+            target.weight_tag_index = tag
+            target.valid_bytes = row["valid_bytes"]
+            target.last_use_epoch = row["lru_rank"]
+        slots.append(target)
     if sorted(ranks) != list(range(len(ranks))):
         raise MeshIrError("E_MOE_CACHE", "replay LRU ranks must be dense")
-    valid_tags = [slot.weight_tag_index for slot in coord.slots
-                  if slot.state == SLOT_VALID]
-    if len(set(valid_tags)) != len(valid_tags):
-        raise MeshIrError("E_MOE_CACHE", "replay holds a duplicate VALID tag")
-    for tombstone in core["failure_tombstones"]:
-        source = ErrorSourceKey.from_wire_bytes(bytes.fromhex(
-            tombstone["first_error"]["source_key_wire"]))
-        coord.failure_table[coord.base_key(tombstone["weight_tag_index"])] = \
-            FailureTombstone(
-                weight_tag_index=tombstone["weight_tag_index"],
-                first_error_tick=tombstone["first_error"]["tick"],
-                first_error_source=source,
-                first_error_code=tombstone["first_error"]["error_code"])
-        if tombstone["weight_tag_index"] in valid_tags:
-            raise MeshIrError("E_MOE_CACHE",
-                              "a replay tag cannot be VALID and tombstoned")
+    failures = {}
+    details = {DETAIL_CODE[name]: name for name in FAILURE_DETAIL_SET}
+    previous = -1
+    for row in core["failure_tombstones"]:
+        tag, error = row["weight_tag_index"], row["first_error"]
+        if tag <= previous or tag not in coord.cacheable_tags or tag in tags or error["error_code"] not in details:
+            raise MeshIrError("E_MOE_CACHE", "replay failure identity is invalid")
+        previous = tag
+        wire = bytes.fromhex(error["source_key_wire"])
+        source = ErrorSourceKey.from_wire_bytes(wire)
+        fill_core, partition, fill_tag, generation, incarnation = struct.unpack("<HHIII", source.aux_key)
+        if (wire != source.wire_bytes() or source.domain != A.MESH_OBJECT_DOMAIN.WEIGHT_FILL or
+                source.object_kind != A.ERROR_SOURCE_OBJECT_KIND.WEIGHT_FILL_OBLIGATION or
+                source.error_class not in (A.MOE_ERROR_CLASS.WEIGHT_FILL, A.MOE_ERROR_CLASS.DMA_AXI, A.MOE_ERROR_CLASS.SRAM) or
+                source.core_id_or_ffff != coord.core_id or source.region_group_id or source.region_id or
+                source.ordinal or source.generation or
+                (fill_core, partition, fill_tag, generation) != (coord.core_id, WEIGHT_CACHE_PARTITION_ID, tag, coord.cache_generation) or
+                not 0 < incarnation < core["next_fill_incarnation"]):
+            raise MeshIrError("E_MOE_CACHE", "replay failure provenance is invalid")
+        tick = u64_value(error["tick"])
+        if isinstance(error["tick"], str) and tick <= (1 << 53) - 1:
+            raise MeshIrError("E_MOE_CACHE", "cache failure tick is not canonical")
+        failures[coord.base_key(tag)] = FailureTombstone(tag, tick, source, details[error["error_code"]])
+    coord.slots = slots
+    coord.failure_table = failures
     coord.next_use_epoch = len(ranks)
     coord.next_fill_incarnation = core["next_fill_incarnation"]
+    coord.tokens.clear()
+    coord.cancelled_members.clear()
+    coord.batch_faults.clear()
 
 
 def cache_fill_traffic_document(coord, digests: dict, fills) -> dict:

@@ -60,7 +60,7 @@ def config(chunk_bytes=4096):
     program, _, _, _ = program_parts()
     return MaterializeConfig(
         workload_plan_digest=PLAN_DIGEST,
-        program_semantic_digest=bytes.fromhex(program.semantic_sha256()),
+        program_semantic_digest=bytes.fromhex(program.semantic_sha256),
         p2p_chunk_bytes=chunk_bytes)
 
 
@@ -123,7 +123,7 @@ def build_cached(tokens=None, members=None, placement=None,
         scratch_for(regions),
         MaterializeConfig(
             workload_plan_digest=PLAN_DIGEST,
-            program_semantic_digest=bytes.fromhex(program.semantic_sha256()),
+            program_semantic_digest=bytes.fromhex(program.semantic_sha256),
             p2p_chunk_bytes=chunk_bytes, weight_residency="cached"),
         bounds_for(regions), program.moe_expert_specs, tags)
     return program, layer, plan, capacity, regions, result
@@ -700,16 +700,17 @@ def test_gate5_unbound_member_output_rejects_a_dropped_fill():
 def test_gate5_member_slice_binds_only_a_fitting_output_shard():
     program = decode_program(MOE_DUAL_IMAGE.read_bytes())
     layer = program.moe_layer_specs[0]
-    assert member_slice(program, layer, "m1", 11, 0).output_allocation == 3
-    assert member_slice(program, layer, "m2", 12, 1).output_allocation == 7
-    shrunk = replace(program, shards=[
+    first = member_slice(program, layer, "m1", 11, 0)
+    second = member_slice(program, layer, "m2", 12, 1)
+    assert first.output_allocation != second.output_allocation
+    shrunk = replace(program, shards=tuple(
         replace(shard, span_bytes=layer.token_bytes)
-        if shard.allocation_id == 7 else shard
-        for shard in program.shards])
-    assert member_slice(shrunk, layer, "m2", 12, 1).output_allocation == 0
-    with pytest.raises(MeshIrError) as err:
+        if shard.allocation_id == second.output_allocation else shard
+        for shard in program.shards))
+    with pytest.raises(MeshIrError, match="do not cover one token"):
+        member_slice(shrunk, layer, "m2", 12, 1)
+    with pytest.raises(MeshIrError, match="needs one layer gate"):
         member_slice(program, layer, "m3", 13, 2)
-    assert "owns no token shard" in err.value.message
 
 
 def test_gate5_member_view_must_stay_on_its_own_core():
@@ -816,7 +817,7 @@ def test_gate5_fill_modes_share_the_service_geometry():
             MaterializeConfig(
                 workload_plan_digest=PLAN_DIGEST,
                 program_semantic_digest=bytes.fromhex(
-                    program.semantic_sha256()),
+                    program.semantic_sha256),
                 p2p_chunk_bytes=4096, fill_mode=mode),
             bounds_for(regions), program.moe_expert_specs, (), (),
             program.allocations)
@@ -862,3 +863,31 @@ def test_gate5_route_fill_content_matches_its_valid_bytes():
         assert len(content) == record.valid_bytes
         assert content != bytes(record.valid_bytes)
         assert len(content) % A.MOE_RUNTIME_ROUTE_ENTRY_BYTES == 0
+
+
+def test_remote_gathers_read_exact_received_rows():
+    layer, _, _, _, result = build()
+    overlay = result.overlay
+    views = {(row.key.region_id, A.MESH_OBJECT_KIND.VIEW, row.key.ordinal): row
+             for row in overlay.of_kind(A.MESH_OBJECT_KIND.VIEW)}
+    allocations = {(row.key.region_id, row.key.ordinal): row
+                   for row in overlay.of_kind(A.MESH_OBJECT_KIND.ALLOCATION)}
+    remote = []
+    for command in overlay.of_kind(A.MESH_OBJECT_KIND.COMMAND):
+        operands = [views[ref] for ref in command.view_refs]
+        if command.role in (A.MOE_COMMAND_ROLE.LOCAL_REDUCE, A.MOE_COMMAND_ROLE.COPY_THROUGH):
+            accepted = next(row['fan_in'] for row in result.plane.fan_in
+                            if row['uid'].encode() == command.token_ref)
+            assert sum(row.view_kind in (A.MOE_VIEW_KIND.EXPERT_OUTPUT,
+                                         A.MOE_VIEW_KIND.COMBINE_BUFFER)
+                       for row in operands) == accepted
+        for view in operands:
+            if view.view_kind not in (A.MOE_VIEW_KIND.DISPATCH_BUFFER,
+                                      A.MOE_VIEW_KIND.COMBINE_BUFFER):
+                continue
+            remote.append(view)
+            allocation = allocations[view.backing_ref]
+            assert view.offset + view.bytes <= allocation.bytes
+            assert view.bytes == (layer.token_bytes if view.view_kind ==
+                                  A.MOE_VIEW_KIND.DISPATCH_BUFFER else layer.output_token_bytes)
+    assert remote

@@ -35,6 +35,15 @@ class AgentRuntimeConfig:
 def load_agent_runtime_config(path) -> AgentRuntimeConfig:
     document = read_yaml_document(Path(path))
     validate_against_schema("agent_runtime_config_v1.schema.json", document)
+    windows = document["runtime"].get("windows")
+    if windows is not None:
+        previous_tick = -1
+        previous_mode = windows["initial_mode"]
+        for row in windows["switches"]:
+            if row["at_tick"] <= previous_tick or row["mode"] == previous_mode:
+                raise PlanError("E_AGENT_PLAN", "runtime/windows",
+                                "switches require increasing ticks and alternating modes")
+            previous_tick, previous_mode = row["at_tick"], row["mode"]
     return AgentRuntimeConfig(
         document=document,
         digest=hashlib.sha256(canonical_json_bytes(document)).hexdigest(),
@@ -99,6 +108,12 @@ def validate_runtime_config(
     document = config.document
     agent = document["agent"]
     serving = document["serving"]
+    flagged = any(round_.batch_replay for user in workload.users
+                  for task in user.tasks for round_ in task.rounds)
+    if serving["batch_replay_artifact"] is None and (
+            flagged or serving["strict_replay_serial_batches"]):
+        raise PlanError("E_BATCH_REPLAY_DIVERGENCE", "serving/batch_replay_artifact",
+                        "replay rounds and strict replay require an artifact")
     if document["agent_axi_driver"]["remote_link_shaper"]["enabled"]:
         raise PlanError(
             "E_AGENT_PLAN",
@@ -136,7 +151,9 @@ def validate_runtime_config(
                 "E_ADDRESS_PLAN", base_field, "rings must be 4 KiB aligned"
             )
     alignment = address_map["arena_alignment_bytes"]
-    for arena_field in ("parameter_arena", "input_arena", "output_arena", "metadata_arena"):
+    for arena_field in ("parameter_arena", "input_arena", "output_arena", "metadata_arena", "workspace_arena"):
+        if arena_field not in address_map:
+            continue
         if address_map[arena_field]["base"] % alignment != 0:
             raise PlanError(
                 "E_ADDRESS_PLAN", arena_field, f"arena base must be {alignment}-byte aligned"
@@ -156,6 +173,9 @@ def validate_runtime_config(
                 label,
                 "host range must stay inside the remote host memory window",
             )
+    if 'workspace_arena' in address_map:
+        workspace = address_map['workspace_arena']
+        ranges.append((workspace['base'], workspace['base'] + workspace['bytes'], 'workspace_arena'))
     ordered = sorted(ranges)
     for (_, previous_end, previous_label), (next_start, _, next_label) in zip(
         ordered, ordered[1:]

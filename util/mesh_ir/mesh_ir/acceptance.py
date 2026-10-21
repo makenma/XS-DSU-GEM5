@@ -6,6 +6,8 @@ import os
 import stat
 import tempfile
 import xml.etree.ElementTree as ET
+from collections import Counter
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import jsonschema
@@ -14,6 +16,7 @@ import yaml
 from mesh_ir.generated import agent_abi
 from mesh_ir.generated import abi as mesh_abi
 from mesh_ir.model import canonical_json_bytes
+from mesh_ir.runtime_dma_timing import DmaExecutionIdentity
 
 
 class ContractError(ValueError):
@@ -924,6 +927,8 @@ def build_dma_traffic(
     expected_rows: list[dict],
     actual_rows: list[dict],
     scale: int,
+    *,
+    dma_bursts: Mapping[DmaExecutionIdentity, Sequence[dict]] | None = None,
 ) -> dict:
     if isinstance(scale, bool) or not isinstance(scale, int) or scale <= 0:
         raise ContractError("traffic scale must be a positive integer")
@@ -937,6 +942,19 @@ def build_dma_traffic(
 
     expected_by_id = {traffic_key(row): row for row in expected_rows}
     actual_by_id = {traffic_key(row): row for row in actual_rows}
+    issued_packets = Counter()
+    if dma_bursts is not None:
+        for identity, bursts in dma_bursts.items():
+            if not isinstance(identity, DmaExecutionIdentity):
+                raise ContractError("issued DMA bursts require execution identities")
+            key = (identity.domain, identity.region_group_id, identity.region_id, identity.descriptor_id)
+            for burst in bursts:
+                if burst["channel"] not in ("AR", "AW"):
+                    raise ContractError("issued DMA burst has an invalid request channel")
+                issued_packets[key, burst["channel"]] += 1
+    elif any(row.get("read_discarded_bytes", 0) or row.get("write_drained_uncommitted_bytes", 0)
+             for row in actual_rows):
+        raise ContractError("drained DMA traffic requires issued burst evidence")
     if len(expected_by_id) != len(expected_rows):
         raise ContractError("duplicate expected traffic descriptor")
     if len(actual_by_id) != len(actual_rows):
@@ -970,7 +988,9 @@ def build_dma_traffic(
             )
             actual_packets = int(actual.get("write_bursts", 0))
         elif kind == mesh_abi.DMA_KIND.P2P_PUSH:
-            actual_bytes = int(actual.get("p2p_bytes", 0))
+            actual_bytes = int(actual.get("p2p_bytes", 0)) + int(
+                actual.get("write_drained_uncommitted_bytes", 0)
+            )
             actual_packets = int(actual.get("p2p_bursts", 0))
         elif kind == mesh_abi.DMA_KIND.LOCAL_FILL:
             actual_bytes = int(actual.get("fill_bytes", 0))
@@ -985,6 +1005,9 @@ def build_dma_traffic(
                 int(actual.get(name, 0))
                 for name in ("read_bursts", "write_bursts", "p2p_bursts")
             )
+        if dma_bursts is not None and kind != mesh_abi.DMA_KIND.LOCAL_FILL:
+            channel = "AR" if kind in (mesh_abi.DMA_KIND.LOAD, mesh_abi.DMA_KIND.PREFETCH) else "AW"
+            actual_packets = issued_packets[descriptor_id, channel]
         traffic_class = (
             "NPU_P2P"
             if kind == mesh_abi.DMA_KIND.P2P_PUSH

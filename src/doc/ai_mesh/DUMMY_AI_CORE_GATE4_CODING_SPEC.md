@@ -40,7 +40,7 @@
 
 | 现有入口 | Gate 4 的使用方式 |
 |---|---|
-| [gate3_protocol_runtime.hh](../../dev/ai_mesh/gate3_protocol_runtime.hh)、[Driver](../../dev/ai_mesh/gate3_protocol_runtime.cc) | 将 protocol pump 与按 profile 生成请求的测试脚本职责分开；business FSM 不叠入现有 `Stage` |
+| [agent_axi_driver.hh](../../dev/ai_mesh/agent_axi_driver.hh)、[Driver](../../dev/ai_mesh/agent_axi_driver.cc) | 将 protocol pump 与按 profile 生成请求的测试脚本职责分开；business FSM 不叠入现有 `Stage` |
 | [Frontend](../../dev/ai_mesh/gate3_protocol_frontend.cc) | 分离 SQ intake、request execution 和 completion publication，使等待执行的 GENERATE 不阻止后续 CANCEL 被读取 |
 | [SubmissionLedger](../../dev/ai_mesh/agent_submission_ledger.hh) | 复用 pending publication、ID 不复用、early evidence、commit/rollback；不增加第二份 producer/head 状态 |
 | [completion ledger](../../dev/ai_mesh/gate3_completion_ledger.hh)、[IRQ queue](../../dev/ai_mesh/gate3_irq_commit_queue.hh)、[fatal reducer](../../dev/ai_mesh/gate3_fatal_reducer.hh) | 保留 Gate 3 的 ownership、MSI/ACK 乘积状态与 fatal-cut 语义 |

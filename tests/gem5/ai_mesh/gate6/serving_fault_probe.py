@@ -26,47 +26,45 @@ assert source.rstrip().endswith("main()")
 exec(compile(source.rsplit("main()", 1)[0], str(source_path), "exec"),
      runner.__dict__)
 
-from dma_uid_predict import predict
-from gate6_serving_scenario import AGENT_INITIATOR_COUNT
+from mesh_ir.fault_plan import predict, target_of
 
 fault_core = int(os.environ.get("GATE6_FAULT_CORE", "0"))
 fault_kind = os.environ.get("GATE6_FAULT_KIND", "write")
 fault_index = int(os.environ.get("GATE6_FAULT_INDEX", "0"))
-fault_uid = int(os.environ.get("GATE6_FAULT_UID") or "0", 0)
+fault_uid = int(os.environ["GATE6_FAULT_UID"], 0) if os.environ.get("GATE6_FAULT_UID") else None
 fault_resp = os.environ.get("GATE6_FAULT_RESP", "slverr")
 delay_uid = os.environ.get("GATE6_DELAY_UID", "")
 delay_cycles = int(os.environ.get("GATE6_DELAY_CYCLES", "0"))
 
-original_scenario = runner.combined_scenario
+original_scenario = runner.ServingDeployment.scenario
 
 
-def injected_scenario(*args, **kwargs):
+def injected_scenario(self):
     global fault_uid, delay_uid
-    scenario = original_scenario(*args, **kwargs)
-    target = scenario["target_ranges"][-1]["dst_node"]
-    if (not fault_uid and os.environ.get("GATE6_SCHEDULE_DIR")
+    scenario = original_scenario(self)
+    target = target_of(runner._region("HBM").base, scenario["target_ranges"])
+    if os.environ.get("GATE6_FAULT_TARGET_ADDRESS"):
+        target = target_of(int(os.environ["GATE6_FAULT_TARGET_ADDRESS"], 0), scenario["target_ranges"])
+        assert target is not None
+    if (fault_uid is None and os.environ.get("GATE6_SCHEDULE_DIR")
             and os.environ.get("GATE6_FAULT_ENABLE") == "1"):
-        mesh = scenario["endpoint_to_router"]["initiators"][
-            AGENT_INITIATOR_COUNT:]
         core_ids = json.loads(os.environ["GATE6_CORE_IDS"])
-        src_nodes = {core_id: mesh[index]["src_node"]
-                     for index, core_id in enumerate(core_ids)}
+        src_nodes = {core_id: self.fabric.initiators[
+            self.fabric.core_initiator_index(core_id)].src_node for core_id in core_ids}
         arch = json.loads(os.environ["GATE6_ARCH_DICT"])
         predicted = predict(Path(os.environ["GATE6_SCHEDULE_DIR"]), arch,
                             src_nodes,
                             src_port=int(os.environ.get("GATE6_SRC_PORT", "0")))
         resolved = predicted[fault_core][fault_kind][fault_index]
         globals()["fault_uid"] = resolved
-    if fault_uid:
+    if fault_uid is not None:
         scenario["mesh_planned_faults"].append(
             {"target": target, "uid": fault_uid, "resp": fault_resp})
     if (not delay_uid and os.environ.get("GATE6_SCHEDULE_DIR")
             and os.environ.get("GATE6_DELAY_ENABLE") == "1"):
-        mesh = scenario["endpoint_to_router"]["initiators"][
-            AGENT_INITIATOR_COUNT:]
         core_ids = json.loads(os.environ["GATE6_CORE_IDS"])
-        src_nodes = {core_id: mesh[index]["src_node"]
-                     for index, core_id in enumerate(core_ids)}
+        src_nodes = {core_id: self.fabric.initiators[
+            self.fabric.core_initiator_index(core_id)].src_node for core_id in core_ids}
         arch = json.loads(os.environ["GATE6_ARCH_DICT"])
         predicted = predict(Path(os.environ["GATE6_SCHEDULE_DIR"]), arch,
                             src_nodes,
@@ -77,6 +75,13 @@ def injected_scenario(*args, **kwargs):
         scenario["mesh_planned_extra_latency"].append(
             {"target": target, "uid": int(delay_uid, 0),
              "cycles": delay_cycles})
+    for plan in json.loads(os.environ.get('GATE6_EXTRA_LATENCIES', '[]')):
+        node = self.fabric.initiators[self.fabric.core_initiator_index(plan['core'])].src_node
+        uid = (node << 48) | (int(plan['kind'] == 'read') << 39) | plan['index']
+        destination = target_of(plan['address'], scenario['target_ranges'])
+        assert destination is not None
+        scenario['mesh_planned_extra_latency'].append(
+            {'target': destination, 'uid': uid, 'cycles': plan['cycles']})
     dump = os.environ.get("GATE6_SCENARIO_DUMP")
     if dump:
         Path(dump).write_text(json.dumps(
@@ -85,7 +90,17 @@ def injected_scenario(*args, **kwargs):
     return scenario
 
 
-runner.combined_scenario = injected_scenario
+runner.ServingDeployment.scenario = injected_scenario
+
+wire_patches = json.loads(os.environ.get('GATE6_SUBMISSION_WIRE_PATCHES', '[]'))
+if wire_patches:
+    wire_driver = runner.AgentAxiDriver
+
+    def patched_driver(*args, **kwargs):
+        kwargs['submission_wire_patches'] = wire_patches
+        return wire_driver(*args, **kwargs)
+
+    runner.AgentAxiDriver = patched_driver
 
 binding_tamper = os.environ.get("GATE6_BINDING_TAMPER_INSTANCE_COUNT", "")
 binding_drop = os.environ.get("GATE6_BINDING_DROP_PROFILE") == "1"
@@ -109,13 +124,13 @@ if binding_tamper or binding_drop or binding_extra_kind:
                     clone = dataclasses.replace(
                         requirement, symbol_id=9001,
                         platform_address=requirement.platform_address +
-                            requirement.platform_bytes + 0x100000)
+                            requirement.required_bytes + 0x100000)
             return tuple(
                 dataclasses.replace(
                     plan,
                     requirements=tuple(list(plan.requirements) + [clone]))
                 for plan in plans)
-        return tuple(dataclasses.replace(plan, instance_count=tampered_count)
+        return tuple(dataclasses.replace(plan, instance_counts=(tampered_count,))
                      for plan in plans)
 
     runner.build_host_binding_plans = tampered_plans
@@ -258,24 +273,10 @@ if host_wire_mode:
                     weight = next(requirement for requirement in
                                   decoded["plans"][0]["requirements"]
                                   if requirement["kind"] == 4)
-                    weight["platform_bytes"] += 1
-                plans = [
-                    types.SimpleNamespace(
-                        program_id=plan["program_id"],
-                        profile_id=plan["profile_id"],
-                        primary_input_symbol_id=plan[
-                            "primary_input_symbol_id"],
-                        primary_output_symbol_id=plan[
-                            "primary_output_symbol_id"],
-                        primary_kv_symbol_id=plan["primary_kv_symbol_id"],
-                        instance_count=plan["instance_count"],
-                        requirements=[
-                            types.SimpleNamespace(**requirement)
-                            for requirement in plan["requirements"]
-                        ],
-                    )
-                    for plan in decoded["plans"]
-                ]
+                    weight["required_bytes"] += 1
+                plans = [types.SimpleNamespace(**{**plan, 'requirements': [
+                    types.SimpleNamespace(**row) for row in plan['requirements']]})
+                    for plan in decoded['plans']]
                 encoded = encode_request_binding_section(
                     decoded["kv_session_slot_bytes"], plans)
                 assert len(encoded) == length

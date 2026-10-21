@@ -32,6 +32,8 @@
 #ifndef __MEM_RUBY_NETWORK_GARNET_0_INPUTUNIT_HH__
 #define __MEM_RUBY_NETWORK_GARNET_0_INPUTUNIT_HH__
 
+#include "base/checkpoint_fields.hh"
+
 #include <iostream>
 #include <vector>
 
@@ -56,6 +58,14 @@ namespace garnet
 class InputUnit : public Consumer
 {
   public:
+    template<class Archive> void serialize(Archive &archive, unsigned)
+    {
+        Consumer::checkpoint(archive);
+        checkpoint::existing(archive, virtualChannels);
+        checkpoint::fields(archive, m_num_buffer_writes, m_num_buffer_reads,
+            m_vc_last_accounted_cycle, m_vc_high_water, m_experiment_vcs,
+            m_experiment_last_cycle);
+    }
     InputUnit(int id, PortDirection direction, Router *router,
               LaneId lane, int ingressPort,
               const std::vector<uint32_t> &depths);

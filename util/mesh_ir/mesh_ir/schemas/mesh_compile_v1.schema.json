@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mesh-compile-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "entrypoints", "shape_profiles", "parallelism", "placement", "tiling", "collectives", "runtime_model"],
+  "properties": {
+    "schema_version": {"const": "mesh-compile-v1"},
+    "entrypoints": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "shape_profiles": {
+      "type": "object", "minProperties": 1,
+      "additionalProperties": {
+        "type": "array", "minItems": 1,
+        "items": {
+          "type": "object", "required": ["profile_id"],
+          "properties": {"profile_id": {"type": "string", "minLength": 1}},
+          "patternProperties": {"^(?!profile_id$)[A-Za-z_][A-Za-z0-9_]*$": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615}},
+          "additionalProperties": false
+        }
+      }
+    },
+    "symbol_bindings": {
+      "type": "object", "default": {},
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object", "additionalProperties": false, "required": ["input", "axis"],
+          "properties": {"input": {"type": "string", "minLength": 1}, "axis": {"type": "integer", "minimum": 0}}
+        }
+      }
+    },
+    "parallelism": {
+      "type": "object", "additionalProperties": false,
+      "required": ["tensor_parallel", "pipeline_parallel", "expert_parallel", "data_parallel"],
+      "properties": {
+        "tensor_parallel": {"type": "integer", "enum": [1, 2, 4]},
+        "pipeline_parallel": {"type": "integer", "minimum": 1},
+        "expert_parallel": {"type": "integer", "minimum": 1},
+        "data_parallel": {"type": "integer", "minimum": 1}
+      }
+    },
+    "placement": {
+      "type": "object", "additionalProperties": false,
+      "required": ["core_order", "allowed_cores"],
+      "properties": {
+        "core_order": {"const": "row_major_yx"},
+        "allowed_cores": {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 0, "maximum": 65534}, "uniqueItems": true},
+        "reserve_cores": {"type": "array", "items": {"type": "integer", "minimum": 0, "maximum": 65534}, "uniqueItems": true, "default": []}
+      }
+    },
+    "tiling": {
+      "type": "object", "additionalProperties": false,
+      "required": ["gemm_m", "gemm_n", "gemm_k", "double_buffer"],
+      "properties": {
+        "gemm_m": {"type": "integer", "minimum": 1}, "gemm_n": {"type": "integer", "minimum": 1}, "gemm_k": {"type": "integer", "minimum": 1}, "double_buffer": {"type": "boolean"}
+      }
+    },
+    "collectives": {
+      "type": "object", "additionalProperties": false,
+      "required": ["all_reduce_algorithm", "chunk_bytes"],
+      "properties": {"all_reduce_algorithm": {"enum": ["ring", "tree"]}, "chunk_bytes": {"type": "integer", "minimum": 1}}
+    },
+    "runtime_model": {
+      "type": "object", "additionalProperties": false,
+      "required": ["mode", "tensor_data"],
+      "properties": {"mode": {"enum": ["FULL_TIMING", "FAST_TRAFFIC"]}, "tensor_data": {"enum": ["FUNCTIONAL_BYTES", "DIGEST_ONLY", "VALIDITY_ONLY"]}}
+    }
+  }
+}

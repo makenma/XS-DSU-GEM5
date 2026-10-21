@@ -1,208 +1,173 @@
 #include "dev/ai_mesh/mesh_kv_layout.hh"
 
 #include <algorithm>
+#include <map>
+#include <ostream>
 #include <set>
-#include <string>
+#include <tuple>
 #include <vector>
 
-#include "dev/ai_mesh/agent_sha256.hh"
-#include "dev/ai_mesh/generated/mesh_ir_abi.hh"
+#include "dev/ai_mesh/mesh_binary_canonical.hh"
+#include "dev/ai_mesh/mesh_hash.hh"
 
 namespace gem5
 {
 namespace ai_mesh
 {
 
-namespace
-{
-
-using namespace mesh_abi;
-
-const char kKvLayoutDomain[] = "AI_MESH_KV_LAYOUT_V1";
-constexpr uint8_t kKvLayoutDomainPad = 0;
-
-bool fail(const char *code, const char *message, MeshLoadError &error)
-{
-    error.code = code;
-    error.message = message;
-    return false;
-}
-
-const Relocation *relocationOf(const DecodedProgram &program, uint32_t symbol)
-{
-    for (const auto &relocation : program.relocations)
-        if (relocation.symbol_sid == symbol)
-            return &relocation;
-    return nullptr;
-}
-
-void appendBinding(std::string &out, const char *role,
-                   const std::string &profile, const std::string &relocation,
-                   const std::string &tensor, bool &first)
-{
-    if (!first)
-        out += ',';
-    first = false;
-    out += "{\"profile\":";
-    out += profile;
-    out += ",\"relocation\":";
-    out += relocation;
-    out += ",\"role\":\"";
-    out += role;
-    out += "\",\"tensor\":";
-    out += tensor;
-    out += '}';
-}
-
-std::string tensorJson(const DecodedProgram &program, uint32_t tensor_id)
-{
-    for (const auto &tensor : program.tensors)
-        if (tensor.tensor_id == tensor_id) {
-            std::string out;
-            jsonTensor(tensor, out);
-            return out;
-        }
-    return std::string();
-}
-
-std::string relocationJson(const Relocation &relocation)
-{
-    std::string out;
-    jsonRelocation(relocation, out);
-    return out;
-}
-
-}
-
 bool kvLayoutDigest(const DecodedProgram &program,
+                    const ProgramSemanticContext &context,
                     std::array<uint8_t, 32> &digest, MeshLoadError &error)
 {
+    using namespace mesh_abi;
+    const auto &transport = program.transport;
+    auto reject = [&](const char *message) {
+        error = {"E_KV_CONTRACT_MISMATCH", message};
+        return false;
+    };
+    if (!context.matches(program))
+        return reject("KV layout requires its own semantic context");
+    struct Binding
+    {
+        size_t request;
+        size_t instance;
+        size_t member;
+        size_t relocation;
+        size_t tensor;
+    };
+    using RequestKey = std::pair<uint32_t, uint32_t>;
+    std::vector<Binding> bindings;
     std::set<uint32_t> tensors;
-    std::set<uint32_t> token_bytes;
-    std::string bindings;
-    bool first_binding = true;
-
-    std::vector<const AgentRequestProfile *> requests;
-    for (const auto &request : program.agent_request_profiles)
-        requests.push_back(&request);
-    std::sort(requests.begin(), requests.end(),
-              [](const AgentRequestProfile *left,
-                 const AgentRequestProfile *right) {
-                  if (left->program_id != right->program_id)
-                      return left->program_id < right->program_id;
-                  return left->profile_id < right->profile_id;
-              });
-    for (const AgentRequestProfile *request : requests) {
-        if (request->primary_kv_symbol_id == 0)
-            return fail("E_KV_CONTRACT_MISMATCH",
-                        "request profile has no KV binding", error);
-        const Relocation *relocation =
-            relocationOf(program, request->primary_kv_symbol_id);
-        if (relocation == nullptr)
-            return fail("E_KV_CONTRACT_MISMATCH",
-                        "KV symbol has no relocation", error);
-        tensors.insert(relocation->tensor_id);
-        token_bytes.insert(request->kv_bytes_per_token);
-        std::string record;
-        jsonAgentRequestProfile(*request, record);
-        const std::string tensor = tensorJson(program, relocation->tensor_id);
-        if (tensor.empty())
-            return fail("E_KV_CONTRACT_MISMATCH",
-                        "KV binding references an unknown tensor", error);
-        appendBinding(bindings, "REQUEST", record,
-                      relocationJson(*relocation), tensor, first_binding);
-    }
-
-    std::vector<const AgentInstanceProfile *> instances;
-    for (const auto &instance : program.agent_instance_profiles)
-        instances.push_back(&instance);
-    std::sort(instances.begin(), instances.end(),
-              [](const AgentInstanceProfile *left,
-                 const AgentInstanceProfile *right) {
-                  return left->instance_profile_id <
-                         right->instance_profile_id;
-              });
-    for (const AgentInstanceProfile *instance : instances) {
-        if (instance->primary_kv_symbol_id == 0)
+    std::set<uint32_t> tokenBytes;
+    std::map<RequestKey, size_t> requests;
+    for (size_t index = 0; index < transport.agent_request_profiles.size(); ++index) {
+        const auto &request = transport.agent_request_profiles[index];
+        if (!(request.flags & mesh_abi::kAgentRequestFlagsHAS_KV))
             continue;
-        const Relocation *relocation =
-            relocationOf(program, instance->primary_kv_symbol_id);
-        if (relocation == nullptr)
-            return fail("E_KV_CONTRACT_MISMATCH",
-                        "KV symbol has no relocation", error);
-        tensors.insert(relocation->tensor_id);
-        std::string record;
-        jsonAgentInstanceProfile(*instance, record);
-        const std::string tensor = tensorJson(program, relocation->tensor_id);
-        if (tensor.empty())
-            return fail("E_KV_CONTRACT_MISMATCH",
-                        "KV binding references an unknown tensor", error);
-        appendBinding(bindings, "INSTANCE", record,
-                      relocationJson(*relocation), tensor, first_binding);
+        if (!request.primary_kv_symbol_id ||
+            request.primary_kv_symbol_id > transport.strings.size() ||
+            !requests.emplace(RequestKey{request.program_id, request.profile_id}, index).second)
+            return reject("KV request identities or roles are invalid");
+        tokenBytes.insert(request.kv_bytes_per_token);
     }
-
-    for (const auto &member : program.agent_instance_member_bindings) {
-        if (member.static_kv_symbol_id == 0)
+    if (requests.empty() || tokenBytes.size() != 1 || !*tokenBytes.begin())
+        return reject("KV requests require one positive token size");
+    std::vector<size_t> instances;
+    std::set<uint32_t> instanceIds;
+    for (size_t index = 0; index < transport.agent_instance_profiles.size(); ++index) {
+        if (!instanceIds.insert(transport.agent_instance_profiles[index].instance_profile_id).second)
+            return reject("KV instance identities are duplicated");
+        instances.push_back(index);
+    }
+    std::sort(instances.begin(), instances.end(), [&](size_t left, size_t right) {
+        return transport.agent_instance_profiles[left].instance_profile_id <
+               transport.agent_instance_profiles[right].instance_profile_id;
+    });
+    std::set<RequestKey> boundRequests;
+    std::set<size_t> consumedMembers;
+    for (const size_t instanceIndex : instances) {
+        const auto &instance = transport.agent_instance_profiles[instanceIndex];
+        if (!instance.primary_kv_symbol_id)
             continue;
-        const Relocation *relocation =
-            relocationOf(program, member.static_kv_symbol_id);
-        if (relocation == nullptr)
-            return fail("E_KV_CONTRACT_MISMATCH",
-                        "KV symbol has no relocation", error);
-        tensors.insert(relocation->tensor_id);
-        std::string record;
-        jsonAgentInstanceMemberBinding(member, record);
-        const std::string tensor = tensorJson(program, relocation->tensor_id);
-        if (tensor.empty())
-            return fail("E_KV_CONTRACT_MISMATCH",
-                        "KV binding references an unknown tensor", error);
-        appendBinding(bindings, "MEMBER", record,
-                      relocationJson(*relocation), tensor, first_binding);
+        const RequestKey key{instance.request_program_id, instance.request_profile_id};
+        const auto requestIt = requests.find(key);
+        if (requestIt == requests.end() || instance.primary_kv_symbol_id !=
+            transport.agent_request_profiles[requestIt->second].primary_kv_symbol_id)
+            return reject("instance KV role differs from its request");
+        const semantic_abi::ProgramVariant *variant = nullptr;
+        for (const auto &[id, candidate] : context.variants()) {
+            if (candidate->entrypoint_id == instance.mesh_entrypoint_id &&
+                candidate->profile_id == instance.mesh_profile_id) {
+                if (variant)
+                    return reject("KV instance variant is ambiguous");
+                variant = candidate;
+            }
+        }
+        if (!variant)
+            return reject("KV instance has no admitted variant");
+        const uint64_t begin = instance.member_binding_first;
+        const uint64_t end = begin + instance.member_binding_count;
+        if (!instance.member_count || instance.member_binding_count != instance.member_count ||
+            end > transport.agent_instance_member_bindings.size())
+            return reject("KV member span is invalid");
+        for (uint64_t index = begin; index < end; ++index) {
+            const auto &member = transport.agent_instance_member_bindings[index];
+            if (!consumedMembers.insert(index).second ||
+                member.instance_profile_id != instance.instance_profile_id ||
+                member.member_ordinal != index - begin)
+                return reject("KV member has no unique instance owner");
+            if (!member.static_kv_symbol_id || member.static_kv_symbol_id > transport.strings.size())
+                return reject("KV member slot symbol is missing");
+            const auto binding = context.symbolBinding(variant->variant_id,
+                transport.strings[member.static_kv_symbol_id - 1]);
+            if (!binding)
+                return reject("KV member slot has no admitted variant owner");
+            const auto &tensor = *binding->tensor;
+            const auto &logical = *binding->logical_tensor;
+            if (tensor.role != kTensorRoleKV_CACHE ||
+                tensor.storage_class != kStorageClassEXTERNAL || tensor.access != kAccessKindREAD_WRITE ||
+                uint16_t(logical.role) != kTensorRoleKV_CACHE ||
+                uint16_t(logical.storage_class) != kStorageClassEXTERNAL ||
+                uint16_t(logical.access) != kAccessKindREAD_WRITE)
+                return reject("KV member slot must own an external read-write KV tensor");
+            bindings.push_back({requestIt->second, instanceIndex, size_t(index),
+                                size_t(binding->relocation - transport.relocations.data()),
+                                size_t(binding->tensor - transport.tensors.data())});
+            tensors.insert(tensor.tensor_id);
+            boundRequests.insert(key);
+        }
     }
-    if (tensors.size() != 1)
-        return fail("E_KV_CONTRACT_MISMATCH",
-                    "KV bindings do not resolve to one tensor", error);
-    if (token_bytes.size() != 1)
-        return fail("E_KV_CONTRACT_MISMATCH",
-                    "kv_bytes_per_token differs across request profiles",
-                    error);
-
-    std::vector<const DmaDescriptor *> descriptors;
-    for (const auto &descriptor : program.descriptors)
-        if (descriptor.kind == kDmaKindLOAD ||
-                descriptor.kind == kDmaKindSTORE)
-            descriptors.push_back(&descriptor);
-    std::sort(descriptors.begin(), descriptors.end(),
-              [](const DmaDescriptor *left, const DmaDescriptor *right) {
-                  return left->descriptor_id < right->descriptor_id;
-              });
-    std::string descriptor_list;
-    bool first_descriptor = true;
-    for (const DmaDescriptor *descriptor : descriptors) {
-        if (!tensors.count(descriptor->src.tensor_id) &&
-                !tensors.count(descriptor->dst.tensor_id))
-            continue;
-        if (!first_descriptor)
-            descriptor_list += ',';
-        first_descriptor = false;
-        jsonDmaDescriptor(*descriptor, descriptor_list);
+    if (boundRequests.size() != requests.size())
+        return reject("KV request has no bound instance member");
+    for (size_t index = 0; index < transport.agent_instance_member_bindings.size(); ++index)
+        if (bool(transport.agent_instance_member_bindings[index].static_kv_symbol_id) !=
+            bool(consumedMembers.count(index)))
+            return reject("KV member is not owned by its instance span");
+    mesh_hash::Sha256StreamBuffer buffer;
+    std::ostream out(&buffer);
+    constexpr char domain[] = "AI_MESH_KV_LAYOUT_V2";
+    out.write(domain, sizeof(domain));
+    auto row = [&](uint16_t section, size_t index) {
+        return mesh_binary_detail::writeTransportRowCanonical(program, section, index, out, error);
+    };
+    out << "{\"bindings\":[";
+    bool first = true;
+    for (const auto &binding : bindings) {
+        if (!first) out << ',';
+        first = false;
+        out << "{\"instance\":";
+        if (!row(kSectionTypeAGENT_INSTANCE_PROFILES, binding.instance)) return false;
+        out << ",\"member\":";
+        if (!row(kSectionTypeAGENT_INSTANCE_MEMBER_BINDINGS, binding.member)) return false;
+        out << ",\"relocation\":";
+        if (!row(kSectionTypeRELOCATIONS, binding.relocation)) return false;
+        out << ",\"request\":";
+        if (!row(kSectionTypeAGENT_REQUEST_PROFILES, binding.request)) return false;
+        out << ",\"tensor\":";
+        if (!row(kSectionTypeTENSORS, binding.tensor)) return false;
+        out << '}';
     }
-
-    std::string projection = "{\"bindings\":[";
-    projection += bindings;
-    projection += "],\"descriptors\":[";
-    projection += descriptor_list;
-    projection += "],\"schema\":\"mesh_kv_layout_v1\",\"token_bytes\":";
-    projection += std::to_string(*token_bytes.begin());
-    projection += '}';
-
-    AgentSha256 hash;
-    hash.update(reinterpret_cast<const uint8_t *>(kKvLayoutDomain),
-                sizeof(kKvLayoutDomain) - 1);
-    hash.update(&kKvLayoutDomainPad, 1);
-    hash.update(reinterpret_cast<const uint8_t *>(projection.data()),
-                projection.size());
-    digest = hash.finish();
+    std::vector<size_t> descriptors;
+    for (size_t index = 0; index < transport.dma_descriptors.size(); ++index) {
+        const auto &descriptor = transport.dma_descriptors[index];
+        if ((descriptor.kind == kDmaKindLOAD || descriptor.kind == kDmaKindSTORE) &&
+            (tensors.count(descriptor.src.tensor_id) || tensors.count(descriptor.dst.tensor_id)))
+            descriptors.push_back(index);
+    }
+    std::sort(descriptors.begin(), descriptors.end(), [&](size_t left, size_t right) {
+        return transport.dma_descriptors[left].descriptor_id < transport.dma_descriptors[right].descriptor_id;
+    });
+    out << "],\"descriptors\":[";
+    first = true;
+    for (const size_t index : descriptors) {
+        if (!first) out << ',';
+        first = false;
+        if (!row(kSectionTypeDMA_DESCRIPTORS, index)) return false;
+    }
+    out << "],\"schema\":\"mesh_kv_layout_v2\",\"token_bytes\":" << *tokenBytes.begin() << '}';
+    if (!out)
+        return reject("KV canonical output stream failed");
+    digest = buffer.digest();
     return true;
 }
 

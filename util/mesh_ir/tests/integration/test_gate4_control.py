@@ -1,4 +1,5 @@
-import os
+from mesh_ir.runtime_environment import runtime_environment
+
 import subprocess
 import sys
 from pathlib import Path
@@ -85,11 +86,7 @@ SCENARIOS = {
 
 
 def run_scenario(name, outdir, *extra):
-    environment = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith("AI_MESH_")
-    }
+    environment = runtime_environment()
     return subprocess.run(
         [
             str(GEM5),
@@ -248,11 +245,7 @@ OUTPUT_CANCEL_PREFIX_BYTES = 8192
 
 
 def run_output_cancel(outdir):
-    environment = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith("AI_MESH_")
-    }
+    environment = runtime_environment()
     return subprocess.run(
         [
             str(GEM5),
@@ -375,11 +368,7 @@ def test_gate4_concurrent_cancel_joins_resolve_independently(tmp_path):
 
 
 def test_gate4_concurrent_cancel_illegal_combination_fatals(tmp_path):
-    environment = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith("AI_MESH_")
-    }
+    environment = runtime_environment()
     run = subprocess.run(
         [
             str(GEM5),

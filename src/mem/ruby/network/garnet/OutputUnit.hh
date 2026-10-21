@@ -32,6 +32,8 @@
 #ifndef __MEM_RUBY_NETWORK_GARNET_0_OUTPUTUNIT_HH__
 #define __MEM_RUBY_NETWORK_GARNET_0_OUTPUTUNIT_HH__
 
+#include "base/checkpoint_fields.hh"
+
 #include <iostream>
 #include <vector>
 
@@ -57,6 +59,11 @@ class Router;
 class OutputUnit : public Consumer
 {
   public:
+    template<class Archive> void serialize(Archive &archive, unsigned)
+    {
+        Consumer::checkpoint(archive);
+        checkpoint::existing(archive, outVcState);
+    }
     OutputUnit(int id, PortDirection direction, Router *router,
                uint32_t consumerVcs,
                const std::vector<uint32_t> &receiverDepths);

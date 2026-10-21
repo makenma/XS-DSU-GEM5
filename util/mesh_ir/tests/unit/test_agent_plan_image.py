@@ -14,16 +14,16 @@ from mesh_ir.agent_workload import (
 )
 
 FIXTURES = Path(__file__).resolve().parents[4] / "tests/gem5/ai_mesh/fixtures/gate4"
-IMAGE_DIGEST = "e917bd290cf4de0a0ead22424267c2d50e644dae95f64084fc76210a4580593d"
+IMAGE_DIGEST = "a8b58eaccd20ff83811c91641e2636435a862fd66d26640ffea2224eaa16b844"
 WORKLOAD_DIGEST = "afc9cc56e7bed3228009e27e99b42cff882cdf580430f47a4016c786c6113e5e"
 CONTROL_DIGEST = "49fcb22b9f99dbce8e30a87871b3d738b99e49e4dde346a381004c218ad1676b"
 SURROGATE_FIXTURE_DIGEST = (
     "d6aa0634939a4d745b25a1ce36b16c94685a7a8d9d58c1d608ed2d20f039d897"
 )
 CTRL_CANCEL_LIVE_DIGEST = (
-    "ec0f8d1fc3dfb47f2a0817fab540f28e48046d8bf365eebb3329a32fdc048a09"
+    "22181b522302071f90520061809a2dd4b1476897d3eee4893521cbf3bf6347eb"
 )
-CTRL_CANCEL_LIVE_LENGTH = 3493
+CTRL_CANCEL_LIVE_LENGTH = 3518
 
 
 def regions():
@@ -57,9 +57,9 @@ def build_control(name):
 def test_image_digest_is_frozen_and_self_consistent():
     image, digest = build()
     assert digest == IMAGE_DIGEST
-    assert len(image) == 3306
+    assert len(image) == 3331
     assert image[:4] == MAGIC
-    assert image[4:8] == (1).to_bytes(4, "little")
+    assert image[4:8] == (5).to_bytes(4, "little")
     assert image[8:12] == (5).to_bytes(4, "little")
     assert image[12:44] == bytes.fromhex(WORKLOAD_DIGEST)
     assert image[44:76] == bytes.fromhex(CONTROL_DIGEST)
@@ -130,7 +130,7 @@ SERVING_FIXTURES = (
 
 def serving_binding_plans():
     from mesh_ir.abi.decoder import decode_program
-    from mesh_ir.builder import load_arch
+    from mesh_ir.architecture import load_arch
     from mesh_ir.host_bindings import build_host_binding_plans
 
     program = decode_program(
@@ -188,10 +188,11 @@ def test_request_binding_section_round_trips_the_frozen_plans():
     for record, plan in zip(decoded["plans"], plans):
         assert record["program_id"] == plan.program_id
         assert record["profile_id"] == plan.profile_id
-        assert record["instance_count"] == plan.instance_count == 4
+        assert record["instance_counts"] == list(plan.instance_counts) == [4]
         assert record["primary_input_symbol_id"] == plan.primary_input_symbol_id
         assert record["primary_output_symbol_id"] == plan.primary_output_symbol_id
         assert record["primary_kv_symbol_id"] == plan.primary_kv_symbol_id
+        assert record["publish_chunk_bytes"] == plan.publish_chunk_bytes
         assert [(row["symbol_id"], row["kind"], row["flags"])
                 for row in record["requirements"]] == [
             (row.symbol_id, row.kind, row.flags)
@@ -206,9 +207,9 @@ def test_request_binding_section_record_is_twenty_four_bytes():
     assert payload[:12] == (4096).to_bytes(8, "little") + \
         (len(plans)).to_bytes(4, "little")
     requirement_total = sum(len(plan.requirements) for plan in plans)
-    assert len(payload) == 12 + 24 * len(plans) + 24 * requirement_total
+    assert len(payload) == 12 + 28 * len(plans) + 4 * sum(len(p.instance_counts) for p in plans) + 24 * requirement_total
     decoded = decode_request_binding_section(payload)
-    assert decoded["plans"][0]["requirements"][0]["kind"] == 1
+    assert [row["kind"] for row in decoded["plans"][0]["requirements"]] == [row.kind for row in plans[0].requirements]
 
 
 def test_checked_in_serving_image_matches_the_rebuild():
@@ -350,3 +351,24 @@ def test_plan_projection_checks_optional_stage_presence(monkeypatch):
         return None
 
     _assert_projection_rejects(monkeypatch, mutate)
+
+
+def test_round_projection_preserves_stable_source_rank():
+    from mesh_ir.agent_plan_image import _round, _decode_round
+    workload = load_workload_plan(FIXTURES / 'agent_workload_plan_two_user.json')
+    source = dataclasses.replace(workload.users[0].tasks[0].rounds[0],
+                                 logical_source_rank=70001)
+    payload = _round(source)
+    decoded, consumed = _decode_round(payload, 0)
+    assert consumed == len(payload)
+    assert decoded['logical_source_rank'] == 70001
+
+
+def test_round_projection_preserves_batch_replay_authority():
+    from mesh_ir.agent_plan_image import _round, _decode_round
+    workload = load_workload_plan(FIXTURES / 'agent_workload_plan_two_user.json')
+    source = dataclasses.replace(workload.users[0].tasks[0].rounds[0], batch_replay=True)
+    payload = _round(source)
+    decoded, consumed = _decode_round(payload, 0)
+    assert consumed == len(payload)
+    assert decoded['batch_replay'] is True

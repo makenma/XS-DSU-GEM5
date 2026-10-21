@@ -16,15 +16,11 @@ from mesh_ir.abi.dependency import (
 )
 from mesh_ir.abi.spans import checked_span
 from mesh_ir.generated import abi as A
+from mesh_ir.ir.common import DType
 from mesh_ir.model import MeshIrError
+from mesh_ir.scheduled.binding_catalog import ProgramBindingCatalog
 
-DTYPE_BYTES = {
-    A.DTYPE.FP32: 4,
-    A.DTYPE.FP16: 2,
-    A.DTYPE.BF16: 2,
-    A.DTYPE.INT8: 1,
-    A.DTYPE.INT32: 4,
-}
+DTYPE_BYTES = {int(dtype): dtype.byte_width for dtype in DType}
 
 INVALID_U32 = 0xFFFFFFFF
 GEMM_OPCODES = (A.OPCODE.GEMM, A.OPCODE.BMM)
@@ -47,18 +43,10 @@ def verify_moe_v1(program, arch) -> None:
         program.moe_expert_specs,
         program.moe_dynamic_regions,
         program.moe_kernel_specs,
-        program.content_digests,
     )
-    unknown = program.required_features & ~A.KNOWN_FEATURE_MASK
-    if unknown:
-        raise MeshIrError("E_ABI_FEATURE", "unknown required feature bits",
-                          features=hex(unknown))
     if not enabled:
-        if any(tables):
-            raise MeshIrError("E_ABI_FEATURE",
-                              "MoE sections without the feature bit")
         return
-    if not all(tables):
+    if not all(tables) or not program.content_digests:
         raise MeshIrError("E_ABI_BOUNDS",
                           "MoE feature requires every conditional section")
     _verify_layers(program)
@@ -161,25 +149,22 @@ def _verify_group_bounds(layer, regions) -> None:
                               layer_id=layer.layer_id)
 
 
-def _weight_tensor(program, symbol_id):
-    relocation = next((r for r in program.relocations
-                       if r.symbol_sid == symbol_id), None)
-    if relocation is None:
-        raise MeshIrError("E_RELOCATION", "weight symbol is not relocated",
-                          symbol_id=symbol_id)
-    tensor = next((t for t in program.tensors
-                   if t.tensor_id == relocation.tensor_id), None)
-    if tensor is None:
-        raise MeshIrError("E_RELOCATION", "weight symbol tensor is missing",
-                          symbol_id=symbol_id)
-    if (tensor.role != A.TENSOR_ROLE.WEIGHT or
+def _weight_tensor(program, catalog, variant, symbol_id):
+    if not 1 <= symbol_id <= len(program.strings):
+        raise MeshIrError("E_RELOCATION", "weight symbol is missing", symbol_id=symbol_id)
+    binding = catalog.binding(variant.entrypoint_id, variant.profile_id,
+                              program.strings[symbol_id - 1].value)
+    tensor = next((item for item in program.tensors
+                   if item.tensor_id == binding.tensor.tensor_id), None)
+    if (tensor is None or tensor.role != A.TENSOR_ROLE.WEIGHT or
             tensor.storage_class != A.STORAGE_CLASS.EXTERNAL or
             tensor.access != A.ACCESS_KIND.READ_ONLY or
-            not tensor.flags & A.TENSOR_FLAGS.HAS_CONTENT_SHA256):
-        raise MeshIrError(
-            "E_RELOCATION",
-            "MoE weight symbol must be a read-only persistent external tensor",
-            symbol_id=symbol_id)
+            int(binding.tensor.role) != tensor.role or
+            int(binding.tensor.storage_class) != tensor.storage_class or
+            int(binding.tensor.access) != tensor.access or
+            not tensor.flags & A.TENSOR_FLAGS.HAS_CONTENT_SHA256 or
+            binding.tensor.content_sha256 != tensor.content_sha256.hex()):
+        raise MeshIrError("E_RELOCATION", "MoE weight must match its admitted read-only external tensor", symbol_id=symbol_id)
     return tensor
 
 
@@ -197,7 +182,18 @@ def _tensor_bytes(tensor) -> int:
 
 
 def _verify_experts(program, arch) -> None:
+    catalog = ProgramBindingCatalog(program)
+    owners = {command: variant for variant in program.semantics.variants
+              for command in range(variant.membership.commands.first_id,
+                                   variant.membership.commands.first_id + variant.membership.commands.count)}
     for layer in program.moe_layer_specs:
+        regions = program.moe_dynamic_regions[_region_span(program, layer)]
+        variants = {owners.get(region.insert_after_command_id).variant_id
+                    if region.insert_after_command_id in owners else None
+                    for region in regions}
+        if None in variants or len(variants) != 1:
+            raise MeshIrError("E_RELOCATION", "MoE layer gates must belong to one admitted variant", layer_id=layer.layer_id)
+        variant = owners[regions[0].insert_after_command_id]
         span = _layer_span(program, layer)
         for ordinal, expert in enumerate(program.moe_expert_specs[span]):
             if expert.layer_id != layer.layer_id:
@@ -222,7 +218,7 @@ def _verify_experts(program, arch) -> None:
                 raise MeshIrError("E_ABI_OVERFLOW",
                                   "expert weight range overflows",
                                   expert_id=expert.expert_id)
-            tensor = _weight_tensor(program, expert.weight_symbol_id)
+            tensor = _weight_tensor(program, catalog, variant, expert.weight_symbol_id)
             if expert.weight_region_offset + expert.weight_bytes > \
                     _tensor_bytes(tensor):
                 raise MeshIrError("E_ABI_BOUNDS",
@@ -234,7 +230,7 @@ def _verify_experts(program, arch) -> None:
                                   "weight digest index out of table",
                                   expert_id=expert.expert_id)
             digest = program.content_digests[expert.weight_digest_index]
-            if (digest.object_kind != A.TENSOR_ROLE.WEIGHT or
+            if (digest.object_kind != A.CONTENT_DIGEST_OBJECT_KIND["TENSOR"] or
                     digest.object_id != tensor.tensor_id or
                     digest.digest != tensor.content_sha256 or
                     digest.digest == bytes(32)):
@@ -323,11 +319,11 @@ def _verify_region_scratch(scratch_by_core, region) -> None:
     scratch_by_core[region.core_id].append((start, end, region.region_id))
 
 
-def _region_lifecycle(program, region) -> tuple:
-    begins = [c for c in program.commands
+def _region_lifecycle(commands, region) -> tuple:
+    begins = [c for c in commands
               if c.opcode == A.OPCODE.REQUEST_BEGIN]
-    ends = [c for c in program.commands if c.opcode == A.OPCODE.REQUEST_END]
-    halts = [c for c in program.commands
+    ends = [c for c in commands if c.opcode == A.OPCODE.REQUEST_END]
+    halts = [c for c in commands
              if c.opcode == A.OPCODE.HALT and c.core_id == region.core_id]
     if len(begins) != 1 or len(ends) != 1:
         raise MeshIrError("E_LIFECYCLE",
@@ -341,7 +337,13 @@ def _region_lifecycle(program, region) -> tuple:
 
 
 def _verify_region_domination(program, region, insert, resume) -> None:
-    begin, end, halt = _region_lifecycle(program, region)
+    from mesh_ir.execution_view import build_execution_views
+    views = [view for view in build_execution_views(program).views
+             if insert.command_id in view.command_ids]
+    if len(views) != 1 or resume.command_id not in views[0].command_ids:
+        raise MeshIrError("E_LIFECYCLE", "region gate crosses execution profiles")
+    begin, end, halt = _region_lifecycle(
+        [program.commands[i] for i in views[0].command_indices], region)
     prerequisites = command_prerequisites(program)
     for target, prerequisite, message in (
             (insert.command_id, begin.command_id,
@@ -356,13 +358,17 @@ def _verify_region_domination(program, region, insert, resume) -> None:
 
 
 def _verify_region_gate(program, region) -> None:
-    stream = next((s for s in program.streams
-                   if s.core_id == region.core_id and
-                   s.stream_id == region.stream_id), None)
-    if stream is None:
+    streams = [stream_commands(program, stream)
+               for stream in program.semantics.streams
+               if stream.core_id == region.core_id and
+               stream.physical_stream_id == region.stream_id]
+    owned = [commands for commands in streams
+             if any(command.command_id == region.insert_after_command_id
+                    for command in commands)]
+    if len(owned) != 1:
         raise MeshIrError("E_STREAM_CONTRACT", "region stream missing",
                           region_id=region.region_id)
-    commands = stream_commands(program, stream)
+    commands = owned[0]
     positions = {c.command_id: i for i, c in enumerate(commands)}
     if region.insert_after_command_id not in positions or \
             region.resume_before_command_id not in positions:

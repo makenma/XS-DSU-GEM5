@@ -2,11 +2,22 @@
 
 #include <algorithm>
 #include <tuple>
+#include <set>
 
 namespace gem5
 {
 namespace ai_mesh
 {
+
+uint64_t
+ProfileExecutionView::commandCount(uint16_t core_id) const
+{
+    uint64_t count = 0;
+    for (const auto &range : ranges)
+        if (range.core_id == core_id)
+            count += range.command_count;
+    return count;
+}
 
 std::vector<ProfileStreamRangeView>
 ProfileExecutionView::rangesForCore(uint16_t core_id) const
@@ -27,54 +38,91 @@ ProfileExecutionView::rangeFor(uint16_t core_id, uint16_t stream_id) const
     return nullptr;
 }
 
-ExecutionViewSet ExecutionViewSet::fromVerified(const DecodedProgram &program)
+bool
+buildExecutionViews(const DecodedProgram &program,
+                    const ProgramSemanticContext &context,
+                    ExecutionViewSet &out, MeshLoadError &error)
 {
-    ExecutionViewSet set;
-    set.whole_view.whole_program = true;
-    set.whole_view.ranges.reserve(program.streams.size());
-    for (const auto &stream : program.streams)
-        set.whole_view.ranges.push_back(
-            {stream.core_id, stream.stream_id, stream.command_begin,
-             stream.command_count});
-    std::sort(set.whole_view.ranges.begin(), set.whole_view.ranges.end(),
-              [](const ProfileStreamRangeView &left,
-                 const ProfileStreamRangeView &right) {
-                  return std::tie(left.core_id, left.stream_id) <
-                         std::tie(right.core_id, right.stream_id);
-              });
-    if (!program.has_profile_scoped_execution_v1) {
-        set.whole_program_value = true;
-        for (const auto &entrypoint : program.entrypoints)
-            for (const auto &profile : program.profiles)
-                if (profile.entrypoint_id == entrypoint.entrypoint_id)
-                    set.by_instance[{entrypoint.entrypoint_id,
-                                     profile.profile_id}] =
-                        set.whole_view;
-        return set;
+    auto reject = [&](const char *message) {
+        error.code = "E_ABI_BOUNDS";
+        error.message = message;
+        return false;
+    };
+    if (!context.matches(program))
+        return reject("execution views require this program's semantic context");
+    ExecutionViewSet result;
+    std::map<uint64_t, std::map<uint64_t, uint32_t>> commands;
+    for (const auto &[id, command] : context.commands()) {
+        const auto *stream = context.commandStream(id);
+        if (!stream || command->core_id != stream->stream->core_id ||
+            command->stream_id != stream->stream->physical_stream_id) {
+            error = {"E_STREAM_CONTRACT", "profile stream command owner differs"};
+            return false;
+        }
+        commands[stream->stream->stream_id].emplace(stream->ordinal, id);
     }
-    set.whole_program_value = false;
-    std::map<uint32_t, std::vector<ProfileStreamRangeView>> grouped;
-    for (const auto &range : program.profile_stream_ranges)
-        grouped[range.profile_id].push_back(
-            {range.core_id, range.stream_id, range.command_begin,
-             range.command_count});
-    for (auto &entry : grouped) {
+    using RangeKey = std::tuple<uint32_t, uint16_t, uint16_t,
+                                uint32_t, uint32_t>;
+    std::vector<RangeKey> expected;
+    for (const auto &[id, variant] : context.variants()) {
         ProfileExecutionView view;
-        view.profile_id = entry.first;
-        view.whole_program = false;
-        view.ranges = std::move(entry.second);
+        view.profile_id = variant->profile_id;
+        view.entrypoint_id = variant->entrypoint_id;
+        for (const auto &[streamId, stream] : context.streams()) {
+            if (context.owner("streams", streamId) != variant)
+                continue;
+            if (stream->core_id > UINT16_MAX ||
+                stream->physical_stream_id > UINT16_MAX ||
+                stream->command_begin > UINT32_MAX ||
+                stream->command_count > UINT32_MAX)
+                return reject("profile stream range exceeds wire bounds");
+            ProfileStreamRangeView range;
+            range.core_id = stream->core_id;
+            range.stream_id = stream->physical_stream_id;
+            range.command_begin = stream->command_begin;
+            range.command_count = stream->command_count;
+            for (const auto &[ordinal, command] : commands[streamId])
+                range.command_ids.push_back(command);
+            if (range.command_ids.size() != range.command_count)
+                return reject("profile stream lacks its semantic commands");
+            expected.emplace_back(view.profile_id, range.core_id,
+                                  range.stream_id, range.command_begin,
+                                  range.command_count);
+            view.ranges.push_back(std::move(range));
+        }
         std::sort(view.ranges.begin(), view.ranges.end(),
-                  [](const ProfileStreamRangeView &left,
-                     const ProfileStreamRangeView &right) {
-                      return std::tie(left.core_id, left.stream_id) <
-                             std::tie(right.core_id, right.stream_id);
-                  });
-        for (const auto &profile : program.profiles)
-            if (profile.profile_id == view.profile_id)
-                view.entrypoint_id = profile.entrypoint_id;
-        set.by_instance[{view.entrypoint_id, view.profile_id}] = view;
+            [](const auto &left, const auto &right) {
+                return std::tie(left.core_id, left.stream_id) <
+                       std::tie(right.core_id, right.stream_id);
+            });
+        if (!result.by_instance.emplace(
+                std::make_pair(view.entrypoint_id, view.profile_id),
+                std::move(view)).second)
+            return reject("execution view profile identity is duplicated");
     }
-    return set;
+    std::sort(expected.begin(), expected.end());
+    std::vector<RangeKey> actual;
+    for (const auto &range : program.transport.profile_stream_ranges)
+        actual.emplace_back(range.profile_id, range.core_id, range.stream_id,
+                            range.command_begin, range.command_count);
+    if (program.header.required_features &
+        mesh_abi::kFeatureProfileScopedExecutionV1) {
+        if (actual != expected)
+            return reject("profile ranges differ from scheduled variant projection");
+    } else if (!actual.empty()) {
+        return reject("profile ranges require the profile feature");
+    }
+    if (result.by_instance.empty() ||
+        result.by_instance.size() != program.transport.profiles.size())
+        return reject("execution views do not cover declared profiles");
+    std::set<std::pair<uint32_t, uint32_t>> profiles;
+    for (const auto &profile : program.transport.profiles) {
+        const auto key = std::make_pair(profile.entrypoint_id, profile.profile_id);
+        if (!profiles.insert(key).second || !result.by_instance.count(key))
+            return reject("execution views differ from declared profiles");
+    }
+    out = std::move(result);
+    return true;
 }
 
 const ProfileExecutionView *
@@ -87,5 +135,5 @@ ExecutionViewSet::forInstance(uint32_t entrypoint_id,
     return &found->second;
 }
 
-} // namespace ai_mesh
-} // namespace gem5
+}
+}

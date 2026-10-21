@@ -46,7 +46,7 @@ def typed_flag(value):
     return value if value in (0, 1) else None
 
 
-def planned_instance_cores(program, path_kind=None):
+def planned_instance_cores(program, core_ids, path_kind=None):
     if path_kind is None:
         path_kind = A.PATH_KIND.INITIAL_PREFILL
     if not program.agent_request_profiles:
@@ -66,7 +66,9 @@ def planned_instance_cores(program, path_kind=None):
         else:
             view = views.for_instance(profile.mesh_entrypoint_id,
                                       profile.mesh_profile_id)
-        cores.append(sorted(view.core_ids))
+        if not set(view.core_ids).issubset(core_ids):
+            return []
+        cores.append(sorted(core_ids))
     return cores
 
 
@@ -187,7 +189,7 @@ def verify_error_drain(result, program, core_ids, fault_core, committed_phases,
     if not isinstance(result, dict):
         return ["the error artifact is not an object"]
     expected_cores = sorted(core_ids)
-    instance_cores = planned_instance_cores(program, path_kind)
+    instance_cores = planned_instance_cores(program, expected_cores, path_kind)
 
     if result.get("terminal") != "ERROR_DRAINED":
         failures.append("the artifact terminal is not ERROR_DRAINED")
@@ -222,6 +224,26 @@ def verify_error_drain(result, program, core_ids, fault_core, committed_phases,
             failures.append("the final instance ledger is not the instance that "
                             "committed the terminal")
 
+    settled_tick = None
+    candidate_events = result.get("serving_candidate_events")
+    if not isinstance(candidate_events, list):
+        failures.append("the serving lifecycle events are missing")
+    else:
+        settled = [row for row in candidate_events
+                   if isinstance(row, dict) and row.get("event") == "SETTLED"]
+        identities = _identities(settled, "instance")
+        if identities != list(range(1, len(instances) + 1)):
+            failures.append("settled events do not exactly follow the archived instances")
+        ticks = [typed_tick(row.get("tick"), minimum=1) for row in settled]
+        if not ticks or any(tick is None for tick in ticks):
+            failures.append("the serving instance settlement has no positive tick")
+        elif any(left > right for left, right in zip(ticks, ticks[1:])):
+            failures.append("serving instance settlements are out of order")
+        elif settled[-1].get("instance") == terminal_instance:
+            settled_tick = ticks[-1]
+            if terminal_tick is not None and settled_tick > terminal_tick:
+                failures.append("the program terminal precedes instance settlement")
+
     cores = result.get("cores")
     if not isinstance(cores, list) or not cores:
         failures.append("the error artifact carries no core evidence")
@@ -254,7 +276,7 @@ def verify_error_drain(result, program, core_ids, fault_core, committed_phases,
             elif latch > drained:
                 failures.append("the fault core work drained before its error "
                                 "latched")
-            elif terminal_tick is not None and drained > terminal_tick:
+            elif settled_tick is not None and drained > settled_tick:
                 failures.append("the error terminal precedes the fault core "
                                 "drain")
             if dma_idle != 1:
@@ -308,7 +330,7 @@ def verify_error_drain(result, program, core_ids, fault_core, committed_phases,
     task = _event_tick(events, "TASK_TERMINAL", request_id, cookie, False,
                        failures)
     if terminal_tick is not None:
-        if host is not None and host < terminal_tick:
+        if host is not None and settled_tick is not None and host < settled_tick:
             failures.append("the Frontend terminal latch precedes the mesh "
                             "error terminal")
         if host is not None and ready is not None and host > ready:
@@ -317,7 +339,7 @@ def verify_error_drain(result, program, core_ids, fault_core, committed_phases,
         if ready is not None and cq is not None and ready > cq:
             failures.append("the CQ terminal ready does not precede the CQ "
                             "assignment")
-        if cq is not None and cq < terminal_tick:
+        if cq is not None and settled_tick is not None and cq < settled_tick:
             failures.append("the CQ assignment precedes the mesh error "
                             "terminal")
         if cq is not None and task is not None and task < cq:

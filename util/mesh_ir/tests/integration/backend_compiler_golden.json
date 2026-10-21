@@ -1,0 +1,145 @@
+{
+  "architecture_digest": "81e983940fadf3943135c2f862fc4e7f590d3c550b513e9b0fc1154624b5f9fe",
+  "configurations": {
+    "ring-tp2": {
+      "effective_config_sha256": "dbc8bbd372acb287bd9b38c03ae26aa4c2865ff69d735b73586a2f7ed4f85f28",
+      "intrinsic_traffic_semantic_sha256": "5953b094d930a5f23e4d8a001279b987f27e0e8074b735918dfc941d64fa58c1",
+      "kernels": [
+        {
+          "entrypoint": "mlp",
+          "profile_id": "mlp_static",
+          "semantic_sha256": "285d3d3a85b4b0ff44e2278c83cb2317b04dd22f020caabdbc8f577330b7433f"
+        },
+        {
+          "entrypoint": "transformer",
+          "profile_id": "b2s4",
+          "semantic_sha256": "83a247c0ecddd23ac39b3a252a029e0eacbf1f794566c9a04f6e1634dce8c205"
+        },
+        {
+          "entrypoint": "transformer",
+          "profile_id": "b4s8",
+          "semantic_sha256": "19724ed18487a9d54134d3f3ca71dd5c15c791302d9ca8223c1d9f70ba772252"
+        }
+      ],
+      "program_semantic_sha256": "f7618b3d52944861b53e0fa27682f21ab9e14c491d1cf3e20d320f3fa5171509"
+    },
+    "ring-tp4": {
+      "effective_config_sha256": "e6e67072353cd2751952aa950edc0aef8c3970f2b3e3d6928229bd1d4554a547",
+      "intrinsic_traffic_semantic_sha256": "a4ba9208e91ab90c79d877239c2de7fe128397175c20cdffb3621816dac0b5ca",
+      "kernels": [
+        {
+          "entrypoint": "mlp",
+          "profile_id": "mlp_static",
+          "semantic_sha256": "619a247aed3bdc787cae99077be43f415943443263f21d8d1be3dac93b6b38c5"
+        },
+        {
+          "entrypoint": "transformer",
+          "profile_id": "b2s4",
+          "semantic_sha256": "df7624ad73423e0065255b22ede66035333c86ab04942c4cdc041e386d59de75"
+        },
+        {
+          "entrypoint": "transformer",
+          "profile_id": "b4s8",
+          "semantic_sha256": "fdbc503e979260071b3368d50146fab09288ce4bcaafb7b9d6ab98700051f909"
+        }
+      ],
+      "program_semantic_sha256": "67403ebbbaa83e2bfc5c71cac9972c4817800c927c97e1b1b7d1123ae6d1a6dd"
+    },
+    "tree-tp1": {
+      "effective_config_sha256": "14eb027fd5a748feb7a7dcc8efc8d1fd11d9e71cf16c650bda72d1b156e981a5",
+      "intrinsic_traffic_semantic_sha256": "d495ea9675ff2971279753fddd4a84d1261f99fbd194902bef140210e1bc1856",
+      "kernels": [
+        {
+          "entrypoint": "mlp",
+          "profile_id": "mlp_static",
+          "semantic_sha256": "0fa5caba8301b185fadfea7d08be8908fd49c62a3856914f96de31e02057d282"
+        },
+        {
+          "entrypoint": "transformer",
+          "profile_id": "b2s4",
+          "semantic_sha256": "b4287dd0dfaf0a08bcf604d666290f204ce4c728f5e390c25b9c3665b298c877"
+        },
+        {
+          "entrypoint": "transformer",
+          "profile_id": "b4s8",
+          "semantic_sha256": "d210bf6f26a676c014f45b680c621e758a16d218d3e80923f318d2c7548d461f"
+        }
+      ],
+      "program_semantic_sha256": "b6de116631ae0272a9283da1b154c10971d99d83a6d0983a2c082a8f8647d74f"
+    },
+    "tree-tp2": {
+      "effective_config_sha256": "280394f6351c5c44a229a23246fe6daeb13958bd75578cd2922b333a23662884",
+      "intrinsic_traffic_semantic_sha256": "eebf65e671b7b37867c95ff24bf7c52a09a3bb36ccc640103672c4388f04a4bd",
+      "kernels": [
+        {
+          "entrypoint": "mlp",
+          "profile_id": "mlp_static",
+          "semantic_sha256": "510699dbf3c1e76fb708d4648b0581212932b2be4f67879bb7f62cb1b5a60b7a"
+        },
+        {
+          "entrypoint": "transformer",
+          "profile_id": "b2s4",
+          "semantic_sha256": "05fa93226bb7b0efdaaa63d581038c230c99adb18a8965e134b91629a22789a4"
+        },
+        {
+          "entrypoint": "transformer",
+          "profile_id": "b4s8",
+          "semantic_sha256": "19724ed18487a9d54134d3f3ca71dd5c15c791302d9ca8223c1d9f70ba772252"
+        }
+      ],
+      "program_semantic_sha256": "0807de40cfdd3bf43a1b01846703e190eb55d2a65b2d8b7d4fcaaea2a2e47e53"
+    },
+    "tree-tp4": {
+      "effective_config_sha256": "6877aec722341463cf515ec4dffa2e6381de8e35492c4e43371e85ff9f66ec2e",
+      "intrinsic_traffic_semantic_sha256": "c98e56efb7e7ed8efbc64effc0b8fbf30abdbd6f094b6137fd4b9837c3c330aa",
+      "kernels": [
+        {
+          "entrypoint": "mlp",
+          "profile_id": "mlp_static",
+          "semantic_sha256": "65182450ace6fbc49e5b72661733270f0098f607ff3d50b98772ed9a6cf3d155"
+        },
+        {
+          "entrypoint": "transformer",
+          "profile_id": "b2s4",
+          "semantic_sha256": "2decc0179bf94d2b5400fd51ca2ab43141b7073d3a92c89770d859c7bc7a34b1"
+        },
+        {
+          "entrypoint": "transformer",
+          "profile_id": "b4s8",
+          "semantic_sha256": "ebd35d2c4b5bf19da135d825d4ac7ab6efd246001ce1cd45d0adac8124071f3c"
+        }
+      ],
+      "program_semantic_sha256": "dc2d0fd57f4b78963d47c1e940d27cb39db618dd2b632056948d118749ba9e4c"
+    }
+  },
+  "schema_version": "mesh-backend-golden-v1",
+  "source_graphs": [
+    {
+      "entrypoint": "mlp",
+      "profile_id": "mlp_static",
+      "semantic_sha256": "07e6a5a223a168ebc419987c5a74e55329f239767086fefe1f1d41a2a2b49c41"
+    },
+    {
+      "entrypoint": "transformer",
+      "profile_id": "symbolic",
+      "semantic_sha256": "c4b9d169ed078daf62f1f9922b7ecfcf2c5d1b7bb0f0299c668489343daea905"
+    }
+  ],
+  "variants": [
+    {
+      "entrypoint": "mlp",
+      "profile_id": "mlp_static",
+      "semantic_sha256": "07e6a5a223a168ebc419987c5a74e55329f239767086fefe1f1d41a2a2b49c41"
+    },
+    {
+      "entrypoint": "transformer",
+      "profile_id": "b2s4",
+      "semantic_sha256": "bebc8ba396b0e9d84e48323a189bc93c76d5f8d3d8ec38c6290d2b11c784d795"
+    },
+    {
+      "entrypoint": "transformer",
+      "profile_id": "b4s8",
+      "semantic_sha256": "ac287c88e10a04a1ec82b05980b659aa7975b5a3168c0c90438974bc48ce0b94"
+    }
+  ]
+}

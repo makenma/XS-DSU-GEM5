@@ -33,6 +33,7 @@
 #define __MEM_RUBY_NETWORK_GARNET_0_GARNETNETWORK_HH__
 
 #include <iostream>
+#include <memory>
 #include <vector>
 
 #include "mem/ruby/network/Network.hh"
@@ -50,6 +51,7 @@ namespace ruby
 
 class FaultModel;
 class NetDest;
+class AggregateNetwork;
 
 namespace garnet
 {
@@ -63,11 +65,16 @@ class CreditLink;
 class GarnetNetwork : public Network
 {
   public:
-    typedef GarnetNetworkParams Params;
+    PARAMS(GarnetNetwork);
     GarnetNetwork(const Params &p);
-    ~GarnetNetwork() = default;
+    ~GarnetNetwork() override;
 
     void init();
+    void serialize(CheckpointOut &cp) const override;
+    void unserialize(CheckpointIn &cp) override;
+    void drainResume() override;
+    template<class Archive> void serialize(Archive &archive, unsigned);
+
 
     const char *garnetVersion = "3.0";
 
@@ -208,12 +215,26 @@ class GarnetNetwork : public Network
 
     GarnetQuiescenceSnapshot quiescenceSnapshot() const;
     GarnetCreditLedger creditLedger() const;
+
+    // Test-only drain-phase fault: drop the next credit returns at the real
+    // delivery boundary.  The data path is untouched, so a dropped return only
+    // shows up as an unrestored credit ledger entry after every core halted.
+    void armCreditDropFault(uint32_t count) { credit_drop_remaining = count; }
+    bool consumeCreditDropFault()
+    {
+        if (credit_drop_remaining == 0)
+            return false;
+        credit_drop_remaining--;
+        return true;
+    }
     GarnetInputVcHighWater inputVcHighWater() const;
     GarnetReceiverCapacityMap receiverCapacityMap() const;
     GarnetExperimentSnapshot experimentSnapshot() const;
     void flushEventIntegratedStats();
     void resetInputVcHighWater();
-    bool isQuiescent() const { return quiescenceSnapshot().empty(); }
+    bool isQuiescent() const override;
+    void setAggregateMode(bool aggregate) override;
+    const AggregateNetwork *aggregateModel() const { return aggregate_model.get(); }
 
   protected:
     // Configuration
@@ -290,6 +311,8 @@ class GarnetNetwork : public Network
     std::vector<std::vector<statistics::Scalar *>> m_ctrl_traffic_distribution;
 
   private:
+    std::string checkpointState;
+    std::unique_ptr<AggregateNetwork> aggregate_model;
     GarnetNetwork(const GarnetNetwork& obj);
     GarnetNetwork& operator=(const GarnetNetwork& obj);
 
@@ -318,6 +341,7 @@ class GarnetNetwork : public Network
     std::vector<NetworkLink *> m_networklinks; // All flit links in the network
     std::vector<NetworkBridge *> m_networkbridges; // All network bridges
     std::vector<CreditLink *> m_creditlinks; // All credit links in the network
+    uint32_t credit_drop_remaining = 0;
     std::vector<NetworkInterface *> m_nis;   // All NI's in Network
     int m_next_packet_id; // static vairable for packet id allocation
 };

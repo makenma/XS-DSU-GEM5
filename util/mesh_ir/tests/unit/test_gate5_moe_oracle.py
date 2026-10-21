@@ -250,7 +250,7 @@ def test_gate5_oracle_recomputes_the_dual_fixture_traffic():
          for region in regions},
         MaterializeConfig(workload_plan_digest=PLAN_DIGEST,
                           program_semantic_digest=bytes.fromhex(
-                              program.semantic_sha256()),
+                              program.semantic_sha256),
                           p2p_chunk_bytes=4096),
         bounds, program.moe_expert_specs)
     weight_bytes = {spec.expert_id: spec.weight_bytes

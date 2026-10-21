@@ -1,3 +1,6 @@
+#include <sstream>
+#include <boost/archive/text_iarchive.hpp>
+#include <boost/archive/text_oarchive.hpp>
 #include <gtest/gtest.h>
 
 #include <cstdint>
@@ -34,6 +37,19 @@ TEST(TensorSramTest, ParallelBanksDoNotStallEachOther)
     EXPECT_EQ(c.stall_ticks, 500u);
     EXPECT_EQ(a.conflict_ticks, 0u);
     EXPECT_EQ(b.conflict_ticks, 0u);
+}
+
+TEST(TensorSramTest, BankBytesCountOnlyAcceptedUsefulSegments)
+{
+    TensorSram sram(256, 4, 16, 16, 16, 16, 1, 1, 1);
+    ASSERT_TRUE(sram.tryReserve(0, 14, 20, false));
+    EXPECT_EQ(sram.bankBytes(false), (std::vector<uint64_t>{2, 16, 2, 0}));
+    EXPECT_FALSE(sram.tryReserve(0, 14, 20, false));
+    EXPECT_EQ(sram.bankBytes(false), (std::vector<uint64_t>{2, 16, 2, 0}));
+    ASSERT_TRUE(sram.tryReserve(0, 15, 18, true));
+    EXPECT_EQ(sram.bankBytes(true), (std::vector<uint64_t>{1, 16, 1, 0}));
+    sram.reserve(4, 64, 0, false);
+    EXPECT_EQ(sram.bankBytes(false), (std::vector<uint64_t>{2, 16, 2, 0}));
 }
 
 TEST(TensorSramTest, SameBankConflictsStall)
@@ -397,6 +413,30 @@ TEST(TensorSramPartitionTest, PartitionServiceBytesAreAccounted)
                   .readBytes, 64u);
     EXPECT_EQ(sram.partition(mesh_abi::SramPartitionKind::WEIGHT_CACHE)
                   .writeBytes, 32u);
+}
+
+TEST(TensorSramTest, CheckpointPreservesPhysicalBytesBankTrafficAndReservations)
+{
+    TensorSram source(256, 4, 16, 16, 16, 16, 1, 1, 1);
+    const std::vector<uint8_t> payload(20, 0x5a);
+    ASSERT_TRUE(source.write(14, payload.size(), payload.data()));
+    ASSERT_TRUE(source.tryReserve(0, 14, 20, false));
+    EXPECT_FALSE(source.tryReserve(0, 14, 20, false));
+    ASSERT_TRUE(source.tryReserve(0, 15, 18, true));
+    std::stringstream bytes;
+    { boost::archive::text_oarchive archive(bytes); archive << source; }
+    TensorSram restored(256, 4, 16, 16, 16, 16, 1, 1, 1);
+    { boost::archive::text_iarchive archive(bytes); archive >> restored; }
+    std::vector<uint8_t> observed(payload.size());
+    ASSERT_TRUE(restored.read(14, observed.size(), observed.data()));
+    EXPECT_EQ(observed, payload);
+    EXPECT_EQ(restored.bankBytes(false), (std::vector<uint64_t>{2, 16, 2, 0}));
+    EXPECT_EQ(restored.bankBytes(true), (std::vector<uint64_t>{1, 16, 1, 0}));
+    EXPECT_EQ(restored.trafficBytes(false), 20u);
+    EXPECT_EQ(restored.trafficBytes(true), 18u);
+    EXPECT_EQ(restored.reservationRejectionAttempts(false), 1u);
+    EXPECT_FALSE(restored.canReserve(0, 14, 20, false));
+    EXPECT_TRUE(restored.canReserve(2, 14, 20, false));
 }
 
 } // anonymous namespace

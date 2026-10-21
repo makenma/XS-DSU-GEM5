@@ -50,6 +50,8 @@ class SimpleNetwork(RubyNetwork):
     cxx_header = "mem/ruby/network/simple/SimpleNetwork.hh"
     cxx_class = "gem5::ruby::SimpleNetwork"
 
+    require_finite_buffers = Param.Bool(False, "Reject unbounded fabric queues")
+
     buffer_size = Param.Int(
         0,
         "default internal buffer size for links and\
@@ -146,10 +148,8 @@ class Switch(BasicRouter):
             fatal("User should not manually set routers' port_buffers")
 
         router_buffers = []
-        # Add message buffers to routers at the end of each
-        # unidirectional internal link
         for link in network.int_links:
-            if link.dst_node == self:
+            if int(link.src_node.router_id) == int(self.router_id):
                 for i in range(int(network.number_of_virtual_networks)):
                     router_buffers.append(
                         SwitchPortBuffer(buffer_size=vnet_buffer_size(i))
@@ -158,7 +158,7 @@ class Switch(BasicRouter):
         # Add message buffers to routers for each external link connection
         for link in network.ext_links:
             # Routers can only be int_nodes on ext_links
-            if link.int_node == self:
+            if int(link.int_node.router_id) == int(self.router_id):
                 for i in range(int(network.number_of_virtual_networks)):
                     router_buffers.append(
                         SwitchPortBuffer(buffer_size=vnet_buffer_size(i))

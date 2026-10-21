@@ -20,14 +20,14 @@ REPO = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO / "configs/example/ai_mesh"))
 sys.path.insert(0, str(REPO / "util/mesh_ir"))
 
-from dma_uid_predict import predict  # noqa: E402
+from mesh_ir.fault_plan import predict  # noqa: E402
 from mesh_ir.abi.decoder import decode_program  # noqa: E402
 from mesh_ir.agent_config import (  # noqa: E402
     load_agent_runtime_config,
     release_policy_of,
 )
 from mesh_ir.agent_workload import load_workload_plan  # noqa: E402
-from mesh_ir.builder import load_arch  # noqa: E402
+from mesh_ir.architecture import load_arch  # noqa: E402
 from mesh_ir.gate3_oracle import read_facts_document  # noqa: E402
 from mesh_ir.serving_error_oracle import (  # noqa: E402
     frozen_request_identity,

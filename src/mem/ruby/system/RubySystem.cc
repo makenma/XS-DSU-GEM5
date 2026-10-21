@@ -194,7 +194,6 @@ RubySystem::makeCacheRecorder(uint8_t *uncompressed_trace,
         }
     }
 
-    assert(ruby_port_ptr != NULL);
 
     for (int cntrl = 0; cntrl < m_abs_cntrl_vec.size(); cntrl++) {
         if (ruby_port_map[cntrl] == NULL) {
@@ -415,6 +414,10 @@ RubySystem::unserialize(CheckpointIn &cp)
 
     readCompressedTrace(cache_trace_file, uncompressed_trace,
                         cache_trace_size);
+    if (!cache_trace_size) {
+        delete[] uncompressed_trace;
+        return;
+    }
     m_warmup_enabled = true;
     m_systems_to_warmup++;
 

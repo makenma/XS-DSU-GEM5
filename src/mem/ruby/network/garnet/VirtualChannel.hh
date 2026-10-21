@@ -32,6 +32,8 @@
 #ifndef __MEM_RUBY_NETWORK_GARNET_0_VIRTUALCHANNEL_HH__
 #define __MEM_RUBY_NETWORK_GARNET_0_VIRTUALCHANNEL_HH__
 
+#include "base/checkpoint_fields.hh"
+
 #include <utility>
 
 #include "mem/ruby/network/garnet/CommonTypes.hh"
@@ -49,6 +51,7 @@ namespace garnet
 class VirtualChannel
 {
   public:
+    GEM5_CHECKPOINT_FIELDS(m_vc_state, m_output_port, m_enqueue_time, m_output_vc)
     explicit VirtualChannel(uint32_t capacity);
     ~VirtualChannel() = default;
 

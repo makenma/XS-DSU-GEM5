@@ -32,6 +32,8 @@
 #ifndef __MEM_RUBY_NETWORK_GARNET_0_ROUTER_HH__
 #define __MEM_RUBY_NETWORK_GARNET_0_ROUTER_HH__
 
+#include "base/checkpoint_fields.hh"
+
 #include <iostream>
 #include <map>
 #include <memory>
@@ -70,6 +72,16 @@ class OutputUnit;
 class Router : public BasicRouter, public Consumer
 {
   public:
+    template<class Archive> void serialize(Archive &archive, unsigned)
+    {
+        Consumer::checkpoint(archive);
+        fatal_if(m_dual_lane, "E_CHECKPOINT_CONFIG: dual-lane restore is unsupported");
+        checkpoint::fields(archive, switchAllocator, crossbarSwitch);
+        for (auto &unit : m_input_unit) archive & *unit;
+        for (auto &unit : m_output_unit) archive & *unit;
+        checkpoint::fields(archive, m_buffer_reads, m_buffer_writes,
+            m_sw_input_arbiter_activity, m_sw_output_arbiter_activity, m_crossbar_activity);
+    }
     typedef GarnetRouterParams Params;
     Router(const Params &p);
 

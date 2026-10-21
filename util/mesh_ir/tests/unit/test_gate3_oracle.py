@@ -732,7 +732,7 @@ def test_observation_cli_returns_machine_readable_result(tmp_path):
     repo = Path(__file__).resolve().parents[4]
     result = subprocess.run(
         [
-            str(Path(sys.executable).resolve()),
+            sys.executable,
             str(repo / "tests/gem5/ai_mesh/gate3/validate_observation.py"),
             str(path),
         ],

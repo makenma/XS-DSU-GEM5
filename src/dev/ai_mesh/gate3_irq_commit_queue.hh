@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <map>
 #include <vector>
+#include <stdexcept>
+#include "base/checkpoint_fields.hh"
 
 namespace gem5
 {
@@ -37,6 +39,14 @@ class Gate3IrqCommitQueue
 {
   public:
     explicit Gate3IrqCommitQueue(size_t capacity);
+
+    template<class Archive> void serialize(Archive &archive, unsigned)
+    {
+        if (!commits.empty())
+            throw std::runtime_error("E_CHECKPOINT_BOUNDARY: IRQ commits are pending");
+        archive & committedTail;
+    }
+
 
     Gate3IrqStageResult stage(Gate3IrqCommit commit);
     std::vector<Gate3IrqCommit> consumePrefix();

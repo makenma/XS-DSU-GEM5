@@ -73,8 +73,6 @@ Random::init(uint32_t s)
 void
 Random::serialize(CheckpointOut &cp) const
 {
-    panic("Currently not used anywhere.\n");
-
     // get the state from the generator
     std::ostringstream oss;
     oss << gen;
@@ -85,8 +83,6 @@ Random::serialize(CheckpointOut &cp) const
 void
 Random::unserialize(CheckpointIn &cp)
 {
-    panic("Currently not used anywhere.\n");
-
     // the random generator state did not use to be part of the
     // checkpoint state, so be forgiving in the unserialization and
     // keep on going if the parameter is not there

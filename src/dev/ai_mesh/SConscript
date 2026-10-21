@@ -1,56 +1,111 @@
-# -*- mode:python -*-
-
+import gem5_scons
 Import('*')
-
-# The AI Mesh dummy core stack only exists in the AXI_MESH protocol build,
-# mirroring the guard used by src/mem/axi/SConscript.
 if env['CONF']['PROTOCOL'] != 'AXI_MESH':
     Return()
-
-SimObject('AiMesh.py', sim_objects=[
-    'DmaEngineBase',
-    'MeshProgramLoader',
-    'MockAxiTransport',
-    'TensorDmaEngine',
-    'AxiGarnetBridge',
-    'AxiTensorDmaEngine',
-    'PeerSramAperture',
-    'NpuMemoryEndpoint',
-    'Gate3ObservationRecorder',
-    'AgentAxiDriver',
-    'NpuServingFrontend',
-    'MeshDummyCore',
-    'MeshDispatcher',
-])
-
+with gem5_scons.Configure(env.Clone(LIBS=[])) as conf:
+    if not conf.CheckPkgConfig('isl'):
+        gem5_scons.error('AI Mesh requires libisl-dev with pkg-config metadata')
+    conf.env.Append(LIBS=['isl'])
+    isl_linked = conf.TryLink('\n#include <isl/ctx.h>\n#include <isl/map.h>\n#include <isl/set.h>\nint\nmain()\n{\n    isl_ctx *context = isl_ctx_alloc();\n    isl_set *set = isl_set_read_from_str(context, "{ [i] }");\n    isl_map *map = isl_map_read_from_str(context, "{ [i] -> [i] }");\n    isl_set_free(set);\n    isl_map_free(map);\n    isl_ctx_free(context);\n    return 0;\n}\n', '.cc')
+    if not isl_linked:
+        gem5_scons.error('AI Mesh requires libisl-dev headers and linker support')
+isl = SourceLib('isl', tags={'gem5 lib', 'ai mesh isl'})
+mesh_binary_sources = ('mesh_binary.cc', 'mesh_binary_envelope.cc', 'mesh_binary_storage.cc', 'mesh_binary_validation.cc', 'mesh_binary_canonical.cc', 'mesh_canonical.cc', 'mesh_hash.cc')
+mesh_admission_sources = (*mesh_binary_sources,
+    'mesh_ir_verifier.cc',
+    'mesh_kv_layout.cc',
+    'mesh_moe_verifier.cc',
+    'mesh_serving_verifier.cc',
+    'mesh_serving_tensor_bindings.cc',
+    'mesh_serving_workspace.cc',
+    'mesh_serving_capacity.cc',
+    'mesh_serving_projection.cc',
+    'mesh_execution_view.cc',
+    'mesh_ir_computation_verifier.cc',
+    'mesh_ir_logical_computation_verifier.cc',
+    'mesh_ir_physical_operation_verifier.cc',
+    'mesh_ir_compute_verifier.cc',
+    'mesh_ir_intrinsic_dependency_facts.cc',
+    'mesh_ir_intrinsic_memory_verifier.cc',
+    'mesh_ir_control_dependency_verifier.cc',
+    'mesh_ir_control_projection.cc',
+    'mesh_ir_dma_verifier.cc',
+    'mesh_ir_gather.cc',
+    'mesh_ir_dependency_graph.cc',
+    'mesh_ir_backing.cc',
+    'mesh_ir_lifetime_verifier.cc',
+    'mesh_ir_region.cc',
+    'mesh_ir_semantic_context.cc',
+    'mesh_splitter.cc',
+)
+mesh_program_sources = (*mesh_admission_sources,
+    'command_rom.cc',
+    'mesh_invocation_binding.cc',
+    'mesh_program_invocation.cc',
+)
+SimObject('AiMesh.py', sim_objects=['DmaEngineBase', 'MeshProgramLoader', 'MockAxiTransport', 'TensorDmaEngine', 'AxiGarnetBridge', 'AxiTensorDmaEngine', 'PeerSramAperture', 'NpuMemoryEndpoint', 'Gate3ObservationRecorder', 'AgentAxiDriver', 'NpuServingFrontend', 'MeshDummyCore', 'MeshDispatcher'])
 Source('mesh_binary.cc')
 Source('mesh_execution_view.cc')
 Source('mesh_kv_layout.cc')
 Source('serving_mesh_executor.cc')
+Source('serving_mesh_replay.cc')
+Source('serving_batch_replay.cc')
+Source('serving_mesh_instance_events.cc')
 Source('serving_fill_inputs.cc')
 Source('mesh_splitter.cc')
 Source('mesh_ir_verifier.cc')
 Source('mesh_moe_verifier.cc')
 Source('mesh_serving_verifier.cc')
+Source('mesh_serving_tensor_bindings.cc')
+Source('mesh_serving_workspace.cc')
+Source('mesh_serving_capacity.cc')
+Source('mesh_json.cc')
+Source('mesh_serving_batch.cc')
 Source('mesh_kv_manager.cc')
+Source('instance_failure_reducer.cc')
+Source('publish_segment_ledger.cc')
+Source('mesh_kv_persistence.cc')
 Source('mesh_kv_manager_state.cc')
 Source('mesh_serving_projection.cc')
 Source('mesh_weight_tags.cc')
 Source('mesh_moe_rng.cc')
 Source('mesh_moe_overlay.cc')
+Source('mesh_moe_finalize.cc')
+Source('mesh_moe_population.cc')
+Source('mesh_moe_materializer.cc')
+Source('mesh_serving_moe.cc')
 Source('mesh_moe_gate.cc')
 Source('mesh_moe_runtime.cc')
 Source('mesh_compute_commit.cc')
+Source('mesh_compute_projection.cc')
 Source('mesh_weight_cache.cc')
+Source('mesh_weight_cache_replay.cc')
+Source('mesh_cache_replay.cc')
+Source('cache_fill_edge.cc')
 Source('mesh_program_loader.cc')
 Source('mock_axi_transport.cc')
+Source('gather_index.cc')
 Source('tensor_dma_engine.cc')
+Source('tensor_dma_gather.cc')
 Source('axi_garnet_bridge.cc')
 Source('axi_tensor_dma_engine.cc')
+Source('mesh_dma_checkpoint.cc')
 Source('peer_sram_aperture.cc')
 Source('npu_memory_endpoint.cc')
+Source('npu_memory_registry.cc')
+Source('mesh_memory_image.cc')
+Source('memory_address_map.cc')
+GTest('memory_address_map.test', 'memory_address_map.test.cc',
+      'memory_address_map.cc', '../../mem/axi/axi_validation.cc')
+GTest('mesh_memory_image.test', 'mesh_memory_image.test.cc',
+      'mesh_memory_image.cc', 'mesh_json.cc', 'mesh_hash.cc', 'memory_address_map.cc',
+      '../../mem/axi/axi_target_adapter.cc', '../../mem/axi/axi_validation.cc',
+      '../../mem/axi/synthetic_hbm_backend.cc')
+Source('mesh_memory_checkpoint.cc')
 Source('gate3_observation_recorder.cc')
+Source('gate3_recorder_checkpoint.cc')
 Source('agent_axi_driver.cc')
+Source('agent_driver_checkpoint.cc')
 Source('agent_axi_driver_plan.cc')
 Source('agent_request_source.cc')
 Source('agent_workload_manager.cc')
@@ -65,6 +120,9 @@ Source('control_trigger_coordinator.cc')
 Source('npu_request_executor.cc')
 Source('npu_serving_frontend.cc')
 Source('npu_serving_frontend_control.cc')
+Source('npu_serving_frontend_execution.cc')
+Source('serving_frontend_checkpoint.cc')
+Source('serving_program_boundary.cc')
 Source('npu_serving_frontend_kv_map.cc')
 Source('serving_request_context.cc')
 Source('kv_token_ledger.cc')
@@ -76,217 +134,106 @@ Source('gate3_msi_id_pool.cc')
 Source('gate3_irq_commit_queue.cc')
 Source('gate3_sq_intake_ledger.cc')
 Source('agent_protocol_validation.cc')
+Source('agent_sq_admission.cc')
+Source('mesh_serving_scheduler.cc')
 Source('agent_protocol_layout.cc')
 Source('agent_ring_state.cc')
 Source('agent_submission_ledger.cc')
 Source('mesh_dummy_core.cc')
+Source('mesh_core_dma.cc')
+Source('mesh_core_checkpoint.cc')
 Source('mesh_dispatcher.cc')
+Source('mesh_dispatcher_results.cc')
+Source('mesh_dispatcher_checkpoint.cc')
+Source('mesh_dispatcher_cache.cc')
+Source('mesh_dispatcher_instances.cc')
 SimObject('MeshExperimentObserver.py', sim_objects=['MeshExperimentObserver'])
 Source('mesh_experiment_observer.cc')
 SimObject('PrestartCancelDriver.py', sim_objects=['PrestartCancelDriver'])
 Source('prestart_cancel_driver.cc')
 Source('agent_crc32c.cc')
 DebugFlag('AiMesh')
+GTest('serving_fill_inputs.test', 'serving_fill_inputs.test.cc', 'serving_fill_inputs.cc', *mesh_program_sources, 'agent_sha256.cc', isl)
+GTest('serving_instance_binding.test', 'serving_instance_binding.test.cc', *mesh_program_sources, 'agent_sha256.cc', isl)
+GTest('mesh_serving_scheduler.test', 'acceptance_gtest_reporter.cc', 'mesh_serving_scheduler.test.cc', 'mesh_serving_scheduler.cc')
+GTest('serving_mesh_executor.test', 'acceptance_gtest_reporter.cc', 'serving_mesh_executor.test.cc', 'serving_prefill.test.cc', 'serving_mesh_executor_admission.test.cc', 'serving_mesh_executor_quantum.test.cc', 'serving_mesh_executor_replay.test.cc', 'serving_mesh_executor_shared.test.cc', 'npu_serving_frontend_kv_map.cc', 'serving_mesh_executor.cc', 'serving_mesh_replay.cc', 'serving_mesh_instance_events.cc', 'serving_fill_inputs.cc', 'mesh_serving_batch.cc', 'publish_segment_ledger.cc', 'mesh_serving_batch.test.cc', 'mesh_serving_scheduler.cc', 'serving_host_bindings.cc', 'agent_surrogate_codec.cc', 'kv_token_ledger.cc', 'serving_request_context.cc', *mesh_program_sources, 'agent_sha256.cc', 'agent_crc32c.cc', 'mesh_kv_manager.cc', 'mesh_kv_manager_state.cc', isl)
+GTest('mesh_kv_layout.test', 'mesh_kv_layout.test.cc', 'mesh_kv_layout.cc', 'mesh_ir_semantic_context.cc', *mesh_binary_sources, 'agent_sha256.cc', 'agent_crc32c.cc')
+GTest('mesh_execution_view.test', 'mesh_execution_view.test.cc', 'mesh_execution_view.cc', 'mesh_ir_semantic_context.cc', *mesh_binary_sources, 'agent_sha256.cc', 'agent_crc32c.cc')
+GTest('mesh_binary.test', 'mesh_binary.test.cc', 'mesh_weight_cache_contract.test.cc', 'mesh_moe_execution_contract.test.cc', 'mesh_weight_cache_candidates.test.cc', 'mesh_weight_cache_replay.test.cc', 'cache_fill_edge.test.cc', 'cache_fill_edge.cc', 'mesh_serving_capacity.test.cc', 'mesh_checkpoint.test.cc', 'acceptance_gtest_reporter.cc', *mesh_program_sources, 'mesh_weight_tags.cc', 'mesh_moe_rng.cc', 'mesh_moe_overlay.cc', 'mesh_moe_gate.cc', 'mesh_moe_runtime.cc', 'mesh_compute_commit.cc', 'mesh_weight_cache.cc', 'mesh_weight_cache_replay.cc', 'agent_sha256.cc', 'mesh_ir_admission.test.cc', 'mesh_invocation_binding.test.cc', isl)
+GTest('mesh_moe_population.test', 'acceptance_gtest_reporter.cc', 'mesh_moe_population.test.cc', 'mesh_moe_population.cc', 'mesh_moe_rng.cc', 'agent_sha256.cc')
+GTest('mesh_moe_materializer.test', 'mesh_moe_materializer.test.cc', 'mesh_moe_materializer.cc', 'mesh_moe_population.cc', 'mesh_moe_rng.cc', *mesh_binary_sources, 'mesh_moe_finalize.cc', 'mesh_serving_projection.cc', 'mesh_moe_overlay.cc', 'agent_sha256.cc')
+GTest('tensor_sram.test', 'tensor_sram.test.cc', 'acceptance_gtest_reporter.cc')
+GTest('tensor_sram_queue.test', 'tensor_sram_queue.test.cc')
+GTest('mesh_splitter.test', 'mesh_splitter.test.cc', 'acceptance_gtest_reporter.cc', 'mesh_splitter.cc', *mesh_binary_sources)
+GTest('program_scoreboard.test', 'program_scoreboard.test.cc')
+GTest('runtime_key.test', 'runtime_key.test.cc', 'acceptance_gtest_reporter.cc')
+GTest('agent_protocol.test', 'agent_protocol.test.cc', 'acceptance_gtest_reporter.cc', 'agent_crc32c.cc')
+GTest('agent_ring.test', 'agent_ring.test.cc', 'agent_runtime_types.cc', 'agent_ring_state.cc', 'agent_protocol_layout.cc')
+GTest('gate3_axi_transfer.test', 'gate3_axi_transfer.test.cc', 'gate3_axi_transfer.cc', '../../mem/axi/axi_validation.cc')
+GTest('gate3_completion_ledger.test', 'gate3_completion_ledger.test.cc', 'gate3_completion_ledger.cc', 'agent_runtime_types.cc')
+GTest('gate3_fatal_reducer.test', 'gate3_fatal_reducer.test.cc', 'gate3_fatal_reducer.cc')
+GTest('gate3_msi_id_pool.test', 'gate3_msi_id_pool.test.cc', 'gate3_msi_id_pool.cc')
+GTest('gate3_irq_commit_queue.test', 'gate3_irq_commit_queue.test.cc', 'gate3_irq_commit_queue.cc')
+GTest('gate3_sq_intake_ledger.test', 'gate3_sq_intake_ledger.test.cc', 'gate3_sq_intake_ledger.cc')
+GTest('agent_protocol_validation.test', 'acceptance_gtest_reporter.cc', 'agent_sq_admission.test.cc', 'agent_sq_admission.cc', 'agent_protocol_validation.test.cc', 'agent_protocol_validation.cc', 'agent_sha256.cc', 'agent_crc32c.cc')
+GTest('agent_submission.test', 'agent_submission.test.cc', 'agent_runtime_types.cc', 'agent_ring_state.cc', 'agent_submission_ledger.cc')
+GTest('agent_request_source.test', 'agent_request_source.test.cc', 'agent_request_source.cc', 'agent_plan_image.cc', 'agent_surrogate_codec.cc', 'agent_sha256.cc')
+GTest('agent_workload_manager.test', 'agent_workload_manager.test.cc', 'acceptance_gtest_reporter.cc', 'agent_workload_manager.cc', 'agent_request_source.cc', 'agent_plan_image.cc', 'agent_surrogate_codec.cc', 'agent_sha256.cc', 'agent_object_table.cc', 'host_resource_manager.cc', 'agent_runtime_types.cc')
+GTest('npu_request_executor.test', 'npu_request_executor.test.cc', 'npu_request_executor.cc', 'agent_surrogate_codec.cc', 'agent_sha256.cc')
+GTest('agent_object_table.test', 'agent_object_table.test.cc', 'acceptance_gtest_reporter.cc', 'agent_object_table.cc', 'agent_runtime_types.cc')
+GTest('host_resource_manager.test', 'host_resource_manager.test.cc', 'acceptance_gtest_reporter.cc', 'host_resource_manager.cc', 'agent_runtime_types.cc')
+GTest('agent_sha256.test', 'agent_sha256.test.cc', 'agent_sha256.cc')
+GTest('agent_plan_image.test', 'agent_plan_image.test.cc', 'agent_plan_image.cc', 'agent_surrogate_codec.cc', 'agent_sha256.cc')
+GTest('agent_surrogate_codec.test', 'agent_surrogate_codec.test.cc', 'agent_surrogate_codec.cc', 'agent_sha256.cc')
+GTest('agent_plan_codec.test', 'agent_plan_codec.test.cc', 'agent_plan_codec.cc', 'serving_host_bindings.cc', 'agent_plan_image.cc', 'agent_surrogate_codec.cc', 'agent_sha256.cc', 'agent_crc32c.cc')
+GTest('control_trigger_coordinator.test', 'control_trigger_coordinator.test.cc', 'control_trigger_coordinator.cc', 'agent_plan_image.cc', 'agent_surrogate_codec.cc', 'agent_sha256.cc')
+GTest('kv_token_ledger.test', 'kv_token_ledger.test.cc', 'kv_token_ledger.cc', 'mesh_kv_manager.cc', 'mesh_kv_manager_state.cc', 'agent_sha256.cc')
+GTest('serving_request_context.test', 'serving_request_context.test.cc', 'serving_request_context.cc', 'mesh_serving_projection.cc', *mesh_binary_sources, 'agent_sha256.cc', 'agent_crc32c.cc', 'mesh_kv_manager.cc', 'mesh_kv_manager_state.cc')
+GTest('npu_serving_frontend_kv_map.test', 'npu_serving_frontend_kv_map.test.cc', 'npu_serving_frontend_kv_map.cc')
+GTest('mesh_kv_manager.test', 'acceptance_gtest_reporter.cc', 'mesh_kv_manager.test.cc', 'mesh_kv_manager.cc', 'mesh_kv_manager_state.cc', 'agent_sha256.cc')
+GTest('mesh_kv_manager_restore.test', 'acceptance_gtest_reporter.cc', 'mesh_kv_manager_restore.test.cc', 'mesh_kv_manager.cc', 'mesh_kv_manager_state.cc', 'agent_sha256.cc')
+GTest('mesh_kv_manager_trace.test', 'acceptance_gtest_reporter.cc', 'mesh_kv_manager_trace.test.cc', 'mesh_kv_manager.cc', 'mesh_kv_manager_state.cc', 'agent_sha256.cc')
+GTest('npu_execution_selector.test', 'npu_execution_selector.test.cc')
+GTest('mesh_kv_persistence.test', 'acceptance_gtest_reporter.cc', 'mesh_kv_persistence.test.cc', 'mesh_kv_persistence.cc', 'mesh_kv_manager.cc', 'mesh_kv_manager_state.cc', 'agent_sha256.cc')
+GTest('instance_failure_reducer.test', 'acceptance_gtest_reporter.cc', 'instance_failure_reducer.test.cc', 'instance_failure_reducer.cc')
+GTest('publish_segment_ledger.test', 'acceptance_gtest_reporter.cc', 'publish_segment_ledger.test.cc', 'publish_segment_ledger.cc', 'mesh_splitter.cc')
+GTest('mesh_json.test', 'mesh_json.test.cc', 'mesh_json.cc')
+GTest('serving_batch_replay.test', 'serving_batch_replay.test.cc', 'serving_batch_replay.cc', 'mesh_json.cc', 'agent_plan_image.cc', 'agent_surrogate_codec.cc', 'agent_sha256.cc', *mesh_binary_sources, 'mesh_serving_projection.cc')
+Source('mesh_binary_envelope.cc')
+Source('mesh_binary_storage.cc')
+Source('mesh_binary_validation.cc')
+Source('mesh_binary_canonical.cc')
+Source('mesh_canonical.cc')
+Source('mesh_hash.cc')
+Source('mesh_ir_computation_verifier.cc')
+Source('mesh_ir_logical_computation_verifier.cc')
+Source('mesh_ir_physical_operation_verifier.cc')
+Source('mesh_ir_compute_verifier.cc')
+Source('mesh_ir_intrinsic_dependency_facts.cc')
+Source('mesh_ir_intrinsic_memory_verifier.cc')
+Source('mesh_ir_control_dependency_verifier.cc')
+Source('mesh_ir_control_projection.cc')
+Source('mesh_ir_dma_verifier.cc')
+Source('mesh_ir_gather.cc')
+Source('mesh_ir_dependency_graph.cc')
+Source('mesh_ir_backing.cc')
+Source('mesh_ir_lifetime_verifier.cc')
+Source('mesh_ir_region.cc')
+Source('mesh_ir_semantic_context.cc')
+Source('command_rom.cc')
+Source('mesh_invocation_binding.cc')
+Source('mesh_program_invocation.cc')
+Source('target_sentinels.cc')
+Source('dma_command_lifecycle.cc')
+Source('mesh_dummy_core_wfg.cc')
+Source('mesh_runtime_observations.cc')
+Source('mesh_runtime_diagnostics.cc')
+Source('mesh_dummy_core_observations.cc')
+Source('peer_transfer_coverage.cc')
+GTest('mesh_runtime_observations.test', 'mesh_runtime_observations.test.cc', 'mesh_runtime_observations.cc', 'acceptance_gtest_reporter.cc')
+GTest('dma_command_lifecycle.test', 'dma_command_lifecycle.test.cc', 'dma_command_lifecycle.cc', 'acceptance_gtest_reporter.cc')
+GTest('mesh_runtime_diagnostics.test', 'mesh_runtime_diagnostics.test.cc', 'mesh_runtime_diagnostics.cc', 'mesh_canonical.cc', 'acceptance_gtest_reporter.cc')
+GTest('peer_transfer_coverage.test', 'peer_transfer_coverage.test.cc', 'peer_transfer_coverage.cc', 'acceptance_gtest_reporter.cc')
+GTest('dma_records.test', 'dma_records.test.cc')
 
-GTest('serving_fill_inputs.test',
-      'serving_fill_inputs.test.cc',
-      'serving_fill_inputs.cc',
-      'mesh_execution_view.cc',
-      'mesh_binary.cc',
-      'agent_sha256.cc',
-      'agent_crc32c.cc')
-
-GTest('serving_instance_binding.test', 'serving_instance_binding.test.cc')
-
-GTest('serving_mesh_executor.test',
-      'serving_mesh_executor.test.cc',
-      'mesh_execution_view.cc',
-      'serving_mesh_executor.cc',
-      'serving_host_bindings.cc',
-      'mesh_serving_projection.cc',
-      'agent_surrogate_codec.cc',
-      'kv_token_ledger.cc',
-      'serving_request_context.cc',
-      'mesh_binary.cc',
-      'agent_sha256.cc',
-      'agent_crc32c.cc',
-      'mesh_kv_manager.cc',
-      'mesh_kv_manager_state.cc')
-
-GTest('mesh_kv_layout.test',
-      'mesh_kv_layout.test.cc',
-      'mesh_kv_layout.cc',
-      'mesh_binary.cc',
-      'agent_sha256.cc',
-      'agent_crc32c.cc')
-
-GTest('mesh_execution_view.test',
-      'mesh_execution_view.test.cc',
-      'mesh_execution_view.cc',
-      'mesh_binary.cc',
-      'agent_sha256.cc',
-      'agent_crc32c.cc')
-
-GTest('mesh_binary.test',
-      'mesh_binary.test.cc',
-      'acceptance_gtest_reporter.cc',
-      'mesh_binary.cc',
-      'mesh_ir_verifier.cc',
-      'mesh_kv_layout.cc',
-      'mesh_moe_verifier.cc',
-      'mesh_serving_verifier.cc',
-      'mesh_serving_projection.cc',
-      'mesh_weight_tags.cc',
-      'mesh_moe_rng.cc',
-      'mesh_moe_overlay.cc',
-      'mesh_moe_gate.cc',
-      'mesh_moe_runtime.cc',
-      'mesh_compute_commit.cc',
-      'mesh_weight_cache.cc',
-      'agent_sha256.cc',
-      'mesh_splitter.cc')
-GTest('tensor_sram.test',
-      'tensor_sram.test.cc',
-      'acceptance_gtest_reporter.cc')
-GTest('tensor_sram_queue.test',
-      'tensor_sram_queue.test.cc')
-GTest('mesh_splitter.test',
-      'mesh_splitter.test.cc',
-      'acceptance_gtest_reporter.cc',
-      'mesh_splitter.cc', 'mesh_binary.cc')
-GTest('program_scoreboard.test',
-      'program_scoreboard.test.cc')
-GTest('runtime_key.test',
-      'runtime_key.test.cc',
-      'acceptance_gtest_reporter.cc')
-GTest('agent_protocol.test',
-      'agent_protocol.test.cc',
-      'acceptance_gtest_reporter.cc',
-      'agent_crc32c.cc')
-GTest('agent_ring.test',
-      'agent_ring.test.cc',
-      'agent_runtime_types.cc',
-      'agent_ring_state.cc',
-      'agent_protocol_layout.cc')
-GTest('gate3_axi_transfer.test',
-      'gate3_axi_transfer.test.cc',
-      'gate3_axi_transfer.cc',
-      '../../mem/axi/axi_validation.cc')
-GTest('gate3_completion_ledger.test',
-      'gate3_completion_ledger.test.cc',
-      'gate3_completion_ledger.cc',
-      'agent_runtime_types.cc')
-GTest('gate3_fatal_reducer.test',
-      'gate3_fatal_reducer.test.cc',
-      'gate3_fatal_reducer.cc')
-GTest('gate3_msi_id_pool.test',
-      'gate3_msi_id_pool.test.cc',
-      'gate3_msi_id_pool.cc')
-GTest('gate3_irq_commit_queue.test',
-      'gate3_irq_commit_queue.test.cc',
-      'gate3_irq_commit_queue.cc')
-GTest('gate3_sq_intake_ledger.test',
-      'gate3_sq_intake_ledger.test.cc',
-      'gate3_sq_intake_ledger.cc')
-GTest('agent_protocol_validation.test',
-      'agent_protocol_validation.test.cc',
-      'agent_protocol_validation.cc',
-      'agent_crc32c.cc')
-GTest('agent_submission.test',
-      'agent_submission.test.cc',
-      'agent_runtime_types.cc',
-      'agent_ring_state.cc',
-      'agent_submission_ledger.cc')
-GTest('agent_request_source.test',
-      'agent_request_source.test.cc',
-      'agent_request_source.cc',
-      'agent_plan_image.cc',
-      'agent_surrogate_codec.cc',
-      'agent_sha256.cc')
-GTest('agent_workload_manager.test',
-      'agent_workload_manager.test.cc',
-      'acceptance_gtest_reporter.cc',
-      'agent_workload_manager.cc',
-      'agent_request_source.cc',
-      'agent_plan_image.cc',
-      'agent_surrogate_codec.cc',
-      'agent_sha256.cc',
-      'agent_object_table.cc',
-      'host_resource_manager.cc',
-      'agent_runtime_types.cc')
-GTest('npu_request_executor.test',
-      'npu_request_executor.test.cc',
-      'npu_request_executor.cc',
-      'agent_surrogate_codec.cc',
-      'agent_sha256.cc')
-GTest('agent_object_table.test',
-      'agent_object_table.test.cc',
-      'acceptance_gtest_reporter.cc',
-      'agent_object_table.cc',
-      'agent_runtime_types.cc')
-GTest('host_resource_manager.test',
-      'host_resource_manager.test.cc',
-      'acceptance_gtest_reporter.cc',
-      'host_resource_manager.cc',
-      'agent_runtime_types.cc')
-GTest('agent_sha256.test',
-      'agent_sha256.test.cc',
-      'agent_sha256.cc')
-GTest('agent_plan_image.test',
-      'agent_plan_image.test.cc',
-      'agent_plan_image.cc',
-      'agent_surrogate_codec.cc',
-      'agent_sha256.cc')
-GTest('agent_surrogate_codec.test',
-      'agent_surrogate_codec.test.cc',
-      'agent_surrogate_codec.cc',
-      'agent_sha256.cc')
-GTest('agent_plan_codec.test',
-      'agent_plan_codec.test.cc',
-      'agent_plan_codec.cc',
-      'serving_host_bindings.cc',
-      'agent_plan_image.cc',
-      'agent_surrogate_codec.cc',
-      'agent_sha256.cc',
-      'agent_crc32c.cc')
-GTest('control_trigger_coordinator.test',
-      'control_trigger_coordinator.test.cc',
-      'control_trigger_coordinator.cc',
-      'agent_plan_image.cc',
-      'agent_surrogate_codec.cc',
-      'agent_sha256.cc')
-GTest('kv_token_ledger.test',
-      'kv_token_ledger.test.cc',
-      'kv_token_ledger.cc',
-      'mesh_kv_manager.cc',
-      'mesh_kv_manager_state.cc',
-      'agent_sha256.cc')
-GTest('serving_request_context.test',
-      'serving_request_context.test.cc',
-      'serving_request_context.cc',
-      'mesh_serving_projection.cc',
-      'mesh_binary.cc',
-      'agent_sha256.cc',
-      'agent_crc32c.cc',
-      'mesh_kv_manager.cc',
-      'mesh_kv_manager_state.cc')
-GTest('npu_serving_frontend_kv_map.test',
-      'npu_serving_frontend_kv_map.test.cc',
-      'npu_serving_frontend_kv_map.cc')
-GTest('mesh_kv_manager.test',
-      'mesh_kv_manager.test.cc',
-      'mesh_kv_manager.cc',
-      'mesh_kv_manager_state.cc',
-      'agent_sha256.cc')
-GTest('mesh_kv_manager_restore.test',
-      'mesh_kv_manager_restore.test.cc',
-      'mesh_kv_manager.cc',
-      'mesh_kv_manager_state.cc',
-      'agent_sha256.cc')
-GTest('mesh_kv_manager_trace.test',
-      'mesh_kv_manager_trace.test.cc',
-      'mesh_kv_manager.cc',
-      'mesh_kv_manager_state.cc',
-      'agent_sha256.cc')
-GTest('npu_execution_selector.test',
-      'npu_execution_selector.test.cc')
+GTest('mesh_cache_replay.test', 'mesh_cache_replay.test.cc', 'mesh_cache_replay.cc', 'mesh_json.cc', 'mesh_weight_tags.cc', 'mesh_weight_cache.cc', 'mesh_weight_cache_replay.cc', 'agent_sha256.cc', *mesh_program_sources, isl)

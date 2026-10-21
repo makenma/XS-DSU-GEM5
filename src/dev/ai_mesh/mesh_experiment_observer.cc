@@ -296,6 +296,7 @@ MeshExperimentObserver::dumpSnapshot(const std::string &path) const
         py::list descriptors;
         for (const auto &[key, timing] : engine->descriptorTimings()) {
             descriptors.append(py::dict("descriptor_id"_a=key.ordinal,
+                "first_error_tick"_a=timing.first_error_tick,
                 "first_ar_tick"_a=timing.first_ar_tick,
                 "first_aw_tick"_a=timing.first_aw_tick,
                 "first_w_tick"_a=timing.first_w_tick,

@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest",
+    "sha256"
+  ],
+  "properties": {
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "identity",
+        "geometry",
+        "capacity",
+        "state_scalars"
+      ],
+      "properties": {
+        "schema": {
+          "const": "ai_mesh_kv_persistent_v1"
+        },
+        "identity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "architecture",
+            "program",
+            "weights",
+            "layout",
+            "plan"
+          ],
+          "properties": {
+            "architecture": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "program": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "weights": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "layout": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "plan": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "geometry": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "region_base",
+            "slot_bytes",
+            "slot_alignment",
+            "max_sessions",
+            "bytes_per_token"
+          ],
+          "properties": {
+            "region_base": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            "slot_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            "slot_alignment": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            "max_sessions": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            "bytes_per_token": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            }
+          }
+        },
+        "capacity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "record_entries",
+            "tombstone_entries",
+            "admission_wait_entries",
+            "release_waiter_entries"
+          ],
+          "properties": {
+            "record_entries": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            "tombstone_entries": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            "admission_wait_entries": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            },
+            "release_waiter_entries": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            }
+          }
+        },
+        "state_scalars": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 18446744073709551615
+          }
+        }
+      }
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

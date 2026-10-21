@@ -1,0 +1,364 @@
+[
+  {
+    "archive": ".tmp/docs/torch-gate-5-morning-main-review-20260918/review.json",
+    "sha256": "824a95004b2cfdd77380cfd163810b8cdc871a9d631acb85b2c099aa8a76a97c",
+    "historical_decision": {
+      "status": "MAIN_GATE5_CHANGES_REQUIRED",
+      "body": "review.md",
+      "supersedes": "../torch-gate-5-r23r6-main-review/review.json",
+      "reviewed_delivery": "../torch-gate-5-overnight-review-20260917-2346/review.json",
+      "implementation_snapshot": "reviewed-status.json",
+      "gate4_authority_revision": 34,
+      "gate4_authority_modified": false,
+      "gate5_pass": false,
+      "gate6_released": false,
+      "cross_gate_obligations_closed": [],
+      "accepted": [
+        "G5-R23-01 (prior scope preserved)",
+        "G5-R23-03",
+        "G5-R23-05 (zero-vnet/channel/loader repair scope)",
+        "G5-R23-06",
+        "G5-D55 (instance boundary scope)"
+      ],
+      "partial": [
+        "G5-D56"
+      ],
+      "open_contracts": [
+        "G5-R23-02",
+        "G5-R23-04"
+      ],
+      "findings": [
+        {
+          "id": "G5-M18-01",
+          "contract": "G5-R23-02",
+          "priority": "P1",
+          "status": "OPEN",
+          "title": "B retirement before request acceptance is admitted"
+        },
+        {
+          "id": "G5-M18-02",
+          "contract": "G5-R23-02",
+          "priority": "P1",
+          "status": "OPEN",
+          "title": "Fault burst deletion with coherent counters and network traffic passes the registered P2P check chain",
+          "adjudication": "C-1 is a required repair, not optional structural refactoring"
+        },
+        {
+          "id": "G5-M18-03",
+          "contract": "G5-R23-04",
+          "priority": "P1",
+          "status": "OPEN",
+          "title": "Valid transaction UID zero bypasses event identity checks"
+        },
+        {
+          "id": "G5-M18-04",
+          "contract": "G5-R23-04",
+          "priority": "P1",
+          "status": "OPEN",
+          "title": "Landing event tick and snapshot digests may move before the matching AW"
+        }
+      ],
+      "verification": {
+        "independent_tests_passed": 52,
+        "commands": "test-commands.json",
+        "independent_probe": "verify-summary.json",
+        "replayed_overnight_probe": "probe-results.json",
+        "manifest": "manifest-check.txt",
+        "identity": "entry-identity.json",
+        "overnight_evidence": "overnight-evidence-audit.json",
+        "matrix_rerun_by_main_reviewer": false,
+        "full_repository_tests": false
+      },
+      "next": "Implement M18-01 -> 02 -> 03 -> 04 with healthy controls and durable coherent negatives; preserve accepted scopes; return pending main review without Gate 5 PASS or Gate 6 release"
+    }
+  },
+  {
+    "archive": ".tmp/docs/torch-gate-5-m18-independent-20260918/review.json",
+    "sha256": "29794281a1b5c27702ef6f4f7abd165661619cd5f9b10d6478e99433e92d2b0d",
+    "historical_decision": {
+      "date": "2026-09-18",
+      "verdict": "CHANGES_REQUIRED",
+      "gate5_pass": false,
+      "gate6_released": false,
+      "head": "7a72d51db2dee4f667fab41cd9ec9c6eb31192a7",
+      "contracts": {
+        "G5-M18-01": "ACCEPTED_IN_REVIEWED_SCOPE",
+        "G5-M18-02": "ACCEPTED_IN_REVIEWED_SCOPE",
+        "G5-M18-03": "CHANGES_REQUIRED",
+        "G5-M18-04": "CHANGES_REQUIRED"
+      },
+      "findings": [
+        {
+          "contract": "G5-M18-03",
+          "priority": "P1",
+          "probe": "two_existing_uids_swapped_with_quota_unchanged",
+          "accepted_by_product": true,
+          "issue": "Transfer UID multiplicity does not prove each event's transaction and range ownership."
+        },
+        {
+          "contract": "G5-M18-04",
+          "priority": "P1",
+          "probe": "landing_before_own_request_but_after_overlapping_request",
+          "accepted_by_product": true,
+          "issue": "The request lower bound comes from the earliest overlapping beat envelope rather than the matching transaction."
+        }
+      ],
+      "evidence": {
+        "identity": "entry-identity.json",
+        "input_status": "reviewed-status.json",
+        "archive_replay": "verify-summary.json",
+        "local_test_report": "focused-local.xml"
+      },
+      "focused_tests": {
+        "passed": 9,
+        "deselected": 52,
+        "seconds": 69.0
+      },
+      "scope": "Local independent review and archived-result replay; no product source or implementation status mutations; no network access."
+    }
+  },
+  {
+    "archive": ".tmp/docs/torch-gate-5-m18r2-independent-20260918/review.json",
+    "sha256": "531a6c460e39ed70d04acc8d90511f371a625c4ddfbbc1d7b5fd7630e71b4028",
+    "historical_decision": {
+      "verdict": "CHANGES_REQUIRED",
+      "gate5_pass": false,
+      "gate6_released": false,
+      "head": "7a72d51db2dee4f667fab41cd9ec9c6eb31192a7",
+      "authority_body": "review.md",
+      "implementation_status": "../torch-gate-5-implementation/status.json",
+      "contracts": {
+        "M18-01": "ACCEPTED_IN_REVIEWED_SCOPE",
+        "M18-02": "ACCEPTED_IN_REVIEWED_SCOPE",
+        "M18-03": "CHANGES_REQUIRED",
+        "M18-04": "CHANGES_REQUIRED"
+      },
+      "findings": [
+        {
+          "contract": "M18-03",
+          "priority": "P1",
+          "probe": "completed_uid_swap",
+          "location": "configs/example/ai_mesh/run_mesh_dma_garnet.py:1413"
+        },
+        {
+          "contract": "M18-04",
+          "priority": "P1",
+          "probe": "completed_before_own_aw",
+          "location": "configs/example/ai_mesh/run_mesh_dma_garnet.py:1413"
+        }
+      ],
+      "auxiliary": {
+        "delivery_replayer": "exit 1: missing source substring",
+        "log": "delivered-replayer.txt"
+      },
+      "validation": {
+        "healthy_controls": 3,
+        "previous_negatives_rejected": 8,
+        "new_negatives_incorrectly_accepted": 2,
+        "registered_checks": [
+          "burst_attribution",
+          "cancelled_commands_issue_nothing",
+          "completion_timing",
+          "conservation",
+          "p2p_partial_abandon",
+          "packet_traffic",
+          "quiescence",
+          "reconciliation",
+          "transfer_snapshots"
+        ],
+        "manifest": {
+          "checked": 1513,
+          "missing": 0,
+          "mismatch": 0
+        },
+        "peer_suite": {
+          "passed": 42,
+          "seconds": 434.77,
+          "exit_code": 0,
+          "log": "peer.txt",
+          "xml": "peer.xml"
+        }
+      },
+      "boundaries": {
+        "product_code_modified": false,
+        "implementation_status_modified": false,
+        "gate4_authority_modified": false,
+        "outer_checkout_modified": false,
+        "commit_merge_push": false,
+        "full_repository_tests": false,
+        "matrix_rerun": false
+      },
+      "review_only_delta": "review-document-delta.json"
+    }
+  },
+  {
+    "archive": ".tmp/docs/torch-gate-5-m18r3-main-review-20260919/review.json",
+    "sha256": "edcb6a9733c6fe68c1ce395a29dcc5999b29573393c305d6e6545a179527eaa7",
+    "historical_decision": {
+      "verdict": "CHANGES_REQUIRED",
+      "gate5_pass": false,
+      "gate6_released": false,
+      "head": "7a72d51db2dee4f667fab41cd9ec9c6eb31192a7",
+      "authority_body": "review.md",
+      "implementation_status": "../torch-gate-5-implementation/status.json",
+      "contracts": {
+        "M18-01": "ACCEPTED_IN_REVIEWED_SCOPE",
+        "M18-02": "ACCEPTED_IN_REVIEWED_SCOPE",
+        "M18-03": "CHANGES_REQUIRED",
+        "M18-04": "ACCEPTED_IN_REVIEWED_SCOPE"
+      },
+      "findings": [
+        {
+          "id": "M19-01",
+          "contract": "M18-03",
+          "priority": "P1",
+          "probes": [
+            "completed_event_empty_ranges",
+            "completed_event_missing",
+            "completed_event_short_range"
+          ],
+          "owner": "runtime_reconciliation.py::verified_landing_events"
+        }
+      ],
+      "validation": {
+        "healthy_controls": 3,
+        "previous_negatives_rejected": 10,
+        "new_negatives_incorrectly_accepted": 3,
+        "extra_control_rejected": 1,
+        "focused": {
+          "passed": 13,
+          "deselected": 29,
+          "seconds": 149.55,
+          "exit_code": 0
+        },
+        "manifest": {
+          "checked": 1519,
+          "missing": 0,
+          "mismatch": 0
+        },
+        "matrix_rerun": false,
+        "full_focused_rerun": false
+      },
+      "night_task": "overnight-prompt.md",
+      "product_code_modified": false,
+      "gate4_authority_modified": false,
+      "outer_checkout_modified": false,
+      "implementation_status_modified": false
+    }
+  },
+  {
+    "archive": ".tmp/docs/torch-gate-5-m19-main-review-20260920/review.json",
+    "sha256": "91543ce149eddaceedb373dd479107f16ea4f2cc6cd480e6286db67d63a13d18",
+    "historical_decision": {
+      "verdict": "CHANGES_REQUIRED",
+      "gate5_pass": false,
+      "gate6_released": false,
+      "head": "7a72d51db2dee4f667fab41cd9ec9c6eb31192a7",
+      "authority_body": "review.md",
+      "contracts": {
+        "M18-01": "ACCEPTED_IN_REVIEWED_SCOPE",
+        "M18-02": "ACCEPTED_IN_REVIEWED_SCOPE",
+        "M18-03": "ACCEPTED_IN_REVIEWED_SCOPE",
+        "M18-04": "ACCEPTED_IN_REVIEWED_SCOPE",
+        "M19-01": "ACCEPTED_IN_REVIEWED_SCOPE"
+      },
+      "findings": [
+        {
+          "id": "M20-01",
+          "priority": "P1",
+          "probe": "last_landing_and_stage_after_own_B_and_retirement",
+          "owner": "runtime_reconciliation.py::verified_landing_events",
+          "aw_tick": 528001,
+          "original_landing_tick": 538000,
+          "response_retire_done_tick": 543001,
+          "forged_event_stage_tick": 543002,
+          "descriptor_id": 26,
+          "burst_index": 1,
+          "uid": 49
+        }
+      ],
+      "rulings": {
+        "cancelled_before_issue": "Existing explicit execution-presence guard rejects event claim; no duplicate guard required.",
+        "D65": "Accepted for reviewed planned execution identity projection; not a claim of three actual repeat executions."
+      },
+      "validation": {
+        "original_healthy": 3,
+        "new_healthy": 2,
+        "old_negatives_rejected": 13,
+        "new_controls_rejected": 3,
+        "new_negative_incorrectly_accepted": 1,
+        "focused": {
+          "passed": 16,
+          "deselected": 29,
+          "seconds": 181.07,
+          "exit_code": 0
+        },
+        "manifest": {
+          "checked": 1525,
+          "missing": 0,
+          "mismatch": 0
+        }
+      },
+      "boundaries": {
+        "product_changes": false,
+        "implementation_status_modified": false,
+        "gate4_authority_modified": false,
+        "outer_checkout_modified": false,
+        "full_repository_tests": false,
+        "matrix_rerun": false,
+        "commit_merge_push": false
+      }
+    }
+  },
+  {
+    "archive": ".tmp/docs/torch-gate-5-m20-main-review-20260920/review.json",
+    "sha256": "7f3b86bcf46b3ba796174588138257acde5424423296ccc08ed372a611be68b7",
+    "historical_decision": {
+      "verdict": "M20_01_ACCEPTED",
+      "gate5_pass_declared": false,
+      "gate6_released": false,
+      "head": "7a72d51db2dee4f667fab41cd9ec9c6eb31192a7",
+      "authority_body": "review.md",
+      "contracts": {
+        "M18-01": "ACCEPTED_IN_REVIEWED_SCOPE",
+        "M18-02": "ACCEPTED_IN_REVIEWED_SCOPE",
+        "M18-03": "ACCEPTED_IN_REVIEWED_SCOPE",
+        "M18-04": "ACCEPTED_IN_REVIEWED_SCOPE",
+        "M19-01": "ACCEPTED_IN_REVIEWED_SCOPE",
+        "M20-01": "ACCEPTED_IN_REVIEWED_SCOPE"
+      },
+      "findings": {
+        "current": [],
+        "scope": "M20-01 repair review"
+      },
+      "validation": {
+        "healthy_controls": 7,
+        "negative_probes_rejected": 19,
+        "probe_verdict": "PROBES_PASS",
+        "focused": {
+          "passed": 11,
+          "deselected": 36,
+          "seconds": 128.44,
+          "exit_code": 0
+        },
+        "manifest": {
+          "checked": 1531,
+          "missing": 0,
+          "mismatch": 0
+        },
+        "entry_sources": 408,
+        "entry_evidence": 666
+      },
+      "next": "Gate 5 final obligation aggregation and authoritative decision; reconcile CPP-06 design scope and legacy PARTIAL/missing text. No Gate 6 release.",
+      "boundaries": {
+        "product_changes": false,
+        "implementation_status_modified": false,
+        "gate4_authority_modified": false,
+        "outer_checkout_modified": false,
+        "full_repository_tests": false,
+        "matrix_rerun": false,
+        "commit_merge_push": false
+      }
+    }
+  }
+]

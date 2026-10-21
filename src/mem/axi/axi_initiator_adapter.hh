@@ -6,8 +6,11 @@
 #include <deque>
 #include <map>
 #include <optional>
+#include <queue>
+#include <set>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #include "mem/axi/axi_types.hh"
@@ -64,6 +67,7 @@ struct AxiInitiatorResourceOccupancy
 
 struct AxiAdmissionRejectionAttempts
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     uint64_t fifoFull = 0;
     uint64_t outstandingFull = 0;
     uint64_t responseReservationFull = 0;
@@ -71,6 +75,7 @@ struct AxiAdmissionRejectionAttempts
 
 struct AxiInitiatorProgress
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     uint64_t bPacketsBuffered = 0;
     uint64_t rPacketsBuffered = 0;
     uint64_t sameIdResponsesBlocked = 0;
@@ -94,6 +99,28 @@ class AxiInitiatorState
 {
   public:
     explicit AxiInitiatorState(const AxiInitiatorConfig &config);
+
+    template<class Archive> void serialize(Archive &archive, unsigned)
+    {
+        if (!_writesByOrdinal.empty() || !_readsByUid.empty() ||
+                !_writeOrdinalByUid.empty() || _openWOrdinal ||
+                !_pendingStagedWrites.empty() ||
+                !_awReady.empty() || !_wReady.empty() || !_bReady.empty() ||
+                !_arReady.empty() || !_rReady.empty() ||
+                !_readResponseOrder.empty() || !_readyReadBeats.empty() ||
+                !_unobservedReadResponses.empty() ||
+                !_writeResponseOrder.empty() || !_readyWriteResponses.empty() ||
+                !_unobservedWriteResponses.empty() ||
+                _unboundBursts || _unboundBeats)
+            throw std::runtime_error("E_CHECKPOINT_BOUNDARY: AXI initiator is active");
+        checkpoint::fields(archive, _nextWriteUid, _nextReadUid,
+            _nextAwOrdinal, _nextWBurstOrdinal, _pairedBursts, _openedWBursts,
+            _closedWBursts, _nextTargetSeq, _nextResponseSeq,
+            _nextBRetireSeq, _nextRRetireSeq, _activeQuota,
+            _peakOutstandingReads, _arAcceptTicks, _firstCreditReleaseTick,
+            _lastAcceptedAw, _lastAcceptedAr, _progress);
+    }
+
 
     bool tryAcceptAw(const AxiAddressRequest &aw, Tick accepted_tick = 0);
     bool tryAcceptW(const AxiWBeat &w, Tick accepted_tick = 0);
@@ -181,6 +208,9 @@ class AxiInitiatorState
         std::tuple<uint32_t, uint16_t, uint32_t, bool, uint32_t>;
     using ResponseSeqKey =
         std::tuple<uint32_t, uint16_t, uint32_t, bool>;
+    using ResponseOrderKey = std::pair<uint32_t, uint64_t>;
+    using WriteReadyKey = std::pair<Tick, uint64_t>;
+    using ReadReadyKey = std::tuple<Tick, uint64_t, uint16_t>;
 
     AxiCommonMeta allocateMeta(const AxiAddressRequest &request,
                                bool read, uint32_t dst_node,
@@ -198,6 +228,7 @@ class AxiInitiatorState
     void pumpStagedW();
     void pumpReadyB();
     void pumpReadyR();
+    void indexReadyR(const ReadState &state);
     void validateConfig() const;
 
     AxiInitiatorConfig _config;
@@ -215,8 +246,15 @@ class AxiInitiatorState
     std::map<TargetSeqKey, uint64_t> _nextTargetSeq;
     std::map<ResponseSeqKey, uint64_t> _nextResponseSeq;
     std::map<uint64_t, WriteState> _writesByOrdinal;
+    std::queue<uint64_t> _pendingStagedWrites;
     std::map<uint64_t, uint64_t> _writeOrdinalByUid;
+    std::map<ResponseOrderKey, uint64_t> _writeResponseOrder;
+    std::set<WriteReadyKey> _readyWriteResponses;
+    std::set<uint64_t> _unobservedWriteResponses;
     std::map<uint64_t, ReadState> _readsByUid;
+    std::map<ResponseOrderKey, uint64_t> _readResponseOrder;
+    std::set<ReadReadyKey> _readyReadBeats;
+    std::set<uint64_t> _unobservedReadResponses;
 
     std::map<uint32_t, uint64_t> _nextBRetireSeq;
     std::map<uint32_t, uint64_t> _nextRRetireSeq;

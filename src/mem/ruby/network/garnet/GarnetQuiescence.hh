@@ -1,6 +1,8 @@
 #ifndef __MEM_RUBY_NETWORK_GARNET_GARNET_QUIESCENCE_HH__
 #define __MEM_RUBY_NETWORK_GARNET_GARNET_QUIESCENCE_HH__
 
+#include "base/checkpoint_fields.hh"
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -83,6 +85,7 @@ using GarnetReceiverCapacityMap = std::vector<GarnetReceiverCapacityEntry>;
 
 struct GarnetInputVcStatsEntry
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     int32_t routerId = -1;
     int32_t inportId = -1;
     int32_t ingressPort = -1;

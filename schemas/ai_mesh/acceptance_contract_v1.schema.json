@@ -241,10 +241,12 @@
             "additionalProperties": false,
             "properties": {
               "cache_generation": {
+                "maximum": 4294967295,
                 "minimum": 0,
                 "type": "integer"
               },
               "core_id": {
+                "maximum": 65535,
                 "minimum": 0,
                 "type": "integer"
               },
@@ -256,16 +258,16 @@
                       "additionalProperties": false,
                       "properties": {
                         "error_code": {
-                          "minLength": 1,
-                          "type": "string"
+                          "maximum": 4294967295,
+                          "minimum": 0,
+                          "type": "integer"
                         },
                         "source_key_wire": {
                           "pattern": "^[0-9a-f]{80}$",
                           "type": "string"
                         },
                         "tick": {
-                          "minimum": 0,
-                          "type": "integer"
+                          "$ref": "#/$defs/u64Json"
                         }
                       },
                       "required": [
@@ -289,6 +291,7 @@
                 "type": "array"
               },
               "next_fill_incarnation": {
+                "maximum": 4294967295,
                 "minimum": 1,
                 "type": "integer"
               },

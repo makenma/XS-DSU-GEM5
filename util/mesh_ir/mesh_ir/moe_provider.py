@@ -55,7 +55,7 @@ def _digest(document) -> str:
     return hashlib.sha256(canonical_json_bytes(document)).hexdigest()
 
 
-def _projection_digest(document: dict) -> str:
+def provider_artifact_digest(document: dict) -> str:
     return _digest({key: value for key, value in document.items()
                     if key != "route_profile_digest"})
 
@@ -143,7 +143,7 @@ def load_provider_artifact(path, program, workload_plan_digest: bytes,
             raise MeshIrError("E_MOE_PROFILE",
                               "provider workload plan digest mismatch")
         if bytes.fromhex(document["mesh_program_digest"]) != \
-                bytes.fromhex(program.semantic_sha256()):
+                bytes.fromhex(program.semantic_sha256):
             raise MeshIrError("E_MOE_PROFILE",
                               "provider mesh program digest mismatch")
     if provider_kind == "histogram_replay":
@@ -157,7 +157,7 @@ def load_provider_artifact(path, program, workload_plan_digest: bytes,
         for layer in document["layers"]:
             for window in layer["windows"]:
                 _validate_correlated_window(layer, window)
-    if document["route_profile_digest"] != _projection_digest(document):
+    if document["route_profile_digest"] != provider_artifact_digest(document):
         raise MeshIrError("E_MOE_PROFILE", "route_profile_digest mismatch")
     return document
 

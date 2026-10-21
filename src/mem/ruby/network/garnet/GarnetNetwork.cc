@@ -41,6 +41,7 @@
 #include "debug/GarnetDualLane.hh"
 #include "mem/ruby/common/NetDest.hh"
 #include "mem/ruby/network/MessageBuffer.hh"
+#include "mem/ruby/network/simple/AggregateNetwork.hh"
 #include "mem/ruby/network/garnet/CommonTypes.hh"
 #include "mem/ruby/network/garnet/CreditLink.hh"
 #include "mem/ruby/network/garnet/GarnetLink.hh"
@@ -69,6 +70,15 @@ namespace garnet
 GarnetNetwork::GarnetNetwork(const Params &p)
     : Network(p)
 {
+    if (!p.aggregate_routers.empty()) {
+        fatal_if(p.dual_lane || p.enable_fault_model || !p.yx_vnets.empty() ||
+                 p.routing_algorithm != XY_,
+                 "aggregate handoff requires uniform XY routing without dual lanes or faults");
+        aggregate_model = std::make_unique<AggregateNetwork>(p, m_ordered);
+    } else {
+        fatal_if(p.aggregate_queue_entries || p.aggregate_initial || !p.aggregate_link_buffers.empty(),
+                 "aggregate configuration requires routers");
+    }
     m_num_rows = p.num_rows;
     m_ni_flit_size = p.ni_flit_size;
     m_vcs_per_vnet = p.vcs_per_vnet;
@@ -161,6 +171,23 @@ GarnetNetwork::GarnetNetwork(const Params &p)
     inform("Garnet version %s\n", garnetVersion);
 }
 
+GarnetNetwork::~GarnetNetwork() = default;
+
+bool
+GarnetNetwork::isQuiescent() const
+{
+    return quiescenceSnapshot().empty() &&
+        (!aggregate_model || aggregate_model->snapshot().empty());
+}
+
+void
+GarnetNetwork::setAggregateMode(bool aggregate)
+{
+    fatal_if(!aggregate_model || !isQuiescent(),
+             "network timing handoff requires an installed aggregate model and drained fabric");
+    aggregate_model->activate(aggregate);
+}
+
 void
 GarnetNetwork::validateDualLaneConfig() const
 {
@@ -229,6 +256,8 @@ GarnetNetwork::init()
     // parent network constructor
     assert(m_topology_ptr != NULL);
     m_topology_ptr->createLinks(this);
+    if (aggregate_model)
+        aggregate_model->activate(params().aggregate_initial);
     std::vector<uint32_t> input_ports;
     for (const auto *router : m_routers)
         input_ports.push_back(router->get_num_inports());
@@ -280,8 +309,16 @@ GarnetNetwork::makeExtInLink(NodeID global_src, SwitchID dest, BasicLink* link,
 {
     NodeID local_src = getLocalNodeID(global_src);
     assert(local_src < m_nodes);
+    if (aggregate_model)
+        aggregate_model->ingress(dest, m_toNetQueues[local_src]);
 
     GarnetExtLink* garnet_link = safe_cast<GarnetExtLink*>(link);
+
+    fatal_if(aggregate_model && (garnet_link->extBridgeEn || garnet_link->intBridgeEn ||
+             garnet_link->m_network_links[LinkDirection_In]->bitWidth != m_ni_flit_size ||
+             garnet_link->m_network_links[LinkDirection_Out]->bitWidth != m_ni_flit_size ||
+             !link->params().supported_vnets.empty()),
+             "aggregate handoff requires uniform external link widths and clocks");
 
     fatal_if(m_input_capacity.extended() &&
              (garnet_link->extBridgeEn || garnet_link->intBridgeEn),
@@ -365,6 +402,8 @@ GarnetNetwork::makeExtOutLink(SwitchID src, NodeID global_dest,
 {
     NodeID local_dest = getLocalNodeID(global_dest);
     assert(local_dest < m_nodes);
+    if (aggregate_model)
+        aggregate_model->egress(src, m_fromNetQueues[local_dest], routing_table_entry[0], link);
     assert(src < m_routers.size());
     assert(m_routers[src] != NULL);
 
@@ -450,6 +489,12 @@ GarnetNetwork::makeInternalLink(SwitchID src, SwitchID dest, BasicLink* link,
                                 PortDirection dst_inport_dirn)
 {
     GarnetIntLink* garnet_link = safe_cast<GarnetIntLink*>(link);
+    fatal_if(aggregate_model && (garnet_link->srcBridgeEn || garnet_link->dstBridgeEn ||
+             garnet_link->m_network_link->bitWidth != m_ni_flit_size ||
+             !link->params().supported_vnets.empty()),
+             "aggregate handoff requires uniform internal link widths and clocks");
+    if (aggregate_model)
+        aggregate_model->internal(src, dest, link, routing_table_entry[0], dst_inport_dirn);
 
     fatal_if(m_input_capacity.extended() &&
              (garnet_link->srcBridgeEn || garnet_link->dstBridgeEn),
@@ -1150,7 +1195,7 @@ GarnetNetwork::update_traffic_distribution(RouteInfo route)
 bool
 GarnetNetwork::functionalRead(Packet *pkt, WriteMask &mask)
 {
-    bool read = false;
+    bool read = aggregate_model && aggregate_model->functionalRead(pkt, mask);
     for (unsigned int i = 0; i < m_routers.size(); i++) {
         if (m_routers[i]->functionalRead(pkt, mask))
             read = true;
@@ -1177,7 +1222,7 @@ GarnetNetwork::functionalRead(Packet *pkt, WriteMask &mask)
 uint32_t
 GarnetNetwork::functionalWrite(Packet *pkt)
 {
-    uint32_t num_functional_writes = 0;
+    uint32_t num_functional_writes = aggregate_model ? aggregate_model->functionalWrite(pkt) : 0;
 
     for (unsigned int i = 0; i < m_routers.size(); i++) {
         num_functional_writes += m_routers[i]->functionalWrite(pkt);

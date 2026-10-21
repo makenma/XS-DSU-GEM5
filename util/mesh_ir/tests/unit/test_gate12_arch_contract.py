@@ -5,7 +5,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from mesh_ir.builder import load_arch
+from mesh_ir.architecture import load_arch
 from mesh_ir.effective import EffectiveArchitecture
 from mesh_ir.model import MeshIrError
 
@@ -26,7 +26,7 @@ def _load_variant(tmp_path, old, new):
     (
         ("data_bytes: 32", "data_bytes: 128"),
         ("max_burst_beats: 16", "max_burst_beats: 257"),
-        ("cols: 2", "cols: 3"),
+        ("mesh:\n  rows: 1\n  cols: 2", "mesh:\n  rows: 1\n  cols: 3"),
         ("tile_stride: 0x400000", "tile_stride: 0x100000"),
         ("tile_stride: 0x400000", "tile_stride: 0x300000"),
         ("base: 0x800000000", "base: 0xfffffffffffff000"),
@@ -37,7 +37,7 @@ def test_architecture_rejects_values_outside_runtime_contract(
 ):
     with pytest.raises(MeshIrError) as error:
         _load_variant(tmp_path, old, new)
-    assert error.value.code == "E_CAPABILITY_MISMATCH"
+    assert error.value.code == "E_CONFIG"
 
 
 @pytest.mark.parametrize(

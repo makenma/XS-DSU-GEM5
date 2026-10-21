@@ -242,7 +242,7 @@ def load_program_weight_registry(path, image: ModelWeightImage,
             bytes.fromhex(image.digest):
         raise MeshIrError("E_RELOCATION",
                           "registry references another weight image")
-    semantic = bytes.fromhex(program.semantic_sha256())
+    semantic = bytes.fromhex(program.semantic_sha256)
     programs = []
     for entry in document["programs"]:
         if _hex64(entry["program_semantic_digest"],
@@ -334,7 +334,7 @@ def load_program_weight_registry(path, image: ModelWeightImage,
 
 def region_digest(registry: ProgramWeightRegistry, program,
                   symbol_id: int, offset: int, byte_count: int) -> bytes:
-    binding = registry.symbol(bytes.fromhex(program.semantic_sha256()),
+    binding = registry.symbol(bytes.fromhex(program.semantic_sha256),
                               symbol_id)
     for region in binding.regions:
         if region.region_offset == offset and region.bytes == byte_count:
@@ -376,7 +376,7 @@ def weight_tag_index_map(program) -> dict:
 
 
 def weight_tag_manifest(program, registry: ProgramWeightRegistry) -> tuple:
-    semantic = bytes.fromhex(program.semantic_sha256())
+    semantic = bytes.fromhex(program.semantic_sha256)
     manifest = []
     for index, (symbol_id, offset, byte_count) in enumerate(
             weight_region_order(program)):

@@ -14,6 +14,7 @@ import hashlib
 from dataclasses import dataclass, field, replace
 
 from mesh_ir.generated import abi as A
+from mesh_ir.moe_uid import SemanticTokenUid
 from mesh_ir.model import MeshIrError, canonical_json_bytes
 from mesh_ir.moe_fill import FUNCTIONAL_BYTES, drop_fill_bytes, \
     encode_route_entry, pad_fill_bytes
@@ -69,21 +70,36 @@ class MemberSlice:
 
 def member_slice(program, layer, member_identity, member_request_id, core_id,
                  valid_token_count=1, first_semantic_token=0) -> MemberSlice:
-    source = program.shard_of(A.TENSOR_ROLE.INPUT, core_id)
-    if source is None:
-        raise MeshIrError("E_MOE_MATERIALIZATION_V",
-                          "member core owns no token shard", core=core_id)
-    sink = program.shard_of(A.TENSOR_ROLE.OUTPUT, core_id)
-    if sink is not None and sink.span_bytes < layer.output_token_bytes:
-        sink = None
+    regions = [row for row in program.moe_dynamic_regions
+               if row.layer_id == layer.layer_id and row.core_id == core_id]
+    if len(regions) != 1:
+        raise MeshIrError("E_MOE_MATERIALIZATION_V", "member core needs one layer gate", core=core_id)
+    region, = regions
+    commands = {row.command_id: row for row in program.commands}
+    tensors = {row.tensor_id: row for row in program.tensors}
+    shards = {row.shard_id: row for row in program.shards}
+    gate = commands[region.insert_after_command_id]
+    operands = program.command_operands[gate.operand_begin:gate.operand_begin + gate.operand_count]
+    sources = [row for row in operands if row.access == A.ACCESS_KIND.READ_ONLY
+               and tensors[row.tensor_id].role == A.TENSOR_ROLE.INPUT and row.allocation_id]
+    if len(sources) != 1:
+        raise MeshIrError("E_MOE_MATERIALIZATION_V", "layer gate needs one local token operand", core=core_id)
+    source = shards[sources[0].shard_id]
+    sinks = [row for row in operands if row.access == A.ACCESS_KIND.READ_WRITE and row.allocation_id]
+    if len(sinks) != 1:
+        raise MeshIrError("E_MOE_MATERIALIZATION_V", "layer gate needs one local result operand", core=core_id)
+    sink = shards[sinks[0].shard_id]
+    if source.span_bytes < layer.token_bytes or sink.span_bytes < layer.output_token_bytes:
+        raise MeshIrError("E_MOE_MATERIALIZATION_V", "layer operands do not cover one token", core=core_id)
     return MemberSlice(
         member_identity=member_identity, member_request_id=member_request_id,
         core_id=core_id, first_semantic_token=first_semantic_token,
         valid_token_count=valid_token_count,
-        input_allocation=source.allocation_id, input_offset=0,
+        input_allocation=source.allocation_id, input_offset=source.allocation_offset,
         input_token_bytes=layer.token_bytes,
-        output_allocation=sink.allocation_id if sink is not None else 0,
-        output_offset=0, output_token_bytes=layer.output_token_bytes)
+        output_allocation=sink.allocation_id,
+        output_offset=sink.allocation_offset,
+        output_token_bytes=layer.output_token_bytes)
 
 
 @dataclass(frozen=True)
@@ -284,7 +300,7 @@ def _coalesce(moves, chunk_bytes, phase) -> tuple:
     ordered = sorted([move for move in moves if move.phase == phase],
                      key=lambda move: (move.src_core, move.dst_core,
                                        move.expert_id, move.src_offset,
-                                       move.token_ref))
+                                       SemanticTokenUid.decode(move.token_ref).sort_key()))
     chunks = []
     current = None
     for move in ordered:

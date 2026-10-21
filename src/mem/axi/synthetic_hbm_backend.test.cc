@@ -183,14 +183,17 @@ TEST(SyntheticHbmBackendTest, LatenciesOverlapWithoutSerialBasePenalty)
     ASSERT_TRUE(backend.trySubmit(1, SyntheticHbmDirection::Read, 512, 0, 200));
     ASSERT_TRUE(backend.trySubmit(2, SyntheticHbmDirection::Read, 512, 0, 200));
     backend.advance(215);
-    EXPECT_FALSE(backend.ready(1));
+    EXPECT_EQ(backend.stats().ready, 0);
     backend.advance(216);
-    EXPECT_TRUE(backend.ready(1));
-    EXPECT_FALSE(backend.ready(2));
+    EXPECT_EQ(backend.stats().ready, 1);
+    EXPECT_EQ(backend.stats().queued, 1);
     backend.advance(232);
-    EXPECT_TRUE(backend.ready(2));
-    EXPECT_EQ(backend.completionCycle(1), 216);
-    EXPECT_EQ(backend.completionCycle(2), 232);
+    const auto completed = backend.takeCompleted();
+    ASSERT_EQ(completed.size(), 2);
+    EXPECT_EQ(completed[0].uid, 1);
+    EXPECT_EQ(completed[0].completedAt, 216);
+    EXPECT_EQ(completed[1].uid, 2);
+    EXPECT_EQ(completed[1].completedAt, 232);
     EXPECT_EQ(backend.stats().busyCycles, 32);
 }
 
@@ -202,10 +205,13 @@ TEST(SyntheticHbmBackendTest, SameCycleAdvanceCannotDuplicateService)
     EXPECT_EQ(backend.stats().readBytesServiced, 32);
     for (int i = 0; i < 10; ++i)
         backend.advance(1);
-    EXPECT_FALSE(backend.ready(1));
+    EXPECT_EQ(backend.stats().ready, 0);
     EXPECT_EQ(backend.stats().readBytesServiced, 32);
     backend.advance(2);
-    EXPECT_TRUE(backend.ready(1));
+    const auto completed = backend.takeCompleted();
+    ASSERT_EQ(completed.size(), 1);
+    EXPECT_EQ(completed[0].uid, 1);
+    EXPECT_EQ(completed[0].completedAt, 2);
 }
 
 TEST(SyntheticHbmBackendTest, CompletedServiceRetainsFiniteSlotUntilHandoff)
@@ -215,10 +221,10 @@ TEST(SyntheticHbmBackendTest, CompletedServiceRetainsFiniteSlotUntilHandoff)
     backend.advance(1);
     EXPECT_EQ(backend.stats().ready, 1);
     EXPECT_FALSE(backend.trySubmit(2, SyntheticHbmDirection::Write, 32, 1, 0));
-    backend.retire(1);
+    ASSERT_EQ(backend.takeCompleted().size(), 1);
     EXPECT_TRUE(backend.trySubmit(2, SyntheticHbmDirection::Write, 32, 1, 0));
     backend.advance(2);
-    backend.retire(2);
+    ASSERT_EQ(backend.takeCompleted().size(), 1);
     EXPECT_TRUE(backend.idle());
     EXPECT_EQ(backend.stats().queueFullCycles, 2);
     EXPECT_EQ(backend.stats().requestSlotCycles, 2);
@@ -233,14 +239,19 @@ TEST(SyntheticHbmBackendTest, ReadWriteRateIsSharedAndPartialCyclesAreBounded)
     ASSERT_TRUE(backend.trySubmit(1, SyntheticHbmDirection::Read, 33, 0, 0));
     ASSERT_TRUE(backend.trySubmit(2, SyntheticHbmDirection::Write, 64, 0, 0));
     backend.advance(3);
-    EXPECT_TRUE(backend.ready(1));
-    EXPECT_FALSE(backend.ready(2));
+    EXPECT_EQ(backend.stats().ready, 1);
+    EXPECT_EQ(backend.stats().queued, 1);
     EXPECT_EQ(backend.stats().readBytesServiced, 33);
     EXPECT_EQ(backend.stats().writeBytesServiced, 32);
     EXPECT_LE(backend.stats().readBytesServiced +
               backend.stats().writeBytesServiced, 3 * 32);
     backend.advance(4);
-    EXPECT_TRUE(backend.ready(2));
+    const auto completed = backend.takeCompleted();
+    ASSERT_EQ(completed.size(), 2);
+    EXPECT_EQ(completed[0].uid, 1);
+    EXPECT_EQ(completed[0].completedAt, 2);
+    EXPECT_EQ(completed[1].uid, 2);
+    EXPECT_EQ(completed[1].completedAt, 4);
 }
 
 TEST(SyntheticHbmBackendTest, UnreadyRequestDoesNotOccupyService)
@@ -249,10 +260,15 @@ TEST(SyntheticHbmBackendTest, UnreadyRequestDoesNotOccupyService)
     ASSERT_TRUE(backend.trySubmit(1, SyntheticHbmDirection::Read, 32, 0, 20));
     ASSERT_TRUE(backend.trySubmit(2, SyntheticHbmDirection::Write, 32, 0, 0));
     backend.advance(1);
-    EXPECT_FALSE(backend.ready(1));
-    EXPECT_TRUE(backend.ready(2));
+    EXPECT_EQ(backend.stats().ready, 1);
+    EXPECT_EQ(backend.stats().queued, 1);
     backend.advance(21);
-    EXPECT_TRUE(backend.ready(1));
+    const auto completed = backend.takeCompleted();
+    ASSERT_EQ(completed.size(), 2);
+    EXPECT_EQ(completed[0].uid, 2);
+    EXPECT_EQ(completed[0].completedAt, 1);
+    EXPECT_EQ(completed[1].uid, 1);
+    EXPECT_EQ(completed[1].completedAt, 21);
     EXPECT_EQ(backend.stats().busyCycles, 2);
 }
 
@@ -269,12 +285,99 @@ TEST(SyntheticHbmBackendTest, RejectsInvalidCapacityTimeAndLifecycle)
     ASSERT_TRUE(backend.trySubmit(1, SyntheticHbmDirection::Read, 32, 0, 10));
     EXPECT_THROW(backend.trySubmit(1, SyntheticHbmDirection::Read, 32, 0, 10),
                  std::invalid_argument);
-    EXPECT_THROW(backend.retire(1), std::logic_error);
-    EXPECT_THROW(backend.completionCycle(1), std::logic_error);
+    EXPECT_TRUE(backend.takeCompleted().empty());
     backend.advance(11);
     EXPECT_THROW(backend.advance(10), std::invalid_argument);
-    backend.retire(1);
-    EXPECT_THROW(backend.retire(1), std::out_of_range);
+    ASSERT_EQ(backend.takeCompleted().size(), 1);
+    EXPECT_TRUE(backend.takeCompleted().empty());
+}
+
+TEST(SyntheticHbmBackendTest, CompletionHandoffPreservesCyclesAndDirections)
+{
+    SyntheticHbmBackend backend(32, 4);
+    ASSERT_TRUE(backend.trySubmit(9, SyntheticHbmDirection::Read, 33, 0, 2));
+    ASSERT_TRUE(backend.trySubmit(1, SyntheticHbmDirection::Write, 32, 0, 2));
+    EXPECT_TRUE(backend.takeCompleted().empty());
+    backend.advance(5);
+    const auto before = backend.stats();
+    EXPECT_EQ(before.completed, 2);
+    EXPECT_EQ(before.retired, 0);
+    EXPECT_EQ(before.ready, 2);
+    const auto completed = backend.takeCompleted();
+    ASSERT_EQ(completed.size(), 2);
+    EXPECT_EQ(completed[0].uid, 9);
+    EXPECT_EQ(completed[0].direction, SyntheticHbmDirection::Read);
+    EXPECT_EQ(completed[0].completedAt, 4);
+    EXPECT_EQ(completed[1].uid, 1);
+    EXPECT_EQ(completed[1].direction, SyntheticHbmDirection::Write);
+    EXPECT_EQ(completed[1].completedAt, 5);
+    EXPECT_TRUE(backend.idle());
+    EXPECT_TRUE(backend.takeCompleted().empty());
+    const auto after = backend.stats();
+    EXPECT_EQ(after.retired, 2);
+    EXPECT_EQ(after.busyCycles, before.busyCycles);
+    EXPECT_EQ(after.queueFullCycles, before.queueFullCycles);
+    EXPECT_EQ(after.requestSlotCycles, before.requestSlotCycles);
+}
+
+TEST(SyntheticHbmBackendTest, SubmissionCompletionRetainsSlotUntilHandoff)
+{
+    SyntheticHbmBackend backend(32, 1);
+    ASSERT_TRUE(backend.trySubmit(7, SyntheticHbmDirection::Read, 32, 0, 0));
+    EXPECT_FALSE(backend.trySubmit(8, SyntheticHbmDirection::Write, 32, 5, 0));
+    EXPECT_TRUE(backend.full());
+    EXPECT_EQ(backend.stats().retired, 0);
+    const auto completed = backend.takeCompleted();
+    ASSERT_EQ(completed.size(), 1);
+    EXPECT_EQ(completed[0].uid, 7);
+    EXPECT_EQ(completed[0].completedAt, 1);
+    EXPECT_EQ(backend.stats().requestSlotCycles, 5);
+    EXPECT_EQ(backend.stats().queueFullCycles, 5);
+    ASSERT_TRUE(backend.trySubmit(7, SyntheticHbmDirection::Write, 32, 5, 0));
+    EXPECT_TRUE(backend.takeCompleted().empty());
+    backend.advance(6);
+    const auto reused = backend.takeCompleted();
+    ASSERT_EQ(reused.size(), 1);
+    EXPECT_EQ(reused[0].uid, 7);
+    EXPECT_EQ(reused[0].direction, SyntheticHbmDirection::Write);
+    EXPECT_EQ(reused[0].completedAt, 6);
+}
+
+TEST(SyntheticHbmBackendTest, CompletedCopiesAndMovesHaveIndependentHandoffs)
+{
+    SyntheticHbmBackend backend(32, 2);
+    ASSERT_TRUE(backend.trySubmit(4, SyntheticHbmDirection::Read, 32, 0, 0));
+    backend.advance(1);
+    SyntheticHbmBackend copied(backend);
+    SyntheticHbmBackend moved(std::move(copied));
+    EXPECT_EQ(backend.takeCompleted().size(), 1);
+    const auto completed = moved.takeCompleted();
+    ASSERT_EQ(completed.size(), 1);
+    EXPECT_EQ(completed[0].uid, 4);
+    EXPECT_EQ(completed[0].completedAt, 1);
+    EXPECT_TRUE(backend.idle());
+    EXPECT_TRUE(moved.idle());
+    EXPECT_EQ(backend.stats().retired, 1);
+    EXPECT_EQ(moved.stats().retired, 1);
+}
+
+TEST(SyntheticHbmBackendTest, CompletionHandoffDoesNotPreemptActiveService)
+{
+    SyntheticHbmBackend backend(16, 3);
+    ASSERT_TRUE(backend.trySubmit(9, SyntheticHbmDirection::Write, 64, 0, 0));
+    backend.advance(1);
+    ASSERT_TRUE(backend.trySubmit(1, SyntheticHbmDirection::Read, 16, 1, 0));
+    backend.advance(4);
+    const auto first = backend.takeCompleted();
+    ASSERT_EQ(first.size(), 1);
+    EXPECT_EQ(first[0].uid, 9);
+    EXPECT_EQ(first[0].completedAt, 4);
+    EXPECT_EQ(backend.stats().readBytesServiced, 0);
+    backend.advance(5);
+    const auto second = backend.takeCompleted();
+    ASSERT_EQ(second.size(), 1);
+    EXPECT_EQ(second[0].uid, 1);
+    EXPECT_EQ(second[0].completedAt, 5);
 }
 
 }

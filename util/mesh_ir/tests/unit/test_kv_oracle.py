@@ -97,7 +97,7 @@ def candidate(tick, ordinal=0, code=None):
         tick, ErrorSourceKey(error_class=A.MOE_ERROR_CLASS.DMA_AXI,
                              core_id_or_ffff=0xFFFF,
                              domain=A.MESH_OBJECT_DOMAIN.KV_RUNTIME,
-                             object_kind=A.MESH_OBJECT_KIND.KV_APPEND,
+                             object_kind=A.ERROR_SOURCE_OBJECT_KIND.KV_APPEND,
                              region_group_id=0, region_id=0, ordinal=ordinal,
                              generation=0),
         AG.DETAIL_CODE["E_AXI_RESPONSE"] if code is None else code)

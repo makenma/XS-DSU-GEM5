@@ -21,7 +21,7 @@ from mesh_ir.agent_workload import (
 from mesh_ir.model import canonical_json_bytes
 
 FIXTURES = Path(__file__).resolve().parents[4] / "tests/gem5/ai_mesh/fixtures/gate4"
-CONFIG_DIGEST = "0ff7cdf1bb695635ee95f43e624f5ecb3ddf3e21d4a1bad05210ed4d3c182077"
+CONFIG_DIGEST = "de4a3a6c558caeffb5214cb1ab54cf70b904f215f8bd4feaacd988d819befd95"
 NULL_CONTROL_DIGEST = "49fcb22b9f99dbce8e30a87871b3d738b99e49e4dde346a381004c218ad1676b"
 
 
@@ -49,6 +49,36 @@ def test_fixture_loads_with_frozen_digest():
     assert config.digest == CONFIG_DIGEST
     assert release_policy_of(config) == "EXPLICIT_ONLY"
     validate_runtime_config(config, workload, registry)
+
+
+@pytest.mark.parametrize('fault', [None, 'same_mode', 'reversed', 'missing_capacity',
+                                  'unknown_field', 'negative_tick', 'empty'])
+def test_window_plan_has_bounded_capacity_and_ordered_alternating_modes(tmp_path, fault):
+    _, _, original, _ = load_all()
+    document = copy.deepcopy(original.document)
+    document['runtime'].update(mode='WINDOWED_TIMING', fast_event={'queue_entries': 1},
+        windows={'initial_mode': 'FAST_EVENT', 'switches': [
+            {'at_tick': 10, 'mode': 'FULL_TIMING'}, {'at_tick': 20, 'mode': 'FAST_EVENT'}]})
+    windows = document['runtime']['windows']
+    if fault == 'same_mode':
+        windows['switches'][0]['mode'] = 'FAST_EVENT'
+    if fault == 'reversed':
+        windows['switches'][1]['at_tick'] = 5
+    if fault == 'missing_capacity':
+        del document['runtime']['fast_event']
+    if fault == 'unknown_field':
+        windows['unknown'] = 1
+    if fault == 'negative_tick':
+        windows['switches'][0]['at_tick'] = -1
+    if fault == 'empty':
+        windows['switches'] = []
+    path = tmp_path / 'runtime.yaml'
+    path.write_text(yaml.safe_dump(document))
+    if fault is None:
+        assert load_agent_runtime_config(path).document == document
+    else:
+        with pytest.raises(PlanError):
+            load_agent_runtime_config(path)
 
 
 def test_capacity_plan_required_matches_contract_formulas():
@@ -196,3 +226,20 @@ def test_shaper_enabled_rejected_at_load():
 def test_shaper_disabled_baseline_still_valid():
     workload, _, config, registry = load_all()
     validate_runtime_config(mutated(config.document), workload, registry)
+
+
+def test_strict_batch_replay_requires_an_artifact():
+    workload, _, config, _ = load_all()
+    document = copy.deepcopy(config.document)
+    document['serving']['strict_replay_serial_batches'] = True
+    document['serving']['batch_replay_artifact'] = None
+    with pytest.raises(PlanError, match='E_BATCH_REPLAY_DIVERGENCE'):
+        validate_runtime_config(mutated(document), workload)
+
+
+def test_flagged_round_requires_a_scenario_artifact():
+    root = FIXTURES.parent / 'gate6'
+    workload = load_workload_plan(root / 'serving_replay_workload.json')
+    config = load_agent_runtime_config(root / 'serving_runtime_config.yaml')
+    with pytest.raises(PlanError, match='E_BATCH_REPLAY_DIVERGENCE'):
+        validate_runtime_config(config, workload)

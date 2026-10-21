@@ -240,6 +240,60 @@ MeshKvManager::hasClaim(uint64_t request_id) const
     return false;
 }
 
+std::optional<KvPath>
+MeshKvManager::admittedPath(const KvRollbackToken &token) const
+{
+    for (const auto &pin : pins)
+        if (pin.request_id == token.request_id && pin.payload &&
+                pin.payload->serial == token.serial)
+            return pin.payload->intent;
+    return std::nullopt;
+}
+
+std::optional<KvOwnedSlot>
+MeshKvManager::ownedSlot(uint64_t request_id) const
+{
+    for (const auto &entry : pins) {
+        if (entry.request_id != request_id)
+            continue;
+        const auto *record = find(entry.session_id, entry.kv_handle);
+        if (record == nullptr || !record->slot_id ||
+                record->generation != entry.generation ||
+                record->contract_digest != entry.contract_digest)
+            return std::nullopt;
+        return KvOwnedSlot{entry.request_id, entry.session_id, entry.kv_handle,
+            entry.generation, geometry_.slotBase(*record->slot_id), geometry_.slot_bytes};
+    }
+    return std::nullopt;
+}
+
+bool
+MeshKvManager::hasAdmissionWaiter(uint64_t request_id) const
+{
+    for (const auto &entry : waiters)
+        if (entry.request_id == request_id)
+            return true;
+    return false;
+}
+
+bool
+MeshKvManager::attachEdgeObserver(KvEdgeObserver &observer)
+{
+    if (edge_observer != nullptr)
+        return false;
+    edge_observer = &observer;
+    return true;
+}
+
+bool
+MeshKvManager::detachEdgeObserver(KvEdgeObserver &observer)
+{
+    if (edge_observer != &observer)
+        return false;
+    edge_observer = nullptr;
+    return true;
+}
+
 bool
 MeshKvManager::hasReleaseWaiter(uint64_t request_id) const
 {
@@ -269,43 +323,12 @@ MeshKvManager::kvWorkDrained(uint64_t session_id, uint64_t kv_handle) const
         !liveAppend(session_id, kv_handle);
 }
 
-bool
-MeshKvManager::candidateLess(const KvErrorCandidate &left,
-                             const KvErrorCandidate &right)
-{
-    if (left.tick != right.tick)
-        return left.tick < right.tick;
-    const mesh_abi::ErrorSourceKey &a = left.source;
-    const mesh_abi::ErrorSourceKey &b = right.source;
-    if (a.error_class != b.error_class)
-        return a.error_class < b.error_class;
-    if (a.core_id_or_ffff != b.core_id_or_ffff)
-        return a.core_id_or_ffff < b.core_id_or_ffff;
-    if (a.domain != b.domain)
-        return a.domain < b.domain;
-    if (a.object_kind != b.object_kind)
-        return a.object_kind < b.object_kind;
-    if (a.region_group_id != b.region_group_id)
-        return a.region_group_id < b.region_group_id;
-    if (a.region_id != b.region_id)
-        return a.region_id < b.region_id;
-    if (a.ordinal != b.ordinal)
-        return a.ordinal < b.ordinal;
-    if (a.generation != b.generation)
-        return a.generation < b.generation;
-    for (size_t index = 0; index < a.aux_key.size(); ++index) {
-        if (a.aux_key[index] != b.aux_key[index])
-            return a.aux_key[index] < b.aux_key[index];
-    }
-    return left.code < right.code;
-}
-
 void
 MeshKvManager::mergeFirstError(KvRecord &record,
-                               const KvErrorCandidate &candidate)
+                               const ErrorCandidate &candidate)
 {
     if (!record.first_error ||
-            candidateLess(candidate, *record.first_error)) {
+            errorCandidateLess(candidate, *record.first_error)) {
         record.first_error = candidate;
     }
 }
@@ -344,6 +367,8 @@ MeshKvManager::commitEdge(const KvEdgeInputs &edge)
         commitAdmissions(edge, cancelled, result);
     if (fatal_)
         result.fatal = fatal_;
+    if (edge_observer != nullptr)
+        edge_observer->onKvEdgeCommitted(result);
     return result;
 }
 
@@ -481,7 +506,7 @@ MeshKvManager::commitFacts(const KvEdgeInputs &edge, KvEdgeResult &result)
               [](const KvFaultEvent &left, const KvFaultEvent &right) {
                   if (left.request_id != right.request_id)
                       return left.request_id < right.request_id;
-                  return MeshKvManager::candidateLess(left.candidate,
+                  return errorCandidateLess(left.candidate,
                                                       right.candidate);
               });
     for (const KvFaultEvent &fault : faults) {
@@ -1617,35 +1642,40 @@ MeshKvManager::startEviction(KvRecord &victim, KvEdgeResult &result)
     result.evictions_started.push_back(event);
 }
 
+std::optional<KvRuntimeView>
+MeshKvManager::runtimeView(uint64_t request_id, uint32_t member_ordinal) const
+{
+    const auto slot = ownedSlot(request_id);
+    if (!slot)
+        return std::nullopt;
+    const auto *record = find(slot->session_id, slot->kv_handle);
+    KvRuntimeView view;
+    view.request_id = request_id;
+    view.member_ordinal = member_ordinal;
+    view.session_id = record->session_id;
+    view.kv_handle = record->kv_handle;
+    view.generation = record->generation;
+    view.contract_digest = record->contract_digest;
+    view.view_epoch = record->view_epoch;
+    view.slot_id = *record->slot_id;
+    view.slot_base = slot->address;
+    view.slot_bytes = slot->bytes;
+    view.valid_bytes_at_arm = record->valid_bytes;
+    return view;
+}
+
 void
 MeshKvManager::armViews(const KvEdgeInputs &edge, KvEdgeResult &result)
 {
     std::vector<KvViewArm> arms = edge.view_arms;
     std::sort(arms.begin(), arms.end(), viewArmLess);
     for (const KvViewArm &arm : arms) {
-        KvRequestPin *entry = pin(arm.request_id);
-        if (entry == nullptr) {
-            fail("runtime view without a KV pin");
+        const auto view = runtimeView(arm.request_id, arm.member_ordinal);
+        if (!view) {
+            fail("runtime view without a pinned resident slot");
             return;
         }
-        KvRecord *record = find(entry->session_id, entry->kv_handle);
-        if (record == nullptr || !record->slot_id) {
-            fail("runtime view without a resident slot");
-            return;
-        }
-        KvRuntimeView view;
-        view.request_id = arm.request_id;
-        view.member_ordinal = arm.member_ordinal;
-        view.session_id = record->session_id;
-        view.kv_handle = record->kv_handle;
-        view.generation = record->generation;
-        view.contract_digest = record->contract_digest;
-        view.view_epoch = record->view_epoch;
-        view.slot_id = *record->slot_id;
-        view.slot_base = geometry_.slotBase(*record->slot_id);
-        view.slot_bytes = geometry_.slot_bytes;
-        view.valid_bytes_at_arm = record->valid_bytes;
-        result.views[{arm.request_id, arm.member_ordinal}] = view;
+        result.views[{arm.request_id, arm.member_ordinal}] = *view;
     }
 }
 

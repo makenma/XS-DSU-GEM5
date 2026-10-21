@@ -195,18 +195,9 @@ controlStatusName(uint16_t status)
 inline const char *
 cqConsumeStatusName(uint16_t status)
 {
-    switch (status) {
-      case agent_abi::kCqStatusSUCCESS:
-        return "SUCCESS";
-      case agent_abi::kCqStatusCANCELLED:
-        return "CANCELLED";
-      case agent_abi::kCqStatusNOT_FOUND:
-        return "NOT_FOUND";
-      case agent_abi::kCqStatusALREADY_TERMINAL:
-        return "ALREADY_TERMINAL";
-      case agent_abi::kCqStatusSTALE_GENERATION:
-        return "STALE_GENERATION";
-    }
+    if (status != agent_abi::kCqStatusPARAM_ERROR)
+        if (const auto *name = controlStatusName(status))
+            return name;
     return "ERROR";
 }
 

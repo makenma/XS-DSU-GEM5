@@ -1,12 +1,18 @@
 #ifndef __MEM_AXI_AXI_TARGET_ADAPTER_HH__
 #define __MEM_AXI_AXI_TARGET_ADAPTER_HH__
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <map>
 #include <optional>
+#include <queue>
+#include <set>
 #include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include "base/logging.hh"
@@ -65,7 +71,11 @@ class AxiSimpleMemory
   public:
     explicit AxiSimpleMemory(std::vector<AxiRange> ranges = {});
 
+    GEM5_CHECKPOINT_FIELDS(_pages)
+
     bool contains(uint64_t address) const;
+    bool containsRange(uint64_t address, uint64_t size) const;
+    const std::vector<AxiRange> &ranges() const { return _ranges; }
     uint8_t readByte(uint64_t address) const;
     void writeByte(uint64_t address, uint8_t value);
     void fill(uint8_t value);
@@ -129,6 +139,7 @@ struct AxiTargetOccupancy
 
 struct AxiTargetProgress
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     uint64_t serviceReady = 0;
     uint64_t architecturalCommits = 0;
     uint64_t sameIdReadyBlocked = 0;
@@ -145,6 +156,29 @@ class AxiTargetState
 {
   public:
     explicit AxiTargetState(const AxiTargetConfig &config);
+
+    template<class Archive> void serialize(Archive &archive, unsigned)
+    {
+        if (!_writes.empty() || !_reads.empty() || !_bReady.empty() ||
+                !_rReady.empty() || _reservedWriteBeats || _reservedReadBeats ||
+                _orphanTransactions || _orphanBeats || _activeWriteServices ||
+                _activeReadServices || !_pendingWriteServices.empty() ||
+                !_pendingReadServices.empty() || !_writeCommitOrder.empty() ||
+                !_eligibleWrites.empty() || !_writeScanObligations.empty() ||
+                !_readCommitOrder.empty() ||
+                !_eligibleReads.empty() || !_readScanObligations.empty() ||
+                !_readGenerationReady.empty())
+            throw std::runtime_error("E_CHECKPOINT_BOUNDARY: AXI target is active");
+        bool backend = _syntheticBackend.has_value();
+        archive & backend;
+        if (backend != _syntheticBackend.has_value())
+            throw std::runtime_error("E_CHECKPOINT_CONFIG: AXI backend differs");
+        if (backend)
+            archive & *_syntheticBackend;
+        checkpoint::fields(archive, _memory, _lastReadSource, _activeQuota,
+            _completedWrites, _completedReads, _now, _nextTargetCommit, _progress);
+    }
+
 
     bool canAcceptAw(const AxiAddressPacket &packet) const;
     bool canAcceptW(const AxiDataPacket &packet) const;
@@ -173,11 +207,13 @@ class AxiTargetState
     const AxiSimpleMemory &memory() const { return _memory; }
     AxiSimpleMemory &memory() { return _memory; }
 
-    void setWriteCommitObserver(AxiWriteCommitObserver *observer)
+    void registerWriteCommitObserver(AxiWriteCommitObserver *observer)
     {
-        fatal_if(writeCommitObserver != nullptr,
-                 "AXI target write-commit observer already registered");
-        writeCommitObserver = observer;
+        fatal_if(observer == nullptr ||
+                 std::find(writeCommitObservers.begin(), writeCommitObservers.end(),
+                           observer) != writeCommitObservers.end(),
+                 "AXI target write-commit observer is null or already registered");
+        writeCommitObservers.push_back(observer);
     }
 
     void setPreCommitPolicy(AxiWritePreCommitPolicy *policy)
@@ -191,6 +227,16 @@ class AxiTargetState
     uint64_t completedReads() const { return _completedReads; }
 
   private:
+    using OrderingKey =
+        std::tuple<uint32_t, uint16_t, uint32_t, bool, uint32_t>;
+    using CommitOrderKey = std::tuple<OrderingKey, uint64_t, uint64_t>;
+    using WriteCommitCandidateKey =
+        std::tuple<uint64_t, uint32_t, uint64_t>;
+    using ReadGenerationKey = std::tuple<AxiEndpointKey, uint64_t, uint64_t>;
+    using ServiceAdmissionKey = std::pair<Tick, uint64_t>;
+    using ServiceAdmissionQueue = std::priority_queue<ServiceAdmissionKey,
+        std::vector<ServiceAdmissionKey>, std::greater<ServiceAdmissionKey>>;
+
     struct WriteContext
     {
         AxiCommonMeta meta;
@@ -205,6 +251,12 @@ class AxiTargetState
         bool orderingBlockCounted = false;
         uint64_t serviceReadyAt = 0;
         AxiResp serviceResponse = AxiResp::Okay;
+
+        OrderingKey orderingKey() const
+        {
+            return {meta.srcNode, meta.srcPort, meta.axiId,
+                    false, meta.dstNode};
+        }
     };
 
     struct ReadContext
@@ -220,6 +272,12 @@ class AxiTargetState
         uint64_t responseEligibleAt = 0;
         AxiResp serviceResponse = AxiResp::Okay;
         std::vector<AxiDataPacket> frozenBeats;
+
+        OrderingKey orderingKey() const
+        {
+            return {ar.meta.srcNode, ar.meta.srcPort, ar.meta.axiId,
+                    true, ar.meta.dstNode};
+        }
     };
 
     struct ReadyB
@@ -227,9 +285,6 @@ class AxiTargetState
         AxiBPacket packet;
         uint64_t readyAt = 0;
     };
-
-    using OrderingKey =
-        std::tuple<uint32_t, uint16_t, uint32_t, bool, uint32_t>;
 
     bool canReserveWrite(const AxiCommonMeta &meta,
                          uint16_t beat_count) const;
@@ -245,8 +300,13 @@ class AxiTargetState
     uint32_t serviceLatency(const AxiCommonMeta &meta, bool read) const;
     AxiResp serviceResponse(const AxiCommonMeta &meta,
                             AxiResp decode_resp) const;
+    void indexPendingWriteService(const WriteContext &context);
     void startServices(uint64_t now);
     void updateServiceReady(uint64_t now);
+    void markWriteServiceReady(WriteContext &context, uint64_t ready_at);
+    void markReadServiceReady(ReadContext &context, uint64_t ready_at);
+    WriteCommitCandidateKey writeCommitCandidateKey(
+        const WriteContext &context) const;
     void commitWrites(uint64_t now);
     void commitReads(uint64_t now);
     void generateReads();
@@ -255,10 +315,19 @@ class AxiTargetState
     AxiTargetConfig _config;
     AxiSimpleMemory _memory;
     std::optional<SyntheticHbmBackend> _syntheticBackend;
-    AxiWriteCommitObserver *writeCommitObserver = nullptr;
+    std::vector<AxiWriteCommitObserver *> writeCommitObservers;
     AxiWritePreCommitPolicy *preCommitPolicy = nullptr;
     std::map<uint64_t, WriteContext> _writes;
     std::map<uint64_t, ReadContext> _reads;
+    ServiceAdmissionQueue _pendingWriteServices;
+    ServiceAdmissionQueue _pendingReadServices;
+    std::set<CommitOrderKey> _writeCommitOrder;
+    std::set<WriteCommitCandidateKey> _eligibleWrites;
+    std::set<uint64_t> _writeScanObligations;
+    std::set<CommitOrderKey> _readCommitOrder;
+    std::set<std::pair<uint64_t, uint64_t>> _eligibleReads;
+    std::set<uint64_t> _readScanObligations;
+    std::set<ReadGenerationKey> _readGenerationReady;
     std::deque<ReadyB> _bReady;
     BoundedFifo<AxiDataPacket> _rReady;
     std::optional<AxiEndpointKey> _lastReadSource;

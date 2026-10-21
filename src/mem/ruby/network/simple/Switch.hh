@@ -56,6 +56,8 @@
 #include <list>
 #include <vector>
 
+#include "mem/ruby/network/simple/NetworkSnapshot.hh"
+
 #include "mem/packet.hh"
 #include "mem/ruby/common/TypeDefines.hh"
 #include "mem/ruby/network/BasicRouter.hh"
@@ -73,7 +75,7 @@ namespace ruby
 
 class MessageBuffer;
 class NetDest;
-class SimpleNetwork;
+struct SimpleNetworkConfig;
 
 class Switch : public BasicRouter
 {
@@ -84,26 +86,33 @@ class Switch : public BasicRouter
     static constexpr Event::Priority PERFECTSWITCH_EV_PRI = Event::Default_Pri;
     static constexpr Event::Priority THROTTLE_EV_PRI = Event::Default_Pri + 1;
 
-    typedef SwitchParams Params;
+    PARAMS(Switch);
     Switch(const Params &p);
     ~Switch() = default;
     void init();
 
-    void addInPort(const std::vector<MessageBuffer*>& in);
-    void addOutPort(const std::vector<MessageBuffer*>& out,
+    Consumer *addInPort(const std::vector<MessageBuffer*>& in, bool connect = true);
+    const Throttle &addOutPort(const std::vector<MessageBuffer*>& out,
                     const NetDest& routing_table_entry,
                     Cycles link_latency, int link_weight, int bw_multiplier,
                     bool is_external,
                     PortDirection dst_inport = "");
 
+    void serialize(CheckpointOut &cp) const override;
+    void unserialize(CheckpointIn &cp) override;
+    void drainResume() override;
+    template<class Archive> void serialize(Archive &archive, unsigned);
     void resetStats();
     void collateStats();
     void regStats();
     const statistics::Formula & getMsgCount(unsigned int type) const
     { return *(switchStats.m_msg_counts[type]); }
 
+    SimpleNetworkSnapshot quiescenceSnapshot() const;
+    const statistics::Formula &getMsgBytes(unsigned int type) const
+    { return *switchStats.m_msg_bytes[type]; }
     void print(std::ostream& out) const;
-    void init_net_ptr(SimpleNetwork* net_ptr) { m_network_ptr = net_ptr; }
+    void init_net_ptr(const SimpleNetworkConfig* net_ptr) { m_network_ptr = net_ptr; }
 
     bool functionalRead(Packet *);
     bool functionalRead(Packet *, WriteMask&);
@@ -116,8 +125,9 @@ class Switch : public BasicRouter
     Switch(const Switch& obj);
     Switch& operator=(const Switch& obj);
 
+    std::string checkpointState;
     PerfectSwitch perfectSwitch;
-    SimpleNetwork* m_network_ptr;
+    const SimpleNetworkConfig* m_network_ptr;
     std::list<Throttle> throttles;
 
     const Cycles m_int_routing_latency;

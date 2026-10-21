@@ -46,30 +46,35 @@ NpuServingFrontend::makeMetadata(uint64_t sequence, uint32_t status) const
         value.user_id = currentUserId;
         value.task_seq = currentTaskSeq;
         value.repair_round = currentRepairRound;
-        value.output_tokens = currentMaxOutputTokens;
+        value.output_tokens = currentCompletion->outputTokens;
         value.output_bytes = currentCompletion->outputBytes;
         value.semantic_content_digest = currentCompletion->semanticDigest;
-        if (currentCompletion->kvTerminal) {
-            value.completed_instance_count =
-                currentCompletion->phaseInstances;
-            value.request_start_tick = currentCompletion->requestStartTick;
-            value.terminal_ready_tick = currentCompletion->terminalTick;
-        } else {
-            value.completed_instance_count = 0;
-            value.moe_invocation_count = 0;
-            value.request_start_tick = curTick();
-            value.terminal_ready_tick = curTick();
-        }
+        value.completed_instance_count = currentCompletion->phaseInstances;
+        value.request_start_tick = currentCompletion->requestStartTick;
+        value.terminal_ready_tick = currentCompletion->terminalTick;
         std::vector<uint8_t> data =
             toVector(agent_abi::encodeOutputMetadata(value));
         const size_t offset = data.size();
         data.resize(offset + kSurrogateTimingBreakdownTlvBytes, 0);
         agent_abi::wrU16(data.data() + offset,
-                         agent_abi::kOutputTlvTypeTIMING_BREAKDOWN);
+                         status != agent_abi::kCqStatusSUCCESS ?
+                         agent_abi::kOutputTlvTypeDIAGNOSTIC : agent_abi::kOutputTlvTypeTIMING_BREAKDOWN);
         agent_abi::wrU16(data.data() + offset + 2,
                          agent_abi::kTlvFlagsREQUIRED);
         agent_abi::wrU32(data.data() + offset + 4,
                          kSurrogateTimingBreakdownTlvBytes - 8);
+        if (status == agent_abi::kCqStatusCANCELLED) {
+            const auto diagnostic = requestCancellationDiagnostic(currentRequestId,
+                currentCompletion ? currentCompletion->terminalPosition : RequestTerminalPosition{});
+            std::copy(diagnostic.begin(), diagnostic.end(), data.begin() + offset + 8);
+        } else if (status != agent_abi::kCqStatusSUCCESS) {
+            const auto diagnostic = currentCompletion->failure ?
+                errorSourceDiagnostic(*currentCompletion->failure) :
+                kvPolicyDiagnostic(currentRequestId, currentSessionId,
+                    currentKvHandle, currentKvGeneration, static_cast<agent_abi::DetailCode>(currentDetailCode));
+            fatal_if(!diagnostic, "terminal detail has no diagnostic projection");
+            std::copy(diagnostic->begin(), diagnostic->end(), data.begin() + offset + 8);
+        }
         agent_abi::wrU32(
             data.data() + agent_abi::kOutputMetadataCrcFieldOffset, 0);
         agent_abi::wrU32(
@@ -187,7 +192,12 @@ NpuServingFrontend::resolveControlCommand(
     const bool cancel = currentControlOpcode == agent_abi::kSqOpcodeCANCEL;
     uint16_t status = agent_abi::kCqStatusSUCCESS;
     if (cancel) {
-        if (seenGenerateRequests.count(value.target_request_id) == 0)
+        const auto target = sqAdmission.opcode(value.target_request_id);
+        if (target && *target != agent_abi::kSqOpcodeGENERATE) {
+            rejectParameter(agent_abi::E_REQUEST_BINDING);
+            return;
+        }
+        if (!target)
             status = agent_abi::kCqStatusNOT_FOUND;
         else if (terminalGenerateRequests.count(value.target_request_id) != 0)
             status = agent_abi::kCqStatusALREADY_TERMINAL;
@@ -209,13 +219,41 @@ NpuServingFrontend::resolveControlCommand(
             dispatchAcceptedBusiness();
         return;
     }
-    recordSemantic("CONTROL_RESOLVE", "CONTROL_WAITER", std::nullopt,
-                   currentRequestId, currentCookie,
-                   controlStatusName(status));
+    if (cancel && servingExecution && status == agent_abi::kCqStatusSUCCESS) {
+        fatal_if(!meshExecutor, "%s: serving cancel has no executor", name());
+        switch (meshExecutor->requestCancel(value.target_request_id, curTick())) {
+          case ServingMeshExecutor::CancelResult::Accepted:
+            break;
+          case ServingMeshExecutor::CancelResult::NotFound:
+            status = agent_abi::kCqStatusNOT_FOUND;
+            break;
+          case ServingMeshExecutor::CancelResult::AlreadyTerminal:
+            status = agent_abi::kCqStatusALREADY_TERMINAL;
+            break;
+        }
+    }
+    if (!(cancel && servingExecution && status == agent_abi::kCqStatusSUCCESS))
+        recordSemantic("CONTROL_RESOLVE", "CONTROL_WAITER", std::nullopt,
+                       currentRequestId, currentCookie,
+                       controlStatusName(status));
     currentCqStatus = status;
     currentCqFlags = agent_abi::kCqFlagsCONTROL_COMMAND;
     currentDetailCode = 0;
     if (cancel && status == agent_abi::kCqStatusSUCCESS) {
+        if (servingExecution) {
+            fatal_if(!currentObligationId || pendingCancels.size() >= cqDepth,
+                     "%s: serving cancel exceeds its reserved obligations", name());
+            const bool inserted = pendingCancels.emplace(currentRequestId,
+                PendingCancel{value.target_request_id,
+                    TerminalResult{*currentObligationId, 0, currentSqSequence,
+                        currentRequestId, currentCookie, 0, currentCqStatus,
+                        currentCqFlags, 0, std::nullopt, false}}).second;
+            fatal_if(!inserted, "%s: duplicate serving cancel obligation", name());
+            recordSemantic("CONTROL_DEFERRED", "CONTROL_WAITER", std::nullopt,
+                           currentRequestId, currentCookie, "PENDING");
+            finishCurrent();
+            return;
+        }
         const Tick targetReadyTick = curTick();
         const auto cancelTarget = [this, target = value.target_request_id](
                                        Tick now) {
@@ -263,7 +301,7 @@ NpuServingFrontend::maybeNotifyFirstOutputChunk(
         return;
     outputChunkNotified = true;
     if (driverRef)
-        driverRef->notifyFirstOutputChunk(*requestId);
+        driverRef->notifyControlEvent(*requestId, ControlTriggerEvent::AfterFirstOutputChunk);
 }
 bool
 NpuServingFrontend::pendingControlIntake() const
@@ -303,7 +341,7 @@ NpuServingFrontend::cancelParkedTarget(Tick now)
     if (executionEvent.scheduled())
         deschedule(&executionEvent);
     releaseKvPin(parked.requestId, agent_abi::kCqStatusCANCELLED);
-    latchGenerateTerminal(parked.requestId);
+    latchGenerateTerminal(parked.requestId, now);
     uint16_t flags = 0;
     std::optional<uint32_t> outputBytes;
     if (parked.outputWork) {
@@ -328,7 +366,7 @@ NpuServingFrontend::cancelQueuedTarget(uint64_t requestId, Tick now)
     const ParkedBusiness parked = found->second;
     acceptedQueue.erase(found);
     releaseKvPin(parked.requestId, agent_abi::kCqStatusCANCELLED);
-    latchGenerateTerminal(parked.requestId);
+    latchGenerateTerminal(parked.requestId, now);
     recorder->setMetric("queued_cancel_requests", 1);
     stageTerminalRecord(parked.obligationId, now, parked.sqSequence,
                         parked.requestId, parked.cookie, parked.qos,
@@ -453,7 +491,7 @@ NpuServingFrontend::saveParkedBusiness()
     parked.qos = currentQos;
     parked.sessionAdmitted = currentSessionAdmitted;
     parked.publishChunkBytes = currentPublishChunkBytes;
-    parked.completion = currentCompletion.value_or(NpuExecutionCompletion{});
+    parked.completion = currentCompletion;
     if (executionEvent.scheduled())
         parked.executionDeadlineTick = executionEvent.when();
     if (parkingOutput) {
@@ -479,6 +517,10 @@ NpuServingFrontend::loadBusinessContext(const ParkedBusiness &parked)
     currentMetadataAddress = parked.metadataAddress;
     currentObligationId = parked.obligationId;
     lastExecutionRequest = parked.executionRequest;
+    if (lastExecutionRequest) {
+        currentKvHandle = lastExecutionRequest->kvHandle;
+        currentKvGeneration = lastExecutionRequest->generation;
+    }
     currentUserId = parked.userId;
     currentTaskSeq = parked.taskSeq;
     currentMaxOutputTokens = parked.maxOutputTokens;
@@ -486,10 +528,7 @@ NpuServingFrontend::loadBusinessContext(const ParkedBusiness &parked)
     currentQos = parked.qos;
     currentSessionAdmitted = parked.sessionAdmitted;
     currentPublishChunkBytes = parked.publishChunkBytes;
-    if (parked.completion.outputBytes != 0 ||
-            !parked.completion.outputPayload.empty() ||
-            parked.completion.coreStarted)
-        currentCompletion = parked.completion;
+    currentCompletion = parked.completion;
     currentValid = true;
     currentError = false;
     currentControlOpcode = 0;
@@ -513,16 +552,8 @@ NpuServingFrontend::restoreParkedBusiness()
     }
     stage = Stage::Execute;
     if (servingExecution) {
-        if (currentCompletion) {
-            if (currentCompletion->success)
-                startMetadata();
-            else
-                queueErrorCompletion(
-                    static_cast<uint16_t>(
-                        agent_abi::CqStatus::PROGRAM_ERROR),
-                    agent_abi::kCqFlagsDETAIL_IN_CQ,
-                    agent_abi::E_KV_STATE);
-        }
+        if (currentCompletion)
+            finishServingRequest();
         scheduleTick();
         return;
     }

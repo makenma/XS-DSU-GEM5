@@ -54,19 +54,19 @@ def test_phase_plan_needs_the_exact_decode_profile():
     request = request_of(program)
     missing = dataclasses.replace(
         program,
-        agent_instance_profiles=[
+        agent_instance_profiles=tuple([
             instance for instance in program.agent_instance_profiles
-            if instance.phase != A.PHASE.DECODE])
+            if instance.phase != A.PHASE.DECODE]))
     with pytest.raises(MeshIrError) as error:
         generate_phase_plan(missing, request, A.PATH_KIND.INITIAL_PREFILL)
     assert "profile" in str(error.value).lower()
 
     drifted = dataclasses.replace(
         program,
-        agent_instance_profiles=[
+        agent_instance_profiles=tuple([
             dataclasses.replace(instance, kv_tokens_before=99)
             if instance.phase == A.PHASE.DECODE else instance
-            for instance in program.agent_instance_profiles])
+            for instance in program.agent_instance_profiles]))
     with pytest.raises(MeshIrError) as error:
         generate_phase_plan(drifted, request, A.PATH_KIND.INITIAL_PREFILL)
     assert "cursor" in str(error.value).lower()
@@ -87,10 +87,10 @@ def test_phase_plan_rejects_byte_equation_violations():
     for name, phase, field, value in cases:
         tampered = dataclasses.replace(
             program,
-            agent_instance_profiles=[
+            agent_instance_profiles=tuple([
                 dataclasses.replace(instance, **{field: value})
                 if instance.phase == phase else instance
-                for instance in program.agent_instance_profiles])
+                for instance in program.agent_instance_profiles]))
         with pytest.raises(MeshIrError) as error:
             generate_phase_plan(tampered, request,
                                 A.PATH_KIND.INITIAL_PREFILL)
@@ -102,21 +102,21 @@ def test_phase_plan_rejects_role_matrix_violations():
     request = request_of(program)
     wrong_primary = dataclasses.replace(
         program,
-        agent_instance_profiles=[
+        agent_instance_profiles=tuple([
             dataclasses.replace(instance,
                                 primary_output_symbol_id=instance.
                                 primary_input_symbol_id)
             if instance.phase == A.PHASE.PREFILL else instance
-            for instance in program.agent_instance_profiles])
+            for instance in program.agent_instance_profiles]))
     with pytest.raises(MeshIrError):
         generate_phase_plan(wrong_primary, request,
                             A.PATH_KIND.INITIAL_PREFILL)
     publish_kv = dataclasses.replace(
         program,
-        agent_instance_profiles=[
+        agent_instance_profiles=tuple([
             dataclasses.replace(instance, primary_kv_symbol_id=99)
             if instance.phase == A.PHASE.PUBLISH else instance
-            for instance in program.agent_instance_profiles])
+            for instance in program.agent_instance_profiles]))
     with pytest.raises(MeshIrError):
         generate_phase_plan(publish_kv, request, A.PATH_KIND.INITIAL_PREFILL)
 
@@ -146,7 +146,7 @@ def test_two_token_fixture_phase_plan():
 
 def test_two_token_fixture_matches_the_cross_language_expected():
     import json
-    from mesh_ir.model import canonical
+    from mesh_ir.model import to_canonical
     from mesh_ir.serving_profiles import (
         program_profile_key_base_digest,
         serving_capacity_required,
@@ -154,7 +154,7 @@ def test_two_token_fixture_matches_the_cross_language_expected():
     program = two_token_program()
     expected = json.loads(
         (FIXTURE / "serving_two_tokens_expected.json").read_text())
-    assert program.semantic_sha256() == expected["semantic_sha256"]
+    assert program.semantic_sha256 == expected["semantic_sha256"]
     assert program_profile_key_base_digest(program).hex() == \
         expected["profile_key_base_digest"]
     assert serving_capacity_required(program).fields() == \
@@ -164,5 +164,5 @@ def test_two_token_fixture_matches_the_cross_language_expected():
             "agent_source_core_map", "agent_instance_member_bindings",
             "agent_request_binding_requirements",
             "agent_publish_surrogate_bindings"):
-        actual = [canonical(record) for record in getattr(program, name)]
+        actual = [to_canonical(record) for record in getattr(program, name)]
         assert actual == expected[name], name

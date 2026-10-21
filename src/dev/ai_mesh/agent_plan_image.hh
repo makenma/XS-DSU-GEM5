@@ -46,6 +46,8 @@ struct AgentPlanRound
     uint64_t promptBytes = 0;
     uint64_t deltaPromptBytes = 0;
     uint32_t itemId = 0;
+    uint32_t logicalSourceRank = 0;
+    bool batchReplay = false;
     uint32_t fullContextTokens = 0;
     uint32_t cachedTokens = 0;
     uint32_t outputTokens = 0;
@@ -63,6 +65,7 @@ struct AgentPlanRound
     bool hasPrompt = false;
     bool hasDelta = false;
     std::array<uint8_t, 32> inputDigest{};
+    std::vector<uint8_t> inputPayload;
     AgentPlanStage compile;
     AgentPlanStage test;
     AgentPlanStage logParse;
@@ -151,7 +154,7 @@ struct AgentHostBindingRequirement
     uint16_t kind = 0;
     uint16_t flags = 0;
     uint64_t platformAddress = 0;
-    uint64_t platformBytes = 0;
+    uint64_t requiredBytes = 0;
 };
 
 struct AgentHostBindingPlan
@@ -161,9 +164,13 @@ struct AgentHostBindingPlan
     uint32_t primaryInputSymbolId = 0;
     uint32_t primaryOutputSymbolId = 0;
     uint32_t primaryKvSymbolId = 0;
-    uint32_t instanceCount = 0;
+    uint32_t publishChunkBytes = 0;
+    std::vector<uint32_t> instanceCounts;
     std::vector<AgentHostBindingRequirement> requirements;
 };
+
+const AgentHostBindingPlan *findHostBindingPlan(const std::vector<AgentHostBindingPlan> &,
+    uint16_t programId, uint16_t profileId);
 
 class AgentPlanImage
 {

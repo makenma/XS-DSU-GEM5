@@ -3,6 +3,8 @@
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <map>
+#include <set>
 #include <utility>
 
 #include "dev/ai_mesh/agent_sha256.hh"
@@ -16,7 +18,7 @@ namespace
 {
 
 constexpr uint8_t kMagic[4] = {'A', 'G', 'P', 'I'};
-constexpr uint32_t kVersion = 1;
+constexpr uint32_t kVersion = 5;
 constexpr uint16_t kSectionWorkload = 1;
 constexpr uint16_t kSectionCommandIdentity = 2;
 constexpr uint16_t kSectionHostTaskIdentity = 3;
@@ -24,6 +26,7 @@ constexpr uint16_t kSectionArena = 4;
 constexpr uint16_t kSectionSurrogate = 5;
 constexpr uint16_t kSectionControl = 6;
 constexpr uint16_t kSectionRequestBindings = 7;
+constexpr uint16_t kSectionInputPayloads = 8;
 
 class Reader
 {
@@ -33,6 +36,7 @@ class Reader
 
     bool failed() const { return failed_; }
     size_t offset() const { return offset_; }
+    size_t remaining() const { return length - offset_; }
 
     uint8_t u8()
     {
@@ -147,6 +151,11 @@ readWorkloadSection(Reader &reader, std::vector<AgentPlanUser> &users)
             for (uint32_t roundIndex = 0; roundIndex < roundCount; ++roundIndex) {
                 AgentPlanRound round;
                 round.itemId = reader.u32();
+                round.logicalSourceRank = reader.u32();
+                const uint8_t batchReplay = reader.u8();
+                if (batchReplay > 1)
+                    return false;
+                round.batchReplay = batchReplay;
                 round.repairRound = reader.u16();
                 round.kvPolicy = reader.u8();
                 round.hasDeadline = reader.u8() != 0;
@@ -308,8 +317,19 @@ readRequestBindingSection(Reader &reader, uint64_t &kvSessionSlotBytes,
         plan.primaryInputSymbolId = reader.u32();
         plan.primaryOutputSymbolId = reader.u32();
         plan.primaryKvSymbolId = reader.u32();
+        plan.publishChunkBytes = reader.u32();
+        if (!plan.publishChunkBytes)
+            return false;
         const uint32_t requirementCount = reader.u32();
-        plan.instanceCount = reader.u32();
+        const uint32_t instanceCountCount = reader.u32();
+        if (instanceCountCount == 0 || instanceCountCount > 3)
+            return false;
+        for (uint32_t item = 0; item < instanceCountCount; ++item) {
+            const auto count = reader.u32();
+            if (count == 0 || (!plan.instanceCounts.empty() && count <= plan.instanceCounts.back()))
+                return false;
+            plan.instanceCounts.push_back(count);
+        }
         if (reader.failed() || requirementCount > 65536)
             return false;
         for (uint32_t item = 0; item < requirementCount; ++item) {
@@ -318,7 +338,7 @@ readRequestBindingSection(Reader &reader, uint64_t &kvSessionSlotBytes,
             requirement.kind = reader.u16();
             requirement.flags = reader.u16();
             requirement.platformAddress = reader.u64();
-            requirement.platformBytes = reader.u64();
+            requirement.requiredBytes = reader.u64();
             if (reader.failed())
                 return false;
             plan.requirements.push_back(requirement);
@@ -328,6 +348,16 @@ readRequestBindingSection(Reader &reader, uint64_t &kvSessionSlotBytes,
     return true;
 }
 
+}
+
+const AgentHostBindingPlan *
+findHostBindingPlan(const std::vector<AgentHostBindingPlan> &plans,
+                    uint16_t programId, uint16_t profileId)
+{
+    for (const AgentHostBindingPlan &plan : plans)
+        if (plan.programId == programId && plan.profileId == profileId)
+            return &plan;
+    return nullptr;
 }
 
 std::optional<AgentPlanImage>
@@ -351,7 +381,7 @@ AgentPlanImage::parse(const uint8_t *data, size_t length)
     if (reader.u32() != kVersion)
         return std::nullopt;
     const uint32_t sectionCount = reader.u32();
-    if (reader.failed() || sectionCount < 4 || sectionCount > 7)
+    if (reader.failed() || sectionCount < 4 || sectionCount > 8)
         return std::nullopt;
 
     AgentPlanImage image;
@@ -359,10 +389,13 @@ AgentPlanImage::parse(const uint8_t *data, size_t length)
         !reader.bytes(image.controlPlanDigest_.data(), 32))
         return std::nullopt;
 
+    std::set<uint16_t> seen;
+    std::map<uint32_t, std::vector<uint8_t>> inputs;
     for (uint32_t section = 0; section < sectionCount; ++section) {
         const uint16_t type = reader.u16();
         const uint64_t sectionLength = reader.u64();
-        if (reader.failed())
+        if (reader.failed() || sectionLength > reader.remaining() ||
+            !seen.insert(type).second)
             return std::nullopt;
         const size_t start = reader.offset();
         bool ok = false;
@@ -379,6 +412,25 @@ AgentPlanImage::parse(const uint8_t *data, size_t length)
         else if (type == kSectionRequestBindings)
             ok = readRequestBindingSection(reader, image.kvSessionSlotBytes_,
                                            image.hostBindingPlans_);
+        else if (type == kSectionInputPayloads) {
+            const uint32_t count = reader.u32();
+            if (reader.failed() || count == 0 || count > 65536)
+                return std::nullopt;
+            for (uint32_t index = 0; index < count; ++index) {
+                const uint32_t item = reader.u32();
+                const uint64_t size = reader.u64();
+                if (reader.failed() || size == 0 ||
+                    reader.offset() - start > sectionLength ||
+                    size > sectionLength - (reader.offset() - start) ||
+                    size > reader.remaining() || inputs.count(item))
+                    return std::nullopt;
+                auto &payload = inputs[item];
+                payload.resize(size);
+                if (!reader.bytes(payload.data(), size))
+                    return std::nullopt;
+            }
+            ok = true;
+        }
         else if (type == kSectionSurrogate) {
             if (sectionLength > length - 32 - start)
                 return std::nullopt;
@@ -397,6 +449,26 @@ AgentPlanImage::parse(const uint8_t *data, size_t length)
             return std::nullopt;
     }
     if (reader.failed() || reader.offset() != length - 32)
+        return std::nullopt;
+    if (!seen.count(kSectionWorkload) || !seen.count(kSectionCommandIdentity) ||
+        !seen.count(kSectionHostTaskIdentity) || !seen.count(kSectionArena))
+        return std::nullopt;
+    std::set<uint32_t> items;
+    for (auto &user : image.users_)
+        for (auto &task : user.tasks)
+            for (auto &round : task.rounds) {
+                if (!items.insert(round.itemId).second)
+                    return std::nullopt;
+                auto input = inputs.find(round.itemId);
+                if (input == inputs.end())
+                    continue;
+                if (input->second.size() != round.fullContextBytes ||
+                    agentSha256(input->second) != round.inputDigest)
+                    return std::nullopt;
+                round.inputPayload = std::move(input->second);
+                inputs.erase(input);
+            }
+    if (!inputs.empty())
         return std::nullopt;
     image.imageDigest_ = stored;
     return image;

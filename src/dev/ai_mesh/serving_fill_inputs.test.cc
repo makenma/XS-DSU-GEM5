@@ -3,6 +3,7 @@
 #include <fstream>
 
 #include "dev/ai_mesh/serving_fill_inputs.hh"
+#include "dev/ai_mesh/mesh_program_test_support.hh"
 
 namespace
 {
@@ -22,10 +23,22 @@ class ServingFillInputsTest : public ::testing::Test
                                   std::istreambuf_iterator<char>());
         MeshLoadError error;
         ASSERT_TRUE(decodeMeshBinary(bytes, program, error));
-        const auto &record = program.agent_publish_surrogate_bindings.front();
-        for (const auto &instance : program.agent_instance_profiles)
+        const auto &record = program.transport.agent_publish_surrogate_bindings.front();
+        for (const auto &instance : program.transport.agent_instance_profiles)
             if (instance.instance_profile_id == record.instance_profile_id) {
-                views = ExecutionViewSet::fromVerified(program);
+                auto arch = test_support::testArch();
+                admission = test_support::admittedFixture(program, arch);
+                views = admission->executionViews();
+                std::shared_ptr<const MeshProgramInvocation> invocation;
+                ASSERT_TRUE(prepareProgramInvocation(admission, instance.mesh_entrypoint_id,
+                    instance.mesh_profile_id, {}, invocation, error)) << error.message;
+                ASSERT_TRUE(owner.installInvocation(invocation));
+                const auto &member = program.transport.agent_instance_member_bindings[instance.member_binding_first];
+                const auto slot = admission->context().symbolBinding(instance.mesh_entrypoint_id,
+                    instance.mesh_profile_id, member.static_output_symbol_id);
+                ASSERT_TRUE(slot);
+                ASSERT_TRUE(owner.bindSlot(slot->slot->slot_id, {},
+                    {0, instance.host_output_dma_bytes_per_member}));
                 view = views.forInstance(instance.mesh_entrypoint_id,
                                          instance.mesh_profile_id);
                 binding.content.assign(instance.host_output_dma_bytes_per_member,
@@ -41,6 +54,7 @@ class ServingFillInputsTest : public ::testing::Test
     }
 
     DecodedProgram program;
+    std::shared_ptr<const MeshProgramAdmission> admission;
     ExecutionViewSet views;
     const ProfileExecutionView *view = nullptr;
     ServingFillBinding binding;
@@ -82,7 +96,7 @@ TEST_F(ServingFillInputsTest, NextInstanceRequiresItsOwnBindingAfterDrain)
 
 TEST_F(ServingFillInputsTest, MissingKvSentinelContentIsRejectedBeforeArm)
 {
-    const auto &profile = program.agent_instance_profiles.front();
+    const auto &profile = program.transport.agent_instance_profiles.front();
     const auto *prefill = views.forInstance(profile.mesh_entrypoint_id,
                                            profile.mesh_profile_id);
     ASSERT_NE(prefill, nullptr);

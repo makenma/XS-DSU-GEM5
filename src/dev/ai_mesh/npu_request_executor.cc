@@ -13,7 +13,7 @@ NpuAdmission
 NpuProtocolProbeExecutor::submit(const NpuExecutionRequest &request)
 {
     if (sink_ != nullptr)
-        sink_->onCoreStart(request.requestId);
+        sink_->onCoreStart(request);
     return NpuAdmission{true, 0};
 }
 
@@ -21,7 +21,9 @@ NpuExecutionCompletion
 NpuProtocolProbeExecutor::completionFor(
     const NpuExecutionRequest &) const
 {
-    return NpuExecutionCompletion{};
+    NpuExecutionCompletion completion;
+    completion.outcome = NpuExecutionOutcome::Success;
+    return completion;
 }
 
 FullContextSurrogateExecutor::FullContextSurrogateExecutor(
@@ -70,8 +72,9 @@ FullContextSurrogateExecutor::completionFor(
     const SurrogateProfile *profile = profileFor(registry, request);
     if (profile == nullptr)
         return completion;
-    completion.success = true;
+    completion.outcome = NpuExecutionOutcome::Success;
     completion.outputBytes = profile->outputBytes;
+    completion.outputTokens = profile->outputTokens;
     completion.semanticDigest = semanticDigestFor(request, *profile);
     completion.outputPayload = surrogateOutputBytes(
         completion.semanticDigest.data(), profile->outputBytes);

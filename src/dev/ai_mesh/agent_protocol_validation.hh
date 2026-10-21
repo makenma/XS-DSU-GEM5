@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "dev/ai_mesh/generated/agent_protocol_abi.hh"
+#include "dev/ai_mesh/mesh_error_candidate.hh"
 
 namespace gem5
 {
@@ -24,12 +25,24 @@ struct Gate3MetadataExpectation
     uint16_t cqFlags = 0;
     uint32_t cqValue = 0;
     uint32_t capacity = 0;
-    uint32_t metadataFlags = 0;
-    bool checkSurrogate = false;
+    std::optional<uint32_t> metadataFlags = 0;
+    uint64_t kvHandle = 0;
+    uint32_t generation = 0;
+    std::optional<ErrorCandidate> failure = std::nullopt;
+    RequestTerminalPosition terminalPosition{};
+    std::optional<uint64_t> outputBytes = std::nullopt;
+    bool checkExecution = false;
     uint32_t outputTokens = 0;
-    uint32_t completedInstanceCount = 0;
+    std::vector<uint32_t> completedInstanceCounts{0};
     std::array<uint8_t, 32> semanticDigest{};
 };
+
+std::optional<std::array<uint8_t, 64>> errorSourceDiagnostic(const ErrorCandidate &candidate);
+std::array<uint8_t, 64> requestCancellationDiagnostic(uint64_t requestId,
+    const RequestTerminalPosition &position = {});
+std::optional<std::array<uint8_t, 64>> kvPolicyDiagnostic(
+    uint64_t requestId, uint64_t sessionId, uint64_t handle, uint32_t generation,
+    agent_abi::DetailCode detail);
 
 std::optional<agent_abi::DetailCode> gate3ParameterStructureError(
     const agent_abi::ParameterHeader &header, uint64_t actualBytes);

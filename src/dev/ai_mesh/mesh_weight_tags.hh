@@ -7,12 +7,13 @@
 
 #include "dev/ai_mesh/generated/mesh_ir_abi.hh"
 
+#include "dev/ai_mesh/mesh_binary.hh"
+
 namespace gem5
 {
 namespace ai_mesh
 {
 
-struct DecodedProgram;
 
 // WeightFillTagTupleV1 wire record (contract 7.2): the complete tuple, not
 // its hash, is the weight identity.  Its canonical order is the unsigned

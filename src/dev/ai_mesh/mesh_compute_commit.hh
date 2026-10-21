@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "dev/ai_mesh/runtime_key.hh"
+#include "dev/ai_mesh/mesh_runtime_observations.hh"
 #include "dev/ai_mesh/tensor_sram.hh"
 
 namespace gem5
@@ -14,6 +15,7 @@ namespace ai_mesh
 
 struct ComputeDigest
 {
+    GEM5_CHECKPOINT_FIELDS(command, allocation_id, offset, digest_words)
     RuntimeObjectKey command;
     uint32_t allocation_id = 0;
     uint64_t offset = 0;
@@ -29,19 +31,30 @@ struct ComputeSpan
     uint64_t span = 0;
 };
 
+enum class ComputeCopyMode
+{
+    Derived,
+    RepeatRow,
+    Ordered,
+};
+
 struct ComputeCommitRequest
 {
     RuntimeObjectKey command;
     uint16_t opcode = 0;
-    const uint8_t *attributes = nullptr;
-    uint32_t attribute_bytes = 0;
+    std::vector<uint8_t> attributes;
     std::vector<ComputeSpan> inputs;
     std::vector<ComputeSpan> results;
     uint32_t result_allocation_id = 0;
     std::vector<uint32_t> valid_allocations;
-    // A combine with exactly one contributor is an identity copy: the result
-    // repeats the gather row byte for byte instead of a derived stream.
-    bool identity_copy = false;
+    ComputeCopyMode copy_mode = ComputeCopyMode::Derived;
+};
+
+struct ComputeCommitResult
+{
+    ComputeDigest digest;
+    std::vector<ContentRowObservation> rows;
+    std::vector<ContentRowObservation> merged_rows;
 };
 
 // Shared compute commit: reads the operand spans, derives the deterministic
@@ -50,16 +63,18 @@ struct ComputeCommitRequest
 class ComputeCommitter
 {
   public:
-    ComputeCommitter(TensorSram *sram, std::vector<ComputeDigest> *digests)
-        : sram(sram), digests(digests)
+    ComputeCommitter(TensorSram *sram, std::vector<ComputeDigest> *digests,
+                     uint64_t byte_limit = 0)
+        : sram(sram), digests(digests), byte_limit(byte_limit)
     {
     }
 
-    void commit(const ComputeCommitRequest &request) const;
+    ComputeCommitResult commit(const ComputeCommitRequest &request) const;
 
   private:
     TensorSram *sram = nullptr;
     std::vector<ComputeDigest> *digests = nullptr;
+    uint64_t byte_limit = 0;
 };
 
 } // namespace ai_mesh

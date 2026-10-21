@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <optional>
 #include <vector>
+#include <stdexcept>
+#include "base/checkpoint_fields.hh"
 
 #include "dev/ai_mesh/agent_plan_image.hh"
 
@@ -45,6 +47,17 @@ class ControlTriggerCoordinator
 {
   public:
     explicit ControlTriggerCoordinator(size_t capacity);
+
+    template<class Archive> void serialize(Archive &archive, unsigned)
+    {
+        size_t count = records_.size();
+        archive & count;
+        if (count != records_.size())
+            throw std::runtime_error("E_CHECKPOINT_CONFIG: control plan differs");
+        for (auto &record : records_)
+            checkpoint::fields(archive, record.state, record.deliveryEdge, record.fired);
+    }
+
 
     bool loadFromImage(const AgentPlanImage &image);
     std::vector<size_t> onAuthoritativeEvent(ControlTriggerEvent kind,

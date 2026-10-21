@@ -28,9 +28,23 @@ AxiSimpleMemory::AxiSimpleMemory(std::vector<AxiRange> ranges)
 bool
 AxiSimpleMemory::contains(uint64_t address) const
 {
+    return containsRange(address, 1);
+}
+
+bool
+AxiSimpleMemory::containsRange(uint64_t address, uint64_t size) const
+{
+    if (size == 0 || size > std::numeric_limits<uint64_t>::max() - address)
+        return false;
+    const uint64_t end = address + size;
     for (const auto &range : _ranges) {
-        if (address >= range.start && address < range.end)
+        if (range.end <= address)
+            continue;
+        if (range.start > address)
+            return false;
+        if (end <= range.end)
             return true;
+        address = range.end;
     }
     return false;
 }
@@ -354,7 +368,7 @@ AxiTargetState::acceptAw(const AxiAddressPacket &packet, uint64_t now)
         context.aw = packet;
         context.beats.resize(context.beatCount);
         reserveWrite(context);
-        _writes.emplace(packet.meta.txnUid, std::move(context));
+        found = _writes.emplace(packet.meta.txnUid, std::move(context)).first;
     } else {
         WriteContext &context = found->second;
         panic_if(context.aw.has_value(), "AXI_PROTOCOL: duplicate AW packet");
@@ -378,6 +392,7 @@ AxiTargetState::acceptAw(const AxiAddressPacket &packet, uint64_t now)
         }
     }
     ++_progress.qosTransactions[packet.meta.qos];
+    indexPendingWriteService(found->second);
     advance(now);
 }
 
@@ -415,6 +430,7 @@ AxiTargetState::acceptW(const AxiDataPacket &packet, uint64_t now)
              "AXI_PROTOCOL: duplicate W beat");
     context.beats[packet.beatIndex] = packet;
     ++context.receivedBeats;
+    indexPendingWriteService(context);
     advance(now);
 }
 
@@ -431,6 +447,7 @@ AxiTargetState::acceptAr(const AxiAddressPacket &packet, uint64_t now)
     reserveRead(context);
     _reads.emplace(packet.meta.txnUid, std::move(context));
     ++_progress.qosTransactions[packet.meta.qos];
+    _pendingReadServices.emplace(packet.meta.acceptedTick, packet.meta.txnUid);
     advance(now);
 }
 
@@ -458,6 +475,17 @@ AxiTargetState::serviceResponse(const AxiCommonMeta &meta,
 }
 
 void
+AxiTargetState::indexPendingWriteService(const WriteContext &context)
+{
+    if (!context.serviceStarted && context.aw &&
+        context.receivedBeats == context.beatCount) {
+        const Tick accepted_tick = _syntheticBackend ?
+            context.meta.acceptedTick : context.aw->meta.acceptedTick;
+        _pendingWriteServices.emplace(accepted_tick, context.meta.txnUid);
+    }
+}
+
+void
 AxiTargetState::startServices(uint64_t now)
 {
     if (_syntheticBackend) {
@@ -465,31 +493,18 @@ AxiTargetState::startServices(uint64_t now)
             WriteContext *write = nullptr;
             ReadContext *read = nullptr;
             const AxiCommonMeta *selected = nullptr;
-            if (_activeWriteServices < _config.writeServiceDepth) {
-                for (auto &[uid, context] : _writes) {
-                    if (context.serviceStarted || !context.aw ||
-                        context.receivedBeats != context.beatCount)
-                        continue;
-                    if (!selected ||
-                        std::tie(context.meta.acceptedTick, uid) <
-                        std::tie(selected->acceptedTick, selected->txnUid)) {
-                        selected = &context.meta;
-                        write = &context;
-                    }
-                }
+            if (_activeWriteServices < _config.writeServiceDepth &&
+                !_pendingWriteServices.empty()) {
+                write = &_writes.at(_pendingWriteServices.top().second);
+                selected = &write->meta;
             }
-            if (_activeReadServices < _config.readServiceDepth) {
-                for (auto &[uid, context] : _reads) {
-                    if (context.serviceStarted)
-                        continue;
-                    if (!selected ||
-                        std::tie(context.ar.meta.acceptedTick, uid) <
-                        std::tie(selected->acceptedTick, selected->txnUid)) {
-                        selected = &context.ar.meta;
-                        read = &context;
-                        write = nullptr;
-                    }
-                }
+            if (_activeReadServices < _config.readServiceDepth &&
+                !_pendingReadServices.empty() &&
+                (!selected || _pendingReadServices.top() <
+                                  _pendingWriteServices.top())) {
+                read = &_reads.at(_pendingReadServices.top().second);
+                selected = &read->ar.meta;
+                write = nullptr;
             }
             if (!selected)
                 break;
@@ -505,31 +520,21 @@ AxiTargetState::startServices(uint64_t now)
                 read->serviceResponse = serviceResponse(*selected,
                                                          read->ar.decodeResp);
                 ++_activeReadServices;
+                _pendingReadServices.pop();
             } else {
                 write->serviceStarted = true;
                 write->serviceResponse = serviceResponse(*selected,
                                                           write->aw->decodeResp);
                 ++_activeWriteServices;
+                _pendingWriteServices.pop();
             }
         }
         return;
     }
-    while (_activeWriteServices < _config.writeServiceDepth) {
-        WriteContext *selected = nullptr;
-        for (auto &[uid, context] : _writes) {
-            if (context.serviceStarted || !context.aw ||
-                context.receivedBeats != context.beatCount) {
-                continue;
-            }
-            if (!selected ||
-                std::tie(context.aw->meta.acceptedTick, uid) <
-                std::tie(selected->aw->meta.acceptedTick,
-                         selected->meta.txnUid)) {
-                selected = &context;
-            }
-        }
-        if (!selected)
-            break;
+    while (_activeWriteServices < _config.writeServiceDepth &&
+           !_pendingWriteServices.empty()) {
+        WriteContext *selected =
+            &_writes.at(_pendingWriteServices.top().second);
         const uint64_t latency = serviceLatency(selected->meta, false);
         panic_if(latency > std::numeric_limits<uint64_t>::max() - now,
                  "AXI target write service-ready time overflows uint64");
@@ -538,22 +543,13 @@ AxiTargetState::startServices(uint64_t now)
         selected->serviceResponse = serviceResponse(
             selected->meta, selected->aw->decodeResp);
         ++_activeWriteServices;
+        _pendingWriteServices.pop();
     }
 
-    while (_activeReadServices < _config.readServiceDepth) {
-        ReadContext *selected = nullptr;
-        for (auto &[uid, context] : _reads) {
-            if (context.serviceStarted)
-                continue;
-            if (!selected ||
-                std::tie(context.ar.meta.acceptedTick, uid) <
-                std::tie(selected->ar.meta.acceptedTick,
-                         selected->ar.meta.txnUid)) {
-                selected = &context;
-            }
-        }
-        if (!selected)
-            break;
+    while (_activeReadServices < _config.readServiceDepth &&
+           !_pendingReadServices.empty()) {
+        ReadContext *selected =
+            &_reads.at(_pendingReadServices.top().second);
         const uint64_t latency = serviceLatency(selected->ar.meta, true);
         panic_if(latency > std::numeric_limits<uint64_t>::max() - now,
                  "AXI target read service-ready time overflows uint64");
@@ -562,44 +558,94 @@ AxiTargetState::startServices(uint64_t now)
         selected->serviceResponse = serviceResponse(
             selected->ar.meta, selected->ar.decodeResp);
         ++_activeReadServices;
+        _pendingReadServices.pop();
     }
 }
 
 void
 AxiTargetState::updateServiceReady(uint64_t now)
 {
-    if (_syntheticBackend)
+    if (_syntheticBackend) {
         _syntheticBackend->advance(now);
+        auto completed = _syntheticBackend->takeCompleted();
+        std::sort(completed.begin(), completed.end(),
+            [](const auto &lhs, const auto &rhs) {
+                if (lhs.direction != rhs.direction)
+                    return lhs.direction == SyntheticHbmDirection::Write;
+                return lhs.uid < rhs.uid;
+            });
+        for (const auto &completion : completed) {
+            if (completion.direction == SyntheticHbmDirection::Write) {
+                WriteContext &context = _writes.at(completion.uid);
+                markWriteServiceReady(context, completion.completedAt);
+            } else {
+                ReadContext &context = _reads.at(completion.uid);
+                markReadServiceReady(context, completion.completedAt);
+            }
+        }
+        return;
+    }
     for (auto &[uid, context] : _writes) {
         if (context.serviceStarted && !context.serviceReady &&
-            (_syntheticBackend ? _syntheticBackend->ready(uid)
-                               : now >= context.serviceReadyAt)) {
-            if (_syntheticBackend) {
-                context.serviceReadyAt = _syntheticBackend->completionCycle(uid);
-                _syntheticBackend->retire(uid);
-            }
-            panic_if(_activeWriteServices == 0,
-                     "AXI target write service accounting underflow");
-            context.serviceReady = true;
-            --_activeWriteServices;
-            ++_progress.serviceReady;
+            now >= context.serviceReadyAt) {
+            markWriteServiceReady(context, context.serviceReadyAt);
         }
     }
     for (auto &[uid, context] : _reads) {
         if (context.serviceStarted && !context.serviceReady &&
-            (_syntheticBackend ? _syntheticBackend->ready(uid)
-                               : now >= context.serviceReadyAt)) {
-            if (_syntheticBackend) {
-                context.serviceReadyAt = _syntheticBackend->completionCycle(uid);
-                _syntheticBackend->retire(uid);
-            }
-            panic_if(_activeReadServices == 0,
-                     "AXI target read service accounting underflow");
-            context.serviceReady = true;
-            --_activeReadServices;
-            ++_progress.serviceReady;
+            now >= context.serviceReadyAt) {
+            markReadServiceReady(context, context.serviceReadyAt);
         }
     }
+}
+
+void
+AxiTargetState::markWriteServiceReady(WriteContext &context, uint64_t ready_at)
+{
+    panic_if(_activeWriteServices == 0,
+             "AXI target write service accounting underflow");
+    context.serviceReadyAt = ready_at;
+    context.serviceReady = true;
+    --_activeWriteServices;
+    ++_progress.serviceReady;
+    const auto key = context.orderingKey();
+    const uint64_t uid = context.meta.txnUid;
+    _writeCommitOrder.emplace(key, context.meta.targetSeq, uid);
+    _writeScanObligations.insert(uid);
+    const auto gate = _nextTargetCommit.find(key);
+    const uint64_t expected = gate == _nextTargetCommit.end() ? 0 : gate->second;
+    if (context.meta.targetSeq == expected)
+        _eligibleWrites.insert(writeCommitCandidateKey(context));
+}
+
+void
+AxiTargetState::markReadServiceReady(ReadContext &context, uint64_t ready_at)
+{
+    panic_if(_activeReadServices == 0,
+             "AXI target read service accounting underflow");
+    context.serviceReadyAt = ready_at;
+    context.serviceReady = true;
+    --_activeReadServices;
+    ++_progress.serviceReady;
+    const auto key = context.orderingKey();
+    const uint64_t uid = context.ar.meta.txnUid;
+    _readCommitOrder.emplace(key, context.ar.meta.targetSeq, uid);
+    _readScanObligations.insert(uid);
+    const auto gate = _nextTargetCommit.find(key);
+    const uint64_t expected = gate == _nextTargetCommit.end() ? 0 : gate->second;
+    if (context.ar.meta.targetSeq == expected)
+        _eligibleReads.emplace(context.serviceReadyAt, uid);
+}
+
+AxiTargetState::WriteCommitCandidateKey
+AxiTargetState::writeCommitCandidateKey(const WriteContext &context) const
+{
+    const uint64_t uid = context.meta.txnUid;
+    const auto rank = _config.writeCommitTieBreakRanks.find(uid);
+    return {context.serviceReadyAt,
+            rank == _config.writeCommitTieBreakRanks.end() ?
+                std::numeric_limits<uint32_t>::max() : rank->second,
+            uid};
 }
 
 void
@@ -607,45 +653,26 @@ AxiTargetState::commitWrites(uint64_t now)
 {
     (void)now;
     while (_bReady.size() < _config.bReadyDepth) {
-        uint64_t selected_uid = 0;
-        WriteContext *selected = nullptr;
-        OrderingKey selected_key;
-        for (auto &[uid, context] : _writes) {
-            if (!context.serviceReady || !context.aw)
-                continue;
-            const OrderingKey key{
-                context.meta.srcNode, context.meta.srcPort,
-                context.meta.axiId, false, context.meta.dstNode};
-            const uint64_t expected = _nextTargetCommit[key];
+        while (!_writeScanObligations.empty()) {
+            const auto obligation = _writeScanObligations.begin();
+            WriteContext &context = _writes.at(*obligation);
+            const uint64_t expected = _nextTargetCommit[context.orderingKey()];
             panic_if(context.meta.targetSeq < expected,
                      "AXI_PROTOCOL: write targetSeq retired twice");
-            if (context.meta.targetSeq != expected) {
-                if (!context.orderingBlockCounted) {
-                    context.orderingBlockCounted = true;
-                    ++_progress.sameIdReadyBlocked;
-                }
-                continue;
+            if (context.meta.targetSeq != expected &&
+                !context.orderingBlockCounted) {
+                context.orderingBlockCounted = true;
+                ++_progress.sameIdReadyBlocked;
             }
-            const auto rank = _config.writeCommitTieBreakRanks.find(uid);
-            const uint32_t candidate_rank =
-                rank == _config.writeCommitTieBreakRanks.end() ?
-                std::numeric_limits<uint32_t>::max() : rank->second;
-            const auto selected_rank =
-                _config.writeCommitTieBreakRanks.find(selected_uid);
-            const uint32_t current_rank =
-                selected_rank == _config.writeCommitTieBreakRanks.end() ?
-                std::numeric_limits<uint32_t>::max() : selected_rank->second;
-            if (!selected ||
-                std::tie(context.serviceReadyAt, candidate_rank, uid) <
-                std::tie(selected->serviceReadyAt, current_rank,
-                         selected_uid)) {
-                selected_uid = uid;
-                selected = &context;
-                selected_key = key;
-            }
+            _writeScanObligations.erase(obligation);
         }
-        if (!selected)
+        if (_eligibleWrites.empty())
             return;
+        const auto candidate = _eligibleWrites.begin();
+        const uint64_t selected_uid = std::get<2>(*candidate);
+        WriteContext *selected = &_writes.at(selected_uid);
+        const OrderingKey selected_key = selected->orderingKey();
+        const uint64_t retired_seq = selected->meta.targetSeq;
 
         std::vector<AxiDataPacket> beats;
         beats.reserve(selected->beatCount);
@@ -697,16 +724,14 @@ AxiTargetState::commitWrites(uint64_t now)
         const AxiResp target_commit_response = response;
         if (post_commit_fault)
             response = mergeResp(response, post_commit->second);
-        if (writeCommitObserver)
-            writeCommitObserver->onAxiWriteCommittedWithMeta(
-                *selected->aw, beats, target_commit_response);
         const auto observer_replays =
             _config.writeCommitObserverReplays.find(selected->meta.txnUid);
-        if (writeCommitObserver &&
-            observer_replays != _config.writeCommitObserverReplays.end()) {
-            for (uint32_t replay = 0;
-                 replay < observer_replays->second; ++replay) {
-                writeCommitObserver->onAxiWriteCommittedWithMeta(
+        for (auto *observer : writeCommitObservers) {
+            observer->onAxiWriteCommittedWithMeta(
+                *selected->aw, beats, target_commit_response);
+            if (observer_replays != _config.writeCommitObserverReplays.end()) {
+                for (uint32_t replay = 0; replay < observer_replays->second; ++replay)
+                    observer->onAxiWriteCommittedWithMeta(
                     *selected->aw, beats, target_commit_response);
             }
         }
@@ -722,6 +747,24 @@ AxiTargetState::commitWrites(uint64_t now)
         ++_progress.writesCommitted;
         ++_nextTargetCommit[selected_key];
         _writes.erase(selected_uid);
+        _eligibleWrites.erase(candidate);
+        _writeCommitOrder.erase({selected_key, retired_seq, selected_uid});
+        const auto old_end = _writeCommitOrder.upper_bound(
+            {selected_key, retired_seq, std::numeric_limits<uint64_t>::max()});
+        for (auto it = _writeCommitOrder.lower_bound(
+                 {selected_key, retired_seq, 0}); it != old_end; ++it) {
+            const uint64_t uid = std::get<2>(*it);
+            _eligibleWrites.erase(writeCommitCandidateKey(_writes.at(uid)));
+            _writeScanObligations.insert(uid);
+        }
+        const uint64_t expected = _nextTargetCommit.at(selected_key);
+        const auto new_end = _writeCommitOrder.upper_bound(
+            {selected_key, expected, std::numeric_limits<uint64_t>::max()});
+        for (auto it = _writeCommitOrder.lower_bound(
+                 {selected_key, expected, 0}); it != new_end; ++it) {
+            const uint64_t uid = std::get<2>(*it);
+            _eligibleWrites.insert(writeCommitCandidateKey(_writes.at(uid)));
+        }
     }
 }
 
@@ -729,35 +772,26 @@ void
 AxiTargetState::commitReads(uint64_t now)
 {
     while (true) {
-        uint64_t selected_uid = 0;
-        ReadContext *selected = nullptr;
-        OrderingKey selected_key;
-        for (auto &[uid, context] : _reads) {
-            if (!context.serviceReady || context.responseEligible)
-                continue;
-            const OrderingKey key{
-                context.ar.meta.srcNode, context.ar.meta.srcPort,
-                context.ar.meta.axiId, true, context.ar.meta.dstNode};
-            const uint64_t expected = _nextTargetCommit[key];
+        while (!_readScanObligations.empty()) {
+            const auto obligation = _readScanObligations.begin();
+            ReadContext &context = _reads.at(*obligation);
+            const uint64_t expected = _nextTargetCommit[context.orderingKey()];
             panic_if(context.ar.meta.targetSeq < expected,
                      "AXI_PROTOCOL: read targetSeq retired twice");
-            if (context.ar.meta.targetSeq != expected) {
-                if (!context.orderingBlockCounted) {
-                    context.orderingBlockCounted = true;
-                    ++_progress.sameIdReadyBlocked;
-                }
-                continue;
+            if (context.ar.meta.targetSeq != expected &&
+                !context.orderingBlockCounted) {
+                context.orderingBlockCounted = true;
+                ++_progress.sameIdReadyBlocked;
             }
-            if (!selected ||
-                std::tie(context.serviceReadyAt, uid) <
-                std::tie(selected->serviceReadyAt, selected_uid)) {
-                selected_uid = uid;
-                selected = &context;
-                selected_key = key;
-            }
+            _readScanObligations.erase(obligation);
         }
-        if (!selected)
+        if (_eligibleReads.empty())
             return;
+        const auto candidate = _eligibleReads.begin();
+        const uint64_t selected_uid = candidate->second;
+        ReadContext *selected = &_reads.at(selected_uid);
+        const OrderingKey selected_key = selected->orderingKey();
+        const uint64_t retired_seq = selected->ar.meta.targetSeq;
 
         selected->frozenBeats.reserve(selected->ar.request.beatCount);
         for (uint16_t index = 0;
@@ -789,6 +823,28 @@ AxiTargetState::commitReads(uint64_t now)
         ++_nextTargetCommit[selected_key];
         ++_progress.architecturalCommits;
         ++_progress.readsCommitted;
+        _eligibleReads.erase(candidate);
+        _readCommitOrder.erase({selected_key, retired_seq, selected_uid});
+        const auto old_end = _readCommitOrder.upper_bound(
+            {selected_key, retired_seq, std::numeric_limits<uint64_t>::max()});
+        for (auto it = _readCommitOrder.lower_bound(
+                 {selected_key, retired_seq, 0}); it != old_end; ++it) {
+            const uint64_t uid = std::get<2>(*it);
+            const ReadContext &context = _reads.at(uid);
+            _eligibleReads.erase({context.serviceReadyAt, uid});
+            _readScanObligations.insert(uid);
+        }
+        const uint64_t expected = _nextTargetCommit.at(selected_key);
+        const auto new_end = _readCommitOrder.upper_bound(
+            {selected_key, expected, std::numeric_limits<uint64_t>::max()});
+        for (auto it = _readCommitOrder.lower_bound(
+                 {selected_key, expected, 0}); it != new_end; ++it) {
+            const uint64_t uid = std::get<2>(*it);
+            _eligibleReads.emplace(_reads.at(uid).serviceReadyAt, uid);
+        }
+        _readGenerationReady.emplace(
+            AxiEndpointKey{selected->ar.meta.srcNode, selected->ar.meta.srcPort},
+            selected->responseEligibleAt, selected_uid);
     }
 }
 
@@ -796,39 +852,25 @@ void
 AxiTargetState::generateReads()
 {
     while (!_rReady.full()) {
-        std::map<AxiEndpointKey, ReadContext *> candidates;
-        for (auto &[uid, context] : _reads) {
-            if (!context.responseEligible ||
-                context.nextBeat >= context.frozenBeats.size()) {
-                continue;
-            }
-            const AxiEndpointKey source{
-                context.ar.meta.srcNode, context.ar.meta.srcPort};
-            auto [candidate, inserted] = candidates.try_emplace(source, &context);
-            if (!inserted &&
-                std::tie(context.responseEligibleAt, uid, context.nextBeat) <
-                std::tie(candidate->second->responseEligibleAt,
-                         candidate->second->ar.meta.txnUid,
-                         candidate->second->nextBeat)) {
-                candidate->second = &context;
-            }
-        }
-        if (candidates.empty())
+        if (_readGenerationReady.empty())
             return;
-        auto grant = _lastReadSource ? candidates.upper_bound(*_lastReadSource)
-                                     : candidates.begin();
-        if (grant == candidates.end())
-            grant = candidates.begin();
-        ReadContext &selected = *grant->second;
-        const uint64_t selected_uid = selected.ar.meta.txnUid;
+        auto grant = _lastReadSource ? _readGenerationReady.upper_bound(
+            {*_lastReadSource, std::numeric_limits<uint64_t>::max(),
+             std::numeric_limits<uint64_t>::max()}) : _readGenerationReady.begin();
+        if (grant == _readGenerationReady.end())
+            grant = _readGenerationReady.begin();
+        const AxiEndpointKey source = std::get<0>(*grant);
+        const uint64_t selected_uid = std::get<2>(*grant);
+        ReadContext &selected = _reads.at(selected_uid);
         panic_if(!_rReady.push(std::move(
                      selected.frozenBeats[selected.nextBeat])),
                  "AXI target R ready FIFO overflow");
-        _lastReadSource = grant->first;
+        _lastReadSource = source;
         ++selected.nextBeat;
         if (selected.nextBeat == selected.frozenBeats.size()) {
             releaseRead(selected);
             ++_completedReads;
+            _readGenerationReady.erase(grant);
             _reads.erase(selected_uid);
         }
     }

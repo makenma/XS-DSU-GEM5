@@ -82,7 +82,7 @@ class Gate5Subcase:
 
     @property
     def node_id(self) -> str:
-        return f"{self.directory}/test_gate5_{self.target}.py::{self.node}"
+        return f"{self.directory}/{self.target}.py::{self.node}"
 
     node: str = ""
     directory: str = UNIT
@@ -95,11 +95,11 @@ class Gate5Subcase:
 
 
 def _unit(name, module, node):
-    return Gate5Subcase(name=name, runner="PYTEST", target=module, node=node)
+    return Gate5Subcase(name=name, runner="PYTEST", target=f"test_gate5_{module}", node=node)
 
 
 def _integration(name, node, module="e2e_determinism"):
-    return Gate5Subcase(name=name, runner="PYTEST", target=module, node=node,
+    return Gate5Subcase(name=name, runner="PYTEST", target=f"test_gate5_{module}", node=node,
                         directory=INTEGRATION)
 
 
@@ -313,7 +313,7 @@ GATE5_CASES = {
         ("cross_core_gate_prerequisite", "test_gate5_dual_core_region_gate_needs_"
                                          "a_cross_core_prerequisite"),
         ("independent_core_rejected", "test_gate5_dual_core_region_gate_rejects_"
-                                      "an_independent_core"),
+                                      "detached_wait_projection"),
     ),
     "MOE-27": _overlay(
         ("scratch_allocates_in_kind_order", "test_gate5_scratch_bump_allocates_in_"
@@ -557,6 +557,16 @@ GATE5_CASES["MOE-28"] = (
     )) + (
     _unit("drain_state_persistent_tombstone", "weight_cache",
           "test_gate5_cache_drain_state_keeps_the_failure_tombstone"),
+)
+
+GATE5_CASES["MOE-28"] += tuple(
+    Gate5Subcase(name=name, target="test_gate6_multiple_requests", node=node,
+                 directory=INTEGRATION)
+    for name, node in (
+        ("crossing_serving_reservations", "test_crossing_batches_attach_wait_resume_and_start_once"),
+        ("crossing_fill_failure", "test_crossing_cache_failure_drains_active_and_rejects_queued_members"),
+        ("crossing_frozen_cancel", "test_cancel_frozen_attached_member_preserves_instance_and_shared_fill"),
+    )
 )
 
 GATE5_CASES["E2E-C"] = (
@@ -824,16 +834,7 @@ def prestart_terminal_gaps(result, expected_cores=(), expected_regions=(),
     return tuple(gaps)
 
 
-GATE5_OPEN_GAPS = (
-    ("MOE-28", "wait_then_release_production_arm",
-     "one batch commits every reachable core/layer demand in a single "
-     "shadow, an uncommitted reservation now blocks arm/start, a waiting "
-     "item keeps its frozen request_id, and a tombstoned demand ends in a "
-     "prestart-failure terminal with zero start; the remaining production "
-     "arm is wait -> resource release -> exactly one commit/start, which "
-     "needs two crossing batches and lands with the Gate 6 async dispatcher "
-     "(Gate 6 R4)"),
-)
+GATE5_OPEN_GAPS = ()
 GATE5_PLACEHOLDER_IDS = ()
 
 

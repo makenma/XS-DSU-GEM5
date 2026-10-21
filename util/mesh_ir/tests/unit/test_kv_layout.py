@@ -23,16 +23,8 @@ FIXTURE = Path(__file__).resolve().parents[4] / \
 WEIGHT_IMAGE = Path(__file__).resolve().parents[4] / \
     "tests/gem5/ai_mesh/fixtures/model_weight_image_v1.json"
 
-GOLDEN = {
-    "serving_min":
-        "78a2574e02b4bf19635acfbbba932d1c1ac712312863a2f86ba7f4cee68d89a1",
-    "serving_two_tokens":
-        "260d84795086ee48029a9d2b3bed4066f0e0e4d5887fb7e8b01d409bc87dae90",
-    "serving_fullview":
-        "2715bce028e710e98ce8c093c0119976751daf1f61b7fc2f52d605fa385a035d",
-}
-CONTRACT = \
-    "f3ba400f75b24a69d3236921aacc37743b3b0f1f9cc56b37290af4a3db2778e6"
+GOLDEN = {name: json.loads((FIXTURE / f"{name}_expected.json").read_text())
+          for name in ("serving_min", "serving_two_tokens", "serving_fullview")}
 
 
 def fixture(name):
@@ -43,38 +35,49 @@ def fixture(name):
 def test_layout_digest_is_pinned_by_the_cross_language_golden(name):
     program = fixture(name)
     projection = kv_layout_projection(program)
-    assert projection["schema"] == "mesh_kv_layout_v1"
+    assert projection["schema"] == "mesh_kv_layout_v2"
     assert projection["token_bytes"] == 16
     assert projection["bindings"]
     assert projection["descriptors"]
     expected = hashlib.sha256(
         KV_LAYOUT_DOMAIN + canonical_json_bytes(projection)).hexdigest()
-    assert expected == GOLDEN[name]
-    assert kv_layout_digest(program).hex() == GOLDEN[name]
+    assert expected == GOLDEN[name]["kv_layout_digest"]
+    assert kv_layout_digest(program).hex() == GOLDEN[name]["kv_layout_digest"]
 
 
-def test_projection_carries_role_profile_relocation_and_tensor():
+def test_projection_carries_exact_instance_member_variant_binding():
     program = fixture("serving_min")
     projection = kv_layout_projection(program)
-    roles = [binding["role"] for binding in projection["bindings"]]
-    assert roles == ["REQUEST", "INSTANCE", "INSTANCE", "MEMBER", "MEMBER"]
+    members = {(row.instance_profile_id, row.member_ordinal): row
+               for row in program.agent_instance_member_bindings if row.static_kv_symbol_id}
+    actual = set()
     for binding in projection["bindings"]:
-        assert set(binding) == {"role", "profile", "relocation", "tensor"}
+        assert set(binding) == {"request", "instance", "member", "relocation", "tensor"}
+        member = binding["member"]
+        key = (member["instance_profile_id"], member["member_ordinal"])
+        assert key not in actual
+        actual.add(key)
+        assert member["static_kv_symbol_id"] == members[key].static_kv_symbol_id
+        assert binding["instance"]["instance_profile_id"] == key[0]
+        assert binding["request"]["profile_id"] == binding["instance"]["request_profile_id"]
+        assert binding["relocation"]["symbol_sid"] == member["static_kv_symbol_id"]
+        assert binding["relocation"]["tensor_id"] == binding["tensor"]["tensor_id"]
         assert binding["tensor"]["role"] == A.TENSOR_ROLE.KV_CACHE
         assert binding["tensor"]["dtype"] == A.DTYPE.INT8
-    descriptor_ids = [d["descriptor_id"] for d in projection["descriptors"]]
+    assert actual == set(members)
+    descriptor_ids = [row["descriptor_id"] for row in projection["descriptors"]]
     assert descriptor_ids == sorted(descriptor_ids)
-    for descriptor in projection["descriptors"]:
-        assert descriptor["kind"] in (A.DMA_KIND.LOAD, A.DMA_KIND.STORE)
+    assert all(row["kind"] in (A.DMA_KIND.LOAD, A.DMA_KIND.STORE)
+               for row in projection["descriptors"])
 
 
 def test_layout_digest_changes_with_the_token_stride():
     program = fixture("serving_min")
     mutated = dataclasses.replace(
         program,
-        agent_request_profiles=[
+        agent_request_profiles=tuple(
             dataclasses.replace(record, kv_bytes_per_token=32)
-            for record in program.agent_request_profiles])
+            for record in program.agent_request_profiles))
     assert kv_layout_digest(mutated) != kv_layout_digest(program)
 
 
@@ -89,7 +92,7 @@ def test_layout_digest_changes_with_the_descriptor_layout():
                 dst_stride_bytes=descriptor.dst_stride_bytes // 2)
             break
     assert kv_layout_digest(
-        dataclasses.replace(program, dma_descriptors=descriptors)) != \
+        dataclasses.replace(program, dma_descriptors=tuple(descriptors))) != \
         kv_layout_digest(program)
 
 
@@ -97,9 +100,9 @@ def test_missing_kv_binding_is_rejected():
     program = fixture("serving_min")
     mutated = dataclasses.replace(
         program,
-        agent_request_profiles=[
+        agent_request_profiles=tuple(
             dataclasses.replace(record, primary_kv_symbol_id=0)
-            for record in program.agent_request_profiles])
+            for record in program.agent_request_profiles))
     with pytest.raises(MeshIrError) as err:
         kv_layout_digest(mutated)
     assert err.value.code == "E_KV_CONTRACT_MISMATCH"
@@ -109,9 +112,9 @@ def test_symbol_without_a_relocation_is_rejected():
     program = fixture("serving_min")
     mutated = dataclasses.replace(
         program,
-        agent_request_profiles=[
+        agent_request_profiles=tuple(
             dataclasses.replace(record, primary_kv_symbol_id=0xFFFF)
-            for record in program.agent_request_profiles])
+            for record in program.agent_request_profiles))
     with pytest.raises(MeshIrError) as err:
         kv_layout_digest(mutated)
     assert err.value.code == "E_KV_CONTRACT_MISMATCH"
@@ -122,5 +125,5 @@ def test_serving_contract_digest_is_pinned():
     weights = json.loads(WEIGHT_IMAGE.read_text())
     digest = serving_contract_digest(
         program, bytes.fromhex(weights["model_weight_image_digest"]))
-    assert digest.hex() == CONTRACT
+    assert digest.hex() == GOLDEN["serving_two_tokens"]["serving_contract_digest"]
     assert len(digest) == 32

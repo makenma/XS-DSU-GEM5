@@ -98,6 +98,9 @@ def define_options(parser):
         help="""SimpleNetwork links uses a separate physical
             channel for each virtual network""")
 
+    parser.add_argument("--simple-buffer-size", type=int, default=0)
+    parser.add_argument("--simple-bytes-per-cycle", type=int, default=0)
+
 def create_network(options, ruby):
 
     # Allow legacy users to use garnet through garnet2.0 option
@@ -222,6 +225,16 @@ def init_network(options, network, InterfaceClass):
             extLink.int_cred_bridge = int_cred_bridges
 
     if options.network == "simple":
+        if options.simple_buffer_size < 0:
+            fatal("simple-buffer-size must be nonnegative")
+        network.buffer_size = options.simple_buffer_size
+        network.require_finite_buffers = options.simple_buffer_size > 0
+        if options.simple_bytes_per_cycle:
+            if not 0 < options.simple_bytes_per_cycle <= 2147483:
+                fatal("simple-bytes-per-cycle exceeds the throttle range")
+            network.endpoint_bandwidth = 1000 * options.simple_bytes_per_cycle
+            for link in list(network.int_links) + list(network.ext_links):
+                link.bandwidth_factor = 1
         if options.simple_physical_channels:
             network.physical_vnets_channels = \
                 [1] * int(network.number_of_virtual_networks)

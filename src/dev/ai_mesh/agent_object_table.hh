@@ -34,6 +34,7 @@ enum class AgentObjectState : uint8_t
 class AgentObjectTable
 {
   public:
+    GEM5_CHECKPOINT_FIELDS(records, nextValue, live)
     explicit AgentObjectTable(size_t capacity);
 
     std::optional<AgentObjectId> reserve(AgentObjectKind kind,
@@ -64,6 +65,7 @@ class AgentObjectTable
   private:
     struct Record
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         AgentObjectKind kind = AgentObjectKind::GeneratedCode;
         AgentObjectState state = AgentObjectState::Reserved;
         uint64_t planned = 0;

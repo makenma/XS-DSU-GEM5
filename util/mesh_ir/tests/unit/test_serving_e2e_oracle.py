@@ -26,7 +26,7 @@ def rows_of(program):
     for descriptor in program.dma_descriptors:
         row = {"descriptor_id": descriptor.descriptor_id,
                "dma_kind": descriptor.kind, "read_bytes": 0,
-               "write_bytes": 0, "fill_bytes": 0, "error_code": 0}
+               "write_bytes": 0, "p2p_bytes": 0, "fill_bytes": 0, "error_code": 0}
         if descriptor.kind in READ_KINDS:
             row["read_bytes"] = descriptor.useful_bytes
         elif descriptor.kind in WRITE_KINDS:
@@ -43,10 +43,7 @@ def phases_of(program_):
 
     steps = generate_phase_plan(program_, program_.agent_request_profiles[0],
                                 A.PATH_KIND.INITIAL_PREFILL)
-    kv_symbol = program_.agent_request_profiles[0].primary_kv_symbol_id
-    kv_tensor = next(relocation.tensor_id
-                     for relocation in program_.relocations
-                     if relocation.symbol_sid == kv_symbol)
+    kv_tensors = {tensor.tensor_id for tensor in program_.tensors if tensor.role == A.TENSOR_ROLE.KV_CACHE}
     rows = []
     for instance in program_.agent_instance_profiles:
         step = next((value for value in steps
@@ -55,7 +52,7 @@ def phases_of(program_):
         if step is None:
             continue
         command_ids = {
-            program_.commands[index].command_id
+            program_.semantics.stream_command_ids[index]
             for range_ in program_.profile_stream_ranges
             if range_.profile_id == instance.mesh_profile_id
             for index in range(range_.command_begin,
@@ -66,7 +63,7 @@ def phases_of(program_):
             1 for descriptor in program_.dma_descriptors
             if descriptor.command_id in command_ids and
             descriptor.kind == A.DMA_KIND.STORE and
-            descriptor.dst.tensor_id == kv_tensor)
+            descriptor.dst.tensor_id in kv_tensors)
         rows.append({
             "phase": step.phase,
             "instance_profile_id": step.instance_profile_id,
@@ -178,3 +175,22 @@ def test_the_real_run_artifact_is_accepted():
                                  facts.serving_phases)
     assert summary["descriptors"] == len(program_.dma_descriptors)
     assert [phase[0] for phase in summary["phases"]] == [1, 2, 2, 3]
+
+
+@pytest.mark.parametrize("field", ["write_bytes", "p2p_bytes", "fill_bytes"])
+def test_foreign_traffic_channel_cannot_hide_behind_correct_read_bytes(field):
+    decoded = program()
+    rows = rows_of(decoded)
+    row = next(row for row in rows if row["dma_kind"] == A.DMA_KIND.LOAD)
+    row[field] = 1
+    with pytest.raises(MeshIrError, match="E_TRAFFIC_MISMATCH"):
+        verify_serving_run(decoded, rows, metrics(), phases_of(decoded))
+
+
+@pytest.mark.parametrize("field", ["live_contexts"])
+def test_required_zero_metric_cannot_be_missing(field):
+    decoded = program()
+    observed = metrics()
+    del observed[field]
+    with pytest.raises(MeshIrError, match="E_KV_STATE"):
+        verify_serving_run(decoded, rows_of(decoded), observed, phases_of(decoded))

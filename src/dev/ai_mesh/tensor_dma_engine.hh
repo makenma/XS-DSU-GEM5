@@ -3,10 +3,12 @@
 
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <vector>
 
 #include "dev/ai_mesh/dma_types.hh"
 #include "dev/ai_mesh/mesh_binary.hh"
+#include "dev/ai_mesh/mesh_runtime_observations.hh"
 #include "dev/ai_mesh/mesh_splitter.hh"
 #include "sim/clocked_object.hh"
 #include "sim/eventq.hh"
@@ -46,13 +48,15 @@ class TensorDmaEngine : public DmaEngineBase
     const std::map<RuntimeObjectKey, ActualTraffic> &
     actualTraffic() const override;
     uint32_t liveDescriptors() const override { return outstanding; }
+    bool readFunctional(uint64_t address, uint64_t size,
+                        uint8_t *out) override;
 
   private:
     void completeDescriptor(const DecodedDmaDescriptor &descriptor,
                             const RuntimeObjectKey &descriptor_key,
                             const RuntimeObjectKey &command_key,
                             const RuntimeObjectKey &completion_event,
-                            Tick commit_tick);
+                            const std::optional<DescriptorKey> &key, Tick commit_tick);
 
     struct EngineEvent : public Event
     {
@@ -61,6 +65,7 @@ class TensorDmaEngine : public DmaEngineBase
         RuntimeObjectKey descriptor_key;
         RuntimeObjectKey command_key;
         RuntimeObjectKey completion_event;
+        std::optional<DescriptorKey> key;
         Tick commit_tick;
 
         EngineEvent(TensorDmaEngine *engine_,
@@ -68,10 +73,10 @@ class TensorDmaEngine : public DmaEngineBase
                     const RuntimeObjectKey &descriptor_key_,
                     const RuntimeObjectKey &command_key_,
                     const RuntimeObjectKey &completion_event_,
-                    Tick commit_tick_)
+                    const std::optional<DescriptorKey> &key_, Tick commit_tick_)
             : Event(), engine(engine_), descriptor(descriptor_),
               descriptor_key(descriptor_key_), command_key(command_key_),
-              completion_event(completion_event_), commit_tick(commit_tick_)
+              completion_event(completion_event_), key(key_), commit_tick(commit_tick_)
         {
             setFlags(AutoDelete);
         }
@@ -79,10 +84,37 @@ class TensorDmaEngine : public DmaEngineBase
         void process() override
         {
             engine->completeDescriptor(descriptor, descriptor_key, command_key,
-                                       completion_event, commit_tick);
+                                       completion_event, key, commit_tick);
         }
         const char *description() const override { return "ai_mesh.dma.complete"; }
     };
+
+    struct GatherEvent : EngineEvent
+    {
+        enum class Phase { Index, Response, Reserve, Commit };
+        GatherIndexReader reader;
+        Phase phase = Phase::Index;
+        std::vector<AxiBurst> bursts;
+        size_t burst_index = 0;
+        std::vector<uint8_t> payload;
+        TrafficContribution contribution;
+        bool fault_checked = false;
+
+        GatherEvent(TensorDmaEngine *engine, const DecodedDmaDescriptor &descriptor,
+                    RuntimeObjectKey descriptor_key, RuntimeObjectKey command_key,
+                    RuntimeObjectKey completion_event, DescriptorKey key,
+                    Tick ready, GatherIndexLayout layout)
+            : EngineEvent(engine, descriptor, descriptor_key, command_key,
+                          completion_event, key, ready), reader(layout)
+        {}
+        void process() override { engine->advanceGather(*this); }
+        const char *description() const override { return "ai_mesh.dma.gather"; }
+    };
+
+    bool submitGather(const DecodedDmaDescriptor &, RuntimeObjectKey descriptor,
+                      RuntimeObjectKey command, RuntimeObjectKey completion, Tick issue_tick);
+    void advanceGather(GatherEvent &state);
+    void finishGather(GatherEvent &state, DmaStatus status);
 
     uint16_t core_id;
     Cycles setup_cycles;

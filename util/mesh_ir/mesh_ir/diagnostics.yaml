@@ -1,0 +1,75 @@
+schema_version: mesh-diagnostics-v1
+diagnostics:
+  E_EXPORT_UNSUPPORTED_OP: {severity: error, message: unsupported exported operator}
+  E_EXPORT_GRAPH_BREAK: {severity: error, message: export could not produce a single graph}
+  E_EXPORT_STATE_MUTATION: {severity: error, message: exported graph mutates state}
+  E_EXPORT_NON_TENSOR_IO: {severity: error, message: exported graph has non-tensor user I/O}
+  E_EXPORT_DTYPE: {severity: error, message: exported graph uses an unsupported dtype}
+  E_EXPORT_LAYOUT: {severity: error, message: exported graph uses an unsafe layout}
+  E_EXPORT_VERSION: {severity: error, message: exported program version or dialect is unsupported}
+  E_CONFIG: {severity: error, message: configuration is invalid}
+  E_MEMORY_IMAGE: {severity: error, message: tensor memory image identity or storage is invalid}
+  E_SHAPE_UNBOUND: {severity: error, message: a shape symbol is unbound}
+  E_SHAPE_PROFILE_MISMATCH: {severity: error, message: a shape profile violates exported constraints}
+  E_PLACEMENT_INFEASIBLE: {severity: error, message: placement policy is infeasible}
+  E_SRAM_OOM: {severity: error, message: SRAM capacity is insufficient}
+  E_DEPENDENCY_CYCLE: {severity: error, message: dependency graph contains a cycle}
+  E_EVENT_MULTIPLE_PRODUCERS: {severity: error, message: event has multiple producers}
+  E_TENSOR_NOT_RESIDENT: {severity: error, message: tensor is not resident}
+  E_DMA_RANGE: {severity: error, message: DMA range is invalid}
+  E_DMA_4K_SPLIT: {severity: error, message: DMA burst crosses a 4 KiB boundary}
+  E_P2P_UNMATCHED: {severity: error, message: P2P transfer is unmatched}
+  E_ABI_MAGIC: {severity: error, message: binary magic is invalid}
+  E_ABI_VERSION: {severity: error, message: ABI version is unsupported}
+  E_ABI_FEATURE: {severity: error, message: ABI section feature contract is invalid}
+  E_ABI_CHECKSUM: {severity: error, message: binary checksum is invalid}
+  E_ABI_SECTION_RANGE: {severity: error, message: binary section range is invalid}
+  E_ARCH_DIGEST: {severity: error, message: architecture digest does not match}
+  E_RUNTIME_DEADLOCK: {severity: error, message: runtime made no progress}
+  E_AXI_RESPONSE: {severity: error, message: AXI response failed}
+  E_TRAFFIC_MISMATCH: {severity: error, message: traffic does not match the oracle}
+  E_ABI_ENUM: {severity: error, message: binary enum is invalid}
+  E_ABI_RESERVED: {severity: error, message: reserved binary data is nonzero}
+  E_ABI_DUPLICATE: {severity: error, message: binary identifier is duplicated}
+  E_ABI_ORDER: {severity: error, message: binary ordering is invalid}
+  E_ABI_BOUNDS: {severity: error, message: binary reference is out of bounds}
+  E_ABI_OVERFLOW: {severity: error, message: binary arithmetic overflowed}
+  E_ABI_CORRUPT: {severity: error, message: binary data is corrupt}
+  E_ENGINE_MISMATCH: {severity: error, message: command engine does not match opcode}
+  E_EVENT_NO_PRODUCER: {severity: error, message: event has no producer}
+  E_STREAM_CONTRACT: {severity: error, message: stream contract is invalid}
+  E_LIFECYCLE: {severity: error, message: lifecycle contract is invalid}
+  E_RELOCATION: {severity: error, message: relocation is invalid}
+  E_CAPABILITY_MISMATCH: {severity: error, message: architecture capability does not match}
+  E_ARCH_PARTITION: {severity: error, message: SRAM partition contract is invalid}
+  E_CAPACITY_PLAN: {severity: error, message: capacity plan}
+  E_MOE_UID: {severity: error, message: moe uid}
+  E_MOE_RNG: {severity: error, message: moe rng}
+  E_MOE_PROVIDER: {severity: error, message: moe provider}
+  E_MOE_ROUTE_REPLAY: {severity: error, message: moe route replay}
+  E_MOE_TOPK_DUP: {severity: error, message: moe topk dup}
+  E_MOE_PROFILE: {severity: error, message: moe profile}
+  E_MOE_KEY_COLLISION: {severity: error, message: moe key collision}
+  E_MOE_CACHE: {severity: error, message: moe cache}
+  E_MOE_TRAFFIC: {severity: error, message: moe traffic}
+  E_MOE_CAPACITY: {severity: error, message: moe capacity}
+  E_MOE_ROUTE_DIGEST: {severity: error, message: moe route digest}
+  E_MOE_SELECTION_V: {severity: error, message: moe selection v}
+  E_MOE_MATERIALIZATION_V: {severity: error, message: moe materialization v}
+  E_MOE_MATERIALIZE_CAPACITY: {severity: error, message: moe materialize capacity}
+  E_MOE_DISPATCH_BYTES: {severity: error, message: moe dispatch bytes}
+  E_MOE_COMBINE_BYTES: {severity: error, message: moe combine bytes}
+  E_REQUEST_PROFILE: {severity: error, message: request profile}
+  E_REQUEST_PROFILE_KEY: {severity: error, message: request profile key}
+  E_BINDING_ROLE: {severity: error, message: binding role}
+  E_HOST_IO_SIZE_MISMATCH: {severity: error, message: host io size mismatch}
+  E_OUTPUT_CHUNK_MISMATCH: {severity: error, message: output chunk mismatch}
+  E_KV_TOKEN_MISMATCH: {severity: error, message: kv token mismatch}
+  E_KV_STATE: {severity: error, message: kv state}
+  E_KV_STALE_GENERATION: {severity: error, message: kv stale generation}
+  E_KV_CONTRACT_MISMATCH: {severity: error, message: kv contract mismatch}
+  E_KV_FLAG_COMBINATION: {severity: error, message: kv flag combination}
+  E_AGENT_PROTOCOL_FATAL: {severity: error, message: agent protocol fatal}
+  E_CHECKPOINT_BOUNDARY: {severity: error, message: checkpoint requires a drained runtime}
+  E_CHECKPOINT_CONFIG: {severity: error, message: checkpoint runtime configuration differs}
+  E_CHECKPOINT_STATE: {severity: error, message: checkpoint state is inconsistent}

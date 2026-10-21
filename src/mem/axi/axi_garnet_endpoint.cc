@@ -1441,6 +1441,22 @@ AxiTargetAdapter::containsMemoryAddress(uint64_t address) const
     return functionalState->memory().contains(address);
 }
 
+bool
+AxiTargetAdapter::containsMemoryRange(uint64_t address, uint64_t size) const
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: functional memory used during raw probe", name());
+    return functionalState->memory().containsRange(address, size);
+}
+
+const std::vector<AxiRange> &
+AxiTargetAdapter::memoryRanges() const
+{
+    fatal_if(rawProbe || !functionalState,
+             "%s: functional memory used during raw probe", name());
+    return functionalState->memory().ranges();
+}
+
 void
 AxiTargetAdapter::writeMemoryByte(uint64_t address, uint8_t value)
 {
@@ -1454,7 +1470,7 @@ AxiTargetAdapter::registerWriteCommitObserver(AxiWriteCommitObserver *observer)
 {
     fatal_if(rawProbe || !functionalState,
              "%s: commit observer used during raw probe", name());
-    functionalState->setWriteCommitObserver(observer);
+    functionalState->registerWriteCommitObserver(observer);
 }
 
 void

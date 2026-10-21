@@ -2,6 +2,7 @@
 #define DEV_AI_MESH_MESH_DMA_OBSERVER_HH
 
 #include <cstdint>
+#include "base/checkpoint_fields.hh"
 #include <vector>
 
 namespace gem5
@@ -11,6 +12,7 @@ namespace ai_mesh
 
 struct DmaCommittedSegment
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     uint32_t row = 0;
     uint64_t offset_in_row = 0;
     uint64_t bytes = 0;

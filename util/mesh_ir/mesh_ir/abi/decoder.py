@@ -1,72 +1,30 @@
-"""Fail-closed binary decoder for .mshb (Scheduled Mesh IR ABI v1).
-
-Every header, checksum, section, enum, reserved-field and bounds violation
-raises MeshIrError with a stable code before any record is installed.
-"""
-
 from __future__ import annotations
 
 import hashlib
 import struct
 import zlib
 
-from mesh_ir.abi.rules import check_payload_rules, check_record_rules
+from mesh_ir.abi.rules import (
+    check_abi_header,
+    check_section_features,
+    check_min_reader_minor,
+    check_payload_rules,
+    check_record_rules,
+)
+from mesh_ir.abi.semantic import SemanticDecoder
+from mesh_ir.abi.optional import validate_optional_sections
 from mesh_ir.generated import abi as A
 from mesh_ir.model import (
     RECORD_CLASSES,
-    AgentInstanceMemberBinding,
-    AgentInstanceProfile,
-    AgentPublishSurrogateBinding,
-    AgentRequestBindingRequirement,
-    AgentRequestProfile,
-    AgentSourceCoreMap,
-    Allocation,
-    Command,
-    CommandOperand,
-    CommandWait,
-    ContentDigest,
     DmaDescriptor,
     DmaEndpoint,
-    Entrypoint,
-    Event,
-    ExpectedTrafficRow,
     MeshIrError,
-    MoeDynamicRegion,
-    MoeExpertSpec,
-    MoeKernelSpec,
-    MoeLayerSpec,
     OpAttr,
-    Profile,
     Program,
-    Relocation,
-    Shard,
-    Stream,
     StringEntry,
-    Tensor,
-    ProfileStreamRange,
 )
 
 U64_MAX = (1 << 64) - 1
-
-SECTION_RECORD_BYTES = {
-    getattr(A.SECTION_TYPE, name): getattr(A, f"{name}_BYTES")
-    for name in ("ENTRYPOINTS", "PROFILES", "TENSORS", "SHARDS", "ALLOCATIONS",
-                 "STREAMS", "COMMANDS", "COMMAND_WAITS", "COMMAND_OPERANDS",
-                 "EVENTS", "DMA_DESCRIPTORS", "OP_ATTRS", "RELOCATIONS",
-                 "EXPECTED_TRAFFIC", "PROFILE_STREAM_RANGES", "SOURCE_MAP",
-                 "CONTENT_DIGESTS",
-                 "MOE_LAYER_SPECS", "MOE_EXPERT_SPECS", "MOE_DYNAMIC_REGIONS",
-                 "MOE_KERNEL_SPECS", "AGENT_REQUEST_PROFILES",
-                 "AGENT_INSTANCE_PROFILES", "AGENT_SOURCE_CORE_MAP",
-                 "AGENT_INSTANCE_MEMBER_BINDINGS",
-                 "AGENT_REQUEST_BINDING_REQUIREMENTS",
-                 "AGENT_PUBLISH_SURROGATE_BINDINGS")
-}
-
-
-def known_section_types() -> set:
-    return {value for value in vars(A.SECTION_TYPE).values()
-            if isinstance(value, int)}
 
 
 class _Reader:
@@ -92,27 +50,15 @@ def decode_header(data: bytes) -> dict:
     header = dict(zip(names, values))
     if header["magic"] != A.MAGIC:
         raise MeshIrError("E_ABI_MAGIC", "bad magic", magic=hex(header["magic"]))
-    if header["abi_major"] != A.ABI_MAJOR:
-        raise MeshIrError("E_ABI_VERSION", "abi major mismatch", major=header["abi_major"])
-    if header["abi_minor"] < A.MIN_READER_MINOR or header["abi_minor"] > A.ABI_MINOR:
-        raise MeshIrError("E_ABI_VERSION", "abi minor out of supported range", minor=header["abi_minor"])
+    check_abi_header(
+        header["abi_major"],
+        header["abi_minor"],
+        header["required_features"],
+    )
     if header["header_bytes"] != A.HEADER_BYTES:
         raise MeshIrError("E_ABI_SECTION_RANGE", "header_bytes mismatch")
     if header["flags"] != 0:
         raise MeshIrError("E_ABI_RESERVED", "header flags must be zero")
-    features = header["required_features"]
-    if features & ~A.KNOWN_FEATURE_MASK:
-        raise MeshIrError("E_ABI_VERSION", "unknown required feature bits",
-                          features=hex(features))
-    if not A.feature_requirements_met(features):
-        raise MeshIrError("E_ABI_FEATURE",
-                          "required feature dependency is not satisfied",
-                          features=hex(features))
-    for name, bit in A.FEATURE_BITS.items():
-        if features & bit and header["abi_minor"] < \
-                A.FEATURE_MIN_WRITER_MINOR[name]:
-            raise MeshIrError("E_ABI_VERSION", "feature bit below writer minor",
-                              minor=header["abi_minor"], feature=name)
     if header["reserved"] != bytes(16):
         raise MeshIrError("E_ABI_RESERVED", "header reserved bytes must be zero")
     if header["file_bytes"] != len(data):
@@ -139,12 +85,13 @@ def decode_section_dir(data: bytes, header: dict) -> list:
         values = A.SECTION_DIR_FORMAT.unpack(raw)
         names = [f["name"] for f in A.SECTION_DIR_FIELDS]
         raw_entries.append(dict(zip(names, values)))
-    if count < len(A.REQUIRED_SECTIONS) or count > len(known_section_types()):
+    optional_count = sum(binding["optional"] for binding in A.TRANSPORT_CANONICAL_SECTIONS.values())
+    if count < len(A.REQUIRED_SECTIONS) or count > len(A.REQUIRED_SECTIONS) + optional_count:
         raise MeshIrError("E_ABI_SECTION_RANGE", "unexpected section count", count=count)
 
     last_type = 0
     last_end = header["section_dir_offset"] + expected_dir_span
-    known_types = known_section_types()
+    known_types = set(vars(A.SECTION_TYPE).values())
     payloads = {}
     for entry in raw_entries:
         stype = entry["section_type"]
@@ -157,8 +104,9 @@ def decode_section_dir(data: bytes, header: dict) -> list:
             raise MeshIrError("E_ABI_RESERVED", "section dir flags/reserved must be zero", section_type=stype)
         if entry["offset"] % 8 != 0:
             raise MeshIrError("E_ABI_SECTION_RANGE", "section offset not 8-aligned", section_type=stype)
-        if entry["offset"] < last_end:
-            raise MeshIrError("E_ABI_SECTION_RANGE", "section overlaps directory or sibling", section_type=stype)
+        expected_offset = (last_end + 7) // 8 * 8
+        if entry["offset"] != expected_offset:
+            raise MeshIrError("E_ABI_SECTION_RANGE", "section offset is not canonical", section_type=stype)
         gap = data[last_end : entry["offset"]]
         if gap.strip(b"\x00"):
             raise MeshIrError("E_ABI_CORRUPT", "padding bytes must be zero", section_type=stype)
@@ -168,36 +116,37 @@ def decode_section_dir(data: bytes, header: dict) -> list:
         if (zlib.crc32(payload) & 0xFFFFFFFF) != entry["crc32"]:
             raise MeshIrError("E_ABI_CHECKSUM", "section crc32 mismatch", section_type=stype)
         record_bytes = entry["record_bytes"]
-        fixed_name = SECTION_RECORD_BYTES.get(stype)
+        fixed_name = A.SECTION_RECORD_BYTES.get(stype)
         if fixed_name is not None and record_bytes != fixed_name:
             raise MeshIrError(
                 "E_ABI_SECTION_RANGE",
                 "fixed-record section has wrong record size",
                 section_type=stype,
             )
-        if stype == A.SECTION_TYPE.STRINGS and record_bytes != 0:
+        if stype in A.BLOB_SECTION_TYPES and record_bytes != 0:
             raise MeshIrError(
                 "E_ABI_SECTION_RANGE",
-                "STRINGS is a blob section and must declare record_bytes 0",
+                "blob section must declare record_bytes 0",
                 section_type=stype,
             )
         if record_bytes == 0:
             if stype == A.SECTION_TYPE.STRINGS:
-                if entry["size"] < 4:
+                header_bytes = A.STRINGS_BLOB_HEADER_BYTES
+                directory_bytes = A.STRINGS_DIRECTORY_RECORD_BYTES
+                if entry["size"] < header_bytes:
                     raise MeshIrError(
                         "E_ABI_SECTION_RANGE",
                         "STRINGS section smaller than its count word",
                         section_type=stype,
                     )
-                inner_count = struct.unpack_from(
-                    "<I", payload, 0)[0]
+                inner_count = A.STRINGS_BLOB_HEADER_FORMAT.unpack_from(payload, 0)[0]
                 if inner_count != entry["count"]:
                     raise MeshIrError(
                         "E_ABI_SECTION_RANGE",
                         "STRINGS outer count != inner directory count",
                         section_type=stype,
                     )
-                directory_span = 4 + entry["count"] * A.STRING_DIR_BYTES
+                directory_span = header_bytes + entry["count"] * directory_bytes
                 if directory_span > entry["size"]:
                     raise MeshIrError(
                         "E_ABI_SECTION_RANGE",
@@ -207,8 +156,9 @@ def decode_section_dir(data: bytes, header: dict) -> list:
                 blob = payload[directory_span:]
                 end = 0
                 for index in range(inner_count):
-                    _, length = struct.unpack_from(
-                        "<II", payload, 4 + index * A.STRING_DIR_BYTES)
+                    _, length = A.STRINGS_DIRECTORY_FORMAT.unpack_from(
+                        payload, header_bytes + index * directory_bytes
+                    )
                     end += length
                 if end != len(blob):
                     raise MeshIrError(
@@ -228,22 +178,10 @@ def decode_section_dir(data: bytes, header: dict) -> list:
     if last_end != len(data):
         raise MeshIrError("E_ABI_SECTION_RANGE", "trailing bytes after last section")
 
-    for required in A.REQUIRED_SECTIONS:
-        stype = getattr(A.SECTION_TYPE, required)
+    for stype in A.REQUIRED_SECTION_TYPES:
         if stype not in payloads:
-            raise MeshIrError("E_ABI_SECTION_RANGE", "missing required section", section=required)
-    for stype in A.conditional_required_sections(header["required_features"]):
-        if stype not in payloads:
-            raise MeshIrError("E_ABI_SECTION_RANGE",
-                              "missing feature-required section",
-                              section_type=stype)
-    for stype in payloads:
-        required_feature = A.SECTION_REQUIRED_FEATURES.get(stype, 0)
-        features = header["required_features"]
-        if required_feature and not features & required_feature:
-            raise MeshIrError("E_ABI_FEATURE",
-                              "section present without its feature bit",
-                              section_type=stype)
+            raise MeshIrError("E_ABI_SECTION_RANGE", "missing required section", section_type=stype)
+    check_section_features(header["required_features"], set(payloads))
     return payloads
 
 
@@ -253,10 +191,10 @@ def _grouped_values(field_specs: list, values: tuple) -> dict:
     cursor = 0
     for spec in field_specs:
         if spec["type"] == "u64x8":
-            grouped[spec["name"]] = tuple(values[cursor : cursor + 8])
+            grouped[spec.get("python_field", spec["name"])] = tuple(values[cursor : cursor + 8])
             cursor += 8
         else:
-            grouped[spec["name"]] = values[cursor]
+            grouped[spec.get("python_field", spec["name"])] = values[cursor]
             cursor += 1
     if cursor != len(values):
         raise MeshIrError("E_ABI_CORRUPT", "record field count mismatch")
@@ -277,15 +215,19 @@ def _unpack_table(section_name: str, payload: bytes, count: int, cls):
 
 
 def _decode_strings(payload: bytes) -> list:
-    (count,) = struct.unpack_from("<I", payload, 0)
-    directory_span = 4 + count * A.STRING_DIR_BYTES
+    header_bytes = A.STRINGS_BLOB_HEADER_BYTES
+    directory_bytes = A.STRINGS_DIRECTORY_RECORD_BYTES
+    (count,) = A.STRINGS_BLOB_HEADER_FORMAT.unpack_from(payload, 0)
+    directory_span = header_bytes + count * directory_bytes
     if len(payload) < directory_span:
         raise MeshIrError("E_ABI_SECTION_RANGE", "string directory exceeds section")
     blob = payload[directory_span:]
     strings = []
     previous_end = 0
     for index in range(count):
-        offset, length = struct.unpack_from("<II", payload, 4 + index * A.STRING_DIR_BYTES)
+        offset, length = A.STRINGS_DIRECTORY_FORMAT.unpack_from(
+            payload, header_bytes + index * directory_bytes
+        )
         if offset != previous_end:
             raise MeshIrError("E_ABI_ORDER", "string offsets must be dense and increasing")
         if offset + length > len(blob):
@@ -357,40 +299,27 @@ def decode_program(data: bytes) -> Program:
     header = decode_header(data)
     payloads = decode_section_dir(data, header)
 
-    def records_of(name: str):
-        entry, payload = payloads[getattr(A.SECTION_TYPE, name)]
+    def records_of(name: str, optional: bool = False):
+        item = payloads.get(getattr(A.SECTION_TYPE, name))
+        if item is None and optional:
+            return None, b""
+        if item is None:
+            raise MeshIrError("E_ABI_SECTION_RANGE", "required section is missing", section=name)
+        entry, payload = item
         return entry, payload
 
     _, strings_payload = records_of("STRINGS")
     strings = _decode_strings(strings_payload)
 
-    simple_sections = {
-        "ENTRYPOINTS": Entrypoint,
-        "PROFILES": Profile,
-        "TENSORS": Tensor,
-        "SHARDS": Shard,
-        "ALLOCATIONS": Allocation,
-        "STREAMS": Stream,
-        "COMMANDS": Command,
-        "COMMAND_WAITS": CommandWait,
-        "COMMAND_OPERANDS": CommandOperand,
-        "EVENTS": Event,
-        "RELOCATIONS": Relocation,
-        "EXPECTED_TRAFFIC": ExpectedTrafficRow,
-    }
     decoded = {}
-    for name, cls in simple_sections.items():
+    for name, binding in A.TRANSPORT_CANONICAL_SECTIONS.items():
+        if binding["optional"] or name in {"STRINGS", "DMA_DESCRIPTORS", "OP_ATTRS"}:
+            continue
+        cls = RECORD_CLASSES[name]
         entry, payload = records_of(name)
         table = _unpack_table(name, payload, entry["count"], cls)
         check_record_rules(name, table)
         decoded[name] = table
-
-    if header["required_features"] & A.PROFILE_SCOPED_EXECUTION_V1:
-        entry, payload = records_of("PROFILE_STREAM_RANGES")
-        ranges = _unpack_table("PROFILE_STREAM_RANGES", payload,
-                               entry["count"], ProfileStreamRange)
-        check_record_rules("PROFILE_STREAM_RANGES", ranges)
-        decoded["PROFILE_STREAM_RANGES"] = ranges
 
     entry, payload = records_of("DMA_DESCRIPTORS")
     descriptors = _decode_descriptors(payload, entry["count"])
@@ -401,69 +330,77 @@ def decode_program(data: bytes) -> Program:
     entry, payload = records_of("OP_ATTRS")
     attrs = _decode_attrs(payload, entry["count"])
 
-    if header["required_features"] & A.DYNAMIC_MOE_V1:
-        feature_sections = {
-            "CONTENT_DIGESTS": ContentDigest,
-            "MOE_LAYER_SPECS": MoeLayerSpec,
-            "MOE_EXPERT_SPECS": MoeExpertSpec,
-            "MOE_DYNAMIC_REGIONS": MoeDynamicRegion,
-            "MOE_KERNEL_SPECS": MoeKernelSpec,
-        }
-        for name, cls in feature_sections.items():
-            entry, payload = records_of(name)
-            table = _unpack_table(name, payload, entry["count"], cls)
-            check_record_rules(name, table)
-            decoded[name] = table
+    semantic_decoder = SemanticDecoder(payloads)
+    optional = {}
+    for name, binding in A.TRANSPORT_CANONICAL_SECTIONS.items():
+        if not binding["optional"]:
+            continue
+        cls = RECORD_CLASSES[name]
+        entry, payload = records_of(name, True)
+        if entry is None:
+            optional[name] = ()
+            continue
+        if entry["count"] == 0 and getattr(A.SECTION_TYPE, name) not in A.conditional_required_sections(header["required_features"]):
+            raise MeshIrError("E_ABI_BOUNDS", "empty optional section must be omitted", section=name)
+        rows = _unpack_table(name, payload, entry["count"], cls)
+        if any(
+            field.get("string_pool") == "SEMANTIC_STRINGS"
+            for field in getattr(A, f"{name}_FIELDS")
+        ):
+            converted = []
+            for row in rows:
+                values = {}
+                for field in getattr(A, f"{name}_FIELDS"):
+                    python_name = field.get("python_field", field["name"])
+                    value = getattr(row, python_name)
+                    if field.get("string_pool") == "SEMANTIC_STRINGS":
+                        if not 1 <= value <= len(semantic_decoder.strings):
+                            raise MeshIrError("E_ABI_BOUNDS", "optional string reference is out of bounds", section=name)
+                        semantic_decoder.used_strings.add(value - 1)
+                        value = semantic_decoder.strings[value - 1]
+                    values[python_name] = value
+                converted.append(cls(**values))
+            rows = converted
+        check_record_rules(name, rows)
+        optional[name] = tuple(rows)
 
-    if header["required_features"] & A.AGENT_SERVING_V1:
-        serving_sections = {
-            "AGENT_REQUEST_PROFILES": AgentRequestProfile,
-            "AGENT_INSTANCE_PROFILES": AgentInstanceProfile,
-            "AGENT_SOURCE_CORE_MAP": AgentSourceCoreMap,
-            "AGENT_INSTANCE_MEMBER_BINDINGS": AgentInstanceMemberBinding,
-            "AGENT_REQUEST_BINDING_REQUIREMENTS":
-                AgentRequestBindingRequirement,
-            "AGENT_PUBLISH_SURROGATE_BINDINGS": AgentPublishSurrogateBinding,
-        }
-        for name, cls in serving_sections.items():
-            entry, payload = records_of(name)
-            table = _unpack_table(name, payload, entry["count"], cls)
-            check_record_rules(name, table)
-            decoded[name] = table
+    metadata_entry, metadata_payload = records_of("PROGRAM_METADATA")
+    if metadata_entry["count"] != 1:
+        raise MeshIrError("E_ABI_BOUNDS", "PROGRAM_METADATA must contain one record")
+    min_reader_minor, flags, reserved, root_ref, semantic_digest = A.PROGRAM_METADATA_FORMAT.unpack(metadata_payload)
+    if flags or reserved:
+        raise MeshIrError("E_ABI_RESERVED", "PROGRAM_METADATA reserved fields must be zero")
+    check_min_reader_minor(
+        min_reader_minor,
+        header["abi_minor"],
+        header["required_features"],
+    )
+    semantics = semantic_decoder.decode(root_ref)
 
-    return Program(
+    transport = {}
+    for name, binding in A.TRANSPORT_CANONICAL_SECTIONS.items():
+        if name == "STRINGS":
+            rows = strings
+        elif name == "DMA_DESCRIPTORS":
+            rows = descriptors
+        elif name == "OP_ATTRS":
+            rows = attrs
+        elif binding["optional"]:
+            rows = optional[name]
+        else:
+            rows = decoded[name]
+        transport[binding["program_field"]] = tuple(rows)
+    program = Program(
         abi_major=header["abi_major"],
         abi_minor=header["abi_minor"],
         arch_digest=header["arch_digest"],
-        strings=strings,
-        entrypoints=decoded["ENTRYPOINTS"],
-        profiles=decoded["PROFILES"],
-        tensors=decoded["TENSORS"],
-        shards=decoded["SHARDS"],
-        allocations=decoded["ALLOCATIONS"],
-        streams=decoded["STREAMS"],
-        commands=decoded["COMMANDS"],
-        command_waits=decoded["COMMAND_WAITS"],
-        command_operands=decoded["COMMAND_OPERANDS"],
-        events=decoded["EVENTS"],
-        dma_descriptors=descriptors,
-        op_attrs=attrs,
-        relocations=decoded["RELOCATIONS"],
-        expected_traffic=decoded["EXPECTED_TRAFFIC"],
-        profile_stream_ranges=decoded.get("PROFILE_STREAM_RANGES", []),
+        semantics=semantics,
+        semantic_sha256=semantic_digest.hex(),
+        min_reader_minor=min_reader_minor,
         required_features=header["required_features"],
-        content_digests=decoded.get("CONTENT_DIGESTS", []),
-        moe_layer_specs=decoded.get("MOE_LAYER_SPECS", []),
-        moe_expert_specs=decoded.get("MOE_EXPERT_SPECS", []),
-        moe_dynamic_regions=decoded.get("MOE_DYNAMIC_REGIONS", []),
-        moe_kernel_specs=decoded.get("MOE_KERNEL_SPECS", []),
-        agent_request_profiles=decoded.get("AGENT_REQUEST_PROFILES", []),
-        agent_instance_profiles=decoded.get("AGENT_INSTANCE_PROFILES", []),
-        agent_source_core_map=decoded.get("AGENT_SOURCE_CORE_MAP", []),
-        agent_instance_member_bindings=decoded.get(
-            "AGENT_INSTANCE_MEMBER_BINDINGS", []),
-        agent_request_binding_requirements=decoded.get(
-            "AGENT_REQUEST_BINDING_REQUIREMENTS", []),
-        agent_publish_surrogate_bindings=decoded.get(
-            "AGENT_PUBLISH_SURROGATE_BINDINGS", []),
+        **transport,
     )
+    if program.computed_semantic_sha256 != program.semantic_sha256:
+        raise MeshIrError("E_ABI_CHECKSUM", "semantic checksum mismatch")
+    validate_optional_sections(program)
+    return program

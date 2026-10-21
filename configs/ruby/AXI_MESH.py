@@ -434,17 +434,21 @@ def _mesh_program_plans(scenario, target_specs):
 
     The Dummy Core runtime owns transaction generation, so plans cannot be
     derived from a tester transaction list; the scenario states them
-    directly per target node (uid -> extra service cycles / fault).
+    directly per target node (uid -> extra service cycles / fault), including
+    a B ejection delay that lands after the target already committed.
     """
     nodes = [int(spec["dst_node"]) for spec in target_specs]
-    plans = [[] for _ in target_specs]
+    plans = {node: {} for node in nodes}
+    b_delay_plans = {node: {} for node in nodes}
     for kind, fields, fault_default in (
         ("mesh_planned_extra_latency", ("uid", "cycles"), None),
         ("mesh_planned_faults", ("uid",), "slverr"),
+        ("mesh_planned_b_ejection", ("uid", "cycles"), None),
     ):
         records = scenario.get(kind, [])
         if not isinstance(records, list):
             fatal("AXI scenario %s must be a list", kind)
+        seen = set()
         for index, record in enumerate(records):
             if not isinstance(record, dict):
                 fatal("AXI %s[%d] must be an object", kind, index)
@@ -465,11 +469,23 @@ def _mesh_program_plans(scenario, target_specs):
             entry_fault = str(record.get("resp", fault_default)).lower()
             if len(fields) == 1 and entry_fault not in ("okay", "slverr"):
                 fatal("AXI mesh_planned_faults resp must be okay or slverr")
-            if len(fields) > 1:
-                plans[nodes.index(target)].append((uid, value, "okay"))
+            if (target, uid) in seen:
+                fatal("AXI %s repeats a target/uid", kind)
+            seen.add((target, uid))
+            if kind == "mesh_planned_b_ejection":
+                b_delay_plans[target][uid] = value
             else:
-                plans[nodes.index(target)].append((uid, 0, entry_fault))
-    return plans
+                entry = plans[target].setdefault(uid, [0, "okay"])
+                if len(fields) > 1:
+                    entry[0] = value
+                else:
+                    entry[1] = entry_fault
+    return (
+        [[(uid, *entry) for uid, entry in sorted(plans[node].items())]
+         for node in nodes],
+        [[(uid, cycles, "okay") for uid, cycles in sorted(b_delay_plans[node].items())]
+         for node in nodes],
+    )
 
 
 def _post_commit_plans(scenario, target_specs):
@@ -578,8 +594,13 @@ def _validate_options(options, initiators, targets, default_error_target,
         fatal("This script requires the AXI_MESH protocol")
     if not options.axi_strict_protocol:
         fatal("AXI_MESH supports strict_protocol=true only")
-    if options.network != "garnet":
-        fatal("AXI_MESH requires --network=garnet")
+    if options.network == "simple":
+        if options.simple_buffer_size <= 0 or options.simple_bytes_per_cycle <= 0:
+            fatal("AXI_MESH aggregate fabric requires finite queues and positive bandwidth")
+        if options.garnet_dual_lane:
+            fatal("AXI_MESH aggregate fabric does not support dual-lane routing")
+    elif options.network != "garnet":
+        fatal("AXI_MESH requires Garnet or the finite aggregate fabric")
     if options.topology != "AxiMeshDie":
         fatal("AXI_MESH requires --topology=AxiMeshDie")
     if options.routing_algorithm != 1:
@@ -755,12 +776,14 @@ def create_system(
         fatal("AXI driver_mode must be sequential, concurrent, mesh_program, or gate3_protocol")
     b_delay_plans_by_target = [[] for _ in target_specs]
     if driver_mode == "mesh_program":
-        plans_by_target = _mesh_program_plans(scenario, target_specs)
+        plans_by_target, b_delay_plans_by_target = \
+            _mesh_program_plans(scenario, target_specs)
     if driver_mode == "gate3_protocol":
         plans_by_target, b_delay_plans_by_target = _gate3_plans(scenario, target_specs)
-        for index, entries in enumerate(
-                _mesh_program_plans(scenario, target_specs)):
+        mesh_plans, mesh_b_delays = _mesh_program_plans(scenario, target_specs)
+        for index, entries in enumerate(mesh_plans):
             plans_by_target[index].extend(entries)
+            b_delay_plans_by_target[index].extend(mesh_b_delays[index])
     if not options.axi_raw_shim_probe and driver_mode not in (
         "mesh_program", "gate3_protocol"
     ):
@@ -1104,13 +1127,6 @@ def create_system(
         setattr(ruby_system, "axi_target_adapter%d" % version, adapter)
         target_adapters.append(adapter)
 
-    driver_mode = str(scenario.get("driver_mode", "sequential"))
-    if driver_mode not in (
-        "sequential", "concurrent", "mesh_program", "gate3_protocol"
-    ):
-        fatal("AXI driver_mode must be sequential, concurrent, mesh_program, or gate3_protocol")
-    if driver_mode == "mesh_program":
-        plans_by_target = _mesh_program_plans(scenario, target_specs)
     if not options.axi_raw_shim_probe and driver_mode not in (
         "mesh_program", "gate3_protocol"
     ):
@@ -1155,7 +1171,8 @@ def create_system(
     ruby_system.network.number_of_virtual_networks = 5
     # The AXI wire sizes are the single source feeding both message-buffer
     # configuration and the dual-lane single-flit validation.
-    ruby_system.network.dual_lane_vnet_wire_bytes = wire_sizes
+    if options.network == "garnet":
+        ruby_system.network.dual_lane_vnet_wire_bytes = wire_sizes
     controllers = initiator_controllers + target_controllers
     topology = create_topology(controllers, options)
     return ([], [], topology)

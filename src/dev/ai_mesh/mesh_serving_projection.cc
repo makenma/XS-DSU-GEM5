@@ -1,11 +1,11 @@
 #include "dev/ai_mesh/mesh_serving_projection.hh"
 
-#include <cstring>
+#include <ostream>
 #include <set>
-#include <vector>
 
-#include "dev/ai_mesh/agent_sha256.hh"
-#include "dev/ai_mesh/generated/mesh_ir_abi.hh"
+#include "dev/ai_mesh/mesh_binary_canonical.hh"
+#include "dev/ai_mesh/mesh_hash.hh"
+#include "dev/ai_mesh/generated/agent_protocol_abi.hh"
 
 namespace gem5
 {
@@ -15,252 +15,103 @@ namespace ai_mesh
 namespace
 {
 
-using namespace mesh_abi;
+constexpr char KeyBaseDomain[] = "AGENT_PROFILE_KEY_BASE_V1";
+constexpr char RequestKeyDomain[] = "AGENT_REQUEST_PROFILE_V1";
 
-constexpr char kKeyBaseDomain[] = "AGENT_PROFILE_KEY_BASE_V1";
-constexpr char kRequestKeyDomain[] = "AGENT_REQUEST_PROFILE_V1";
-
-void appendKey(std::string &out, const char *name)
-{
-    out += '"';
-    out += name;
-    out += "\":";
 }
 
-void appendOpen(std::string &out)
+bool
+verifyRequestPhaseMode(const DecodedProgram &program,
+    const mesh_abi::AgentRequestProfile &request, MeshLoadError &error)
 {
-    out += "{\"abi\":{\"major\":";
-    out += std::to_string(kAbiMajor);
-    out += ",\"minor\":";
-    out += std::to_string(kAbiMinor);
-}
-
-void appendRequiredFeatures(std::string &out, uint64_t features)
-{
-    if (features == 0)
-        return;
-    out += ",\"required_features\":";
-    out += std::to_string(features);
-}
-
-void appendArchDigest(std::string &out, const std::string &hex)
-{
-    out += "},\"arch_digest\":\"";
-    out += hex;
-    out += "\",\"sections\":{";
-}
-
-template <typename T>
-void appendTable(std::string &out, const std::vector<T> &records,
-                 void (*emit)(const T &, std::string &))
-{
-    out += '[';
-    for (size_t i = 0; i < records.size(); i++) {
-        if (i)
-            out += ',';
-        emit(records[i], out);
-    }
-    out += ']';
-}
-
-void appendWait(const uint32_t &event_id, std::string &out)
-{
-    out += "{\"event_id\":";
-    out += std::to_string(event_id);
-    out += '}';
-}
-
-void appendString(const std::string &value, std::string &out)
-{
-    jsonString(out, value.data(), value.size());
-}
-
-void appendAttr(const DecodedAttr &attr, std::string &out)
-{
-    jsonAttrPayload(attr.kind, attr.typed, out);
-}
-
-void appendRequestProfile(std::string &out,
-                          const AgentRequestProfile &record)
-{
-    AgentRequestProfile copy = record;
-    copy.requested_profile_key = 0;
-    copy.reserved0 = 0;
-    jsonAgentRequestProfile(copy, out);
-}
-
-void appendRequestProfileKeyed(std::string &out,
-                               const AgentRequestProfile &record)
-{
-    jsonAgentRequestProfile(record, out);
-}
-
-} // anonymous namespace
-
-std::string canonicalProgramProjection(const DecodedProgram &program,
-                                       bool zero_request_keys)
-{
-    std::string out;
-    appendOpen(out);
-    appendRequiredFeatures(out, program.required_features);
-    appendArchDigest(out, program.arch_digest_hex);
-
-    bool first = true;
-    auto section = [&out, &first](const char *name) {
-        if (!first)
-            out += ',';
-        first = false;
-        appendKey(out, name);
+    using namespace mesh_abi;
+    const auto reject = [&](const char *message) {
+        error = {"E_REQUEST_PROFILE", message};
+        return false;
     };
-
-    if (program.required_features & kFeatureAgentServingV1) {
-        section("AGENT_INSTANCE_MEMBER_BINDINGS");
-        appendTable(out, program.agent_instance_member_bindings,
-                    jsonAgentInstanceMemberBinding);
-        section("AGENT_INSTANCE_PROFILES");
-        appendTable(out, program.agent_instance_profiles,
-                    jsonAgentInstanceProfile);
-        section("AGENT_PUBLISH_SURROGATE_BINDINGS");
-        appendTable(out, program.agent_publish_surrogate_bindings,
-                    jsonAgentPublishSurrogateBinding);
-        section("AGENT_REQUEST_BINDING_REQUIREMENTS");
-        appendTable(out, program.agent_request_binding_requirements,
-                    jsonAgentRequestBindingRequirement);
-        section("AGENT_REQUEST_PROFILES");
-        out += '[';
-        for (size_t i = 0; i < program.agent_request_profiles.size(); i++) {
-            if (i)
-                out += ',';
-            if (zero_request_keys)
-                appendRequestProfile(out, program.agent_request_profiles[i]);
-            else
-                appendRequestProfileKeyed(out,
-                                          program.agent_request_profiles[i]);
-        }
-        out += ']';
-        section("AGENT_SOURCE_CORE_MAP");
-        appendTable(out, program.agent_source_core_map,
-                    jsonAgentSourceCoreMap);
+    if (request.flags != 0 && request.flags != kAgentRequestFlagsHAS_KV)
+        return reject("unknown request mode");
+    if (request.flags == kAgentRequestFlagsHAS_KV)
+        return (request.primary_kv_symbol_id && request.kv_bytes_per_token && request.output_tokens) ||
+            reject("generation requires KV and output tokens");
+    if (request.primary_kv_symbol_id || request.kv_bytes_per_token || request.output_tokens ||
+            request.expected_cached_tokens || request.path_mask != (1 << kPathKindINITIAL_PREFILL))
+        return reject("prefill-only request carries KV or generation state");
+    for (const auto &row : program.transport.agent_request_binding_requirements)
+        if (row.request_program_id == request.program_id && row.request_profile_id == request.profile_id &&
+                row.binding_kind == agent_abi::kBindingKindKV_EXTERNAL)
+            return reject("prefill-only request declares KV storage");
+    for (const auto &instance : program.transport.agent_instance_profiles) {
+        if (instance.request_program_id != request.program_id || instance.request_profile_id != request.profile_id)
+            continue;
+        if ((instance.phase != kPhasePREFILL && instance.phase != kPhasePUBLISH) ||
+                instance.path_kind != kPathKindINITIAL_PREFILL || instance.primary_kv_symbol_id ||
+                instance.kv_tokens_before || instance.kv_read_bytes_per_member ||
+                instance.kv_write_bytes_per_member || instance.decode_chunk_tokens)
+            return reject("prefill-only instance carries KV or generation state");
+        for (const auto &row : program.transport.agent_instance_tensor_bindings)
+            if (row.instance_profile_id == instance.instance_profile_id && row.binding_kind == agent_abi::kBindingKindKV_EXTERNAL)
+                return reject("prefill-only tensor mapping carries KV state");
+        for (const auto &member : program.transport.agent_instance_member_bindings)
+            if (member.instance_profile_id == instance.instance_profile_id && member.static_kv_symbol_id)
+                return reject("prefill-only member carries KV state");
     }
-
-    section("ALLOCATIONS");
-    appendTable(out, program.allocations, jsonAllocation);
-    section("COMMANDS");
-    appendTable(out, program.commands, jsonCommand);
-    section("COMMAND_OPERANDS");
-    appendTable(out, program.operands, jsonCommandOperand);
-    section("COMMAND_WAITS");
-    appendTable(out, program.waits, appendWait);
-    if (program.required_features & kFeatureDynamicMoeV1) {
-        section("CONTENT_DIGESTS");
-        appendTable(out, program.content_digests, jsonContentDigest);
-    }
-    section("DMA_DESCRIPTORS");
-    appendTable(out, program.descriptors, jsonDmaDescriptor);
-    section("ENTRYPOINTS");
-    appendTable(out, program.entrypoints, jsonEntrypoint);
-    section("EVENTS");
-    appendTable(out, program.events, jsonEvent);
-    section("EXPECTED_TRAFFIC");
-    appendTable(out, program.traffic, jsonExpectedTraffic);
-    if (program.required_features & kFeatureDynamicMoeV1) {
-        section("MOE_DYNAMIC_REGIONS");
-        appendTable(out, program.moe_dynamic_regions, jsonMoeDynamicRegion);
-        section("MOE_EXPERT_SPECS");
-        appendTable(out, program.moe_expert_specs, jsonMoeExpertSpec);
-        section("MOE_KERNEL_SPECS");
-        appendTable(out, program.moe_kernel_specs, jsonMoeKernelSpec);
-        section("MOE_LAYER_SPECS");
-        appendTable(out, program.moe_layer_specs, jsonMoeLayerSpec);
-    }
-    section("OP_ATTRS");
-    appendTable(out, program.attrs, appendAttr);
-    section("PROFILES");
-    appendTable(out, program.profiles, jsonProfile);
-    if (program.required_features & kFeatureProfileScopedExecutionV1) {
-        section("PROFILE_STREAM_RANGES");
-        appendTable(out, program.profile_stream_ranges,
-                    jsonProfileStreamRange);
-    }
-    section("RELOCATIONS");
-    appendTable(out, program.relocations, jsonRelocation);
-    section("SHARDS");
-    appendTable(out, program.shards, jsonShard);
-    section("STREAMS");
-    appendTable(out, program.streams, jsonStream);
-    section("STRINGS");
-    appendTable(out, program.strings, appendString);
-    section("TENSORS");
-    appendTable(out, program.tensors, jsonTensor);
-
-    out += "}}";
-    return out;
+    return true;
 }
 
-std::array<uint8_t, 32> programProfileKeyBaseDigest(
-    const DecodedProgram &program)
+bool
+programProfileKeyBaseDigest(
+    const DecodedProgram &program, std::array<uint8_t, 32> &out,
+    MeshLoadError &error)
 {
-    const std::string projection = canonicalProgramProjection(program, true);
-    AgentSha256 hash;
-    hash.update(reinterpret_cast<const uint8_t *>(kKeyBaseDomain),
-                sizeof(kKeyBaseDomain));
-    hash.update(reinterpret_cast<const uint8_t *>(projection.data()),
-                projection.size());
-    return hash.finish();
+    mesh_hash::Sha256StreamBuffer buffer;
+    std::ostream stream(&buffer);
+    stream.write(KeyBaseDomain, sizeof(KeyBaseDomain));
+    if (!mesh_binary_detail::writeProgramProfileKeyBaseCanonical(
+            program, stream, error))
+        return false;
+    out = buffer.digest();
+    return true;
 }
 
-std::array<uint8_t, 32> programSemanticDigest(const DecodedProgram &program)
+uint64_t
+requestProfileKey(const mesh_abi::AgentRequestProfile &record,
+                  const std::array<uint8_t, 32> &base_digest)
 {
-    const std::string projection = canonicalProgramProjection(program, false);
-    AgentSha256 hash;
-    hash.update(reinterpret_cast<const uint8_t *>(projection.data()),
-                projection.size());
-    return hash.finish();
-}
-
-uint64_t requestProfileKey(const AgentRequestProfile &record,
-                           const std::array<uint8_t, 32> &base_digest)
-{
-    uint8_t wire[kAgentRequestProfilesBytes] = {};
-    writeAgentRequestProfile(wire, record);
-    std::memset(wire + kAgentRequestProfilesRequestedProfileKeyOffset, 0, 8);
-    std::memset(wire + kAgentRequestProfilesReserved0Offset, 0, 2);
-    AgentSha256 hash;
-    hash.update(reinterpret_cast<const uint8_t *>(kRequestKeyDomain),
-                sizeof(kRequestKeyDomain));
+    auto canonical = record;
+    canonical.requested_profile_key = 0;
+    canonical.reserved0 = 0;
+    const auto wire = mesh_abi::encodeAgentRequestProfile(canonical);
+    mesh_hash::Sha256 hash;
+    hash.update(reinterpret_cast<const uint8_t *>(RequestKeyDomain),
+                sizeof(RequestKeyDomain));
     hash.update(base_digest.data(), base_digest.size());
-    hash.update(wire, sizeof(wire));
-    const auto digest = hash.finish();
-    uint64_t key = 0;
-    for (int i = 7; i >= 0; i--)
-        key = (key << 8) | digest[i];
-    return key;
+    hash.update(wire.data(), wire.size());
+    const auto digest = hash.digest();
+    return mesh_abi::rdU64(digest.data());
 }
 
-bool verifyRequestProfileKeys(const DecodedProgram &program,
-                              MeshLoadError &error)
+bool
+verifyRequestProfileKeys(const DecodedProgram &program, MeshLoadError &error)
 {
-    if ((program.required_features & kFeatureAgentServingV1) == 0)
+    if (!(program.header.required_features & mesh_abi::kFeatureAgentServingV1))
         return true;
-    const auto base = programProfileKeyBaseDigest(program);
+    std::array<uint8_t, 32> base;
+    if (!programProfileKeyBaseDigest(program, base, error))
+        return false;
     std::set<uint64_t> seen;
-    for (const auto &record : program.agent_request_profiles) {
-        const uint64_t expected = requestProfileKey(record, base);
-        if (record.requested_profile_key == 0 ||
-            record.requested_profile_key != expected) {
-            error.code = "E_REQUEST_PROFILE_KEY";
-            error.message = "request profile key does not match the base "
-                            "projection";
-            return false;
-        }
-        if (!seen.insert(expected).second) {
-            error.code = "E_REQUEST_PROFILE_KEY";
-            error.message = "request profile keys must be unique";
+    for (const auto &record : program.transport.agent_request_profiles) {
+        const auto expected = requestProfileKey(record, base);
+        if (!record.requested_profile_key ||
+            record.requested_profile_key != expected ||
+            !seen.insert(expected).second) {
+            error = {mesh_diagnostics::E_REQUEST_PROFILE_KEY,
+                     "request profile key is invalid or duplicated"};
             return false;
         }
     }
     return true;
 }
 
-} // namespace ai_mesh
-} // namespace gem5
+}
+}

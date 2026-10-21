@@ -138,7 +138,7 @@ KvRecord readRecord(Cursor &cursor)
         record.diagnostic_prefix_digest = digest;
     }
     if (words[17]) {
-        KvErrorCandidate error;
+        ErrorCandidate error;
         error.tick = words[18];
         error.code = static_cast<uint32_t>(words[19]);
         uint8_t wire[mesh_abi::kErrorSourceKeysBytes];

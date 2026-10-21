@@ -2,6 +2,8 @@
 
 #include <limits>
 
+#include "dev/ai_mesh/generated/agent_protocol_abi.hh"
+
 namespace gem5
 {
 namespace ai_mesh
@@ -50,11 +52,6 @@ ProtocolProfileRequestSource::nextBatch(
 namespace
 {
 
-constexpr uint8_t kArenaInput = 0;
-constexpr uint8_t kArenaParameter = 1;
-constexpr uint8_t kArenaOutput = 2;
-constexpr uint8_t kArenaMetadata = 3;
-
 const AgentPlanTask *
 findTask(const AgentPlanImage &image, const AgentCommandRecord &record)
 {
@@ -79,25 +76,34 @@ bool
 fillArenaAddresses(const AgentPlanImage &image, const AgentCommandRecord &record,
                    AgentSubmissionIntent &intent)
 {
-    bool seen[4] = {false, false, false, false};
+    bool seen[agent_abi::kArenaKindWORKSPACE + 1] = {};
     for (const AgentArenaRecord &arena : image.arena()) {
         if (arena.requestId != record.requestId ||
-                arena.arenaKind > kArenaMetadata)
+                arena.arenaKind > agent_abi::kArenaKindWORKSPACE)
             continue;
+        if (seen[arena.arenaKind] || !arena.allocationBytes ||
+                arena.base > UINT64_MAX - arena.allocationBytes)
+            return false;
         seen[arena.arenaKind] = true;
         switch (arena.arenaKind) {
-          case kArenaInput:
+          case agent_abi::kArenaKindINPUT:
             intent.inputAddress = arena.base;
             break;
-          case kArenaParameter:
+          case agent_abi::kArenaKindPARAMETER:
             intent.parameterAddress = arena.base;
             intent.parameterCapacityBytes = arena.allocationBytes;
             break;
-          case kArenaOutput:
+          case agent_abi::kArenaKindOUTPUT:
             intent.outputAddress = arena.base;
             break;
-          case kArenaMetadata:
+          case agent_abi::kArenaKindMETADATA:
             intent.outputMetadataAddress = arena.base;
+            break;
+          case agent_abi::kArenaKindWORKSPACE:
+            if (arena.initialValidBytes)
+                return false;
+            intent.workspaceAddress = arena.base;
+            intent.workspaceCapacityBytes = arena.allocationBytes;
             break;
         }
     }
@@ -121,7 +127,11 @@ buildGenerateIntent(const AgentPlanImage &image, size_t commandIndex)
     if (round == nullptr)
         return std::nullopt;
     const SurrogateProfileRegistry *registry = image.surrogateRegistry();
-    if (registry == nullptr)
+    const auto *binding = findHostBindingPlan(image.hostBindingPlans(), round->programId, round->profileId);
+    if (!registry && (!binding || binding->primaryKvSymbolId))
+        return std::nullopt;
+    if (binding && !binding->primaryKvSymbolId &&
+            (task->kvHandle || task->generation || round->cachedTokens || round->outputTokens || round->repairRound))
         return std::nullopt;
 
     AgentSubmissionIntent intent;
@@ -147,7 +157,7 @@ buildGenerateIntent(const AgentPlanImage &image, size_t commandIndex)
     intent.deadlineTick = round->deadlineTick;
     intent.inputDigest = round->inputDigest;
     intent.workloadDigest = image.workloadPlanDigest();
-    intent.publishChunkBytes = registry->publishChunkBytes();
+    intent.publishChunkBytes = binding ? binding->publishChunkBytes : registry->publishChunkBytes();
     intent.round = round;
     intent.task = task;
     if (!fillArenaAddresses(image, record, intent))
@@ -162,16 +172,20 @@ buildControlIntent(const AgentPlanImage &image, size_t controlIndex)
     if (controlIndex >= image.controlActions().size())
         return std::nullopt;
     const AgentControlAction &action = image.controlActions()[controlIndex];
-    const AgentCommandRecord *selected = nullptr;
-    for (const AgentCommandRecord &record : image.commands())
-        if (record.controlOrdinal == action.controlOrdinal &&
-                record.commandKind != kAgentCommandGenerate) {
-            selected = &record;
-            break;
-        }
-    if (selected == nullptr)
-        return std::nullopt;
+    for (size_t index = 0; index < image.commands().size(); ++index)
+        if (image.commands()[index].controlOrdinal == action.controlOrdinal &&
+                image.commands()[index].commandKind != kAgentCommandGenerate)
+            return buildControlCommandIntent(image, index);
+    return std::nullopt;
+}
 
+std::optional<AgentSubmissionIntent>
+buildControlCommandIntent(const AgentPlanImage &image, size_t commandIndex)
+{
+    if (commandIndex >= image.commands().size() ||
+            image.commands()[commandIndex].commandKind == kAgentCommandGenerate)
+        return std::nullopt;
+    const auto *selected = &image.commands()[commandIndex];
     AgentSubmissionIntent intent;
     intent.requestId = selected->requestId;
     intent.completionCookie = selected->requestId;

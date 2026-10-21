@@ -1,4 +1,5 @@
 import copy
+from dataclasses import replace
 import sys
 from pathlib import Path
 
@@ -7,7 +8,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from mesh_ir.abi.decoder import decode_program
-from mesh_ir.builder import load_arch
+from mesh_ir.architecture import load_arch
 from mesh_ir.generated import abi as A
 from mesh_ir.model import MeshIrError
 from mesh_ir.moe_capacity import (
@@ -61,8 +62,7 @@ def test_gate5_layer_view_bounds_follow_the_frozen_formula(context):
     drop = layer_view_bounds(layer, TOTAL_TOKENS)
     assert drop.max_view_records == 272
     assert drop.max_view_refs == 496
-    padded_layer = copy.copy(layer)
-    padded_layer.overflow_policy = A.MOE_OVERFLOW_POLICY.PAD_TO_CAPACITY
+    padded_layer = replace(layer, overflow_policy=A.MOE_OVERFLOW_POLICY.PAD_TO_CAPACITY)
     padded = layer_view_bounds(padded_layer, TOTAL_TOKENS)
     assert padded.max_view_records == 272 + 2 * 16
     assert padded.max_view_refs == 496 + 4 * 16

@@ -3,13 +3,15 @@
 
 #include <cstdint>
 #include <map>
+#include <set>
 #include <vector>
 
 #include <string>
 
 #include "base/statistics.hh"
-#include "dev/ai_mesh/dma_types.hh"
+#include "dev/ai_mesh/dma_records.hh"
 #include "dev/ai_mesh/runtime_key.hh"
+#include "dev/ai_mesh/mesh_runtime_observations.hh"
 #include "sim/clocked_object.hh"
 
 namespace gem5
@@ -38,6 +40,9 @@ class MockAxiTransport : public ClockedObject
 
     void registerCore(uint16_t core_id, MeshDummyCore *core);
 
+    void initializeMemoryBytes(uint64_t address, const std::vector<uint8_t> &bytes);
+    std::vector<uint8_t> memoryBytes(uint64_t address, uint64_t size);
+
     // Absolute-address functional accessors used by the DMA engine.
     bool readHbm(uint64_t addr, uint64_t size, uint8_t *out);
     bool writeHbm(uint64_t addr, uint64_t size, const uint8_t *in);
@@ -52,21 +57,23 @@ class MockAxiTransport : public ClockedObject
     Tick transferLatency(uint64_t beats_total, uint32_t bursts) const;
 
     // Per-descriptor accounting (oracle reconciliation).
-    void accountRead(RuntimeObjectKey descriptor, uint64_t bytes,
-                     uint32_t bursts);
-    void accountWrite(RuntimeObjectKey descriptor, uint64_t bytes,
-                      uint32_t bursts);
-    void accountP2p(RuntimeObjectKey descriptor, uint64_t bytes,
-                    uint32_t bursts);
-    void accountFill(RuntimeObjectKey descriptor, uint64_t bytes);
+    TrafficContribution accountRead(RuntimeObjectKey descriptor_id,
+                                             uint64_t bytes, uint32_t bursts);
+    TrafficContribution accountWrite(RuntimeObjectKey descriptor_id,
+                                              uint64_t bytes, uint32_t bursts);
+    TrafficContribution accountP2p(RuntimeObjectKey descriptor_id,
+                                            uint64_t bytes, uint32_t bursts);
+    TrafficContribution accountFill(RuntimeObjectKey descriptor_id,
+                                             uint64_t bytes);
     void accountKind(RuntimeObjectKey descriptor, uint16_t kind);
-    void notePayload(RuntimeObjectKey descriptor, const uint8_t *data,
-                     uint64_t size);
+    void accountStatus(RuntimeObjectKey descriptor, DmaStatus status);
+    void notePayload(RuntimeObjectKey descriptor_id, const uint8_t *data, uint64_t size);
 
     // Digest state lifecycle: begin at submit, rows accumulate, finish
     // formats and retires the state (spec: descriptor rolling state).
-    void beginPayloadDigest(RuntimeObjectKey descriptor);
-    void finishPayloadDigest(RuntimeObjectKey descriptor);
+    void beginPayloadDigest(RuntimeObjectKey descriptor_id);
+    void accountInjectedError(RuntimeObjectKey descriptor_id);
+    std::string finishPayloadDigest(RuntimeObjectKey descriptor_id);
 
     const std::map<RuntimeObjectKey, ActualTraffic> &actualTraffic() const
     {
@@ -74,6 +81,17 @@ class MockAxiTransport : public ClockedObject
     }
 
     uint32_t dataBusBytes() const { return data_bus_bytes; }
+    // Deterministic fault injection (spec 8.8).  A listed descriptor faults on
+    // the completion selected by fault_occurrence; occurrence 0 faults every
+    // completion, so a REPEAT window can be faulted on its first pass or on a
+    // later replay pass with the same descriptor identity.
+    enum class DescriptorFault
+    {
+        None,
+        Lost,
+        Error,
+    };
+    DescriptorFault takeDescriptorFault(uint32_t descriptor_id);
     uint64_t burstBaseLatencyCycles() const
     {
         return static_cast<uint64_t>(burst_base_latency);
@@ -97,6 +115,10 @@ class MockAxiTransport : public ClockedObject
     std::map<uint64_t, std::vector<uint8_t>> hbm_pages;
     std::map<RuntimeObjectKey, ActualTraffic> actual;
     std::map<RuntimeObjectKey, std::pair<uint64_t, uint64_t>> digest_state;
+    std::set<uint32_t> error_descriptors;
+    std::set<uint32_t> lost_descriptors;
+    uint32_t fault_occurrence;
+    std::map<uint32_t, uint32_t> descriptor_completions;
 
     std::vector<uint8_t> &page(uint64_t addr);
 };

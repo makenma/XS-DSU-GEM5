@@ -14,6 +14,7 @@
 #include "dev/ai_mesh/agent_protocol_validation.hh"
 #include "dev/ai_mesh/agent_request_source.hh"
 #include "dev/ai_mesh/agent_submission_ledger.hh"
+#include "dev/ai_mesh/agent_sq_admission.hh"
 #include "dev/ai_mesh/agent_workload_manager.hh"
 #include "dev/ai_mesh/cancel_join.hh"
 #include "dev/ai_mesh/control_trigger_coordinator.hh"
@@ -33,11 +34,13 @@ namespace gem5
 {
 
 struct AgentAxiDriverParams;
+namespace ruby { class Network; }
 
 namespace ai_mesh
 {
 
 class NpuMemoryEndpoint;
+class ServingMeshExecutor;
 struct PlanWireAddresses;
 
 class AgentAxiDriver : public ClockedObject,
@@ -51,7 +54,16 @@ class AgentAxiDriver : public ClockedObject,
 
     void init() override;
     void startup() override;
+    void serialize(CheckpointOut &cp) const override;
+    void unserialize(CheckpointIn &cp) override;
+    void drainResume() override;
+    template<class Archive> void serialize(Archive &archive, unsigned);
+
     void wakeup();
+    void requestProgramBoundary(const ServingMeshExecutor &executor);
+    bool programBoundaryReady() const;
+    void resumeProgramBoundary();
+    void switchProgramTiming(bool aggregate);
 
     void onAxiWriteCommitted(const axi::AxiAddressRequest &request,
                              const std::vector<axi::AxiDataPacket> &beats,
@@ -63,8 +75,7 @@ class AgentAxiDriver : public ClockedObject,
     void onGate3FatalCut(Tick tick) override;
     void onGate3NormalCommit(Tick tick) override;
 
-    void notifySqAccepted(uint64_t requestId);
-    void notifyFirstOutputChunk(uint64_t requestId);
+    void notifyControlEvent(uint64_t requestId, ControlTriggerEvent event);
     void notifyGenerateTerminalVisible(uint64_t requestId);
     void notifyReleaseTerminal(uint64_t requestId);
 
@@ -120,6 +131,7 @@ class AgentAxiDriver : public ClockedObject,
 
     struct SubmissionContext
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         SqSeq sqSequence;
         RequestId requestId;
         CompletionCookie cookie;
@@ -203,7 +215,7 @@ class AgentAxiDriver : public ClockedObject,
         const AgentSubmissionIntent &intent,
         const struct PlanWireAddresses &addresses,
         const AgentPlanRound &round) const;
-    uint32_t plannedInstanceCount(uint16_t programId,
+    std::vector<uint32_t> plannedInstanceCounts(uint16_t programId,
                                   uint16_t profileId) const;
     Gate3MetadataExpectation metadataExpectation() const;
     void processIrqCommits();
@@ -278,6 +290,7 @@ class AgentAxiDriver : public ClockedObject,
     uint64_t kvSessionSlotBytes = 0;
     uint64_t metadataOutputBytes = 0;
     Gate3ObservationRecorder *const recorder;
+    ruby::Network *const network;
     const bool planDrivenMode;
     const uint32_t dataBusBytes;
     const uint32_t sqDepth;
@@ -293,6 +306,9 @@ class AgentAxiDriver : public ClockedObject,
     uint32_t requestCount;
     const uint32_t localVisibilityDelay;
     const uint32_t requestIdCapacity;
+    const std::vector<uint64_t> submissionWirePatches;
+    void applySubmissionWirePatches(uint64_t sequence, uint8_t kind,
+                                   std::vector<uint8_t> &bytes) const;
     const uint32_t drainCycles;
     const uint32_t doorbellAxiId;
     const uint32_t ackAxiId;
@@ -319,6 +335,7 @@ class AgentAxiDriver : public ClockedObject,
     std::set<uint64_t> standaloneControlRequests;
     std::set<uint64_t> consumedGenerateRequests;
     std::set<uint64_t> acceptedGenerateRequests;
+    std::string checkpointState;
     Stage stage = Stage::Prepare;
     TickEvent tickEvent;
     FatalDrainEvent fatalDrainEvent;

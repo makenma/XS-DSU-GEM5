@@ -109,7 +109,7 @@ std::vector<WeightTagSiteV1> weightTagSitesOf(const DecodedProgram &program,
                                               uint16_t core_id)
 {
     std::vector<WeightTagSiteV1> sites;
-    for (const auto &expert : program.moe_expert_specs) {
+    for (const auto &expert : program.transport.moe_expert_specs) {
         WeightTagSiteV1 site;
         site.expert_id = expert.expert_id;
         site.core_id = expert.core_id;

@@ -59,15 +59,18 @@ namespace ruby
 {
 
 SimpleNetwork::SimpleNetwork(const Params &p)
-    : Network(p), m_buffer_size(p.buffer_size),
-      m_endpoint_bandwidth(p.endpoint_bandwidth),
+    : Network(p), switch_config{p.ruby_system, p.endpoint_bandwidth,
+          p.require_finite_buffers, p.physical_vnets_channels,
+          p.physical_vnets_bandwidth, m_ordered},
       networkStats(this)
 {
+    fatal_if(p.require_finite_buffers && p.buffer_size <= 0,
+             "finite SimpleNetwork requires a positive buffer size");
     // record the routers
     for (std::vector<BasicRouter*>::const_iterator i = p.routers.begin();
          i != p.routers.end(); ++i) {
         auto* s = safe_cast<Switch*>(*i);
-        s->init_net_ptr(this);
+        s->init_net_ptr(&switch_config);
         auto id = static_cast<size_t>(s->params().router_id);
         m_switches[id] = s;
     }
@@ -99,6 +102,16 @@ SimpleNetwork::init()
     // the parent class network constructor.
     assert(m_topology_ptr != NULL);
     m_topology_ptr->createLinks(this);
+    if (requiresFiniteBuffers()) {
+        for (const auto *queues : {&m_toNetQueues, &m_fromNetQueues})
+            for (const auto &node : *queues)
+                for (const auto *buffer : node)
+                    fatal_if(buffer && !buffer->capacity(),
+                             "finite SimpleNetwork has an unbounded endpoint queue");
+        for (const auto *buffer : m_int_link_buffers)
+            fatal_if(!buffer->capacity(),
+                     "finite SimpleNetwork has an unbounded internal link queue");
+    }
 }
 
 // From a switch to an endpoint node
@@ -119,10 +132,10 @@ SimpleNetwork::makeExtOutLink(SwitchID src, NodeID global_dest,
     gem5_assert(num_vnets >= m_fromNetQueues[local_dest].size());
     m_fromNetQueues[local_dest].resize(num_vnets, nullptr);
 
-    m_switches[src]->addOutPort(m_fromNetQueues[local_dest],
+    endpoint_throttles.push_back(&m_switches[src]->addOutPort(m_fromNetQueues[local_dest],
                                 routing_table_entry[0],
                                 simple_link->m_latency, 0,
-                                simple_link->m_bw_multiplier, true);
+                                simple_link->m_bw_multiplier, true));
 }
 
 // From an endpoint node to a switch
@@ -157,6 +170,31 @@ SimpleNetwork::makeInternalLink(SwitchID src, SwitchID dest, BasicLink* link,
             simple_link->m_buffers.begin(), simple_link->m_buffers.end());
 }
 
+SimpleNetworkSnapshot
+SimpleNetwork::endpointSnapshot() const
+{
+    SimpleNetworkSnapshot snapshot;
+    for (const auto *throttle : endpoint_throttles)
+        snapshot += throttle->quiescenceSnapshot();
+    return snapshot;
+}
+
+SimpleNetworkSnapshot
+SimpleNetwork::quiescenceSnapshot() const
+{
+    SimpleNetworkSnapshot snapshot;
+    for (const auto *queues : {&m_toNetQueues, &m_fromNetQueues})
+        for (const auto &node : *queues)
+            for (auto *buffer : node)
+                if (buffer)
+                    snapshot.queuedMessages += buffer->getNumMessages() + buffer->getNumStalledMessages();
+    for (auto *buffer : m_int_link_buffers)
+        snapshot.queuedMessages += buffer->getNumMessages() + buffer->getNumStalledMessages();
+    for (const auto &[id, router] : m_switches)
+        snapshot += router->quiescenceSnapshot();
+    return snapshot;
+}
+
 void
 SimpleNetwork::regStats()
 {
@@ -182,11 +220,9 @@ SimpleNetwork::regStats()
         for (auto& it : m_switches) {
             *(networkStats.m_msg_counts[(unsigned int) type]) +=
                 sum(it.second->getMsgCount(type));
+            *(networkStats.m_msg_bytes[(unsigned int) type]) +=
+                sum(it.second->getMsgBytes(type));
         }
-
-        *(networkStats.m_msg_bytes[(unsigned int) type]) =
-            *(networkStats.m_msg_counts[(unsigned int) type]) *
-                statistics::constant(Network::MessageSizeType_to_int(type));
     }
 }
 

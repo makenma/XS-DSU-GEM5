@@ -48,10 +48,11 @@ def test_gate5_contract_matches_the_manifest(manifest):
 def test_gate5_every_registered_pytest_node_resolves_exactly_once():
     import subprocess
 
+    modules = sorted({requirement.node_id.split("::", 1)[0]
+                      for requirements in GATE5_CASES.values()
+                      for requirement in requirements if requirement.runner == "PYTEST"})
     collected = subprocess.run(
-        [sys.executable, "-m", "pytest", "util/mesh_ir/tests/unit",
-         "util/mesh_ir/tests/integration/test_gate5_e2e_determinism.py",
-         "--collect-only", "-q"],
+        [sys.executable, "-m", "pytest", *modules, "--collect-only", "-q"],
         cwd=REPO, capture_output=True, text=True)
     assert collected.returncode == 0, collected.stderr[-2000:]
     known = set()

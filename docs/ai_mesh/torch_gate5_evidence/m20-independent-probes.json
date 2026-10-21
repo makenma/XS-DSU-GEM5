@@ -1,0 +1,1530 @@
+{
+  "scope": "Immutable archive replay through shared entries and unchanged runner AST; not a new gem5 run.",
+  "probes": [
+    {
+      "name": "healthy_dma_chain",
+      "accepted": true,
+      "result": [
+        "done",
+        {
+          "frames": 1,
+          "bursts": 48
+        },
+        "conservation: PASS",
+        "packet traffic: PASS (5 vnets, 832 packets injected and received)",
+        "completion timing: PASS"
+      ]
+    },
+    {
+      "name": "B_response_before_issue_and_AW",
+      "accepted": false,
+      "error": "burst 0 of execution (0, 5, 0, 3) retired at 1, before its request handshake at 1416001"
+    },
+    {
+      "name": "healthy_error_chain",
+      "accepted": true,
+      "result": [
+        "error_drained",
+        {
+          "frames": 1,
+          "bursts": 4
+        },
+        "drained beat classification: PASS (W 32, R 32 issued)",
+        "conservation: PASS",
+        "packet traffic: PASS (5 vnets, 70 packets injected and received)",
+        "completion timing: PASS",
+        "write error drain: PASS"
+      ]
+    },
+    {
+      "name": "C1_dropped_error_burst_attribution_and_conservation",
+      "accepted": false,
+      "error": "execution (0, 3, 0, 2) declares 1 successful bursts but archives 0 non-errored ones"
+    },
+    {
+      "name": "C1_dropped_error_burst_write_error_drain",
+      "accepted": false,
+      "error": "execution (0, 3, 0, 2) declares 1 successful bursts but archives 0 non-errored ones"
+    },
+    {
+      "name": "healthy_partial_chain",
+      "accepted": true,
+      "result": [
+        "error_drained",
+        {
+          "frames": 1,
+          "bursts": 50
+        },
+        "drained beat classification: PASS (W 50, R 0 issued)",
+        "conservation: PASS",
+        "packet traffic: PASS (5 vnets, 150 packets injected and received)",
+        "completion timing: PASS",
+        "quiescence: PASS",
+        "cancelled commands issue nothing: PASS (5 cancelled before issue, 0 cancelled after submission)",
+        "transfer snapshots: PASS (24 of 40 descriptor commits of transfer 1, 64 pending bytes, resident destination)",
+        "p2p partial abandon: PASS (transfer 1 kept 98 of 160 bytes over 49 bursts and abandoned, 0 transfers published)"
+      ]
+    },
+    {
+      "name": "all_landing_event_uids_zeroed",
+      "accepted": false,
+      "error": "transfer snapshot contract failed: transfer 1 archives a landing claiming transaction 0x0, but its ranges are the landing of transaction 0x1"
+    },
+    {
+      "name": "landing_events_and_snapshot_digests_backdated_before_AW",
+      "accepted": false,
+      "error": "transfer snapshot contract failed: transfer 1 archives a landing of transaction 0x12 at tick 111000 against a coverage stage at tick 267000"
+    },
+    {
+      "name": "C1_partial_error_burst_and_counters_packets_coherently_removed",
+      "accepted": false,
+      "error": "execution (0, 4, 0, 11) reports status AXI_WRITE_ERROR but archives no errored burst"
+    },
+    {
+      "name": "two_existing_uids_swapped_with_quota_unchanged",
+      "accepted": false,
+      "error": "transfer snapshot contract failed: transfer 1 archives a landing claiming transaction 0x12, but its ranges are the landing of transaction 0x0"
+    },
+    {
+      "name": "landing_before_own_request_but_after_overlapping_request",
+      "accepted": false,
+      "error": "transfer snapshot contract failed: transfer 1 archives a landing of transaction 0x12 at tick 257000 against a coverage stage at tick 267000"
+    },
+    {
+      "name": "completed_uid_swap",
+      "accepted": false,
+      "error": "transfer snapshot contract failed: transfer 1 archives a landing claiming transaction 0x1, but its ranges are the landing of transaction 0x0"
+    },
+    {
+      "name": "completed_before_own_aw",
+      "accepted": false,
+      "error": "transfer snapshot contract failed: transfer 1 archives a landing of transaction 0x0 at tick 95000 against a coverage stage at tick 105000"
+    },
+    {
+      "name": "completed_event_missing",
+      "accepted": false,
+      "error": "transfer snapshot contract failed: transfer 1 archives 48 landing events for 49 coverage stages"
+    },
+    {
+      "name": "completed_event_empty_ranges",
+      "accepted": false,
+      "error": "transfer snapshot contract failed: transfer 1 archives a landing of transaction 0x0 at tick 105000 with no ranges"
+    },
+    {
+      "name": "completed_event_short_range",
+      "accepted": false,
+      "error": "transfer snapshot contract failed: transfer 1 covered 2 stage bytes by tick 105000, its landing events account for 1"
+    },
+    {
+      "name": "coherent_event_stage_coverage_deletion",
+      "accepted": false,
+      "error": "partial transfer abandon failed: abandoned transfer 1 landed 96 bytes but the source moved 98"
+    },
+    {
+      "name": "coherent_event_stage_before_own_aw",
+      "accepted": false,
+      "error": "transfer snapshot contract failed: transfer 1 archives transaction 0x0 landing at 95000, before its request handshake at 95001"
+    },
+    {
+      "name": "cancelled_identity_cannot_claim_event",
+      "accepted": false,
+      "error": "transfer 1 archives a landing owned by execution 0 of descriptor 27, which the frame did not run"
+    },
+    {
+      "name": "last_landing_and_stage_after_own_B_and_retirement",
+      "accepted": false,
+      "error": "transfer snapshot contract failed: transfer 1 archives transaction 0x31 landing at 543002, after its own write response retired at 543001"
+    },
+    {
+      "name": "healthy_equivalent_multi_range",
+      "accepted": true,
+      "result": [
+        "error_drained",
+        {
+          "frames": 1,
+          "bursts": 50
+        },
+        "drained beat classification: PASS (W 50, R 0 issued)",
+        "conservation: PASS",
+        "packet traffic: PASS (5 vnets, 150 packets injected and received)",
+        "completion timing: PASS",
+        "quiescence: PASS",
+        "cancelled commands issue nothing: PASS (5 cancelled before issue, 0 cancelled after submission)",
+        "transfer snapshots: PASS (24 of 40 descriptor commits of transfer 1, 64 pending bytes, resident destination)",
+        "p2p partial abandon: PASS (transfer 1 kept 98 of 160 bytes over 49 bursts and abandoned, 0 transfers published)"
+      ]
+    },
+    {
+      "name": "healthy_equal_tick_event_stage",
+      "accepted": true,
+      "result": [
+        "error_drained",
+        {
+          "frames": 1,
+          "bursts": 50
+        },
+        "drained beat classification: PASS (W 50, R 0 issued)",
+        "conservation: PASS",
+        "packet traffic: PASS (5 vnets, 150 packets injected and received)",
+        "completion timing: PASS",
+        "quiescence: PASS",
+        "cancelled commands issue nothing: PASS (5 cancelled before issue, 0 cancelled after submission)",
+        "transfer snapshots: PASS (24 of 40 descriptor commits of transfer 1, 64 pending bytes, resident destination)",
+        "p2p partial abandon: PASS (transfer 1 kept 98 of 160 bytes over 49 bursts and abandoned, 0 transfers published)"
+      ]
+    },
+    {
+      "name": "healthy_landing_at_own_B",
+      "accepted": true,
+      "result": [
+        "error_drained",
+        {
+          "frames": 1,
+          "bursts": 50
+        },
+        "drained beat classification: PASS (W 50, R 0 issued)",
+        "conservation: PASS",
+        "packet traffic: PASS (5 vnets, 150 packets injected and received)",
+        "completion timing: PASS",
+        "quiescence: PASS",
+        "cancelled commands issue nothing: PASS (5 cancelled before issue, 0 cancelled after submission)",
+        "transfer snapshots: PASS (24 of 40 descriptor commits of transfer 1, 64 pending bytes, resident destination)",
+        "p2p partial abandon: PASS (transfer 1 kept 98 of 160 bytes over 49 bursts and abandoned, 0 transfers published)"
+      ]
+    },
+    {
+      "name": "landing_after_own_B_before_later_B",
+      "accepted": false,
+      "error": "transfer snapshot contract failed: transfer 1 archives transaction 0x0 landing at 110002, after its own write response retired at 110001"
+    },
+    {
+      "name": "zero_response_cannot_hide_retired_late_landing",
+      "accepted": false,
+      "error": "burst 1 of execution (0, 4, 0, 26) did not retire exactly once: {'instance': 1, 'core_id': 0, 'command_id': 4, 'generation': 0, 'descriptor_id': 26, 'burst_index': 1, 'ordinal': 49, 'channel': 'AW', 'axi_id': 49, 'address': 17184063616, 'beats': 1, 'beat_bytes': 32, 'useful_bytes': 2, 'logical_start': 17184063636, 'issue_tick': 528001, 'ar_aw_tick': 528001, 'response_tick': 0, 'local_commit_tick': 0, 'retire_tick': 543001, 'done_tick': 543001, 'errored': False}"
+    },
+    {
+      "name": "healthy_shared_entry_pending_B",
+      "accepted": true,
+      "result": {
+        "2": [
+          [
+            105000,
+            0,
+            [
+              [
+                17184063488,
+                2
+              ]
+            ],
+            95001
+          ],
+          [
+            106000,
+            1,
+            [
+              [
+                17184063492,
+                2
+              ]
+            ],
+            96001
+          ]
+        ],
+        "3": [
+          [
+            123000,
+            2,
+            [
+              [
+                17184063494,
+                2
+              ]
+            ],
+            113001
+          ],
+          [
+            124000,
+            3,
+            [
+              [
+                17184063498,
+                2
+              ]
+            ],
+            114001
+          ]
+        ],
+        "4": [
+          [
+            141500,
+            4,
+            [
+              [
+                17184063500,
+                2
+              ]
+            ],
+            131001
+          ],
+          [
+            142000,
+            5,
+            [
+              [
+                17184063504,
+                2
+              ]
+            ],
+            132001
+          ]
+        ],
+        "5": [
+          [
+            159000,
+            6,
+            [
+              [
+                17184063506,
+                2
+              ]
+            ],
+            149001
+          ],
+          [
+            160000,
+            7,
+            [
+              [
+                17184063510,
+                2
+              ]
+            ],
+            150001
+          ]
+        ],
+        "6": [
+          [
+            177500,
+            8,
+            [
+              [
+                17184063512,
+                2
+              ]
+            ],
+            167001
+          ],
+          [
+            178000,
+            9,
+            [
+              [
+                17184063516,
+                2
+              ]
+            ],
+            168001
+          ]
+        ],
+        "7": [
+          [
+            195000,
+            10,
+            [
+              [
+                17184063518,
+                2
+              ]
+            ],
+            185001
+          ],
+          [
+            196000,
+            11,
+            [
+              [
+                17184063522,
+                2
+              ]
+            ],
+            186001
+          ]
+        ],
+        "8": [
+          [
+            213500,
+            12,
+            [
+              [
+                17184063524,
+                2
+              ]
+            ],
+            203001
+          ],
+          [
+            214000,
+            13,
+            [
+              [
+                17184063528,
+                2
+              ]
+            ],
+            204001
+          ]
+        ],
+        "9": [
+          [
+            231000,
+            14,
+            [
+              [
+                17184063530,
+                2
+              ]
+            ],
+            221001
+          ],
+          [
+            232000,
+            15,
+            [
+              [
+                17184063534,
+                2
+              ]
+            ],
+            222001
+          ]
+        ],
+        "10": [
+          [
+            249500,
+            16,
+            [
+              [
+                17184063536,
+                2
+              ]
+            ],
+            239001
+          ],
+          [
+            250000,
+            17,
+            [
+              [
+                17184063540,
+                2
+              ]
+            ],
+            240001
+          ]
+        ],
+        "11": [
+          [
+            267000,
+            18,
+            [
+              [
+                17184063542,
+                2
+              ]
+            ],
+            257001
+          ]
+        ],
+        "12": [
+          [
+            285500,
+            20,
+            [
+              [
+                17184063548,
+                2
+              ]
+            ],
+            275001
+          ],
+          [
+            286000,
+            21,
+            [
+              [
+                17184063552,
+                2
+              ]
+            ],
+            276001
+          ]
+        ],
+        "13": [
+          [
+            303000,
+            22,
+            [
+              [
+                17184063554,
+                2
+              ]
+            ],
+            293001
+          ],
+          [
+            304000,
+            23,
+            [
+              [
+                17184063558,
+                2
+              ]
+            ],
+            294001
+          ]
+        ],
+        "14": [
+          [
+            321500,
+            24,
+            [
+              [
+                17184063560,
+                2
+              ]
+            ],
+            311001
+          ],
+          [
+            322000,
+            25,
+            [
+              [
+                17184063564,
+                2
+              ]
+            ],
+            312001
+          ]
+        ],
+        "15": [
+          [
+            339000,
+            26,
+            [
+              [
+                17184063566,
+                2
+              ]
+            ],
+            329001
+          ],
+          [
+            340000,
+            27,
+            [
+              [
+                17184063570,
+                2
+              ]
+            ],
+            330001
+          ]
+        ],
+        "16": [
+          [
+            357500,
+            28,
+            [
+              [
+                17184063572,
+                2
+              ]
+            ],
+            347001
+          ],
+          [
+            358000,
+            29,
+            [
+              [
+                17184063576,
+                2
+              ]
+            ],
+            348001
+          ]
+        ],
+        "17": [
+          [
+            375000,
+            30,
+            [
+              [
+                17184063578,
+                2
+              ]
+            ],
+            365001
+          ],
+          [
+            376000,
+            31,
+            [
+              [
+                17184063582,
+                2
+              ]
+            ],
+            366001
+          ]
+        ],
+        "18": [
+          [
+            393500,
+            32,
+            [
+              [
+                17184063584,
+                2
+              ]
+            ],
+            383001
+          ],
+          [
+            394000,
+            33,
+            [
+              [
+                17184063588,
+                2
+              ]
+            ],
+            384001
+          ]
+        ],
+        "19": [
+          [
+            411000,
+            34,
+            [
+              [
+                17184063590,
+                2
+              ]
+            ],
+            401001
+          ],
+          [
+            412000,
+            35,
+            [
+              [
+                17184063594,
+                2
+              ]
+            ],
+            402001
+          ]
+        ],
+        "20": [
+          [
+            429500,
+            36,
+            [
+              [
+                17184063596,
+                2
+              ]
+            ],
+            419001
+          ],
+          [
+            430000,
+            37,
+            [
+              [
+                17184063600,
+                2
+              ]
+            ],
+            420001
+          ]
+        ],
+        "21": [
+          [
+            447000,
+            38,
+            [
+              [
+                17184063602,
+                2
+              ]
+            ],
+            437001
+          ],
+          [
+            448000,
+            39,
+            [
+              [
+                17184063606,
+                2
+              ]
+            ],
+            438001
+          ]
+        ],
+        "22": [
+          [
+            465500,
+            40,
+            [
+              [
+                17184063608,
+                2
+              ]
+            ],
+            455001
+          ],
+          [
+            466000,
+            41,
+            [
+              [
+                17184063612,
+                2
+              ]
+            ],
+            456001
+          ]
+        ],
+        "23": [
+          [
+            483000,
+            42,
+            [
+              [
+                17184063614,
+                2
+              ]
+            ],
+            473001
+          ],
+          [
+            484000,
+            43,
+            [
+              [
+                17184063618,
+                2
+              ]
+            ],
+            474001
+          ]
+        ],
+        "24": [
+          [
+            501500,
+            44,
+            [
+              [
+                17184063620,
+                2
+              ]
+            ],
+            491001
+          ],
+          [
+            502000,
+            45,
+            [
+              [
+                17184063624,
+                2
+              ]
+            ],
+            492001
+          ]
+        ],
+        "25": [
+          [
+            519000,
+            46,
+            [
+              [
+                17184063626,
+                2
+              ]
+            ],
+            509001
+          ],
+          [
+            520000,
+            47,
+            [
+              [
+                17184063630,
+                2
+              ]
+            ],
+            510001
+          ]
+        ],
+        "26": [
+          [
+            537500,
+            48,
+            [
+              [
+                17184063632,
+                2
+              ]
+            ],
+            527001
+          ],
+          [
+            538000,
+            49,
+            [
+              [
+                17184063636,
+                2
+              ]
+            ],
+            528001
+          ]
+        ]
+      }
+    }
+  ],
+  "early_B": {
+    "original": {
+      "instance": 1,
+      "core_id": 0,
+      "command_id": 5,
+      "generation": 0,
+      "descriptor_id": 3,
+      "burst_index": 0,
+      "ordinal": 32,
+      "channel": "AW",
+      "axi_id": 0,
+      "address": 34362884096,
+      "beats": 16,
+      "beat_bytes": 32,
+      "useful_bytes": 512,
+      "logical_start": 34362884096,
+      "issue_tick": 1415501,
+      "ar_aw_tick": 1416001,
+      "response_tick": 1459501,
+      "local_commit_tick": 0,
+      "retire_tick": 1459501,
+      "done_tick": 1854501,
+      "errored": false
+    }
+  },
+  "zero_uid": {
+    "transaction_uids": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49
+    ],
+    "zero_registered": true
+  },
+  "backdated_landing": {
+    "descriptor": 11,
+    "snapshot_tick": 111001,
+    "original_events": [
+      {
+        "tick": 267000,
+        "txn_uid": 18,
+        "ranges": [
+          {
+            "address": 17184063542,
+            "size": 2
+          }
+        ]
+      }
+    ],
+    "first_AW": 257001
+  },
+  "C1_generalized": {
+    "removed": {
+      "instance": 1,
+      "core_id": 0,
+      "command_id": 4,
+      "generation": 0,
+      "descriptor_id": 11,
+      "burst_index": 1,
+      "ordinal": 19,
+      "channel": "AW",
+      "axi_id": 19,
+      "address": 17184063520,
+      "beats": 1,
+      "beat_bytes": 32,
+      "useful_bytes": 2,
+      "logical_start": 17184063546,
+      "issue_tick": 258001,
+      "ar_aw_tick": 258001,
+      "response_tick": 273001,
+      "local_commit_tick": 0,
+      "retire_tick": 273001,
+      "done_tick": 273001,
+      "errored": true
+    },
+    "w_accepted_unchanged": 50,
+    "b_error_count_unchanged": 1,
+    "chain": "all registered p2p_prefilled_incomplete invariants; reconciliation via shared entry with archived admitted oracle"
+  },
+  "pfi_registered_checks": [
+    "burst_attribution",
+    "cancelled_commands_issue_nothing",
+    "completion_timing",
+    "conservation",
+    "p2p_partial_abandon",
+    "packet_traffic",
+    "quiescence",
+    "reconciliation",
+    "transfer_snapshots"
+  ],
+  "uid_permutation": {
+    "before": [
+      {
+        "tick": 267000,
+        "txn_uid": 18,
+        "ranges": [
+          {
+            "address": 17184063542,
+            "size": 2
+          }
+        ]
+      },
+      {
+        "tick": 105000,
+        "txn_uid": 0,
+        "ranges": [
+          {
+            "address": 17184063488,
+            "size": 2
+          }
+        ]
+      }
+    ]
+  },
+  "matching_request_backdate": {
+    "event": {
+      "tick": 267000,
+      "txn_uid": 18,
+      "ranges": [
+        {
+          "address": 17184063542,
+          "size": 2
+        }
+      ]
+    },
+    "matching_burst": {
+      "instance": 1,
+      "core_id": 0,
+      "command_id": 4,
+      "generation": 0,
+      "descriptor_id": 11,
+      "burst_index": 0,
+      "ordinal": 18,
+      "channel": "AW",
+      "axi_id": 18,
+      "address": 17184063520,
+      "beats": 1,
+      "beat_bytes": 32,
+      "useful_bytes": 2,
+      "logical_start": 17184063542,
+      "issue_tick": 256501,
+      "ar_aw_tick": 257001,
+      "response_tick": 272001,
+      "local_commit_tick": 0,
+      "retire_tick": 272001,
+      "done_tick": 273001,
+      "errored": false
+    },
+    "canonical_uid": 18,
+    "address_covering_candidates": [
+      {
+        "instance": 1,
+        "core_id": 0,
+        "command_id": 4,
+        "generation": 0,
+        "descriptor_id": 7,
+        "burst_index": 1,
+        "ordinal": 11,
+        "channel": "AW",
+        "axi_id": 11,
+        "address": 17184063520,
+        "beats": 1,
+        "beat_bytes": 32,
+        "useful_bytes": 2,
+        "logical_start": 17184063522,
+        "issue_tick": 186001,
+        "ar_aw_tick": 186001,
+        "response_tick": 201001,
+        "local_commit_tick": 0,
+        "retire_tick": 201001,
+        "done_tick": 201001,
+        "errored": false
+      },
+      {
+        "instance": 1,
+        "core_id": 0,
+        "command_id": 4,
+        "generation": 0,
+        "descriptor_id": 8,
+        "burst_index": 0,
+        "ordinal": 12,
+        "channel": "AW",
+        "axi_id": 12,
+        "address": 17184063520,
+        "beats": 1,
+        "beat_bytes": 32,
+        "useful_bytes": 2,
+        "logical_start": 17184063524,
+        "issue_tick": 202501,
+        "ar_aw_tick": 203001,
+        "response_tick": 218501,
+        "local_commit_tick": 0,
+        "retire_tick": 218501,
+        "done_tick": 219001,
+        "errored": false
+      },
+      {
+        "instance": 1,
+        "core_id": 0,
+        "command_id": 4,
+        "generation": 0,
+        "descriptor_id": 8,
+        "burst_index": 1,
+        "ordinal": 13,
+        "channel": "AW",
+        "axi_id": 13,
+        "address": 17184063520,
+        "beats": 1,
+        "beat_bytes": 32,
+        "useful_bytes": 2,
+        "logical_start": 17184063528,
+        "issue_tick": 204001,
+        "ar_aw_tick": 204001,
+        "response_tick": 219001,
+        "local_commit_tick": 0,
+        "retire_tick": 219001,
+        "done_tick": 219001,
+        "errored": false
+      },
+      {
+        "instance": 1,
+        "core_id": 0,
+        "command_id": 4,
+        "generation": 0,
+        "descriptor_id": 9,
+        "burst_index": 0,
+        "ordinal": 14,
+        "channel": "AW",
+        "axi_id": 14,
+        "address": 17184063520,
+        "beats": 1,
+        "beat_bytes": 32,
+        "useful_bytes": 2,
+        "logical_start": 17184063530,
+        "issue_tick": 220501,
+        "ar_aw_tick": 221001,
+        "response_tick": 236001,
+        "local_commit_tick": 0,
+        "retire_tick": 236001,
+        "done_tick": 237001,
+        "errored": false
+      },
+      {
+        "instance": 1,
+        "core_id": 0,
+        "command_id": 4,
+        "generation": 0,
+        "descriptor_id": 9,
+        "burst_index": 1,
+        "ordinal": 15,
+        "channel": "AW",
+        "axi_id": 15,
+        "address": 17184063520,
+        "beats": 1,
+        "beat_bytes": 32,
+        "useful_bytes": 2,
+        "logical_start": 17184063534,
+        "issue_tick": 222001,
+        "ar_aw_tick": 222001,
+        "response_tick": 237001,
+        "local_commit_tick": 0,
+        "retire_tick": 237001,
+        "done_tick": 237001,
+        "errored": false
+      },
+      {
+        "instance": 1,
+        "core_id": 0,
+        "command_id": 4,
+        "generation": 0,
+        "descriptor_id": 10,
+        "burst_index": 0,
+        "ordinal": 16,
+        "channel": "AW",
+        "axi_id": 16,
+        "address": 17184063520,
+        "beats": 1,
+        "beat_bytes": 32,
+        "useful_bytes": 2,
+        "logical_start": 17184063536,
+        "issue_tick": 238501,
+        "ar_aw_tick": 239001,
+        "response_tick": 254501,
+        "local_commit_tick": 0,
+        "retire_tick": 254501,
+        "done_tick": 255001,
+        "errored": false
+      },
+      {
+        "instance": 1,
+        "core_id": 0,
+        "command_id": 4,
+        "generation": 0,
+        "descriptor_id": 10,
+        "burst_index": 1,
+        "ordinal": 17,
+        "channel": "AW",
+        "axi_id": 17,
+        "address": 17184063520,
+        "beats": 1,
+        "beat_bytes": 32,
+        "useful_bytes": 2,
+        "logical_start": 17184063540,
+        "issue_tick": 240001,
+        "ar_aw_tick": 240001,
+        "response_tick": 255001,
+        "local_commit_tick": 0,
+        "retire_tick": 255001,
+        "done_tick": 255001,
+        "errored": false
+      },
+      {
+        "instance": 1,
+        "core_id": 0,
+        "command_id": 4,
+        "generation": 0,
+        "descriptor_id": 11,
+        "burst_index": 0,
+        "ordinal": 18,
+        "channel": "AW",
+        "axi_id": 18,
+        "address": 17184063520,
+        "beats": 1,
+        "beat_bytes": 32,
+        "useful_bytes": 2,
+        "logical_start": 17184063542,
+        "issue_tick": 256501,
+        "ar_aw_tick": 257001,
+        "response_tick": 272001,
+        "local_commit_tick": 0,
+        "retire_tick": 272001,
+        "done_tick": 273001,
+        "errored": false
+      },
+      {
+        "instance": 1,
+        "core_id": 0,
+        "command_id": 4,
+        "generation": 0,
+        "descriptor_id": 11,
+        "burst_index": 1,
+        "ordinal": 19,
+        "channel": "AW",
+        "axi_id": 19,
+        "address": 17184063520,
+        "beats": 1,
+        "beat_bytes": 32,
+        "useful_bytes": 2,
+        "logical_start": 17184063546,
+        "issue_tick": 258001,
+        "ar_aw_tick": 258001,
+        "response_tick": 273001,
+        "local_commit_tick": 0,
+        "retire_tick": 273001,
+        "done_tick": 273001,
+        "errored": true
+      },
+      {
+        "instance": 1,
+        "core_id": 0,
+        "command_id": 4,
+        "generation": 0,
+        "descriptor_id": 12,
+        "burst_index": 0,
+        "ordinal": 20,
+        "channel": "AW",
+        "axi_id": 20,
+        "address": 17184063520,
+        "beats": 1,
+        "beat_bytes": 32,
+        "useful_bytes": 2,
+        "logical_start": 17184063548,
+        "issue_tick": 274501,
+        "ar_aw_tick": 275001,
+        "response_tick": 290501,
+        "local_commit_tick": 0,
+        "retire_tick": 290501,
+        "done_tick": 291001,
+        "errored": false
+      }
+    ]
+  },
+  "verdict": "PROBES_PASS",
+  "completed_uid_swap": {
+    "before": [
+      {
+        "tick": 105000,
+        "txn_uid": 0,
+        "ranges": [
+          {
+            "address": 17184063488,
+            "size": 2
+          }
+        ]
+      },
+      {
+        "tick": 106000,
+        "txn_uid": 1,
+        "ranges": [
+          {
+            "address": 17184063492,
+            "size": 2
+          }
+        ]
+      }
+    ],
+    "after": [
+      {
+        "tick": 105000,
+        "txn_uid": 1,
+        "ranges": [
+          {
+            "address": 17184063488,
+            "size": 2
+          }
+        ]
+      },
+      {
+        "tick": 106000,
+        "txn_uid": 0,
+        "ranges": [
+          {
+            "address": 17184063492,
+            "size": 2
+          }
+        ]
+      }
+    ]
+  },
+  "completed_before_own_aw": {
+    "before": [
+      {
+        "tick": 105000,
+        "txn_uid": 0,
+        "ranges": [
+          {
+            "address": 17184063488,
+            "size": 2
+          }
+        ]
+      },
+      {
+        "tick": 106000,
+        "txn_uid": 1,
+        "ranges": [
+          {
+            "address": 17184063492,
+            "size": 2
+          }
+        ]
+      }
+    ],
+    "owner_fact": {
+      "uid": 0,
+      "direction": "write",
+      "kind": 3,
+      "address": 17179869184,
+      "beats": 1,
+      "useful_bytes": 2,
+      "command_id": 4,
+      "descriptor_id": 2,
+      "burst_index": 0,
+      "execution": 0,
+      "instance": 1
+    },
+    "burst": {
+      "instance": 1,
+      "core_id": 0,
+      "command_id": 4,
+      "generation": 0,
+      "descriptor_id": 2,
+      "burst_index": 0,
+      "ordinal": 0,
+      "channel": "AW",
+      "axi_id": 0,
+      "address": 17184063488,
+      "beats": 1,
+      "beat_bytes": 32,
+      "useful_bytes": 2,
+      "logical_start": 17184063488,
+      "issue_tick": 94501,
+      "ar_aw_tick": 95001,
+      "response_tick": 110001,
+      "local_commit_tick": 0,
+      "retire_tick": 110001,
+      "done_tick": 111001,
+      "errored": false
+    },
+    "execution": {
+      "command_id": 4,
+      "generation": 0,
+      "descriptor_id": 2,
+      "submit_tick": 92500,
+      "scheduled": true,
+      "scheduled_completion_tick": 93500,
+      "completed": true,
+      "completion_tick": 111001,
+      "committed": true,
+      "commit_tick": 96000,
+      "status": "OK",
+      "fault_target_before_digest": null,
+      "fault_target_after_digest": null,
+      "landing_digest": null,
+      "destination_storage": null,
+      "source_rows": [
+        {
+          "address": 17179869696,
+          "size": 2,
+          "digest": "c55cabe798eab3be107238aad42c4749ee93cc6d47c6a4b486827670d7c9eb3a",
+          "bytes_hex": "ff67"
+        },
+        {
+          "address": 17179869698,
+          "size": 2,
+          "digest": "7f74b98a716fc8c3bc0e87be7a59c8328fa82b1094a188485c84224761873778",
+          "bytes_hex": "7ba7"
+        }
+      ],
+      "sentinel_ranges": [],
+      "transfer": {
+        "read_bytes": 0,
+        "write_bytes": 0,
+        "p2p_bytes": 4,
+        "fill_bytes": 0,
+        "read_bursts": 0,
+        "write_bursts": 0,
+        "p2p_bursts": 2,
+        "payload_digest": "fe277662a1f66075-7ca6a9fd57ab84a1"
+      }
+    },
+    "after": [
+      {
+        "tick": 95000,
+        "txn_uid": 0,
+        "ranges": [
+          {
+            "address": 17184063488,
+            "size": 2
+          }
+        ]
+      },
+      {
+        "tick": 106000,
+        "txn_uid": 1,
+        "ranges": [
+          {
+            "address": 17184063492,
+            "size": 2
+          }
+        ]
+      }
+    ]
+  },
+  "m19_completed_event_missing": {
+    "before": {
+      "tick": 105000,
+      "txn_uid": 0,
+      "ranges": [
+        {
+          "address": 17184063488,
+          "size": 2
+        }
+      ]
+    }
+  },
+  "unexecuted_identity": {
+    "uid": 50,
+    "descriptor_id": 27,
+    "execution": 0,
+    "burst_index": 0,
+    "address": 17184063638,
+    "useful_bytes": 2
+  },
+  "late_landing": {
+    "before": {
+      "tick": 538000,
+      "txn_uid": 49,
+      "ranges": [
+        {
+          "address": 17184063636,
+          "size": 2
+        }
+      ]
+    },
+    "owner": {
+      "uid": 49,
+      "descriptor_id": 26,
+      "execution": 0,
+      "burst_index": 1,
+      "address": 17184063636,
+      "useful_bytes": 2
+    },
+    "burst": {
+      "instance": 1,
+      "core_id": 0,
+      "command_id": 4,
+      "generation": 0,
+      "descriptor_id": 26,
+      "burst_index": 1,
+      "ordinal": 49,
+      "channel": "AW",
+      "axi_id": 49,
+      "address": 17184063616,
+      "beats": 1,
+      "beat_bytes": 32,
+      "useful_bytes": 2,
+      "logical_start": 17184063636,
+      "issue_tick": 528001,
+      "ar_aw_tick": 528001,
+      "response_tick": 543001,
+      "local_commit_tick": 0,
+      "retire_tick": 543001,
+      "done_tick": 543001,
+      "errored": false
+    },
+    "execution": {
+      "command_id": 4,
+      "generation": 0,
+      "descriptor_id": 26,
+      "submit_tick": 255500,
+      "scheduled": true,
+      "scheduled_completion_tick": 256500,
+      "completed": true,
+      "completion_tick": 543001,
+      "committed": true,
+      "commit_tick": 528000,
+      "status": "OK",
+      "fault_target_before_digest": null,
+      "fault_target_after_digest": null,
+      "landing_digest": null,
+      "destination_storage": null,
+      "source_rows": [
+        {
+          "address": 17179869792,
+          "size": 2,
+          "digest": "9e8cf38dd3319d5e430575bc23362ae520fa6206e1d7c172ef81cc41c063d451",
+          "bytes_hex": "a93c"
+        },
+        {
+          "address": 17179869794,
+          "size": 2,
+          "digest": "727ae257587815610453dd71e8ddf4a2b5fe0280ccadb0efc08c99f26b094087",
+          "bytes_hex": "9d58"
+        }
+      ],
+      "sentinel_ranges": [],
+      "transfer": {
+        "read_bytes": 0,
+        "write_bytes": 0,
+        "p2p_bytes": 4,
+        "fill_bytes": 0,
+        "read_bursts": 0,
+        "write_bursts": 0,
+        "p2p_bursts": 2,
+        "payload_digest": "44ee5fda14249a35-bbcb01cc2f0112f5"
+      }
+    },
+    "after": {
+      "tick": 543002,
+      "txn_uid": 49,
+      "ranges": [
+        {
+          "address": 17184063636,
+          "size": 2
+        }
+      ]
+    }
+  },
+  "healthy_landing_at_own_B": {
+    "uid": 49,
+    "own_B_before": 543001,
+    "event_tick": 543001
+  },
+  "landing_after_own_B_before_later_B": {
+    "uid": 0,
+    "own_B_before": 110001,
+    "event_tick": 110002
+  },
+  "zero_response_cannot_hide_retired_late_landing": {
+    "uid": 49,
+    "own_B_before": 543001,
+    "event_tick": 543002
+  },
+  "pending_B_scope": "Isolated shared-entry contract for unset response/retirement ticks; not an admitted full watchdog result or a new gem5 run."
+}

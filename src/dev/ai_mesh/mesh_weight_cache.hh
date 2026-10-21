@@ -4,13 +4,16 @@
 #include <algorithm>
 #include <array>
 #include <map>
+#include <optional>
 #include <set>
 #include <utility>
 #include <vector>
 #include <cstdint>
+#include "base/checkpoint_fields.hh"
 #include <string>
 
 #include "dev/ai_mesh/generated/mesh_ir_abi.hh"
+#include "dev/ai_mesh/mesh_error_candidate.hh"
 
 namespace gem5
 {
@@ -35,14 +38,11 @@ cacheDmaDescriptorKeyBytes(const mesh_abi::WeightFillKey &key,
 
 std::string weightFillTrafficId(const mesh_abi::WeightFillKey &key);
 
-std::array<uint8_t, mesh_abi::kErrorSourceKeysBytes>
-errorSourceKeyBytes(const mesh_abi::ErrorSourceKey &key);
-
 mesh_abi::ErrorSourceKey weightFillSource(const mesh_abi::WeightFillKey &key);
 
 // Failure sites map to the frozen detail-code closure (contract 8.7.5); the
 // table lives in one place so a tombstone reader cannot invent a code.
-const char *weightFillFailureDetail(uint16_t site);
+std::optional<agent_abi::DetailCode> weightFillFailureDetail(uint16_t site);
 
 // Runtime-only slot states (the replay artifact only carries INVALID/VALID).
 enum MoeCacheSlotState : uint32_t
@@ -57,6 +57,7 @@ enum MoeCacheSlotState : uint32_t
 
 struct MoeCacheSlot
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     uint32_t slot_id = 0;
     uint32_t state = kCacheSlotFree;
     uint32_t weight_tag_index = 0;
@@ -84,16 +85,15 @@ struct MoeCacheObligation
     uint64_t eligible_engine_edge = 0;
     bool consumed_eviction = false;
     bool completed = false;
+    bool descriptor_drained = false;
     std::map<std::pair<uint64_t, uint32_t>, MoeCacheSubscriber> subscribers;
-    bool has_first_error = false;
     uint64_t drained_bytes = 0;
-    uint64_t first_error_tick = 0;
-    mesh_abi::ErrorSourceKey first_error_source;
-    std::string first_error_code;
+    std::optional<ErrorCandidate> first_error;
 };
 
 struct MoeCacheToken
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     uint64_t token_id = 0;
     uint64_t batch_id = 0;
     mesh_abi::WeightCacheBaseKey base;
@@ -118,6 +118,7 @@ struct MoeCacheToken
 // happened, in either order; a prestart abort needs the fanout only.
 struct MoeBatchFault
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     bool started = true;
     bool fanout_done = false;
     bool owned_drained = false;
@@ -186,6 +187,40 @@ class MoeWeightCache
 
     explicit MoeWeightCache(const Config &config);
 
+    struct ReplaySlot
+    {
+        std::optional<uint32_t> weight_tag_index;
+        uint64_t valid_bytes = 0;
+        std::optional<uint32_t> lru_rank;
+    };
+
+    struct ReplayState
+    {
+        uint16_t core_id = 0;
+        uint32_t cache_generation = 0;
+        uint32_t next_fill_incarnation = 1;
+        std::vector<ReplaySlot> slots;
+        std::map<uint32_t, ErrorCandidate> failure_tombstones;
+    };
+
+    bool quiescent() const;
+    template<class Archive> void serialize(Archive &archive, unsigned)
+    {
+        if (!quiescent())
+            throw std::runtime_error("E_CHECKPOINT_BOUNDARY: weight cache is active");
+        checkpoint::fields(archive, slots_value, tokens_value, failure_records,
+            fill_log, cancelled_members, batch_faults, next_token_id,
+            next_use_epoch, next_fill_incarnation, cache_generation,
+            cache_edge, commit_epoch, engine_edge, tokens_created, token_releases,
+            tombstones_marked, woken_marked, faulted_fill_terminals,
+            mshr_free, eviction_free, obligation_free, subscriber_free);
+        if (!quiescent())
+            throw std::runtime_error("E_CHECKPOINT_STATE: weight cache is not drained");
+    }
+
+    std::optional<ReplayState> replayState(std::string &reason) const;
+    bool installReplay(const ReplayState &state, std::string &reason);
+
     ReservePlan prepare(uint64_t batch_id,
                         const std::vector<LayerTags> &demand,
                         uint64_t tick) const;
@@ -207,7 +242,8 @@ class MoeWeightCache
                          uint64_t valid_bytes, uint64_t completion_tick);
     void noteFillFailure(const mesh_abi::WeightFillKey &key, uint16_t site,
                          uint64_t tick,
-                         const mesh_abi::ErrorSourceKey &source);
+                         const mesh_abi::ErrorSourceKey &source, bool descriptor_drained);
+    void noteFillDrained(const mesh_abi::WeightFillKey &key);
     void cancelMember(uint64_t batch_id);
     void abortBeforeStart(uint64_t batch_id);
     void noteInstanceFault(uint64_t batch_id, uint64_t tick);
@@ -259,6 +295,7 @@ class MoeWeightCache
     uint32_t cacheGeneration() const { return cache_generation; }
     struct FillLogEntry
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         mesh_abi::WeightFillKey key;
         uint32_t slot_id = 0;
         uint64_t address = 0;
@@ -271,11 +308,11 @@ class MoeWeightCache
     // True while any reservation subscriber is still WAITING for its fill, so
     // the cached policy can hold the overlay release until every weight line
     // is resident (contract 8.7.3).
-    bool hasPendingSubscribers() const
+    bool hasPendingSubscribers(std::optional<uint64_t> batch = std::nullopt) const
     {
         for (const auto &entry : obligations_value)
             for (const auto &subscriber : entry.second.subscribers)
-                if (subscriber.second.state ==
+                if ((!batch || subscriber.first.first == *batch) && subscriber.second.state ==
                     mesh_abi::kCacheSubscriberStateWAITING)
                     return true;
         return false;
@@ -345,9 +382,10 @@ class MoeWeightCache
                 valid++;
         return valid;
     }
+    std::optional<ErrorCandidate> failure(uint32_t tag) const;
     uint32_t tombstoneCount() const
     {
-        return uint32_t(failure_detail.size());
+        return uint32_t(failure_records.size());
     }
     // Exactly-once lifecycle observability: every token is released once, and
     // a faulted batch's subscribers are tombstoned instead of woken.
@@ -362,6 +400,8 @@ class MoeWeightCache
     std::string snapshotJson() const;
 
   private:
+    bool validateReplay(const ReplayState &state, std::string &reason) const;
+    MoeCacheObligation &obligationFor(const mesh_abi::WeightFillKey &key);
     uint32_t tagOf(const mesh_abi::WeightCacheBaseKey &key) const
     {
         return key.weight_tag_index;
@@ -381,16 +421,14 @@ class MoeWeightCache
     void releaseFaultedBatches();
     bool releaseTokenIfOwned(uint64_t token_id);
     bool fillTerminal(const MoeCacheToken &token) const;
-    bool subscriberTombstoned(const MoeCacheToken &token) const;
 
     Config config;
     std::vector<MoeCacheSlot> slots_value;
     std::map<uint32_t, MoeCacheObligation> obligations_value;
     std::map<uint64_t, MoeCacheToken> tokens_value;
-    std::map<uint32_t, std::string> failure_detail;
+    std::map<uint32_t, ErrorCandidate> failure_records;
     std::vector<FillLogEntry> fill_log;
     std::set<uint32_t> cacheable_tags;
-    std::set<uint32_t> tombstoned_tags;
     std::set<uint64_t> cancelled_members;
     std::map<uint64_t, MoeBatchFault> batch_faults;
     uint64_t next_token_id = 1;

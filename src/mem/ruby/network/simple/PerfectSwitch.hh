@@ -48,6 +48,8 @@
 #ifndef __MEM_RUBY_NETWORK_SIMPLE_PERFECTSWITCH_HH__
 #define __MEM_RUBY_NETWORK_SIMPLE_PERFECTSWITCH_HH__
 
+#include "base/checkpoint_fields.hh"
+
 #include <iostream>
 #include <string>
 #include <vector>
@@ -63,20 +65,25 @@ namespace ruby
 
 class MessageBuffer;
 class NetDest;
-class SimpleNetwork;
+struct SimpleNetworkConfig;
 class Switch;
 
 class PerfectSwitch : public Consumer
 {
   public:
+    template<class Archive> void serialize(Archive &archive, unsigned)
+    {
+        Consumer::checkpoint(archive);
+        checkpoint::fields(archive, m_wakeups_wo_switch, m_pending_message_count);
+    }
     PerfectSwitch(SwitchID sid, Switch *, uint32_t);
     ~PerfectSwitch();
 
     std::string name()
     { return csprintf("PerfectSwitch-%i", m_switch_id); }
 
-    void init(SimpleNetwork *);
-    void addInPort(const std::vector<MessageBuffer*>& in);
+    void init(const SimpleNetworkConfig *);
+    void addInPort(const std::vector<MessageBuffer*>& in, bool connect = true);
     void addOutPort(const std::vector<MessageBuffer*>& out,
                     const NetDest& routing_table_entry,
                     const PortDirection &dst_inport,
@@ -125,7 +132,7 @@ class PerfectSwitch : public Consumer
     uint32_t m_virtual_networks;
     int m_wakeups_wo_switch;
 
-    SimpleNetwork* m_network_ptr;
+    const SimpleNetworkConfig* m_network_ptr;
     std::vector<int> m_pending_message_count;
 
     MessageBuffer* inBuffer(int in_port, int vnet) const;

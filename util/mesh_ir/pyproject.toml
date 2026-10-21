@@ -1,8 +1,49 @@
+[build-system]
+requires = ["hatchling>=1.27,<2", "hatch-vcs>=0.5,<1"]
+build-backend = "hatchling.build"
+
 [project]
 name = "mesh-ir"
 version = "0.1.0"
 description = "Scheduled Mesh IR ABI toolchain (.mshb encoder/decoder/verifier, builder, traffic oracle)"
-requires-python = ">=3.8"
+dynamic = ["urls"]
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "jsonschema>=4.23,<5",
+    "PyYAML>=6.0.2,<7",
+    "referencing==0.37.0",
+    "rustworkx==0.18.1",
+]
+
+[project.optional-dependencies]
+compiler = [
+    "sympy==1.14.0",
+    "torch==2.8.0+cpu",
+]
+dev = [
+    "build>=1.2.2,<2",
+    "hatch-vcs>=0.5,<1",
+    "hatchling>=1.27,<2",
+    "networkx==3.6.1",
+    "pytest>=8.3,<10",
+    "uv>=0.12.11,<0.13",
+    "wheel>=0.45,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["mesh_ir"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"requirements-lock.txt" = "mesh_ir/requirements-lock.txt"
+
+[tool.hatch.build.targets.sdist]
+include = ["/mesh_ir", "/requirements-lock.txt", "/pyproject.toml"]
+
+[tool.hatch.build.targets.sdist.force-include]
+"requirements-lock.txt" = "requirements-lock.txt"
+
+[tool.hatch.metadata.hooks.vcs.urls]
+"Compiler Source" = "https://github.com/makenma/XS-DSU-GEM5/tree/{commit_hash}"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -36,6 +36,7 @@
 #include "base/logging.hh"
 #include "debug/RubyNetwork.hh"
 #include "mem/ruby/network/garnet/Credit.hh"
+#include "mem/ruby/network/garnet/GarnetNetwork.hh"
 #include "mem/ruby/network/garnet/CreditLink.hh"
 #include "mem/ruby/network/garnet/Router.hh"
 #include "mem/ruby/network/garnet/flitBuffer.hh"
@@ -187,10 +188,15 @@ OutputUnit::wakeup()
 {
     if (m_credit_link->isReady(curTick())) {
         Credit *t_credit = (Credit*) m_credit_link->consumeLink();
-        increment_credit(t_credit->get_vc());
+        GarnetNetwork *network = m_router->get_net_ptr();
+        const bool dropped =
+            network != nullptr && network->consumeCreditDropFault();
+        if (!dropped) {
+            increment_credit(t_credit->get_vc());
 
-        if (t_credit->is_free_signal())
-            set_vc_state(IDLE_, t_credit->get_vc(), curTick());
+            if (t_credit->is_free_signal())
+                set_vc_state(IDLE_, t_credit->get_vc(), curTick());
+        }
 
         delete t_credit;
 

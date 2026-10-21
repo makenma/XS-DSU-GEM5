@@ -1,0 +1,15 @@
+schema_version: mesh-compile-v1
+entrypoints: [forward]
+shape_profiles:
+  forward:
+    - {profile_id: b2s8, batch: 2, sequence: 8}
+    - {profile_id: b4s8, batch: 4, sequence: 8}
+symbol_bindings:
+  forward:
+    batch: {input: value, axis: 0}
+    sequence: {input: value, axis: 1}
+parallelism: {tensor_parallel: 1, pipeline_parallel: 1, expert_parallel: 1, data_parallel: 1}
+placement: {core_order: row_major_yx, allowed_cores: [7, 2, 9, 13], reserve_cores: []}
+tiling: {gemm_m: 3, gemm_n: 5, gemm_k: 7, double_buffer: true}
+collectives: {all_reduce_algorithm: tree, chunk_bytes: 28}
+runtime_model: {mode: FULL_TIMING, tensor_data: DIGEST_ONLY}

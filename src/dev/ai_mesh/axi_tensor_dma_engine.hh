@@ -2,12 +2,17 @@
 #define DEV_AI_MESH_AXI_TENSOR_DMA_ENGINE_HH
 
 #include <cstdint>
+#include "base/checkpoint_fields.hh"
 #include <deque>
 #include <map>
 #include <optional>
+#include <set>
 #include <vector>
 
 #include "dev/ai_mesh/dma_types.hh"
+#include "dev/ai_mesh/gather_index.hh"
+#include "dev/ai_mesh/burst_attribution.hh"
+#include "dev/ai_mesh/mesh_runtime_observations.hh"
 #include "dev/ai_mesh/mesh_splitter.hh"
 #include "mem/axi/axi_types.hh"
 #include "sim/clocked_object.hh"
@@ -42,6 +47,11 @@ class AxiTensorDmaEngine : public DmaEngineBase
     ~AxiTensorDmaEngine() override;
 
     void startup() override;
+    void serialize(CheckpointOut &cp) const override;
+    void unserialize(CheckpointIn &cp) override;
+    void drainResume() override;
+    template<class Archive> void serialize(Archive &archive, unsigned);
+
     void regStats() override;
 
     void bindInstance(const ServingInstanceBinding &value) override
@@ -59,6 +69,7 @@ class AxiTensorDmaEngine : public DmaEngineBase
     void releaseFillBindings(InstanceGeneration instance) override;
     bool idle() const override;
     void bindOwner(MeshDummyCore *core, const RuntimeArch *arch) override;
+    void beginInstance() override;
     const std::map<RuntimeObjectKey, ActualTraffic> &
     actualTraffic() const override
     {
@@ -69,6 +80,9 @@ class AxiTensorDmaEngine : public DmaEngineBase
         return read_queue.size() + write_queue.size();
     }
 
+    bool readFunctional(uint64_t address, uint64_t size,
+                        uint8_t *out) override;
+
     void onReadBeat(uint64_t burst_ordinal, uint16_t beat_index, bool last,
                     axi::AxiResp resp, const uint8_t *data);
     void onWriteDone(uint64_t burst_ordinal, axi::AxiResp resp);
@@ -76,9 +90,12 @@ class AxiTensorDmaEngine : public DmaEngineBase
 
     // Completion-point timing exported for the acceptance assertions:
     // first AXI issue/response ticks, last R beat tick, local SRAM commit
-    // tick and descriptor terminal tick per descriptor (last instance wins).
+    // tick and descriptor terminal tick.  One log entry per real
+    // completion, so every program instance keeps its own facts.
     struct DescriptorTiming
     {
+        GEM5_CHECKPOINT_AGGREGATE()
+        Tick first_error_tick = 0;
         Tick first_ar_tick = 0;
         Tick first_aw_tick = 0;
         Tick first_w_tick = 0;
@@ -87,14 +104,32 @@ class AxiTensorDmaEngine : public DmaEngineBase
         Tick local_commit_tick = 0;
         Tick done_tick = 0;
     };
+    struct DescriptorTimingEntry
+    {
+        GEM5_CHECKPOINT_AGGREGATE()
+        RuntimeObjectKey descriptor;
+        CommandGeneration command;
+        uint16_t dma_kind = 0;
+        DescriptorTiming timing;
+    };
     const std::map<RuntimeObjectKey, DescriptorTiming> &
     descriptorTimings() const
     {
         return timings;
     }
 
+    const std::vector<DescriptorTimingEntry> &descriptorTimingLog() const
+    {
+        return timing_log;
+    }
+
     const std::map<uint64_t, Tick> &readCommitTicks() const
     { return read_commit_ticks; }
+
+    // Every burst of the instance that is currently being observed, with the
+    // admitted execution it belongs to and the retirement facts it earned.
+    const std::vector<BurstAttribution> &instanceBursts() const
+    { return instance_bursts; }
 
     uint64_t submittedReadBursts() const { return read_bursts_submitted; }
     uint64_t submittedWriteBursts() const { return write_bursts_submitted; }
@@ -128,7 +163,6 @@ class AxiTensorDmaEngine : public DmaEngineBase
     {
         AxiBurst plan;
         uint64_t dst_base = 0;
-        uint32_t descriptor_id = 0;
         RuntimeObjectKey descriptor_key;
         uint16_t axi_id = 0;
         bool errored = false;      // latched on ANY error beat (spec 7.4)
@@ -144,9 +178,9 @@ class AxiTensorDmaEngine : public DmaEngineBase
     struct WriteBurst
     {
         AxiBurst plan;
-        uint32_t descriptor_id = 0;
         RuntimeObjectKey descriptor_key;
         uint16_t kind = 0;
+        std::vector<uint8_t> payload;
         uint16_t axi_id = 0;
         bool errored = false;
     };
@@ -156,6 +190,7 @@ class AxiTensorDmaEngine : public DmaEngineBase
         RuntimeObjectKey descriptor_key;
         RuntimeObjectKey command_key;
         RuntimeObjectKey completion_event;
+        std::optional<DescriptorKey> key;
         uint32_t bursts_total = 0;
         uint32_t bursts_done = 0;
         uint32_t bursts_errored = 0;
@@ -163,8 +198,17 @@ class AxiTensorDmaEngine : public DmaEngineBase
         bool prepare_pending = false;
         Tick ready_tick = 0;
         std::vector<AxiBurst> plan;
+        std::optional<GatherIndexReader> gather;
+        DmaStatus gather_status = DmaStatus::OK;
         std::vector<uint64_t> burst_ordinals;
         std::optional<std::vector<axi::AxiWBeat>> prepared_beats;
+        // Per-execution facts.  The transport row accumulates across
+        // instances; this contribution is exactly one dispatched execution.
+        TrafficContribution contribution;
+        std::map<std::pair<uint32_t, uint64_t>, std::vector<uint8_t>> ordered_burst_payload;
+        std::set<std::pair<uint32_t, uint64_t>> committed_bursts;
+        uint64_t discarded_bytes = 0;
+        uint64_t drained_bytes = 0;
     };
 
     struct TickEvent : public Event
@@ -249,15 +293,18 @@ class AxiTensorDmaEngine : public DmaEngineBase
                            uint64_t row_src_local);
     void commitFillRow(RuntimeObjectKey descriptor, uint32_t row);
     void finishDescriptor(bool read, DmaStatus status);
+    std::string recordSourceRows(const DescriptorState &state);
+    std::string destinationDigest(const DecodedDmaDescriptor &descriptor);
     void notifyOwner(RuntimeObjectKey descriptor, RuntimeObjectKey command,
                      RuntimeObjectKey completion_event, DmaStatus status);
     void retireBurst(bool read, uint64_t burst_ordinal, bool errored);
     void notePayload(RuntimeObjectKey descriptor, const uint8_t *data,
                      uint64_t size);
     ActualTraffic &rowOf(RuntimeObjectKey descriptor);
-    std::vector<AxiBurst> planOf(const DecodedDmaDescriptor &descriptor) const;
+    std::vector<AxiBurst> planOf(const DecodedDmaDescriptor &descriptor,
+                                 const RuntimeObjectKey &key) const;
     uint64_t remoteRowAddress(const DecodedDmaDescriptor &descriptor,
-                              uint32_t row) const;
+                              const RuntimeObjectKey &key, uint32_t row) const;
 
     ServingInstanceBinding instance_binding;
 
@@ -271,21 +318,32 @@ class AxiTensorDmaEngine : public DmaEngineBase
     // (AR handshake to RLAST), which the initiator adapter owns.
     const uint32_t segment_queue_depth;
     const uint16_t axi_id_count;
+    const uint64_t source_bytes_limit;
 
     MeshDummyCore *owner = nullptr;
-    const RuntimeArch *arch = nullptr;
 
     std::deque<DescriptorState> read_queue;
     std::deque<DescriptorState> write_queue;
     std::map<uint64_t, ReadBurst> live_read_bursts;
     std::map<uint64_t, Tick> read_commit_ticks;
+    uint64_t instance_counter = 0;
+    std::vector<BurstAttribution> instance_bursts;
+    std::map<uint64_t, size_t> attribution_by_ordinal;
+
+    BurstAttribution &noteBurst(const DescriptorState &state,
+                                const AxiBurst &plan, uint32_t burst_index,
+                                uint64_t ordinal, uint16_t axi_id, bool read);
+    BurstAttribution *burstAttribution(uint64_t ordinal);
+    void finishBurstAttribution(const DescriptorState &state, Tick done_tick);
     std::map<uint64_t, WriteBurst> live_write_bursts;
     std::map<RuntimeObjectKey, std::pair<uint64_t, uint64_t>> payload_state;
     std::map<RuntimeObjectKey, ActualTraffic> actual;
     std::map<RuntimeObjectKey, DescriptorTiming> timings;
+    std::vector<DescriptorTimingEntry> timing_log;
     std::map<RuntimeObjectKey, uint64_t> fill_patterns;
     struct FillContent
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         std::vector<uint8_t> bytes;
         bool install_bytes = true;
     };
@@ -312,6 +370,7 @@ class AxiTensorDmaEngine : public DmaEngineBase
     std::vector<Tick> ar_accept_ticks;
     uint64_t protocol_dropped_beats = 0;
 
+    std::string checkpointState;
     TickEvent tick_event;
 
     static void readBeatTrampoline(void *ctx, uint64_t ordinal,

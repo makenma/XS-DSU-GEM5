@@ -1,5 +1,6 @@
+from mesh_ir.runtime_environment import runtime_environment
+
 import copy
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -31,11 +32,7 @@ LATE_ANCHOR_TICK_LIMIT = 400000000000
 
 
 def run_first_pass(outdir):
-    environment = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith("AI_MESH_")
-    }
+    environment = runtime_environment()
     return subprocess.run(
         [
             str(GEM5),
@@ -57,11 +54,7 @@ def run_first_pass(outdir):
 
 
 def run_control_fixture(config_name, outdir):
-    environment = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith("AI_MESH_")
-    }
+    environment = runtime_environment()
     return subprocess.run(
         [
             str(GEM5),

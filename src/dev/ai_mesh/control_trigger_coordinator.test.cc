@@ -81,7 +81,7 @@ buildImage(const std::vector<ActionSpec> &actions)
     body.push_back('G');
     body.push_back('P');
     body.push_back('I');
-    pushU32(body, 1);
+    pushU32(body, 4);
     pushU32(body, 5);
     body.insert(body.end(), 32, 0);
     body.insert(body.end(), 32, 0);
@@ -136,14 +136,32 @@ TEST(ControlTriggerCoordinator, LoadsImplementedKindsAndLifecycle)
     EXPECT_FALSE(coordinator.allTerminal());
 }
 
-TEST(ControlTriggerCoordinator, RejectsUnimplementedTriggerKinds)
+TEST(ControlTriggerCoordinator, ServingLifecycleTriggersUseTheirExactAnchor)
 {
-    for (const uint8_t kind : {uint8_t{5}, uint8_t{6}, uint8_t{7}}) {
+    for (const uint8_t kind : {uint8_t{5}, uint8_t{6}}) {
         const auto image = buildImage({{1, 1, kind, true, 0, 0, 0, false, 0}});
         ASSERT_TRUE(image.has_value());
         gem5::ai_mesh::ControlTriggerCoordinator coordinator(4);
-        EXPECT_FALSE(coordinator.loadFromImage(*image)) << "kind " << int(kind);
+        ASSERT_TRUE(coordinator.loadFromImage(*image));
+        const auto event = static_cast<gem5::ai_mesh::ControlTriggerEvent>(kind);
+        EXPECT_TRUE(coordinator.onAuthoritativeEvent(event, {1, 0, 0}, 0, 10).empty());
+        EXPECT_EQ(coordinator.onAuthoritativeEvent(event, {0, 0, 0}, 0, 10).size(), 1u);
+        EXPECT_TRUE(coordinator.onAuthoritativeEvent(event, {0, 0, 0}, 0, 10).empty());
+        EXPECT_TRUE(coordinator.due(10).empty());
+        EXPECT_EQ(coordinator.due(11).size(), 1u);
     }
+}
+
+TEST(ControlTriggerCoordinator, ReleaseTerminalUsesTheControlOrdinal)
+{
+    const auto image = buildImage({{1, 1, 0, false, 0, 0, 0, false, 0},
+                                 {2, 1, 7, false, 0, 0, 0, true, 1}});
+    ASSERT_TRUE(image.has_value());
+    gem5::ai_mesh::ControlTriggerCoordinator coordinator(4);
+    ASSERT_TRUE(coordinator.loadFromImage(*image));
+    const auto event = gem5::ai_mesh::ControlTriggerEvent::AfterReleaseTerminal;
+    EXPECT_TRUE(coordinator.onAuthoritativeEvent(event, {}, 0, 10).empty());
+    EXPECT_EQ(coordinator.onAuthoritativeEvent(event, {}, 1, 10), std::vector<size_t>{1});
 }
 
 TEST(ControlTriggerCoordinator, CapacityBoundsTheRecordArray)

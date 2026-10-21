@@ -25,6 +25,10 @@ from mesh_ir.acceptance import (
     validate_traffic,
 )
 from mesh_ir.generated import abi as A
+from mesh_ir.execution_view import build_execution_views
+from mesh_ir.kv_layout import kv_layout_projection
+from mesh_ir.scheduled.addressing import descriptor_endpoint_span
+from mesh_ir.scheduled.model import EndpointSide
 from mesh_ir.gate3_oracle import read_facts_document
 from mesh_ir.serving_contract_digest import frozen_expectation
 from mesh_ir.serving_output_bytes import (
@@ -92,49 +96,26 @@ def _u64_check(name, observed, expected):
     }
 
 
-def _executed_ranges(program):
-    ranges = []
-    cursor = 0
-    for range_ in program.profile_stream_ranges:
-        if range_.command_begin != cursor or range_.command_count == 0:
-            return None
-        cursor += range_.command_count
-        ranges.append(range_)
-    if not ranges or cursor != len(program.commands):
-        return None
-    return ranges
-
-
-def _instances_match_ranges(result, ranges):
+def _instances_match_views(result, views):
     instances = result["instances"]
-    if [entry["instance"] for entry in instances] != \
-            list(range(1, len(ranges) + 1)):
+    if [entry["instance"] for entry in instances] != list(range(1, len(views) + 1)):
         return False
-    for range_, entry in zip(ranges, instances):
-        completed = sum(core["completed"] for core in entry["cores"].values())
-        errored = sum(core["errored"] for core in entry["cores"].values())
-        if completed != range_.command_count or errored != 0:
-            return False
-    return True
+    return all(
+        sum(core["completed"] for core in frame["cores"].values()) == len(view.command_ids) and
+        sum(core["errored"] for core in frame["cores"].values()) == 0
+        for view, frame in zip(views, instances, strict=True))
 
 
-def _serialization_violations(program, ranges, cores):
-    issuing = [core for core in cores
-               if core["commands_issued"] == len(program.commands)]
-    if ranges is None or len(issuing) != 1:
+def _serialization_violations(views, frames):
+    if len(frames) != len(views):
         return 1
-    ticks = issuing[0]["command_issue_ticks"]
     windows = []
-    for range_ in ranges:
-        commands = [
-            program.commands[index]
-            for index in range(range_.command_begin,
-                               range_.command_begin + range_.command_count)
-        ]
-        issued = [ticks[str(command.command_id)] for command in commands]
-        windows.append((min(issued), max(issued)))
-    return sum(windows[index][1] >= windows[index + 1][0]
-               for index in range(len(windows) - 1))
+    for view, frame in zip(views, frames, strict=True):
+        issued = [row for core in frame["cores"].values() for row in core["observations"]["commands"] if row["issued"]]
+        if len(issued) != len(view.command_ids) or {row["command_id"] for row in issued} != view.command_ids:
+            return 1
+        windows.append((min(row["issue_tick"] for row in issued), max(row["issue_tick"] for row in issued)))
+    return sum(before[1] >= after[0] for before, after in zip(windows, windows[1:]))
 
 
 def _counter_deviations(rows, metrics):
@@ -147,37 +128,23 @@ def _final_matches(metrics, final):
 
 
 def _published_stores(program):
-    profile = program.profile_stream_ranges[-1].profile_id
-    command_ids = {
-        program.commands[index].command_id
-        for range_ in program.profile_stream_ranges
-        if range_.profile_id == profile
-        for index in range(range_.command_begin,
-                           range_.command_begin + range_.command_count)
-    }
+    view = build_execution_views(program).views[-1]
     return {descriptor.descriptor_id
             for descriptor in program.dma_descriptors
             if descriptor.kind == A.DMA_KIND.STORE and
-            descriptor.command_id in command_ids}
+            descriptor.descriptor_id in view.descriptor_ids}
 
 
 def _expected_appends(program):
-    kv_symbol = program.agent_request_profiles[0].primary_kv_symbol_id
-    kv_tensor = next(relocation.tensor_id
-                     for relocation in program.relocations
-                     if relocation.symbol_sid == kv_symbol)
-    expected = {}
-    for range_ in program.profile_stream_ranges:
-        command_ids = {program.commands[index].command_id
-                       for index in range(range_.command_begin,
-                                          range_.command_begin +
-                                          range_.command_count)}
-        expected[range_.profile_id] = sum(
-            1 for descriptor in program.dma_descriptors
-            if descriptor.command_id in command_ids and
+    kv_tensors = {row["tensor"]["tensor_id"] for row in kv_layout_projection(program)["bindings"]}
+    return {
+        view.profile_id: sum(
+            descriptor.descriptor_id in view.descriptor_ids and
             descriptor.kind == A.DMA_KIND.STORE and
-            descriptor.dst.tensor_id == kv_tensor)
-    return expected
+            descriptor.dst.tensor_id in kv_tensors
+            for descriptor in program.dma_descriptors)
+        for view in build_execution_views(program).views
+    }
 
 
 def _phase_order_violations(serving_phases, core_start_tick):
@@ -221,13 +188,7 @@ def _expected_host_digest(span, frozen=None):
 
 
 def _published_stores_in_order(program):
-    command_ids = {program.commands[index].command_id
-                   for index in range(program.profile_stream_ranges[-1].
-                                      command_begin,
-                                      program.profile_stream_ranges[-1].
-                                      command_begin +
-                                      program.profile_stream_ranges[-1].
-                                      command_count)}
+    command_ids = build_execution_views(program).views[-1].command_ids
     stores = [descriptor for descriptor in program.dma_descriptors
               if descriptor.kind == A.DMA_KIND.STORE and
               descriptor.command_id in command_ids]
@@ -262,37 +223,26 @@ def _payload_violations(result, span, program, frozen=None):
 def _kv_payload_violations(program, result, frozen):
     if frozen is None:
         return 1
-    profile = program.agent_request_profiles[0]
-    relocation = next(row for row in program.relocations
-                      if row.symbol_sid == profile.primary_kv_symbol_id)
-    commands = {row.command_id: row for row in program.commands}
-    allocations = {row.allocation_id: row for row in program.allocations}
+    kv_tensors = {row["tensor"]["tensor_id"] for row in kv_layout_projection(program)["bindings"]}
+    uses = {(use.descriptor_id, use.side): use for use in program.semantics.endpoint_uses}
     actual = {row["descriptor_id"]: row["payload_digest"]
               for row in result["transport"]}
     content = frozen["kv_content"]
     violations = 0
     for descriptor in program.dma_descriptors:
-        if descriptor.src.tensor_id != relocation.tensor_id and \
-                descriptor.dst.tensor_id != relocation.tensor_id:
+        if descriptor.src.tensor_id not in kv_tensors and descriptor.dst.tensor_id not in kv_tensors:
             continue
         if descriptor.kind in (A.DMA_KIND.LOAD, A.DMA_KIND.PREFETCH):
-            endpoint, stride, base = descriptor.src, descriptor.src_stride_bytes, \
-                relocation.offset_bytes
-        elif descriptor.kind == A.DMA_KIND.STORE:
-            endpoint, stride, base = descriptor.dst, descriptor.dst_stride_bytes, \
-                relocation.offset_bytes
-        elif descriptor.kind == A.DMA_KIND.LOCAL_FILL:
-            command = commands[descriptor.command_id]
-            operand = program.command_operands[
-                command.operand_begin + command.operand_count - 1]
-            endpoint, stride, base = descriptor.dst, descriptor.dst_stride_bytes, \
-                allocations[operand.allocation_id].offset_bytes
+            side, stride = EndpointSide.SRC, descriptor.src_stride_bytes
+        elif descriptor.kind in (A.DMA_KIND.STORE, A.DMA_KIND.LOCAL_FILL):
+            side, stride = EndpointSide.DST, descriptor.dst_stride_bytes
         else:
             violations += 1
             continue
+        _, _, _, _, _, begin, _ = descriptor_endpoint_span(program.semantics, uses[(descriptor.descriptor_id, side)])
         payload = bytearray()
         for row in range(descriptor.rows):
-            start = endpoint.offset_bytes - base + row * stride
+            start = begin + row * stride
             end = start + descriptor.row_bytes
             if start < 0 or end > len(content):
                 violations += 1
@@ -309,21 +259,15 @@ def _phase_precondition_violations(program, result, serving_phases):
     timings = {}
     for row in result["dma_timings"]:
         timings.setdefault(row["descriptor_id"], []).append(row)
-    kv_symbol = program.agent_request_profiles[0].primary_kv_symbol_id
-    kv_tensor = next(relocation.tensor_id for relocation in program.relocations
-                     if relocation.symbol_sid == kv_symbol)
+    kv_tensors = {row["tensor"]["tensor_id"] for row in kv_layout_projection(program)["bindings"]}
+    views = build_execution_views(program)
     for index, phase in enumerate(serving_phases):
         profile = phase["mesh_profile_id"]
-        command_ids = {program.commands[pos].command_id
-                       for range_ in program.profile_stream_ranges
-                       if range_.profile_id == profile
-                       for pos in range(range_.command_begin,
-                                        range_.command_begin +
-                                        range_.command_count)}
+        command_ids = views.for_profile(profile).command_ids
         kv = [descriptor for descriptor in program.dma_descriptors
               if descriptor.command_id in command_ids and
               descriptor.kind == A.DMA_KIND.STORE and
-              descriptor.dst.tensor_id == kv_tensor]
+              descriptor.dst.tensor_id in kv_tensors]
         for descriptor in kv:
             matching = timings.get(descriptor.descriptor_id, [])
             if len(matching) != 1:
@@ -335,18 +279,11 @@ def _phase_precondition_violations(program, result, serving_phases):
                 violations += 1
         if index + 1 < len(serving_phases):
             next_profile = serving_phases[index + 1]["mesh_profile_id"]
-            next_ids = {program.commands[pos].command_id
-                        for range_ in program.profile_stream_ranges
-                        if range_.profile_id == next_profile
-                        for pos in range(range_.command_begin,
-                                         range_.command_begin +
-                                         range_.command_count)}
+            next_ids = views.for_profile(next_profile).command_ids
             ticks = []
-            for core in result["cores"]:
-                for command_id in next_ids:
-                    value = core["command_issue_ticks"].get(str(command_id))
-                    if value is not None:
-                        ticks.append(value)
+            for core in result["instances"][index + 1]["cores"].values():
+                ticks.extend(row["issue_tick"] for row in core["observations"]["commands"]
+                             if row["issued"] and row["command_id"] in next_ids)
             if ticks and phase["commit_tick"] >= min(ticks):
                 violations += 1
     return violations
@@ -413,20 +350,9 @@ def _argv_path(argv, option):
 
 
 def _planned_output_bytes(program):
-    profile = program.profile_stream_ranges[-1].profile_id
-    total = 0
-    for range_ in program.profile_stream_ranges:
-        if range_.profile_id != profile:
-            continue
-        command_ids = {program.commands[index].command_id
-                       for index in range(range_.command_begin,
-                                          range_.command_begin +
-                                          range_.command_count)}
-        total += sum(descriptor.useful_bytes
-                     for descriptor in program.dma_descriptors
-                     if descriptor.kind == A.DMA_KIND.STORE and
-                     descriptor.command_id in command_ids)
-    return total
+    published = _published_stores(program)
+    return sum(descriptor.useful_bytes for descriptor in program.dma_descriptors
+               if descriptor.descriptor_id in published)
 
 
 def _join_order_violations(serving_phases):
@@ -455,7 +381,7 @@ def derive_gate6_evidence(program, result, final, metrics, serving_phases,
         if error.code not in CHAIN_CODES + CQ_CODES:
             raise
         failed = error.code
-    ranges = _executed_ranges(program)
+    views = build_execution_views(program).views
     quiescence = (
         (0 if result["terminal"] == "DONE" else 1) +
         (0 if result["error_drained"] == 0 else 1) +
@@ -463,8 +389,7 @@ def derive_gate6_evidence(program, result, final, metrics, serving_phases,
         (1 if final["fatal"] else 0)
     )
     chain = (
-        (0 if ranges is not None and
-            _instances_match_ranges(result, ranges) else 1) +
+        (0 if _instances_match_views(result, views) else 1) +
         _phase_descriptor_violations(program, serving_phases) +
         _kv_payload_violations(program, result, frozen) +
         (1 if failed in CHAIN_CODES else 0)
@@ -484,7 +409,7 @@ def derive_gate6_evidence(program, result, final, metrics, serving_phases,
         _u64_check("quiescence", quiescence, 0),
         _u64_check(
             "completion_timing",
-            _serialization_violations(program, ranges, result["cores"]) +
+            _serialization_violations(views, result["instances"]) +
             _join_order_violations(serving_phases) +
             _phase_order_violations(serving_phases,
                                     _core_start_tick(events)) +

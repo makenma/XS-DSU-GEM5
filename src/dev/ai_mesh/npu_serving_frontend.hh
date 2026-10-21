@@ -15,8 +15,10 @@
 #include "dev/ai_mesh/agent_plan_image.hh"
 #include "dev/ai_mesh/agent_protocol_layout.hh"
 #include "dev/ai_mesh/agent_protocol_validation.hh"
+#include "dev/ai_mesh/agent_sq_admission.hh"
 #include "dev/ai_mesh/gate3_axi_transfer.hh"
 #include "dev/ai_mesh/mesh_kv_manager.hh"
+#include "dev/ai_mesh/mesh_kv_persistence.hh"
 #include "dev/ai_mesh/gate3_completion_ledger.hh"
 #include "dev/ai_mesh/gate3_msi_id_pool.hh"
 #include "dev/ai_mesh/gate3_observation_recorder.hh"
@@ -58,7 +60,17 @@ class NpuServingFrontend : public ClockedObject,
 
     void init() override;
     void startup() override;
+    DrainState drain() override;
+    void serialize(CheckpointOut &cp) const override;
+    void unserialize(CheckpointIn &cp) override;
+    void drainResume() override;
+    template<class Archive> void serialize(Archive &archive, unsigned);
+
     void wakeup();
+    void requestProgramBoundary();
+    bool programBoundaryReady() const;
+    void resumeProgramBoundary();
+    void switchProgramTiming(bool aggregate);
 
     void onAxiWriteCommitted(const axi::AxiAddressRequest &request,
                              const std::vector<axi::AxiDataPacket> &beats,
@@ -74,6 +86,7 @@ class NpuServingFrontend : public ClockedObject,
         axi::AxiResp transport_response) override;
     void onGate3FatalCut(Tick tick) override;
     void onGate3NormalCommit(Tick tick) override;
+    void onGate3DrainComplete() override;
 
   private:
     enum class Stage : uint8_t
@@ -128,6 +141,7 @@ class NpuServingFrontend : public ClockedObject,
 
     struct TerminalResult
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         CqObligationId obligationId;
         Tick readyTick = 0;
         uint64_t sqSequence = 0;
@@ -139,6 +153,12 @@ class NpuServingFrontend : public ClockedObject,
         uint32_t detailCode = 0;
         std::optional<uint32_t> outputBytes;
         bool readyRecorded = false;
+    };
+
+    struct PendingCancel
+    {
+        uint64_t targetRequestId;
+        TerminalResult completion;
     };
 
     struct TerminalEvent : public Event
@@ -208,12 +228,14 @@ class NpuServingFrontend : public ClockedObject,
         uint64_t outputCommittedBytes = 0;
         bool outputChunkNotified = false;
         Tick executionDeadlineTick = 0;
-        NpuExecutionCompletion completion;
+        std::optional<NpuExecutionCompletion> completion;
         Tick readyTick = 0;
         uint64_t deadlineTick = kNpuNoDeadline;
     };
 
     void scheduleTick();
+    void scheduleServingQuantum(uint64_t tick);
+    void processServingQuantum();
     void consumeB();
     void consumeR();
     void driveWrite();
@@ -225,8 +247,9 @@ class NpuServingFrontend : public ClockedObject,
     void startSqHead();
     void startOutput();
     void startMetadata();
+    void finishServingRequest();
     void stageTerminalResult();
-    void latchGenerateTerminal(uint64_t requestId);
+    void latchGenerateTerminal(uint64_t requestId, Tick readyTick);
     bool activateReadyTerminal();
     void emitMaturedTerminals();
     void scheduleTerminalWake();
@@ -259,7 +282,10 @@ class NpuServingFrontend : public ClockedObject,
     bool businessParked() const { return parkedBusiness.has_value(); }
     bool executionCurrent() const
     { return currentValid && stage == Stage::Execute; }
-    void onCoreStart(uint64_t requestId) override;
+    void onCoreStart(const NpuExecutionRequest &request) override;
+    void onSessionAdmitted(uint64_t requestId) override;
+    void onBatchFrozen(uint64_t requestId) override;
+    void onPublishSegment(const PublishSegmentFact &fact, bool firstChunk) override;
     void onRequestComplete(
         const NpuExecutionRequest &request,
         const NpuExecutionCompletion &completion) override;
@@ -386,19 +412,28 @@ class NpuServingFrontend : public ClockedObject,
     AgentProtocolLayout ringLayout;
     Gate3AxiTransferPlanner transferPlanner;
     Gate3CompletionLedger completionLedger;
+    AgentSqAdmission sqAdmission;
     Gate3MsiIdPool msiIdPool;
     Gate3SqIntakeLedger sqIntakeLedger;
     std::unique_ptr<NpuRequestExecutor> requestExecutor;
-    std::unique_ptr<ServingMeshExecutor> meshExecutor;
     std::array<uint8_t, 32> servingContractDigest{};
+    KvPersistentIdentity servingPersistentIdentity;
     std::vector<AgentHostBindingPlan> frozenBindingPlans;
     uint64_t frozenKvSessionSlotBytes = 0;
     MeshProgramLoader *servingLoader = nullptr;
     MeshDispatcher *servingDispatcher = nullptr;
     std::string servingWeightImageDigest;
     std::string servingPlanImage;
+    std::string servingBatchReplayArtifact;
+    bool servingStrictReplay = false;
     std::optional<AgentPlanImage> planImage;
     const SurrogateProfileRegistry *planRegistry = nullptr;
+    uint64_t schedulerMaxActiveSequences = 0;
+    uint64_t schedulerMaxBatchTokens = 0;
+    uint64_t schedulerMaxPrefillTokensPerBatch = 0;
+    uint64_t schedulerMaxDecodeSequencesPerBatch = 0;
+    uint64_t schedulerBatchWaitCycles = 0;
+    uint64_t schedulerPrefillStarvationCycles = 0;
     struct AgentPlanRequestProof
     {
         uint32_t userId = 0;
@@ -408,6 +443,8 @@ class NpuServingFrontend : public ClockedObject,
         uint64_t kvHandle = 0;
         uint32_t generation = 0;
         uint32_t itemId = 0;
+        uint32_t logicalSourceRank = 0;
+        bool batchReplay = false;
         uint32_t fullContextTokens = 0;
         uint64_t fullContextBytes = 0;
         uint32_t cachedTokens = 0;
@@ -438,14 +475,27 @@ class NpuServingFrontend : public ClockedObject,
         const char *description() const override
         { return "ai_mesh.gate3.ack_retire"; }
     };
+    class QuantumEvent : public Event
+    {
+      public:
+        NpuServingFrontend *frontend;
+        explicit QuantumEvent(NpuServingFrontend *f)
+            : Event(), frontend(f) {}
+        void process() override { frontend->processServingQuantum(); }
+        const char *description() const override
+        { return "ai_mesh.serving.quantum"; }
+    };
     RetireEvent retireEvent;
     TerminalEvent terminalEvent;
     ExecutionEvent executionEvent;
+    QuantumEvent quantumEvent;
     uint64_t ackReceivedSeq = 0;
     uint64_t msiConfirmedSeq = 0;
     uint32_t liveCqObligations = 0;
 
+    std::string checkpointState;
     Stage stage = Stage::Doorbell;
+    EventFunctionWrapper replayPrepareEvent;
     TickEvent tickEvent;
     FatalDrainEvent fatalDrainEvent;
     std::deque<Doorbell> doorbells;
@@ -491,6 +541,7 @@ class NpuServingFrontend : public ClockedObject,
     std::optional<ParkedBusiness> parkedBusiness;
     std::map<uint64_t, ParkedBusiness> acceptedQueue;
     std::map<uint64_t, ParkedRelease> pendingReleases;
+    std::map<uint64_t, PendingCancel> pendingCancels;
     std::map<uint64_t, uint64_t> generateDeadlineTicks;
     bool executingBusiness = false;
     Tick currentAcceptTick = 0;
@@ -498,8 +549,8 @@ class NpuServingFrontend : public ClockedObject,
     uint64_t outputCommittedBytes = 0;
     bool outputChunkNotified = false;
     MeshKvManager kvManager;
+    std::unique_ptr<ServingMeshExecutor> meshExecutor;
     std::array<uint8_t, 32> kvContractDigest{};
-    std::set<uint64_t> seenGenerateRequests;
     std::set<uint64_t> terminalGenerateRequests;
     uint16_t currentControlOpcode = 0;
     uint16_t currentSqFlags = 0;

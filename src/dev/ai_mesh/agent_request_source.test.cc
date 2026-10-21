@@ -148,3 +148,21 @@ TEST(ReplayPlanRequestSource, FirstIntentCarriesFullPlanContext)
     EXPECT_EQ(intent.workloadDigest[0], 0xaf);
     EXPECT_EQ(intent.workloadDigest[31], 0x5e);
 }
+
+TEST(ReplayPlanRequestSource, PrefillIntentUsesAdmittedPublishContractWithoutSurrogate)
+{
+    std::ifstream stream("tests/gem5/ai_mesh/fixtures/gate6/agent_plan_image_prefill.bin", std::ios::binary);
+    const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(stream)), {});
+    const auto image = gem5::ai_mesh::AgentPlanImage::parse(bytes.data(), bytes.size());
+    ASSERT_TRUE(image);
+    EXPECT_EQ(image->surrogateRegistry(), nullptr);
+    ASSERT_EQ(image->commands().size(), 1u);
+    const auto intent = gem5::ai_mesh::buildGenerateIntent(*image, 0);
+    ASSERT_TRUE(intent);
+    EXPECT_EQ(intent->kvHandle, 0u);
+    EXPECT_EQ(intent->kvGeneration, 0u);
+    EXPECT_EQ(intent->maxOutputTokens, 0u);
+    EXPECT_EQ(intent->publishChunkBytes, 64u);
+    EXPECT_EQ(intent->workspaceAddress, 0x800200000);
+    EXPECT_EQ(intent->workspaceCapacityBytes, 64u);
+}

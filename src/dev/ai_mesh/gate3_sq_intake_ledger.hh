@@ -39,6 +39,13 @@ struct Gate3SqIntakeRecord
 class Gate3SqIntakeLedger
 {
   public:
+    template<class Archive> void serialize(Archive &archive, unsigned)
+    {
+        if (!live.empty() || !fatal.empty())
+            throw std::runtime_error("E_CHECKPOINT_BOUNDARY: SQ intake ledger is active");
+        checkpoint::fields(archive, nextId, created, released);
+    }
+
     SqIntakeId reserve(SqSeq expectedSqSeq);
     bool acceptRead(SqIntakeId id, uint64_t readTag);
     bool observeTerminal(SqIntakeId id, Gate3SqIntakeTerminal terminal);

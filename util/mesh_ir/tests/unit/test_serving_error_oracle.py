@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "configs" /
 
 from mesh_ir.abi.decoder import decode_program  # noqa: E402
 from mesh_ir.agent_workload import load_workload_plan  # noqa: E402
-from mesh_ir.builder import load_arch  # noqa: E402
+from mesh_ir.architecture import load_arch  # noqa: E402
 from mesh_ir.gate3_oracle import read_facts_document  # noqa: E402
 from mesh_ir.serving_error_oracle import (  # noqa: E402
     frozen_request_identity,
@@ -139,8 +139,8 @@ def test_frozen_identity_comes_from_the_command_plan():
     assert request_id == 1
     assert cookie == request_id
     program = decode_program(PROGRAM.read_bytes())
-    cores = planned_instance_cores(program)
-    assert cores == [[FAULT_CORE]] * 4
+    cores = planned_instance_cores(program, list(load_arch(ARCH_YAML).core_ids))
+    assert cores == [[0, 1]] * 4
 
 
 def test_missing_core_or_bridge_set_is_rejected():
@@ -245,7 +245,7 @@ def test_instance_ledgers_must_cover_the_frozen_participants():
     result["instances"][0]["cores"].pop(str(FAULT_CORE))
     assert verify(result)
     result = copy.deepcopy(stored_result())
-    result["instances"][0]["cores"]["1"] = {"completed": 0, "errored": 0,
+    result["instances"][0]["cores"]["99"] = {"completed": 0, "errored": 0,
                                             "cancelled": 0}
     assert verify(result)
     result = copy.deepcopy(stored_result())
@@ -321,3 +321,25 @@ def test_error_identity_is_attributed_to_the_fault_core():
     result = copy.deepcopy(stored_result())
     result["instances"][0]["cores"][str(FAULT_CORE)]["errored"] = 1
     assert verify(result)
+
+
+def test_settled_instance_anchors_host_terminal_causality():
+    result = copy.deepcopy(stored_result())
+    assert verify(result) == []
+    for mutation in ("missing", "duplicate", "foreign", "after_host", "before_drain"):
+        changed = copy.deepcopy(result)
+        rows = changed["serving_candidate_events"]
+        final = next(row for row in rows if row["event"] == "SETTLED"
+                     and row["instance"] == changed["terminal_instance"])
+        if mutation == "missing":
+            rows.remove(final)
+        elif mutation == "duplicate":
+            rows.append(copy.deepcopy(final))
+        elif mutation == "foreign":
+            final["instance"] = 99
+        elif mutation == "after_host":
+            final["tick"] = next(row["tick"] for row in stored_events()
+                                 if row["kind"] == "GENERATE_TERMINAL_LATCHED") + 1
+        else:
+            final["tick"] = fault_core_row(changed)["work_drained_tick"] - 1
+        assert verify(changed), mutation

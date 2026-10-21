@@ -146,8 +146,10 @@ AxiInitiatorState::tryAcceptAw(const AxiAddressRequest &aw,
     _writeOrdinalByUid.emplace(packet.meta.txnUid, ordinal);
     panic_if(!_awReady.push(ordinal), "AXI source AW FIFO overflow");
 
-    if (!state.stagedW.empty())
+    if (!state.stagedW.empty()) {
+        _pendingStagedWrites.push(ordinal);
         bindAndValidate(state);
+    }
     advance();
     return true;
 }
@@ -285,10 +287,9 @@ AxiInitiatorState::bindAndValidate(WriteState &state)
 void
 AxiInitiatorState::pumpStagedW()
 {
-    for (auto &[ordinal, state] : _writesByOrdinal) {
-        (void)ordinal;
-        if (!state.aw)
-            continue;
+    while (!_pendingStagedWrites.empty()) {
+        WriteState &state =
+            _writesByOrdinal.at(_pendingStagedWrites.front());
         while (!state.stagedW.empty() && !_wReady.full()) {
             const AxiDataPacket staged = std::move(state.stagedW.front());
             state.stagedW.pop_front();
@@ -302,6 +303,8 @@ AxiInitiatorState::pumpStagedW()
             panic_if(!_wReady.push(std::move(packet)),
                      "AXI source W FIFO overflow while binding");
         }
+        if (state.stagedW.empty())
+            _pendingStagedWrites.pop();
         if (_wReady.full())
             return;
     }
@@ -504,6 +507,10 @@ AxiInitiatorState::tryAcceptAr(const AxiAddressRequest &ar,
     const uint64_t uid = packet.meta.txnUid;
     panic_if(!_readsByUid.emplace(uid, std::move(state)).second,
              "AXI_PROTOCOL: duplicate read txnUid");
+    panic_if(!_readResponseOrder.emplace(
+                 ResponseOrderKey{packet.meta.axiId, packet.meta.responseSeq},
+                 uid).second,
+             "AXI internal duplicate read response order");
     if (_readsByUid.size() > _peakOutstandingReads)
         _peakOutstandingReads = _readsByUid.size();
     _arAcceptTicks.push_back(accepted_tick);
@@ -550,6 +557,10 @@ AxiInitiatorState::acceptBPacket(const AxiBPacket &packet, Tick ready_tick)
     state.response = packet;
     state.responseReadyTick = ready_tick;
     ++_progress.bPacketsBuffered;
+    _writeResponseOrder.emplace(
+        ResponseOrderKey{state.aw->meta.axiId, state.aw->meta.responseSeq},
+        uid->second);
+    _unobservedWriteResponses.insert(uid->second);
     pumpReadyB();
 }
 
@@ -578,88 +589,91 @@ AxiInitiatorState::acceptRPacket(const AxiDataPacket &packet, Tick ready_tick)
              "AXI_PROTOCOL: duplicate R beat");
     state.received[packet.beatIndex] = ReceivedR{packet, ready_tick};
     ++_progress.rPacketsBuffered;
+    const auto gate = _nextRRetireSeq.find(state.ar.meta.axiId);
+    const uint64_t expected = gate == _nextRRetireSeq.end() ? 0 : gate->second;
+    if (state.ar.meta.responseSeq != expected) {
+        if (!state.orderingBlockCounted)
+            _unobservedReadResponses.insert(packet.meta.txnUid);
+    } else if (packet.beatIndex == state.nextQueuedBeat) {
+        indexReadyR(state);
+    }
     pumpReadyR();
 }
 
 void
 AxiInitiatorState::pumpReadyB()
 {
-    while (!_bReady.full()) {
-        WriteState *selected = nullptr;
-        for (auto &[ordinal, state] : _writesByOrdinal) {
-            (void)ordinal;
-            if (!state.aw || !state.response || state.responseQueued)
-                continue;
-            const uint64_t expected =
-                _nextBRetireSeq[state.aw->meta.axiId];
-            if (state.aw->meta.responseSeq != expected) {
-                if (!state.orderingBlockCounted) {
-                    state.orderingBlockCounted = true;
-                    ++_progress.sameIdResponsesBlocked;
-                }
-                continue;
+    if (_bReady.full())
+        return;
+    for (const uint64_t ordinal : _unobservedWriteResponses) {
+        WriteState &state = _writesByOrdinal.at(ordinal);
+        const uint64_t expected = _nextBRetireSeq[state.aw->meta.axiId];
+        if (state.aw->meta.responseSeq != expected) {
+            if (!state.orderingBlockCounted) {
+                state.orderingBlockCounted = true;
+                ++_progress.sameIdResponsesBlocked;
             }
-            if (!selected ||
-                std::tie(state.responseReadyTick,
-                         state.aw->meta.txnUid) <
-                std::tie(selected->responseReadyTick,
-                         selected->aw->meta.txnUid)) {
-                selected = &state;
-            }
+        } else {
+            _readyWriteResponses.emplace(state.responseReadyTick,
+                                         state.aw->meta.txnUid);
         }
-        if (!selected)
-            return;
-        panic_if(!_bReady.push(*selected->response),
-                 "AXI source B ready FIFO overflow");
-        selected->responseQueued = true;
     }
+    _unobservedWriteResponses.clear();
+    while (!_bReady.full() && !_readyWriteResponses.empty()) {
+        const auto selected = _readyWriteResponses.begin();
+        WriteState &state = _writesByOrdinal.at(
+            _writeOrdinalByUid.at(selected->second));
+        panic_if(!_bReady.push(*state.response),
+                 "AXI source B ready FIFO overflow");
+        state.responseQueued = true;
+        _readyWriteResponses.erase(selected);
+        _writeResponseOrder.erase(
+            {state.aw->meta.axiId, state.aw->meta.responseSeq});
+    }
+}
+
+void
+AxiInitiatorState::indexReadyR(const ReadState &state)
+{
+    if (state.nextQueuedBeat >= state.received.size() ||
+        !state.received[state.nextQueuedBeat]) {
+        return;
+    }
+    panic_if(!_readyReadBeats.emplace(
+                 state.received[state.nextQueuedBeat]->readyTick,
+                 state.ar.meta.txnUid, state.nextQueuedBeat).second,
+             "AXI internal duplicate ready R beat");
 }
 
 void
 AxiInitiatorState::pumpReadyR()
 {
-    while (!_rReady.full()) {
-        uint64_t selected_uid = 0;
-        ReadState *selected = nullptr;
-        Tick selected_tick = 0;
-        for (auto &[uid, state] : _readsByUid) {
-            const uint64_t expected =
-                _nextRRetireSeq[state.ar.meta.axiId];
-            if (state.ar.meta.responseSeq != expected) {
-                bool has_received = false;
-                for (const auto &beat : state.received)
-                    has_received = has_received || beat.has_value();
-                if (has_received && !state.orderingBlockCounted) {
-                    state.orderingBlockCounted = true;
-                    ++_progress.sameIdResponsesBlocked;
-                }
-                continue;
-            }
-            if (state.nextQueuedBeat >= state.received.size() ||
-                !state.received[state.nextQueuedBeat]) {
-                continue;
-            }
-            const Tick ready_tick =
-                state.received[state.nextQueuedBeat]->readyTick;
-            if (!selected ||
-                std::tie(ready_tick, uid, state.nextQueuedBeat) <
-                std::tie(selected_tick, selected_uid,
-                         selected->nextQueuedBeat)) {
-                selected_uid = uid;
-                selected = &state;
-                selected_tick = ready_tick;
-            }
+    if (_rReady.full())
+        return;
+    for (const uint64_t uid : _unobservedReadResponses) {
+        ReadState &state = _readsByUid.at(uid);
+        const uint64_t expected = _nextRRetireSeq[state.ar.meta.axiId];
+        if (state.ar.meta.responseSeq != expected &&
+            !state.orderingBlockCounted) {
+            state.orderingBlockCounted = true;
+            ++_progress.sameIdResponsesBlocked;
         }
-        if (!selected)
-            return;
+    }
+    _unobservedReadResponses.clear();
+    while (!_rReady.full() && !_readyReadBeats.empty()) {
+        const auto selected = _readyReadBeats.begin();
+        const uint64_t uid = std::get<1>(*selected);
+        _readyReadBeats.erase(selected);
+        ReadState &state = _readsByUid.at(uid);
         ReadyR ready;
-        ready.txnUid = selected_uid;
+        ready.txnUid = uid;
         ready.packet = std::move(
-            selected->received[selected->nextQueuedBeat]->packet);
-        selected->received[selected->nextQueuedBeat].reset();
-        ++selected->nextQueuedBeat;
+            state.received[state.nextQueuedBeat]->packet);
+        state.received[state.nextQueuedBeat].reset();
+        ++state.nextQueuedBeat;
         panic_if(!_rReady.push(std::move(ready)),
                  "AXI source R ready FIFO overflow");
+        indexReadyR(state);
     }
 }
 
@@ -677,8 +691,13 @@ AxiInitiatorState::tryConsumeB(AxiBBeat &beat)
     releaseWriteQuota(state);
     ++_nextBRetireSeq[state.aw->meta.axiId];
     ++_progress.bTransactionsRetired;
+    const uint32_t axi_id = state.aw->meta.axiId;
     _writeOrdinalByUid.erase(packet.meta.txnUid);
     _writesByOrdinal.erase(ordinal);
+    const auto next = _writeResponseOrder.find(
+        {axi_id, _nextBRetireSeq.at(axi_id)});
+    if (next != _writeResponseOrder.end())
+        _unobservedWriteResponses.insert(next->second);
     pumpReadyB();
     return true;
 }
@@ -705,7 +724,14 @@ AxiInitiatorState::tryConsumeR(AxiRBeat &beat, Tick tick)
             _firstCreditReleaseTick = tick;
         ++_nextRRetireSeq[state.ar.meta.axiId];
         ++_progress.rTransactionsRetired;
+        const uint32_t axi_id = state.ar.meta.axiId;
+        _readResponseOrder.erase({axi_id, state.ar.meta.responseSeq});
+        _unobservedReadResponses.erase(ready.txnUid);
         _readsByUid.erase(ready.txnUid);
+        const auto next = _readResponseOrder.find(
+            {axi_id, _nextRRetireSeq.at(axi_id)});
+        if (next != _readResponseOrder.end())
+            indexReadyR(_readsByUid.at(next->second));
     }
     pumpReadyR();
     return true;

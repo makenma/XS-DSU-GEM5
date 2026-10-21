@@ -21,6 +21,8 @@ GEM5是一个模块化的离散事件驱动的计算机系统架构模拟器平�
 
 ## AXI Mesh
 
+- [单次多核与 Mesh 仿真加速资料索引](tools/simulation_acceleration.md)
+- [AXI/HBM 端点串行优化方案](ai_mesh/axi_endpoint_optimization_design.md)
 - [Dummy AI Core Gate 4 Coding Spec](../src/doc/ai_mesh/DUMMY_AI_CORE_GATE4_CODING_SPEC.md)
 - [Dummy AI Core Gate 5 Coding Spec](../src/doc/ai_mesh/DUMMY_AI_CORE_GATE5_CODING_SPEC.md)
 - [Dummy AI Core Gate 6 Coding Spec](../src/doc/ai_mesh/DUMMY_AI_CORE_GATE6_CODING_SPEC.md)

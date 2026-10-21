@@ -41,6 +41,7 @@
 #include "mem/ruby/network/simple/Throttle.hh"
 
 #include <cassert>
+#include <limits>
 
 #include "base/cast.hh"
 #include "base/cprintf.hh"
@@ -118,6 +119,7 @@ Throttle::addLinks(const std::vector<MessageBuffer*>& in_vec,
         MessageBuffer *out_ptr = out_vec[vnet];
 
         m_units_remaining.emplace_back(getChannelCnt(vnet),0);
+        m_pending.emplace_back(getChannelCnt(vnet));
         m_in.push_back(in_ptr);
         m_out.push_back(out_ptr);
 
@@ -171,71 +173,43 @@ Throttle::operateVnet(int vnet, int channel, int &total_bw_remaining,
     }
 
     int &units_remaining = m_units_remaining[vnet][channel];
-
+    auto &pending = m_pending[vnet][channel];
     gem5_assert(units_remaining >= 0);
-    Tick current_time = m_switch->clockEdge();
-
-    int bw_remaining = m_physical_vnets ?
-                getLinkBandwidth(vnet) : total_bw_remaining;
-
-    auto hasPendingWork = [&]{ return in->isReady(current_time) ||
-                                      units_remaining > 0; };
-    while ((bw_remaining > 0) && hasPendingWork() &&
-           out->areNSlotsAvailable(1, current_time)) {
-        // See if we are done transferring the previous message on
-        // this virtual network
-        if (units_remaining == 0 && in->isReady(current_time)) {
-            // Find the size of the message we are moving
-            MsgPtr msg_ptr = in->peekMsgPtr();
-            Message *net_msg_ptr = msg_ptr.get();
-            Tick msg_enqueue_time = msg_ptr->getLastEnqueueTime();
-            units_remaining = network_message_to_size(net_msg_ptr);
-
-            DPRINTF(RubyNetwork, "throttle: %d my bw %d bw spent "
-                    "enqueueing net msg %d time: %lld.\n",
-                    m_node, getLinkBandwidth(vnet), units_remaining,
-                    m_ruby_system->curCycle());
-
-            // Move the message
+    const Tick current_time = m_switch->clockEdge();
+    int bw_remaining = m_physical_vnets ? getLinkBandwidth(vnet) : total_bw_remaining;
+    const auto hasPendingWork = [&] { return in->isReady(current_time) || pending; };
+    while (bw_remaining > 0 && hasPendingWork() && out->areNSlotsAvailable(1, current_time)) {
+        if (!pending) {
+            gem5_assert(in->isReady(current_time) && units_remaining == 0);
+            pending = in->peekMsgPtr();
+            units_remaining = network_message_to_size(pending.get());
             in->dequeue(current_time);
-            out->enqueue(msg_ptr, current_time,
-                         m_switch->cyclesToTicks(m_link_latency));
-
-            // Count the message
-            (*(throttleStats.
-                msg_counts[net_msg_ptr->getMessageSize()]))[vnet]++;
-            throttleStats.total_msg_count += 1;
-            uint32_t total_size =
-                Network::MessageSizeType_to_int(net_msg_ptr->getMessageSize());
-            throttleStats.total_msg_bytes += total_size;
-            total_size -=
-                Network::MessageSizeType_to_int(MessageSizeType_Control);
-            throttleStats.total_data_msg_bytes += total_size;
-            throttleStats.total_msg_wait_time +=
-                current_time - msg_enqueue_time;
-            DPRINTF(RubyNetwork, "%s\n", *out);
         }
-
-        // Calculate the amount of bandwidth we spent on this message
-        int spent = std::min(units_remaining, bw_remaining);
+        const int message_units = network_message_to_size(pending.get());
+        const int spent = std::min(units_remaining, bw_remaining);
         units_remaining -= spent;
         bw_remaining -= spent;
         total_bw_remaining -= spent;
+        if (units_remaining != 0)
+            continue;
+        const Tick enqueued = pending->getLastEnqueueTime();
+        const auto type = pending->getMessageSize();
+        const uint32_t wire_bytes = message_units / MESSAGE_SIZE_MULTIPLIER;
+        out->enqueue(pending, current_time, m_switch->cyclesToTicks(m_link_latency));
+        pending.reset();
+        (*throttleStats.msg_counts[type])[vnet]++;
+        (*throttleStats.msg_bytes[type])[vnet] += wire_bytes;
+        throttleStats.total_msg_count++;
+        throttleStats.total_msg_bytes += wire_bytes;
+        throttleStats.total_data_msg_bytes += Network::MessageSizeType_to_int(type) -
+            Network::MessageSizeType_to_int(MessageSizeType_Control);
+        throttleStats.total_msg_wait_time += current_time - enqueued;
     }
-
-    gem5_assert(units_remaining >= 0);
-    gem5_assert(bw_remaining >= 0);
-    gem5_assert(total_bw_remaining >= 0);
-
-    // Notify caller if
-    //  - we ran out of bandwith and still have stuff to do
-    //  - we had something to do but output queue was unavailable
+    gem5_assert(units_remaining >= 0 && bw_remaining >= 0 && total_bw_remaining >= 0);
     if (hasPendingWork()) {
-        gem5_assert((bw_remaining == 0) ||
-                    !out->areNSlotsAvailable(1, current_time));
-        bw_saturated = bw_saturated || (bw_remaining == 0);
-        output_blocked = output_blocked ||
-            !out->areNSlotsAvailable(1, current_time);
+        gem5_assert(bw_remaining == 0 || !out->areNSlotsAvailable(1, current_time));
+        bw_saturated = bw_saturated || bw_remaining == 0;
+        output_blocked = output_blocked || !out->areNSlotsAvailable(1, current_time);
     }
 }
 
@@ -300,6 +274,54 @@ Throttle::wakeup()
     }
 }
 
+bool
+Throttle::functionalRead(Packet *packet)
+{
+    for (const auto &channels : m_pending)
+        for (const auto &message : channels)
+            if (message && message->functionalRead(packet))
+                return true;
+    return false;
+}
+
+bool
+Throttle::functionalRead(Packet *packet, WriteMask &mask)
+{
+    bool read = false;
+    for (const auto &channels : m_pending)
+        for (const auto &message : channels)
+            if (message)
+                read = message->functionalRead(packet, mask) || read;
+    return read;
+}
+
+uint32_t
+Throttle::functionalWrite(Packet *packet)
+{
+    uint32_t writes = 0;
+    for (const auto &channels : m_pending)
+        for (const auto &message : channels)
+            if (message)
+                writes += message->functionalWrite(packet);
+    return writes;
+}
+
+SimpleNetworkSnapshot
+Throttle::quiescenceSnapshot() const
+{
+    SimpleNetworkSnapshot snapshot;
+    for (const auto &channels : m_units_remaining)
+        for (const auto units : channels)
+            snapshot.serializationUnits += units;
+    for (const auto &channels : m_pending)
+        for (const auto &message : channels)
+            snapshot.queuedMessages += bool(message);
+    snapshot.forwardedMessages = throttleStats.total_msg_count.value();
+    snapshot.wireBytes = throttleStats.total_msg_bytes.value();
+    snapshot.blockedCycles = throttleStats.total_stall_cy.value();
+    return snapshot;
+}
+
 void
 Throttle::print(std::ostream& out) const
 {
@@ -318,8 +340,14 @@ network_message_to_size(Message *net_msg_ptr)
 {
     assert(net_msg_ptr != NULL);
 
-    int size = Network::MessageSizeType_to_int(net_msg_ptr->getMessageSize());
-    size *=  MESSAGE_SIZE_MULTIPLIER;
+    int size = net_msg_ptr->getWireSizeBytes();
+    fatal_if(size < 0, "negative message wire size");
+    if (size == 0)
+        size = Network::MessageSizeType_to_int(net_msg_ptr->getMessageSize());
+    fatal_if(size <= 0 || size > std::numeric_limits<int>::max() /
+             MESSAGE_SIZE_MULTIPLIER / BROADCAST_SCALING,
+             "message wire size exceeds throttle representation");
+    size *= MESSAGE_SIZE_MULTIPLIER;
 
     // Artificially increase the size of broadcast messages
     if (BROADCAST_SCALING > 1 && net_msg_ptr->getDestination().isBroadcast())
@@ -340,7 +368,7 @@ ThrottleStats::ThrottleStats(Switch *parent, const NodeID &nodeID)
       ADD_STAT(total_msg_bytes, statistics::units::Byte::get(),
         "Total number of bytes forwarded by this switch"),
       ADD_STAT(total_data_msg_bytes, statistics::units::Byte::get(),
-        "Total number of data bytes forwarded by this switch"),
+        "Legacy MessageSizeType data bytes forwarded by this switch"),
       ADD_STAT(total_msg_wait_time, statistics::units::Tick::get(),
         "Total time spend forwarding messages"),
       ADD_STAT(total_stall_cy, statistics::units::Cycle::get(),
@@ -378,15 +406,14 @@ ThrottleStats::ThrottleStats(Switch *parent, const NodeID &nodeID)
             ;
 
         msg_bytes[(unsigned int) type] =
-            new statistics::Formula(this,
+            new statistics::Vector(this,
             csprintf("msg_bytes.%s", MessageSizeType_to_string(type)).c_str());
         msg_bytes[(unsigned int) type]
-            ->flags(statistics::nozero)
+            ->init(Network::getNumberOfVirtualNetworks())
+            .flags(statistics::nozero)
             ;
 
-        *(msg_bytes[(unsigned int) type]) =
-            *(msg_counts[type]) * statistics::constant(
-                Network::MessageSizeType_to_int(type));
+
     }
 }
 

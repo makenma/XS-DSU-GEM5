@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "base/types.hh"
+#include "base/checkpoint_fields.hh"
 
 namespace gem5
 {
@@ -36,6 +37,7 @@ struct AxiInternalId
 
 struct AxiCommonMeta
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     uint64_t txnUid = 0;
     uint64_t targetSeq = 0;
     uint64_t responseSeq = 0;
@@ -51,6 +53,7 @@ struct AxiCommonMeta
 
 struct AxiAddressRequest
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     uint32_t axiId = 0;
     uint64_t address = 0;
     uint16_t beatCount = 0;
@@ -88,6 +91,7 @@ struct AxiRBeat
 
 struct AxiAddressPacket
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     AxiCommonMeta meta;
     AxiAddressRequest request;
     uint64_t writeOrdinal = 0;
@@ -96,6 +100,7 @@ struct AxiAddressPacket
 
 struct AxiDataPacket
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     AxiCommonMeta meta;
     uint64_t writeOrdinal = 0;
     uint16_t beatIndex = 0;
@@ -116,6 +121,7 @@ struct AxiBPacket
 
 struct AxiEndpointKey
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     uint32_t srcNode = 0;
     uint16_t srcPort = 0;
 
@@ -135,6 +141,7 @@ struct AxiRange
 
 struct AxiQuota
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     uint32_t writeContexts = 0;
     uint32_t writeBeats = 0;
     uint32_t readContexts = 0;

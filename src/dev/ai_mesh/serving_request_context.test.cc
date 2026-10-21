@@ -1,14 +1,18 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <string>
+#include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include "dev/ai_mesh/generated/mesh_ir_abi.hh"
 #include "dev/ai_mesh/mesh_binary.hh"
+#include "dev/ai_mesh/mesh_program_test_support.hh"
 #include "dev/ai_mesh/mesh_kv_manager.hh"
 #include "dev/ai_mesh/serving_request_context.hh"
 #include "dev/ai_mesh/mesh_serving_projection.hh"
@@ -67,9 +71,9 @@ ServingRequestIdentity identity(uint32_t path_kind = 0)
     const DecodedProgram fixture = loadFixture(
         "tests/gem5/ai_mesh/fixtures/gate6/serving_two_tokens.mshb");
     const mesh_abi::AgentRequestProfile &bound =
-        fixture.agent_request_profiles.at(0);
+        fixture.transport.agent_request_profiles.at(0);
     id.requested_profile_key = requestProfileKey(
-        bound, programProfileKeyBaseDigest(fixture));
+        bound, test_support::profileBaseDigest(fixture));
     id.input_bytes = bound.full_input_dma_bytes;
     id.input_tokens = bound.full_input_tokens;
     id.output_tokens = bound.output_tokens;
@@ -99,7 +103,7 @@ TEST(ServingRequestContext, ResolvesTheExactPhaseChain)
         "tests/gem5/ai_mesh/fixtures/gate6/serving_two_tokens.mshb");
     ServingRequestContext context(program, identity());
     std::string reason;
-    ASSERT_TRUE(context.resolve(reason)) << reason;
+    ASSERT_TRUE(context.resolve(KvPath::InitialPrefill, reason)) << reason;
     ASSERT_EQ(context.plan().size(), 4u);
     EXPECT_EQ(context.plan()[0].phase, kPhasePREFILL);
     EXPECT_EQ(context.plan()[1].phase, kPhaseDECODE);
@@ -130,13 +134,13 @@ TEST(ServingRequestContext, AdmissionIntentCarriesTheContractIdentity)
         "tests/gem5/ai_mesh/fixtures/gate6/serving_two_tokens.mshb");
     ServingRequestContext context(program, identity());
     std::string reason;
-    ASSERT_TRUE(context.resolve(reason)) << reason;
+    ASSERT_TRUE(context.resolve(KvPath::InitialPrefill, reason)) << reason;
     const KvAdmissionIntent intent = context.admissionIntent(1000);
     EXPECT_EQ(intent.request_id, 1u);
     EXPECT_EQ(intent.session_id, 11u);
     EXPECT_EQ(intent.kv_handle, 11u);
     EXPECT_EQ(intent.generation, 1u);
-    EXPECT_EQ(intent.deadline_or_max, 0u);
+    EXPECT_EQ(intent.deadline_or_max, UINT64_MAX);
     EXPECT_EQ(intent.flags, 0u);
     EXPECT_EQ(intent.required_cached_tokens, 0u);
     EXPECT_EQ(intent.required_tokens_after_round, 10u);
@@ -149,7 +153,7 @@ TEST(ServingRequestContext, DrivesOneGenerateThroughTheKvManager)
         "tests/gem5/ai_mesh/fixtures/gate6/serving_two_tokens.mshb");
     ServingRequestContext context(program, identity());
     std::string reason;
-    ASSERT_TRUE(context.resolve(reason)) << reason;
+    ASSERT_TRUE(context.resolve(KvPath::InitialPrefill, reason)) << reason;
     MeshKvManager manager(geometry(), capacity());
 
     KvEdgeInputs admission;
@@ -269,7 +273,7 @@ TEST(ServingRequestContext, JoinNeedsBothCoreDrainAndAppendTerminal)
         "tests/gem5/ai_mesh/fixtures/gate6/serving_two_tokens.mshb");
     ServingRequestContext context(program, identity());
     std::string reason;
-    ASSERT_TRUE(context.resolve(reason)) << reason;
+    ASSERT_TRUE(context.resolve(KvPath::InitialPrefill, reason)) << reason;
     MeshKvManager manager(geometry(), capacity());
     KvEdgeInputs admission;
     admission.tick = 100;
@@ -295,7 +299,7 @@ TEST(ServingRequestContext, SameEdgeAppendAndDrainCommitExactlyOnce)
     for (const bool drainFirst : {true, false}) {
         ServingRequestContext context(program, identity());
         std::string reason;
-        ASSERT_TRUE(context.resolve(reason)) << reason;
+        ASSERT_TRUE(context.resolve(KvPath::InitialPrefill, reason)) << reason;
         MeshKvManager manager(geometry(), capacity());
         KvEdgeInputs admission;
         admission.tick = 100;
@@ -333,7 +337,7 @@ TEST(ServingRequestContext, PartialAppendPrefixBlocksTheNextPhase)
         "tests/gem5/ai_mesh/fixtures/gate6/serving_two_tokens.mshb");
     ServingRequestContext context(program, identity());
     std::string reason;
-    ASSERT_TRUE(context.resolve(reason)) << reason;
+    ASSERT_TRUE(context.resolve(KvPath::InitialPrefill, reason)) << reason;
     MeshKvManager manager(geometry(), capacity());
     KvEdgeInputs admission;
     admission.tick = 100;
@@ -365,8 +369,160 @@ TEST(ServingRequestContext, RejectsAPathThatIsNotDeclaredReachable)
 {
     const DecodedProgram program = loadFixture(
         "tests/gem5/ai_mesh/fixtures/gate6/serving_two_tokens.mshb");
-    ServingRequestContext context(program, identity(1));
+    ServingRequestContext context(program, identity());
     std::string reason;
-    EXPECT_FALSE(context.resolve(reason));
+    EXPECT_FALSE(context.resolve(KvPath::KvReuse, reason));
     EXPECT_FALSE(reason.empty());
+}
+
+TEST(ServingRequestContext, RepairUsesFullHeaderAndAppendsAfterTheResidentPrefix)
+{
+    auto program = loadFixture(
+        "tests/gem5/ai_mesh/fixtures/gate6/serving_two_tokens.mshb");
+    auto &profile = program.transport.agent_request_profiles.at(0);
+    profile.path_mask = 6;
+    profile.expected_cached_tokens = 10;
+    profile.full_input_tokens = 18;
+    profile.input_binding_bytes = profile.full_input_dma_bytes = 256;
+    for (auto &instance : program.transport.agent_instance_profiles) {
+        instance.path_kind = kPathKindKV_REUSE;
+        instance.kv_tokens_before += 10;
+        if (instance.phase != kPhasePUBLISH)
+            instance.kv_read_bytes_per_member += 160;
+    }
+    auto id = identity();
+    id.repair_round = 1;
+    id.kv_flags = agent_abi::kSqFlagsALLOW_REPREFILL;
+    id.cached_tokens = 10;
+    id.input_tokens = 18;
+    id.input_bytes = 256;
+    id.requested_profile_key = requestProfileKey(profile, test_support::profileBaseDigest(program));
+    ServingRequestContext context(program, id);
+    std::string reason;
+    ASSERT_TRUE(context.validate(reason)) << reason;
+    EXPECT_EQ(context.admissionIntent(1).flags, agent_abi::kSqFlagsALLOW_REPREFILL);
+    ASSERT_TRUE(context.resolve(KvPath::KvReuse, reason)) << reason;
+    ASSERT_EQ(context.plan().size(), 4u);
+    EXPECT_EQ(context.plan()[0].kv_tokens_before, 10u);
+    EXPECT_EQ(context.plan()[0].valid_tokens_per_member, 8u);
+    EXPECT_EQ(context.plan()[0].cached_tokens_after, 18u);
+    EXPECT_EQ(context.plan()[0].kv_read_bytes_per_member, 160u);
+    EXPECT_EQ(context.plan()[0].host_input_dma_bytes_per_member, 128u);
+    EXPECT_EQ(context.plan().back().cached_tokens_after, 20u);
+    id.input_bytes = 128;
+    ServingRequestContext delta_header(program, id);
+    EXPECT_FALSE(delta_header.validate(reason));
+}
+
+namespace
+{
+std::pair<DecodedProgram, ServingRequestIdentity>
+prefillOnlyFixture()
+{
+    auto program = loadFixture(
+        "tests/gem5/ai_mesh/fixtures/gate6/serving_two_tokens.mshb");
+    auto id = identity();
+    auto &request = program.transport.agent_request_profiles.at(0);
+    request.flags = 0;
+    request.path_mask = 1;
+    request.primary_kv_symbol_id = 0;
+    request.kv_bytes_per_token = 0;
+    request.output_tokens = 0;
+    auto &instances = program.transport.agent_instance_profiles;
+    instances.erase(std::remove_if(instances.begin(), instances.end(),
+        [](const auto &row) { return row.phase == kPhaseDECODE; }), instances.end());
+    for (auto &instance : instances) {
+        instance.primary_kv_symbol_id = 0;
+        instance.kv_tokens_before = 0;
+        instance.kv_read_bytes_per_member = 0;
+        instance.kv_write_bytes_per_member = 0;
+    }
+    for (auto &member : program.transport.agent_instance_member_bindings)
+        member.static_kv_symbol_id = 0;
+    auto &mappings = program.transport.agent_instance_tensor_bindings;
+    mappings.erase(std::remove_if(mappings.begin(), mappings.end(), [&](const auto &row) {
+        return row.binding_kind == agent_abi::kBindingKindKV_EXTERNAL ||
+            std::none_of(instances.begin(), instances.end(), [&](const auto &instance) {
+                return instance.instance_profile_id == row.instance_profile_id;
+            });
+    }), mappings.end());
+    auto &requirements = program.transport.agent_request_binding_requirements;
+    requirements.erase(std::remove_if(requirements.begin(), requirements.end(), [](const auto &row) {
+        return row.binding_kind == agent_abi::kBindingKindKV_EXTERNAL;
+    }), requirements.end());
+    id.kv_handle = 0;
+    id.generation = 0;
+    id.kv_bytes_per_token = 0;
+    id.output_tokens = 0;
+    id.requested_profile_key = requestProfileKey(request, test_support::profileBaseDigest(program));
+    return {std::move(program), id};
+}
+}
+
+TEST(ServingRequestContext, PrefillOnlyDrainsWithoutKvEdges)
+{
+    auto [program, id] = prefillOnlyFixture();
+    ServingRequestContext context(program, id);
+    std::string reason;
+    ASSERT_TRUE(context.resolve(KvPath::InitialPrefill, reason)) << reason;
+    EXPECT_FALSE(context.usesKv());
+    ASSERT_EQ(context.plan().size(), 2u);
+    EXPECT_EQ(context.plan()[0].phase, kPhasePREFILL);
+    EXPECT_EQ(context.plan()[0].valid_tokens_per_member, id.input_tokens);
+    EXPECT_EQ(context.plan()[1].phase, kPhasePUBLISH);
+    EXPECT_EQ(context.requiredTokensAfterRound(), 0u);
+    MeshKvManager manager(geometry(), capacity());
+    for (size_t phase = 0; phase < context.plan().size(); ++phase) {
+        EXPECT_EQ(context.step().kv_tokens_before, 0u);
+        EXPECT_EQ(context.step().cached_tokens_after, 0u);
+        KvEdgeInputs edge;
+        edge.tick = 100 * (phase + 1);
+        context.beginPhase(edge);
+        EXPECT_TRUE(edge.view_arms.empty());
+        EXPECT_TRUE(edge.append_arms.empty());
+        EXPECT_FALSE(manager.commitEdge(edge).fatal);
+        EXPECT_EQ(manager.findRecord(id.session_id, id.kv_handle), nullptr);
+        EXPECT_FALSE(context.joinSatisfied());
+        EXPECT_FALSE(context.commitPhase(reason));
+        context.noteCoreDrain();
+        EXPECT_TRUE(context.joinSatisfied());
+        ASSERT_TRUE(context.commitPhase(reason)) << reason;
+    }
+    EXPECT_TRUE(context.finished());
+    EXPECT_THROW(context.admissionIntent(100), std::logic_error);
+    EXPECT_THROW(context.ownerTerminal(KvTerminalStatus::Success), std::logic_error);
+    EXPECT_THROW(context.rollbackTerminal(KvTerminalStatus::Error, KvRollbackToken{}), std::logic_error);
+}
+
+TEST(ServingRequestContext, PrefillOnlyRejectsKvAndGeneratedTokenState)
+{
+    for (unsigned mutation = 0; mutation < 16; ++mutation) {
+        auto [program, id] = prefillOnlyFixture();
+        auto &request = program.transport.agent_request_profiles.at(0);
+        switch (mutation) {
+          case 0: id.kv_handle = 1; break;
+          case 1: id.generation = 1; break;
+          case 2: id.cached_tokens = 1; break;
+          case 3: id.repair_round = 1; break;
+          case 4: id.kv_flags = agent_abi::kSqFlagsALLOW_REPREFILL; break;
+          case 5: id.kv_bytes_per_token = request.kv_bytes_per_token = 16; break;
+          case 6: id.output_tokens = request.output_tokens = 1; break;
+          case 7: program.transport.agent_instance_profiles[0].kv_write_bytes_per_member = 16; break;
+          case 8: program.transport.agent_instance_profiles[1].kv_tokens_before = 8; break;
+          case 9: request.primary_kv_symbol_id = 7; break;
+          case 10: request.flags = 2; break;
+          case 11: request.flags = kAgentRequestFlagsHAS_KV; break;
+          case 12: program.transport.agent_instance_tensor_bindings[0].binding_kind = agent_abi::kBindingKindKV_EXTERNAL; break;
+          case 13: program.transport.agent_instance_profiles.push_back(program.transport.agent_instance_profiles[0]);
+              program.transport.agent_instance_profiles.back().phase = kPhaseDECODE; break;
+          case 14: program.transport.agent_instance_member_bindings[0].static_kv_symbol_id = 9; break;
+          case 15: program.transport.agent_request_binding_requirements[0].binding_kind = agent_abi::kBindingKindKV_EXTERNAL; break;
+        }
+        if (mutation != 10)
+            id.requested_profile_key = requestProfileKey(request, test_support::profileBaseDigest(program));
+        ServingRequestContext context(program, id);
+        std::string reason;
+        EXPECT_FALSE(context.resolve(KvPath::InitialPrefill, reason)) << mutation;
+        EXPECT_FALSE(reason.empty()) << mutation;
+    }
 }

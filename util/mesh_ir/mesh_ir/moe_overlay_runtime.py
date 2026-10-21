@@ -333,7 +333,7 @@ def _install_dispatch(builder, region, plane, transfers, entry, route_fill,
             activity.commands.append(command)
             ready.setdefault(chunk["expert_id"], []).append(event)
             remote_rows[(chunk["expert_id"], chunk["chunk_ordinal"])] = (
-                view, chunk)
+                allocation, chunk)
     return ready, remote_rows
 
 
@@ -456,8 +456,8 @@ def _install_experts(builder, layer, kernel, region, plane, dispatch_ready,
                                   "dispatch chunk rows disagree",
                                   expert_id=expert_id)
             for index, token_ref in enumerate(chunk["token_refs"]):
-                remote[token_ref] = (handle[0], index * chunk["row_bytes"],
-                                     chunk["row_bytes"])
+                remote[token_ref] = (handle[0], index * (chunk["row_bytes"] // chunk["rows"]),
+                                     chunk["row_bytes"] // chunk["rows"])
         for row in real:
             if row["source_core"] == core:
                 member = row["member"]
@@ -466,7 +466,7 @@ def _install_experts(builder, layer, kernel, region, plane, dispatch_ready,
                     builder, region_id, core, A.MOE_VIEW_KIND.MEMBER_INPUT,
                     A.MOE_VIEW_ACCESS.READ,
                     member.input_allocation if bound else None,
-                    member.input_offset + row["input_offset"],
+                    row["input_offset"],
                     row["input_row_bytes"], A.MOE_SEMANTIC_OWNER.MEMBER,
                     (member.binding_ordinal,), row["token_ref"],
                     backing_kind=(
@@ -498,7 +498,8 @@ def _install_experts(builder, layer, kernel, region, plane, dispatch_ready,
             payload_bytes=len(rows) * output_row_bytes)
         _link_event(builder, result_event, compute)
         activity.commands.append(compute)
-        state[expert_id] = {"result": result_event, "output_view": output_view}
+        state[expert_id] = {"result": result_event, "output_view": output_view,
+                            "output_allocation": output}
     return state
 
 
@@ -512,12 +513,18 @@ def _install_combine(builder, region, plane, experts, entry, config,
             continue
         if chunk["src_core"] == core and chunk["dst_core"] != core:
             state = experts.get(chunk["expert_id"])
+            source = _add_view(
+                builder, region_id, core, A.MOE_VIEW_KIND.EXPERT_OUTPUT,
+                A.MOE_VIEW_ACCESS.READ, state["output_allocation"],
+                chunk["src_offset"], chunk["row_bytes"],
+                A.MOE_SEMANTIC_OWNER.EXPERT, (chunk["expert_id"],), bytes(32),
+                validity=(chunk["rows"],))
             descriptor = _add_descriptor(
                 builder, region_id, A.MOE_DESCRIPTOR_KIND.COMBINE, core,
                 chunk["phase"], chunk["src_core"], chunk["dst_core"],
                 chunk["expert_id"], chunk["chunk_ordinal"], bytes(32),
                 valid_bytes=chunk["row_bytes"],
-                source_view=(state["output_view"],) if state else ())
+                source_view=(source,))
             command = _add_command(
                 builder, region_id, A.MOE_COMMAND_PHASE.COMBINE_PUSH,
                 A.OPCODE.DMA_P2P_PUSH, A.MOE_COMMAND_ROLE.COMBINE_SENDER,
@@ -561,7 +568,10 @@ def _install_combine(builder, region, plane, experts, entry, config,
                 payload_bytes=chunk["row_bytes"])
             _link_event(builder, event, command)
             activity.commands.append(command)
-            ready.setdefault(chunk["expert_id"], []).append(event)
+            for index, token_ref in enumerate(chunk["token_refs"]):
+                row_bytes = chunk["row_bytes"] // chunk["rows"]
+                ready[(chunk["expert_id"], token_ref)] = (
+                    event, allocation, index * row_bytes, row_bytes)
     return ready
 
 
@@ -592,7 +602,6 @@ def _install_tokens(builder, layer, region, plane, members, placement, entry,
             builder, region_id, core, A.MOE_VIEW_KIND.MEMBER_OUTPUT,
             A.MOE_VIEW_ACCESS.WRITE,
             member.output_allocation if bound else None,
-            member.output_offset +
             member.output_row_offset(member.local_ordinal(record["uid"])),
             member.output_token_bytes, A.MOE_SEMANTIC_OWNER.MEMBER,
             (member.binding_ordinal,), token_ref,
@@ -625,10 +634,20 @@ def _install_tokens(builder, layer, region, plane, members, placement, entry,
         for expert_id in record["accepted_experts"]:
             if placement[expert_id] == core:
                 waits.append(experts[expert_id]["result"])
-                views.append(experts[expert_id]["output_view"])
+                row = next(row for row in plane.expert_rows
+                           if row["expert_id"] == expert_id and row["token_ref"] == token_ref)
+                views.append(_add_view(
+                    builder, region_id, core, A.MOE_VIEW_KIND.EXPERT_OUTPUT,
+                    A.MOE_VIEW_ACCESS.READ, experts[expert_id]["output_allocation"],
+                    row["row_ordinal"] * layer.output_token_bytes, layer.output_token_bytes,
+                    A.MOE_SEMANTIC_OWNER.EXPERT, (expert_id,), token_ref))
             else:
-                for event in combine_ready.get(expert_id, ()):
-                    waits.append(event)
+                event, allocation, received_offset, byte_count = combine_ready[(expert_id, token_ref)]
+                waits.append(event)
+                views.append(_add_view(
+                    builder, region_id, core, A.MOE_VIEW_KIND.COMBINE_BUFFER,
+                    A.MOE_VIEW_ACCESS.READ, allocation, received_offset, byte_count,
+                    A.MOE_SEMANTIC_OWNER.EXPERT, (expert_id,), token_ref))
         views.append(_add_view(
             builder, region_id, core, A.MOE_VIEW_KIND.REDUCE_ACCUMULATOR,
             A.MOE_VIEW_ACCESS.READ_WRITE, accumulator, offset,

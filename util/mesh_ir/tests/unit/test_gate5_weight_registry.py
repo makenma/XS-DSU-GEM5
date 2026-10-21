@@ -8,8 +8,8 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from mesh_ir.abi.decoder import decode_program
-from mesh_ir.abi.verifier import verify_program
-from mesh_ir.builder import load_arch
+from mesh_ir.scheduled.verify import verify_program
+from mesh_ir.architecture import load_arch
 from mesh_ir.model import MeshIrError
 from mesh_ir.weight_registry import (
     TAG_TUPLE_BYTES,
@@ -67,14 +67,14 @@ def test_gate5_weight_artifacts_are_byte_stable(artifacts):
     assert home.content == materialize_content(home.seed_utf8, home.bytes)
     assert home.arena_offset + home.bytes <= image.arena_bytes
     assert registry.document["programs"][0]["program_semantic_digest"] == \
-        program.semantic_sha256()
+        program.semantic_sha256
 
 
 def test_gate5_projection_dependency_graph_is_acyclic(artifacts):
     _, image, registry, golden = artifacts
     manifest = weight_tag_manifest(artifacts[0], registry)
     digests = {
-        "program_semantic_digest": artifacts[0].semantic_sha256(),
+        "program_semantic_digest": artifacts[0].semantic_sha256,
         "model_weight_image_digest": image.digest,
         "program_weight_registry_digest": registry.digest,
         "weight_tag_manifest_digest": __import__("hashlib").sha256(
@@ -114,7 +114,7 @@ def test_gate5_weight_tags_are_dense_sorted_and_deduplicated(artifacts):
                                expert.weight_region_offset,
                                expert.weight_bytes)
         expected = encode_tag_tuple(
-            bytes.fromhex(program.semantic_sha256()),
+            bytes.fromhex(program.semantic_sha256),
             expert.weight_symbol_id, expert.weight_region_offset,
             expert.weight_bytes, digest)
         assert expected in tuples
@@ -125,7 +125,7 @@ def test_gate5_tag_order_is_the_runtime_expert_projection(artifacts):
     order = weight_region_order(program)
     manifest = weight_tag_manifest(program, registry)
     assert len(order) == len(manifest)
-    semantic = bytes.fromhex(program.semantic_sha256())
+    semantic = bytes.fromhex(program.semantic_sha256)
     for index, (symbol_id, offset, byte_count) in enumerate(order):
         assert manifest[index][0] == index
         digest = region_digest(registry, program, symbol_id, offset,
@@ -170,7 +170,7 @@ def test_gate5_tag_order_deduplicates_aliased_regions(artifacts):
 
 def test_gate5_registry_declares_every_moe_weight_region(artifacts):
     program, _, registry, _ = artifacts
-    semantic = bytes.fromhex(program.semantic_sha256())
+    semantic = bytes.fromhex(program.semantic_sha256)
     for expert in program.moe_expert_specs:
         binding = registry.symbol(semantic, expert.weight_symbol_id)
         assert binding.bytes >= expert.weight_region_offset + \

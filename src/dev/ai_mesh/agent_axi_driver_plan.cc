@@ -14,15 +14,6 @@ namespace gem5
 namespace ai_mesh
 {
 
-const AgentHostBindingPlan *
-findHostBindingPlan(const std::vector<AgentHostBindingPlan> &plans,
-                    uint16_t programId, uint16_t profileId)
-{
-    for (const AgentHostBindingPlan &plan : plans)
-        if (plan.programId == programId && plan.profileId == profileId)
-            return &plan;
-    return nullptr;
-}
 
 std::vector<agent_abi::BindingRecord>
 AgentAxiDriver::requestBindings(const AgentSubmissionIntent &intent,
@@ -38,6 +29,10 @@ AgentAxiDriver::requestBindings(const AgentSubmissionIntent &intent,
              intent.programId, intent.profileId);
     std::vector<agent_abi::BindingRecord> bindings = resolveHostBindings(
         *plan, addresses, round, kvSessionSlotBytes);
+    for (const auto &binding : bindings)
+        if (binding.kind == agent_abi::kBindingKindREQUEST_WORKSPACE)
+            fatal_if(binding.bytes > intent.workspaceCapacityBytes,
+                "request workspace exceeds its planned arena allocation");
     std::string reason;
     if (verifyHostBindingRequest(
             bindings, *plan, addresses.inputBase, round.fullContextBytes,
@@ -50,19 +45,19 @@ AgentAxiDriver::requestBindings(const AgentSubmissionIntent &intent,
     return bindings;
 }
 
-uint32_t
-AgentAxiDriver::plannedInstanceCount(uint16_t programId,
+std::vector<uint32_t>
+AgentAxiDriver::plannedInstanceCounts(uint16_t programId,
                                      uint16_t profileId) const
 {
     if (hostBindingPlans.empty())
-        return 0;
+        return {0};
     const AgentHostBindingPlan *plan =
         findHostBindingPlan(hostBindingPlans, programId, profileId);
     fatal_if(plan == nullptr,
              "%s: request profile %u/%u is absent from the frozen Host "
              "expectation while other profiles are present", name(),
              programId, profileId);
-    return plan->instanceCount;
+    return plan->instanceCounts;
 }
 
 
@@ -83,6 +78,8 @@ AgentAxiDriver::encodePlanSq(uint64_t sequence, uint64_t requestId,
     value.completion_cookie = cookie;
     if (intent.commandKind == kAgentCommandGenerate) {
         value.flags = kvPolicyToSqFlags(intent.kvPolicy);
+        if (intent.round->batchReplay)
+            value.flags |= agent_abi::kSqFlagsBATCH_REPLAY;
         value.session_id = intent.sessionId;
         value.program_id = intent.programId;
         value.profile_id = intent.profileId;
@@ -102,6 +99,33 @@ AgentAxiDriver::encodePlanSq(uint64_t sequence, uint64_t requestId,
     value.reserved = 0;
     return toVector(agent_abi::encodeSqDescriptor(value));
 }
+void
+AgentAxiDriver::applySubmissionWirePatches(uint64_t sequence, uint8_t kind,
+                                           std::vector<uint8_t> &bytes) const
+{
+    fatal_if(submissionWirePatches.size() % 4, "wire patch tuples have an incomplete entry");
+    bool patched = false;
+    std::set<uint64_t> offsets;
+    for (size_t i = 0; i < submissionWirePatches.size(); i += 4) {
+        fatal_if(submissionWirePatches[i + 1] > 1 || submissionWirePatches[i + 3] > 255,
+                 "wire patch tuple has an invalid kind or byte");
+        if (submissionWirePatches[i] != sequence || submissionWirePatches[i + 1] != kind)
+            continue;
+        const auto offset = submissionWirePatches[i + 2];
+        fatal_if(offset >= bytes.size() || !offsets.insert(offset).second,
+                 "wire patch offset is outside the record or duplicated");
+        bytes[offset] = submissionWirePatches[i + 3];
+        patched = true;
+    }
+    if (!patched)
+        return;
+    const auto crc_offset = kind == 0 ? agent_abi::kSqDescriptorCrc32Offset :
+                                        agent_abi::kParameterHeaderCrc32Offset;
+    agent_abi::wrU32(bytes.data() + crc_offset, 0);
+    agent_abi::wrU32(bytes.data() + crc_offset, agent_abi::crc32c(bytes.data(),
+        kind == 0 ? crc_offset : bytes.size()));
+}
+
 void
 AgentAxiDriver::preparePlanRecords(const AgentSubmissionIntent &intent,
                                    uint64_t sqSequence, uint64_t requestId,
@@ -128,11 +152,11 @@ AgentAxiDriver::preparePlanRecords(const AgentSubmissionIntent &intent,
         } else {
             standaloneControlRequests.insert(intent.requestId);
         }
-        const std::vector<uint8_t> parameterBlob = buildControlParameter(
+        std::vector<uint8_t> parameterBlob = buildControlParameter(
             intent.commandKind, intent.targetRequestId, intent.controlKvHandle,
             intent.controlGeneration);
         submitParameterBlockBytes = parameterBlob.size();
-        const std::vector<uint8_t> sqBlob =
+        std::vector<uint8_t> sqBlob =
             encodePlanSq(sqSequence, requestId, cookie, intent,
                          submitParameterBlockBytes);
         storeSubmissionContext(SubmissionContext{
@@ -141,6 +165,8 @@ AgentAxiDriver::preparePlanRecords(const AgentSubmissionIntent &intent,
             intent.commandKind == kAgentCommandReleaseSession ?
                 intent.controlSessionId : 0,
             intent.userId, intent.taskSequence, 0, 0, 0}, intent);
+        applySubmissionWirePatches(sqSequence, 0, sqBlob);
+        applySubmissionWirePatches(sqSequence, 1, parameterBlob);
         storeBytes(sqAddress(sqSequence), sqBlob);
         storeBytes(intent.parameterAddress, parameterBlob,
                    agent_abi::kParameterHeaderBytes);
@@ -154,12 +180,12 @@ AgentAxiDriver::preparePlanRecords(const AgentSubmissionIntent &intent,
     }
     const PlanWireAddresses wireAddresses{
         intent.inputAddress, intent.parameterAddress, intent.outputAddress,
-        intent.outputMetadataAddress};
+        intent.outputMetadataAddress, intent.workspaceAddress};
     const std::vector<agent_abi::BindingRecord> bindings =
         requestBindings(intent, wireAddresses, *intent.round);
     const uint64_t parameterCapacity =
         planParameterBytes(*intent.round, bindings.size());
-    const std::vector<uint8_t> parameterBlob = buildPlanParameter(
+    std::vector<uint8_t> parameterBlob = buildPlanParameter(
         *intent.round, *intent.task, intent.userId, wireAddresses,
         intent.workloadDigest.data(), intent.publishChunkBytes, bindings);
     fatal_if(parameterBlob.size() != parameterCapacity,
@@ -174,7 +200,7 @@ AgentAxiDriver::preparePlanRecords(const AgentSubmissionIntent &intent,
              static_cast<unsigned long long>(parameterCapacity),
              static_cast<unsigned long long>(intent.parameterCapacityBytes));
     submitParameterBlockBytes = parameterBlob.size();
-    const std::vector<uint8_t> sqBlob =
+    std::vector<uint8_t> sqBlob =
         encodePlanSq(sqSequence, requestId, cookie, intent,
                      submitParameterBlockBytes);
     storeSubmissionContext(SubmissionContext{
@@ -182,12 +208,16 @@ AgentAxiDriver::preparePlanRecords(const AgentSubmissionIntent &intent,
         intent.sessionId, intent.userId, intent.taskSequence,
         intent.repairRound, intent.outputMetadataAddress,
         intent.outputMetadataCapacityBytes}, intent);
+    applySubmissionWirePatches(sqSequence, 0, sqBlob);
+    applySubmissionWirePatches(sqSequence, 1, parameterBlob);
     storeBytes(sqAddress(sqSequence), sqBlob);
     storeBytes(intent.parameterAddress, parameterBlob,
                parameterCapacity);
     storeBytes(intent.inputAddress,
-               agentInputSurrogateBytes(intent.inputDigest.data(),
-                                        intent.inputBytes),
+               intent.round->inputPayload.empty() ?
+                   agentInputSurrogateBytes(intent.inputDigest.data(),
+                                            intent.inputBytes) :
+                   intent.round->inputPayload,
                intent.inputBytes);
     recordSemantic("LOCAL_VISIBLE", "PROMPT", std::nullopt, requestId, cookie);
     recordSemantic("LOCAL_VISIBLE", "PARAMETER", std::nullopt, requestId,
@@ -274,29 +304,13 @@ AgentAxiDriver::scheduleControlDeliveryWake()
 }
 
 void
-AgentAxiDriver::notifySqAccepted(uint64_t requestId)
+AgentAxiDriver::notifyControlEvent(uint64_t requestId, ControlTriggerEvent event)
 {
     ControlAnchor anchor;
     if (coordinator && workloadManager &&
             workloadManager->anchorForRequest(requestId, anchor.userId,
-                                              anchor.taskSeq,
-                                              anchor.repairRound)) {
-        coordinator->onAuthoritativeEvent(
-            ControlTriggerEvent::AfterSqAccept, anchor, 0, curTick());
-        scheduleTick();
-        scheduleControlDeliveryWake();
-    }
-}
-void
-AgentAxiDriver::notifyFirstOutputChunk(uint64_t requestId)
-{
-    ControlAnchor anchor;
-    if (coordinator && workloadManager &&
-            workloadManager->anchorForRequest(requestId, anchor.userId,
-                                              anchor.taskSeq,
-                                              anchor.repairRound)) {
-        coordinator->onAuthoritativeEvent(
-            ControlTriggerEvent::AfterFirstOutputChunk, anchor, 0, curTick());
+                                              anchor.taskSeq, anchor.repairRound)) {
+        coordinator->onAuthoritativeEvent(event, anchor, 0, curTick());
         scheduleTick();
         scheduleControlDeliveryWake();
     }
@@ -319,16 +333,15 @@ AgentAxiDriver::notifyGenerateTerminalVisible(uint64_t requestId)
 void
 AgentAxiDriver::notifyReleaseTerminal(uint64_t requestId)
 {
-    ControlAnchor anchor;
-    if (coordinator && workloadManager &&
-            workloadManager->anchorForRequest(requestId, anchor.userId,
-                                              anchor.taskSeq,
-                                              anchor.repairRound)) {
-        coordinator->onAuthoritativeEvent(
-            ControlTriggerEvent::AfterReleaseTerminal, anchor, 0, curTick());
-        scheduleTick();
-        scheduleControlDeliveryWake();
-    }
+    const auto index = controlIndexByRequest.find(requestId);
+    if (!coordinator || index == controlIndexByRequest.end())
+        return;
+    const auto &action = coordinator->action(index->second);
+    fatal_if(action.opcode != kAgentCommandReleaseSession, "release event has a non-release owner");
+    coordinator->onAuthoritativeEvent(ControlTriggerEvent::AfterReleaseTerminal,
+                                     {}, action.controlOrdinal, curTick());
+    scheduleTick();
+    scheduleControlDeliveryWake();
 }
 void
 AgentAxiDriver::pumpControlDelivery()
@@ -408,29 +421,22 @@ AgentAxiDriver::beginControlSubmission()
 bool
 AgentAxiDriver::controlCqValid(const agent_abi::CqDescriptor &value) const
 {
-    if ((value.flags & agent_abi::kCqFlagsMETADATA_VALID) != 0 ||
-            (value.flags & agent_abi::kCqFlagsCONTROL_COMMAND) == 0 ||
-            value.request_id == 0 || value.completion_cookie != value.request_id)
-        return false;
     if (currentSqSequence >= planIntents.size())
         return false;
-    const uint8_t kind = planIntents.at(currentSqSequence).commandKind;
-    const uint16_t status = value.status;
-    const bool releaseAllowed =
-        status == agent_abi::kCqStatusSUCCESS ||
-        status == agent_abi::kCqStatusNOT_FOUND ||
-        status == agent_abi::kCqStatusALREADY_TERMINAL ||
-        status == agent_abi::kCqStatusSTALE_GENERATION;
-    const bool cancelAllowed =
-        status == agent_abi::kCqStatusSUCCESS ||
-        status == agent_abi::kCqStatusNOT_FOUND ||
-        status == agent_abi::kCqStatusALREADY_TERMINAL ||
-        status == agent_abi::kCqStatusPARAM_ERROR;
-    return kind == kAgentCommandCancel ? cancelAllowed : releaseAllowed;
+    const auto kind = planIntents.at(currentSqSequence).commandKind;
+    const auto opcode = kind == kAgentCommandCancel ? agent_abi::kSqOpcodeCANCEL :
+        kind == kAgentCommandReleaseSession ? agent_abi::kSqOpcodeRELEASE_SESSION : 0;
+    return gem5::ai_mesh::controlCqValid(value, opcode);
 }
 void
 AgentAxiDriver::noteControlCommandCompletion(uint16_t status)
 {
+    const auto &intent = planIntents.at(currentSqSequence);
+    if (workloadManager && intent.commandKind == kAgentCommandReleaseSession &&
+            !workloadManager->onReleaseTerminal(intent, status, curTick())) {
+        requestFatal(agent_abi::E_AGENT_PROTOCOL_FATAL);
+        return;
+    }
     CancelJoinRecord *joinByCommand =
         findCancelJoinByCommand(currentRequestId);
     if (joinByCommand) {
@@ -444,6 +450,8 @@ AgentAxiDriver::noteControlCommandCompletion(uint16_t status)
     const auto index = controlIndexByRequest.find(currentRequestId);
     if (index != controlIndexByRequest.end())
         coordinator->markControlTerminal(index->second);
+    if (intent.commandKind == kAgentCommandReleaseSession)
+        notifyReleaseTerminal(currentRequestId);
 }
 void
 AgentAxiDriver::advanceGenerateBusiness(uint64_t requestId, uint16_t status)
@@ -489,9 +497,17 @@ AgentAxiDriver::metadataExpectation() const
         const std::array<uint8_t, 32> seed = surrogateSeed(
             intent.inputDigest.data(), intent.programId, intent.profileId,
             intent.profileKey);
+        const auto projection = recorder->servingProjection(currentRequestId);
+        if (!hostBindingPlans.empty() && isSuccessStatus(observedCqStatus)) {
+            const auto counts = plannedInstanceCounts(intent.programId, intent.profileId);
+            fatal_if(projection.tokens != intent.maxOutputTokens ||
+                         std::find(counts.begin(), counts.end(), projection.instances) == counts.end(),
+                     "successful serving report disagrees with the frozen Host profile");
+        }
+        const uint32_t outputTokens = hostBindingPlans.empty() ? intent.maxOutputTokens : projection.tokens;
         std::vector<std::array<uint8_t, 32>> tokenDigests;
-        tokenDigests.reserve(intent.maxOutputTokens);
-        for (uint32_t ordinal = 0; ordinal < intent.maxOutputTokens;
+        tokenDigests.reserve(outputTokens);
+        for (uint32_t ordinal = 0; ordinal < outputTokens;
              ++ordinal)
             tokenDigests.push_back(
                 surrogateTokenDigest(seed.data(), ordinal));
@@ -499,17 +515,23 @@ AgentAxiDriver::metadataExpectation() const
             currentRequestId, context.sessionId, context.userId,
             context.taskSequence, context.repairRound, observedCqStatus,
             observedCqFlags, observedCqValue, context.metadataCapacity};
-        expectation.metadataFlags =
-            intent.kvPolicy == kAgentKvPolicyInitial ||
-                    intent.kvPolicy == kAgentKvPolicyAllowReprefill ?
-            agent_abi::kMetadataFlagsSESSION_ADMITTED : 0;
-        expectation.checkSurrogate = true;
-        expectation.outputTokens = intent.maxOutputTokens;
-        expectation.completedInstanceCount =
-            plannedInstanceCount(intent.programId, intent.profileId);
-        expectation.semanticDigest = surrogateOutputPrefixDigest(
-            intent.workloadDigest.data(), intent.workloadPlanItemId,
-            intent.maxOutputTokens, tokenDigests);
+        expectation.metadataFlags = hostBindingPlans.empty() ? std::optional<uint32_t>{} :
+            std::optional<uint32_t>{agent_abi::kMetadataFlagsSESSION_ADMITTED};
+        expectation.kvHandle = intent.kvHandle;
+        expectation.generation = intent.kvGeneration;
+        expectation.failure = recorder->servingFailure(currentRequestId);
+        if (!hostBindingPlans.empty() && observedCqStatus == agent_abi::kCqStatusCANCELLED)
+            expectation.terminalPosition = recorder->servingCancellation(currentRequestId);
+        expectation.checkExecution = !hostBindingPlans.empty() || isSuccessStatus(observedCqStatus);
+        expectation.outputTokens = outputTokens;
+        expectation.completedInstanceCounts = hostBindingPlans.empty() ?
+            plannedInstanceCounts(intent.programId, intent.profileId) : std::vector<uint32_t>{projection.instances};
+        if (!hostBindingPlans.empty())
+            expectation.outputBytes = projection.bytes;
+        const auto *binding = findHostBindingPlan(hostBindingPlans, intent.programId, intent.profileId);
+        if (!binding || binding->primaryKvSymbolId)
+            expectation.semanticDigest = surrogateOutputPrefixDigest(
+                intent.workloadDigest.data(), intent.workloadPlanItemId, outputTokens, tokenDigests);
         return expectation;
     }
     return Gate3MetadataExpectation{
@@ -618,6 +640,10 @@ AgentAxiDriver::planAdvanceSubmission()
         return;
     }
     if (ledger.available() == 0)
+        return;
+    if (workloadManager && workloadManager->generateIsPaused() &&
+            !workloadManager->controlIntentsPending() &&
+            !workloadManager->boundaryAdmissionsPending())
         return;
     const std::vector<AgentSubmissionIntent> intents =
         requestSource->nextBatch(issuedRequestIds, submissionAttempts,

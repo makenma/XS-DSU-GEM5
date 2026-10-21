@@ -10,10 +10,6 @@
 #include "base/logging.hh"
 #include "dev/ai_mesh/agent_axi_driver.hh"
 #include "dev/ai_mesh/agent_plan_image.hh"
-#include "dev/ai_mesh/mesh_dispatcher.hh"
-#include "dev/ai_mesh/mesh_kv_layout.hh"
-#include "dev/ai_mesh/mesh_program_loader.hh"
-#include "dev/ai_mesh/mesh_serving_projection.hh"
 #include "dev/ai_mesh/serving_mesh_executor.hh"
 #include "params/NpuServingFrontend.hh"
 #include "sim/core.hh"
@@ -84,12 +80,25 @@ NpuServingFrontend::NpuServingFrontend(const Params &p)
                  p.cq_ring_base, p.cq_depth),
       transferPlanner(p.data_bus_bytes, p.max_burst_beats),
       completionLedger(p.cq_depth),
+      sqAdmission(p.seen_request_id_entries),
       msiIdPool(p.msi_axi_id, p.msi_axi_id_count),
       retireEvent(this), terminalEvent(this), executionEvent(this),
+      quantumEvent(this),
+      replayPrepareEvent([this] { ensureServingPrepared(); }, name() + ".replay_prepare"),
       tickEvent(this),
       fatalDrainEvent(this),
       kvManager(buildKvGeometry(), buildKvCapacity())
 {
+    servingBatchReplayArtifact = p.batch_replay_artifact;
+    servingStrictReplay = p.strict_replay_serial_batches;
+    schedulerMaxActiveSequences = p.scheduler_max_active_sequences;
+    schedulerMaxBatchTokens = p.scheduler_max_batch_tokens;
+    schedulerMaxPrefillTokensPerBatch =
+        p.scheduler_max_prefill_tokens_per_batch;
+    schedulerMaxDecodeSequencesPerBatch =
+        p.scheduler_max_decode_sequences_per_batch;
+    schedulerBatchWaitCycles = p.scheduler_batch_wait_cycles;
+    schedulerPrefillStarvationCycles = p.scheduler_prefill_starvation_cycles;
     fatal_if(dataBusBytes == 0 || dataBusBytes > 64,
              "%s: invalid AXI data bus width", name());
     fatal_if(controlBytes != sizeof(uint64_t) || controlBytes > dataBusBytes,
@@ -130,8 +139,10 @@ NpuServingFrontend::NpuServingFrontend(const Params &p)
         planImage = loadAgentPlanImageFile(p.plan_image);
         fatal_if(!planImage, "%s: plan image %s cannot be loaded", name(),
                  p.plan_image);
+        fatal_if(p.seen_request_id_entries < planImage->commands().size(),
+                 "E_CAPACITY_PLAN: SQ identity table is smaller than the command plan");
         const SurrogateProfileRegistry *registry = planImage->surrogateRegistry();
-        fatal_if(registry == nullptr,
+        fatal_if(registry == nullptr && !servingExecution,
                  "%s: plan image has no surrogate profile registry", name());
         requestCount = planImage->generateCommandCount();
         fatal_if(requestCount == 0,
@@ -164,6 +175,10 @@ NpuServingFrontend::NpuServingFrontend(const Params &p)
             proof.kvHandle = command.kvHandle;
             proof.generation = command.generation;
             proof.itemId = round->itemId;
+            proof.logicalSourceRank = round->logicalSourceRank;
+            proof.batchReplay = round->batchReplay;
+            fatal_if(servingExecution && proof.batchReplay && servingBatchReplayArtifact.empty(),
+                     "E_BATCH_REPLAY_DIVERGENCE: flagged round has no artifact");
             proof.fullContextTokens = round->fullContextTokens;
             proof.fullContextBytes = round->fullContextBytes;
             proof.cachedTokens = round->cachedTokens;
@@ -213,131 +228,6 @@ NpuServingFrontend::NpuServingFrontend(const Params &p)
 }
 
 void
-NpuServingFrontend::onCoreStart(uint64_t requestId)
-{
-    recordSemantic("CORE_START", "CONTEXT", std::nullopt, requestId,
-                   currentCookie);
-    recorder->setMetric("core_starts", recorder->metric("core_starts") + 1);
-}
-
-void
-NpuServingFrontend::onRequestComplete(
-    const NpuExecutionRequest &request,
-    const NpuExecutionCompletion &completion)
-{
-    fatal_if(request.requestId != currentRequestId,
-             "%s: completion request does not match the live context", name());
-    currentCompletion = completion;
-    if (completion.kvTerminal)
-        recorder->setMetric("kv_cached_tokens",
-                            completion.kvTerminal->cached_tokens);
-    if (parkedBusiness)
-        parkedBusiness->completion = completion;
-    if (!executionCurrent())
-        return;
-    if (servingExecution && !completion.success) {
-        queueErrorCompletion(
-            static_cast<uint16_t>(agent_abi::CqStatus::PROGRAM_ERROR),
-            agent_abi::kCqFlagsDETAIL_IN_CQ, agent_abi::E_KV_STATE);
-        return;
-    }
-    if (servingExecution) {
-        startMetadata();
-        return;
-    }
-    startOutput();
-}
-
-void
-NpuServingFrontend::completeExecution()
-{
-    fatal_if(!lastExecutionRequest,
-             "%s: execution completion without a submitted request", name());
-    activeExecutor()->postCompletion(*lastExecutionRequest);
-}
-
-void
-NpuServingFrontend::ensureServingPrepared()
-{
-    if (meshExecutor)
-        return;
-    fatal_if(servingLoader == nullptr || servingDispatcher == nullptr,
-             "%s: serving_mesh is not configured", name());
-    fatal_if(!servingLoader->loaded(),
-             "%s: serving program is not loaded", name());
-    std::array<uint8_t, 32> weight_digest{};
-    for (size_t index = 0; index < weight_digest.size(); ++index) {
-        const std::string byte = servingWeightImageDigest.substr(index * 2, 2);
-        weight_digest[index] = static_cast<uint8_t>(
-            std::stoul(byte, nullptr, 16));
-    }
-    const DecodedProgram &serving_program = servingLoader->program();
-    std::array<uint8_t, 32> layout_digest{};
-    MeshLoadError layout_error;
-    fatal_if(!kvLayoutDigest(serving_program, layout_digest, layout_error),
-             "%s: %s: %s", name(), layout_error.code, layout_error.message);
-    fatal_if(serving_program.agent_request_profiles.empty(),
-             "%s: serving program has no request profile", name());
-    servingContractDigest = MeshKvManager::contractDigest(
-        programSemanticDigest(serving_program), weight_digest, layout_digest,
-        serving_program.agent_request_profiles[0].kv_bytes_per_token);
-    meshExecutor = std::make_unique<ServingMeshExecutor>(
-        serving_program, kvManager);
-    meshExecutor->attachDispatch(*servingDispatcher);
-    servingDispatcher->setDmaObserver(meshExecutor.get());
-    servingDispatcher->setInstanceObserver(meshExecutor.get());
-    meshExecutor->setTickSource([this]() { return curTick(); });
-    meshExecutor->setPhaseFactSink([this](const ServingPhaseFact &fact) {
-        recorder->recordServingPhase(
-            Gate3ObservationRecorder::ServingPhaseRow{
-                fact.phase, fact.instance_profile_id, fact.mesh_profile_id,
-                fact.kv_tokens_before, fact.append_tokens,
-                fact.accepted_descriptors, fact.terminal_descriptors,
-                fact.core_drain_tick, fact.append_terminal_tick,
-                fact.commit_tick});
-    });
-    meshExecutor->attachSink(this);
-    if (planRegistry != nullptr) {
-        const SurrogateProfileRegistry *registry = planRegistry;
-        meshExecutor->setDigestSource(
-            [this, registry](const NpuExecutionRequest &request,
-                             uint64_t output_bytes) {
-                const SurrogateProfile *profile =
-                    FullContextSurrogateExecutor::profileFor(*registry,
-                                                              request);
-                if (profile != nullptr) {
-                    fatal_if(profile->outputBytes != output_bytes,
-                             "%s: surrogate output bytes %llu != mesh output "
-                             "bytes %llu", name(),
-                             (unsigned long long)profile->outputBytes,
-                             (unsigned long long)output_bytes);
-                    return FullContextSurrogateExecutor::semanticDigestFor(
-                        request, *profile);
-                }
-                fatal_if(request.maxOutputTokens == 0,
-                         "%s: serving request needs output tokens", name());
-                const std::array<uint8_t, 32> seed = surrogateSeed(
-                    request.inputDigest.data(), request.programId,
-                    request.profileId, request.requestedProfileKey);
-                std::vector<std::array<uint8_t, 32>> token_digests;
-                token_digests.reserve(request.maxOutputTokens);
-                for (uint32_t ordinal = 0; ordinal < request.maxOutputTokens;
-                     ++ordinal)
-                    token_digests.push_back(
-                        surrogateTokenDigest(seed.data(), ordinal));
-                return surrogateOutputPrefixDigest(
-                    request.workloadDigest.data(),
-                    request.workloadPlanItemId, request.maxOutputTokens,
-                    token_digests);
-            });
-    }
-    if (kvManager.fatalReason()) {
-        fatal("%s: invalid KV geometry or capacity: %s", name(),
-              kvManager.fatalReason()->c_str());
-    }
-}
-
-void
 NpuServingFrontend::init()
 {
     ClockedObject::init();
@@ -368,6 +258,8 @@ void
 NpuServingFrontend::startup()
 {
     ClockedObject::startup();
+    if (servingExecution && !servingBatchReplayArtifact.empty())
+        schedule(&replayPrepareEvent, curTick());
     schedule(&tickEvent, clockEdge() + 1);
 }
 
@@ -439,9 +331,11 @@ NpuServingFrontend::makeControl(uint64_t sequence) const
 std::optional<uint32_t>
 NpuServingFrontend::terminalOutputBytes() const
 {
-    if (!planExecution || !currentCompletion || currentError ||
-        currentControlOpcode != 0 || currentRequestId == 0)
+    if (!(currentCqFlags & agent_abi::kCqFlagsMETADATA_VALID))
         return std::nullopt;
+    if (!planExecution)
+        return dataBusBytes;
+    fatal_if(!currentCompletion, "metadata terminal has no execution completion");
     return static_cast<uint32_t>(currentCompletion->outputBytes);
 }
 
@@ -460,8 +354,10 @@ NpuServingFrontend::makeCq(uint64_t sequence, uint64_t requestId,
         value.output_bytes_or_detail_code = currentDetailCode;
     else if (flags & agent_abi::kCqFlagsCONTROL_COMMAND)
         value.output_bytes_or_detail_code = 0;
-    else if (flags & agent_abi::kCqFlagsPARTIAL_OUTPUT)
-        value.output_bytes_or_detail_code = currentOutputBytes.value_or(0);
+    else if (flags & agent_abi::kCqFlagsMETADATA_VALID) {
+        fatal_if(!currentOutputBytes, "metadata CQ has no frozen output length");
+        value.output_bytes_or_detail_code = *currentOutputBytes;
+    }
     else if (status != static_cast<uint16_t>(agent_abi::CqStatus::SUCCESS))
         value.output_bytes_or_detail_code = currentDetailCode;
     else if (currentOutputBytes)
@@ -698,6 +594,22 @@ void
 NpuServingFrontend::onGate3FatalCut(Tick tick)
 {
     (void)tick;
+    if (servingExecution) {
+        const auto state = kvManager.saveLive();
+        uint64_t tokens = 0;
+        uint64_t bytes = 0;
+        uint64_t outstanding = 0;
+        for (const auto &record : state.records) {
+            tokens += record.cached_tokens;
+            bytes += record.valid_bytes;
+            outstanding += record.outstanding_kv_dma;
+        }
+        recorder->setMetric("fatal_kv_records", state.records.size());
+        recorder->setMetric("fatal_kv_cached_tokens", tokens);
+        recorder->setMetric("fatal_kv_valid_bytes", bytes);
+        recorder->setMetric("fatal_kv_outstanding_dma", outstanding);
+        recorder->setMetric("fatal_kv_pins", state.pins.size());
+    }
     cutFatalOwnership();
     if (!fatalDrainEvent.scheduled())
         schedule(&fatalDrainEvent, clockEdge() + 1);
@@ -901,11 +813,13 @@ NpuServingFrontend::processDoorbells()
     cqBackpressureObserved = false;
     currentSqSequence = sqConsumer;
     currentRequestId = 0;
+    currentCompletion.reset();
     currentCookie = 0;
     currentValid = true;
     currentDuplicate = false;
     currentError = false;
     currentControlOpcode = 0;
+    currentQos = 0;
     currentSessionAdmitted = false;
     currentObligationId.reset();
     stage = Stage::SqRead;
@@ -981,12 +895,10 @@ NpuServingFrontend::startOutput()
 void
 NpuServingFrontend::startMetadata()
 {
-    // Metadata encodes the immutable KV owner terminal, so it may only be
-    // built once the executor has formed that snapshot and given up
-    // ownership; otherwise the CQ would describe state the release changes.
     if (servingExecution) {
-        fatal_if(!currentCompletion || !currentCompletion->kvTerminal,
-                 "%s: metadata built without a KV owner terminal snapshot",
+        fatal_if(!currentCompletion || bool(currentCompletion->kvTerminal) !=
+                     meshExecutor->context(currentRequestId).usesKv(),
+                 "%s: metadata terminal snapshot differs from the request mode",
                  name());
         recorder->setMetric("serving_instance_count",
                             currentCompletion->phaseInstances);
@@ -998,7 +910,7 @@ NpuServingFrontend::startMetadata()
     activeWrite = makeWrite(
         "METADATA", "METADATA", std::nullopt, currentRequestId,
         currentCookie, currentMetadataAddress, 22,
-        makeMetadata(currentSqSequence,
+        makeMetadata(currentSqSequence, servingExecution ? currentCqStatus :
                      static_cast<uint32_t>(agent_abi::CqStatus::SUCCESS)));
     stage = Stage::Metadata;
 }
@@ -1022,6 +934,7 @@ NpuServingFrontend::stageTerminalResult()
     }
     const bool sequenceKeyed =
         currentCqFlags & (agent_abi::kCqFlagsSQ_SEQ_ONLY_ERROR |
+                          agent_abi::kCqFlagsSQ_ABI_ERROR |
                           agent_abi::kCqFlagsSQ_IDENTITY_ERROR);
     const uint8_t effectiveQos = sequenceKeyed ? 0 : currentQos;
     const uint64_t effectiveRequestId = sequenceKeyed ? 0 : currentRequestId;
@@ -1044,7 +957,7 @@ NpuServingFrontend::stageTerminalResult()
     }
     if (currentControlOpcode == 0) {
         releaseKvPin(currentRequestId, currentCqStatus);
-        latchGenerateTerminal(currentRequestId);
+        latchGenerateTerminal(currentRequestId, readyTick);
     }
     currentValid = false;
     currentError = false;
@@ -1062,14 +975,33 @@ NpuServingFrontend::stageTerminalResult()
 }
 
 void
-NpuServingFrontend::latchGenerateTerminal(uint64_t requestId)
+NpuServingFrontend::latchGenerateTerminal(uint64_t requestId, Tick readyTick)
 {
     if (!planExecution || requestId == 0)
         return;
+    const auto proof = planRequestProofs.find(requestId);
+    if (meshExecutor && proof != planRequestProofs.end() && proof->second.batchReplay) {
+        const auto &member = proof->second;
+        meshExecutor->onReplayMemberTerminal({member.itemId, member.userId, member.taskSeq, member.repairRound});
+    }
     if (!terminalGenerateRequests.insert(requestId).second)
         return;
     recordSemantic("GENERATE_TERMINAL_LATCHED", "CONTEXT", std::nullopt,
                    requestId, std::nullopt);
+    for (auto entry = pendingCancels.begin(); entry != pendingCancels.end();) {
+        if (entry->second.targetRequestId != requestId) {
+            ++entry;
+            continue;
+        }
+        const TerminalResult completion = entry->second.completion;
+        entry = pendingCancels.erase(entry);
+        recordSemantic("CONTROL_RESOLVE", "CONTROL_WAITER", std::nullopt,
+                       completion.requestId, completion.cookie, "SUCCESS");
+        stageTerminalRecord(completion.obligationId, readyTick,
+                            completion.sqSequence, completion.requestId,
+                            completion.cookie, completion.qos, completion.status,
+                            completion.flags, completion.detailCode, completion.outputBytes);
+    }
 }
 
 void
@@ -1284,51 +1216,34 @@ NpuServingFrontend::handleSqRecord()
             axiSourceToken(agent_abi::FatalComponentKindV1::NPU_COMMAND,
                            true, readTransaction));
         return;
-    } else if (value.request_id == 0 || value.completion_cookie == 0) {
-        currentError = true;
-        currentCqStatus = static_cast<uint16_t>(
-            agent_abi::CqStatus::PARAM_ERROR);
-        currentCqFlags = agent_abi::kCqFlagsSQ_IDENTITY_ERROR |
-            agent_abi::kCqFlagsDETAIL_IN_CQ;
-        currentDetailCode = agent_abi::E_REQUEST_IDENTITY;
-        currentRequestId = value.request_id;
-        currentCookie = value.completion_cookie;
     } else {
-        currentRequestId = value.request_id;
-        currentCookie = value.completion_cookie;
-        currentParameterAddress = value.parameter_block_addr;
-        currentParameterBytes = value.parameter_block_bytes;
-        currentQos = value.qos;
-        currentSessionId = value.session_id;
-        currentProgramId = value.program_id;
-        currentProfileId = value.profile_id;
-        currentSqFlags = value.flags;
-        currentControlOpcode = 0;
-        if (planExecution) {
-            const uint16_t opcode = value.opcode;
-            if (opcode == agent_abi::kSqOpcodeRELEASE_SESSION ||
-                    opcode == agent_abi::kSqOpcodeCANCEL) {
-                const bool release =
-                    opcode == agent_abi::kSqOpcodeRELEASE_SESSION;
-                if (value.flags != 0 || value.qos != 0 ||
-                        value.program_id != 0 || value.profile_id != 0 ||
-                        (release && value.session_id == 0) ||
-                        (!release && value.session_id != 0)) {
-                    currentError = true;
-                    currentCqStatus = static_cast<uint16_t>(
-                        agent_abi::CqStatus::PARAM_ERROR);
-                    currentCqFlags = agent_abi::kCqFlagsDETAIL_IN_CQ;
-                    currentDetailCode = agent_abi::E_RESERVED_FIELD;
-                } else {
-                    currentControlOpcode = opcode;
-                }
-            } else if (opcode != agent_abi::kSqOpcodeGENERATE) {
-                currentError = true;
-                currentCqStatus = static_cast<uint16_t>(
-                    agent_abi::CqStatus::PARAM_ERROR);
-                currentCqFlags = agent_abi::kCqFlagsDETAIL_IN_CQ;
-                currentDetailCode = agent_abi::E_RESERVED_FIELD;
-            }
+        const auto admission = sqAdmission.accept(value);
+        if (admission.capacity_error) {
+            requestFatal(agent_abi::E_AGENT_PROTOCOL_FATAL);
+            return;
+        }
+        const bool sequence_keyed = admission.flags &
+            (agent_abi::kCqFlagsSQ_ABI_ERROR | agent_abi::kCqFlagsSQ_IDENTITY_ERROR);
+        currentRequestId = sequence_keyed ? 0 : value.request_id;
+        currentCookie = sequence_keyed ? currentSqSequence : value.completion_cookie;
+        currentControlOpcode = !sequence_keyed &&
+            (value.opcode == agent_abi::kSqOpcodeCANCEL ||
+             value.opcode == agent_abi::kSqOpcodeRELEASE_SESSION) ? value.opcode : 0;
+        if (!admission.accepted()) {
+            currentError = true;
+            currentCqStatus = agent_abi::kCqStatusPARAM_ERROR;
+            currentCqFlags = admission.flags;
+            currentDetailCode = admission.detail;
+            if (!sequence_keyed)
+                currentQos = value.qos;
+        } else {
+            currentParameterAddress = value.parameter_block_addr;
+            currentParameterBytes = value.parameter_block_bytes;
+            currentQos = value.qos;
+            currentSessionId = value.session_id;
+            currentProgramId = value.program_id;
+            currentProfileId = value.profile_id;
+            currentSqFlags = value.flags;
         }
     }
     fatal_if(sqCommitPending,
@@ -1397,8 +1312,12 @@ NpuServingFrontend::handleWriteResponse(const Gate3WriteWork &work,
         }
         startMetadata();
     } else if (work.control == "METADATA") {
-        currentCqStatus = static_cast<uint16_t>(agent_abi::CqStatus::SUCCESS);
+        if (!servingExecution)
+            currentCqStatus = static_cast<uint16_t>(agent_abi::CqStatus::SUCCESS);
         currentCqFlags = agent_abi::kCqFlagsMETADATA_VALID;
+        if (servingExecution && currentCompletion && !currentCompletion->succeeded() &&
+                currentCompletion->outputBytes != 0)
+            currentCqFlags |= agent_abi::kCqFlagsPARTIAL_OUTPUT;
         stageTerminalResult();
     } else if (work.control == "CQ_ENTRY") {
         const std::string status = isSuccessStatus(currentCqStatus) ?
@@ -1440,6 +1359,8 @@ NpuServingFrontend::commitAckRetire()
                        obligation->cqSequence->value(),
                        obligation->requestId.value(),
                        obligation->cookie.value());
+        if (servingExecution && meshExecutor)
+            meshExecutor->retireCompletedRequest(obligation->requestId.value());
         fatal_if(!completionLedger.retire(id),
                  "%s: CQ obligation retirement failed", name());
     }
@@ -1528,7 +1449,7 @@ NpuServingFrontend::queueErrorCompletion(uint16_t status, uint16_t flags,
 {
     currentError = true;
     currentCqStatus = status;
-    currentCqFlags = flags;
+    currentCqFlags = flags | (currentControlOpcode ? agent_abi::kCqFlagsCONTROL_COMMAND : 0);
     currentDetailCode = detail_code;
     stageTerminalResult();
 }

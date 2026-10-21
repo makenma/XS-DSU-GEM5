@@ -17,6 +17,8 @@ from mesh_ir.abi.decoder import decode_program  # noqa: E402
 from mesh_ir.acceptance import canonical_digest  # noqa: E402
 from mesh_ir.agent_workload import load_workload_plan
 from mesh_ir.generated import abi as A
+from mesh_ir.execution_view import build_execution_views
+from mesh_ir.kv_layout import kv_layout_projection
 from mesh_ir.gate3_oracle import SERVING_PHASE_FIELDS
 from mesh_ir.gate3_oracle import read_facts_document  # noqa: E402
 from mesh_ir.serving_output_bytes import dual_fnv_digest, surrogate_output_bytes
@@ -313,8 +315,9 @@ def test_the_real_run_host_read_matches_the_contract_output_bytes():
 def test_interleaved_phase_windows_fail_the_serialization_check():
     result, _ = evidence()
     mutated = copy.deepcopy(result)
-    issue = mutated["cores"][0]["command_issue_ticks"]
-    issue["1"], issue["9"] = issue["9"], issue["1"]
+    first = next(row for row in mutated["instances"][0]["cores"]["0"]["observations"]["commands"] if row["command_id"] == 1)
+    second = next(row for row in mutated["instances"][1]["cores"]["0"]["observations"]["commands"] if row["command_id"] == 9)
+    first["issue_tick"], second["issue_tick"] = second["issue_tick"], first["issue_tick"]
     checks, _ = derive(result=mutated)
     assert status_of(checks, "completion_timing") == "FAIL"
     assert status_of(checks, "serving_phase_chain") == "PASS"
@@ -406,10 +409,7 @@ def test_runner_rejects_review_counterexamples(tmp_path, mutation):
                 if row[0] == "EVENT" and row[13] == "GENERATED_CODE_READ")
     metrics = {row[1]: row for row in rows if row[0] == "METRIC"}
     decoded = program()
-    publish_range = decoded.profile_stream_ranges[-1]
-    publish_commands = {command.command_id for command in decoded.commands[
-        publish_range.command_begin:
-        publish_range.command_begin + publish_range.command_count]}
+    publish_commands = build_execution_views(decoded).views[-1].command_ids
     stores = sorted((descriptor for descriptor in decoded.dma_descriptors
                      if descriptor.command_id in publish_commands and
                      descriptor.kind == A.DMA_KIND.STORE),
@@ -443,10 +443,9 @@ def test_runner_rejects_review_counterexamples(tmp_path, mutation):
         phases[1][fields["append_terminal_tick"]] = str(
             facts.serving_phases[0]["commit_tick"] + 1)
     elif mutation == "commit_after_next_phase_start":
-        next_range = decoded.profile_stream_ranges[1]
-        command = decoded.commands[next_range.command_begin].command_id
-        phases[0][fields["commit_tick"]] = str(
-            result["cores"][0]["command_issue_ticks"][str(command)] + 1)
+        next_issue = min(row["issue_tick"] for core in result["instances"][1]["cores"].values()
+                         for row in core["observations"]["commands"] if row["issued"])
+        phases[0][fields["commit_tick"]] = str(next_issue + 1)
     elif mutation == "forged_semantic_and_all_output_evidence":
         seed = b"\x11" * 32
         content = surrogate_output_bytes(seed, result["output_span"]["bytes"])
@@ -466,17 +465,12 @@ def test_runner_rejects_review_counterexamples(tmp_path, mutation):
             payloads[descriptor.descriptor_id]["payload_digest"] = \
                 dual_fnv_digest(content[start:start + descriptor.useful_bytes])
     else:
-        kv_symbol = decoded.agent_request_profiles[0].primary_kv_symbol_id
-        kv_tensor = next(relocation.tensor_id for relocation in
-                         decoded.relocations if relocation.symbol_sid == kv_symbol)
-        first_range = decoded.profile_stream_ranges[0]
-        commands = {command.command_id for command in decoded.commands[
-            first_range.command_begin:
-            first_range.command_begin + first_range.command_count]}
+        kv_tensors = {row["tensor"]["tensor_id"] for row in kv_layout_projection(decoded)["bindings"]}
+        commands = build_execution_views(decoded).views[0].command_ids
         descriptor = next(descriptor for descriptor in decoded.dma_descriptors
                           if descriptor.command_id in commands and
                           descriptor.kind == A.DMA_KIND.STORE and
-                          descriptor.dst.tensor_id == kv_tensor)
+                          descriptor.dst.tensor_id in kv_tensors)
         timing = next(row for row in result["dma_timings"]
                       if row["descriptor_id"] == descriptor.descriptor_id)
         assert 0 < timing["first_aw_tick"] < timing["first_b_tick"]

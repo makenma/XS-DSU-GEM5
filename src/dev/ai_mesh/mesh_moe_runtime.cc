@@ -93,7 +93,7 @@ void MoeOverlayExecutor::reset()
     live_dma.clear();
     descriptors.clear();
     views.clear();
-    graph_ref = nullptr;
+    graph_storage = {};
     failure_reason.clear();
 }
 
@@ -117,8 +117,8 @@ void MoeOverlayExecutor::load(uint32_t layer_id, InstanceGeneration instance,
     fatal_if(scoreboard == nullptr, "overlay executor has no scoreboard");
     layer_id_value = layer_id;
     instance_value = instance;
-    graph_ref = &graph;
-    for (const auto &entry : graph.objects()) {
+    graph_storage = graph;
+    for (const auto &entry : graph_storage.objects()) {
         if (entry.kind != mesh_abi::kMeshObjectKindCOMMAND)
             continue;
         if (entry.owner_core != config.core_id)
@@ -177,7 +177,7 @@ void MoeOverlayExecutor::load(uint32_t layer_id, InstanceGeneration instance,
         }
         commands.push_back(command);
     }
-    for (const auto &entry : graph.objects()) {
+    for (const auto &entry : graph_storage.objects()) {
         if (entry.kind == mesh_abi::kMeshObjectKindDESCRIPTOR)
             descriptors[std::make_pair(entry.region_id, entry.ordinal)] =
                 &entry;
@@ -368,7 +368,7 @@ bool MoeOverlayExecutor::resolveView(const MoeOverlayEntry &view,
     byte_count = view.bytes;
     if (view.backing_kind == mesh_abi::kMoeViewBackingOVERLAY_ALLOCATION) {
         const auto *interval =
-            graph_ref->resolveAllocation(view.ref_region, view.ref_ordinal);
+            graph_storage.resolveAllocation(view.ref_region, view.ref_ordinal);
         if (interval == nullptr)
             return false;
         if (view.offset + view.bytes > interval->bytes)
@@ -458,7 +458,7 @@ MoeOverlayExecutor::submitDma(const MoeRuntimeCommand &command)
         }
         wire.src = wire.dst;
         wire.descriptor_id = descriptor->ordinal;
-        const auto payload = graph_ref->resolvePayload(descriptor->region_id,
+        const auto payload = graph_storage.resolvePayload(descriptor->region_id,
                                                        descriptor->ordinal);
         fatal_if(payload.first == nullptr && descriptor->bytes > 0,
                  "fill descriptor %u:%u carries no contract content",
@@ -466,7 +466,7 @@ MoeOverlayExecutor::submitDma(const MoeRuntimeCommand &command)
         const std::vector<uint8_t> content(payload.first,
                                            payload.first + payload.second);
         dma->bindFillContent(command.key, content,
-                             graph_ref->fillMode() == 0);
+                             graph_storage.fillMode() == 0);
         if (!dma->submitOverlayDma(wire, overlayDescriptorKey(*descriptor),
                                    command.key, now))
             return DmaIssue::BACKPRESSURE;
@@ -480,7 +480,7 @@ MoeOverlayExecutor::submitDma(const MoeRuntimeCommand &command)
         failure_reason = "no address space";
         return DmaIssue::UNRESOLVABLE;
     }
-    const auto weight = addresses->expert_weights.find(expert);
+    const auto weight = addresses->expert_weights.find({layer_id_value, expert});
     if (weight == addresses->expert_weights.end()) {
         failure_reason = "expert " + std::to_string(expert) +
                          " has no weight binding";
@@ -504,12 +504,7 @@ MoeOverlayExecutor::submitDma(const MoeRuntimeCommand &command)
         failure_reason = "weight view smaller than the bound slice";
         return DmaIssue::UNRESOLVABLE;
     }
-    wire.src.memory_space = mesh_abi::kMemorySpaceHBM;
-    wire.src.owner_core = 0;
-    wire.src.tensor_id = 0;
-    wire.src.shard_id = 0;
-    wire.src.region_id = addresses->hbm_region;
-    wire.src.offset_bytes = weight->second.first;
+    wire.src = weight->second.first;
     wire.row_bytes = weight->second.second;
     wire.src_stride_bytes = weight->second.second;
     wire.dst_stride_bytes = weight->second.second;
@@ -879,8 +874,8 @@ void MoeOverlayExecutor::commitCompute(const MoeRuntimeCommand &command)
     ComputeCommitRequest request;
     request.command = command.key;
     request.opcode = command.opcode;
-    request.identity_copy =
-        command.role == mesh_abi::kMoeCommandRoleCOPY_THROUGH;
+    request.copy_mode = command.role == mesh_abi::kMoeCommandRoleCOPY_THROUGH
+        ? ComputeCopyMode::RepeatRow : ComputeCopyMode::Derived;
     for (const auto &triple : localViews(command)) {
         const MoeOverlayEntry &view = *std::get<0>(triple);
         mesh_abi::DmaEndpoint endpoint;

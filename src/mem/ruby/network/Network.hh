@@ -110,6 +110,9 @@ class Network : public ClockedObject
                                   PortDirection src_outport,
                                   PortDirection dst_inport) = 0;
 
+    virtual bool isQuiescent() const = 0;
+    virtual void setAggregateMode(bool aggregate)
+    { fatal("network does not support timing mode handoff"); }
     virtual void collateStats() = 0;
     virtual void print(std::ostream& out) const = 0;
 

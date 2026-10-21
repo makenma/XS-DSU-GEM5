@@ -7,6 +7,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <stdexcept>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -36,6 +37,8 @@ enum class AgentTaskFsmState : uint8_t
     ParsingLog,
     BusinessDone,
     BusinessFailed,
+    ReleaseSubmitting,
+    ReleaseWaitCq,
     TaskLifecycleFinal,
 };
 
@@ -54,6 +57,7 @@ struct AgentWorkloadManagerConfig
     uint32_t hostTestSlots = 6;
     uint32_t hostLogParseSlots = 4;
     uint32_t hostServiceQueueDepth = 64;
+    uint32_t hostReleaseWaiterEntries = 64;
     uint32_t hostWeightCompile = 4;
     uint32_t hostWeightTest = 3;
     uint32_t hostWeightLogParse = 2;
@@ -84,6 +88,34 @@ const char *hostStageKindName(HostStageKindV1 kind);
 class AgentWorkloadManager final : public AgentRequestSource
 {
   public:
+    AgentSubmissionIntent intentForRequest(uint64_t requestId) const;
+
+    template<class Archive>
+    void serialize(Archive &archive, unsigned)
+    {
+        auto digest = image.imageDigest();
+        archive & digest;
+        if (digest != image.imageDigest())
+            throw std::runtime_error("E_CHECKPOINT_IDENTITY: Host plan differs");
+        size_t count = tasks.size();
+        archive & count;
+        if (count != tasks.size())
+            throw std::runtime_error("checkpoint task population differs from plan");
+        for (auto &task : tasks)
+            archive & task;
+        checkpoint::fields(archive, resources, objects, queuedArrivals, pendingStages,
+            pendingControls, pendingGenerateTerminals, lastArbitratedTick,
+            agingReservationActive, hostFaultFired, boundaryAdmissions, liveReleaseWaiters,
+            completedTaskCount, failedTaskCount, infraFailedTaskCount, agingReservationCount,
+            rawLogBytes, scannedLogBytes, excerptBytes, excerptTokens);
+        if constexpr (Archive::is_loading::value) {
+            for (auto &task : tasks)
+                if (task.intent)
+                    task.intent = intentForRequest(task.intent->requestId);
+            for (auto &intent : pendingControls)
+                intent = intentForRequest(intent.requestId);
+        }
+    }
     AgentWorkloadManager(AgentPlanImage &&planImage,
                          const AgentWorkloadManagerConfig &managerConfig,
                          AgentWorkloadFactsSink factsSink);
@@ -94,6 +126,8 @@ class AgentWorkloadManager final : public AgentRequestSource
         uint64_t submissionAttempts, uint32_t sqDepth) override;
 
     void onEdge(Tick now);
+    void observeSessionAdmitted(uint64_t requestId, bool admitted);
+    bool onReleaseTerminal(const AgentSubmissionIntent &intent, uint16_t status, Tick now);
     void onGenerateTerminal(uint64_t requestId, bool success, Tick now);
     void scheduleGenerateTerminal(uint64_t requestId, bool success, Tick at);
     std::optional<Tick> nextWakeTick() const;
@@ -107,11 +141,18 @@ class AgentWorkloadManager final : public AgentRequestSource
     uint64_t completedTasks() const { return completedTaskCount; }
     uint64_t failedTasks() const { return failedTaskCount; }
     uint64_t infraFailedTasks() const { return infraFailedTaskCount; }
+    void pauseGenerate(std::set<uint32_t> requiredItems)
+    { boundaryAdmissions = std::move(requiredItems); }
+    void resumeGenerate() { boundaryAdmissions.reset(); }
+    bool generateIsPaused() const { return boundaryAdmissions.has_value(); }
+    bool boundaryAdmissionsPending() const
+    { return boundaryAdmissions && !boundaryAdmissions->empty(); }
     const HostResourceManager &hostResources() const { return resources; }
 
   private:
     struct StageRun
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         HostTaskId id{0};
         HostStageKindV1 kind = HostStageKindV1::Compile;
         uint64_t requestId = 0;
@@ -121,6 +162,7 @@ class AgentWorkloadManager final : public AgentRequestSource
 
     struct PendingEnqueue
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         size_t taskIndex = 0;
         HostStageKindV1 kind = HostStageKindV1::Compile;
 
@@ -132,6 +174,10 @@ class AgentWorkloadManager final : public AgentRequestSource
 
     struct TaskContext
     {
+        GEM5_CHECKPOINT_FIELDS(state, roundIndex, thinkTargetTick, submitReadyTick,
+            lifecycleFinalTick, suppressed, sessionAdmitted, sessionReleased,
+            businessOutcome, autoReleaseCommand, currentRequestId, intent, stage,
+            ownedObjects, generatedCode, rawLog)
         uint32_t userId = 0;
         uint32_t taskSeq = 0;
         uint16_t effectiveCap = 0;
@@ -142,6 +188,10 @@ class AgentWorkloadManager final : public AgentRequestSource
         Tick submitReadyTick = 0;
         Tick lifecycleFinalTick = 0;
         bool suppressed = false;
+        bool sessionAdmitted = false;
+        bool sessionReleased = false;
+        std::optional<AgentTaskOutcome> businessOutcome;
+        std::optional<size_t> autoReleaseCommand;
         uint64_t currentRequestId = 0;
         std::optional<AgentSubmissionIntent> intent;
         std::optional<StageRun> stage;
@@ -180,6 +230,8 @@ class AgentWorkloadManager final : public AgentRequestSource
     void commitExcerpt(TaskContext &task, const AgentPlanStage &stage);
     void admitPendingStages(Tick now);
     void applyStopCutoff();
+    void finishTaskLifecycle(TaskContext &task, Tick now);
+    void scheduleSessionReleases();
 
     const AgentPlanImage image;
     const AgentWorkloadManagerConfig config;
@@ -196,6 +248,7 @@ class AgentWorkloadManager final : public AgentRequestSource
     std::vector<AgentSubmissionIntent> pendingControls;
     struct PendingGenerateTerminal
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         uint64_t requestId;
         bool success;
         Tick at;
@@ -206,6 +259,8 @@ class AgentWorkloadManager final : public AgentRequestSource
     Tick lastArbitratedTick = 0;
     bool agingReservationActive = false;
     bool hostFaultFired = false;
+    std::optional<std::set<uint32_t>> boundaryAdmissions;
+    uint32_t liveReleaseWaiters = 0;
     uint64_t completedTaskCount = 0;
     uint64_t failedTaskCount = 0;
     uint64_t infraFailedTaskCount = 0;

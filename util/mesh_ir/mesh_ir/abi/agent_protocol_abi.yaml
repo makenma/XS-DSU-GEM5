@@ -62,11 +62,28 @@ enums:
     HOST_OUTPUT: 0x0002
     KV_EXTERNAL: 0x0003
     WEIGHT_EXTERNAL: 0x0004
+    REQUEST_WORKSPACE: 0x0005
+  arena_kind:
+    INPUT: 0
+    PARAMETER: 1
+    OUTPUT: 2
+    METADATA: 3
+    WORKSPACE: 4
   binding_flags:
     READ: 0x0001
     WRITE: 0x0002
     PERSISTENT: 0x0004
     RESOLVE_BY_HANDLE: 0x0008
+  kv_policy_site_v1:
+    REUSE_REQUIRED: 0
+    TOKEN_MISMATCH: 1
+    STATE: 2
+    CAPACITY: 3
+    RELEASE_PENDING: 4
+  diagnostic_source_kind_v1:
+    ERROR_SOURCE_KEY: 0
+    REQUEST_TERMINAL: 1
+    KV_POLICY: 2
   diagnostic_component:
     FRONTEND: 0x0001
     MESH_CORE: 0x0002
@@ -203,6 +220,7 @@ detail_code_registry:
   E_DCORE_SRAM_BOUNDS: 0x0001000a
   E_DCORE_SRAM_LIFETIME: 0x0001000b
   E_DCORE_TIMING_OVERFLOW: 0x0001000c
+  E_DCORE_INDEX_BOUNDS: 0x0001000d
   E_AXI_RESPONSE: 0x00020001
   E_AGENT_PROTOCOL_FATAL: 0x00020002
   E_COMPLETION_PATH_AXI: 0x00020003
@@ -260,6 +278,36 @@ detail_code_registry:
   E_TRAFFIC_MISMATCH: 0x00070004
   E_GLOBAL_DRAIN: 0x00070005
 
+diagnostic_projections_v1:
+  E_REQUEST_CANCELLED: {source_kind: REQUEST_TERMINAL, component: FRONTEND, site: 0}
+  E_KV_REUSE_REQUIRED: {source_kind: KV_POLICY, component: SERVING_KV, site: 0}
+  E_KV_TOKEN_MISMATCH: {source_kind: KV_POLICY, component: SERVING_KV, site: 1}
+  E_KV_STATE: {source_kind: KV_POLICY, component: SERVING_KV, site: 2}
+  E_AXI_RESPONSE: {source_kind: ERROR_SOURCE_KEY, component: DMA_AXI, site: 0}
+  E_DCORE_ENGINE: {source_kind: ERROR_SOURCE_KEY, component: MESH_CORE, site: 0}
+
+  E_DCORE_COMMAND_STATE: {source_kind: ERROR_SOURCE_KEY, component: MESH_CORE, site: 0}
+  E_DCORE_EVENT: {source_kind: ERROR_SOURCE_KEY, component: MESH_CORE, site: 0}
+  E_DCORE_EVENT_NAMESPACE: {source_kind: ERROR_SOURCE_KEY, component: MESH_CORE, site: 0}
+  E_DCORE_OPCODE: {source_kind: ERROR_SOURCE_KEY, component: MESH_CORE, site: 0}
+  E_DCORE_POISON_READ: {source_kind: ERROR_SOURCE_KEY, component: MESH_CORE, site: 0}
+  E_DCORE_SRAM_BOUNDS: {source_kind: ERROR_SOURCE_KEY, component: MESH_CORE, site: 0}
+  E_DCORE_SRAM_LIFETIME: {source_kind: ERROR_SOURCE_KEY, component: MESH_CORE, site: 0}
+  E_DCORE_TIMING_OVERFLOW: {source_kind: ERROR_SOURCE_KEY, component: MESH_CORE, site: 0}
+  E_DCORE_INDEX_BOUNDS: {source_kind: ERROR_SOURCE_KEY, component: MESH_CORE, site: 0}
+  E_MOE_CAPACITY: {source_kind: ERROR_SOURCE_KEY, component: MESH_CORE, site: 0}
+  E_MOE_COMBINE_BYTES: {source_kind: ERROR_SOURCE_KEY, component: MESH_CORE, site: 0}
+  E_MOE_DISPATCH_BYTES: {source_kind: ERROR_SOURCE_KEY, component: MESH_CORE, site: 0}
+  E_MOE_MATERIALIZE_CAPACITY: {source_kind: ERROR_SOURCE_KEY, component: MESH_CORE, site: 0}
+  E_MOE_PROFILE: {source_kind: ERROR_SOURCE_KEY, component: MESH_CORE, site: 0}
+  E_MOE_ROUTE_DIGEST: {source_kind: ERROR_SOURCE_KEY, component: MESH_CORE, site: 0}
+  E_MOE_ROUTE_REPLAY: {source_kind: ERROR_SOURCE_KEY, component: MESH_CORE, site: 0}
+  E_MOE_TOPK_DUP: {source_kind: ERROR_SOURCE_KEY, component: MESH_CORE, site: 0}
+
+diagnostic_source_components_v1:
+  domain_overrides: {2: MOE_CACHE, 4: SERVING_KV}
+  error_classes: {0: MOE_CACHE, 1: MOE_CACHE, 2: DMA_AXI, 3: MESH_CORE, 4: MESH_CORE, 5: MESH_CORE, 6: MESH_CORE, 7: MESH_CORE}
+
 detail_dispositions_v1:
   E_OK: {severity: INFO, cq_status: SUCCESS, run_exit_reason: null}
   E_REQUEST_CANCELLED: {severity: REQUEST_RECOVERABLE, cq_status: CANCELLED, run_exit_reason: null}
@@ -292,6 +340,7 @@ detail_dispositions_v1:
   E_DCORE_SRAM_BOUNDS: *program_error
   E_DCORE_SRAM_LIFETIME: *program_error
   E_DCORE_TIMING_OVERFLOW: *program_error
+  E_DCORE_INDEX_BOUNDS: *program_error
   E_MOE_CAPACITY: *program_error
   E_MOE_COMBINE_BYTES: *program_error
   E_MOE_DISPATCH_BYTES: *program_error

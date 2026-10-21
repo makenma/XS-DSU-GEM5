@@ -70,6 +70,22 @@ def load_schema(path: Path) -> dict:
         assert projection["component_kind"] in schema["enums"]["fatal_component_kind_v1"]
         assert projection["object_kind"] in schema["enums"]["fatal_object_kind_v1"]
         assert projection["detail_code"] in detail_codes
+    for key, node in yaml.compose(path.read_bytes()).value:
+        if key.value == 'diagnostic_projections_v1':
+            keys = [entry.value for entry, _ in node.value]
+            assert len(keys) == len(set(keys)), 'duplicate diagnostic projection'
+    for detail, projection in schema['diagnostic_projections_v1'].items():
+        assert set(projection) == {'source_kind', 'component', 'site'}
+        assert detail in detail_codes and dispositions[detail]['cq_status'] is not None
+        assert projection['source_kind'] in schema['enums']['diagnostic_source_kind_v1']
+        assert projection['component'] in schema['enums']['diagnostic_component']
+        assert 0 <= projection['site'] <= 0xffffffff
+    components = schema['diagnostic_source_components_v1']
+    assert set(components) == {'domain_overrides', 'error_classes'}
+    assert set(components['error_classes']) == set(range(8))
+    assert all(0 <= domain <= 5 for domain in components['domain_overrides'])
+    assert all(value in schema['enums']['diagnostic_component']
+               for table in components.values() for value in table.values())
     return schema
 
 
@@ -97,6 +113,11 @@ def render_python(schema, sha):
         for key, value in values.items():
             lines.append(f"    {key} = {value}")
         lines.append("")
+    lines.append("ENUM_VALUES = {")
+    for enum_name, values in schema["enums"].items():
+        lines.append(f"    {enum_name!r}: {values!r},")
+    lines.append("}")
+    lines.append("")
     lines.append("DETAIL_CODE = {")
     for key, value in schema["detail_code_registry"].items():
         lines.append(f"    {key!r}: {value},")
@@ -111,6 +132,11 @@ def render_python(schema, sha):
         )
     lines.append("}")
     lines.append("")
+    lines.append(f"DIAGNOSTIC_SOURCE_COMPONENTS_V1 = {schema['diagnostic_source_components_v1']!r}")
+    lines.append("DIAGNOSTIC_PROJECTION_V1 = {")
+    for key, value in schema['diagnostic_projections_v1'].items():
+        lines.append(f"    {key!r}: {value!r},")
+    lines.extend(["}", ""])
     lines.append("INVARIANT_SITE_PROJECTION_V1 = {")
     for key, value in schema["invariant_site_projections_v1"].items():
         lines.append(f"    {key!r}: {value!r},")
@@ -224,6 +250,37 @@ def render_cpp(schema, sha):
         "    return std::nullopt;",
         "}",
         "",
+    ])
+    out.extend([
+        "struct DiagnosticProjectionV1",
+        "{",
+        "    DiagnosticSourceKindV1 sourceKind;",
+        "    DiagnosticComponent component;",
+        "    uint32_t site;",
+        "};",
+        "constexpr std::optional<DiagnosticProjectionV1>",
+        "diagnosticProjectionV1(uint16_t status, DetailCode detail)",
+        "{",
+        "    const auto disposition = detailDispositionV1(detail);",
+        "    if (!disposition || disposition->cqStatus != status)",
+        "        return std::nullopt;",
+        "    switch (detail) {",
+    ])
+    for key, value in schema['diagnostic_projections_v1'].items():
+        out.extend([f"      case {key}:",
+            f"        return DiagnosticProjectionV1{{DiagnosticSourceKindV1::{value['source_kind']}, "
+            f"DiagnosticComponent::{value['component']}, {value['site']}}};"])
+    out.extend(["      default: return std::nullopt;", "    }", "}", ""])
+    out.extend(["constexpr std::optional<DiagnosticComponent>",
+                "diagnosticErrorComponentV1(uint8_t domain, uint16_t errorClass)", "{",
+                "    if (domain > 5 || errorClass > 7) return std::nullopt;"])
+    for key, value in schema['diagnostic_source_components_v1']['domain_overrides'].items():
+        out.append(f"    if (domain == {key}) return DiagnosticComponent::{value};")
+    out.append("    switch (errorClass) {")
+    for key, value in schema['diagnostic_source_components_v1']['error_classes'].items():
+        out.append(f"      case {key}: return DiagnosticComponent::{value};")
+    out.extend(["      default: return std::nullopt;", "    }", "}", ""])
+    out.extend([
         "struct FatalSiteProjectionV1",
         "{",
         "    FatalSourceClassV1 sourceClass;",
@@ -443,7 +500,10 @@ def render_markdown(schema, sha):
             f"`{value['cq_status']}` | `{value['run_exit_reason']}` |"
         )
     out.append("")
-    out.append("## Fatal fault-site projections")
+    out.extend(["## Terminal diagnostic projections", "", "| detail | source kind | component | site |", "|---|---|---|---|"])
+    for key, value in schema['diagnostic_projections_v1'].items():
+        out.append(f"| `{key}` | `{value['source_kind']}` | `{value['component']}` | {value['site']} |")
+    out.extend(["", "## Fatal fault-site projections"])
     out.append("")
     out.append("| site | source class | component | object | detail |")
     out.append("|---|---|---|---|---|")

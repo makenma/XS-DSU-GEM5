@@ -9,6 +9,9 @@
 
 #include "dev/ai_mesh/generated/agent_protocol_abi.hh"
 #include "dev/ai_mesh/mesh_serving_projection.hh"
+#include "dev/ai_mesh/mesh_serving_tensor_bindings.hh"
+#include "dev/ai_mesh/mesh_serving_workspace.hh"
+#include "dev/ai_mesh/mesh_ir_dma_verifier.hh"
 
 namespace gem5
 {
@@ -20,7 +23,7 @@ namespace
 
 using namespace mesh_abi;
 
-bool fail(const char *code, const char *message, MeshLoadError &error)
+bool fail(const char *code, const std::string &message, MeshLoadError &error)
 {
     error.code = code;
     error.message = message;
@@ -31,12 +34,13 @@ constexpr uint16_t kPathMaskAll = 0x7;
 
 bool anyServingTable(const DecodedProgram &program)
 {
-    return !program.agent_request_profiles.empty() ||
-           !program.agent_instance_profiles.empty() ||
-           !program.agent_source_core_map.empty() ||
-           !program.agent_instance_member_bindings.empty() ||
-           !program.agent_request_binding_requirements.empty() ||
-           !program.agent_publish_surrogate_bindings.empty();
+    return !program.transport.agent_request_profiles.empty() ||
+           !program.transport.agent_instance_profiles.empty() ||
+           !program.transport.agent_source_core_map.empty() ||
+           !program.transport.agent_instance_member_bindings.empty() ||
+           !program.transport.agent_instance_tensor_bindings.empty() ||
+           !program.transport.agent_request_binding_requirements.empty() ||
+           !program.transport.agent_publish_surrogate_bindings.empty();
 }
 
 bool coreInArch(const RuntimeArch &arch, uint16_t core_id)
@@ -49,7 +53,7 @@ const AgentRequestProfile *requestOf(const DecodedProgram &program,
                                      uint16_t program_id,
                                      uint16_t profile_id)
 {
-    for (const auto &record : program.agent_request_profiles)
+    for (const auto &record : program.transport.agent_request_profiles)
         if (record.program_id == program_id &&
             record.profile_id == profile_id)
             return &record;
@@ -58,7 +62,7 @@ const AgentRequestProfile *requestOf(const DecodedProgram &program,
 
 const Command *commandOf(const DecodedProgram &program, uint32_t command_id)
 {
-    for (const auto &record : program.commands)
+    for (const auto &record : program.transport.commands)
         if (record.command_id == command_id)
             return &record;
     return nullptr;
@@ -66,7 +70,7 @@ const Command *commandOf(const DecodedProgram &program, uint32_t command_id)
 
 const Event *eventOf(const DecodedProgram &program, uint32_t event_id)
 {
-    for (const auto &record : program.events)
+    for (const auto &record : program.transport.events)
         if (record.event_id == event_id)
             return &record;
     return nullptr;
@@ -75,7 +79,7 @@ const Event *eventOf(const DecodedProgram &program, uint32_t event_id)
 const Allocation *allocationOf(const DecodedProgram &program,
                                uint32_t allocation_id)
 {
-    for (const auto &record : program.allocations)
+    for (const auto &record : program.transport.allocations)
         if (record.allocation_id == allocation_id)
             return &record;
     return nullptr;
@@ -93,7 +97,7 @@ struct ServingInterval
     uint64_t end = 0;
 };
 
-void collectRows(std::vector<ServingInterval> &out, uint32_t wanted,
+void collectRows(std::vector<ServingInterval> &out,
                  const DmaEndpoint &endpoint, uint64_t stride,
                  uint32_t rows, uint64_t row_bytes);
 bool coverageGaps(const std::vector<ServingInterval> &intervals,
@@ -103,51 +107,68 @@ constexpr int kRoleHostInput = 0;
 constexpr int kRoleHostOutput = 1;
 constexpr int kRoleKvRead = 2;
 constexpr int kRoleKvStore = 3;
+constexpr int kRoleWorkspaceRead = 4;
+constexpr int kRoleWorkspaceStore = 5;
+
+struct ServingBindingFacts
+{
+    const ProgramSemanticContext &context;
+    const VerifiedDmaDomain &dma;
+    std::map<std::tuple<uint32_t, uint32_t, uint16_t>,
+        std::vector<const AgentInstanceTensorBinding *>> mappings;
+
+    std::map<std::pair<uint32_t, uint64_t>, uint16_t> slotKinds;
+
+    ServingBindingFacts(const ProgramSemanticContext &context_,
+        const VerifiedDmaDomain &dma_, const DecodedProgram &program)
+        : context(context_), dma(dma_)
+    {
+        for (const auto &row : program.transport.agent_instance_tensor_bindings) {
+            mappings[{row.instance_profile_id, row.member_ordinal, row.binding_kind}].push_back(&row);
+            const auto instance = std::find_if(program.transport.agent_instance_profiles.begin(),
+                program.transport.agent_instance_profiles.end(), [&](const auto &item) {
+                    return item.instance_profile_id == row.instance_profile_id;
+                });
+            if (instance == program.transport.agent_instance_profiles.end())
+                continue;
+            const auto binding = context.symbolBinding(instance->mesh_entrypoint_id,
+                instance->mesh_profile_id, row.static_symbol_id);
+            if (binding)
+                slotKinds[{row.instance_profile_id, binding->slot->slot_id}] = row.binding_kind;
+        }
+    }
+};
 
 struct MemberView
 {
     bool present = false;
-    uint32_t tensor = 0;
+    const AgentInstanceTensorBinding *mapping = nullptr;
+    std::optional<ProgramSymbolBinding> binding;
     uint64_t start = 0;
     uint64_t end = 0;
 };
 
-bool memberView(const DecodedProgram &program,
-                const AgentRequestProfile &request,
-                const AgentInstanceProfile &instance, uint32_t ordinal,
-                int role, MemberView &out);
-bool descriptorRoleMatches(const DecodedProgram &program,
-                           const AgentRequestProfile &request,
-                           const DmaDescriptor &descriptor, int role);
-bool descriptorCandidates(const DecodedProgram &program,
+bool memberViews(const ServingBindingFacts &facts, const AgentRequestProfile &request,
+                 const AgentInstanceProfile &instance, uint32_t ordinal,
+                 int role, std::vector<MemberView> &out);
+bool descriptorRoleMatches(const ServingBindingFacts &facts,
+                           const AgentInstanceProfile &instance, const DmaDescriptor &descriptor, int role);
+bool descriptorCandidates(const ServingBindingFacts &facts,
                           const AgentRequestProfile &request,
                           const AgentInstanceProfile &instance,
                           const DmaDescriptor &descriptor, int role,
                           std::vector<uint32_t> &out, MeshLoadError &error);
-bool descriptorAttributedTo(const DecodedProgram &program,
-                            const AgentRequestProfile &request,
-                            const AgentInstanceProfile &instance,
-                            const DmaDescriptor &descriptor, int role,
-                            uint32_t ordinal, MeshLoadError &error);
-
-const Relocation *relocationOf(const DecodedProgram &program, uint32_t symbol)
-{
-    for (const auto &record : program.relocations)
-        if (record.symbol_sid == symbol)
-            return &record;
-    return nullptr;
-}
 
 bool rankVectorOf(const DecodedProgram &program,
                   const AgentInstanceProfile &instance, RankVector &out)
 {
     const size_t first = instance.member_binding_first;
     const size_t end = first + instance.member_binding_count;
-    if (end > program.agent_instance_member_bindings.size())
+    if (end > program.transport.agent_instance_member_bindings.size())
         return false;
     out.clear();
     for (size_t i = first; i < end; i++)
-        out.push_back(program.agent_instance_member_bindings[i].
+        out.push_back(program.transport.agent_instance_member_bindings[i].
                       expected_logical_source_rank);
     return true;
 }
@@ -161,9 +182,9 @@ bool memberCore(const DecodedProgram &program,
         return false;
     const uint64_t index = uint64_t(request.source_core_map_begin) +
                            ranks[ordinal];
-    if (index >= program.agent_source_core_map.size())
+    if (index >= program.transport.agent_source_core_map.size())
         return false;
-    core = program.agent_source_core_map[index].core_id;
+    core = program.transport.agent_source_core_map[index].core_id;
     return true;
 }
 
@@ -173,7 +194,7 @@ uint32_t endpointAllocation(const DecodedProgram &program,
     if (endpoint.memory_space != kMemorySpaceCORE_SRAM ||
         endpoint.shard_id == 0)
         return 0;
-    for (const auto &shard : program.shards)
+    for (const auto &shard : program.transport.shards)
         if (shard.shard_id == endpoint.shard_id)
             return shard.allocation_id;
     return 0;
@@ -200,6 +221,7 @@ bool sramWriteKind(uint16_t kind)
     case kDmaKindLOAD:
     case kDmaKindLOCAL_FILL:
     case kDmaKindPREFETCH:
+    case kDmaKindGATHER_LOAD:
     case kDmaKindP2P_PUSH:
         return true;
     default:
@@ -211,18 +233,18 @@ std::set<uint32_t> allocationWriters(const DecodedProgram &program,
                                      uint32_t allocation_id)
 {
     std::set<uint32_t> writers;
-    for (const auto &command : program.commands) {
+    for (const auto &command : program.transport.commands) {
         if (!computeWriteOpcode(command.opcode))
             continue;
         const size_t end = command.operand_begin + command.operand_count;
-        if (end > program.operands.size())
+        if (end > program.transport.command_operands.size())
             continue;
         for (size_t i = command.operand_begin; i < end; i++)
-            if (program.operands[i].allocation_id == allocation_id &&
-                program.operands[i].access == kAccessKindREAD_WRITE)
+            if (program.transport.command_operands[i].allocation_id == allocation_id &&
+                program.transport.command_operands[i].access == kAccessKindREAD_WRITE)
                 writers.insert(command.command_id);
     }
-    for (const auto &descriptor : program.descriptors) {
+    for (const auto &descriptor : program.transport.dma_descriptors) {
         if (!sramWriteKind(descriptor.kind))
             continue;
         if (endpointAllocation(program, descriptor.dst) == allocation_id)
@@ -235,28 +257,25 @@ bool waitsFor(const DecodedProgram &program, const Command &command,
               uint32_t event_id)
 {
     const size_t end = command.wait_begin + command.wait_count;
-    if (end > program.waits.size())
+    if (end > program.transport.command_waits.size())
         return false;
     for (size_t i = command.wait_begin; i < end; i++)
-        if (program.waits[i] == event_id)
+        if (program.transport.command_waits[i].event_id == event_id)
             return true;
     return false;
 }
 
 std::vector<const DmaDescriptor *>
-profileDescriptors(const DecodedProgram &program,
+profileDescriptors(const ExecutionViewSet &views, const DecodedProgram &program,
                   const AgentInstanceProfile &instance)
 {
     std::set<uint32_t> commands;
-    for (const auto &range : program.profile_stream_ranges) {
-        if (range.profile_id != instance.mesh_profile_id)
-            continue;
-        for (uint32_t i = 0; i < range.command_count; i++)
-            commands.insert(
-                program.commands[size_t(range.command_begin) + i].command_id);
-    }
+    const auto *view = views.forInstance(instance.mesh_entrypoint_id,
+                                         instance.mesh_profile_id);
+    for (const auto &range : view->ranges)
+        commands.insert(range.command_ids.begin(), range.command_ids.end());
     std::vector<const DmaDescriptor *> out;
-    for (const auto &descriptor : program.descriptors)
+    for (const auto &descriptor : program.transport.dma_descriptors)
         if (commands.count(descriptor.command_id))
             out.push_back(&descriptor);
     return out;
@@ -278,6 +297,8 @@ bool legalBindingFlags(uint16_t kind, uint16_t flags)
         return flags == (read | write | persist | by_handle);
     case kBindingKindWEIGHT_EXTERNAL:
         return flags == (read | persist);
+    case kBindingKindREQUEST_WORKSPACE:
+        return flags == (read | write);
     default:
         return false;
     }
@@ -306,7 +327,7 @@ bool memberSpan(const DecodedProgram &program,
 {
     first = instance.member_binding_first;
     end = first + instance.member_binding_count;
-    if (end > program.agent_instance_member_bindings.size())
+    if (end > program.transport.agent_instance_member_bindings.size())
         return fail("E_BINDING_ROLE", "member binding span out of range",
                     error);
     return true;
@@ -318,30 +339,26 @@ bool verifyRequestProfiles(const DecodedProgram &program,
     std::set<std::pair<uint16_t, uint16_t>> keys;
     std::map<uint16_t, std::set<std::pair<uint32_t, uint32_t>>> rank_maps;
     uint32_t kv_bytes_per_token = 0;
-    for (const auto &request : program.agent_request_profiles) {
+    for (const auto &request : program.transport.agent_request_profiles) {
         if (request.program_id == 0 || request.profile_id == 0)
             return fail("E_REQUEST_PROFILE",
                         "request profile id must be nonzero", error);
         if (!keys.insert({request.program_id, request.profile_id}).second)
             return fail("E_ABI_DUPLICATE", "duplicate request profile",
                         error);
-        if (request.flags != kAgentRequestFlagsHAS_KV)
-            return fail("E_REQUEST_PROFILE",
-                        "serving request profile requires HAS_KV", error);
+        if (!verifyRequestPhaseMode(program, request, error))
+            return false;
         if (request.path_mask == 0 ||
             (request.path_mask & ~kPathMaskAll) != 0)
             return fail("E_REQUEST_PROFILE",
                         "path_mask is not a legal path set", error);
-        if (request.kv_bytes_per_token == 0)
-            return fail("E_REQUEST_PROFILE",
-                        "kv_bytes_per_token must be positive", error);
-        if (kv_bytes_per_token == 0)
+        if (request.flags == kAgentRequestFlagsHAS_KV && kv_bytes_per_token == 0)
             kv_bytes_per_token = request.kv_bytes_per_token;
-        else if (kv_bytes_per_token != request.kv_bytes_per_token)
+        else if (request.flags == kAgentRequestFlagsHAS_KV && kv_bytes_per_token != request.kv_bytes_per_token)
             return fail("E_REQUEST_PROFILE",
                         "kv_bytes_per_token must match across the program",
                         error);
-        if (request.full_input_dma_bytes != request.input_binding_bytes ||
+        if (request.full_input_dma_bytes > request.input_binding_bytes ||
             request.delta_input_dma_bytes == 0 ||
             request.delta_input_dma_bytes > request.full_input_dma_bytes)
             return fail("E_HOST_IO_SIZE_MISMATCH",
@@ -357,7 +374,7 @@ bool verifyRequestProfiles(const DecodedProgram &program,
             return fail("E_OUTPUT_CHUNK_MISMATCH",
                         "publish_chunk_bytes is not AXI-aligned in range",
                         error);
-        if (request.host_output_bytes == 0 || request.output_tokens == 0)
+        if (request.host_output_bytes == 0)
             return fail("E_HOST_IO_SIZE_MISMATCH",
                         "request output size/tokens must be positive", error);
         if (request.source_rank_count == 0)
@@ -379,14 +396,14 @@ bool verifyInstanceMeshBinding(const DecodedProgram &program,
                                MeshLoadError &error)
 {
     const Entrypoint *entrypoint = nullptr;
-    for (const auto &record : program.entrypoints)
+    for (const auto &record : program.transport.entrypoints)
         if (record.entrypoint_id == instance.mesh_entrypoint_id)
             entrypoint = &record;
     if (entrypoint == nullptr)
         return fail("E_REQUEST_PROFILE", "instance entrypoint is missing",
                     error);
     bool profile_found = false;
-    for (const auto &record : program.profiles)
+    for (const auto &record : program.transport.profiles)
         if (record.profile_id == instance.mesh_profile_id)
             profile_found = true;
     if (!profile_found)
@@ -394,11 +411,11 @@ bool verifyInstanceMeshBinding(const DecodedProgram &program,
                     error);
     const size_t begin = entrypoint->profile_begin;
     const size_t end = begin + entrypoint->profile_count;
-    if (end > program.profiles.size())
+    if (end > program.transport.profiles.size())
         return fail("E_REQUEST_PROFILE", "entrypoint profile span is broken",
                     error);
     for (size_t i = begin; i < end; i++)
-        if (program.profiles[i].profile_id == instance.mesh_profile_id)
+        if (program.transport.profiles[i].profile_id == instance.mesh_profile_id)
             return true;
     return fail("E_REQUEST_PROFILE",
                 "instance mesh profile is outside its entrypoint", error);
@@ -452,7 +469,7 @@ bool verifyInstanceProfiles(const DecodedProgram &program,
 {
     std::set<uint32_t> ids;
     std::set<ServingSelector> selectors;
-    for (const auto &instance : program.agent_instance_profiles) {
+    for (const auto &instance : program.transport.agent_instance_profiles) {
         if (instance.instance_profile_id == 0)
             return fail("E_REQUEST_PROFILE",
                         "instance profile id must be nonzero", error);
@@ -466,6 +483,7 @@ bool verifyInstanceProfiles(const DecodedProgram &program,
         bool input = false, output = false, kv = false;
         if (!phaseAccess(instance.phase, input, output, kv))
             return fail("E_REQUEST_PROFILE", "unknown instance phase", error);
+        kv = kv && requestOf(program, instance.request_program_id, instance.request_profile_id)->flags == kAgentRequestFlagsHAS_KV;
         if (instance.member_count == 0)
             return fail("E_REQUEST_PROFILE", "member_count must be positive",
                         error);
@@ -523,14 +541,14 @@ bool verifyInstanceProfiles(const DecodedProgram &program,
 bool verifySourceCoreMap(const DecodedProgram &program,
                          const RuntimeArch &arch, MeshLoadError &error)
 {
-    for (const auto &request : program.agent_request_profiles) {
+    for (const auto &request : program.transport.agent_request_profiles) {
         const uint64_t begin = request.source_core_map_begin;
         const uint64_t end = begin + request.source_rank_count;
-        if (end > program.agent_source_core_map.size())
+        if (end > program.transport.agent_source_core_map.size())
             return fail("E_REQUEST_PROFILE",
                         "source core map span out of range", error);
         for (uint64_t i = begin; i < end; i++)
-            if (!coreInArch(arch, program.agent_source_core_map[i].core_id))
+            if (!coreInArch(arch, program.transport.agent_source_core_map[i].core_id))
                 return fail("E_REQUEST_PROFILE",
                             "source core map core is not in the architecture",
                             error);
@@ -542,7 +560,7 @@ bool verifyMemberBindings(const DecodedProgram &program,
                           MeshLoadError &error)
 {
     std::set<std::pair<uint32_t, uint16_t>> roles;
-    for (const auto &instance : program.agent_instance_profiles) {
+    for (const auto &instance : program.transport.agent_instance_profiles) {
         const AgentRequestProfile *request =
             requestOf(program, instance.request_program_id,
                       instance.request_profile_id);
@@ -552,13 +570,14 @@ bool verifyMemberBindings(const DecodedProgram &program,
         bool input = false, output = false, kv = false;
         if (!phaseAccess(instance.phase, input, output, kv))
             return fail("E_REQUEST_PROFILE", "unknown instance phase", error);
+        kv = kv && requestOf(program, instance.request_program_id, instance.request_profile_id)->flags == kAgentRequestFlagsHAS_KV;
         size_t first = 0, end = 0;
         if (!memberSpan(program, instance, first, end, error))
             return false;
         std::set<uint32_t> symbols;
         uint32_t ordinal = 0;
         for (size_t i = first; i < end; i++, ordinal++) {
-            const auto &record = program.agent_instance_member_bindings[i];
+            const auto &record = program.transport.agent_instance_member_bindings[i];
             if (record.instance_profile_id != instance.instance_profile_id)
                 return fail("E_BINDING_ROLE",
                             "member binding targets another instance profile",
@@ -627,7 +646,7 @@ bool primaryRequirement(const DecodedProgram &program, uint16_t program_id,
     size_t matches = 0;
     bool kind_ok = false;
     for (const auto &requirement :
-         program.agent_request_binding_requirements) {
+         program.transport.agent_request_binding_requirements) {
         if (requirement.request_program_id != program_id ||
             requirement.request_profile_id != profile_id ||
             requirement.symbol_id != symbol_id)
@@ -645,7 +664,7 @@ bool verifyRequirements(const DecodedProgram &program, MeshLoadError &error)
     std::tuple<uint16_t, uint16_t, uint32_t> previous{0, 0, 0};
     bool first = true;
     for (const auto &requirement :
-         program.agent_request_binding_requirements) {
+         program.transport.agent_request_binding_requirements) {
         if (requestOf(program, requirement.request_program_id,
                       requirement.request_profile_id) == nullptr)
             return fail("E_REQUEST_PROFILE",
@@ -670,7 +689,7 @@ bool verifyRequirements(const DecodedProgram &program, MeshLoadError &error)
             return fail("E_BINDING_ROLE",
                         "binding flags are not legal for the kind", error);
     }
-    for (const auto &request : program.agent_request_profiles) {
+    for (const auto &request : program.transport.agent_request_profiles) {
         if (!primaryRequirement(program, request.program_id,
                                 request.profile_id,
                                 request.primary_input_symbol_id,
@@ -694,25 +713,19 @@ bool verifySymbolClassification(const DecodedProgram &program,
 {
     std::set<uint32_t> requirement_symbols;
     for (const auto &requirement :
-         program.agent_request_binding_requirements)
+         program.transport.agent_request_binding_requirements)
         requirement_symbols.insert(requirement.symbol_id);
     std::set<uint32_t> member_symbols;
-    for (const auto &record : program.agent_instance_member_bindings) {
-        const uint32_t symbols[] = {record.static_input_symbol_id,
-                                    record.static_output_symbol_id,
-                                    record.static_kv_symbol_id};
-        for (uint32_t symbol : symbols)
-            if (symbol != 0)
-                member_symbols.insert(symbol);
-    }
+    for (const auto &record : program.transport.agent_instance_tensor_bindings)
+        member_symbols.insert(record.static_symbol_id);
     for (uint32_t symbol : member_symbols)
         if (requirement_symbols.count(symbol))
             return fail("E_BINDING_ROLE",
                         "symbol is both REQUEST_BINDABLE and "
                         "INSTANCE_MEMBER_SLOT", error);
-    for (const auto &relocation : program.relocations) {
+    for (const auto &relocation : program.transport.relocations) {
         const Tensor *tensor = nullptr;
-        for (const auto &record : program.tensors)
+        for (const auto &record : program.transport.tensors)
             if (record.tensor_id == relocation.tensor_id)
                 tensor = &record;
         if (tensor == nullptr)
@@ -728,28 +741,26 @@ bool verifySymbolClassification(const DecodedProgram &program,
     return true;
 }
 
-bool verifyPublishStoreChain(const DecodedProgram &program,
+bool verifyPublishStoreChain(const ServingBindingFacts &facts, const ExecutionViewSet &views, const DecodedProgram &program,
                              const AgentRequestProfile &request,
                              const AgentInstanceProfile &instance,
                              uint32_t ordinal,
                              const AgentPublishSurrogateBinding &record,
                              MeshLoadError &error)
 {
-    MemberView output_view;
-    if (!memberView(program, request, instance, ordinal, kRoleHostOutput,
-                    output_view) || !output_view.present)
+    std::vector<MemberView> output_views;
+    if (!memberViews(facts, request, instance, ordinal, kRoleHostOutput, output_views) || output_views.empty())
         return fail("E_BINDING_ROLE",
                     "PUBLISH member has no output slot view", error);
-    const uint64_t output_base = output_view.start;
     bool found_store = false;
-    for (const DmaDescriptor *descriptor : profileDescriptors(program,
+    for (const DmaDescriptor *descriptor : profileDescriptors(views, program,
                                                               instance)) {
         if (descriptor->kind != kDmaKindSTORE ||
-            !descriptorRoleMatches(program, request, *descriptor,
+            !descriptorRoleMatches(facts, instance, *descriptor,
                                    kRoleHostOutput))
             continue;
         std::vector<uint32_t> candidates;
-        if (!descriptorCandidates(program, request, instance, *descriptor,
+        if (!descriptorCandidates(facts, request, instance, *descriptor,
                                   kRoleHostOutput, candidates, error))
             return false;
         bool mine = false;
@@ -759,6 +770,12 @@ bool verifyPublishStoreChain(const DecodedProgram &program,
         if (!mine)
             continue;
         found_store = true;
+        const auto binding = facts.dma.endpointBinding(descriptor->descriptor_id, false);
+        const auto output_view = std::find_if(output_views.begin(), output_views.end(),
+            [&](const auto &view) { return binding && binding->slot->slot_id == view.binding->slot->slot_id; });
+        if (output_view == output_views.end())
+            return fail("E_BINDING_ROLE", "publish store has no mapped output", error);
+        const auto output_offset = output_view->mapping->offset_bytes;
         if (endpointAllocation(program, descriptor->src) !=
             record.allocation_id)
             return fail("E_BINDING_ROLE",
@@ -780,8 +797,8 @@ bool verifyPublishStoreChain(const DecodedProgram &program,
                 uint64_t(row) * descriptor->src_stride_bytes;
             const uint64_t target_start = descriptor->dst.offset_bytes +
                 uint64_t(row) * descriptor->dst_stride_bytes;
-            if (source_start - allocation->offset_bytes !=
-                target_start - output_base)
+            if (source_start !=
+                target_start + output_offset)
                 return fail("E_BINDING_ROLE",
                             "publish store source must match the member "
                             "output offset", error);
@@ -794,7 +811,7 @@ bool verifyPublishStoreChain(const DecodedProgram &program,
     return true;
 }
 
-bool verifyPublishRecord(const DecodedProgram &program,
+bool verifyPublishRecord(const ServingBindingFacts &facts, const ExecutionViewSet &views, const DecodedProgram &program,
                          const AgentRequestProfile &request,
                          const AgentInstanceProfile &instance,
                          uint32_t ordinal,
@@ -830,7 +847,7 @@ bool verifyPublishRecord(const DecodedProgram &program,
                     "publish producer must be a DMA_FILL command", error);
     const Event *event = eventOf(program, record.completion_event_id);
     bool completes = false;
-    for (const auto &descriptor : program.descriptors)
+    for (const auto &descriptor : program.transport.dma_descriptors)
         if (descriptor.command_id == command->command_id &&
             descriptor.completion_event == record.completion_event_id)
             completes = true;
@@ -840,14 +857,14 @@ bool verifyPublishRecord(const DecodedProgram &program,
                     "publish completion event is not the producer signal",
                     error);
     if (command->attr_index == 0 ||
-        command->attr_index > program.attrs.size())
+        command->attr_index > program.transport.op_attrs.size())
         return fail("E_BINDING_ROLE",
                     "publish producer needs a FILL_V1 attr", error);
-    const DecodedAttr &attr = program.attrs[command->attr_index - 1];
+    const DecodedAttr &attr = program.transport.op_attrs[command->attr_index - 1];
     if (attr.kind != kAttrKindFILL_V1)
         return fail("E_BINDING_ROLE",
                     "publish producer needs a FILL_V1 attr", error);
-    if (std::get<FillV1>(attr.typed).pattern !=
+    if (std::get<FillV1>(attr.payload).pattern !=
         kDmaFillRuntimeBoundSentinel)
         return fail("E_BINDING_ROLE",
                     "publish producer must use the runtime-bound sentinel",
@@ -859,14 +876,14 @@ bool verifyPublishRecord(const DecodedProgram &program,
                     "surrogate allocation must have exactly one producer",
                     error);
     std::vector<ServingInterval> producer_fill;
-    for (const DmaDescriptor *descriptor : profileDescriptors(program,
+    for (const DmaDescriptor *descriptor : profileDescriptors(views, program,
                                                               instance)) {
         if (descriptor->command_id != command->command_id)
             continue;
         if (endpointAllocation(program, descriptor->dst) !=
             record.allocation_id)
             continue;
-        collectRows(producer_fill, descriptor->dst.tensor_id,
+        collectRows(producer_fill,
                     descriptor->dst, descriptor->dst_stride_bytes,
                     descriptor->rows, descriptor->row_bytes);
     }
@@ -875,21 +892,20 @@ bool verifyPublishRecord(const DecodedProgram &program,
                     "publish producer is not in the PUBLISH profile "
                     "closure", error);
     std::string reason;
-    if (!coverageGaps(producer_fill, allocation->offset_bytes,
-                      allocation->offset_bytes + allocation->size_bytes,
+    if (!coverageGaps(producer_fill, 0, allocation->size_bytes,
                       reason))
         return fail("E_BINDING_ROLE",
                     "publish producer must fill the bound allocation "
                     "exactly", error);
-    return verifyPublishStoreChain(program, request, instance, ordinal,
+    return verifyPublishStoreChain(facts, views, program, request, instance, ordinal,
                                    record, error);
 }
 
-bool verifyPublishBindings(const DecodedProgram &program,
+bool verifyPublishBindings(const ServingBindingFacts &facts, const ExecutionViewSet &views, const DecodedProgram &program,
                            MeshLoadError &error)
 {
     std::set<std::pair<uint32_t, uint16_t>> seen;
-    for (const auto &record : program.agent_publish_surrogate_bindings) {
+    for (const auto &record : program.transport.agent_publish_surrogate_bindings) {
         auto key = std::make_pair(record.instance_profile_id,
                                   record.member_ordinal);
         if (!seen.insert(key).second)
@@ -899,15 +915,15 @@ bool verifyPublishBindings(const DecodedProgram &program,
     size_t index = 0;
     for (const auto &key : seen) {
         const auto &record =
-            program.agent_publish_surrogate_bindings[index++];
+            program.transport.agent_publish_surrogate_bindings[index++];
         if (std::make_pair(record.instance_profile_id,
                            record.member_ordinal) != key)
             return fail("E_ABI_ORDER",
                         "publish surrogate bindings must be sorted", error);
     }
-    for (const auto &record : program.agent_publish_surrogate_bindings) {
+    for (const auto &record : program.transport.agent_publish_surrogate_bindings) {
         bool known = false;
-        for (const auto &instance : program.agent_instance_profiles)
+        for (const auto &instance : program.transport.agent_instance_profiles)
             if (instance.instance_profile_id == record.instance_profile_id)
                 known = true;
         if (!known)
@@ -915,13 +931,14 @@ bool verifyPublishBindings(const DecodedProgram &program,
                         "publish binding references no instance profile",
                         error);
     }
-    for (const auto &instance : program.agent_instance_profiles) {
+    for (const auto &instance : program.transport.agent_instance_profiles) {
         std::vector<const AgentPublishSurrogateBinding *> records;
-        for (const auto &record : program.agent_publish_surrogate_bindings)
+        for (const auto &record : program.transport.agent_publish_surrogate_bindings)
             if (record.instance_profile_id ==
                 instance.instance_profile_id)
                 records.push_back(&record);
-        if (instance.phase != kPhasePUBLISH) {
+        const auto *request = requestOf(program, instance.request_program_id, instance.request_profile_id);
+        if (instance.phase != kPhasePUBLISH || request->flags != kAgentRequestFlagsHAS_KV) {
             if (!records.empty())
                 return fail("E_BINDING_ROLE",
                             "non-PUBLISH profile carries publish bindings",
@@ -949,14 +966,11 @@ bool verifyPublishBindings(const DecodedProgram &program,
             return fail("E_BINDING_ROLE",
                         "each PUBLISH member needs its own surrogate "
                         "allocation", error);
-        const AgentRequestProfile *request =
-            requestOf(program, instance.request_program_id,
-                      instance.request_profile_id);
         if (request == nullptr)
             return fail("E_REQUEST_PROFILE",
                         "instance references no request profile", error);
         for (const auto *record : records)
-            if (!verifyPublishRecord(program, *request, instance,
+            if (!verifyPublishRecord(facts, views, program, *request, instance,
                                      record->member_ordinal, *record,
                                      error))
                 return false;
@@ -965,12 +979,10 @@ bool verifyPublishBindings(const DecodedProgram &program,
 }
 
 void collectRows(std::vector<ServingInterval> &out,
-                 uint32_t wanted, const DmaEndpoint &endpoint,
+                 const DmaEndpoint &endpoint,
                  uint64_t stride, uint32_t rows,
                  uint64_t row_bytes)
 {
-    if (wanted == 0 || endpoint.tensor_id != wanted)
-        return;
     for (uint32_t index = 0; index < rows; index++) {
         const uint64_t start =
             endpoint.offset_bytes + index * stride;
@@ -1038,95 +1050,80 @@ uint64_t intervalBytes(const std::vector<ServingInterval> &intervals)
     return total;
 }
 
-std::vector<ServingInterval> relative(
-    const std::vector<ServingInterval> &intervals, uint64_t base)
+bool memberViews(const ServingBindingFacts &facts,
+                 const AgentRequestProfile &request,
+                 const AgentInstanceProfile &instance, uint32_t ordinal,
+                 int role, std::vector<MemberView> &out)
 {
-    std::vector<ServingInterval> out;
-    for (const auto &item : intervals)
-        out.push_back({item.start - base, item.end - base});
-    return out;
-}
-
-void requestKindTensors(const DecodedProgram &program,
-                        const AgentRequestProfile &request,
-                        uint32_t tensors[3])
-{
-    tensors[0] = tensors[1] = tensors[2] = 0;
-    const Relocation *input =
-        relocationOf(program, request.primary_input_symbol_id);
-    const Relocation *output =
-        relocationOf(program, request.primary_output_symbol_id);
-    const Relocation *kv =
-        relocationOf(program, request.primary_kv_symbol_id);
-    if (input != nullptr)
-        tensors[0] = input->tensor_id;
-    if (output != nullptr)
-        tensors[1] = output->tensor_id;
-    if (kv != nullptr)
-        tensors[2] = kv->tensor_id;
-}
-
-bool memberView(const DecodedProgram &program,
-                const AgentRequestProfile &request,
-                const AgentInstanceProfile &instance, uint32_t ordinal,
-                int role, MemberView &out)
-{
-    out = MemberView{};
-    const size_t index = instance.member_binding_first + ordinal;
-    if (index >= program.agent_instance_member_bindings.size())
-        return false;
-    const auto &record = program.agent_instance_member_bindings[index];
-    uint32_t symbol = 0;
-    if (role == kRoleHostInput)
-        symbol = record.static_input_symbol_id;
-    else if (role == kRoleHostOutput)
-        symbol = record.static_output_symbol_id;
-    else
-        symbol = record.static_kv_symbol_id;
-    if (symbol == 0)
+    out.clear();
+    const uint16_t kind = role == kRoleHostInput ? agent_abi::kBindingKindHOST_INPUT :
+        role == kRoleHostOutput ? agent_abi::kBindingKindHOST_OUTPUT :
+        role >= kRoleWorkspaceRead ? agent_abi::kBindingKindREQUEST_WORKSPACE : agent_abi::kBindingKindKV_EXTERNAL;
+    const auto found = facts.mappings.find({instance.instance_profile_id, ordinal, kind});
+    if (found == facts.mappings.end())
         return true;
-    const Relocation *relocation = relocationOf(program, symbol);
-    if (relocation == nullptr)
-        return false;
-    out.present = true;
-    out.tensor = relocation->tensor_id;
-    const uint64_t slot_base = relocation->offset_bytes;
-    const uint64_t valid = uint64_t(instance.kv_tokens_before) *
-                           request.kv_bytes_per_token;
-    if (role == kRoleKvRead) {
-        out.start = slot_base;
-        out.end = slot_base + valid;
-    } else if (role == kRoleKvStore) {
-        out.start = slot_base + valid;
-        out.end = out.start + instance.kv_write_bytes_per_member;
-    } else if (role == kRoleHostInput) {
-        out.start = slot_base;
-        if (instance.path_kind == kPathKindKV_REUSE)
-            out.start += request.input_binding_bytes -
-                         request.delta_input_dma_bytes;
-        out.end = out.start + instance.host_input_dma_bytes_per_member;
+    uint64_t begin = 0, end = 0;
+    const uint64_t valid = uint64_t(instance.kv_tokens_before) * request.kv_bytes_per_token;
+    if (role == kRoleHostInput) {
+        if (instance.path_kind == kPathKindKV_REUSE) {
+            if (request.full_input_dma_bytes < request.delta_input_dma_bytes)
+                return false;
+            begin = request.full_input_dma_bytes - request.delta_input_dma_bytes;
+        }
+        end = request.full_input_dma_bytes;
+    } else if (role == kRoleHostOutput) {
+        end = instance.host_output_dma_bytes_per_member;
+    } else if (role == kRoleKvRead) {
+        end = valid;
     } else {
-        out.start = slot_base;
-        out.end = slot_base + instance.host_output_dma_bytes_per_member;
+        begin = valid;
+        end = valid + instance.kv_write_bytes_per_member;
+    }
+    for (const auto *mapping : found->second) {
+        MemberView view;
+        view.mapping = mapping;
+        view.binding = facts.context.symbolBinding(instance.mesh_entrypoint_id,
+            instance.mesh_profile_id, mapping->static_symbol_id);
+        if (!view.binding)
+            return false;
+        view.present = true;
+        if (role >= kRoleWorkspaceRead) {
+            begin = mapping->offset_bytes;
+            end = begin + view.binding->object->footprint_bytes;
+        }
+        const auto start = std::max(begin, mapping->offset_bytes);
+        const auto stop = std::min(end, mapping->offset_bytes + mapping->span_bytes);
+        if (stop >= start) {
+            view.start = start - mapping->offset_bytes;
+            view.end = stop - mapping->offset_bytes;
+        }
+        if (view.end > view.binding->object->footprint_bytes)
+            return false;
+        out.push_back(view);
     }
     return true;
 }
 
-bool sameTensorOverlap(const MemberView &left, const MemberView &right)
+bool sameStorageOverlap(const MemberView &left, const MemberView &right)
 {
-    if (!left.present || !right.present || left.tensor != right.tensor)
+    if (!left.binding || !right.binding)
         return false;
-    return left.start < right.end && right.start < left.end;
+    const auto &lhs = *left.binding->reference;
+    const auto &rhs = *right.binding->reference;
+    if (lhs.region_id != rhs.region_id || lhs.owner_core != rhs.owner_core)
+        return false;
+    return lhs.allocation_offset_bytes + left.start < rhs.allocation_offset_bytes + right.end &&
+           rhs.allocation_offset_bytes + right.start < lhs.allocation_offset_bytes + left.end;
 }
 
-bool verifyMemberOwnership(const DecodedProgram &program,
+bool verifyMemberOwnership(const ServingBindingFacts &facts, const DecodedProgram &program,
                            const AgentRequestProfile &request,
                            const AgentInstanceProfile &instance,
                            MeshLoadError &error)
 {
     if (instance.member_count < 2)
         return true;
-    std::vector<std::vector<MemberView>> views(instance.member_count);
+    std::vector<std::vector<std::vector<MemberView>>> views(instance.member_count);
     std::vector<uint32_t> cores;
     for (uint32_t ordinal = 0; ordinal < instance.member_count; ordinal++) {
         RankVector ranks;
@@ -1135,10 +1132,9 @@ bool verifyMemberOwnership(const DecodedProgram &program,
             return fail("E_REQUEST_PROFILE",
                         "member source core is unresolved", error);
         cores.push_back(core);
-        for (int role = kRoleHostInput; role <= kRoleKvStore; role++) {
-            MemberView view;
-            if (!memberView(program, request, instance, ordinal, role,
-                            view))
+        for (int role = kRoleHostInput; role <= kRoleWorkspaceStore; role++) {
+            std::vector<MemberView> view;
+            if (!memberViews(facts, request, instance, ordinal, role, view))
                 return fail("E_BINDING_ROLE",
                             "member view is unresolved", error);
             views[ordinal].push_back(view);
@@ -1150,45 +1146,11 @@ bool verifyMemberOwnership(const DecodedProgram &program,
             if (cores[left] != cores[right])
                 continue;
             for (size_t role = 0; role < views[left].size(); role++)
-                if (sameTensorOverlap(views[left][role],
-                                      views[right][role]))
-                    return fail("E_BINDING_ROLE",
-                                "member slots alias on one core", error);
+                for (const auto &lhs : views[left][role])
+                    for (const auto &rhs : views[right][role])
+                        if (sameStorageOverlap(lhs, rhs))
+                            return fail("E_BINDING_ROLE", "member slots alias on one core", error);
         }
-    }
-    return true;
-}
-
-bool verifyMemberSymbolRoles(const DecodedProgram &program,
-                             const AgentRequestProfile &request,
-                             const AgentInstanceProfile &instance,
-                             uint32_t ordinal, MeshLoadError &error)
-{
-    const size_t index = instance.member_binding_first + ordinal;
-    if (index >= program.agent_instance_member_bindings.size())
-        return fail("E_BINDING_ROLE",
-                    "member binding span out of range", error);
-    const auto &record = program.agent_instance_member_bindings[index];
-    const uint32_t symbols[] = {record.static_input_symbol_id,
-                                record.static_output_symbol_id,
-                                record.static_kv_symbol_id};
-    const uint32_t primaries[] = {request.primary_input_symbol_id,
-                                  request.primary_output_symbol_id,
-                                  request.primary_kv_symbol_id};
-    for (int kind = 0; kind < 3; kind++) {
-        if (symbols[kind] == 0)
-            continue;
-        if (primaries[kind] == 0)
-            return fail("E_BINDING_ROLE",
-                        "member slot is present in a forbidden phase kind",
-                        error);
-        const Relocation *relocation = relocationOf(program, symbols[kind]);
-        const Relocation *primary = relocationOf(program, primaries[kind]);
-        if (relocation == nullptr || primary == nullptr ||
-            relocation->tensor_id != primary->tensor_id)
-            return fail("E_BINDING_ROLE",
-                        "member slot must view the request primary tensor",
-                        error);
     }
     return true;
 }
@@ -1196,7 +1158,7 @@ bool verifyMemberSymbolRoles(const DecodedProgram &program,
 bool rowsFit(const DmaEndpoint &endpoint, uint64_t stride, uint32_t rows,
              uint64_t row_bytes, const MemberView &view)
 {
-    if (!view.present || endpoint.tensor_id != view.tensor)
+    if (!view.present)
         return false;
     for (uint32_t row = 0; row < rows; row++) {
         const uint64_t start = endpoint.offset_bytes + uint64_t(row) * stride;
@@ -1206,88 +1168,64 @@ bool rowsFit(const DmaEndpoint &endpoint, uint64_t stride, uint32_t rows,
     return true;
 }
 
-bool descriptorRoleMatches(const DecodedProgram &program,
-                           const AgentRequestProfile &request,
-                           const DmaDescriptor &descriptor, int role)
+bool descriptorRoleMatches(const ServingBindingFacts &facts,
+                           const AgentInstanceProfile &instance, const DmaDescriptor &descriptor, int role)
 {
-    const bool read = role == kRoleHostInput || role == kRoleKvRead;
-    if (read && descriptor.kind != kDmaKindLOAD)
+    const bool read = role == kRoleHostInput || role == kRoleKvRead || role == kRoleWorkspaceRead;
+    if (read && descriptor.kind != kDmaKindLOAD && descriptor.kind != kDmaKindPREFETCH)
         return false;
     if (!read && descriptor.kind != kDmaKindSTORE)
         return false;
-    uint32_t kind_tensors[3];
-    requestKindTensors(program, request, kind_tensors);
-    const uint32_t wanted = role == kRoleKvRead || role == kRoleKvStore
-                                ? kind_tensors[2] : kind_tensors[role];
-    if (wanted == 0)
+    const auto binding = facts.dma.endpointBinding(descriptor.descriptor_id, read);
+    if (!binding)
         return false;
-    const DmaEndpoint &endpoint =
-        read ? descriptor.src : descriptor.dst;
-    return endpoint.tensor_id == wanted;
+    const uint16_t kind = role == kRoleHostInput ? agent_abi::kBindingKindHOST_INPUT :
+        role == kRoleHostOutput ? agent_abi::kBindingKindHOST_OUTPUT :
+        role >= kRoleWorkspaceRead ? agent_abi::kBindingKindREQUEST_WORKSPACE : agent_abi::kBindingKindKV_EXTERNAL;
+    const auto found = facts.slotKinds.find({instance.instance_profile_id, binding->slot->slot_id});
+    return found != facts.slotKinds.end() && found->second == kind;
 }
 
-bool descriptorCandidates(const DecodedProgram &program,
+bool descriptorCandidates(const ServingBindingFacts &facts,
                           const AgentRequestProfile &request,
                           const AgentInstanceProfile &instance,
                           const DmaDescriptor &descriptor, int role,
                           std::vector<uint32_t> &out, MeshLoadError &error)
 {
     out.clear();
-    if (!descriptorRoleMatches(program, request, descriptor, role))
+    if (!descriptorRoleMatches(facts, instance, descriptor, role))
         return true;
-    const bool read = role == kRoleHostInput || role == kRoleKvRead;
+    const bool read = role == kRoleHostInput || role == kRoleKvRead || role == kRoleWorkspaceRead;
     const DmaEndpoint &endpoint = read ? descriptor.src : descriptor.dst;
     const uint64_t stride = read ? descriptor.src_stride_bytes
                                  : descriptor.dst_stride_bytes;
     for (uint32_t ordinal = 0; ordinal < instance.member_count; ordinal++) {
-        RankVector ranks;
-        uint32_t core = 0;
-        if (!memberCore(program, request, instance, ordinal, ranks, core))
-            return fail("E_REQUEST_PROFILE",
-                        "member source core is unresolved", error);
-        if (descriptor.owner_core != core)
-            continue;
-        MemberView view;
-        if (!memberView(program, request, instance, ordinal, role, view))
-            return fail("E_BINDING_ROLE", "member view is unresolved",
-                        error);
-        if (rowsFit(endpoint, stride, descriptor.rows, descriptor.row_bytes,
-                    view))
-            out.push_back(ordinal);
+        std::vector<MemberView> windows;
+        if (!memberViews(facts, request, instance, ordinal, role, windows))
+            return fail("E_BINDING_ROLE", "member view is unresolved", error);
+        const auto binding = facts.dma.endpointBinding(descriptor.descriptor_id, read);
+        for (const auto &view : windows)
+            if (binding && view.binding && binding->slot->slot_id == view.binding->slot->slot_id &&
+                rowsFit(endpoint, stride, descriptor.rows, descriptor.row_bytes, view))
+                out.push_back(ordinal);
     }
     return true;
 }
 
-bool descriptorAttributedTo(const DecodedProgram &program,
-                            const AgentRequestProfile &request,
-                            const AgentInstanceProfile &instance,
-                            const DmaDescriptor &descriptor, int role,
-                            uint32_t ordinal, MeshLoadError &error)
-{
-    std::vector<uint32_t> candidates;
-    if (!descriptorCandidates(program, request, instance, descriptor, role,
-                              candidates, error))
-        return false;
-    for (uint32_t candidate : candidates)
-        if (candidate == ordinal)
-            return true;
-    return false;
-}
-
-bool verifyDescriptorAttribution(const DecodedProgram &program,
+bool verifyDescriptorAttribution(const ServingBindingFacts &facts, const ExecutionViewSet &views, const DecodedProgram &program,
                                  const AgentRequestProfile &request,
                                  const AgentInstanceProfile &instance,
                                  MeshLoadError &error)
 {
     const int roles[] = {kRoleHostInput, kRoleHostOutput, kRoleKvRead,
-                         kRoleKvStore};
-    for (const DmaDescriptor *descriptor : profileDescriptors(program,
+                         kRoleKvStore, kRoleWorkspaceRead, kRoleWorkspaceStore};
+    for (const DmaDescriptor *descriptor : profileDescriptors(views, program,
                                                               instance)) {
         for (int role : roles) {
-            if (!descriptorRoleMatches(program, request, *descriptor, role))
+            if (!descriptorRoleMatches(facts, instance, *descriptor, role))
                 continue;
             std::vector<uint32_t> candidates;
-            if (!descriptorCandidates(program, request, instance,
+            if (!descriptorCandidates(facts, request, instance,
                                       *descriptor, role, candidates, error))
                 return false;
             if (candidates.size() != 1)
@@ -1296,95 +1234,72 @@ bool verifyDescriptorAttribution(const DecodedProgram &program,
                             "slot", error);
         }
     }
+    const auto descriptors = profileDescriptors(views, program, instance);
+    for (const auto *producer : descriptors) {
+        const auto *command = commandOf(program, producer->command_id);
+        if (producer->kind != kDmaKindLOCAL_FILL || !command || !command->attr_index)
+            continue;
+        const auto &attr = program.transport.op_attrs.at(command->attr_index - 1);
+        if (attr.kind != kAttrKindFILL_V1 || attr.as<FillV1>()->pattern != kDmaFillRuntimeBoundSentinel)
+            continue;
+        if (!command->operand_count)
+            return fail("E_BINDING_ROLE", "runtime fill has no unique member STORE", error);
+        const auto allocation = program.transport.command_operands.at(
+            command->operand_begin + command->operand_count - 1).allocation_id;
+        std::set<uint32_t> owners;
+        for (const auto *consumer : descriptors) {
+            const auto *store = commandOf(program, consumer->command_id);
+            if (consumer->kind != kDmaKindSTORE || !store || !store->operand_count ||
+                    program.transport.command_operands.at(store->operand_begin).allocation_id != allocation)
+                continue;
+            for (int role : {kRoleHostOutput, kRoleKvStore}) {
+                if (!descriptorRoleMatches(facts, instance, *consumer, role))
+                    continue;
+                std::vector<uint32_t> candidates;
+                if (!descriptorCandidates(facts, request, instance, *consumer, role, candidates, error))
+                    return false;
+                owners.insert(candidates.begin(), candidates.end());
+            }
+        }
+        if (owners.size() != 1)
+            return fail("E_BINDING_ROLE", "runtime fill has no unique member STORE", error);
+    }
+
     return true;
 }
 
-bool verifyMemberIo(const DecodedProgram &program,
+bool verifyMemberIo(const ServingBindingFacts &facts, const ExecutionViewSet &views, const DecodedProgram &program,
                     const AgentRequestProfile &request,
                     const AgentInstanceProfile &instance, uint16_t ordinal,
                     MeshLoadError &error)
 {
-    RankVector ranks;
-    uint32_t core = 0;
-    if (!memberCore(program, request, instance, ordinal, ranks, core))
-        return fail("E_REQUEST_PROFILE", "member source core is unresolved",
-                    error);
-    (void)core;
-    uint32_t tensors[3];
-    requestKindTensors(program, request, tensors);
-    if (!verifyMemberSymbolRoles(program, request, instance, ordinal, error))
-        return false;
-    MemberView input_window, output_window, kv_window;
-    if (!memberView(program, request, instance, ordinal, kRoleHostInput,
-                    input_window) ||
-        !memberView(program, request, instance, ordinal, kRoleHostOutput,
-                    output_window) ||
-        !memberView(program, request, instance, ordinal, kRoleKvRead,
-                    kv_window))
-        return fail("E_BINDING_ROLE", "member view is unresolved", error);
-    const Relocation *input = input_window.present
-        ? relocationOf(program, program.agent_instance_member_bindings[
-              instance.member_binding_first + ordinal].static_input_symbol_id)
-        : nullptr;
-    const Relocation *output = output_window.present
-        ? relocationOf(program, program.agent_instance_member_bindings[
-              instance.member_binding_first + ordinal].static_output_symbol_id)
-        : nullptr;
-    const Relocation *kv = kv_window.present
-        ? relocationOf(program, program.agent_instance_member_bindings[
-              instance.member_binding_first + ordinal].static_kv_symbol_id)
-        : nullptr;
-    const uint64_t input_base = input ? input->offset_bytes : 0;
-    const uint64_t output_base = output ? output->offset_bytes : 0;
-    const uint64_t kv_base = kv ? kv->offset_bytes : 0;
-    std::vector<ServingInterval> reads, writes, kv_reads, kv_writes;
-    for (const DmaDescriptor *descriptor : profileDescriptors(program,
-                                                              instance)) {
-        if (descriptor->owner_core != core)
-            continue;
-        if (descriptor->rows == 0 ||
-            descriptor->useful_bytes !=
-                uint64_t(descriptor->rows) * descriptor->row_bytes)
-            return fail("E_HOST_IO_SIZE_MISMATCH",
-                        "descriptor row geometry is inconsistent", error);
-        if (descriptor->kind == kDmaKindLOAD) {
-            if (descriptorAttributedTo(program, request, instance,
-                                       *descriptor, kRoleHostInput, ordinal,
-                                       error))
-                collectRows(reads, tensors[0], descriptor->src,
-                            descriptor->src_stride_bytes, descriptor->rows,
-                            descriptor->row_bytes);
-            if (descriptorAttributedTo(program, request, instance,
-                                       *descriptor, kRoleKvRead, ordinal,
-                                       error))
-                collectRows(kv_reads, tensors[2], descriptor->src,
-                            descriptor->src_stride_bytes, descriptor->rows,
-                            descriptor->row_bytes);
-        } else if (descriptor->kind == kDmaKindSTORE) {
-            if (descriptorAttributedTo(program, request, instance,
-                                       *descriptor, kRoleHostOutput, ordinal,
-                                       error))
-                collectRows(writes, tensors[1], descriptor->dst,
-                            descriptor->dst_stride_bytes, descriptor->rows,
-                            descriptor->row_bytes);
-            if (descriptorAttributedTo(program, request, instance,
-                                       *descriptor, kRoleKvStore, ordinal,
-                                       error))
-                collectRows(kv_writes, tensors[2], descriptor->dst,
-                            descriptor->dst_stride_bytes, descriptor->rows,
-                            descriptor->row_bytes);
+    std::vector<ServingInterval> rel_reads, rel_writes, rel_kv_reads, rel_kv_writes;
+    std::vector<ServingInterval> *intervals[] = {&rel_reads, &rel_writes, &rel_kv_reads, &rel_kv_writes};
+    for (const DmaDescriptor *descriptor : profileDescriptors(views, program, instance)) {
+        for (int role = kRoleHostInput; role <= kRoleKvStore; ++role) {
+            if (!descriptorRoleMatches(facts, instance, *descriptor, role))
+                continue;
+            if (!descriptor->rows || descriptor->useful_bytes != uint64_t(descriptor->rows) * descriptor->row_bytes)
+                return fail("E_HOST_IO_SIZE_MISMATCH", "descriptor row geometry is inconsistent", error);
+            const bool read = role == kRoleHostInput || role == kRoleKvRead || role == kRoleWorkspaceRead;
+            const auto binding = facts.dma.endpointBinding(descriptor->descriptor_id, read);
+            const auto &endpoint = read ? descriptor->src : descriptor->dst;
+            const auto stride = read ? descriptor->src_stride_bytes : descriptor->dst_stride_bytes;
+            std::vector<MemberView> windows;
+            if (!memberViews(facts, request, instance, ordinal, role, windows))
+                return fail("E_BINDING_ROLE", "member view is unresolved", error);
+            for (const auto &window : windows) {
+                if (!binding || binding->slot->slot_id != window.binding->slot->slot_id ||
+                        !rowsFit(endpoint, stride, descriptor->rows, descriptor->row_bytes, window))
+                    continue;
+                auto projected = endpoint;
+                projected.offset_bytes += window.mapping->offset_bytes;
+                collectRows(*intervals[role], projected, stride, descriptor->rows, descriptor->row_bytes);
+            }
         }
     }
-    const std::vector<ServingInterval> rel_reads = relative(reads, input_base);
-    const std::vector<ServingInterval> rel_writes =
-        relative(writes, output_base);
-    const std::vector<ServingInterval> rel_kv_reads =
-        relative(kv_reads, kv_base);
-    const std::vector<ServingInterval> rel_kv_writes =
-        relative(kv_writes, kv_base);
     std::string reason;
-    if (!overlapGaps(rel_reads, reason) ||
-        !overlapGaps(rel_writes, reason) ||
+    if (!overlapGaps(rel_writes, reason) ||
         !overlapGaps(rel_kv_reads, reason) ||
         !overlapGaps(rel_kv_writes, reason))
         return fail("E_HOST_IO_SIZE_MISMATCH",
@@ -1474,7 +1389,7 @@ bool verifyPathClosure(const DecodedProgram &program,
                        MeshLoadError &error)
 {
     std::set<ServingSelector> selectors;
-    for (const auto &instance : program.agent_instance_profiles) {
+    for (const auto &instance : program.transport.agent_instance_profiles) {
         RankVector ranks;
         if (!rankVectorOf(program, instance, ranks))
             return fail("E_BINDING_ROLE",
@@ -1504,7 +1419,7 @@ bool verifyPathClosure(const DecodedProgram &program,
         std::set<RankVector> rank_vectors;
         for (uint32_t rank = 0; rank < request.source_rank_count; rank++)
             rank_vectors.insert(RankVector{rank});
-        for (const auto &instance : program.agent_instance_profiles) {
+        for (const auto &instance : program.transport.agent_instance_profiles) {
             if (instance.request_program_id != request.program_id ||
                 instance.request_profile_id != request.profile_id ||
                 instance.path_kind != path_kind)
@@ -1537,7 +1452,7 @@ bool verifyPathClosure(const DecodedProgram &program,
                             "missing PREFILL profile for a reachable rank",
                             error);
             uint16_t chunk = 0;
-            for (const auto &instance : program.agent_instance_profiles) {
+            for (const auto &instance : program.transport.agent_instance_profiles) {
                 if (instance.request_program_id != request.program_id ||
                     instance.request_profile_id != request.profile_id ||
                     instance.path_kind != path_kind ||
@@ -1573,7 +1488,7 @@ bool verifyPathClosure(const DecodedProgram &program,
             if (!selectors.count(
                     {request.program_id, request.profile_id, path_kind,
                      kPhasePUBLISH, static_cast<uint16_t>(ranks.size()), 0,
-                     request.full_input_tokens + request.output_tokens, 0,
+                     request.flags == kAgentRequestFlagsHAS_KV ? request.full_input_tokens + request.output_tokens : 0, 0,
                      ranks}))
                 return fail("E_REQUEST_PROFILE",
                             "missing PUBLISH instance profile", error);
@@ -1582,24 +1497,70 @@ bool verifyPathClosure(const DecodedProgram &program,
     return true;
 }
 
-bool verifyServingClosureAndIo(const DecodedProgram &program,
+bool verifyServingClosureAndIo(const ServingBindingFacts &facts, const ExecutionViewSet &views, const DecodedProgram &program,
                                MeshLoadError &error)
 {
-    for (const auto &request : program.agent_request_profiles) {
+    for (const auto &request : program.transport.agent_request_profiles) {
         if (!verifyPathClosure(program, request, error))
             return false;
-        for (const auto &instance : program.agent_instance_profiles) {
+        for (const auto &instance : program.transport.agent_instance_profiles) {
             if (instance.request_program_id != request.program_id ||
                 instance.request_profile_id != request.profile_id)
                 continue;
-            if (!verifyMemberOwnership(program, request, instance, error))
+            if (instance.phase == kPhasePUBLISH && request.flags == kAgentRequestFlagsHAS_KV) {
+                std::set<uint32_t> retired;
+                for (const auto *descriptor : profileDescriptors(views, program, instance))
+                    if (descriptor->kind == kDmaKindSTORE)
+                        retired.insert(descriptor->completion_event);
+                std::vector<const Command *> pending;
+                const auto *view = views.forInstance(instance.mesh_entrypoint_id,
+                                                     instance.mesh_profile_id);
+                for (const auto &range : view->ranges)
+                    for (const auto id : range.command_ids)
+                        pending.push_back(commandOf(program, id));
+                bool changed = true;
+                while (changed) {
+                    changed = false;
+                    for (auto it = pending.begin(); it != pending.end();) {
+                        const auto &command = **it;
+                        const bool reached = std::any_of(retired.begin(), retired.end(),
+                            [&](uint32_t event) { return waitsFor(program, command, event); });
+                        if (!reached) {
+                            ++it;
+                            continue;
+                        }
+                        switch (command.opcode) {
+                          case kOpcodeREQUEST_END:
+                          case kOpcodeHALT:
+                          case kOpcodeEVENT_WAIT:
+                          case kOpcodeEVENT_SIGNAL:
+                          case kOpcodeBARRIER:
+                          case kOpcodeAXI_FENCE:
+                            if (!command.operand_count)
+                                break;
+                            [[fallthrough]];
+                          default:
+                            return fail("E_BINDING_ROLE",
+                                "suppressed PUBLISH event reaches a data consumer", error);
+                        }
+                        if (command.signal_event)
+                            retired.insert(command.signal_event);
+                        for (const auto &event : program.transport.events)
+                            if (event.producer_command_id == command.command_id)
+                                retired.insert(event.event_id);
+                        it = pending.erase(it);
+                        changed = true;
+                    }
+                }
+            }
+            if (!verifyMemberOwnership(facts, program, request, instance, error))
                 return false;
-            if (!verifyDescriptorAttribution(program, request, instance,
+            if (!verifyDescriptorAttribution(facts, views, program, request, instance,
                                              error))
                 return false;
             for (uint16_t ordinal = 0; ordinal < instance.member_count;
                  ordinal++)
-                if (!verifyMemberIo(program, request, instance, ordinal,
+                if (!verifyMemberIo(facts, views, program, request, instance, ordinal,
                                     error))
                     return false;
         }
@@ -1607,89 +1568,51 @@ bool verifyServingClosureAndIo(const DecodedProgram &program,
     return true;
 }
 
-uint16_t phaseRoleCount(uint16_t phase)
-{
-    switch (phase) {
-    case kPhasePREFILL: return 2;
-    case kPhaseDECODE: return 1;
-    case kPhasePUBLISH: return 1;
-    default: return 0;
-    }
-}
-
-bool servingCapacityFor(const DecodedProgram &program,
-                        const AgentInstanceProfile &instance,
-                        ServingCapacityRequirement &out, MeshLoadError &error)
-{
-    uint64_t weights = 0;
-    for (const auto &requirement :
-         program.agent_request_binding_requirements) {
-        if (requirement.request_program_id != instance.request_program_id ||
-            requirement.request_profile_id != instance.request_profile_id)
-            continue;
-        if (requirement.binding_kind ==
-            ::gem5::ai_mesh::agent_abi::kBindingKindWEIGHT_EXTERNAL)
-            weights++;
-    }
-    const uint16_t roles = phaseRoleCount(instance.phase);
-    if (roles == 0)
-        return fail("E_CAPACITY_PLAN", "unknown instance phase", error);
-    const uint64_t members = instance.member_count;
-    out.batch_weight_binding_entries = std::max(
-        out.batch_weight_binding_entries, weights);
-    out.instance_member_binding_entries = std::max(
-        out.instance_member_binding_entries, members * roles);
-    out.batch_interval_entries = std::max(
-        out.batch_interval_entries, 4 * members + weights);
-    return true;
-}
 
 } // anonymous namespace
 
-bool servingCapacityRequired(const DecodedProgram &program,
-                             ServingCapacityRequirement &out,
-                             MeshLoadError &error)
-{
-    if ((program.required_features & kFeatureAgentServingV1) == 0)
-        return true;
-    if (program.agent_instance_profiles.empty())
-        return fail("E_CAPACITY_PLAN",
-                    "serving program has no reachable profile", error);
-    for (const auto &instance : program.agent_instance_profiles)
-        if (!servingCapacityFor(program, instance, out, error))
-            return false;
-    return true;
-}
 
-bool verifyServingV1(const DecodedProgram &program, const RuntimeArch &arch,
+bool verifyServingV1(const ExecutionViewSet &views, const DecodedProgram &program,
+                     const ProgramSemanticContext &context, const VerifiedDmaDomain &dma,
+                     const VerifiedProgramGeometry &geometry, const RuntimeArch &arch,
                      MeshLoadError &error)
 {
-    if ((program.required_features & ~kKnownFeatureMask) != 0)
-        return fail("E_ABI_FEATURE", "unknown required feature bits", error);
-    if ((program.required_features & kFeatureAgentServingV1) == 0) {
+    const ServingBindingFacts facts{context, dma, program};
+    if ((program.header.required_features & kFeatureAgentServingV1) == 0) {
         if (anyServingTable(program))
             return fail("E_ABI_FEATURE",
                         "Agent serving sections without the feature bit",
                         error);
         return true;
     }
-    if (program.agent_request_profiles.empty() ||
-        program.agent_instance_profiles.empty() ||
-        program.agent_source_core_map.empty() ||
-        program.agent_instance_member_bindings.empty() ||
-        program.agent_request_binding_requirements.empty())
+    if (program.transport.agent_request_profiles.empty() ||
+        program.transport.agent_instance_profiles.empty() ||
+        program.transport.agent_source_core_map.empty() ||
+        program.transport.agent_instance_member_bindings.empty() ||
+        program.transport.agent_instance_tensor_bindings.empty() ||
+        program.transport.agent_request_binding_requirements.empty())
         return fail("E_ABI_BOUNDS",
                     "Agent serving feature requires every conditional "
                     "section", error);
-    return verifyRequestProfileKeys(program, error) &&
+    for (const auto &instance : program.transport.agent_instance_profiles)
+        if (!views.forInstance(instance.mesh_entrypoint_id, instance.mesh_profile_id))
+            return fail("E_REQUEST_PROFILE", "instance has no admitted execution view", error);
+    const bool valid = verifyRequestProfileKeys(program, error) &&
            verifyRequestProfiles(program, arch, error) &&
            verifyInstanceProfiles(program, error) &&
            verifySourceCoreMap(program, arch, error) &&
            verifyMemberBindings(program, error) &&
            verifyRequirements(program, error) &&
+           verifyServingTensorBindings(program, context, error) &&
            verifySymbolClassification(program, error) &&
-           verifyPublishBindings(program, error) &&
-           verifyServingClosureAndIo(program, error);
+           verifyPublishBindings(facts, views, program, error) &&
+           verifyServingClosureAndIo(facts, views, program, error);
+    if (!valid)
+        return false;
+    for (const auto &request : program.transport.agent_request_profiles)
+        if (request.flags == 0 && !verifyWorkspacePublication(program, context, geometry, views, request, error))
+            return false;
+    return true;
 }
 
 } // namespace ai_mesh

@@ -79,6 +79,7 @@ SyntheticHbmBackend::advance(uint64_t now)
             counters.writeBytesServiced += bytes;
         if (job.remaining == 0) {
             job.completedAt = cursor;
+            completedUids.push_back(*active);
             ++counters.completed;
             active.reset();
         }
@@ -86,28 +87,20 @@ SyntheticHbmBackend::advance(uint64_t now)
     currentCycle = now;
 }
 
-bool
-SyntheticHbmBackend::ready(uint64_t uid) const
+std::vector<SyntheticHbmCompletion>
+SyntheticHbmBackend::takeCompleted()
 {
-    return jobs.at(uid).completedAt.has_value();
-}
-
-uint64_t
-SyntheticHbmBackend::completionCycle(uint64_t uid) const
-{
-    const auto &job = jobs.at(uid);
-    if (!job.completedAt)
-        throw std::logic_error("synthetic HBM request is not complete");
-    return *job.completedAt;
-}
-
-void
-SyntheticHbmBackend::retire(uint64_t uid)
-{
-    if (!ready(uid))
-        throw std::logic_error("synthetic HBM request retired before completion");
-    jobs.erase(uid);
-    ++counters.retired;
+    std::vector<SyntheticHbmCompletion> completed;
+    completed.reserve(completedUids.size());
+    for (const uint64_t uid : completedUids) {
+        const auto it = jobs.find(uid);
+        const Job &job = it->second;
+        completed.push_back({uid, job.direction, *job.completedAt});
+        jobs.erase(it);
+        ++counters.retired;
+    }
+    completedUids.clear();
+    return completed;
 }
 
 SyntheticHbmStats

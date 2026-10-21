@@ -36,6 +36,7 @@ enum class HostTaskState : uint8_t
 
 struct HostServiceTask
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     HostTaskId hostTaskId{0};
     HostStageKindV1 kind = HostStageKindV1::Compile;
     uint64_t arrivalTick = 0;
@@ -54,6 +55,8 @@ enum class HostEnqueueResult
 class HostResourceManager
 {
   public:
+    GEM5_CHECKPOINT_FIELDS(freeSlots_, scores, queues, entries, tokensFree,
+                          agingThresholdTicks, agingReservation, reservationTarget)
     HostResourceManager(
         const std::array<uint32_t, kHostStageKindCount> &slots,
         const std::array<uint32_t, kHostStageKindCount> &queueDepths,
@@ -80,6 +83,7 @@ class HostResourceManager
   private:
     struct Entry
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         HostServiceTask task;
         HostTaskState state = HostTaskState::WaitHostEnqueue;
     };

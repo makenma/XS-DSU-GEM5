@@ -84,6 +84,7 @@ class Consumer
         return em;
     }
 
+    template<class Archive> void checkpoint(Archive &archive);
     void scheduleEventAbsolute(Tick timeAbs);
     void scheduleEvent(Cycles timeDelta);
 

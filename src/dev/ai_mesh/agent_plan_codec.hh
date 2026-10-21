@@ -19,6 +19,7 @@ struct PlanWireAddresses
     uint64_t parameterBase = 0;
     uint64_t outputBase = 0;
     uint64_t metadataBase = 0;
+    uint64_t workspaceBase = 0;
 };
 
 uint64_t planParameterBytes(const AgentPlanRound &round,

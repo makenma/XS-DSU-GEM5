@@ -3,6 +3,7 @@
 #include "dev/ai_mesh/mesh_serving_projection.hh"
 
 #include <algorithm>
+#include <stdexcept>
 #include <utility>
 
 #include "dev/ai_mesh/generated/agent_protocol_abi.hh"
@@ -11,20 +12,6 @@ namespace gem5
 {
 namespace ai_mesh
 {
-
-uint32_t
-pathKindOfSqFlags(uint16_t sq_flags)
-{
-    const bool reuse = (sq_flags & agent_abi::kSqFlagsREQUIRE_KV_REUSE) != 0;
-    const bool reprefill = (sq_flags & agent_abi::kSqFlagsALLOW_REPREFILL) != 0;
-    if (reuse && reprefill)
-        return mesh_abi::kPathKindValuesMask;
-    if (reuse)
-        return mesh_abi::kPathKindKV_REUSE;
-    if (reprefill)
-        return mesh_abi::kPathKindREPREFILL;
-    return mesh_abi::kPathKindINITIAL_PREFILL;
-}
 
 namespace
 {
@@ -86,12 +73,19 @@ ServingRequestContext::fail(std::string &reason, const std::string &code,
 const mesh_abi::AgentRequestProfile *
 ServingRequestContext::requestProfile() const
 {
-    for (const auto &request : program->agent_request_profiles) {
+    for (const auto &request : program->transport.agent_request_profiles) {
         if (request.program_id == request_identity.program_id &&
                 request.profile_id == request_identity.profile_id)
             return &request;
     }
     return nullptr;
+}
+
+bool
+ServingRequestContext::usesKv() const
+{
+    const auto *request = requestProfile();
+    return request && request->flags == mesh_abi::kAgentRequestFlagsHAS_KV;
 }
 
 const mesh_abi::AgentInstanceProfile *
@@ -100,12 +94,15 @@ ServingRequestContext::select(uint16_t phase, uint32_t kv_tokens_before,
 {
     const mesh_abi::AgentInstanceProfile *match = nullptr;
     uint32_t matches = 0;
-    for (const auto &instance : program->agent_instance_profiles) {
+    for (const auto &instance : program->transport.agent_instance_profiles) {
         if (instance.request_program_id != request_identity.program_id ||
                 instance.request_profile_id != request_identity.profile_id ||
                 instance.path_kind != request_identity.path_kind ||
                 instance.phase != phase ||
-                instance.kv_tokens_before != kv_tokens_before)
+                instance.kv_tokens_before != kv_tokens_before ||
+                instance.member_count != 1 ||
+                program->transport.agent_instance_member_bindings.at(instance.member_binding_first).
+                    expected_logical_source_rank != request_identity.logical_source_rank)
             continue;
         match = &instance;
         ++matches;
@@ -132,10 +129,11 @@ bool
 ServingRequestContext::validatePrefill(
     const mesh_abi::AgentRequestProfile &request,
     const mesh_abi::AgentInstanceProfile &instance, uint32_t tokens,
-    uint64_t host_input, std::string &reason) const
+    std::string &reason) const
 {
     if (instance.primary_input_symbol_id == 0 ||
-            instance.primary_kv_symbol_id == 0 ||
+            (usesKv() ? instance.primary_kv_symbol_id == 0 :
+                        instance.primary_kv_symbol_id != 0) ||
             instance.primary_output_symbol_id != 0)
         return fail(reason, "E_REQUEST_PROFILE",
                     "prefill primary roles are not the contract set");
@@ -147,10 +145,10 @@ ServingRequestContext::validatePrefill(
             uint64_t(tokens) * request.kv_bytes_per_token)
         return fail(reason, "E_KV_TOKEN_MISMATCH",
                     "prefill append bytes do not match the token count");
-    if (instance.host_input_dma_bytes_per_member != host_input ||
+    if (instance.host_input_dma_bytes_per_member == 0 ||
             instance.host_output_dma_bytes_per_member != 0)
         return fail(reason, "E_HOST_IO_SIZE_MISMATCH",
-                    "prefill Host ranges do not match the request profile");
+                    "prefill Host access roles are inconsistent");
     return true;
 }
 
@@ -216,18 +214,21 @@ ServingRequestContext::validatePublish(
 }
 
 bool
-ServingRequestContext::resolve(std::string &reason)
+ServingRequestContext::validate(std::string &reason) const
 {
-    steps.clear();
-    phase_index = 0;
-    core_started = false;
-    core_drained = false;
-    append_terminal_seen = false;
-    append_prefix_complete = false;
     reject_detail = 0;
     const auto *request = requestProfile();
     if (request == nullptr)
         return fail(reason, "E_REQUEST_PROFILE", "unknown request profile");
+    MeshLoadError modeError;
+    if (!verifyRequestPhaseMode(*program, *request, modeError))
+        return fail(reason, modeError.code.c_str(), modeError.message.c_str());
+    if (!usesKv() && (request_identity.kv_handle || request_identity.generation ||
+            request_identity.cached_tokens || request_identity.kv_flags || request_identity.repair_round ||
+            request_identity.kv_bytes_per_token))
+        return fail(reason, "E_REQUEST_PROFILE", "prefill-only request carries KV or generation state");
+    if (request_identity.logical_source_rank >= request->source_rank_count)
+        return fail(reason, "E_REQUEST_PROFILE", "logical source rank is outside the request profile");
     const uint16_t kv_flags = request_identity.kv_flags &
         (agent_abi::kSqFlagsREQUIRE_KV_REUSE |
          agent_abi::kSqFlagsALLOW_REPREFILL);
@@ -241,53 +242,66 @@ ServingRequestContext::resolve(std::string &reason)
         return fail(reason, "E_KV_FLAG_COMBINATION",
                     "a repair round needs exactly one KV path bit");
     }
-    request_identity.path_kind = pathKindOfSqFlags(kv_flags);
-    if (request_identity.path_kind > mesh_abi::kPathKindREPREFILL)
-        return fail(reason, "E_REQUEST_PROFILE", "path kind is outside range");
-    if (!(request->path_mask & (1u << request_identity.path_kind)))
-        return fail(reason, "E_REQUEST_PROFILE",
-                    "path kind is not declared reachable");
-    const uint32_t start = reuse ? request->delta_input_tokens :
-        request->full_input_tokens;
-    if (reuse && start != request->expected_cached_tokens)
-        return fail(reason, "E_KV_TOKEN_MISMATCH",
-                    "reused prefix must equal the expected cached tokens");
-    const uint32_t expected_cached = reuse ? request->expected_cached_tokens : 0;
-    if (request_identity.cached_tokens != expected_cached)
-        return fail(reason, "E_KV_TOKEN_MISMATCH",
-                    "round cached tokens do not match the selected path");
+    const uint32_t required_paths = request_identity.repair_round == 0 ? 1 :
+        (reprefill ? 6 : 2);
+    if ((request->path_mask & required_paths) != required_paths)
+        return fail(reason, "E_REQUEST_PROFILE", "requested paths are not declared reachable");
+    if (request_identity.cached_tokens != request->expected_cached_tokens)
+        return fail(reason, "E_KV_TOKEN_MISMATCH", "cached tokens differ from the request profile");
     if (request_identity.kv_bytes_per_token != request->kv_bytes_per_token)
         return fail(reason, "E_KV_TOKEN_MISMATCH",
                     "manager token geometry differs from the request profile");
-    const std::array<uint8_t, 32> key_base =
-        programProfileKeyBaseDigest(*program);
+    std::array<uint8_t, 32> key_base;
+    MeshLoadError key_error;
+    if (!programProfileKeyBaseDigest(*program, key_base, key_error))
+        return fail(reason, key_error.code.c_str(), key_error.message.c_str());
     if (requestProfileKey(*request, key_base) !=
             request_identity.requested_profile_key)
         return fail(reason, "E_REQUEST_PROFILE",
                     "requested profile key does not match the serving profile");
-    const uint64_t proof_input_bytes =
-        reuse ? request->delta_input_dma_bytes : request->full_input_dma_bytes;
-    if (request_identity.input_bytes != proof_input_bytes ||
-            request_identity.input_tokens != start)
+    if (request_identity.input_bytes != request->input_binding_bytes ||
+            request_identity.input_tokens != request->full_input_tokens)
         return fail(reason, "E_HOST_IO_SIZE_MISMATCH",
-                    "Host input range does not match the request profile");
+                    "Host input must contain the full context");
     if (request_identity.output_tokens != request->output_tokens ||
             request_identity.output_capacity_bytes < request->host_output_bytes)
         return fail(reason, "E_HOST_IO_SIZE_MISMATCH",
                     "Host output range does not match the request profile");
 
-    const auto *prefill = select(kPrefill, 0, reason);
+    return true;
+}
+
+bool
+ServingRequestContext::resolve(KvPath path, std::string &reason)
+{
+    steps.clear();
+    phase_index = 0;
+    core_started = core_drained = append_terminal_seen = append_prefix_complete = false;
+    if (!validate(reason))
+        return false;
+    const auto *request = requestProfile();
+    const bool reuse = path == KvPath::KvReuse;
+    const bool permitted = request_identity.repair_round == 0 ?
+        path == KvPath::InitialPrefill :
+        (reuse || (path == KvPath::Reprefill &&
+                   (request_identity.kv_flags & agent_abi::kSqFlagsALLOW_REPREFILL)));
+    if (!pathClosed(path) || !permitted ||
+            !(request->path_mask & (1u << static_cast<uint32_t>(path))))
+        return fail(reason, "E_REQUEST_PROFILE", "admitted path is not permitted");
+    request_identity.path_kind = static_cast<uint32_t>(path);
+    const uint32_t start = request->full_input_tokens;
+    const uint32_t before = reuse ? request->expected_cached_tokens : 0;
+    const auto *prefill = select(kPrefill, before, reason);
     if (prefill == nullptr)
         return false;
-    const uint64_t host_input = reuse ? request->delta_input_dma_bytes :
-        request->full_input_dma_bytes;
-    if (!validatePrefill(*request, *prefill, start, host_input, reason))
+    if (!validatePrefill(*request, *prefill, reuse ? request->delta_input_tokens : start, reason))
         return false;
     if (prefill->kv_read_bytes_per_member !=
-            (reuse ? request->delta_input_dma_bytes : 0))
+            uint64_t(before) * request->kv_bytes_per_token)
         return fail(reason, "E_KV_TOKEN_MISMATCH",
                     "prefill read bytes do not match the path");
-    steps.push_back(makeStep(*prefill, start));
+    const uint32_t cursor = usesKv() ? start : 0;
+    steps.push_back(makeStep(*prefill, cursor));
 
     uint32_t produced = 0;
     while (produced < request->output_tokens) {
@@ -303,14 +317,14 @@ ServingRequestContext::resolve(std::string &reason)
         produced += chunk;
         steps.push_back(makeStep(*decode, start + produced));
     }
-    const auto *publish = select(kPublish, start + produced, reason);
+    const auto *publish = select(kPublish, cursor + produced, reason);
     if (publish == nullptr)
         return false;
-    if (!validatePublish(*request, *publish, start + produced, reason))
+    if (!validatePublish(*request, *publish, cursor + produced, reason))
         return false;
-    steps.push_back(makeStep(*publish, start + produced));
+    steps.push_back(makeStep(*publish, cursor + produced));
     if (steps.back().cached_tokens_after !=
-            request->full_input_tokens + request->output_tokens)
+            requiredTokensAfterRound())
         return fail(reason, "E_KV_TOKEN_MISMATCH",
                     "final cursor must equal full context plus output");
     return true;
@@ -320,7 +334,7 @@ uint32_t
 ServingRequestContext::requiredTokensAfterRound() const
 {
     const auto *request = requestProfile();
-    if (request == nullptr)
+    if (request == nullptr || !usesKv())
         return 0;
     return request->full_input_tokens + request->output_tokens;
 }
@@ -337,6 +351,8 @@ ServingRequestContext::instanceProfile() const
 KvAdmissionIntent
 ServingRequestContext::admissionIntent(uint64_t tick) const
 {
+    if (!usesKv())
+        throw std::logic_error("prefill-only request has no KV admission");
     KvAdmissionIntent intent;
     intent.request_id = request_identity.request_id;
     intent.session_id = request_identity.session_id;
@@ -344,10 +360,10 @@ ServingRequestContext::admissionIntent(uint64_t tick) const
     intent.generation = request_identity.generation;
     intent.contract_digest = request_identity.contract_digest;
     intent.ready_tick = tick;
-    if (request_identity.path_kind == mesh_abi::kPathKindKV_REUSE)
-        intent.flags = agent_abi::kSqFlagsREQUIRE_KV_REUSE;
-    else if (request_identity.path_kind == mesh_abi::kPathKindREPREFILL)
-        intent.flags = agent_abi::kSqFlagsALLOW_REPREFILL;
+    intent.deadline_or_max = request_identity.deadline_tick;
+    intent.qos = request_identity.qos;
+    intent.flags = request_identity.kv_flags &
+        (agent_abi::kSqFlagsREQUIRE_KV_REUSE | agent_abi::kSqFlagsALLOW_REPREFILL);
     const auto *request = requestProfile();
     if (request != nullptr) {
         intent.required_cached_tokens = request->expected_cached_tokens;
@@ -358,7 +374,7 @@ ServingRequestContext::admissionIntent(uint64_t tick) const
 }
 
 void
-ServingRequestContext::beginPhase(KvEdgeInputs &edge)
+ServingRequestContext::beginPhase(KvEdgeInputs &edge, uint32_t member_ordinal)
 {
     if (finished())
         return;
@@ -366,13 +382,8 @@ ServingRequestContext::beginPhase(KvEdgeInputs &edge)
     append_terminal_seen = false;
     append_prefix_complete = false;
     const ServingPhaseStep &item = step();
-    if (item.phase != kPublish) {
-        for (uint32_t ordinal = 0; ordinal < item.member_count; ++ordinal) {
-            KvViewArm arm;
-            arm.request_id = request_identity.request_id;
-            arm.member_ordinal = ordinal;
-            edge.view_arms.push_back(arm);
-        }
+    if (usesKv() && item.phase != kPublish) {
+        edge.view_arms.push_back({request_identity.request_id, member_ordinal});
     }
     const uint32_t tokens = appendTokens(item);
     if (tokens != 0) {
@@ -402,7 +413,7 @@ ServingRequestContext::joinSatisfied() const
 {
     if (finished() || !core_drained)
         return false;
-    if (step().phase == kPublish)
+    if (!usesKv() || step().phase == kPublish)
         return true;
     return append_terminal_seen && append_prefix_complete;
 }
@@ -425,6 +436,8 @@ ServingRequestContext::commitPhase(std::string &reason)
 KvOwnerTerminal
 ServingRequestContext::ownerTerminal(KvTerminalStatus status) const
 {
+    if (!usesKv())
+        throw std::logic_error("prefill-only request has no KV owner terminal");
     KvOwnerTerminal terminal;
     terminal.request_id = request_identity.request_id;
     terminal.status = status;
@@ -436,6 +449,8 @@ KvOwnerTerminal
 ServingRequestContext::rollbackTerminal(KvTerminalStatus status,
                                         const KvRollbackToken &token) const
 {
+    if (!usesKv())
+        throw std::logic_error("prefill-only request has no KV rollback");
     KvOwnerTerminal terminal;
     terminal.request_id = request_identity.request_id;
     terminal.status = status;

@@ -1,4 +1,5 @@
-import os
+from mesh_ir.runtime_environment import runtime_environment
+
 import subprocess
 import sys
 import time
@@ -18,11 +19,7 @@ SIM_TICK_LIMIT = 2000000000000
 
 
 def run_plan(outdir, plan_image, *extra):
-    environment = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith("AI_MESH_")
-    }
+    environment = runtime_environment()
     return subprocess.run(
         [
             str(GEM5),
@@ -49,11 +46,7 @@ def facts_of(outdir):
 
 
 def run_agent(outdir, *extra):
-    environment = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith("AI_MESH_")
-    }
+    environment = runtime_environment()
     return subprocess.run(
         [
             str(GEM5),

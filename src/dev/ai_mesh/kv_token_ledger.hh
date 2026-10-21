@@ -25,7 +25,7 @@ class KvTokenLedger
                           uint32_t tokens);
     void noteBurst(uint32_t descriptor_id, uint64_t offset_in_append,
                    uint64_t bytes, bool okay,
-                   std::optional<KvErrorCandidate> candidate);
+                   std::optional<ErrorCandidate> candidate);
     bool descriptorComplete(uint32_t descriptor_id) const;
     uint32_t outstandingDescriptors() const;
     uint32_t acceptDelta() const { return accept_delta; }
@@ -35,7 +35,7 @@ class KvTokenLedger
     std::vector<bool> tokenBitmap() const;
     uint32_t completePrefix() const;
     bool hasFault() const { return !error_candidates.empty(); }
-    const std::vector<KvErrorCandidate> &errors() const
+    const std::vector<ErrorCandidate> &errors() const
     { return error_candidates; }
     KvAppendTerminal appendTerminal() const;
 
@@ -63,7 +63,7 @@ class KvTokenLedger
     std::map<uint32_t, Entry> descriptors;
     std::vector<uint32_t> committed_bytes;
     std::vector<uint8_t> written_bytes;
-    std::vector<KvErrorCandidate> error_candidates;
+    std::vector<ErrorCandidate> error_candidates;
     uint32_t accept_delta = 0;
     uint32_t terminal_delta = 0;
 };

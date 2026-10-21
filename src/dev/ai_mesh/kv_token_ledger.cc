@@ -41,7 +41,7 @@ KvTokenLedger::acceptDescriptor(uint32_t descriptor_id, uint32_t first_token,
 void
 KvTokenLedger::noteBurst(uint32_t descriptor_id, uint64_t offset_in_append,
                          uint64_t bytes, bool okay,
-                         std::optional<KvErrorCandidate> candidate)
+                         std::optional<ErrorCandidate> candidate)
 {
     auto found = descriptors.find(descriptor_id);
     if (found == descriptors.end())

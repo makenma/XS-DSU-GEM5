@@ -6,8 +6,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from mesh_ir.abi.decoder import decode_program
 from mesh_ir.abi.encoder import encode_program
 from mesh_ir.abi.moe_verifier import verify_moe_v1
-from mesh_ir.abi.verifier import verify_program
-from mesh_ir.builder import load_arch
+from mesh_ir.scheduled.verify import verify_program
+from mesh_ir.architecture import load_arch
 from mesh_ir.generated import abi as A
 from mesh_ir.moe_programs import (
     QUAD_CORES,
@@ -44,7 +44,7 @@ def test_gate5_quad_program_verifies_and_round_trips():
     blob = encode_program(program)
     decoded = decode_program(blob)
     assert encode_program(decoded) == blob
-    assert decoded.semantic_sha256() == program.semantic_sha256()
+    assert decoded.semantic_sha256 == program.semantic_sha256
 
 
 def test_gate5_quad_program_places_one_region_and_expert_per_core():

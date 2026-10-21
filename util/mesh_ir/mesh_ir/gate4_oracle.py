@@ -118,6 +118,7 @@ ARENA_FIELDS = (
     ("PARAMETER", "parameter_arena"),
     ("OUTPUT", "output_arena"),
     ("METADATA", "metadata_arena"),
+    ("WORKSPACE", "workspace_arena"),
 )
 
 
@@ -129,7 +130,7 @@ def arena_regions(address_map) -> tuple[ArenaRegion, ...]:
             address_map[field]["bytes"],
             address_map["arena_alignment_bytes"],
         )
-        for kind, field in ARENA_FIELDS
+        for kind, field in ARENA_FIELDS if field in address_map
     )
 
 

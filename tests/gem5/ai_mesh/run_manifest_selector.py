@@ -24,6 +24,7 @@ sys.path.insert(0, str(CONFIG_ROOT))
 
 from dummy_core_case_registry import Backend
 from dummy_core_case_registry import CASES as GEM5_CASES
+from mesh_ir.runtime_environment import embedded_python_path
 from dummy_core_case_registry import GATE3_PROFILES
 from dummy_core_case_registry import invariant_registry
 from mesh_ir.acceptance import (
@@ -67,7 +68,7 @@ from mesh_ir.agent_planning import (
 )
 from mesh_ir.agent_surrogate import load_surrogate_profiles
 from mesh_ir.agent_workload import load_control_plan, load_workload_plan
-from mesh_ir.builder import load_arch
+from mesh_ir.architecture import load_arch
 from mesh_ir.effective import EffectiveArchitecture
 from mesh_ir.gate3_oracle import load_observation, validate_observation
 from mesh_ir.gate4_oracle import arena_regions
@@ -75,6 +76,14 @@ from mesh_ir.gate4_oracle import arena_regions
 
 MANIFEST = Path(__file__).resolve().parent / "mandatory_case_manifest.yaml"
 GTEST_BINARIES = (
+    REPO / "build/AXI_MESH/dev/ai_mesh/mesh_kv_manager.test.opt",
+    REPO / "build/AXI_MESH/dev/ai_mesh/mesh_kv_manager_trace.test.opt",
+    REPO / "build/AXI_MESH/dev/ai_mesh/mesh_kv_persistence.test.opt",
+    REPO / "build/AXI_MESH/dev/ai_mesh/mesh_kv_manager_restore.test.opt",
+    REPO / "build/AXI_MESH/dev/ai_mesh/mesh_moe_population.test.opt",
+    REPO / "build/AXI_MESH/dev/ai_mesh/agent_protocol_validation.test.opt",
+    REPO / "build/AXI_MESH/dev/ai_mesh/serving_mesh_executor.test.opt",
+    REPO / "build/AXI_MESH/dev/ai_mesh/mesh_serving_scheduler.test.opt",
     REPO / "build/AXI_MESH/dev/ai_mesh/mesh_binary.test.opt",
     REPO / "build/AXI_MESH/dev/ai_mesh/tensor_sram.test.opt",
     REPO / "build/AXI_MESH/dev/ai_mesh/mesh_splitter.test.opt",
@@ -296,6 +305,7 @@ def build_command(
         arguments = [_replace_golden(value, golden) for value in execution["args"]]
         command = [
             str(executable),
+            "--path", embedded_python_path(),
             f"--outdir={artifact_dir}",
             execution["config_script"],
         ]
@@ -464,7 +474,7 @@ def _gate6_scenario(execution: dict, arguments: list[str]) -> dict:
         "mesh_programs": [
             {
                 "program_id": 1,
-                "semantic_digest": decoded.semantic_sha256(),
+                "semantic_digest": decoded.semantic_sha256,
                 "file_sha256": _digest(str(program_image.resolve())),
             }
         ],
@@ -672,7 +682,7 @@ def _gem5_scenario(execution: dict, command: list[str], golden: Path) -> dict:
         ),
         "base_architecture": arch.digest().hex(),
         "effective_architecture": effective.digest().hex(),
-        "command_identity": decoded.semantic_sha256(),
+        "command_identity": decoded.semantic_sha256,
         **empty_digests,
     }
     return {
@@ -684,7 +694,7 @@ def _gem5_scenario(execution: dict, command: list[str], golden: Path) -> dict:
         "mesh_programs": [
             {
                 "program_id": 1,
-                "semantic_digest": decoded.semantic_sha256(),
+                "semantic_digest": decoded.semantic_sha256,
                 "file_sha256": _digest(str(program_image.resolve())),
             }
         ],

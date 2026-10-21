@@ -2481,6 +2481,101 @@
   "schema_version": 1,
   "unit_binaries": [
     {
+      "binary": "mem/axi/axi_behavior_trace.test.opt",
+      "suites": [
+        "AxiBehaviorTrace"
+      ],
+      "tests": [
+        "AxiBehaviorTrace.BCapacityAndTwoPass",
+        "AxiBehaviorTrace.BCopiesMovePendingHeadsAndRestoreRetirementHistory",
+        "AxiBehaviorTrace.BFieldsFailBeforeQueuedDuplicateAndExOkay",
+        "AxiBehaviorTrace.BFullBatchObservesBeforeChoosingAndPromotingHeads",
+        "AxiBehaviorTrace.BFullFifoStillRejectsFreshExOkay",
+        "AxiBehaviorTrace.BFullPendingAndQueuedHead",
+        "AxiBehaviorTrace.BFutureTicksSortAndReceivedPacketsRemainValues",
+        "AxiBehaviorTrace.BPartiallyInjectedWriteFailsBeforeExOkay",
+        "AxiBehaviorTrace.BQueuedDuplicateFailsBeforeExOkay",
+        "AxiBehaviorTrace.BRetiredUidFailsBeforeFieldsAndExOkay",
+        "AxiBehaviorTrace.HbmSelectionKeepsSequenceActiveJobAndFiniteSlots",
+        "AxiBehaviorTrace.MixedBulkCompletionAndFrozenReads",
+        "AxiBehaviorTrace.RActiveCopiesAndMovesDrainIndependently",
+        "AxiBehaviorTrace.REqualReadyTickOrdersByUid",
+        "AxiBehaviorTrace.RFullPendingBeforeAndAfterRlast",
+        "AxiBehaviorTrace.RNextBeatReentersWithEarlierReadyTick",
+        "AxiBehaviorTrace.RNonHeadLaterBeatsAreObservedTogether",
+        "AxiBehaviorTrace.RQueuedSlotDuplicateDoesNotReenterReadyFifo",
+        "AxiBehaviorTrace.ReadCommitCopiesMoveAndIdleCheckpoint",
+        "AxiBehaviorTrace.ReadCommitGateWrapReobservesDuplicateMaximum",
+        "AxiBehaviorTrace.ReadCommitMetadataAndUidReuse",
+        "AxiBehaviorTrace.ReadDuplicateOneRechecksPreviouslyBlockedUid",
+        "AxiBehaviorTrace.ReadDuplicateZeroSelectsReadyTimeBeforeUid",
+        "AxiBehaviorTrace.ReadFullFifoFreezesBeforeLaterMemoryWrites",
+        "AxiBehaviorTrace.ReadGenerationCursorSurvivesChangesAndCheckpoint",
+        "AxiBehaviorTrace.ReadGenerationFrozenCopiesAndMovesDrainIndependently",
+        "AxiBehaviorTrace.ReadGenerationLateUidPreemptsAndRoundRobins",
+        "AxiBehaviorTrace.ReadGenerationRlastEnqueueReleasesQuotaBeforeUidReuse",
+        "AxiBehaviorTrace.ReadGenerationZeroAndMaximumKeysRemainCandidates",
+        "AxiBehaviorTrace.ReadObservationFollowsWriteObserver",
+        "AxiBehaviorTrace.ReadStaleBlocksOtherDomainAndStopsUidPrefix",
+        "AxiBehaviorTrace.ReadStaleWithoutEligibleStillFails",
+        "AxiBehaviorTrace.SeededInitiatorTargetLoop",
+        "AxiBehaviorTrace.ServiceCopiesMovePendingOrphansReuseUidAndArchive",
+        "AxiBehaviorTrace.ServiceCrossDirectionDuplicateFailsAfterWriteGrant",
+        "AxiBehaviorTrace.ServiceCrossDirectionEqualKeySubmitsWriteFirst",
+        "AxiBehaviorTrace.ServiceDirectionDepthAllowsOtherDirection",
+        "AxiBehaviorTrace.ServiceKeysKeepZeroMaximumAndUidTies",
+        "AxiBehaviorTrace.ServiceLatencyOverflowWaitsForActualSelection",
+        "AxiBehaviorTrace.ServiceOrdinaryWriteAdmissionPrecedesReadTimeOverflow",
+        "AxiBehaviorTrace.ServiceOrphanModesKeepContextAndAwOrdering",
+        "AxiBehaviorTrace.ServiceSyntheticTimeOverflowKeepsCompletionPrefix",
+        "AxiBehaviorTrace.ServiceTwoRoundsAndResponsePopUseSameNow",
+        "AxiBehaviorTrace.StagedWriteValidationWaitsForReadyCapacity",
+        "AxiBehaviorTrace.StagedWritesKeepOrdinalOrderAcrossCopiesAndBackpressure",
+        "AxiBehaviorTrace.TargetTransitions",
+        "AxiBehaviorTrace.WriteCopiesMovesAndIdleCheckpointKeepOwners",
+        "AxiBehaviorTrace.WriteDelayedBStillDefersDuplicateObservation",
+        "AxiBehaviorTrace.WriteDuplicateOneRechecksFlagAfterBFull",
+        "AxiBehaviorTrace.WriteDuplicateZeroDepthOneDefersUntilPop",
+        "AxiBehaviorTrace.WriteDuplicateZeroDepthTwoFailsInSameAdvance",
+        "AxiBehaviorTrace.WriteGateWrapReobservesMaximumOnlyAfterBPop",
+        "AxiBehaviorTrace.WriteMalformedBeatValidationWaitsForCapacity",
+        "AxiBehaviorTrace.WriteOrphanAcceptedTickRetainsModeSpecificAdmission",
+        "AxiBehaviorTrace.WritePolicyFaultReplayAndObserverMemory",
+        "AxiBehaviorTrace.WriteReadyTimeRankAndUidPreserveMemoryOrder",
+        "AxiBehaviorTrace.WriteStaleBlocksOtherDomainAndStopsUidPrefix",
+        "AxiBehaviorTrace.WriteStaleWithoutEligibleStillFails",
+        "AxiBehaviorTrace.WriteUidReuseWhileOldBStillQueued"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "binary": "mem/axi/synthetic_hbm_backend.test.opt",
+      "suites": [
+        "SyntheticHbmBackendTest",
+        "SyntheticHbmTargetTest"
+      ],
+      "tests": [
+        "SyntheticHbmBackendTest.CompletedCopiesAndMovesHaveIndependentHandoffs",
+        "SyntheticHbmBackendTest.CompletedServiceRetainsFiniteSlotUntilHandoff",
+        "SyntheticHbmBackendTest.CompletionHandoffDoesNotPreemptActiveService",
+        "SyntheticHbmBackendTest.CompletionHandoffPreservesCyclesAndDirections",
+        "SyntheticHbmBackendTest.LatenciesOverlapWithoutSerialBasePenalty",
+        "SyntheticHbmBackendTest.ReadWriteRateIsSharedAndPartialCyclesAreBounded",
+        "SyntheticHbmBackendTest.RejectsInvalidCapacityTimeAndLifecycle",
+        "SyntheticHbmBackendTest.SameCycleAdvanceCannotDuplicateService",
+        "SyntheticHbmBackendTest.SubmissionCompletionRetainsSlotUntilHandoff",
+        "SyntheticHbmBackendTest.UnreadyRequestDoesNotOccupyService",
+        "SyntheticHbmTargetTest.BaseLatencyAndServiceDoNotCollapse",
+        "SyntheticHbmTargetTest.BoundedServiceCannotBlockOlderSameIdCommit",
+        "SyntheticHbmTargetTest.DisabledBackendPreservesLegacyTiming",
+        "SyntheticHbmTargetTest.FaultStillDrainsWithoutMemoryCommit",
+        "SyntheticHbmTargetTest.HalfRateRequiresTwiceTheServiceCycles",
+        "SyntheticHbmTargetTest.ReadAndWriteShareServiceBandwidth",
+        "SyntheticHbmTargetTest.SuccessfulCommitCountsStrobesAndLocalCycle"
+      ],
+      "timeout_seconds": 60
+    },
+    {
       "binary": "mem/axi/axi_validation.test.opt",
       "suites": [
         "AxiBurstValidationTest"
@@ -2531,6 +2626,7 @@
         "AxiTargetOrphanWTest.MergesWBeforeAw",
         "AxiTargetOrphanWTest.RejectsDuplicatePacket",
         "AxiTargetOrphanWTest.RejectsQuotaOversubscription",
+        "AxiWritePairingTest.BindingFailureKeepsStagedValidationOnLaterAdvance",
         "AxiWritePairingTest.BlocksUnboundWInjection",
         "AxiWritePairingTest.BuffersMultiplePreAwBursts",
         "AxiWritePairingTest.KeepsAwReadyWhenWFull",
@@ -2602,7 +2698,37 @@
         "AxiErrorResponseTest.ErrorWriteCommitsNoBytes",
         "AxiErrorResponseTest.NeverProducesExOkay",
         "AxiErrorResponseTest.RangeTailRoutesWholeBurstToError",
+        "AxiErrorResponseTest.SharedBackingNotifiesEveryObserver",
         "AxiErrorResponseTest.TargetFaultReturnsSlverr"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "binary": "mem/axi/axi_checkpoint.test.opt",
+      "suites": [
+        "AxiCheckpoint"
+      ],
+      "tests": [
+        "AxiCheckpoint.RejectsOutstandingTransactions",
+        "AxiCheckpoint.RestoresMemoryOrderingAndSyntheticServiceHistory"
+      ],
+      "timeout_seconds": 60
+    },
+    {
+      "binary": "mem/axi/axi_simple_memory.test.opt",
+      "suites": [
+        "AxiSimpleMemoryTest"
+      ],
+      "tests": [
+        "AxiSimpleMemoryTest.ActualBeatRangeFailurePreservesCommittedPrefix",
+        "AxiSimpleMemoryTest.AdjacentPagesReturnExactFullWidthBeatBytes",
+        "AxiSimpleMemoryTest.FillHonorsPartialPagesAndDisjointRanges",
+        "AxiSimpleMemoryTest.InvalidLaterBeatLeavesEarlierBytesUnchanged",
+        "AxiSimpleMemoryTest.NonPowerOfTwoBusPreservesLanesAcrossPageBoundary",
+        "AxiSimpleMemoryTest.RangeCoverageRejectsInteriorHoles",
+        "AxiSimpleMemoryTest.RangeCoverageTraversesAdjacentRangesWithoutOverflow",
+        "AxiSimpleMemoryTest.UnwrittenBytesRemainZeroAfterSparseWrites",
+        "AxiSimpleMemoryTest.WriteStrobesPreserveUnselectedLanes"
       ],
       "timeout_seconds": 60
     },

@@ -24,6 +24,10 @@ struct ServingFillBinding
     std::vector<uint8_t> content;
 };
 
+std::optional<ServingMemberIdentity> servingFillMember(
+    const DecodedProgram &program, const ProfileExecutionView &view,
+    const ServingInstanceBinding &binding, uint32_t producer_command_id);
+
 class ServingFillInputs
 {
   public:

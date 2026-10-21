@@ -56,10 +56,9 @@ NpuServingFrontend::commitCurrentSq()
     recordSemantic("SQ_CONSUME", "SQ_ENTRY", currentSqSequence,
                    currentRequestId, currentCookie, status);
     if (planExecution && !currentError && currentControlOpcode == 0) {
-        seenGenerateRequests.insert(currentRequestId);
         currentAcceptTick = curTick();
         if (driverRef)
-            driverRef->notifySqAccepted(currentRequestId);
+            driverRef->notifyControlEvent(currentRequestId, ControlTriggerEvent::AfterSqAccept);
     }
     ++sqConsumer;
     expectedDoorbellTail = sqConsumer + 1;
@@ -87,6 +86,8 @@ NpuServingFrontend::rejectParameter(agent_abi::DetailCode code)
         requestFatal(agent_abi::E_AGENT_PROTOCOL_FATAL);
         return false;
     }
+    fatal_if(disposition->severity == agent_abi::DetailSeverityV1::CONFIG_FATAL,
+             "%s: %s", name(), agent_abi::detailCodeNameV1(code));
     recordSemantic("PARAMETER_REJECT", "PARAMETER", currentSqSequence,
                    currentRequestId, currentCookie,
                    agent_abi::detailCodeNameV1(code));
@@ -182,7 +183,7 @@ NpuServingFrontend::handleParameterRecord()
             agent_abi::E_REQUEST_BINDING);
         return;
     }
-    if (value.request_kind != 1 || value.target_request_id != 0 ||
+    if (value.request_kind != 1 || value.target_request_id != 0 || value.flags != 0 ||
             value.qos != currentQos || value.reserved != 0 ||
             value.reserved2 != 0 || value.reserved3 != 0 ||
             value.moe_route_profile_id != 0) {
@@ -197,6 +198,10 @@ NpuServingFrontend::handleParameterRecord()
             return;
         }
         proof = &proof_it->second;
+        if (proof->batchReplay != bool(currentSqFlags & agent_abi::kSqFlagsBATCH_REPLAY)) {
+            rejectParameter(agent_abi::E_BATCH_REPLAY_DIVERGENCE);
+            return;
+        }
         if (proof->sessionId != currentSessionId ||
                 proof->programId != currentProgramId ||
                 proof->profileId != currentProfileId ||
@@ -249,9 +254,11 @@ NpuServingFrontend::handleParameterRecord()
         rejectParameter(agent_abi::E_WORKLOAD_PLAN_MISMATCH);
         return;
     }
+    const auto *binding_plan = findHostBindingPlan(frozenBindingPlans, currentProgramId, currentProfileId);
+    const uint32_t expected_chunk = binding_plan ? binding_plan->publishChunkBytes :
+        (planRegistry ? planRegistry->publishChunkBytes() : 0);
     if (tlvs.outputChunkBytes == 0 ||
-            (proof != nullptr && tlvs.outputChunkBytes !=
-                planRegistry->publishChunkBytes())) {
+            (proof != nullptr && tlvs.outputChunkBytes != expected_chunk)) {
         rejectParameter(agent_abi::E_OUTPUT_CHUNK_MISMATCH);
         return;
     }
@@ -369,6 +376,7 @@ NpuServingFrontend::submitServingRequest()
     executionRequest.metadataCapacityBytes = currentMetadataCapacityBytes;
     executionRequest.inputTokens = currentInputTokens;
     executionRequest.cachedTokens = currentCachedTokens;
+    executionRequest.batchReplay = currentSqFlags & agent_abi::kSqFlagsBATCH_REPLAY;
     executionRequest.kvFlags = currentSqFlags &
         (agent_abi::kSqFlagsREQUIRE_KV_REUSE |
          agent_abi::kSqFlagsALLOW_REPREFILL);
@@ -377,6 +385,12 @@ NpuServingFrontend::submitServingRequest()
     executionRequest.outputTokens = currentMaxOutputTokens;
     executionRequest.requestedProfileKey = currentRequestedProfileKey;
     executionRequest.workloadPlanItemId = currentWorkloadItemId;
+    if (planExecution) {
+        const auto &proof = planRequestProofs.at(currentRequestId);
+        executionRequest.userId = proof.userId;
+        executionRequest.taskSeq = proof.taskSeq;
+        executionRequest.logicalSourceRank = proof.logicalSourceRank;
+    }
     executionRequest.programId = currentProgramId;
     executionRequest.profileId = currentProfileId;
     executionRequest.qos = currentQos;
@@ -387,10 +401,11 @@ NpuServingFrontend::submitServingRequest()
     executionRequest.generation = currentKvGeneration;
     executionRequest.contractDigest = servingContractDigest;
     executionRequest.hostBindings = currentHostBindings;
+    const auto deadline = generateDeadlineTicks.find(currentRequestId);
+    executionRequest.deadlineTick = deadline == generateDeadlineTicks.end() ?
+        kNpuNoDeadline : deadline->second;
     lastExecutionRequest = executionRequest;
     const NpuAdmission admission = activeExecutor()->submit(executionRequest);
-    if (servingExecution && admission.admitted)
-        currentSessionAdmitted = true;
     if (planExecution && !admission.admitted) {
         rejectParameter(static_cast<agent_abi::DetailCode>(
             admission.rejectDetail));
@@ -448,6 +463,7 @@ NpuServingFrontend::enqueueCurrentBusiness()
     parked.repairRound = currentRepairRound;
     parked.qos = currentQos;
     parked.sessionAdmitted = currentSessionAdmitted;
+    parked.completion = currentCompletion;
     parked.publishChunkBytes = currentPublishChunkBytes;
 
     parked.readyTick = currentAcceptTick;
@@ -492,15 +508,6 @@ NpuServingFrontend::dispatchAcceptedBusiness()
     parkedBusiness = parked;
     scheduleExecutionEvent(parked.executionDeadlineTick);
     scheduleTick();
-}
-
-void
-NpuServingFrontend::scheduleExecutionEvent(Tick deadline)
-{
-    if (executionEvent.scheduled())
-        reschedule(&executionEvent, deadline, true);
-    else
-        schedule(&executionEvent, deadline);
 }
 
 }

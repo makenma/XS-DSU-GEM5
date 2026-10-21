@@ -1,6 +1,8 @@
 #include "dev/ai_mesh/mesh_dispatcher.hh"
+#include "dev/ai_mesh/dma_kind.hh"
 
-#include "dev/ai_mesh/npu_memory_endpoint.hh"
+
+#include "dev/ai_mesh/mesh_runtime_diagnostics.hh"
 
 #include <algorithm>
 #include <fstream>
@@ -17,12 +19,15 @@
 #include "dev/ai_mesh/axi_garnet_bridge.hh"
 #include "dev/ai_mesh/axi_tensor_dma_engine.hh"
 #include "dev/ai_mesh/dma_types.hh"
+#include "dev/ai_mesh/mesh_clock.hh"
 #include "dev/ai_mesh/mesh_dummy_core.hh"
 #include "dev/ai_mesh/mesh_program_loader.hh"
+#include "dev/ai_mesh/agent_sha256.hh"
 #include "dev/ai_mesh/mock_axi_transport.hh"
-#include "dev/ai_mesh/npu_memory_endpoint.hh"
 #include "dev/ai_mesh/peer_sram_aperture.hh"
 #include "mem/ruby/network/garnet/GarnetNetwork.hh"
+#include "mem/ruby/network/simple/AggregateNetwork.hh"
+#include "mem/ruby/network/simple/SimpleNetwork.hh"
 #include "params/MeshDispatcher.hh"
 #include "sim/cur_tick.hh"
 #include "sim/sim_exit.hh"
@@ -32,25 +37,115 @@ namespace gem5
 namespace ai_mesh
 {
 
+bool
+MeshDispatcher::readDestinationBytes(uint16_t kind, uint16_t owner_core,
+                                     uint64_t address, uint64_t size,
+                                     std::vector<uint8_t> &out) const
+{
+    out.assign(size, 0);
+    if (kind == 2) {
+        return memory.read(address, size, out.data());
+    }
+    for (const PeerSramAperture *aperture : apertures) {
+        if (aperture->coreId() != owner_core)
+            continue;
+        const uint64_t base = aperture->sramBase();
+        if (address < base || size > aperture->sramBytes()
+            || address - base > aperture->sramBytes() - size)
+            return false;
+        return aperture->read(address - base, size, out.data());
+    }
+    return false;
+}
+
+void
+MeshDispatcher::captureDestination(const MeshDummyCore &core,
+                                   const DescriptorKey &key,
+                                   DestinationSampling sampling)
+{
+    if (destination_bytes_limit == 0 || key.descriptor.domain != mesh_abi::MeshObjectDomain::STATIC)
+        return;
+    const DecodedDmaDescriptor *descriptor = core.descriptorById(key.descriptor.ordinal);
+    fatal_if(descriptor == nullptr, "destination sample has no admitted descriptor");
+    const uint16_t kind = descriptor->kind;
+    if (kind != 2 && kind != 3 && kind != 5)
+        return;
+    fatal_if(!sampled_destinations.insert(key).second,
+             "destination execution was sampled twice");
+    const uint16_t owner_core = kind == 3
+        ? uint16_t(descriptor->dst.owner_core) : core.archCoreId();
+    const uint64_t base = core.admittedEndpointAddress(key.descriptor.ordinal, false);
+    for (uint32_t row = 0; row < descriptor->rows; ++row) {
+        DestinationSegment segment;
+        segment.descriptor_id = key.descriptor.ordinal;
+        segment.command_id = key.command.command_id;
+        segment.generation = key.command.generation;
+        segment.kind = kind;
+        segment.row = row;
+        segment.address = base + uint64_t(row) * descriptor->dst_stride_bytes;
+        segment.size = descriptor->row_bytes;
+        segment.sample_tick = curTick();
+        segment.sampling = sampling;
+        if (segment.size == 0 || segment.size > destination_bytes_limit)
+            continue;
+        std::vector<uint8_t> bytes;
+        fatal_if(!readDestinationBytes(kind, owner_core, segment.address,
+                                       segment.size, bytes),
+                 "cannot read admitted destination at commit boundary");
+        segment.bytes_hex = bytesHex(bytes);
+        live_destinations.push_back(std::move(segment));
+    }
+}
+
+
+void
+MeshDispatcher::capturePendingDestinations()
+{
+    if (destination_bytes_limit == 0)
+        return;
+    for (const MeshDummyCore *core : cores) {
+        for (const auto &execution : core->runtimeObservations().view().descriptors) {
+            const DescriptorKey key{execution.command, execution.descriptor};
+            if (!sampled_destinations.count(key))
+                captureDestination(*core, key, DestinationSampling::PendingReadback);
+        }
+    }
+}
+
 MeshDispatcher::MeshDispatcher(const Params &p)
     : ClockedObject(p),
       loader(p.loader),
       cores(p.cores.begin(), p.cores.end()),
       transport(p.transport),
       apertures(p.apertures.begin(), p.apertures.end()),
-      endpoint(p.endpoint),
+      memory(loader->physicalMemory()),
       output_span_base(p.output_span_base),
       output_span_bytes(p.output_span_bytes),
       network(p.network),
       result_json_path(p.result_json),
+      receiver_fault(p.receiver_fault),
+      residency_fault(p.residency_fault),
+      drain_fault(p.drain_fault),
+      destination_bytes_limit(p.destination_bytes_limit),
       total_instances(p.instances),
       autostart(p.autostart),
       watchdog_ticks_value(p.watchdog_ticks),
+      failure_record_capacity(p.batch_failure_record_entries),
+      failure_reducer(p.batch_failure_record_entries, 0),
+      failure_event(this),
       start_event(this),
       watchdog_event(this),
       cache_retry_event(this),
-      settle_retry_event(this)
-{}
+      settle_retry_event(this),
+      drain_event(this)
+{
+    const auto &arch = loader->arch();
+    const auto *partition = arch.partition(mesh_abi::kSramPartitionKindWEIGHT_CACHE);
+    const uint64_t slots = partition && arch.weight_cache_slot_bytes ?
+        partition->bytes / arch.weight_cache_slot_bytes : 0;
+    fatal_if(!cores.empty() && slots > SIZE_MAX / cores.size(), "cache edge capacity overflows");
+    cache_fill_edge = std::make_unique<CacheFillEdge>(slots * cores.size());
+}
 
 void MeshDispatcher::regStats()
 {
@@ -61,9 +156,14 @@ void MeshDispatcher::regStats()
 
 void MeshDispatcher::startup()
 {
+    for (auto *core : cores) {
+        core->setDispatcher(this);
+        core->setOverlayBus(&overlay_bus);
+    }
+
     // The atomic start goes out at the first legal core clock edge; all
     // loader startup work is guaranteed complete before this tick.
-    if (endpoint != nullptr && output_span_bytes != 0)
+    if (output_span_bytes != 0)
         output_digest_before = outputSpanDigest();
     if (autostart)
         begin();
@@ -76,32 +176,6 @@ void MeshDispatcher::begin()
     schedule(&start_event, clockEdge() + 1);
 }
 
-bool MeshDispatcher::installSelectors(
-    const std::vector<std::pair<uint32_t, uint32_t>> &selectors,
-    std::string &reason)
-{
-    if (selectors.empty()) {
-        reason = "dispatcher execution selectors must not be empty";
-        return false;
-    }
-    if (selectors.size() != total_instances) {
-        reason = "dispatcher execution selectors do not cover every instance";
-        return false;
-    }
-    if (!execution_selectors.empty()) {
-        reason = "dispatcher execution selectors are already installed";
-        return false;
-    }
-    for (const auto &selector : selectors) {
-        if (selector.first == 0 || selector.second == 0) {
-            reason = "dispatcher execution selector must be nonzero";
-            return false;
-        }
-    }
-    execution_selectors = selectors;
-    return true;
-}
-
 void MeshDispatcher::setDmaObserver(MeshDmaObserver *observer)
 {
     for (MeshDummyCore *core : cores)
@@ -109,34 +183,40 @@ void MeshDispatcher::setDmaObserver(MeshDmaObserver *observer)
 }
 
 void
-MeshDispatcher::bindInstance(const ServingInstanceBinding &value)
+MeshDispatcher::bindInstance(const ServingInstanceBinding &value,
+                            std::shared_ptr<const MoeOverlaySet> overlays)
 {
-    instance_binding = value;
+    fatal_if(staging_candidate == nullptr, "serving binding without a candidate");
+    staging_candidate->binding = value;
+    staging_candidate->overlays = std::move(overlays);
+}
+
+bool MeshDispatcher::prepareMoe(const mesh_abi::AgentInstanceProfile &profile,
+    const std::vector<ServingBatchMember> &members, const ServingInstanceBinding &binding,
+    std::shared_ptr<const MoeOverlaySet> &overlays, MoePreparationError &error)
+{
+    return loader->prepareServingMoe(profile, members, binding, overlays, error);
 }
 
 bool
 MeshDispatcher::canAccessKv(uint64_t address, uint64_t bytes) const
 {
-    return endpoint != nullptr && endpoint->containsMemoryRange(address, bytes);
+    return memory.contains(address, bytes);
 }
 
 void
 MeshDispatcher::bindSemanticDigest(const std::array<uint8_t, 32> &digest)
 {
-    semantic_digest = digest;
-    semantic_digest_set = true;
+    fatal_if(staging_candidate == nullptr, "serving digest without a candidate");
+    staging_candidate->digest = digest;
+    staging_candidate->has_digest = true;
 }
 
 void
 MeshDispatcher::bindFillContent(const ServingFillBinding &binding)
 {
-    fatal_if(batch_setup_done, "runtime fill binding changed after arm");
-    pending_fill_bindings.push_back(binding);
-}
-
-void MeshDispatcher::beginFirstInstance()
-{
-    begin();
+    fatal_if(staging_candidate == nullptr, "serving fill without a candidate");
+    staging_candidate->fills.push_back(binding);
 }
 
 void MeshDispatcher::setInstanceObserver(MeshInstanceObserver *observer)
@@ -144,25 +224,25 @@ void MeshDispatcher::setInstanceObserver(MeshInstanceObserver *observer)
     instance_observer = observer;
 }
 
-void MeshDispatcher::resumeInstance()
+void MeshDispatcher::finishExecution()
 {
     fatal_if(instance_observer == nullptr,
-             "dispatcher has no instance observer to resume");
-    advanceAfterInstance();
+             "dispatcher has no serving owner");
+    fatal_if(started || batch_setup_done || start_event.scheduled() ||
+                 selected_view != nullptr,
+             "serving execution finished with a live instance");
+    commitProgramTerminal();
 }
 
 const ProfileExecutionView *MeshDispatcher::executionView() const
 {
-    if (loader->executionViews().wholeProgram())
-        return &loader->executionViews().wholeProgramView();
-    fatal_if(execution_selectors.size() != total_instances,
-             "dispatcher execution selectors do not cover every instance");
-    const auto &selector = execution_selectors[instance_counter.value() - 1];
-    const ProfileExecutionView *view = loader->executionViews().forInstance(
-        selector.first, selector.second);
-    fatal_if(view == nullptr,
-             "dispatcher selector has no execution view");
-    return view;
+    if (instance_observer != nullptr) {
+        fatal_if(selected_view == nullptr, "serving instance has no selector");
+        return selected_view;
+    }
+    if (loader->defaultInvocation())
+        return &loader->defaultInvocation()->executionView();
+    fatal("profile execution requires an instance selector");
 }
 
 bool MeshDispatcher::armInstance()
@@ -174,12 +254,24 @@ bool MeshDispatcher::armInstance()
         fatal_if(instance_error_latched && !pending_fences.empty(),
                  "previous instance left live cross-core fences");
         instance_error_latched = false;
-        error_latched_during_run = false;
-        const auto next_instance = checkedSequenceAdd(instance_counter, 1);
-        fatal_if(!next_instance, "dispatcher instance generation overflow");
-        instance_counter = *next_instance;
+        if (instance_observer == nullptr) {
+            const auto next_instance = checkedSequenceAdd(instance_counter, 1);
+            fatal_if(!next_instance, "dispatcher instance generation overflow");
+            instance_counter = *next_instance;
+        }
+        if (instance_observer == nullptr)
+            fatal_if(!failure_reducer.begin(instance_counter.value(), instance_counter.value(),
+                                           instance_binding.memberRequests()),
+                     "invalid frozen failure population");
         instancesDispatched++;
         started = true;
+        live_destinations.clear();
+        sampled_destinations.clear();
+        drain_active = false;
+        drain_begin_tick = 0;
+        drain_begin_pending = 0;
+        drain_end_tick = 0;
+        drain_end_pending = 0;
         halted_cores.clear();
         for (PeerSramAperture *aperture : apertures)
             aperture->beginInstance();
@@ -189,7 +281,10 @@ bool MeshDispatcher::armInstance()
             core->setInstanceBinding(instance_binding);
         overlay_bus.clear();
         overlay_exits_seen.clear();
+        const auto &invocation = instance_observer ? instance_binding.invocation() : loader->defaultInvocation();
+        fatal_if(!invocation, "dispatcher has no frozen invocation");
         const ProfileExecutionView *view = executionView();
+        fatal_if(view != &invocation->executionView(), "dispatcher selector differs from its frozen invocation");
         std::string fill_reason;
         auto prepared_fills = ServingFillInputs::freeze(
             loader->program(), *view, instance_counter, instance_binding, pending_fill_bindings,
@@ -202,16 +297,19 @@ bool MeshDispatcher::armInstance()
             core->setDispatcher(this);
             core->clearRegionGates();
             core->setOverlayBus(&overlay_bus);
-            if (view->rangesForCore(core->archCoreId()).empty())
-                continue;
+            core->installInvocation(invocation);
             core->armRequest(instance_counter, *view, fill_inputs);
             participant_cores.push_back(core);
         }
-        loader->installOverlayImage();
+        loader->installOverlayImage(*invocation, serving_overlays.get());
         batch_setup_done = true;
     }
-    if (!reserveWeightCaches())
+    if (active_candidate) {
+        for (const auto &request : active_candidate->demand)
+            coreOf(request.core_id)->installCacheTokens(request.tokens, request.consumers);
+    } else if (!reserveWeightCaches()) {
         return false;
+    }
     armOverlayGates();
     cache_reservation_waiting = false;
     batch_state = mesh_abi::MeshBatchState::REQUEST_ARMED;
@@ -228,6 +326,8 @@ bool MeshDispatcher::startInstance()
         return false;
     batch_state = mesh_abi::MeshBatchState::REQUEST_RUNNING;
     batch_starts++;
+    if (active_candidate)
+        candidate_events.push_back({instance_counter.value(), curTick(), "STARTED"});
     for (MeshDummyCore *core : participant_cores)
         core->startRequest();
     if (instance_observer != nullptr)
@@ -239,10 +339,7 @@ bool MeshDispatcher::startInstance()
             instance_counter.value(), total_instances,
             participant_cores.size());
     if (watchdog_ticks_value > 0) {
-        uint64_t progress = 0;
-        for (const MeshDummyCore *core : participant_cores)
-            progress += core->workProgress();
-        last_progress_snapshot = progress;
+        last_progress_snapshot = progressSample();
         if (watchdog_event.scheduled())
             deschedule(&watchdog_event);
         schedule(&watchdog_event, curTick() + watchdog_ticks_value);
@@ -259,182 +356,14 @@ MeshDispatcher::coreOf(uint16_t core_id) const
     return nullptr;
 }
 
-std::vector<MeshDispatcher::CacheReservationRequest>
-MeshDispatcher::cacheDemands() const
-{
-    std::vector<CacheReservationRequest> requests;
-    for (MeshDummyCore *core : cores) {
-        if (core->weightCache() == nullptr)
-            continue;
-        CacheReservationRequest request;
-        request.core_id = core->archCoreId();
-        std::map<uint32_t, std::map<uint32_t, uint32_t>> demand;
-        for (const auto &entry : loader->overlayGraphs()) {
-            const uint32_t layer_id = entry.first;
-            for (const auto &object : entry.second.objects()) {
-                if (object.kind != mesh_abi::kMeshObjectKindVIEW ||
-                    object.secondary_kind != mesh_abi::kMoeViewKindWEIGHT)
-                    continue;
-                if (object.backing_kind !=
-                    mesh_abi::kMoeViewBackingWEIGHT_CACHE_SLOT)
-                    continue;
-                if (object.owner_core != core->archCoreId())
-                    continue;
-                demand[layer_id][object.ref_ordinal]++;
-            }
-        }
-        for (const auto &layer : demand) {
-            MoeWeightCache::LayerTags tags;
-            tags.layer_id = layer.first;
-            for (const auto &tag : layer.second) {
-                tags.tags.push_back(tag.first);
-                request.consumers[layer.first][tag.first] = tag.second;
-            }
-            request.demand.push_back(tags);
-        }
-        if (request.demand.empty())
-            continue;
-        requests.push_back(request);
-    }
-    std::sort(requests.begin(), requests.end(),
-              [](const CacheReservationRequest &left,
-                 const CacheReservationRequest &right) {
-                  return std::tie(left.core_id) < std::tie(right.core_id);
-              });
-    return requests;
-}
-
-bool MeshDispatcher::reserveWeightCaches()
-{
-    if (loader->weightPolicy() != "cached")
-        return true;
-    std::vector<CacheReservationRequest> requests;
-    if (cache_reservation_queue.empty()) {
-        requests = cacheDemands();
-        cache_queue_capacity = uint32_t(requests.size());
-        cache_reservation_queue.clear();
-        next_cache_request_id = 1;
-    } else {
-        requests = cache_reservation_queue;
-    }
-    cache_reservation_attempts++;
-    if (resolveCacheReservations(requests)) {
-        cache_reservation_waiting = false;
-        if (cache_retry_event.scheduled())
-            deschedule(&cache_retry_event);
-        return true;
-    }
-    cache_reservation_waiting = !instance_error_latched;
-    if (!cache_reservation_waiting) {
-        if (cache_retry_event.scheduled())
-            deschedule(&cache_retry_event);
-        return false;
-    }
-    if (watchdog_ticks_value > 0 && !watchdog_event.scheduled())
-        schedule(&watchdog_event, curTick() + watchdog_ticks_value);
-    if (!cache_retry_event.scheduled())
-        schedule(&cache_retry_event, clockEdge() + 1);
-    return false;
-}
-
-bool MeshDispatcher::retryCacheReservations()
-{
-    if (!cache_reservation_waiting)
-        return false;
-    if (!reserveWeightCaches())
-        return false;
-    // Resources arrived: finish the arm exactly once and start the batch.
-    armOverlayGates();
-    cache_reservation_waiting = false;
-    batch_state = mesh_abi::MeshBatchState::REQUEST_ARMED;
-    startInstance();
-    return true;
-}
-
-bool MeshDispatcher::resolveCacheReservations(
-    const std::vector<CacheReservationRequest> &requests)
-{
-    // Two phases across every core of the batch: prepare only reads live
-    // state, so a batch commits all of its core/layer demand or nothing at
-    // all, and a waiting item keeps its frozen request identity.
-    struct Prepared
-    {
-        const CacheReservationRequest *request = nullptr;
-        MoeWeightCache *cache = nullptr;
-        MoeWeightCache::ReservePlan plan;
-    };
-    std::vector<Prepared> prepared;
-    bool all_committed = true;
-    bool any_failed = false;
-    for (const CacheReservationRequest &request : requests) {
-        MeshDummyCore *core = coreOf(uint16_t(request.core_id));
-        if (core == nullptr || core->weightCache() == nullptr)
-            continue;
-        Prepared entry;
-        entry.request = &request;
-        entry.cache = core->weightCache();
-        entry.plan = entry.cache->prepare(core->cacheBatchId(),
-                                          request.demand, curTick());
-        if (entry.plan.status == MoeWeightCache::ReserveStatus::FAILED)
-            any_failed = true;
-        if (entry.plan.status != MoeWeightCache::ReserveStatus::COMMITTED)
-            all_committed = false;
-        prepared.push_back(entry);
-    }
-    if (prepared.empty())
-        return false;
-    if (any_failed) {
-        for (Prepared &entry : prepared) {
-            MeshDummyCore *core = coreOf(uint16_t(entry.request->core_id));
-            const uint64_t batch_id = core->cacheBatchId();
-            entry.cache->abortBeforeStart(batch_id);
-            entry.cache->noteFailureFanoutDone(batch_id);
-        }
-        cache_reservation_queue.clear();
-        cache_reservation_waiting = false;
-        commitPrestartFailure();
-        return false;
-    }
-    if (!all_committed) {
-        // The waiting item keeps the identity assigned when it first failed:
-        // retries never re-key a live demand.
-        std::vector<CacheReservationRequest> waiting;
-        for (const CacheReservationRequest &request : requests) {
-            CacheReservationRequest queued = request;
-            for (const CacheReservationRequest &existing :
-                 cache_reservation_queue)
-                if (existing.core_id == queued.core_id) {
-                    queued.request_id = existing.request_id;
-                    if (existing.request_id == 0)
-                        cache_identity_reassignments++;
-                    break;
-                }
-            if (queued.request_id == 0)
-                queued.request_id = next_cache_request_id++;
-            waiting.push_back(queued);
-        }
-        cache_reservation_queue = waiting;
-        fatal_if(cache_reservation_queue.size() > cache_queue_capacity,
-                 "cache reservation queue overflowed: %zu of %u",
-                 cache_reservation_queue.size(), cache_queue_capacity);
-        return false;
-    }
-    for (Prepared &entry : prepared) {
-        MeshDummyCore *core = coreOf(uint16_t(entry.request->core_id));
-        const std::vector<MoeCacheToken> tokens =
-            entry.cache->commit(entry.plan, curTick());
-        core->installCacheTokens(tokens, entry.request->consumers);
-        cache_reservation_commits++;
-    }
-    cache_reservation_queue.clear();
-    return true;
-}
-
 void MeshDispatcher::armOverlayGates()
 {
     fatal_if(loader == nullptr, "dispatcher has no program loader");
     const auto &program = loader->program();
-    for (const auto &region : program.moe_dynamic_regions) {
+    for (const auto &region : program.transport.moe_dynamic_regions) {
+        if (serving_overlays && std::none_of(serving_overlays->begin(), serving_overlays->end(),
+                [&](const auto &row) { return row.first == region.layer_id; }))
+            continue;
         MeshDummyCore *owner = nullptr;
         for (MeshDummyCore *core : participant_cores)
             if (core->archCoreId() == region.core_id)
@@ -475,7 +404,7 @@ bool MeshDispatcher::overlayGroupExited(uint32_t layer_id)
 bool MeshDispatcher::allOverlayGroupsExited() const
 {
     for (MeshDummyCore *core : participant_cores) {
-        for (const auto &region : loader->program().moe_dynamic_regions)
+        for (const auto &region : loader->program().transport.moe_dynamic_regions)
             if (core->archCoreId() == region.core_id &&
                 core->overlayGatePhase(region.layer_id) !=
                     MoeInsertionGate::RegionPhase::RELEASED)
@@ -506,14 +435,44 @@ MeshDispatcher::releaseWaitWindow()
 }
 
 void
-MeshDispatcher::cancelPendingInstance()
+MeshDispatcher::cancelPendingInstance(uint64_t instance)
 {
+    if (instance && instance_observer) {
+        for (auto &candidate : serving_candidates) {
+            if (!candidate || candidate->instance.value() != instance)
+                continue;
+            for (const auto &request : candidate->demand) {
+                auto *cache = coreOf(request.core_id)->weightCache();
+                cache->abortBeforeStart(instance);
+                cache->noteFailureFanoutDone(instance);
+            }
+            if (staging_candidate == &*candidate)
+                staging_candidate = nullptr;
+            failure_reducer.release(instance);
+            candidate.reset();
+            return;
+        }
+        if (instance != instance_counter.value())
+            return;
+    }
     // Only a pending, not-yet-started instance is cancellable.  Validating the
     // state before touching the window keeps a stray cancel on a running or
     // draining instance from silently closing its progress watchdog.
     if (batch_state == mesh_abi::MeshBatchState::REQUEST_ARMED) {
         releaseWaitWindow();
         abortBeforeStart();
+        return;
+    }
+    if (batch_state == mesh_abi::MeshBatchState::PROGRAM_READY &&
+            selected_view != nullptr && !batch_setup_done && !started) {
+        if (start_event.scheduled())
+            deschedule(&start_event);
+        releaseWaitWindow();
+        pending_fill_bindings.clear();
+        selected_view = nullptr;
+        failure_reducer.release(instance_counter.value());
+        active_candidate.reset();
+        retryCacheReservations();
         return;
     }
     if (batch_state != mesh_abi::MeshBatchState::PROGRAM_READY ||
@@ -526,16 +485,17 @@ MeshDispatcher::cancelPendingInstance()
     halted_cores.clear();
     batch_setup_done = false;
     started = false;
+    selected_view = nullptr;
+    pending_fill_bindings.clear();
     DPRINTF(AiMesh, "dispatcher: pending instance %u cancelled before start\n",
             instance_counter.value());
 }
 
 void
-MeshDispatcher::failCurrentInstance()
+MeshDispatcher::failCurrentInstance(const ErrorCandidate &failure)
 {
-    if (participant_cores.empty())
-        return;
-    latchInstanceError(participant_cores.front(), curTick());
+    if (!participant_cores.empty())
+        stageInstanceFailure(failure);
 }
 
 void MeshDispatcher::abortBeforeStart()
@@ -553,6 +513,9 @@ void MeshDispatcher::abortBeforeStart()
             instance_counter.value());
     batch_state = mesh_abi::MeshBatchState::PROGRAM_READY;
     batch_setup_done = false;
+    started = false;
+    selected_view = nullptr;
+    pending_fill_bindings.clear();
 }
 
 const char *
@@ -594,8 +557,12 @@ void MeshDispatcher::commitPrestartFailure()
     DPRINTF(AiMesh, "dispatcher: instance %u prestart failure\n",
             instance_counter.value());
     releaseWaitWindow();
+    InstanceRecord record;
+    record.instance = instance_counter;
+    if (failure_reducer.failure(instance_counter.value()))
+        record.failure = *failure_reducer.failure(instance_counter.value());
     for (MeshDummyCore *core : participant_cores)
-        core->disarmRequest();
+        record.cores[core->archCoreId()] = core->disarmRequest();
     for (MeshDummyCore *core : cores)
         core->clearRegionGates();
     overlay_bus.clear();
@@ -603,12 +570,7 @@ void MeshDispatcher::commitPrestartFailure()
     participant_cores.clear();
     halted_cores.clear();
     instance_error_latched = true;
-    {
-        InstanceRecord record;
-        for (MeshDummyCore *core : cores)
-            record.cores[core->archCoreId()] = core->takeInstanceLedger();
-        instance_records.push_back(std::move(record));
-    }
+    instance_records.push_back(std::move(record));
     // A deterministic prestart failure repeats for every later instance of the
     // same frozen batch, so the run terminates with the program error.
     batch_state = mesh_abi::MeshBatchState::BATCH_PRESTART_DRAINED;
@@ -628,9 +590,46 @@ void MeshDispatcher::dispatch()
     startInstance();
 }
 
+uint64_t MeshDispatcher::progressSample() const
+{
+    // One metric for the arming sample and for every later sample: a class of
+    // work that advances between two checks counts in both (spec 8.8).
+    uint64_t progress = dma_tags_retired;
+    for (const MeshDummyCore *core : cores)
+        progress += core->progressSnapshot();
+    // Credit return and flit ejection are real progress: without them a
+    // network that is still delivering after every core halted would look
+    // stalled to the watchdog.
+    if (const auto *garnet =
+            dynamic_cast<const ruby::garnet::GarnetNetwork *>(network)) {
+        const auto snapshot = garnet->quiescenceSnapshot();
+        progress += snapshot.creditLinkPendingCredits * 2 +
+                    snapshot.dataLinkPendingFlits * 2 + snapshot.niQueuedFlits +
+                    snapshot.routerBufferedFlits + snapshot.creditDeficit;
+        for (const auto &entry : garnet->creditLedger())
+            progress += entry.returned + entry.sent;
+    }
+    if (transport)
+        for (const auto &entry : transport->actualTraffic()) {
+            const ActualTraffic &row = entry.second;
+            progress += row.read_bytes + row.write_bytes + row.p2p_bytes +
+                        row.fill_bytes;
+        }
+    return progress;
+}
+
 void MeshDispatcher::bindScoreboardTo(MeshDummyCore *core)
 {
     core->setScoreboard(&scoreboard);
+}
+
+const MeshDummyCore *
+MeshDispatcher::core(uint16_t core_id) const
+{
+    for (const MeshDummyCore *candidate : cores)
+        if (candidate->archCoreId() == core_id)
+            return candidate;
+    return nullptr;
 }
 
 void MeshDispatcher::notifyCoreHalted(uint16_t core_id)
@@ -650,169 +649,82 @@ void MeshDispatcher::notifyCoreHalted(uint16_t core_id)
 std::string
 MeshDispatcher::outputSpanDigest() const
 {
-    if (endpoint == nullptr || output_span_bytes == 0)
+    if (output_span_bytes == 0)
         return std::string();
-    return endpoint->rangeDigest(output_span_base, output_span_bytes);
+    return memory.rangeDigest(output_span_base, output_span_bytes);
 }
 
-void MeshDispatcher::writeResultJson()
+bool
+MeshDispatcher::drainSatisfied()
 {
-    if (result_json_path.empty())
-        return;
-    std::ofstream out(result_json_path);
-    out << "{\n  \"transport\": [\n";
-    bool first = true;
-    // The artifact accounts per descriptor identity across instances; the
-    // instance generation stays part of the in-engine key so per-instance
-    // state never mixes.
-    using TrafficKey =
-        std::tuple<uint32_t, uint32_t, uint32_t, uint32_t, uint32_t,
-                   uint32_t>;
-    std::map<TrafficKey, ActualTraffic> traffic;
-    std::map<TrafficKey, RuntimeObjectKey> traffic_first;
-    std::set<const std::map<RuntimeObjectKey, ActualTraffic> *> sources;
+    if (const auto *garnet =
+            dynamic_cast<const ruby::garnet::GarnetNetwork *>(network)) {
+        if (!garnet->isQuiescent())
+            return false;
+        for (const auto &entry : garnet->creditLedger())
+            if (!entry.restored())
+                return false;
+    }
     for (const MeshDummyCore *core : cores) {
-        const auto &rows = core->dmaEngine()->actualTraffic();
-        if (!sources.insert(&rows).second)
+        const auto *engine =
+            dynamic_cast<const AxiTensorDmaEngine *>(core->dmaEngine());
+        if (engine && engine->bridgeOf() && !engine->bridgeOf()->idle())
+            return false;
+    }
+    for (const PeerSramAperture *aperture : apertures)
+        if (aperture->liveExpectations())
+            return false;
+    if (!memory.idle())
+        return false;
+    return true;
+}
+
+std::vector<const MeshDummyCore::InstanceLedger *>
+MeshDispatcher::instanceLedgers(uint16_t core_id) const
+{
+    std::vector<const MeshDummyCore::InstanceLedger *> ledgers;
+    for (const InstanceRecord &record : instance_records) {
+        const auto found = record.cores.find(core_id);
+        if (found != record.cores.end())
+            ledgers.push_back(&found->second);
+    }
+    return ledgers;
+}
+
+
+std::vector<BurstAttribution>
+MeshDispatcher::instanceBursts() const
+{
+    std::vector<BurstAttribution> rows;
+    for (const MeshDummyCore *core : cores) {
+        const auto *engine = dynamic_cast<const AxiTensorDmaEngine *>(
+            core->dmaEngine());
+        if (engine == nullptr)
             continue;
-        for (const auto &row : rows) {
-            const TrafficKey key(uint32_t(row.first.domain),
-                                 uint32_t(core->archCoreId()),
-                                 row.first.regionGroupId, row.first.regionId,
-                                 uint32_t(row.first.kind), row.first.ordinal);
-            traffic_first.emplace(key, row.first);
-            ActualTraffic &total = traffic[key];
-            total.read_bytes += row.second.read_bytes;
-            total.write_bytes += row.second.write_bytes;
-            total.p2p_bytes += row.second.p2p_bytes;
-            total.fill_bytes += row.second.fill_bytes;
-            total.read_bursts += row.second.read_bursts;
-            total.write_bursts += row.second.write_bursts;
-            total.p2p_bursts += row.second.p2p_bursts;
-            total.read_discarded_bytes += row.second.read_discarded_bytes;
-            total.write_drained_uncommitted_bytes +=
-                row.second.write_drained_uncommitted_bytes;
-            total.error_code = row.second.error_code;
-            total.dma_kind = row.second.dma_kind;
-            total.payload_digest = row.second.payload_digest;
-        }
-    }
-    for (const auto &row : traffic) {
-        if (!first)
-            out << ",\n";
-        first = false;
-        out << "    {\"descriptor_id\": " << std::get<5>(row.first)
-            << ", \"domain\": " << std::get<0>(row.first)
-            << ", \"core_id\": " << std::get<1>(row.first)
-            << ", \"region_group_id\": " << std::get<2>(row.first)
-            << ", \"region_id\": " << std::get<3>(row.first)
-            << ", \"object_kind\": " << std::get<4>(row.first)
-            << ", \"kind\": " << row.second.dma_kind
-            << ", \"read_bytes\": " << row.second.read_bytes
-            << ", \"write_bytes\": " << row.second.write_bytes
-            << ", \"p2p_bytes\": " << row.second.p2p_bytes
-            << ", \"fill_bytes\": " << row.second.fill_bytes
-            << ", \"read_bursts\": " << row.second.read_bursts
-            << ", \"write_bursts\": " << row.second.write_bursts
-            << ", \"p2p_bursts\": " << row.second.p2p_bursts
-            << ", \"read_discarded_bytes\": " << row.second.read_discarded_bytes
-            << ", \"write_drained_uncommitted_bytes\": "
-            << row.second.write_drained_uncommitted_bytes
-            << ", \"error_code\": " << row.second.error_code
-            << ", \"dma_kind\": " << row.second.dma_kind
-            << ", \"payload_digest\": \"" << row.second.payload_digest << "\"}";
-    }
-    out << "\n  ],\n  \"cores\": [\n";
-    first = true;
-    for (const MeshDummyCore *core : cores) {
-        if (!first)
-            out << ",\n";
-        first = false;
-        out << "    {\"core_id\": " << core->archCoreId()
-            << ", \"commands_issued\": " << core->commandsIssued.value()
-            << ", \"commands_completed\": " << core->commandsCompleted.value()
-            << ", \"commands_errored\": " << core->commandsErrored.value()
-            << ", \"commands_cancelled\": " << core->commandsCancelled.value()
-            << ", \"live_commands\": " << (core->quiescent() ? 0 : 1)
-            << ", \"events_published\": " << core->eventsPublished.value()
-            << ", \"gemm_cycles\": " << core->gemmCycles.value()
-            << ", \"reduce_cycles\": " << core->reduceCycles.value()
-            << ", \"sram_bank_conflicts\": " << core->sramBankConflicts.value()
-            << ", \"sram_service_cycles\": " << core->sramServiceCycles.value()
-            << ", \"instance_error\": " << (core->instanceErrored() ? 1 : 0)
-            << ", \"error_latch_tick\": " << core->errorLatchTick()
-            << ", \"work_drained_tick\": " << core->workDrainedTick()
-            << ", \"dma_idle\": " << (core->dmaEngine()->idle() ? 1 : 0)
-            << ", \"completed_command_ids\": [";
-        bool first_id = true;
-        for (const RuntimeObjectKey &id : core->completed_command_ids) {
-            if (!first_id)
-                out << ", ";
-            first_id = false;
-            out << id.ordinal;
-        }
-        out << "], \"errored_command_ids\": [";
-        first_id = true;
-        for (const RuntimeObjectKey &id : core->errored_command_ids) {
-            if (!first_id)
-                out << ", ";
-            first_id = false;
-            out << id.ordinal;
-        }
-        out << "], \"cancelled_command_ids\": [";
-        first_id = true;
-        for (const RuntimeObjectKey &id : core->cancelled_command_ids) {
-            if (!first_id)
-                out << ", ";
-            first_id = false;
-            out << id.ordinal;
-        }
-        out << "], \"command_issue_ticks\": {";
-        {
-            bool first_it = true;
-            for (const auto &entry : core->command_issue_ticks) {
-                if (!first_it)
-                    out << ", ";
-                first_it = false;
-                out << "\"" << entry.first.ordinal << "\": "
-                    << entry.second;
+        const AxiGarnetBridge *bridge = engine->bridgeOf();
+        for (BurstAttribution row : engine->instanceBursts()) {
+            if (bridge != nullptr) {
+                const AxiGarnetBridge::OrdinalTicks *ticks =
+                    bridge->ordinalTicks(row.ordinal);
+                if (ticks != nullptr)
+                    row.ar_aw_tick = ticks->addr_accept;
             }
-        }
-        out << "}, \"command_done_ticks\": {";
-        first_id = true;
-        for (const auto &kv : core->commandDoneTicks()) {
-            if (!first_id)
-                out << ", ";
-            first_id = false;
-            out << "\"" << kv.first.ordinal << "\": " << kv.second;
-        }
-        out << "}}";
-    }
-    out << "\n  ],\n  \"watchdog_fired\": " << watchdog_fired_count << ",\n  \"digests\": [\n";
-    first = true;
-    for (const MeshDummyCore *core : cores) {
-        for (const auto &digest : core->computeDigests) {
-            if (!first)
-                out << ",\n";
-            first = false;
-            out << "    {\"core_id\": " << core->archCoreId()
-                << ", \"command_id\": " << digest.command.ordinal
-                << ", \"digest\": \"" << std::hex;
-            for (int i = 0; i < 4; i++)
-                out << std::setfill('0') << std::setw(8) << digest.digest_words[i];
-            out << std::dec << std::setfill(' ') << "\"}";
+            rows.push_back(row);
         }
     }
-    out << "\n  ],\n";
-    out << "  \"output_span\": {\"semantic_digest\": \"";
-    for (uint8_t byte : semantic_digest)
-        out << std::hex << std::setfill('0') << std::setw(2) << unsigned(byte);
-    out << std::dec << std::setfill(' ') << "\", \"base\": " << output_span_base
-        << ", \"bytes\": " << output_span_bytes
-        << ", \"digest_before\": \"" << output_digest_before
-        << "\", \"digest_after\": \"" << outputSpanDigest() << "\"},\n";
-    writeConservationJson(out);
-    out << "\n}\n";
+    return rows;
+}
+
+const MeshDummyCore::InstanceLedger *
+MeshDispatcher::lastInstanceLedger(uint16_t core_id) const
+{
+    for (auto record = instance_records.rbegin();
+         record != instance_records.rend(); ++record) {
+        const auto found = record->cores.find(core_id);
+        if (found != record->cores.end())
+            return &found->second;
+    }
+    return nullptr;
 }
 
 int
@@ -824,539 +736,98 @@ MeshDispatcher::erroredCoreId() const
     return -1;
 }
 
-void
-MeshDispatcher::writeConservationJson(std::ofstream &out)
+bool
+MeshDispatcher::anyInstanceErrored() const
 {
-    const std::pair<axi::AxiChannel, const char *> channels[] = {
-        {axi::AxiChannel::Aw, "AW"}, {axi::AxiChannel::W, "W"},
-        {axi::AxiChannel::B, "B"}, {axi::AxiChannel::Ar, "AR"},
-        {axi::AxiChannel::R, "R"}};
-    const auto writeBlocked = [&out, &channels](const auto &counts) {
-        out << "{";
-        bool first = true;
-        for (const auto &[channel, name] : channels) {
-            if (!first)
-                out << ", ";
-            first = false;
-            out << '"' << name << "\": " << counts[unsigned(channel)];
-        }
-        out << "}";
-    };
-    out << "  \"core_clock_period_ticks\": " << clockPeriod() << ",\n";
-    out << "  \"target_message_buffer_blocked_cycles\": {";
-    bool first_target = true;
-    for (const PeerSramAperture *aperture : apertures) {
-        if (!first_target)
-            out << ", ";
-        first_target = false;
-        out << '"' << aperture->name() << "\": ";
-        writeBlocked(aperture->queueHighWater().messageBufferStallCycles);
-    }
-    if (endpoint) {
-        if (!first_target)
-            out << ", ";
-        out << '"' << endpoint->name() << "\": ";
-        writeBlocked(endpoint->queueHighWater().messageBufferStallCycles);
-    }
-    out << "},\n  \"network_stalls\": {";
-    const auto *garnet = dynamic_cast<ruby::garnet::GarnetNetwork *>(network);
-    if (garnet) {
-        bool first_channel = true;
-        for (const auto &[channel, name] : channels) {
-            if (!first_channel)
-                out << ", ";
-            first_channel = false;
-            const unsigned vnet = unsigned(channel);
-            out << '"' << name << "\": {\"router_credit_stall_vc_cycles\": "
-                << garnet->routerCreditStalls(vnet)
-                << ", \"router_vc_alloc_stall_vc_cycles\": "
-                << garnet->vcAllocStalls(vnet)
-                << ", \"ni_credit_stall_vc_cycles\": "
-                << garnet->niCreditStalls(vnet)
-                << ", \"ni_vc_busy_cycles\": " << garnet->niVcBusyCycles(vnet)
-                << "}";
-        }
-    }
-    out << "},\n";
+    for (const InstanceRecord &record : instance_records)
+        for (const auto &entry : record.cores)
+            for (const MeshDummyCore::TerminalRecord &terminal :
+                 entry.second.terminals)
+                if (terminal.state == MeshDummyCore::TerminalState::Errored)
+                    return true;
+    return anyCoreErrored();
+}
 
-    out << "  \"terminal\": \"" << terminalName() << "\",\n";
-    out << "  \"terminal_tick\": " << curTick() << ",\n";
-    out << "  \"terminal_instance\": " << instance_counter.value() << ",\n";
-    out << "  \"terminal_error_core\": " << erroredCoreId() << ",\n";
-    out << "  \"error_drained\": "
-        << (program_terminal == ProgramTerminal::ERROR_DRAINED ||
-                    program_terminal == ProgramTerminal::PRESTART_FAILED
-                ? 1
-                : 0)
-        << ",\n";
-
-    out << "  \"apertures\": [\n";
-    bool first = true;
-    for (const PeerSramAperture *aperture : apertures) {
-        if (!first)
-            out << ",\n";
-        first = false;
-        out << "    {\"core_id\": " << aperture->coreId()
-            << ", \"committed_valid_bytes\": " << aperture->committedBytes()
-            << ", \"error_drained_bytes\": " << aperture->errorDrainBytes()
-            << ", \"transfers\": [";
-        bool first_t = true;
-        for (const auto &kv : aperture->transferCommitTicks()) {
-            if (!first_t)
-                out << ", ";
-            first_t = false;
-            out << "{\"transfer_id\": " << kv.first
-                << ", \"commit_tick\": " << kv.second << "}";
-        }
-        out << "]}";
-    }
-    out << "\n  ],\n";
-
-    out << "  \"arch\": {\"base_digest\": \""
-        << loader->arch().arch_digest_hex << "\", \"effective_digest\": \""
-        << loader->effectiveArchDigest() << "\"},\n";
-
-    out << "  \"instances\": [\n";
-    for (size_t i = 0; i < instance_records.size(); i++) {
-        out << "    {\"instance\": " << (i + 1) << ", \"cores\": {";
-        bool first_core = true;
-        for (const auto &kv : instance_records[i].cores) {
-            if (!first_core)
-                out << ", ";
-            first_core = false;
-            out << "\"" << kv.first << "\": {"
-                << "\"completed\": " << kv.second.completed.size()
-                << ", \"errored\": " << kv.second.errored.size()
-                << ", \"cancelled\": " << kv.second.cancelled.size()
-                << "}";
-        }
-        out << "}}" << (i + 1 < instance_records.size() ? "," : "") << "\n";
-    }
-    out << "  ],\n";
-
-    out << "  \"dma_timings\": [\n";
-    first = true;
-    for (const MeshDummyCore *core : cores) {
-        const AxiTensorDmaEngine *engine =
-            dynamic_cast<const AxiTensorDmaEngine *>(core->dmaEngine());
-        if (!engine)
-            continue;
-        std::map<RuntimeObjectKey, AxiTensorDmaEngine::DescriptorTiming>
-            timings;
-        for (const auto &kv : engine->descriptorTimings())
-            timings[kv.first] = kv.second;
-        for (const auto &kv : timings) {
-            if (!first)
-                out << ",\n";
-            first = false;
-            out << "    {\"core_id\": " << core->archCoreId()
-                << ", \"descriptor_id\": " << kv.first.ordinal
-                << ", \"domain\": " << uint32_t(kv.first.domain)
-                << ", \"region_group_id\": " << kv.first.regionGroupId
-                << ", \"region_id\": " << kv.first.regionId
-                << ", \"kind\": " << uint32_t(kv.first.kind)
-                << ", \"first_ar_tick\": " << kv.second.first_ar_tick
-                << ", \"first_aw_tick\": " << kv.second.first_aw_tick
-                << ", \"first_w_tick\": " << kv.second.first_w_tick
-                << ", \"first_b_tick\": " << kv.second.first_b_tick
-                << ", \"last_r_tick\": " << kv.second.last_r_tick
-                << ", \"local_commit_tick\": " << kv.second.local_commit_tick
-                << ", \"done_tick\": " << kv.second.done_tick << "}";
-        }
-    }
-    out << "\n  ],\n";
-
-    {
-        uint64_t ar = 0, rlast = 0, refill = 0;
-        uint32_t peak = 0;
-        Tick first_rlast = 0;
-        for (const MeshDummyCore *core : cores) {
-            const auto *engine =
-                dynamic_cast<const AxiTensorDmaEngine *>(core->dmaEngine());
-            if (!engine)
-                continue;
-            ar += engine->readArAccepted();
-            rlast += engine->readRlastConsumed();
-            peak += engine->peakReadWindow();
-            if (first_rlast == 0 ||
-                (engine->firstRlastTick() != 0 &&
-                 engine->firstRlastTick() < first_rlast))
-                first_rlast = engine->firstRlastTick();
-        }
-        std::vector<Tick> ar_ticks;
-        Tick first_credit_release = 0;
-        for (const MeshDummyCore *core : cores) {
-            const AxiTensorDmaEngine *engine =
-                dynamic_cast<const AxiTensorDmaEngine *>(core->dmaEngine());
-            const AxiGarnetBridge *bridge = engine ? engine->bridgeOf() : nullptr;
-            if (!bridge)
-                continue;
-            std::vector<Tick> ticks = bridge->arAcceptTicks();
-            ar_ticks.insert(ar_ticks.end(), ticks.begin(), ticks.end());
-            const Tick release = bridge->firstCreditReleaseTick();
-            if (release != 0 &&
-                (first_credit_release == 0 || release < first_credit_release))
-                first_credit_release = release;
-        }
-        std::sort(ar_ticks.begin(), ar_ticks.end());
-        out << "  \"read_window\": {\"segment_peak\": " << peak
-            << ", \"first_credit_release_tick\": " << first_credit_release
-            << ", \"ar_accept_ticks\": [";
-        for (size_t i = 0; i < ar_ticks.size(); ++i) {
-            if (i)
-                out << ", ";
-            out << ar_ticks[i];
-        }
-        out << "]},\n";
-    }
-
-    out << "  \"burst_timings\": [";
-    bool first_burst = true;
-    for (const MeshDummyCore *core : cores) {
-        const auto *engine = dynamic_cast<const AxiTensorDmaEngine *>(
-            core->dmaEngine());
-        if (!engine || !engine->bridgeOf())
-            continue;
-        for (const auto &[ordinal, ticks] : engine->bridgeOf()->burstTimings()) {
-            if (!first_burst)
-                out << ", ";
-            first_burst = false;
-            const auto commit = engine->readCommitTicks().find(ordinal);
-            out << "{\"core_id\": " << core->archCoreId()
-                << ", \"ordinal\": " << ordinal
-                << ", \"channel\": \"" << (ticks.read ? "AR" : "AW") << '"'
-                << ", \"axi_id\": " << ticks.axi_id
-                << ", \"address\": " << ticks.address
-                << ", \"beats\": " << ticks.beats
-                << ", \"beat_bytes\": " << ticks.beat_bytes
-                << ", \"ar_aw_tick\": " << ticks.addr_accept
-                << ", \"response_tick\": " << ticks.resp_last
-                << ", \"commit_tick\": "
-                << (commit == engine->readCommitTicks().end() ? 0 : commit->second)
-                << "}";
-        }
-    }
-    out << "],\n";
-
-    out << "  \"bridges\": [\n";
-    first = true;
-    for (const MeshDummyCore *core : cores) {
-        const AxiTensorDmaEngine *engine =
-            dynamic_cast<const AxiTensorDmaEngine *>(core->dmaEngine());
-        if (!engine || !engine->bridgeOf())
-            continue;
-        const AxiGarnetBridge *bridge = engine->bridgeOf();
-        if (!first)
-            out << ",\n";
-        first = false;
-        const axi::AxiEndpointQueueHighWater high_water = bridge->queueHighWater();
-        out << "    {\"core_id\": " << core->archCoreId()
-            << ", \"aw_accepted\": " << bridge->acceptedWrites()
-            << ", \"ar_accepted\": " << bridge->acceptedReads()
-            << ", \"w_accepted\": " << bridge->counters().wAccepted
-            << ", \"b_consumed\": " << bridge->completedWrites()
-            << ", \"r_beats_consumed\": " << bridge->counters().rBeatsConsumed
-            << ", \"b_error_count\": " << bridge->counters().bErrorCount
-            << ", \"r_error_beats\": " << bridge->counters().rErrorBeats
-            << ", \"read_bursts_submitted\": " << engine->submittedReadBursts()
-            << ", \"write_bursts_submitted\": " << engine->submittedWriteBursts()
-            << ", \"read_bursts_completed\": " << engine->completedReadBursts()
-            << ", \"write_bursts_completed\": " << engine->completedWriteBursts()
-            << ", \"error_read_bursts\": " << engine->errorReadBursts()
-            << ", \"error_write_bursts\": " << engine->errorWriteBursts()
-            << ", \"valid_read_bytes\": " << engine->validReadBytes()
-            << ", \"valid_write_bytes\": " << engine->validWriteBytes()
-            << ", \"pending_aw\": " << bridge->pendingWrites()
-            << ", \"pending_ar\": " << bridge->pendingReads()
-            << ", \"outstanding_writes\": " << bridge->outstandingWrites()
-            << ", \"outstanding_reads\": " << bridge->outstandingReads()
-            << ", \"peak_read_outstanding\": " << bridge->peakOutstandingReads()
-            << ", \"message_buffer_blocked_cycles\": ";
-        writeBlocked(high_water.messageBufferStallCycles);
-        out            << ", \"idle\": " << (bridge->idle() ? 1 : 0)
-            << ", \"b_retire_order\": [";
-        bool first_b = true;
-        for (uint64_t ordinal : bridge->counters().bOrder) {
-            if (!first_b)
-                out << ", ";
-            first_b = false;
-            out << ordinal;
-        }
-        out << "]}";
-    }
-    out << "\n  ],\n";
-
-    out << "  \"memory_endpoint\": ";
-    if (endpoint) {
-        endpoint->computeVerifyDigests();
-        out << "{\"committed_valid_bytes\": " << endpoint->committedBytes()
-            << ", \"error_drained_bytes\": " << endpoint->errorDrainBytes()
-            << ", \"seeds\": [";
-        bool first_s = true;
-        for (const auto &seed : endpoint->seedRows()) {
-            if (!first_s)
-                out << ", ";
-            first_s = false;
-            out << "{\"address\": " << seed.address
-                << ", \"size\": " << seed.size
-                << ", \"pattern\": " << int(seed.pattern)
-                << ", \"digest\": \"" << seed.digest << "\"}";
-        }
-        out << "], \"verifies\": [";
-        bool first_v = true;
-        for (const auto &verify : endpoint->verifyRows()) {
-            if (!first_v)
-                out << ", ";
-            first_v = false;
-            out << "{\"address\": " << verify.address
-                << ", \"size\": " << verify.size
-                << ", \"digest\": \"" << verify.digest << "\""
-                << ", \"after16_digest\": \"" << verify.after_digest << "\"}";
-        }
-        out << "]}";
-    } else {
-        out << "null";
-    }
-    out << ",\n";
-
-    out << "  \"cache_reservation\": {\"waiting\": "
-        << (cache_reservation_waiting ? 1 : 0)
-        << ", \"attempts\": " << cache_reservation_attempts
-        << ", \"identity_reassignments\": "
-        << cache_identity_reassignments
-        << ", \"commits\": " << cache_reservation_commits
-        << ", \"prestart_failures\": " << prestart_failures
-        << ", \"starts\": " << batch_starts
-        << ", \"pending\": [";
-    {
-        bool first_pending = true;
-        for (const CacheReservationRequest &request :
-             cache_reservation_queue) {
-            if (!first_pending)
-                out << ", ";
-            first_pending = false;
-            out << "{\"core_id\": " << request.core_id
-                << ", \"request_id\": " << request.request_id
-                << ", \"layers\": [";
-            bool first_layer = true;
-            for (const MoeWeightCache::LayerTags &layer : request.demand) {
-                if (!first_layer)
-                    out << ", ";
-                first_layer = false;
-                out << layer.layer_id;
-            }
-            out << "]}";
-        }
-    }
-    out << "]},\n";
-    out << "  \"moe\": ";
-    if (loader != nullptr && loader->program().has_moe_v1) {
-        out << "{\"gate_state\": \"" << overlayGateState()
-            << "\", \"groups_exited\": " << overlay_exits_seen.size()
-            << ", \"overlay_exits\": [";
-        bool first_exit = true;
-        for (uint32_t layer_id : overlay_exits_seen) {
-            if (!first_exit)
-                out << ", ";
-            first_exit = false;
-            out << layer_id;
-        }
-        out << "], \"regions\": [";
-        bool first_region = true;
-        for (const auto &region : loader->program().moe_dynamic_regions) {
-            for (const MeshDummyCore *core : cores) {
-                if (core->archCoreId() != region.core_id)
-                    continue;
-                if (!first_region)
-                    out << ", ";
-                first_region = false;
-                out << "{\"layer_id\": " << region.layer_id
-                    << ", \"region_id\": " << region.region_id
-                    << ", \"core_id\": " << region.core_id
-                    << ", \"entry_tick\": " << core->overlayEntryTick()
-                    << ", \"phase\": "
-                    << uint32_t(core->overlayGatePhase(region.layer_id))
-                    << ", \"armed\": "
-                    << (core->overlayGateArmed(region.layer_id) ? 1 : 0)
-                    << ", \"drained\": "
-                    << (core->overlayDrained() ? 1 : 0);
-                const MoeOverlayExecutor *executor =
-                    core->overlayExecutor(region.layer_id);
-                out << ", \"issued\": "
-                    << (executor ? executor->issuedCommands() : 0)
-                    << ", \"completed\": "
-                    << (executor ? executor->completedCommands() : 0)
-                    << ", \"sram_read_bytes\": "
-                    << (executor
-                            ? executor->sramReadBytesForRegion(
-                                  region.region_id)
-                            : 0)
-                    << ", \"sram_write_bytes\": "
-                    << (executor
-                            ? executor->sramWriteBytesForRegion(
-                                  region.region_id)
-                            : 0)
-                    << ", \"sram_service_cycles\": "
-                    << (executor ? executor->sramServiceCycles() : 0)
-                    << ", \"sram_bank_conflicts\": "
-                    << (executor ? executor->sramBankConflicts() : 0)
-                    << ", \"compute_cycles\": "
-                    << (executor ? executor->computeCyclesTotal() : 0)
-                    << ", \"compute_commits\": "
-                    << (executor ? executor->computeCommits() : 0)
-                    << ", \"copy_through_commands\": "
-                    << (executor ? executor->copyThroughCommands() : 0)
-                    << ", \"local_reduce_commands\": "
-                    << (executor ? executor->localReduceCommands() : 0)
-                    << ", \"uncommitted_views\": "
-                    << (executor ? executor->uncommittedViews() : 0)
-                    << ", \"sram_read_by_kind\": ";
-                if (executor == nullptr) {
-                    out << "{}";
-                } else {
-                    out << "{";
-                    bool first_kind = true;
-                    for (const auto &kind : executor->sramKindBytesForRegion(
-                             region.region_id)) {
-                        if (!first_kind)
-                            out << ", ";
-                        first_kind = false;
-                        out << "\"" << kind.first << "\": "
-                            << kind.second.first;
-                    }
-                    out << "}";
-                }
-                out << ", \"sram_write_by_kind\": ";
-                if (executor == nullptr) {
-                    out << "{}";
-                } else {
-                    out << "{";
-                    bool first_kind = true;
-                    for (const auto &kind : executor->sramKindBytesForRegion(
-                             region.region_id)) {
-                        if (!first_kind)
-                            out << ", ";
-                        first_kind = false;
-                        out << "\"" << kind.first << "\": "
-                            << kind.second.second;
-                    }
-                    out << "}";
-                }
-                out << "}";
-            }
-        }
-        out << "], \"cache_state\": [";
-        bool first_state = true;
-        for (const MeshDummyCore *core : cores) {
-            const MoeWeightCache *cache = core->weightCache();
-            if (cache == nullptr)
-                continue;
-            if (!first_state)
-                out << ", ";
-            first_state = false;
-            out << "{\"core_id\": " << core->archCoreId()
-                << ", \"tokens_created\": " << cache->tokensCreated()
-                << ", \"token_releases\": " << cache->tokenReleases()
-                << ", \"tombstoned_subscribers\": "
-                << cache->tombstonedSubscribers()
-                << ", \"woken_subscribers\": " << cache->wokenSubscribers()
-                << ", \"faulted_fill_terminals\": "
-                << cache->faultedFillTerminals()
-                << ", \"live_tokens\": " << cache->liveTokens()
-                << ", \"live_obligations\": " << cache->obligations().size()
-                << ", \"pending_fills\": " << cache->pendingFills()
-                << ", \"pending_subscribers\": "
-                << cache->pendingSubscribers()
-                << ", \"mshr_free\": " << cache->mshrFree()
-                << ", \"mshr_slots\": " << cache->mshrSlots()
-                << ", \"eviction_free\": " << cache->evictionFree()
-                << ", \"eviction_slots\": " << cache->evictionSlots()
-                << ", \"obligation_free\": " << cache->obligationFree()
-                << ", \"obligation_slots\": " << cache->obligationSlots()
-                << ", \"subscriber_free\": " << cache->subscriberFree()
-                << ", \"subscriber_slots\": " << cache->subscriberSlots()
-                << ", \"valid_lines\": [";
-            bool first_line = true;
-            for (const auto &slot : cache->slots()) {
-                if (slot.state != kCacheSlotValid)
-                    continue;
-                if (!first_line)
-                    out << ", ";
-                first_line = false;
-                out << "{\"slot_id\": " << slot.slot_id
-                    << ", \"weight_tag_index\": " << slot.weight_tag_index
-                    << ", \"valid_bytes\": " << slot.valid_bytes << "}";
-            }
-            out << "], \"tombstones\": " << cache->tombstoneCount()
-                << ", \"fills_retried\": " << core->cacheFillsRetried()
-                << "}";
-        }
-        out << "], \"cache_fills\": [";
-        bool first_fill = true;
-        for (const MeshDummyCore *core : cores) {
-            const MoeWeightCache *cache = core->weightCache();
-            if (cache == nullptr)
-                continue;
-            for (const auto &fill : cache->fillLog()) {
-                if (!first_fill)
-                    out << ", ";
-                first_fill = false;
-                out << "{\"core_id\": " << core->archCoreId()
-                    << ", \"weight_tag_index\": "
-                    << fill.key.weight_tag_index
-                    << ", \"fill_incarnation\": "
-                    << fill.key.fill_incarnation
-                    << ", \"bytes\": " << fill.bytes
-                    << ", \"committed_bytes\": " << fill.committed_bytes
-                    << ", \"slot_id\": " << fill.slot_id
-                    << ", \"address\": " << fill.address
-                    << ", \"done_tick\": " << fill.done_tick << "}";
-            }
-        }
-        out << "]}";
-    } else {
-        out << "null";
-    }
-    out << ",\n";
-
-    out << "  \"garnet\": ";
-    if (network) {
-        const auto *garnet =
-            dynamic_cast<const ruby::garnet::GarnetNetwork *>(network);
-        if (!garnet) {
-            out << "null";
-        } else {
-            const auto snapshot = garnet->quiescenceSnapshot();
-            out << "{\"ni_queued_flits\": " << snapshot.niQueuedFlits
-                << ", \"ni_queued_messages\": " << snapshot.niQueuedMessages
-                << ", \"router_buffered_flits\": " << snapshot.routerBufferedFlits
-                << ", \"non_idle_input_vcs\": " << snapshot.nonIdleInputVcs
-                << ", \"non_idle_output_vcs\": " << snapshot.nonIdleOutputVcs
-                << ", \"data_link_pending_flits\": " << snapshot.dataLinkPendingFlits
-                << ", \"credit_link_pending_credits\": "
-                << snapshot.creditLinkPendingCredits
-                << ", \"bridge_pending_items\": " << snapshot.bridgePendingItems
-                << ", \"credit_deficit\": " << snapshot.creditDeficit
-                << ", \"quiescent\": " << (snapshot.empty() ? 1 : 0) << "}";
-        }
-    } else {
-        out << "null";
-    }
+void MeshDispatcher::checkDrain()
+{
+    if (!drain_active || drain_end_tick != 0)
+        return;
+    checkAllHalted();
+    if (drain_active && drain_end_tick == 0 && !drain_event.scheduled())
+        schedule(&drain_event, nextCoreEdge(*this));
 }
 
 void MeshDispatcher::checkWatchdog()
 {
     if (!started)
         return;
-    uint64_t progress = 0;
-    for (const MeshDummyCore *core : cores)
-        progress += core->workProgress();
+    const uint64_t progress = progressSample();
     bool all_done = true;
     for (const MeshDummyCore *core : cores)
         if (!core->halted() || !core->quiescent())
             all_done = false;
-    if (all_done)
-        return;
+    if (all_done) {
+        // Every core stopped, but the unified drain gate may still be waiting
+        // for network credits, bridge queues, peer expectations or the target
+        // endpoint.  Re-evaluate it on the next real progress event instead of
+        // waiting for another halt notification that will never come.
+        checkAllHalted();
+        if (drain_end_tick != 0)
+            return;  // the gate closed and the exit was requested
+        if (progress != last_progress_snapshot) {
+            last_progress_snapshot = progress;
+            if (!watchdog_event.scheduled())
+                schedule(&watchdog_event, curTick() + watchdog_ticks_value);
+            return;
+        }
+        // The drain itself made no progress: report what is still pending
+        // instead of running to the simulation limit.
+        watchdog_fired_count++;
+        std::string drain_graph = "  drain pending:";
+        if (const auto *garnet =
+                dynamic_cast<const ruby::garnet::GarnetNetwork *>(network)) {
+            const auto snapshot = garnet->quiescenceSnapshot();
+            drain_graph +=
+                " ni_flits=" + std::to_string(snapshot.niQueuedFlits) +
+                " router_flits=" + std::to_string(snapshot.routerBufferedFlits) +
+                " data_link=" + std::to_string(snapshot.dataLinkPendingFlits) +
+                " credit_link=" +
+                std::to_string(snapshot.creditLinkPendingCredits) +
+                " bridge_items=" + std::to_string(snapshot.bridgePendingItems) +
+                " deficit=" + std::to_string(snapshot.creditDeficit);
+            uint64_t unrestored = 0;
+            for (const auto &entry : garnet->creditLedger())
+                if (!entry.restored())
+                    unrestored++;
+            drain_graph += " unrestored_links=" + std::to_string(unrestored);
+        }
+        for (const MeshDummyCore *core : cores) {
+            const auto *engine =
+                dynamic_cast<const AxiTensorDmaEngine *>(core->dmaEngine());
+            if (engine && engine->bridgeOf() && !engine->bridgeOf()->idle())
+                drain_graph += " bridge_core_" +
+                               std::to_string(core->archCoreId()) + "_busy";
+        }
+        for (const PeerSramAperture *aperture : apertures)
+            if (aperture->liveExpectations())
+                drain_graph += " aperture_" +
+                               std::to_string(aperture->coreId()) +
+                               "_live_expectation";
+        if (!memory.idle())
+            drain_graph += " endpoint_busy";
+        drain_graph += "\n";
+        RuntimeDiagnostic record;
+        record.code = mesh_diagnostics::DiagnosticCode::E_RUNTIME_DEADLOCK;
+        record.stage = DiagnosticStage::Watchdog;
+        record.context = {{"instance", std::to_string(instance_counter.value())},
+                          {"watchdog_ticks", std::to_string(watchdog_ticks_value)},
+                          {"phase", "drain"}};
+        const std::string business =
+            "E_RUNTIME_DEADLOCK: the drain made no progress within " +
+            std::to_string(watchdog_ticks_value) + " ticks\n" + drain_graph;
+        reportRuntimeDiagnostic(record, business);
+        fatal("%s", business.c_str());
+    }
     if (progress == last_progress_snapshot) {
         watchdog_fired_count++;
         std::string state = overlayGateState();
@@ -1383,7 +854,7 @@ void MeshDispatcher::checkWatchdog()
                     (core->quiescent() ? " idle" : " live");
             if (loader != nullptr)
                 for (const auto &region :
-                     loader->program().moe_dynamic_regions)
+                     loader->program().transport.moe_dynamic_regions)
                     if (region.core_id == core->archCoreId()) {
                         const MoeOverlayExecutor *executor =
                             core->overlayExecutor(region.layer_id);
@@ -1393,9 +864,45 @@ void MeshDispatcher::checkWatchdog()
                                           : std::string("none"));
                     }
         }
-        fatal("MESH_WATCHDOG: no command progress within %llu ticks;%s;%s",
-              (unsigned long long)watchdog_ticks_value, state.c_str(),
-              live.c_str());
+        std::string graph = state + "\n" + live + "\n";
+        for (const MeshDummyCore *core : cores)
+            graph += core->waitForGraph() + "\n";
+        // Instance-scoped fences wait on tags owned by any core, so their
+        // relation is reported by the owner of that cross-core wait.
+        for (const PendingFence &fence : pending_fences) {
+            graph += "  fence cmd=" + std::to_string(fence.command_id) +
+                     " core=" + std::to_string(fence.core_id) +
+                     " scope=instance tags=";
+            bool first_tag = true;
+            for (const auto &waiter : fence.waiting) {
+                if (!first_tag)
+                    graph += ",";
+                first_tag = false;
+                uint32_t owner = 0;
+                for (const MeshDummyCore *core : cores)
+                    if (core->archCoreId() == waiter.first) {
+                        owner = core->tagOwner(waiter.second);
+                        break;
+                    }
+                graph += std::to_string(waiter.first) + ":" +
+                         std::to_string(waiter.second) + "(cmd" +
+                         std::to_string(owner) + ")";
+            }
+            if (first_tag)
+                graph += "none";
+            graph += "\n";
+        }
+        RuntimeDiagnostic record;
+        record.code = mesh_diagnostics::DiagnosticCode::E_RUNTIME_DEADLOCK;
+        record.stage = DiagnosticStage::Watchdog;
+        record.context = {
+            {"instance", std::to_string(instance_counter.value())},
+            {"watchdog_ticks", std::to_string(watchdog_ticks_value)}};
+        const std::string business =
+            "E_RUNTIME_DEADLOCK: no runtime progress within " +
+            std::to_string(watchdog_ticks_value) + " ticks\n" + graph;
+        reportDiagnostic(loader->diagnostics(), record, business);
+        fatal("%s", business.c_str());
     }
     last_progress_snapshot = progress;
     schedule(&watchdog_event, curTick() + watchdog_ticks_value);
@@ -1421,6 +928,7 @@ bool MeshDispatcher::registerFence(MeshDummyCore *core, uint32_t command_id,
 
 void MeshDispatcher::onDmaTagRetired(uint16_t core_id, uint64_t tag)
 {
+    dma_tags_retired++;
     if (pending_fences.empty())
         return;
     const std::pair<uint16_t, uint64_t> key(core_id, tag);
@@ -1455,7 +963,9 @@ void MeshDispatcher::armTransferExpectation(uint32_t transfer_id)
 {
     if (apertures.empty())
         return;  // mock runtime: peer commits flow through the transport
-    const auto *plan = loader->transferPlan(transfer_id);
+    const auto &invocation = instance_observer ? instance_binding.invocation() : loader->defaultInvocation();
+    fatal_if(!invocation, "peer expectation has no frozen invocation");
+    const auto *plan = invocation->transferPlan(transfer_id);
     fatal_if(plan == nullptr, "no transfer plan for transfer %u", transfer_id);
     for (PeerSramAperture *aperture : apertures)
         if (aperture->coreId() == plan->receiver_core) {
@@ -1466,26 +976,204 @@ void MeshDispatcher::armTransferExpectation(uint32_t transfer_id)
           transfer_id, plan->receiver_core);
 }
 
-void MeshDispatcher::latchInstanceError(MeshDummyCore *source, Tick tick)
+bool
+MeshDispatcher::expectsTransfer(uint32_t transfer_id) const
 {
-    if (instance_error_latched)
+    for (const PeerSramAperture *aperture : apertures)
+        if (aperture->expects(transfer_id))
+            return true;
+    return false;
+}
+
+bool
+MeshDispatcher::readFunctional(uint64_t address, uint64_t size,
+                               uint8_t *out) const
+{
+    for (const PeerSramAperture *aperture : apertures) {
+        const uint64_t base = aperture->sramBase();
+        if (address < base || size > aperture->sramBytes()
+            || address - base > aperture->sramBytes() - size)
+            continue;
+        return aperture->read(address - base, size, out);
+    }
+    return false;
+}
+
+void MeshDispatcher::stageInstanceFailure(const ErrorCandidate &candidate)
+{
+    stageInstanceFailure(instance_counter.value(), candidate);
+    if (candidate.source.domain != mesh_abi::kMeshObjectDomainWEIGHT_FILL)
         return;
-    instance_error_latched = true;
-    error_latched_during_run =
-        started && batch_state == mesh_abi::MeshBatchState::REQUEST_RUNNING;
-    for (PeerSramAperture *aperture : apertures)
-        aperture->cancelAllExpectations();
+    const auto *wire = candidate.source.aux_key.data();
+    const auto core = agent_abi::rdU16(wire + mesh_abi::kWeightFillKeysCoreIdOffset);
+    const auto tag = agent_abi::rdU32(wire + mesh_abi::kWeightFillKeysWeightTagIndexOffset);
+    for (auto &queued : serving_candidates) {
+        if (!queued || &*queued == staging_candidate)
+            continue;
+        for (const auto &request : queued->demand) {
+            if (request.core_id != core)
+                continue;
+            for (const auto &layer : request.demand)
+                if (std::find(layer.tags.begin(), layer.tags.end(), tag) != layer.tags.end()) {
+                    stageInstanceFailure(queued->instance.value(), candidate);
+                    queued->failure_pending = true;
+                    break;
+                }
+        }
+    }
+}
+
+void MeshDispatcher::stageInstanceFailure(uint64_t instance, const ErrorCandidate &candidate)
+{
+    if (failure_reducer.failure(instance))
+        return;
+    fatal_if(candidate.tick != curTick() || !failure_reducer.stage(instance, candidate),
+             "instance failure arrived outside its reduction edge");
+    failure_pending = true;
+    if (!edge_commit_active && !failure_event.scheduled())
+        schedule(&failure_event, curTick());
+}
+
+void MeshDispatcher::commitInstanceFailure()
+{
+    edge_commit_active = true;
+    cache_fill_edge->commitFailures();
+    for (const auto &failure : cache_fill_edge->failures())
+        stageInstanceFailure(failure);
+    for (auto &queued : serving_candidates) {
+        if (!queued || &*queued == staging_candidate || queued->failure_pending)
+            continue;
+        for (const auto &request : queued->demand)
+            for (const auto &layer : request.demand)
+                for (const auto tag : layer.tags)
+                    if (auto error = coreOf(request.core_id)->weightCache()->failure(tag)) {
+                        error->tick = curTick();
+                        stageInstanceFailure(queued->instance.value(), *error);
+                        queued->failure_pending = true;
+                    }
+    }
+    if (failure_pending)
+        fatal_if(!failure_reducer.commitEdge(curTick()), "invalid scenario failure reduction edge");
+    failure_pending = false;
+    if (const auto *record = failure_reducer.failure(instance_counter.value());
+            record && !instance_error_latched) {
+        instance_error_latched = true;
+        const auto &source = record->first.source;
+        if ((source.domain == mesh_abi::kMeshObjectDomainSTATIC ||
+             source.domain == mesh_abi::kMeshObjectDomainKV_RUNTIME) &&
+            source.error_class == mesh_abi::kMoeErrorClassDMA_AXI) {
+            const auto found = loader->programAdmission().context().descriptors().find(source.ordinal);
+            fatal_if(found == loader->programAdmission().context().descriptors().end(),
+                     "runtime failure has no admitted descriptor");
+            const auto &descriptor = *found->second;
+            const auto status = dmaKindIsRead(descriptor.kind)
+                ? DmaStatus::AXI_READ_ERROR : DmaStatus::AXI_WRITE_ERROR;
+            RuntimeDiagnostic diagnostic;
+            diagnostic.code = mesh_diagnostics::DiagnosticCode::E_AXI_RESPONSE;
+            diagnostic.stage = DiagnosticStage::Runtime;
+            diagnostic.context = {
+                {"instance", std::to_string(record->program_instance_id)},
+                {"core_id", std::to_string(source.core_id_or_ffff)},
+                {"command_id", std::to_string(descriptor.command_id)},
+                {"generation", std::to_string(source.generation)},
+                {"descriptor_id", std::to_string(descriptor.descriptor_id)},
+                {"dma_kind", std::to_string(descriptor.kind)},
+                {"status", dmaStatusName(status)}};
+            if (descriptor.transfer_id)
+                diagnostic.context.push_back({"transfer_id", std::to_string(descriptor.transfer_id)});
+            reportRuntimeDiagnostic(diagnostic, "E_AXI_RESPONSE: instance " +
+                std::to_string(record->program_instance_id) + " descriptor " + std::to_string(descriptor.descriptor_id));
+        }
+        if (const auto &output = instance_binding.outputLedger())
+            output->fail(curTick());
+        if (instance_observer)
+            instance_observer->onInstanceFailure(*record);
+        scoreboard.cancelOpen(curTick());
+        for (PeerSramAperture *aperture : apertures)
+            aperture->abandonAllExpectations();
+        for (MeshDummyCore *core : cores)
+            core->onInstanceError(curTick());
+    }
+    for (auto &queued : serving_candidates) {
+        if (!queued)
+            continue;
+        const auto *failure = failure_reducer.failure(queued->instance.value());
+        if (!failure)
+            continue;
+        const BatchFailureRecord record = *failure;
+        InstanceRecord observation;
+        observation.instance = queued->instance;
+        observation.failure = record;
+        instance_records.push_back(std::move(observation));
+        cancelPendingInstance(record.program_instance_id);
+        ++prestart_failures;
+        instance_observer->onInstanceFailure(record);
+    }
+    cache_fill_edge->commitSuccesses();
+    edge_commit_active = false;
+    retryCacheReservations();
+}
+
+void MeshDispatcher::noteMemberCancel(uint64_t instance, uint64_t request, uint64_t tick)
+{
+    fatal_if(!failure_reducer.cancel(instance, request, tick), "invalid frozen cancel owner");
+}
+
+void MeshDispatcher::reportRuntimeDiagnostic(const RuntimeDiagnostic &record,
+                                               const std::string &business)
+{
+    reportDiagnostic(loader->diagnostics(), record, business);
+}
+
+void MeshDispatcher::markReceiverAllocationValid(uint16_t core_id,
+                                                uint32_t allocation_id)
+{
     for (MeshDummyCore *core : cores)
-        core->onInstanceError(core == source ? tick : curTick());
+        if (core->archCoreId() == core_id) {
+            core->markAllocationValid(allocation_id);
+            return;
+        }
 }
 
 void MeshDispatcher::routePeerCommit(uint16_t peer_core, uint32_t transfer_id)
 {
+    if (destination_bytes_limit != 0) {
+        for (const MeshDummyCore *core : cores) {
+            for (const auto &execution : core->runtimeObservations().view().descriptors) {
+                if (execution.descriptor.domain != mesh_abi::MeshObjectDomain::STATIC)
+                    continue;
+                const auto *descriptor = core->descriptorById(execution.descriptor.ordinal);
+                if (descriptor && descriptor->kind == 3 &&
+                    descriptor->transfer_id == transfer_id)
+                    captureDestination(*core, {execution.command, execution.descriptor},
+                                       DestinationSampling::TransferCommit);
+            }
+        }
+    }
+
+    MeshDummyCore *target = nullptr;
     for (MeshDummyCore *core : cores)
         if (core->archCoreId() == peer_core) {
-            core->onTransferCommitted(core->transferKey(transfer_id));
-            return;
+            target = core;
+            break;
         }
+    if (target == nullptr)
+        return;
+    // Test-only notification routing defects are injected at the delivery
+    // boundary: the receiver record is always produced by the actual handler.
+    if (receiver_fault == "receive_drop")
+        return;
+    if (receiver_fault == "receive_redirect") {
+        for (MeshDummyCore *core : cores)
+            if (core != target) {
+                core->onTransferCommitted(core->transferKey(transfer_id));
+                return;
+            }
+        return;
+    }
+    target->onTransferCommitted(target->transferKey(transfer_id));
+    if (receiver_fault == "receive_duplicate")
+        target->onTransferCommitted(target->transferKey(transfer_id));
 }
 
 void MeshDispatcher::retryInstanceSettle()
@@ -1495,6 +1183,8 @@ void MeshDispatcher::retryInstanceSettle()
 
 void MeshDispatcher::checkAllHalted()
 {
+    if (failure_event.scheduled())
+        return;
     if (!started)
         return;
     if (batch_state != mesh_abi::MeshBatchState::REQUEST_RUNNING ||
@@ -1509,49 +1199,92 @@ void MeshDispatcher::checkAllHalted()
                  "core %u settled with live DMA traffic",
                  core->archCoreId());
     }
+    // HALT only earns the right to drain: the instance is archived and the
+    // program exits only once every real owner has emptied.  The drain window
+    // opens the first time every core has stopped, before the network is
+    // necessarily empty, so a deferred exit is visible.
+    if (!drain_active) {
+        drain_active = true;
+        drain_begin_tick = curTick();
+        // Test-only: lose the next credit return at the real delivery boundary
+        // once the drain is open, so the gate really has to wait for the
+        // ledger to restore.
+        if (drain_fault == "drop_credit") {
+            auto *garnet = dynamic_cast<ruby::garnet::GarnetNetwork *>(network);
+            fatal_if(garnet == nullptr,
+                     "drain_fault drop_credit needs a Garnet network");
+            garnet->armCreditDropFault(1);
+        }
+        const auto *garnet =
+            dynamic_cast<const ruby::garnet::GarnetNetwork *>(network);
+        const auto begin = garnet ? garnet->quiescenceSnapshot()
+                                  : ruby::garnet::GarnetQuiescenceSnapshot();
+        drain_begin_pending = begin.creditLinkPendingCredits +
+                              begin.dataLinkPendingFlits + begin.niQueuedFlits +
+                              begin.routerBufferedFlits +
+                              begin.nonIdleInputVcs + begin.nonIdleOutputVcs;
+    }
+    if (!drainSatisfied()) {
+        // Keep evaluating on real clock edges until every owner is empty.
+        if (!drain_event.scheduled())
+            schedule(&drain_event, nextCoreEdge(*this));
+        return;
+    }
+    if (drain_active && drain_end_tick == 0) {
+        drain_end_tick = curTick();
+        const auto *garnet =
+            dynamic_cast<const ruby::garnet::GarnetNetwork *>(network);
+        const auto end = garnet ? garnet->quiescenceSnapshot()
+                                : ruby::garnet::GarnetQuiescenceSnapshot();
+        drain_end_pending = end.creditLinkPendingCredits +
+                            end.dataLinkPendingFlits + end.niQueuedFlits +
+                            end.routerBufferedFlits + end.nonIdleInputVcs +
+                            end.nonIdleOutputVcs;
+    }
     {
         InstanceRecord record;
+        record.instance = instance_counter;
+        if (failure_reducer.failure(instance_counter.value()))
+            record.failure = *failure_reducer.failure(instance_counter.value());
+        record.finalized = true;
+        record.bursts = instanceBursts();
+        record.barriers = scoreboard.barrierHistory();
+        capturePendingDestinations();
         for (MeshDummyCore *core : participant_cores) {
             record.cores[core->archCoreId()] = core->takeInstanceLedger();
             core->releaseInstanceInputs();
         }
+        record.destinations = std::move(live_destinations);
+        for (const PeerSramAperture *aperture : apertures) {
+            ApertureFrame frame;
+            frame.core_id = aperture->coreId();
+            frame.transfers = aperture->transferCoverage();
+            record.apertures.push_back(std::move(frame));
+        }
         instance_records.push_back(std::move(record));
     }
+    drained_instances++;
     batch_state = mesh_abi::MeshBatchState::PROGRAM_READY;
     batch_setup_done = false;
     cache_reservation_waiting = false;
     participant_cores.clear();
-    // A latched error is only a latched error: the final error state and its
-    // artifact belong to the drained instance, so they are committed here,
-    // after every participant halted, quiesced and its DMA is idle.
-    // Observer-driven runs return to their observer before the normal
-    // advance, so they need the mesh-side terminal published here; a
-    // mesh-program run reaches it through advanceAfterInstance() instead.
-    if (instance_observer != nullptr && instance_error_latched &&
-            error_latched_during_run)
-        commitErrorTerminal();
+    started = false;
+    selected_view = nullptr;
+    if (anyCoreErrored() && !drained_error_core)
+        drained_error_core = erroredCoreId();
     if (instance_observer != nullptr) {
+        candidate_events.push_back({instance_counter.value(), curTick(), "SETTLED"});
+        active_candidate.reset();
         instance_observer->onInstanceSettled(instance_counter.value(),
                                              instance_binding.requestId(),
                                              instance_binding.requestGeneration(),
                                              anyCoreErrored(), curTick());
+        failure_reducer.release(instance_counter.value());
+        retryCacheReservations();
         return;
     }
+    failure_reducer.release(instance_counter.value());
     advanceAfterInstance();
-}
-
-void
-MeshDispatcher::commitErrorTerminal()
-{
-    if (program_terminal != ProgramTerminal::NONE)
-        return;
-    program_terminal = ProgramTerminal::ERROR_DRAINED;
-    const std::string cause = programCause();
-    DPRINTF(AiMesh, "dispatcher: %s\n", cause.c_str());
-    writeResultJson();
-    if (instance_observer != nullptr)
-        return;
-    exitSimLoop(cause.c_str());
 }
 
 void MeshDispatcher::advanceAfterInstance()
@@ -1560,11 +1293,20 @@ void MeshDispatcher::advanceAfterInstance()
         return;
     if (instance_counter.value() < total_instances) {
         // Same immutable CommandROM, fresh per-instance state (spec 17.2.24).
-        schedule(&start_event, clockEdge() + 1);
+        schedule(&start_event, nextCoreEdge(*this));
         return;
     }
+    commitProgramTerminal();
+}
+
+void MeshDispatcher::commitProgramTerminal()
+{
+    if (program_terminal != ProgramTerminal::NONE)
+        return;
     instancesCompleted++;
-    program_terminal = anyCoreErrored() ? ProgramTerminal::ERROR_DRAINED
+    const bool failed_instance = std::any_of(instance_records.begin(), instance_records.end(),
+        [](const auto &record) { return record.failure.has_value(); });
+    program_terminal = (failed_instance || drained_error_core || anyInstanceErrored()) ? ProgramTerminal::ERROR_DRAINED
                                         : ProgramTerminal::DONE;
     const std::string cause = programCause();
     DPRINTF(AiMesh, "dispatcher: %s\n", cause.c_str());

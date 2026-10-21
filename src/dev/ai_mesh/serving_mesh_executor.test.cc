@@ -1,283 +1,73 @@
-#include <gtest/gtest.h>
-
-#include <array>
-#include <cstdint>
-#include <fstream>
-#include <string>
-#include <utility>
-#include <vector>
-
-#include "dev/ai_mesh/agent_sha256.hh"
-#include "dev/ai_mesh/generated/agent_protocol_abi.hh"
-#include "dev/ai_mesh/mesh_binary.hh"
-#include "dev/ai_mesh/mesh_kv_manager.hh"
-#include "dev/ai_mesh/mesh_serving_projection.hh"
-#include "dev/ai_mesh/serving_host_bindings.hh"
-#include "dev/ai_mesh/serving_mesh_executor.hh"
-
-namespace
-{
+#include "dev/ai_mesh/serving_mesh_executor_test.hh"
 
 using namespace gem5::ai_mesh;
-using namespace mesh_abi;
+using namespace gem5::ai_mesh::mesh_abi;
+using namespace gem5::ai_mesh::serving_test;
 
-class RecordingDispatch : public ServingMeshDispatch
+TEST(ServingMeshExecutor, CompletionCannotBeReadThroughAnotherIdentity)
 {
-  public:
-    bool installSelectors(
-        const std::vector<std::pair<uint32_t, uint32_t>> &value,
-        std::string &reason) override
-    {
-        if (installed) {
-            reason = "selectors already installed";
-            return false;
-        }
-        selectors = value;
-        installed = true;
-        return true;
+    Harness harness;
+    const auto request = executionRequest();
+    ASSERT_TRUE(harness.executor.submit(request).admitted);
+    driveOneGenerate(harness, kvStoreCommands(harness.program));
+    ASSERT_TRUE(harness.executor.completionFor(request).succeeded());
+    for (const bool change_generation : {false, true}) {
+        auto foreign = request;
+        if (change_generation)
+            ++foreign.generation;
+        else
+            ++foreign.requestId;
+        const auto completion = harness.executor.completionFor(foreign);
+        EXPECT_FALSE(completion.succeeded());
+        EXPECT_FALSE(completion.kvTerminal.has_value());
+        EXPECT_EQ(completion.phaseInstances, 0u);
+        EXPECT_EQ(completion.outputBytes, 0u);
+        EXPECT_EQ(completion.semanticDigest, (std::array<uint8_t, 32>{}));
     }
+    EXPECT_TRUE(harness.executor.completionFor(request).succeeded());
+}
 
-    void failCurrentInstance() override { fails++; }
+TEST(ServingMeshExecutor, UnknownCompletionBeforeAdmissionHasNoState)
+{
+    Harness harness;
+    const auto completion = harness.executor.completionFor(executionRequest());
+    EXPECT_FALSE(completion.succeeded());
+    EXPECT_FALSE(completion.kvTerminal.has_value());
+    EXPECT_EQ(completion.phaseInstances, 0u);
+}
 
-    void bindInstance(const ServingInstanceBinding &binding) override
-    { instance_bindings.push_back(binding); }
-
-    bool canAccessKv(uint64_t, uint64_t) const override
-    { return kv_reachable; }
-
-    void bindFillContent(const ServingFillBinding &binding) override
-    {
-        fills.push_back(binding);
-        publish_content = binding.content;
+TEST(ServingMeshExecutor, RepeatedAdmissionCannotReplaceAnAdmittedIdentity)
+{
+    for (const bool change_generation : {false, true}) {
+        Harness harness;
+        const auto original = executionRequest();
+        std::string reason;
+        ASSERT_TRUE(harness.admitOnly(original, 100).admitted);
+        const bool had_claim = harness.manager.hasClaim(original.requestId);
+        const bool had_pin = harness.manager.hasPin(original.requestId);
+        ASSERT_TRUE(had_claim || had_pin);
+        const auto selectors = harness.dispatch.selectors;
+        auto other = original;
+        if (change_generation)
+            ++other.generation;
+        const auto duplicate = harness.admitOnly(other, 120);
+        EXPECT_FALSE(duplicate.admitted);
+        EXPECT_EQ(duplicate.rejectDetail, agent_abi::E_KV_STATE);
+        const auto &retained = harness.executor.context(1).identity();
+        EXPECT_EQ(retained.request_id, original.requestId);
+        EXPECT_EQ(retained.generation, original.generation);
+        EXPECT_EQ(harness.executor.lastTick(), 100u);
+        EXPECT_EQ(harness.dispatch.selectors, selectors);
+        EXPECT_EQ(harness.dispatch.begins, 0u);
+        EXPECT_EQ(harness.dispatch.cancels, 0u);
+        EXPECT_EQ(harness.dispatch.fails, 0u);
+        EXPECT_EQ(harness.manager.hasClaim(original.requestId), had_claim);
+        EXPECT_EQ(harness.manager.hasPin(original.requestId), had_pin);
+        ASSERT_TRUE(harness.executor.abortBeforeStart(1, 150, reason)) << reason;
+        EXPECT_FALSE(harness.manager.hasClaim(original.requestId));
+        EXPECT_FALSE(harness.manager.hasPin(original.requestId));
+        EXPECT_FALSE(harness.manager.fatalReason().has_value());
     }
-
-    void bindSemanticDigest(const std::array<uint8_t, 32> &digest) override
-    { semantic_digest = digest; }
-
-    void beginFirstInstance() override
-    {
-        begins++;
-        if (on_start)
-            on_start();
-    }
-
-    void cancelPendingInstance() override { cancels++; }
-
-    void resumeInstance() override
-    {
-        resumes++;
-        if (on_start)
-            on_start();
-    }
-
-    std::vector<std::pair<uint32_t, uint32_t>> selectors;
-    bool installed = false;
-    bool kv_reachable = true;
-    uint32_t begins = 0;
-    uint32_t cancels = 0;
-    uint32_t fails = 0;
-    uint32_t resumes = 0;
-    std::function<void()> on_start;
-    std::vector<uint8_t> publish_content;
-    std::vector<ServingFillBinding> fills;
-    std::vector<ServingInstanceBinding> instance_bindings;
-    std::array<uint8_t, 32> semantic_digest = {};
-};
-
-DecodedProgram loadFixture(const std::string &path)
-{
-    std::ifstream stream(path, std::ios::binary);
-    EXPECT_TRUE(stream.good()) << path;
-    std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(stream)),
-                               std::istreambuf_iterator<char>());
-    DecodedProgram program;
-    MeshLoadError error;
-    EXPECT_TRUE(decodeMeshBinary(bytes, program, error))
-        << error.code << ": " << error.message;
-    return program;
-}
-
-KvGeometry geometry()
-{
-    KvGeometry geo;
-    geo.region_base = 0x100000;
-    geo.slot_bytes = 4096;
-    geo.slot_alignment = 4096;
-    geo.max_sessions = 2;
-    geo.bytes_per_token = 16;
-    return geo;
-}
-
-KvCapacity capacity()
-{
-    KvCapacity cap;
-    cap.record_entries = 4;
-    cap.tombstone_entries = 2;
-    cap.admission_wait_entries = 2;
-    cap.release_waiter_entries = 2;
-    return cap;
-}
-
-ServingRequestIdentity identity(
-    const std::string &fixture =
-        "tests/gem5/ai_mesh/fixtures/gate6/serving_two_tokens.mshb")
-{
-    ServingRequestIdentity id;
-    id.request_id = 1;
-    id.session_id = 11;
-    id.kv_handle = 11;
-    id.generation = 1;
-    id.program_id = 1;
-    id.profile_id = 1;
-    id.path_kind = kPathKindINITIAL_PREFILL;
-    id.contract_digest.fill(0x5c);
-    const DecodedProgram program = loadFixture(fixture);
-    const mesh_abi::AgentRequestProfile &profile =
-        program.agent_request_profiles.at(0);
-    id.requested_profile_key = requestProfileKey(
-        profile, programProfileKeyBaseDigest(program));
-    id.input_bytes = profile.full_input_dma_bytes;
-    id.input_tokens = profile.full_input_tokens;
-    id.output_tokens = profile.output_tokens;
-    id.output_capacity_bytes = profile.host_output_bytes;
-    id.kv_bytes_per_token = profile.kv_bytes_per_token;
-    return id;
-}
-
-uint32_t kvTensorId(const DecodedProgram &program)
-{
-    uint32_t symbol = 0;
-    for (const auto &request : program.agent_request_profiles)
-        symbol = request.primary_kv_symbol_id;
-    for (const auto &relocation : program.relocations)
-        if (relocation.symbol_sid == symbol)
-            return relocation.tensor_id;
-    return 0;
-}
-
-struct KvStore
-{
-    uint32_t descriptor_id = 0;
-    uint32_t command_id = 0;
-};
-
-std::vector<KvStore> kvStoreCommands(const DecodedProgram &program)
-{
-    const uint32_t tensor = kvTensorId(program);
-    std::vector<KvStore> out;
-    for (const auto &descriptor : program.descriptors)
-        if (descriptor.kind == kDmaKindSTORE &&
-                descriptor.dst.tensor_id == tensor)
-            out.push_back({descriptor.descriptor_id, descriptor.command_id});
-    return out;
-}
-
-struct Harness
-{
-    Harness()
-        : Harness("tests/gem5/ai_mesh/fixtures/gate6/serving_two_tokens.mshb")
-    {}
-
-    explicit Harness(const std::string &fixture)
-        : program(loadFixture(fixture)),
-          manager(geometry(), capacity()),
-          executor(program, manager)
-    {
-        executor.attachDispatch(dispatch);
-        dispatch.on_start = [this]() {
-            executor.onInstanceStarted(static_cast<uint32_t>(executor.phasesCommitted()) + 1, 1, 1, 150);
-        };
-        executor.setDigestSource([](const NpuExecutionRequest &request,
-                                    uint64_t bytes) {
-            std::array<uint8_t, 32> digest{};
-            for (size_t i = 0; i < digest.size(); ++i)
-                digest[i] = static_cast<uint8_t>(0x40 + i + (bytes & 0x1f) +
-                                                 request.requestId);
-            return digest;
-        });
-    }
-
-    uint64_t currentInstance() const
-    { return static_cast<uint64_t>(executor.phasesCommitted()) + 1; }
-
-    DecodedProgram program;
-    MeshKvManager manager;
-    RecordingDispatch dispatch;
-    ServingMeshExecutor executor;
-};
-
-}
-
-class RecordingSink : public NpuCompletionSink
-{
-  public:
-    void onCoreStart(uint64_t) override { core_starts++; }
-    void onRequestComplete(const NpuExecutionRequest &,
-                           const NpuExecutionCompletion &value) override
-    {
-        completions++;
-        last = value;
-        if (on_complete)
-            on_complete(value);
-    }
-
-    uint32_t core_starts = 0;
-    uint32_t completions = 0;
-    NpuExecutionCompletion last;
-    std::function<void(const NpuExecutionCompletion &)> on_complete;
-};
-
-NpuExecutionRequest executionRequest(
-    uint64_t output_address = 0x300000,
-    const std::string &fixture =
-        "tests/gem5/ai_mesh/fixtures/gate6/serving_two_tokens.mshb")
-{
-    NpuExecutionRequest request;
-    request.requestId = 1;
-    request.sessionId = 11;
-    request.kvHandle = 11;
-    request.generation = 1;
-    request.programId = 1;
-    request.profileId = 1;
-    request.pathKind = kPathKindINITIAL_PREFILL;
-    request.inputAddress = 0x100200000;
-    request.outputAddress = output_address;
-    request.outputTokens = 2;
-    request.maxOutputTokens = 2;
-    const ServingRequestIdentity source = identity(fixture);
-    request.requestedProfileKey = source.requested_profile_key;
-    request.inputBytes = source.input_bytes;
-    request.inputTokens = source.input_tokens;
-    request.outputCapacityBytes = source.output_capacity_bytes;
-    request.contractDigest = source.contract_digest;
-    const DecodedProgram program = loadFixture(fixture);
-    std::vector<mesh_abi::AgentRequestBindingRequirement> requirements;
-    for (const auto &requirement : program.agent_request_binding_requirements)
-        if (requirement.request_program_id == request.programId &&
-                requirement.request_profile_id == request.profileId)
-            requirements.push_back(requirement);
-    request.hostBindings = expectedHostBindings(
-        requirements, request.inputAddress, request.inputBytes,
-        request.outputAddress, request.outputCapacityBytes,
-        geometry().slot_bytes);
-    return request;
-}
-
-void driveOneGenerate(Harness &harness, const std::vector<KvStore> &stores,
-                      uint32_t first = 1)
-{
-    // Phases 1..3 each issue one KV store; phase 4 publishes without one.
-    for (uint32_t phase = first; phase <= 3; ++phase) {
-        const KvStore &store = stores.at(phase - 1);
-        const uint64_t tick = 100 + 100 * phase;
-        harness.executor.onDmaAccepted(store.descriptor_id, store.command_id,
-                                       phase, 1, 1, tick);
-        harness.executor.onDmaTerminal(store.descriptor_id, store.command_id, phase == 1 ? 128 : 16, 0, phase, 1, 1,
-                                           tick + 10,
-                                           std::vector<DmaCommittedSegment>{{0, 0, uint64_t(phase == 1 ? 128 : 16)}});
-        harness.executor.onInstanceSettled(phase, 1, 1, false, tick + 20);
-    }
-    harness.executor.onInstanceSettled(4, 1, 1, false, 520);
 }
 
 TEST(ServingMeshExecutor, TerminalSnapshotPrecedesCompletion)
@@ -316,9 +106,10 @@ TEST(ServingMeshExecutor, TerminalSnapshotPrecedesCompletion)
     EXPECT_EQ(sink.last.kvTerminal->valid_bytes, 160u);
     EXPECT_EQ(sink.last.phaseInstances, 4u);
     EXPECT_EQ(sink.last.requestStartTick, 100u);
-    EXPECT_EQ(sink.last.terminalTick, 520u);
-    EXPECT_EQ(harness.executor.terminalTick(), 520u);
-    EXPECT_LT(sink.last.terminalTick, 521u);
+    EXPECT_EQ(sink.last.terminalTick, 521u);
+    EXPECT_EQ(harness.executor.terminalTick(1), 521u);
+    EXPECT_LT(harness.executor.phaseFacts(1).back().core_drain_tick,
+              sink.last.terminalTick);
 }
 
 TEST(ServingMeshExecutor, TerminalSnapshotSurvivesLaterKvEdges)
@@ -330,9 +121,9 @@ TEST(ServingMeshExecutor, TerminalSnapshotSurvivesLaterKvEdges)
     ASSERT_TRUE(harness.executor.submit(executionRequest()).admitted);
     driveOneGenerate(harness, kvStoreCommands(harness.program));
     ASSERT_EQ(sink.completions, 1u);
-    ASSERT_TRUE(harness.executor.kvTerminal().has_value());
-    const KvTerminalSnapshot frozen = *harness.executor.kvTerminal();
-    const uint64_t terminal_tick = harness.executor.terminalTick();
+    ASSERT_TRUE(harness.executor.kvTerminal(1).has_value());
+    const KvTerminalSnapshot frozen = *harness.executor.kvTerminal(1);
+    const uint64_t terminal_tick = harness.executor.terminalTick(1);
 
     MeshKvManager &manager = harness.manager;
     KvEdgeInputs later;
@@ -346,13 +137,13 @@ TEST(ServingMeshExecutor, TerminalSnapshotSurvivesLaterKvEdges)
     const KvEdgeResult result = manager.commitEdge(later);
     EXPECT_FALSE(result.fatal.has_value());
 
-    const KvTerminalSnapshot &after = *harness.executor.kvTerminal();
+    const KvTerminalSnapshot &after = *harness.executor.kvTerminal(1);
     EXPECT_EQ(after.request_id, frozen.request_id);
     EXPECT_EQ(after.status, KvTerminalStatus::Success);
     EXPECT_EQ(after.cached_tokens, frozen.cached_tokens);
     EXPECT_EQ(after.valid_bytes, frozen.valid_bytes);
     EXPECT_EQ(after.state, frozen.state);
-    EXPECT_EQ(harness.executor.terminalTick(), terminal_tick);
+    EXPECT_EQ(harness.executor.terminalTick(1), terminal_tick);
     EXPECT_EQ(sink.last.terminalTick, terminal_tick);
     EXPECT_EQ(sink.last.kvTerminal->status, KvTerminalStatus::Success);
 }
@@ -369,7 +160,7 @@ TEST(ServingMeshExecutor, SubmitAdmitsAndCompletesOnceWithRealOutput)
     EXPECT_EQ(harness.executor.modeledServiceNs(executionRequest()), 0u);
     driveOneGenerate(harness, kvStoreCommands(harness.program));
     EXPECT_EQ(sink.completions, 1u);
-    EXPECT_TRUE(sink.last.success);
+    EXPECT_TRUE(sink.last.succeeded());
     EXPECT_TRUE(sink.last.coreStarted);
     EXPECT_EQ(sink.last.phaseInstances, 4u);
     EXPECT_EQ(sink.last.outputBytes, 256u);
@@ -377,9 +168,9 @@ TEST(ServingMeshExecutor, SubmitAdmitsAndCompletesOnceWithRealOutput)
     EXPECT_EQ(harness.dispatch.publish_content.size(), 256u);
     std::array<uint8_t, 32> expected{};
     for (size_t i = 0; i < expected.size(); ++i)
-        expected[i] = static_cast<uint8_t>(0x40 + i + (256 & 0x1f) + 1);
+        expected[i] = static_cast<uint8_t>(0x40 + i + 1);
     EXPECT_EQ(sink.last.semanticDigest, expected);
-    EXPECT_FALSE(harness.executor.failed());
+    EXPECT_FALSE(harness.executor.failed(1));
 }
 
 TEST(ServingMeshExecutor, BindsKvInputAndTokenContentAtAbsolutePositions)
@@ -415,18 +206,11 @@ TEST(ServingMeshExecutor, BindsAllocatedNonzeroKvSlotAndFrozenReadWindow)
     occupied.admissions.push_back(first);
     ASSERT_FALSE(harness.manager.commitEdge(occupied).fatal);
     ASSERT_TRUE(harness.executor.submit(executionRequest()).admitted);
-    const auto symbol = harness.program.agent_request_profiles[0].primary_kv_symbol_id;
-    const auto relocation = std::find_if(
-        harness.program.relocations.begin(), harness.program.relocations.end(),
-        [&](const auto &item) { return item.symbol_sid == symbol; });
-    ASSERT_NE(relocation, harness.program.relocations.end());
     ASSERT_FALSE(harness.dispatch.instance_bindings.empty());
     const auto prefill = harness.dispatch.instance_bindings.back();
-    EXPECT_EQ(prefill.resolve(relocation->tensor_id, relocation->offset_bytes,
-                             128, true, 0),
+    EXPECT_EQ(slotAddress(prefill, memberSlot(prefill, false), 0, 128, true),
               std::optional<uint64_t>(geometry().slotBase(1)));
-    EXPECT_FALSE(prefill.resolve(relocation->tensor_id, relocation->offset_bytes,
-                                 1, false, 0));
+    EXPECT_FALSE(slotAddress(prefill, memberSlot(prefill, false), 0, 1, false));
     const auto stores = kvStoreCommands(harness.program);
     harness.executor.onDmaAccepted(stores[0].descriptor_id, stores[0].command_id, harness.currentInstance(), 1, 1, 200);
     harness.executor.onDmaTerminal(stores[0].descriptor_id, stores[0].command_id, 128, 0, harness.currentInstance(), 1, 1,
@@ -434,16 +218,12 @@ TEST(ServingMeshExecutor, BindsAllocatedNonzeroKvSlotAndFrozenReadWindow)
                                            std::vector<DmaCommittedSegment>{{0, 0, 128}});
     harness.executor.onInstanceSettled(1, 1, 1, false, 220);
     const auto decode = harness.dispatch.instance_bindings.back();
-    EXPECT_EQ(decode.resolve(relocation->tensor_id, relocation->offset_bytes,
-                            128, false, 0),
+    EXPECT_EQ(slotAddress(decode, memberSlot(decode, false), 0, 128, false),
               std::optional<uint64_t>(geometry().slotBase(1)));
-    EXPECT_FALSE(decode.resolve(relocation->tensor_id, relocation->offset_bytes,
-                                129, false, 0));
-    EXPECT_EQ(decode.resolve(relocation->tensor_id, relocation->offset_bytes + 128,
-                            16, true, 0),
+    EXPECT_FALSE(slotAddress(decode, memberSlot(decode, false), 0, 129, false));
+    EXPECT_EQ(slotAddress(decode, memberSlot(decode, false), 128, 16, true),
               std::optional<uint64_t>(geometry().slotBase(1) + 128));
-    EXPECT_FALSE(prefill.resolve(relocation->tensor_id, relocation->offset_bytes,
-                                 1, false, 0));
+    EXPECT_FALSE(slotAddress(prefill, memberSlot(prefill, false), 0, 1, false));
 }
 
 TEST(ServingMeshExecutor, RejectsUnreachableKvSlotsBeforeInstallingSelectors)
@@ -453,7 +233,7 @@ TEST(ServingMeshExecutor, RejectsUnreachableKvSlotsBeforeInstallingSelectors)
     const auto admission = harness.executor.submit(executionRequest());
     EXPECT_FALSE(admission.admitted);
     EXPECT_EQ(admission.rejectDetail, agent_abi::E_BINDING_ROLE);
-    EXPECT_FALSE(harness.dispatch.installed);
+    EXPECT_TRUE(harness.dispatch.selectors.empty());
     EXPECT_FALSE(harness.manager.hasPin(1));
     EXPECT_FALSE(harness.manager.hasClaim(1));
     EXPECT_EQ(harness.dispatch.begins, 0u);
@@ -481,9 +261,13 @@ TEST(ServingMeshExecutor, FaultReportsOneFailedCompletion)
     RecordingSink sink;
     harness.executor.attachSink(&sink);
     ASSERT_TRUE(harness.executor.submit(executionRequest()).admitted);
-    harness.executor.onInstanceSettled(1, 1, 1, true, 200);
+    BatchFailureRecord failure;
+    failure.batch_id = failure.program_instance_id = 1;
+    failure.first = {190, {}, agent_abi::E_DCORE_ENGINE};
+    harness.executor.onInstanceFailure(failure);
+    harness.settleFailedInstance(1, 1, 1, 200);
     EXPECT_EQ(sink.completions, 1u);
-    EXPECT_FALSE(sink.last.success);
+    EXPECT_FALSE(sink.last.succeeded());
     EXPECT_EQ(sink.last.phaseInstances, 0u);
     EXPECT_FALSE(harness.manager.hasPin(1));
 }
@@ -526,10 +310,8 @@ TEST(ServingMeshExecutor, RejectsRequestsWithoutTheBoundProfileProof)
         EXPECT_EQ(admission.rejectDetail, item.detail) << item.name;
         EXPECT_EQ(harness.dispatch.begins, 0u) << item.name;
         EXPECT_EQ(harness.dispatch.resumes, 0u) << item.name;
-        EXPECT_FALSE(harness.dispatch.installed) << item.name;
+        EXPECT_TRUE(harness.dispatch.selectors.empty()) << item.name;
         EXPECT_FALSE(harness.manager.hasPin(1)) << item.name;
-        EXPECT_EQ(harness.executor.phasesCommitted(), 0u) << item.name;
-        EXPECT_FALSE(harness.executor.finished()) << item.name;
     }
 }
 
@@ -550,36 +332,36 @@ TEST(ServingMeshExecutor, OldInstanceFactsAndRepeatedSettlesAreDropped)
                                            210,
                                            std::vector<DmaCommittedSegment>{{0, 0, 128}});
     harness.executor.onInstanceSettled(1, 1, 1, false, 220);
-    ASSERT_EQ(harness.executor.phasesCommitted(), 1u);
+    ASSERT_EQ(harness.executor.phasesCommitted(1), 1u);
 
     // Phase 2 is armed as instance 2.  A fact from the old instance that
     // reuses the same request identity *and* the same descriptor/command ids
     // must not reach the current ledger.
-    const uint32_t accepted = harness.executor.acceptedKvDescriptors();
-    const uint32_t terminal = harness.executor.terminalKvDescriptors();
+    const uint32_t accepted = harness.executor.acceptedKvDescriptors(1);
+    const uint32_t terminal = harness.executor.terminalKvDescriptors(1);
     harness.executor.onDmaAccepted(stores[1].descriptor_id, stores[1].command_id,
                                    1, 1, 1, 300);
     harness.executor.onDmaTerminal(stores[1].descriptor_id, stores[1].command_id, 16, 0, 1, 1, 1,
                                            310,
                                            std::vector<DmaCommittedSegment>{{0, 0, 16}});
-    EXPECT_EQ(harness.executor.acceptedKvDescriptors(), accepted);
-    EXPECT_EQ(harness.executor.terminalKvDescriptors(), terminal);
+    EXPECT_EQ(harness.executor.acceptedKvDescriptors(1), accepted);
+    EXPECT_EQ(harness.executor.terminalKvDescriptors(1), terminal);
     EXPECT_EQ(harness.executor.staleInstanceFacts(), 2u);
 
     // The current instance drains before its append terminal arrives: the
     // settle is consumed once and the phase stays open.
     harness.executor.onInstanceSettled(2, 1, 1, false, 320);
-    const uint32_t settles = harness.executor.instanceSettles();
+    const uint32_t settles = harness.executor.instanceSettles(1);
     EXPECT_EQ(settles, 2u);
-    EXPECT_EQ(harness.executor.phasesCommitted(), 1u);
+    EXPECT_EQ(harness.executor.phasesCommitted(1), 1u);
 
     // Repeating that settle cannot count or advance anything.
     harness.executor.onInstanceSettled(2, 1, 1, false, 321);
-    harness.executor.onInstanceSettled(2, 1, 1, true, 322);
-    EXPECT_EQ(harness.executor.instanceSettles(), settles);
-    EXPECT_EQ(harness.executor.phasesCommitted(), 1u);
+    harness.settleFailedInstance(2, 1, 1, 322);
+    EXPECT_EQ(harness.executor.instanceSettles(1), settles);
+    EXPECT_EQ(harness.executor.phasesCommitted(1), 1u);
     EXPECT_EQ(harness.executor.staleInstanceFacts(), 4u);
-    EXPECT_FALSE(harness.executor.failed());
+    EXPECT_FALSE(harness.executor.failed(1));
 
     // The same instance's drain facts are still accepted and close the phase.
     harness.executor.onDmaAccepted(stores[1].descriptor_id, stores[1].command_id,
@@ -587,15 +369,15 @@ TEST(ServingMeshExecutor, OldInstanceFactsAndRepeatedSettlesAreDropped)
     harness.executor.onDmaTerminal(stores[1].descriptor_id, stores[1].command_id, 16, 0, 2, 1, 1,
                                            340,
                                            std::vector<DmaCommittedSegment>{{0, 0, 16}});
-    EXPECT_EQ(harness.executor.acceptedKvDescriptors(), accepted + 1);
-    EXPECT_EQ(harness.executor.terminalKvDescriptors(), terminal + 1);
-    EXPECT_EQ(harness.executor.phasesCommitted(), 2u);
-    EXPECT_FALSE(harness.executor.failed());
+    EXPECT_EQ(harness.executor.acceptedKvDescriptors(1), accepted + 1);
+    EXPECT_EQ(harness.executor.terminalKvDescriptors(1), terminal + 1);
+    EXPECT_EQ(harness.executor.phasesCommitted(1), 2u);
+    EXPECT_FALSE(harness.executor.failed(1));
 
     // A settle for an instance that was never armed is a contract violation.
     harness.executor.onInstanceSettled(99, 1, 1, false, 350);
-    EXPECT_TRUE(harness.executor.failed());
-    EXPECT_EQ(harness.executor.phasesCommitted(), 2u);
+    EXPECT_TRUE(harness.executor.failed(1));
+    EXPECT_EQ(harness.executor.phasesCommitted(1), 2u);
 }
 
 TEST(ServingMeshExecutor, LateDmaFactsCannotRewriteASealedSuccess)
@@ -608,10 +390,10 @@ TEST(ServingMeshExecutor, LateDmaFactsCannotRewriteASealedSuccess)
         ASSERT_TRUE(harness.executor.submit(request).admitted);
         const std::vector<KvStore> stores = kvStoreCommands(harness.program);
         driveOneGenerate(harness, stores);
-        ASSERT_TRUE(harness.executor.finished());
+        ASSERT_TRUE(harness.executor.finished(1));
         ASSERT_EQ(sink.completions, 1u);
-        ASSERT_TRUE(sink.last.success);
-        ASSERT_TRUE(harness.executor.completionFor(request).success);
+        ASSERT_TRUE(sink.last.succeeded());
+        ASSERT_TRUE(harness.executor.completionFor(request).succeeded());
         if (terminal)
             harness.executor.onDmaTerminal(stores[0].descriptor_id, stores[0].command_id, 128, 0, 99, 1, 1,
                                            600,
@@ -619,11 +401,11 @@ TEST(ServingMeshExecutor, LateDmaFactsCannotRewriteASealedSuccess)
         else
             harness.executor.onDmaAccepted(stores[0].descriptor_id,
                                            stores[0].command_id, 99, 1, 1, 600);
-        EXPECT_FALSE(harness.executor.failed());
-        EXPECT_TRUE(harness.executor.completionFor(request).success);
+        EXPECT_FALSE(harness.executor.failed(1));
+        EXPECT_TRUE(harness.executor.completionFor(request).succeeded());
         EXPECT_EQ(harness.dispatch.fails, 0u);
         EXPECT_EQ(sink.completions, 1u);
-        EXPECT_TRUE(sink.last.success);
+        EXPECT_TRUE(sink.last.succeeded());
     }
 }
 
@@ -642,9 +424,9 @@ TEST(ServingMeshExecutor, UnknownInstanceDmaFactsFailTheRequest)
         ASSERT_FALSE(stores.empty());
         harness.executor.onDmaAccepted(stores[0].descriptor_id,
                                        stores[0].command_id, 99, 1, 1, 200);
-        EXPECT_TRUE(harness.executor.failed());
+        EXPECT_TRUE(harness.executor.failed(1));
         EXPECT_EQ(harness.dispatch.fails, 1u);
-        EXPECT_EQ(harness.executor.acceptedKvDescriptors(), 0u);
+        EXPECT_EQ(harness.executor.acceptedKvDescriptors(1), 0u);
         EXPECT_EQ(sink.completions, 0u);
     }
     {
@@ -658,13 +440,13 @@ TEST(ServingMeshExecutor, UnknownInstanceDmaFactsFailTheRequest)
         harness.executor.onDmaAccepted(stores[0].descriptor_id,
                                        stores[0].command_id,
                                        harness.currentInstance(), 1, 1, 200);
-        ASSERT_EQ(harness.executor.acceptedKvDescriptors(), 1u);
+        ASSERT_EQ(harness.executor.acceptedKvDescriptors(1), 1u);
         harness.executor.onDmaTerminal(stores[0].descriptor_id, stores[0].command_id, 128, 0, 99, 1, 1,
                                            210,
                                            std::vector<DmaCommittedSegment>{{0, 0, 128}});
-        EXPECT_TRUE(harness.executor.failed());
+        EXPECT_TRUE(harness.executor.failed(1));
         EXPECT_EQ(harness.dispatch.fails, 1u);
-        EXPECT_EQ(harness.executor.terminalKvDescriptors(), 0u);
+        EXPECT_EQ(harness.executor.terminalKvDescriptors(1), 0u);
         EXPECT_EQ(sink.completions, 0u);
 
         harness.executor.onDmaTerminal(stores[0].descriptor_id, stores[0].command_id, 128, 0, harness.currentInstance(), 1, 1,
@@ -677,7 +459,7 @@ TEST(ServingMeshExecutor, UnknownInstanceDmaFactsFailTheRequest)
         EXPECT_FALSE(harness.manager.hasPin(1));
         EXPECT_FALSE(harness.manager.hasClaim(1));
         EXPECT_TRUE(harness.manager.validate().empty());
-        EXPECT_EQ(harness.executor.terminalKvDescriptors(), 1u);
+        EXPECT_EQ(harness.executor.terminalKvDescriptors(1), 1u);
     }
 }
 
@@ -689,15 +471,15 @@ TEST(ServingMeshExecutor, DmaFactsBeforeTheRealStartRollBackThePrestartClaim)
     harness.dispatch.on_start = nullptr;
     harness.executor.setTickSource([]() { return 100; });
     ASSERT_TRUE(harness.executor.submit(executionRequest()).admitted);
-    ASSERT_FALSE(harness.executor.finished());
+    ASSERT_FALSE(harness.executor.finished(1));
     const std::vector<KvStore> stores = kvStoreCommands(harness.program);
     ASSERT_FALSE(stores.empty());
     harness.executor.onDmaAccepted(stores[0].descriptor_id, stores[0].command_id,
                                    1, 1, 1, 200);
-    EXPECT_TRUE(harness.executor.failed());
+    EXPECT_TRUE(harness.executor.failed(1));
     EXPECT_EQ(harness.dispatch.cancels, 1u);
     EXPECT_EQ(harness.dispatch.fails, 0u);
-    EXPECT_EQ(harness.executor.phasesCommitted(), 0u);
+    EXPECT_EQ(harness.executor.phasesCommitted(1), 0u);
     EXPECT_EQ(sink.completions, 1u);
     ASSERT_TRUE(sink.last.kvTerminal.has_value());
     EXPECT_EQ(sink.last.kvTerminal->status, KvTerminalStatus::Error);
@@ -721,16 +503,16 @@ TEST(ServingMeshExecutor, AStaleInstanceDrainCannotCloseTheCurrentPhase)
                                            210,
                                            std::vector<DmaCommittedSegment>{{0, 0, 128}});
     harness.executor.onInstanceSettled(1, 1, 1, false, 220);
-    ASSERT_EQ(harness.executor.phasesCommitted(), 1u);
-    ASSERT_FALSE(harness.executor.failed());
+    ASSERT_EQ(harness.executor.phasesCommitted(1), 1u);
+    ASSERT_FALSE(harness.executor.failed(1));
 
     harness.executor.onInstanceSettled(1, 1, 1, false, 300);
-    EXPECT_EQ(harness.executor.phasesCommitted(), 1u);
+    EXPECT_EQ(harness.executor.phasesCommitted(1), 1u);
     harness.executor.onDmaAccepted(stores[0].descriptor_id, stores[0].command_id,
                                    1, 1, 1, 310);
-    EXPECT_EQ(harness.executor.acceptedKvDescriptors(), 1u);
-    EXPECT_EQ(harness.executor.phasesCommitted(), 1u);
-    EXPECT_FALSE(harness.executor.failed());
+    EXPECT_EQ(harness.executor.acceptedKvDescriptors(1), 1u);
+    EXPECT_EQ(harness.executor.phasesCommitted(1), 1u);
+    EXPECT_FALSE(harness.executor.failed(1));
 
     harness.executor.onDmaAccepted(stores[1].descriptor_id, stores[1].command_id,
                                    2, 1, 1, 400);
@@ -738,9 +520,33 @@ TEST(ServingMeshExecutor, AStaleInstanceDrainCannotCloseTheCurrentPhase)
                                            410,
                                            std::vector<DmaCommittedSegment>{{0, 0, 16}});
     harness.executor.onInstanceSettled(2, 1, 1, false, 420);
-    EXPECT_EQ(harness.executor.phasesCommitted(), 2u);
-    EXPECT_FALSE(harness.executor.failed());
+    EXPECT_EQ(harness.executor.phasesCommitted(1), 2u);
+    EXPECT_FALSE(harness.executor.failed(1));
     EXPECT_TRUE(harness.manager.validate().empty());
+}
+
+TEST(ServingMeshExecutor, UsesScopedMemberSymbolsForEveryPhase)
+{
+    Harness harness;
+    auto request = executionRequest();
+    ASSERT_TRUE(harness.executor.submit(request).admitted);
+    driveOneGenerate(harness, kvStoreCommands(harness.program));
+    ASSERT_TRUE(harness.executor.completionFor(request).succeeded());
+    for (const auto &view : harness.dispatch.instance_bindings) {
+        for (const auto &instance : harness.program.transport.agent_instance_profiles) {
+            if (instance.instance_profile_id != view.instanceProfileId())
+                continue;
+            const auto &member = harness.program.transport.agent_instance_member_bindings.at(instance.member_binding_first);
+            if (member.static_input_symbol_id) {
+                const auto slot = symbolSlot(view, member.static_input_symbol_id);
+                EXPECT_EQ(slotAddress(view, slot, 0, request.inputBytes, false), request.inputAddress);
+            }
+            if (member.static_output_symbol_id) {
+                const auto slot = symbolSlot(view, member.static_output_symbol_id);
+                EXPECT_EQ(slotAddress(view, slot, 0, request.outputCapacityBytes, true), request.outputAddress);
+            }
+        }
+    }
 }
 
 TEST(ServingMeshExecutor, InstallsEveryVerifiedRoleIntoTheExecutionView)
@@ -753,28 +559,30 @@ TEST(ServingMeshExecutor, InstallsEveryVerifiedRoleIntoTheExecutionView)
     ASSERT_FALSE(request.hostBindings.empty());
     ASSERT_TRUE(harness.executor.submit(request).admitted);
     ASSERT_FALSE(harness.dispatch.instance_bindings.empty());
-    const ServingInstanceBinding &view =
-        harness.dispatch.instance_bindings.back();
+    const ServingInstanceBinding prefill = harness.dispatch.instance_bindings.back();
+    driveOneGenerate(harness, kvStoreCommands(harness.program));
+    ASSERT_TRUE(harness.executor.completionFor(request).succeeded());
+    const ServingInstanceBinding &publish = harness.dispatch.instance_bindings.back();
     uint32_t installed = 0;
     for (const agent_abi::BindingRecord &binding : request.hostBindings) {
         if (binding.kind == agent_abi::kBindingKindKV_EXTERNAL)
             continue;
-        const auto relocation = std::find_if(
-            harness.program.relocations.begin(),
-            harness.program.relocations.end(),
-            [&](const auto &item) {
-                return item.symbol_sid == binding.symbol_id;
-            });
-        ASSERT_NE(relocation, harness.program.relocations.end());
         const bool write = binding.kind == agent_abi::kBindingKindHOST_OUTPUT;
-        const uint64_t fallback = 0xDead0000ull;
-        const auto resolved = view.resolve(relocation->tensor_id,
-                                           relocation->offset_bytes,
-                                           binding.bytes, write, fallback);
+        const auto &view = write ? publish : prefill;
+        uint32_t slot = 0;
+        if (binding.kind == agent_abi::kBindingKindWEIGHT_EXTERNAL) {
+            slot = symbolSlot(view, binding.symbol_id);
+        } else {
+            const auto &table = harness.program.transport;
+            const auto instance = std::find_if(table.agent_instance_profiles.begin(), table.agent_instance_profiles.end(),
+                [&](const auto &row) { return row.instance_profile_id == view.instanceProfileId(); });
+            ASSERT_NE(instance, table.agent_instance_profiles.end());
+            const auto &member = table.agent_instance_member_bindings.at(instance->member_binding_first);
+            slot = symbolSlot(view, write ? member.static_output_symbol_id : member.static_input_symbol_id);
+        }
+        const auto resolved = slotAddress(view, slot, 0, binding.bytes, write);
         ASSERT_TRUE(resolved.has_value()) << binding.symbol_id;
         EXPECT_EQ(*resolved, binding.address) << binding.symbol_id;
-        EXPECT_NE(*resolved, fallback + relocation->offset_bytes)
-            << binding.symbol_id;
         ++installed;
     }
     EXPECT_EQ(installed, 3u);
@@ -826,9 +634,8 @@ TEST(ServingMeshExecutor, RejectsATamperedHostBindingTableBeforeAdmission)
         EXPECT_EQ(admission.rejectDetail, agent_abi::E_BINDING_ROLE)
             << item.name;
         EXPECT_EQ(harness.dispatch.begins, 0u) << item.name;
-        EXPECT_FALSE(harness.dispatch.installed) << item.name;
+        EXPECT_TRUE(harness.dispatch.selectors.empty()) << item.name;
         EXPECT_FALSE(harness.manager.hasPin(1)) << item.name;
-        EXPECT_EQ(harness.executor.phasesCommitted(), 0u) << item.name;
     }
 }
 
@@ -882,9 +689,8 @@ TEST(ServingMeshExecutor, RejectsOverlappingRequestRangesBeforeAdmission)
         EXPECT_EQ(admission.rejectDetail,
                   agent_abi::E_BINDING_ALIAS_MISMATCH) << item.name;
         EXPECT_EQ(harness.dispatch.begins, 0u) << item.name;
-        EXPECT_FALSE(harness.dispatch.installed) << item.name;
+        EXPECT_TRUE(harness.dispatch.selectors.empty()) << item.name;
         EXPECT_FALSE(harness.manager.hasPin(1)) << item.name;
-        EXPECT_EQ(harness.executor.phasesCommitted(), 0u) << item.name;
     }
     Harness harness;
     NpuExecutionRequest adjacent = executionRequest();
@@ -928,9 +734,8 @@ TEST(ServingMeshExecutor, WireBindingsCannotDisagreeWithTheCheckedHeader)
         EXPECT_EQ(admission.rejectDetail, agent_abi::E_BINDING_ROLE)
             << item.name;
         EXPECT_EQ(harness.dispatch.begins, 0u) << item.name;
-        EXPECT_FALSE(harness.dispatch.installed) << item.name;
+        EXPECT_TRUE(harness.dispatch.selectors.empty()) << item.name;
         EXPECT_FALSE(harness.manager.hasPin(1)) << item.name;
-        EXPECT_EQ(harness.executor.phasesCommitted(), 0u) << item.name;
     }
 }
 
@@ -976,9 +781,8 @@ TEST(ServingMeshExecutor, RejectsZeroRequestAddressesBeforeAdmission)
         EXPECT_EQ(admission.rejectDetail, agent_abi::E_BINDING_ROLE)
             << item.name;
         EXPECT_EQ(harness.dispatch.begins, 0u) << item.name;
-        EXPECT_FALSE(harness.dispatch.installed) << item.name;
+        EXPECT_TRUE(harness.dispatch.selectors.empty()) << item.name;
         EXPECT_FALSE(harness.manager.hasPin(1)) << item.name;
-        EXPECT_EQ(harness.executor.phasesCommitted(), 0u) << item.name;
     }
 }
 
@@ -1051,7 +855,7 @@ TEST(ServingMeshExecutor, HostBindingRequestRangeRules)
     weight.kind = agent_abi::kBindingKindWEIGHT_EXTERNAL;
     weight.flags = exactBindingFlags(weight.kind);
     weight.platformAddress = 0x800200000;
-    weight.platformBytes = 128;
+    weight.requiredBytes = 128;
     AgentHostBindingRequirement aliasWeight = weight;
     aliasWeight.symbolId = 4;
 
@@ -1074,7 +878,7 @@ TEST(ServingMeshExecutor, HostBindingRequestRangeRules)
         record(1, input.kind, input.flags, 0x1000, 128),
         record(2, output.kind, output.flags, 0x2000, 128),
         record(3, weight.kind, weight.flags, weight.platformAddress,
-               weight.platformBytes),
+               weight.requiredBytes),
     };
     EXPECT_EQ(verifyHostBindingRequest(
                   control, plan, 0x1000, 128, 0x2000, 128, 0x3000, 128,
@@ -1085,7 +889,7 @@ TEST(ServingMeshExecutor, HostBindingRequestRangeRules)
     std::vector<agent_abi::BindingRecord> equalWeights = {
         control[0], control[1], control[2],
         record(4, aliasWeight.kind, aliasWeight.flags,
-               weight.platformAddress, weight.platformBytes),
+               weight.platformAddress, weight.requiredBytes),
     };
     EXPECT_EQ(verifyHostBindingRequest(
                   equalWeights, plan, 0x1000, 128, 0x2000, 128, 0x3000, 128,
@@ -1161,14 +965,12 @@ TEST(ServingMeshExecutor, DrivesOneGenerateThroughRealKvEdges)
 {
     Harness harness;
     std::string reason;
-    ASSERT_TRUE(harness.executor.start(identity(), 100, reason)) << reason;
-    ASSERT_TRUE(harness.executor.beginFirstPhase(150, reason)) << reason;
+    ASSERT_TRUE(harness.admitOnly(executionRequest(), 100).admitted);
+    harness.executor.onQuantumEdge(150);
+    ASSERT_FALSE(harness.executor.failed(1)) << harness.executor.failureReason(1);
     EXPECT_EQ(harness.dispatch.begins, 1u);
-    ASSERT_EQ(harness.dispatch.selectors.size(), 4u);
+    ASSERT_EQ(harness.dispatch.selectors.size(), 1u);
     EXPECT_EQ(harness.dispatch.selectors[0], std::make_pair(1u, 1u));
-    EXPECT_EQ(harness.dispatch.selectors[1], std::make_pair(2u, 2u));
-    EXPECT_EQ(harness.dispatch.selectors[2], std::make_pair(3u, 3u));
-    EXPECT_EQ(harness.dispatch.selectors[3], std::make_pair(4u, 4u));
     const std::vector<KvStore> stores = kvStoreCommands(harness.program);
     ASSERT_EQ(stores.size(), 3u);
     const KvRecord *record = harness.manager.findRecord(11, 11);
@@ -1179,11 +981,11 @@ TEST(ServingMeshExecutor, DrivesOneGenerateThroughRealKvEdges)
     harness.executor.onDmaTerminal(stores[0].descriptor_id, stores[0].command_id, 128, 0, harness.currentInstance(), 1, 1,
                                            210,
                                            std::vector<DmaCommittedSegment>{{0, 0, 128}});
-    EXPECT_EQ(harness.executor.acceptedKvDescriptors(), 1u);
-    EXPECT_EQ(harness.executor.terminalKvDescriptors(), 1u);
-    EXPECT_EQ(harness.executor.phasesCommitted(), 0u);
+    EXPECT_EQ(harness.executor.acceptedKvDescriptors(1), 1u);
+    EXPECT_EQ(harness.executor.terminalKvDescriptors(1), 1u);
+    EXPECT_EQ(harness.executor.phasesCommitted(1), 0u);
     harness.executor.onInstanceSettled(1, 1, 1, false, 220);
-    EXPECT_EQ(harness.executor.phasesCommitted(), 1u);
+    EXPECT_EQ(harness.executor.phasesCommitted(1), 1u);
     EXPECT_EQ(harness.dispatch.resumes, 1u);
     record = harness.manager.findRecord(11, 11);
     ASSERT_NE(record, nullptr);
@@ -1195,7 +997,7 @@ TEST(ServingMeshExecutor, DrivesOneGenerateThroughRealKvEdges)
                                            310,
                                            std::vector<DmaCommittedSegment>{{0, 0, 16}});
     harness.executor.onInstanceSettled(2, 1, 1, false, 320);
-    EXPECT_EQ(harness.executor.phasesCommitted(), 2u);
+    EXPECT_EQ(harness.executor.phasesCommitted(1), 2u);
     EXPECT_EQ(harness.dispatch.resumes, 2u);
     record = harness.manager.findRecord(11, 11);
     ASSERT_NE(record, nullptr);
@@ -1206,25 +1008,33 @@ TEST(ServingMeshExecutor, DrivesOneGenerateThroughRealKvEdges)
                                            410,
                                            std::vector<DmaCommittedSegment>{{0, 0, 16}});
     harness.executor.onInstanceSettled(3, 1, 1, false, 420);
-    EXPECT_EQ(harness.executor.phasesCommitted(), 3u);
+    EXPECT_EQ(harness.executor.phasesCommitted(1), 3u);
     EXPECT_EQ(harness.dispatch.resumes, 3u);
     record = harness.manager.findRecord(11, 11);
     ASSERT_NE(record, nullptr);
     EXPECT_EQ(record->cached_tokens, 10u);
     EXPECT_EQ(record->valid_bytes, 160u);
 
+    harness.drainOutput(500);
     harness.executor.onInstanceSettled(4, 1, 1, false, 520);
-    EXPECT_TRUE(harness.executor.finished());
-    EXPECT_FALSE(harness.executor.failed());
-    EXPECT_EQ(harness.executor.phasesCommitted(), 4u);
-    EXPECT_EQ(harness.dispatch.resumes, harness.executor.phasesCommitted());
+    EXPECT_TRUE(harness.executor.finished(1));
+    EXPECT_FALSE(harness.executor.failed(1));
+    EXPECT_EQ(harness.executor.phasesCommitted(1), 4u);
+    EXPECT_EQ(harness.dispatch.resumes, 3u);
+    EXPECT_EQ(harness.dispatch.finishes, 0u);
+    harness.executor.finishServingRun();
+    EXPECT_EQ(harness.dispatch.finishes, 1u);
+    ASSERT_EQ(harness.dispatch.selectors.size(), 4u);
+    EXPECT_EQ(harness.dispatch.selectors[1], std::make_pair(2u, 2u));
+    EXPECT_EQ(harness.dispatch.selectors[2], std::make_pair(3u, 3u));
+    EXPECT_EQ(harness.dispatch.selectors[3], std::make_pair(4u, 4u));
     const std::optional<KvTerminalSnapshot> &terminal =
-        harness.executor.kvTerminal();
+        harness.executor.kvTerminal(1);
     ASSERT_TRUE(terminal.has_value());
     EXPECT_EQ(terminal->request_id, 1u);
     EXPECT_EQ(terminal->status, KvTerminalStatus::Success);
     EXPECT_EQ(terminal->cached_tokens, 10u);
-    EXPECT_EQ(harness.executor.terminalTick(), 520u);
+    EXPECT_EQ(harness.executor.terminalTick(1), 521u);
     EXPECT_FALSE(harness.manager.hasPin(1));
     EXPECT_FALSE(harness.manager.hasClaim(1));
     record = harness.manager.findRecord(11, 11);
@@ -1239,8 +1049,9 @@ TEST(ServingMeshExecutor, PhaseFactsRecordTheRealCausalChain)
 {
     Harness harness;
     std::string reason;
-    ASSERT_TRUE(harness.executor.start(identity(), 100, reason)) << reason;
-    ASSERT_TRUE(harness.executor.beginFirstPhase(150, reason)) << reason;
+    ASSERT_TRUE(harness.admitOnly(executionRequest(), 100).admitted);
+    harness.executor.onQuantumEdge(150);
+    ASSERT_FALSE(harness.executor.failed(1)) << harness.executor.failureReason(1);
     const std::vector<KvStore> stores = kvStoreCommands(harness.program);
     ASSERT_EQ(stores.size(), 3u);
     harness.executor.onDmaAccepted(stores[0].descriptor_id, stores[0].command_id, harness.currentInstance(), 1, 1, 200);
@@ -1248,8 +1059,8 @@ TEST(ServingMeshExecutor, PhaseFactsRecordTheRealCausalChain)
                                            210,
                                            std::vector<DmaCommittedSegment>{{0, 0, 128}});
     harness.executor.onInstanceSettled(1, 1, 1, false, 220);
-    ASSERT_EQ(harness.executor.phaseFacts().size(), 2u);
-    const ServingPhaseFact &prefill = harness.executor.phaseFacts()[0];
+    ASSERT_EQ(harness.executor.phaseFacts(1).size(), 2u);
+    const ServingPhaseFact &prefill = harness.executor.phaseFacts(1)[0];
     EXPECT_EQ(prefill.phase, kPhasePREFILL);
     EXPECT_EQ(prefill.instance_profile_id, 11u);
     EXPECT_EQ(prefill.mesh_profile_id, 1u);
@@ -1259,25 +1070,26 @@ TEST(ServingMeshExecutor, PhaseFactsRecordTheRealCausalChain)
     EXPECT_EQ(prefill.terminal_descriptors, 1u);
     EXPECT_EQ(prefill.append_terminal_tick, 210u);
     EXPECT_EQ(prefill.core_drain_tick, 220u);
-    EXPECT_EQ(prefill.commit_tick, 220u);
-    const ServingPhaseFact &decode0 = harness.executor.phaseFacts()[1];
+    EXPECT_EQ(prefill.commit_tick, 221u);
+    const ServingPhaseFact &decode0 = harness.executor.phaseFacts(1)[1];
     EXPECT_EQ(decode0.phase, kPhaseDECODE);
     EXPECT_EQ(decode0.kv_tokens_before, 8u);
     EXPECT_EQ(decode0.append_tokens, 1u);
     EXPECT_EQ(decode0.commit_tick, 0u);
     driveOneGenerate(harness, stores, 2);
-    ASSERT_EQ(harness.executor.phaseFacts().size(), 4u);
-    EXPECT_EQ(harness.executor.phaseFacts()[3].phase, kPhasePUBLISH);
-    EXPECT_EQ(harness.executor.phaseFacts()[3].append_tokens, 0u);
-    EXPECT_EQ(harness.executor.phaseFacts()[3].accepted_descriptors, 0u);
+    ASSERT_EQ(harness.executor.phaseFacts(1).size(), 4u);
+    EXPECT_EQ(harness.executor.phaseFacts(1)[3].phase, kPhasePUBLISH);
+    EXPECT_EQ(harness.executor.phaseFacts(1)[3].append_tokens, 0u);
+    EXPECT_EQ(harness.executor.phaseFacts(1)[3].accepted_descriptors, 0u);
 }
 
 TEST(ServingMeshExecutor, PartialTokenPrefixBlocksThePhase)
 {
     Harness harness;
     std::string reason;
-    ASSERT_TRUE(harness.executor.start(identity(), 100, reason)) << reason;
-    ASSERT_TRUE(harness.executor.beginFirstPhase(150, reason)) << reason;
+    ASSERT_TRUE(harness.admitOnly(executionRequest(), 100).admitted);
+    harness.executor.onQuantumEdge(150);
+    ASSERT_FALSE(harness.executor.failed(1)) << harness.executor.failureReason(1);
     const std::vector<KvStore> stores = kvStoreCommands(harness.program);
     ASSERT_EQ(stores.size(), 3u);
     harness.executor.onDmaAccepted(stores[0].descriptor_id, stores[0].command_id, harness.currentInstance(), 1, 1, 200);
@@ -1285,7 +1097,7 @@ TEST(ServingMeshExecutor, PartialTokenPrefixBlocksThePhase)
                                            210,
                                            std::vector<DmaCommittedSegment>{{0, 0, 16}});
     harness.executor.onInstanceSettled(1, 1, 1, false, 220);
-    EXPECT_EQ(harness.executor.phasesCommitted(), 0u);
+    EXPECT_EQ(harness.executor.phasesCommitted(1), 0u);
     EXPECT_EQ(harness.dispatch.resumes, 0u);
     const KvRecord *record = harness.manager.findRecord(11, 11);
     ASSERT_NE(record, nullptr);
@@ -1298,8 +1110,9 @@ TEST(ServingMeshExecutor, RetriedDescriptorTerminalIsNotDoubleCounted)
 {
     Harness harness;
     std::string reason;
-    ASSERT_TRUE(harness.executor.start(identity(), 100, reason)) << reason;
-    ASSERT_TRUE(harness.executor.beginFirstPhase(150, reason)) << reason;
+    ASSERT_TRUE(harness.admitOnly(executionRequest(), 100).admitted);
+    harness.executor.onQuantumEdge(150);
+    ASSERT_FALSE(harness.executor.failed(1)) << harness.executor.failureReason(1);
     const std::vector<KvStore> stores = kvStoreCommands(harness.program);
     harness.executor.onDmaAccepted(stores[0].descriptor_id, stores[0].command_id, harness.currentInstance(), 1, 1, 200);
     harness.executor.onDmaAccepted(stores[0].descriptor_id, stores[0].command_id, harness.currentInstance(), 1, 1, 201);
@@ -1309,8 +1122,8 @@ TEST(ServingMeshExecutor, RetriedDescriptorTerminalIsNotDoubleCounted)
     harness.executor.onDmaTerminal(stores[0].descriptor_id, stores[0].command_id, 128, 0, harness.currentInstance(), 1, 1,
                                            211,
                                            std::vector<DmaCommittedSegment>{{0, 0, 128}});
-    EXPECT_EQ(harness.executor.acceptedKvDescriptors(), 1u);
-    EXPECT_EQ(harness.executor.terminalKvDescriptors(), 1u);
+    EXPECT_EQ(harness.executor.acceptedKvDescriptors(1), 1u);
+    EXPECT_EQ(harness.executor.terminalKvDescriptors(1), 1u);
     const KvRecord *record = harness.manager.findRecord(11, 11);
     ASSERT_NE(record, nullptr);
     EXPECT_EQ(record->outstanding_kv_dma, 0u);
@@ -1321,16 +1134,17 @@ TEST(ServingMeshExecutor, CoreDrainAndAppendTerminalAreBothRequired)
 {
     Harness harness;
     std::string reason;
-    ASSERT_TRUE(harness.executor.start(identity(), 100, reason)) << reason;
-    ASSERT_TRUE(harness.executor.beginFirstPhase(150, reason)) << reason;
+    ASSERT_TRUE(harness.admitOnly(executionRequest(), 100).admitted);
+    harness.executor.onQuantumEdge(150);
+    ASSERT_FALSE(harness.executor.failed(1)) << harness.executor.failureReason(1);
     const std::vector<KvStore> stores = kvStoreCommands(harness.program);
     harness.executor.onDmaAccepted(stores[0].descriptor_id, stores[0].command_id, harness.currentInstance(), 1, 1, 200);
     harness.executor.onDmaTerminal(stores[0].descriptor_id, stores[0].command_id, 128, 0, harness.currentInstance(), 1, 1,
                                            210,
                                            std::vector<DmaCommittedSegment>{{0, 0, 128}});
-    EXPECT_EQ(harness.executor.phasesCommitted(), 0u);
+    EXPECT_EQ(harness.executor.phasesCommitted(1), 0u);
     harness.executor.onInstanceSettled(1, 1, 1, false, 300);
-    EXPECT_EQ(harness.executor.phasesCommitted(), 1u);
+    EXPECT_EQ(harness.executor.phasesCommitted(1), 1u);
     EXPECT_EQ(harness.dispatch.resumes, 1u);
 }
 
@@ -1347,7 +1161,7 @@ TEST(ServingMeshExecutor, SamePhaseSecondStoreDoesNotBlockTheWrapUp)
     harness.executor.attachSink(&sink);
     harness.executor.setTickSource([]() { return 100; });
     const NpuAdmission split_admission = harness.executor.submit(
-        executionRequest(0x300000,
+        executionRequest(0x100300000,
                          "tests/gem5/ai_mesh/fixtures/gate6/"
                          "serving_split_kv.mshb"));
     ASSERT_TRUE(split_admission.admitted)
@@ -1358,9 +1172,9 @@ TEST(ServingMeshExecutor, SamePhaseSecondStoreDoesNotBlockTheWrapUp)
     ASSERT_EQ(stores[1].descriptor_id, stores[0].descriptor_id + 1);
 
     harness.executor.onDmaAccepted(stores[0].descriptor_id, stores[0].command_id, harness.currentInstance(), 1, 1, 200);
-    ASSERT_EQ(harness.executor.acceptedKvDescriptors(), 1u);
+    ASSERT_EQ(harness.executor.acceptedKvDescriptors(1), 1u);
     harness.executor.onDmaAccepted(stores[0].descriptor_id + 100, stores[0].command_id, harness.currentInstance(), 1, 1, 210);
-    EXPECT_TRUE(harness.executor.failed());
+    EXPECT_TRUE(harness.executor.failed(1));
     EXPECT_FALSE(harness.manager.fatalReason().has_value());
     EXPECT_EQ(sink.completions, 0u);
 
@@ -1388,7 +1202,7 @@ TEST(ServingMeshExecutor, SamePhaseSecondStoreWaitsForTheIssuedTerminal)
     harness.executor.attachSink(&sink);
     harness.executor.setTickSource([]() { return 100; });
     const NpuAdmission split_admission = harness.executor.submit(
-        executionRequest(0x300000,
+        executionRequest(0x100300000,
                          "tests/gem5/ai_mesh/fixtures/gate6/"
                          "serving_split_kv.mshb"));
     ASSERT_TRUE(split_admission.admitted)
@@ -1397,7 +1211,7 @@ TEST(ServingMeshExecutor, SamePhaseSecondStoreWaitsForTheIssuedTerminal)
     ASSERT_GE(stores.size(), 2u);
     harness.executor.onDmaAccepted(stores[0].descriptor_id, stores[0].command_id, harness.currentInstance(), 1, 1, 200);
     harness.executor.onDmaAccepted(stores[0].descriptor_id + 100, stores[0].command_id, harness.currentInstance(), 1, 1, 210);
-    EXPECT_TRUE(harness.executor.failed());
+    EXPECT_TRUE(harness.executor.failed(1));
 
     harness.executor.onInstanceSettled(1, 1, 1, false, 300);
     EXPECT_FALSE(harness.manager.fatalReason().has_value());
@@ -1428,9 +1242,9 @@ TEST(ServingMeshExecutor, FailedRequestWaitsForItsDrainBeforeReporting)
     const std::vector<KvStore> stores = kvStoreCommands(harness.program);
     ASSERT_FALSE(stores.empty());
     harness.executor.onDmaAccepted(stores[0].descriptor_id, stores[0].command_id, harness.currentInstance(), 1, 1, 200);
-    ASSERT_EQ(harness.executor.acceptedKvDescriptors(), 1u);
+    ASSERT_EQ(harness.executor.acceptedKvDescriptors(1), 1u);
     harness.executor.onDmaAccepted(stores[0].descriptor_id + 100, stores[0].command_id, harness.currentInstance(), 1, 1, 210);
-    EXPECT_TRUE(harness.executor.failed());
+    EXPECT_TRUE(harness.executor.failed(1));
     EXPECT_FALSE(harness.manager.fatalReason().has_value());
 
     harness.executor.onDmaTerminal(stores[0].descriptor_id, stores[0].command_id, 128, 0, harness.currentInstance(), 1, 1,
@@ -1438,12 +1252,15 @@ TEST(ServingMeshExecutor, FailedRequestWaitsForItsDrainBeforeReporting)
                                            std::vector<DmaCommittedSegment>{{0, 0, 128}});
     EXPECT_FALSE(harness.manager.fatalReason().has_value());
     EXPECT_EQ(sink.completions, 0u);
+    EXPECT_EQ(harness.executor.completionFor(executionRequest()).outcome,
+              NpuExecutionOutcome::Pending);
 
     harness.executor.onInstanceSettled(1, 1, 1, false, 320);
     EXPECT_FALSE(harness.manager.fatalReason().has_value());
     EXPECT_EQ(sink.completions, 1u);
     ASSERT_TRUE(observed.has_value());
     EXPECT_NE(observed->status, KvTerminalStatus::Success);
+    EXPECT_EQ(sink.last.outcome, NpuExecutionOutcome::Error);
     EXPECT_FALSE(harness.manager.hasPin(1));
     EXPECT_FALSE(harness.manager.hasClaim(1));
     EXPECT_TRUE(harness.manager.validate().empty());
@@ -1465,7 +1282,7 @@ TEST(ServingMeshExecutor, FailedRequestWaitsForTheLastKvTerminalAfterTheDrain)
     ASSERT_FALSE(stores.empty());
     harness.executor.onDmaAccepted(stores[0].descriptor_id, stores[0].command_id, harness.currentInstance(), 1, 1, 200);
     harness.executor.onDmaAccepted(stores[0].descriptor_id + 100, stores[0].command_id, harness.currentInstance(), 1, 1, 210);
-    EXPECT_TRUE(harness.executor.failed());
+    EXPECT_TRUE(harness.executor.failed(1));
 
     harness.executor.onInstanceSettled(1, 1, 1, false, 320);
     EXPECT_FALSE(harness.manager.fatalReason().has_value());
@@ -1495,8 +1312,8 @@ TEST(ServingMeshExecutor, UnissuedDescriptorsDoNotBlockTheFailedWrapUp)
     ASSERT_GE(stores.size(), 2u);
     harness.executor.onDmaAccepted(stores[0].descriptor_id, stores[0].command_id, harness.currentInstance(), 1, 1, 200);
     harness.executor.onDmaAccepted(stores[0].descriptor_id + 100, stores[0].command_id, harness.currentInstance(), 1, 1, 210);
-    EXPECT_TRUE(harness.executor.failed());
-    EXPECT_EQ(harness.executor.acceptedKvDescriptors(), 1u);
+    EXPECT_TRUE(harness.executor.failed(1));
+    EXPECT_EQ(harness.executor.acceptedKvDescriptors(1), 1u);
 
     harness.executor.onDmaTerminal(stores[0].descriptor_id, stores[0].command_id, 128, 0, harness.currentInstance(), 1, 1,
                                            300,
@@ -1522,12 +1339,12 @@ TEST(ServingMeshExecutor, SecondPhaseFailureWaitsForItsOwnDrain)
                                            210,
                                            std::vector<DmaCommittedSegment>{{0, 0, 128}});
     harness.executor.onInstanceSettled(1, 1, 1, false, 220);
-    ASSERT_EQ(harness.executor.phasesCommitted(), 1u);
+    ASSERT_EQ(harness.executor.phasesCommitted(1), 1u);
     EXPECT_EQ(sink.completions, 0u);
 
     harness.executor.onDmaAccepted(stores[1].descriptor_id, stores[1].command_id, harness.currentInstance(), 1, 1, 240);
     harness.executor.onDmaAccepted(stores[1].descriptor_id + 100, stores[1].command_id, harness.currentInstance(), 1, 1, 250);
-    EXPECT_TRUE(harness.executor.failed());
+    EXPECT_TRUE(harness.executor.failed(1));
     harness.executor.onDmaTerminal(stores[1].descriptor_id, stores[1].command_id, 16, 0, harness.currentInstance(), 1, 1,
                                            300,
                                            std::vector<DmaCommittedSegment>{{0, 0, 16}});
@@ -1553,8 +1370,8 @@ TEST(ServingMeshExecutor, ErroredInstanceDrainUsesTheSameTerminalGate)
     ASSERT_FALSE(stores.empty());
     harness.executor.onDmaAccepted(stores[0].descriptor_id, stores[0].command_id, harness.currentInstance(), 1, 1, 200);
 
-    harness.executor.onInstanceSettled(1, 1, 1, true, 210);
-    EXPECT_TRUE(harness.executor.failed());
+    harness.settleFailedInstance(1, 1, 1, 210);
+    EXPECT_TRUE(harness.executor.failed(1));
     EXPECT_FALSE(harness.manager.fatalReason().has_value());
     EXPECT_EQ(sink.completions, 0u);
 
@@ -1580,9 +1397,18 @@ TEST(ServingMeshExecutor, FailureStopsTheRunningCoreThroughTheMesh)
     ASSERT_FALSE(stores.empty());
     harness.executor.onDmaAccepted(stores[0].descriptor_id, stores[0].command_id, harness.currentInstance(), 1, 1, 200);
     harness.executor.onDmaAccepted(stores[0].descriptor_id + 100, stores[0].command_id, harness.currentInstance(), 1, 1, 210);
-    EXPECT_TRUE(harness.executor.failed());
+    EXPECT_TRUE(harness.executor.failed(1));
     EXPECT_EQ(harness.dispatch.fails, 1u);
     EXPECT_EQ(harness.dispatch.cancels, 0u);
+    ASSERT_EQ(harness.dispatch.failures.size(), 1u);
+    const auto &source = harness.dispatch.failures.front().source;
+    EXPECT_EQ(source.error_class, mesh_abi::kMoeErrorClassINTERNAL);
+    EXPECT_EQ(source.domain, mesh_abi::kMeshObjectDomainKV_RUNTIME);
+    EXPECT_EQ(source.object_kind, mesh_abi::kErrorSourceObjectKindKV_APPEND);
+    EXPECT_EQ(source.ordinal, 1u);
+    EXPECT_EQ(source.generation, 1u);
+    EXPECT_EQ(agent_abi::rdU64(source.aux_key.data()), 1u);
+    EXPECT_EQ(agent_abi::rdU64(source.aux_key.data() + 8), 1u);
 }
 
 TEST(ServingMeshExecutor, ErrorCompletionCarriesTheOwnerTerminal)
@@ -1600,8 +1426,8 @@ TEST(ServingMeshExecutor, ErrorCompletionCarriesTheOwnerTerminal)
     harness.executor.attachSink(&sink);
     harness.executor.setTickSource([]() { return 100; });
     ASSERT_TRUE(harness.executor.submit(executionRequest()).admitted);
-    harness.executor.onInstanceSettled(1, 1, 1, true, 200);
-    EXPECT_TRUE(harness.executor.failed());
+    harness.settleFailedInstance(1, 1, 1, 200);
+    EXPECT_TRUE(harness.executor.failed(1));
     EXPECT_GE(sink.completions, 1u);
     ASSERT_TRUE(observed.has_value());
     EXPECT_FALSE(observed->status == KvTerminalStatus::Success);
@@ -1614,11 +1440,12 @@ TEST(ServingMeshExecutor, MeshFaultReleasesTheKvClaim)
 {
     Harness harness;
     std::string reason;
-    ASSERT_TRUE(harness.executor.start(identity(), 100, reason)) << reason;
-    ASSERT_TRUE(harness.executor.beginFirstPhase(150, reason)) << reason;
-    harness.executor.onInstanceSettled(1, 1, 1, true, 200);
-    EXPECT_TRUE(harness.executor.failed());
-    EXPECT_FALSE(harness.executor.finished());
+    ASSERT_TRUE(harness.admitOnly(executionRequest(), 100).admitted);
+    harness.executor.onQuantumEdge(150);
+    ASSERT_FALSE(harness.executor.failed(1)) << harness.executor.failureReason(1);
+    harness.settleFailedInstance(1, 1, 1, 200);
+    EXPECT_TRUE(harness.executor.failed(1));
+    EXPECT_FALSE(harness.executor.finished(1));
     EXPECT_FALSE(harness.manager.hasPin(1));
     EXPECT_TRUE(harness.manager.validate().empty());
 }
@@ -1627,22 +1454,23 @@ TEST(ServingMeshExecutor, FaultedDmaTerminalRecordsTheErrorPrefix)
 {
     Harness harness;
     std::string reason;
-    ASSERT_TRUE(harness.executor.start(identity(), 100, reason)) << reason;
-    ASSERT_TRUE(harness.executor.beginFirstPhase(150, reason)) << reason;
+    ASSERT_TRUE(harness.admitOnly(executionRequest(), 100).admitted);
+    harness.executor.onQuantumEdge(150);
+    ASSERT_FALSE(harness.executor.failed(1)) << harness.executor.failureReason(1);
     const std::vector<KvStore> stores = kvStoreCommands(harness.program);
     harness.executor.onDmaAccepted(stores[0].descriptor_id, stores[0].command_id, harness.currentInstance(), 1, 1, 200);
     harness.executor.onDmaTerminal(stores[0].descriptor_id, stores[0].command_id, 0, 7, harness.currentInstance(), 1, 1,
                                            210,
                                            std::vector<DmaCommittedSegment>{});
     harness.executor.onInstanceSettled(1, 1, 1, false, 220);
-    EXPECT_EQ(harness.executor.phasesCommitted(), 0u);
+    EXPECT_EQ(harness.executor.phasesCommitted(1), 0u);
     EXPECT_EQ(harness.dispatch.resumes, 0u);
     const KvRecord *record = harness.manager.findRecord(11, 11);
     ASSERT_NE(record, nullptr);
     EXPECT_EQ(record->cached_tokens, 0u);
     EXPECT_EQ(record->state, KvState::Error);
     ASSERT_TRUE(record->first_error.has_value());
-    EXPECT_EQ(record->first_error->code, 7u);
+    EXPECT_EQ(record->first_error->code, uint32_t(agent_abi::E_AXI_RESPONSE));
     EXPECT_TRUE(harness.manager.validate().empty());
 }
 
@@ -1650,12 +1478,13 @@ TEST(ServingMeshExecutor, MismatchedDescriptorIdentityIsRejected)
 {
     Harness harness;
     std::string reason;
-    ASSERT_TRUE(harness.executor.start(identity(), 100, reason)) << reason;
-    ASSERT_TRUE(harness.executor.beginFirstPhase(150, reason)) << reason;
+    ASSERT_TRUE(harness.admitOnly(executionRequest(), 100).admitted);
+    harness.executor.onQuantumEdge(150);
+    ASSERT_FALSE(harness.executor.failed(1)) << harness.executor.failureReason(1);
     const std::vector<KvStore> stores = kvStoreCommands(harness.program);
     harness.executor.onDmaAccepted(stores[0].descriptor_id + 100, stores[0].command_id, harness.currentInstance(), 1, 1, 200);
-    EXPECT_TRUE(harness.executor.failed());
-    EXPECT_EQ(harness.executor.acceptedKvDescriptors(), 0u);
+    EXPECT_TRUE(harness.executor.failed(1));
+    EXPECT_EQ(harness.executor.acceptedKvDescriptors(1), 0u);
 }
 
 TEST(ServingMeshExecutor, CancelCompletionCarriesTheOwnerTerminal)
@@ -1675,17 +1504,18 @@ TEST(ServingMeshExecutor, CancelCompletionCarriesTheOwnerTerminal)
     harness.executor.setTickSource([]() { return 100; });
     ASSERT_TRUE(harness.executor.submit(executionRequest()).admitted);
     std::string reason;
-    ASSERT_TRUE(harness.executor.abortBeforeStart(150, reason)) << reason;
-    EXPECT_TRUE(harness.executor.failed());
-    EXPECT_EQ(harness.executor.phasesCommitted(), 0u);
+    ASSERT_TRUE(harness.executor.abortBeforeStart(1, 150, reason)) << reason;
+    EXPECT_FALSE(harness.executor.failed(1));
+    EXPECT_EQ(sink.last.outcome, NpuExecutionOutcome::Cancelled);
+    EXPECT_EQ(harness.executor.phasesCommitted(1), 0u);
     EXPECT_EQ(sink.completions, 1u);
-    EXPECT_FALSE(sink.last.success);
+    EXPECT_FALSE(sink.last.succeeded());
     ASSERT_TRUE(observed.has_value());
     EXPECT_EQ(observed->status, KvTerminalStatus::Cancelled);
     EXPECT_TRUE(ownership_released);
     EXPECT_EQ(sink.last.requestStartTick, 100u);
     EXPECT_EQ(sink.last.terminalTick, 150u);
-    EXPECT_EQ(harness.executor.terminalTick(), 150u);
+    EXPECT_EQ(harness.executor.terminalTick(1), 150u);
     EXPECT_FALSE(harness.manager.hasPin(1));
     EXPECT_TRUE(harness.manager.validate().empty());
 }
@@ -1693,12 +1523,11 @@ TEST(ServingMeshExecutor, CancelCompletionCarriesTheOwnerTerminal)
 TEST(ServingMeshExecutor, UnknownRequestProfileIsRejectedWithoutSideEffects)
 {
     Harness harness;
-    ServingRequestIdentity bad = identity();
-    bad.profile_id = 9;
-    std::string reason;
-    EXPECT_FALSE(harness.executor.start(bad, 100, reason));
-    EXPECT_EQ(reason.rfind("E_REQUEST_PROFILE", 0), 0u);
-    EXPECT_FALSE(harness.executor.failed());
+    auto bad = executionRequest();
+    bad.profileId = 9;
+    const auto admission = harness.admitOnly(bad, 100);
+    EXPECT_FALSE(admission.admitted);
+    EXPECT_EQ(admission.rejectDetail, agent_abi::E_REQUEST_PROFILE);
     EXPECT_EQ(harness.dispatch.selectors.size(), 0u);
     EXPECT_FALSE(harness.manager.hasPin(1));
     EXPECT_TRUE(harness.manager.validate().empty());
@@ -1708,19 +1537,20 @@ TEST(ServingMeshExecutor, UnknownInstanceCallbackDoesNotAdvanceThePhase)
 {
     Harness harness;
     std::string reason;
-    ASSERT_TRUE(harness.executor.start(identity(), 100, reason)) << reason;
-    ASSERT_TRUE(harness.executor.beginFirstPhase(150, reason)) << reason;
+    ASSERT_TRUE(harness.admitOnly(executionRequest(), 100).admitted);
+    harness.executor.onQuantumEdge(150);
+    ASSERT_FALSE(harness.executor.failed(1)) << harness.executor.failureReason(1);
     const std::vector<KvStore> stores = kvStoreCommands(harness.program);
     harness.executor.onDmaAccepted(stores[0].descriptor_id, stores[0].command_id, harness.currentInstance(), 1, 1, 200);
     harness.executor.onDmaTerminal(stores[0].descriptor_id, stores[0].command_id, 128, 0, harness.currentInstance(), 1, 1,
                                            210,
                                            std::vector<DmaCommittedSegment>{{0, 0, 128}});
     harness.executor.onInstanceSettled(999, 1, 1, false, 220);
-    EXPECT_EQ(harness.executor.phasesCommitted(), 0u);
-    EXPECT_TRUE(harness.executor.failed());
-    EXPECT_FALSE(harness.executor.finished());
+    EXPECT_EQ(harness.executor.phasesCommitted(1), 0u);
+    EXPECT_TRUE(harness.executor.failed(1));
+    EXPECT_FALSE(harness.executor.finished(1));
     harness.executor.onInstanceSettled(1, 1, 1, false, 230);
-    EXPECT_EQ(harness.executor.phasesCommitted(), 0u);
+    EXPECT_EQ(harness.executor.phasesCommitted(1), 0u);
 }
 
 TEST(ServingMeshExecutor, AbortBeforeTheRealStartRollsBackTheClaim)
@@ -1728,12 +1558,13 @@ TEST(ServingMeshExecutor, AbortBeforeTheRealStartRollsBackTheClaim)
     Harness harness;
     std::string reason;
     harness.dispatch.on_start = nullptr;
-    ASSERT_TRUE(harness.executor.start(identity(), 100, reason)) << reason;
-    ASSERT_TRUE(harness.executor.beginFirstPhase(150, reason)) << reason;
-    ASSERT_TRUE(harness.executor.abortBeforeStart(160, reason)) << reason;
+    ASSERT_TRUE(harness.admitOnly(executionRequest(), 100).admitted);
+    harness.executor.onQuantumEdge(150);
+    ASSERT_FALSE(harness.executor.failed(1)) << harness.executor.failureReason(1);
+    ASSERT_TRUE(harness.executor.abortBeforeStart(1, 160, reason)) << reason;
     EXPECT_EQ(harness.dispatch.cancels, 1u);
     EXPECT_EQ(harness.dispatch.begins, 1u);
-    EXPECT_FALSE(harness.executor.abortBeforeStart(170, reason));
+    EXPECT_FALSE(harness.executor.abortBeforeStart(1, 170, reason));
     EXPECT_EQ(harness.dispatch.cancels, 1u);
     EXPECT_FALSE(harness.manager.hasPin(1));
     EXPECT_TRUE(harness.manager.validate().empty());
@@ -1744,10 +1575,11 @@ TEST(ServingMeshExecutor, TheRealStartConsumesTheRollbackAuthority)
     Harness harness;
     std::string reason;
     harness.dispatch.on_start = nullptr;
-    ASSERT_TRUE(harness.executor.start(identity(), 100, reason)) << reason;
-    ASSERT_TRUE(harness.executor.beginFirstPhase(150, reason)) << reason;
+    ASSERT_TRUE(harness.admitOnly(executionRequest(), 100).admitted);
+    harness.executor.onQuantumEdge(150);
+    ASSERT_FALSE(harness.executor.failed(1)) << harness.executor.failureReason(1);
     harness.executor.onInstanceStarted(1, 1, 1, 160);
-    EXPECT_FALSE(harness.executor.abortBeforeStart(170, reason));
+    EXPECT_FALSE(harness.executor.abortBeforeStart(1, 170, reason));
 }
 
 TEST(ServingMeshExecutor, SuccessfulBurstPrefixSurvivesDescriptorError)
@@ -1763,7 +1595,7 @@ TEST(ServingMeshExecutor, SuccessfulBurstPrefixSurvivesDescriptorError)
     harness.executor.onDmaTerminal(stores[0].descriptor_id, stores[0].command_id, 64, 7, harness.currentInstance(), 1, 1,
                                            210,
                                            std::vector<DmaCommittedSegment>{{0, 0, 64}});
-    harness.executor.onInstanceSettled(1, 1, 1, true, 220);
+    harness.settleFailedInstance(1, 1, 1, 220);
     const KvRecord *record = harness.manager.findRecord(11, 11);
     ASSERT_NE(record, nullptr);
     EXPECT_EQ(record->cached_tokens, 4u);
@@ -1798,7 +1630,7 @@ TEST(ServingMeshExecutor, CommittedSegmentsCoverOnlyTheirOwnBytes)
         RecordingSink sink;
         harness.executor.attachSink(&sink);
         ASSERT_TRUE(harness.executor.submit(
-            executionRequest(0x300000, fixture)).admitted);
+            executionRequest(0x100300000, fixture)).admitted);
         const std::vector<KvStore> stores = kvStoreCommands(harness.program);
         ASSERT_GE(stores.size(), 2u);
         harness.executor.onDmaAccepted(stores[0].descriptor_id,
@@ -1811,7 +1643,7 @@ TEST(ServingMeshExecutor, CommittedSegmentsCoverOnlyTheirOwnBytes)
                                        stores[0].command_id, committed, 7,
                                        harness.currentInstance(), 1, 1, 210,
                                        item.segments);
-        harness.executor.onInstanceSettled(1, 1, 1, true, 220);
+        harness.settleFailedInstance(1, 1, 1, 220);
         const KvRecord *record = harness.manager.findRecord(11, 11);
         ASSERT_NE(record, nullptr) << item.name;
         EXPECT_EQ(record->cached_tokens, item.expected_tokens) << item.name;
@@ -1831,7 +1663,7 @@ TEST(ServingMeshExecutor, SameEdgeFaultWinnerDoesNotFollowCallbackOrder)
         RecordingSink sink;
         harness.executor.attachSink(&sink);
         ASSERT_TRUE(harness.executor.submit(
-            executionRequest(0x300000, fixture)).admitted);
+            executionRequest(0x100300000, fixture)).admitted);
         const std::vector<KvStore> stores = kvStoreCommands(harness.program);
         ASSERT_GE(stores.size(), 2u);
         for (unsigned index : {0u, 1u})
@@ -1845,31 +1677,17 @@ TEST(ServingMeshExecutor, SameEdgeFaultWinnerDoesNotFollowCallbackOrder)
                                            210,
                                            std::vector<DmaCommittedSegment>{});
         }
-        harness.executor.onInstanceSettled(1, 1, 1, true, 220);
+        harness.settleFailedInstance(1, 1, 1, 220);
         const KvRecord *record = harness.manager.findRecord(11, 11);
         ASSERT_NE(record, nullptr);
         ASSERT_TRUE(record->first_error.has_value()) << "reverse=" << reverse;
         EXPECT_EQ(record->first_error->source.ordinal,
-                  std::min(stores[0].descriptor_id, stores[1].descriptor_id))
+                  1u)
             << "reverse=" << reverse;
         EXPECT_FALSE(harness.manager.fatalReason().has_value());
         EXPECT_TRUE(harness.manager.validate().empty());
         EXPECT_EQ(sink.completions, 1u);
     }
-}
-
-TEST(ServingMeshExecutor, SqFlagsMapToTheDeclaredRequestPathKind)
-{
-    EXPECT_EQ(pathKindOfSqFlags(0), mesh_abi::kPathKindINITIAL_PREFILL);
-    EXPECT_EQ(pathKindOfSqFlags(agent_abi::kSqFlagsREQUIRE_KV_REUSE),
-              mesh_abi::kPathKindKV_REUSE);
-    EXPECT_EQ(pathKindOfSqFlags(agent_abi::kSqFlagsALLOW_REPREFILL),
-              mesh_abi::kPathKindREPREFILL);
-    EXPECT_GT(pathKindOfSqFlags(agent_abi::kSqFlagsREQUIRE_KV_REUSE |
-                                agent_abi::kSqFlagsALLOW_REPREFILL),
-              mesh_abi::kPathKindREPREFILL);
-    EXPECT_EQ(pathKindOfSqFlags(agent_abi::kSqFlagsBATCH_REPLAY),
-              mesh_abi::kPathKindINITIAL_PREFILL);
 }
 
 TEST(ServingMeshExecutor, RoundAndFlagsAreProvenBeforeAdmission)
@@ -1909,11 +1727,10 @@ TEST(ServingMeshExecutor, RoundAndFlagsAreProvenBeforeAdmission)
         const NpuAdmission admission = harness.executor.submit(request);
         EXPECT_FALSE(admission.admitted) << item.name;
         EXPECT_EQ(admission.rejectDetail, item.expected_detail) << item.name;
-        EXPECT_FALSE(harness.dispatch.installed) << item.name;
+        EXPECT_TRUE(harness.dispatch.selectors.empty()) << item.name;
         EXPECT_EQ(harness.dispatch.begins, 0u) << item.name;
         EXPECT_FALSE(harness.manager.hasPin(1)) << item.name;
         EXPECT_FALSE(harness.manager.hasClaim(1)) << item.name;
-        EXPECT_EQ(harness.executor.phasesCommitted(), 0u) << item.name;
         EXPECT_EQ(sink.completions, 0u) << item.name;
         EXPECT_TRUE(harness.manager.validate().empty()) << item.name;
     }
@@ -1940,7 +1757,7 @@ TEST(ServingMeshExecutor, MissingOrInconsistentSegmentsAreAContractError)
     for (const Case &item : cases) {
         Harness harness(fixture);
         ASSERT_TRUE(harness.executor.submit(
-            executionRequest(0x300000, fixture)).admitted);
+            executionRequest(0x100300000, fixture)).admitted);
         const std::vector<KvStore> stores = kvStoreCommands(harness.program);
         ASSERT_GE(stores.size(), 2u);
         harness.executor.onDmaAccepted(stores[0].descriptor_id,
@@ -1950,8 +1767,8 @@ TEST(ServingMeshExecutor, MissingOrInconsistentSegmentsAreAContractError)
                                        stores[0].command_id, item.committed,
                                        item.error, harness.currentInstance(), 1,
                                        1, 210, item.segments);
-        EXPECT_TRUE(harness.executor.failed()) << item.name;
-        EXPECT_EQ(harness.executor.phasesCommitted(), 0u) << item.name;
+        EXPECT_TRUE(harness.executor.failed(1)) << item.name;
+        EXPECT_EQ(harness.executor.phasesCommitted(1), 0u) << item.name;
         EXPECT_FALSE(harness.manager.fatalReason().has_value()) << item.name;
         EXPECT_TRUE(harness.manager.validate().empty()) << item.name;
     }
@@ -1970,8 +1787,8 @@ TEST(ServingMeshExecutor, InvalidSegmentsStillReachOneTerminalAfterDrain)
     harness.executor.onDmaTerminal(stores[0].descriptor_id, stores[0].command_id,
                                    128, 0, harness.currentInstance(), 1, 1, 210,
                                    {});
-    ASSERT_TRUE(harness.executor.failed());
-    harness.executor.onInstanceSettled(1, 1, 1, true, 220);
+    ASSERT_TRUE(harness.executor.failed(1));
+    harness.settleFailedInstance(1, 1, 1, 220);
     const KvRecord *record = harness.manager.findRecord(11, 11);
     ASSERT_NE(record, nullptr);
     EXPECT_EQ(record->outstanding_kv_dma, 0u);
@@ -2003,10 +1820,10 @@ TEST(ServingMeshExecutor, DuplicateOrWrappedSegmentsCannotProveSuccess)
                                        stores[0].command_id, 128, 0,
                                        harness.currentInstance(), 1, 1, 210,
                                        segments);
-        EXPECT_TRUE(harness.executor.failed());
+        EXPECT_TRUE(harness.executor.failed(1));
         harness.executor.onInstanceSettled(1, 1, 1, false, 220);
-        EXPECT_TRUE(harness.executor.failed());
-        EXPECT_EQ(harness.executor.phasesCommitted(), 0u);
+        EXPECT_TRUE(harness.executor.failed(1));
+        EXPECT_EQ(harness.executor.phasesCommitted(1), 0u);
         EXPECT_EQ(sink.completions, 1u);
         const KvRecord *record = harness.manager.findRecord(11, 11);
         ASSERT_NE(record, nullptr);

@@ -8,6 +8,7 @@
 #include "dev/ai_mesh/agent_surrogate_codec.hh"
 #include "dev/ai_mesh/generated/agent_protocol_abi.hh"
 #include "dev/ai_mesh/mesh_kv_manager.hh"
+#include "dev/ai_mesh/publish_segment_ledger.hh"
 
 namespace gem5
 {
@@ -30,12 +31,15 @@ struct NpuExecutionRequest
     uint32_t outputTokens = 0;
     uint64_t requestedProfileKey = 0;
     uint32_t workloadPlanItemId = 0;
+    uint32_t userId = 0;
+    uint32_t taskSeq = 0;
+    uint32_t logicalSourceRank = 0;
     uint64_t sessionId = 0;
     uint64_t kvHandle = 0;
     uint32_t generation = 0;
-    uint32_t pathKind = 0;
     uint32_t cachedTokens = 0;
     uint16_t kvFlags = 0;
+    bool batchReplay = false;
     uint16_t repairRound = 0;
     std::array<uint8_t, 32> contractDigest{};
     uint16_t programId = 0;
@@ -44,6 +48,7 @@ struct NpuExecutionRequest
     std::array<uint8_t, 32> inputDigest{};
     std::array<uint8_t, 32> workloadDigest{};
     std::vector<agent_abi::BindingRecord> hostBindings;
+    uint64_t deadlineTick = UINT64_MAX;
 };
 
 enum class NpuExecutorKind
@@ -59,13 +64,27 @@ struct NpuAdmission
     uint32_t rejectDetail = 0;
 };
 
+enum class NpuExecutionOutcome
+{
+    Pending,
+    Success,
+    Error,
+    Cancelled,
+};
+
 struct NpuExecutionCompletion
 {
-    bool success = false;
+    NpuExecutionOutcome outcome = NpuExecutionOutcome::Pending;
+    bool succeeded() const { return outcome == NpuExecutionOutcome::Success; }
     bool coreStarted = false;
+    std::optional<ErrorCandidate> failure;
+    RequestTerminalPosition terminalPosition;
+    std::optional<agent_abi::DetailCode> admissionRejectDetail;
+    std::optional<agent_abi::DetailCode> infrastructureFailure;
     std::vector<uint8_t> outputPayload;
     std::array<uint8_t, 32> semanticDigest{};
     uint64_t outputBytes = 0;
+    uint32_t outputTokens = 0;
     uint32_t phaseInstances = 0;
     std::optional<KvTerminalSnapshot> kvTerminal;
     uint64_t requestStartTick = 0;
@@ -76,7 +95,10 @@ class NpuCompletionSink
 {
   public:
     virtual ~NpuCompletionSink() = default;
-    virtual void onCoreStart(uint64_t requestId) = 0;
+    virtual void onSessionAdmitted(uint64_t requestId) = 0;
+    virtual void onBatchFrozen(uint64_t requestId) = 0;
+    virtual void onPublishSegment(const PublishSegmentFact &fact, bool firstChunk) = 0;
+    virtual void onCoreStart(const NpuExecutionRequest &request) = 0;
     virtual void onRequestComplete(
         const NpuExecutionRequest &request,
         const NpuExecutionCompletion &completion) = 0;

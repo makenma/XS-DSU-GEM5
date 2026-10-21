@@ -1,6 +1,8 @@
 #ifndef __MEM_RUBY_NETWORK_GARNET_LANE_ARBITER_HH__
 #define __MEM_RUBY_NETWORK_GARNET_LANE_ARBITER_HH__
 
+#include "base/checkpoint_fields.hh"
+
 #include <array>
 #include <cassert>
 #include <optional>
@@ -20,6 +22,7 @@ struct SwitchGrant
 class LaneArbiter
 {
   public:
+    GEM5_CHECKPOINT_FIELDS(inputs, nextInput)
     LaneArbiter(const std::vector<int> &ports, int outputs, int vcs)
         : nextInput(outputs, 0), numVcs(vcs)
     {
@@ -75,6 +78,7 @@ class LaneArbiter
   private:
     struct InputState
     {
+        GEM5_CHECKPOINT_AGGREGATE()
         int port;
         int nextVc;
         int output;
@@ -89,6 +93,7 @@ class LaneArbiter
 class LaneMergeArbiter
 {
   public:
+    GEM5_CHECKPOINT_FIELDS(nextLane)
     std::optional<LaneId> select(const std::array<bool, 2> &ready) const
     {
         if (ready[nextLane])

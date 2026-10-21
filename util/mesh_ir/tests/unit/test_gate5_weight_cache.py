@@ -6,6 +6,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from mesh_ir.generated import abi as A
+from mesh_ir.generated.agent_abi import DETAIL_CODE
 from mesh_ir.model import MeshIrError
 from mesh_ir.moe_weight_cache import (
     BASE_KEY_BYTES,
@@ -120,25 +121,28 @@ def test_gate5_error_source_key_is_forty_bytes_and_carries_the_fill_key():
     wire = source.wire_bytes()
     assert len(wire) == ERROR_SOURCE_KEY_BYTES == 40
     assert source.error_class == A.MOE_ERROR_CLASS.WEIGHT_FILL
+    assert source.core_id_or_ffff == 2
+    assert source.object_kind == 5
+    assert source.generation == 0
     assert source.domain == A.MESH_OBJECT_DOMAIN.WEIGHT_FILL
-    assert source.object_kind == A.MESH_OBJECT_KIND.WEIGHT_FILL_OBLIGATION
+    assert source.object_kind == A.ERROR_SOURCE_OBJECT_KIND.WEIGHT_FILL_OBLIGATION
     assert source.aux_key == fill.wire_bytes()
     assert ErrorSourceKey.from_wire_bytes(wire) == source
     assert wire[4] == A.MESH_OBJECT_DOMAIN.WEIGHT_FILL
-    assert wire[5] == A.MESH_OBJECT_KIND.WEIGHT_FILL_OBLIGATION
+    assert wire[5] == A.ERROR_SOURCE_OBJECT_KIND.WEIGHT_FILL_OBLIGATION
 
 
 def test_gate5_error_source_order_is_field_numeric_then_aux_bytes():
     low = ErrorSourceKey(error_class=A.MOE_ERROR_CLASS.WEIGHT_FILL,
                          core_id_or_ffff=1,
                          domain=A.MESH_OBJECT_DOMAIN.WEIGHT_FILL,
-                         object_kind=A.MESH_OBJECT_KIND.WEIGHT_FILL_OBLIGATION,
+                         object_kind=A.ERROR_SOURCE_OBJECT_KIND.WEIGHT_FILL_OBLIGATION,
                          region_group_id=0, region_id=0, ordinal=0,
                          generation=0, aux_key=bytes(16))
     high = ErrorSourceKey(error_class=A.MOE_ERROR_CLASS.DMA_AXI,
                           core_id_or_ffff=0,
                           domain=A.MESH_OBJECT_DOMAIN.STATIC,
-                          object_kind=A.MESH_OBJECT_KIND.DESCRIPTOR,
+                          object_kind=A.ERROR_SOURCE_OBJECT_KIND.DESCRIPTOR,
                           region_group_id=0, region_id=0, ordinal=0,
                           generation=0, aux_key=bytes(16))
     assert low.sort_key() < high.sort_key()
@@ -146,7 +150,7 @@ def test_gate5_error_source_order_is_field_numeric_then_aux_bytes():
         ErrorSourceKey(error_class=99,
                        core_id_or_ffff=0,
                        domain=A.MESH_OBJECT_DOMAIN.WEIGHT_FILL,
-                       object_kind=A.MESH_OBJECT_KIND.WEIGHT_FILL_OBLIGATION,
+                       object_kind=A.ERROR_SOURCE_OBJECT_KIND.WEIGHT_FILL_OBLIGATION,
                        region_group_id=0, region_id=0, ordinal=0,
                        generation=0)
 
@@ -534,7 +538,7 @@ def test_gate5_cache_scenario_matches_the_frozen_transition_golden():
         (0, 0, None, None), (1, 1, 2, 0), (2, 1, 3, 1)]
     tombstone = document["failure_tombstones"][0]
     assert tombstone["weight_tag_index"] == 4
-    assert tombstone["first_error"]["error_code"] == "E_AXI_RESPONSE"
+    assert tombstone["first_error"]["error_code"] == DETAIL_CODE["E_AXI_RESPONSE"]
     assert tombstone["first_error"]["tick"] == 50
     assert len(tombstone["first_error"]["source_key_wire"]) == 80
 

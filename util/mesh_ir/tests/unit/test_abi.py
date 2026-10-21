@@ -11,11 +11,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from mesh_ir.abi.decoder import decode_program
 from mesh_ir.abi.encoder import encode_program
-from mesh_ir.abi.verifier import verify_program
-from mesh_ir.builder import load_arch
+from mesh_ir.architecture import load_arch
+from mesh_ir.canonical import semantic_sha256
 from mesh_ir.generated import abi as A
 from mesh_ir.golden_programs import build_dual_core_program, build_single_core_program
 from mesh_ir.model import RECORD_CLASSES, MeshIrError
+from mesh_ir.scheduled.verify import verify_program
 
 ARCH_PATH = Path(__file__).resolve().parents[4] / "configs/example/ai_mesh/arch/mesh_1x2.yaml"
 
@@ -103,7 +104,8 @@ def test_opcode_closed_set_and_engine_mapping():
 
 def test_required_sections_present_in_enum():
     required = set(A.REQUIRED_SECTIONS)
-    assert len(required) == 15
+    assert len(required) == len(A.REQUIRED_SECTIONS)
+    assert len(required) > len(RECORD_CLASSES)
     for name in required:
         assert hasattr(A.SECTION_TYPE, name)
 
@@ -119,18 +121,20 @@ MOE_RECORDS = {
 
 
 def test_dynamic_moe_abi_surface_is_frozen_by_contract():
-    assert A.DYNAMIC_MOE_V1 == 0x1
+    assert A.SCHEDULED_SEMANTICS == 0x1
+    assert A.DYNAMIC_MOE_V1 == 0x2
     assert A.KNOWN_FEATURE_MASK == (
-        A.DYNAMIC_MOE_V1 | A.AGENT_SERVING_V1 |
+        A.SCHEDULED_SEMANTICS | A.DYNAMIC_MOE_V1 | A.AGENT_SERVING_V1 |
         A.PROFILE_SCOPED_EXECUTION_V1)
     assert A.FEATURE_MIN_WRITER_MINOR == {
-        "DYNAMIC_MOE_V1": 1, "AGENT_SERVING_V1": 1,
-        "PROFILE_SCOPED_EXECUTION_V1": 3}
+        "SCHEDULED_SEMANTICS": 0, "DYNAMIC_MOE_V1": 0,
+        "AGENT_SERVING_V1": 0, "PROFILE_SCOPED_EXECUTION_V1": 0}
     assert A.FEATURE_REQUIRES == {
-        "DYNAMIC_MOE_V1": (), "AGENT_SERVING_V1":
-        ("PROFILE_SCOPED_EXECUTION_V1",),
-        "PROFILE_SCOPED_EXECUTION_V1": ()}
-    assert A.SECTION_TYPE.PROFILE_STREAM_RANGES == 16
+        "SCHEDULED_SEMANTICS": (),
+        "DYNAMIC_MOE_V1": ("SCHEDULED_SEMANTICS",),
+        "AGENT_SERVING_V1": ("SCHEDULED_SEMANTICS", "PROFILE_SCOPED_EXECUTION_V1"),
+        "PROFILE_SCOPED_EXECUTION_V1": ("SCHEDULED_SEMANTICS",)}
+    assert A.SECTION_TYPE.PROFILE_STREAM_RANGES == 0x400A
     assert A.PROFILE_STREAM_RANGES_BYTES == 16
     assert A.conditional_required_sections(
         A.PROFILE_SCOPED_EXECUTION_V1) == (
@@ -143,11 +147,11 @@ def test_dynamic_moe_abi_surface_is_frozen_by_contract():
         assert getattr(A, f"{name}_BYTES") == size, name
     assert A.conditional_required_sections(0) == ()
     assert A.conditional_required_sections(A.DYNAMIC_MOE_V1) == (
+        A.SECTION_TYPE.CONTENT_DIGESTS,
         A.SECTION_TYPE.MOE_LAYER_SPECS,
         A.SECTION_TYPE.MOE_EXPERT_SPECS,
         A.SECTION_TYPE.MOE_DYNAMIC_REGIONS,
         A.SECTION_TYPE.MOE_KERNEL_SPECS,
-        A.SECTION_TYPE.CONTENT_DIGESTS,
     )
 
 
@@ -210,7 +214,9 @@ def _with_header(data: bytes, minor: int, features: int) -> bytes:
 def test_reader_feature_gating_matches_the_shared_contract(programs):
     golden = encode_program(programs["single"])
     assert decode_program(golden).abi_minor == programs["single"].abi_minor
-    accepted = _with_header(golden, 1, 0)
+    future = dataclasses.replace(programs["single"], abi_minor=1, semantic_sha256="")
+    future = dataclasses.replace(future, semantic_sha256=semantic_sha256(future.semantic_dict()))
+    accepted = encode_program(future)
     assert decode_program(accepted).abi_minor == 1
     with pytest.raises(MeshIrError) as unknown:
         decode_program(_with_header(golden, 1, 1 << 63))
@@ -219,13 +225,15 @@ def test_reader_feature_gating_matches_the_shared_contract(programs):
         decode_program(_with_header(golden, 0, A.DYNAMIC_MOE_V1))
     assert premature.value.code == "E_ABI_VERSION"
     with pytest.raises(MeshIrError) as missing:
-        decode_program(_with_header(golden, 1, A.DYNAMIC_MOE_V1))
-    assert missing.value.code == "E_ABI_SECTION_RANGE"
+        decode_program(_with_header(golden, 0, A.SCHEDULED_SEMANTICS | A.DYNAMIC_MOE_V1))
+    assert missing.value.code == "E_ABI_FEATURE"
 
 
 def test_model_matches_generated_schema_exactly():
     for name, cls in RECORD_CLASSES.items():
-        schema_names = tuple(f["name"] for f in getattr(A, f"{name}_FIELDS"))
+        schema_names = tuple(
+            field["name"] for field in A.TRANSPORT_CANONICAL_FIELDS[name]
+        )
         model_names = tuple(f.name for f in dataclasses.fields(cls))
         assert schema_names == model_names, name
 
@@ -237,7 +245,7 @@ def test_golden_programs_round_trip_semantic_sha(programs, arch):
         decoded = decode_program(blob)
         verify_program(decoded, arch)
         assert program.canonical_dict() == decoded.canonical_dict(), name
-        assert decoded.semantic_sha256() == program.semantic_sha256(), name
+        assert decoded.semantic_sha256 == program.semantic_sha256, name
 
 
 def test_encode_is_deterministic_across_hashseeds(programs, arch):
@@ -252,7 +260,7 @@ def test_encode_is_deterministic_across_hashseeds(programs, arch):
         script = (
             "import sys, hashlib; "
             f"sys.path.insert(0, {str(Path(__file__).resolve().parents[2])!r}); "
-            "from mesh_ir.builder import load_arch; "
+                "from mesh_ir.architecture import load_arch; "
             f"from mesh_ir.golden_programs import {build_call[name]}; "
             "from mesh_ir.abi.encoder import encode_program; "
             f"blob = encode_program({build_call[name]}(load_arch({str(ARCH_PATH)!r}))); "
@@ -306,6 +314,7 @@ def test_dual_core_program_shape(programs):
         A.OPCODE.GEMM,
         A.OPCODE.RECV_WAIT,
         A.OPCODE.LOCAL_REDUCE,
+        A.OPCODE.ELEMENTWISE,
         A.OPCODE.DMA_STORE,
         A.OPCODE.HALT,
     ]
@@ -317,8 +326,7 @@ def test_dual_core_program_shape(programs):
 
 
 def test_arch_digest_binding(programs, arch):
-    wrong = load_arch(ARCH_PATH)
-    wrong.sram_bytes += 1
+    wrong = dataclasses.replace(arch, arch_name=arch.arch_name + "-wrong")
     with pytest.raises(MeshIrError) as err:
         verify_program(programs["single"], wrong)
     assert err.value.code == "E_ARCH_DIGEST"
@@ -343,12 +351,11 @@ def test_generated_enum_closed_sets_cover_every_enum():
         "cache_subscriber_state", "cache_obligation_state",
         "agent_request_flags", "path_kind", "phase", "dma_fill_kind",
         "agent_allocation_role", "agent_digest_source",
+        "scalar_kind", "content_digest_object_kind",
+        "internal_check_site", "error_source_object_kind", "materializer_check_site",
     }
     for enum_name, values in A.ENUM_CLOSED_SETS.items():
-        mask = A.ENUM_MASKS[enum_name]
-        for value in values:
-            assert mask & (1 << value), enum_name
-    assert A.ENUM_MASKS["stream_flags"] == 0b110
+        assert len(values) == len(set(values)), enum_name
     assert A.ENUM_ALLOWED_BITS["stream_flags"] == (
         A.STREAM_FLAGS.IS_LIFECYCLE | A.STREAM_FLAGS.IS_LOCAL_CONTROL
     )
@@ -373,18 +380,18 @@ def test_payload_by_kind_covers_attr_kinds():
 
 
 def test_generated_cpp_header_has_decoders():
-    header = (
-        Path(__file__).resolve().parents[4]
-        / "src/dev/ai_mesh/generated/mesh_ir_abi.hh"
-    ).read_text()
+    generated = Path(__file__).resolve().parents[4] / "src/dev/ai_mesh/generated"
+    header = (generated / "mesh_ir_abi.hh").read_text()
+    codecs = (generated / "mesh_ir_transport_codecs.hh").read_text()
+    assert '#include "dev/ai_mesh/generated/mesh_ir_transport_codecs.hh"' in header
     for record in ("Command", "DmaDescriptor", "DmaEndpoint", "Profile", "Shard",
                    "Tensor", "Relocation", "Entrypoint", "ExpectedTraffic"):
         assert f"struct {record}" in header, record
-        assert f"decode{record}(" in header, record
-    assert "using AttrPayload = std::variant<" in header
-    assert "decodeAttrPayload(" in header
-    assert "kDtypeValuesMask" in header
+        assert f"decode{record}(" in codecs, record
+    assert "using AttrPayload = std::variant<" in codecs
+    assert "decodeAttrPayload(" in codecs
+    assert "validDtype(" in (generated / "mesh_ir_transport_enums.hh").read_text()
     for payload in ("RepeatV1", "GemmV1", "BmmV1", "ElementwiseV1", "ReduceV1",
                     "SoftmaxV1", "NormV1", "FillV1", "BlockedMnkLayoutV1",
                     "RecvWaitV1"):
-        assert f"decode{payload}(" in header, payload
+        assert f"decode{payload}(" in codecs, payload

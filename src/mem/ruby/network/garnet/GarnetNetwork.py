@@ -40,6 +40,28 @@ class GarnetNetwork(RubyNetwork):
     type = "GarnetNetwork"
     cxx_header = "mem/ruby/network/garnet/GarnetNetwork.hh"
     cxx_class = "gem5::ruby::garnet::GarnetNetwork"
+    aggregate_routers = VectorParam.Switch([], "Aggregate routers sharing this topology")
+    aggregate_link_buffers = VectorParam.MessageBuffer([], "Aggregate internal link queues")
+    aggregate_queue_entries = Param.UInt32(0, "Aggregate queue capacity")
+    aggregate_initial = Param.Bool(False, "Start with aggregate transport")
+
+    def setup_aggregate(self, queue_entries, initial):
+        from types import SimpleNamespace
+        from m5.objects.SimpleNetwork import Switch, SwitchPortBuffer
+        if queue_entries <= 0 or self.aggregate_routers:
+            raise ValueError("aggregate topology requires positive capacity and unique setup")
+        self.aggregate_queue_entries = queue_entries
+        self.aggregate_initial = initial
+        self.aggregate_routers = [Switch(router_id=router.router_id,
+            latency=router.latency, virt_nets=self.number_of_virtual_networks,
+            clk_domain=self.clk_domain) for router in self.routers]
+        topology = SimpleNamespace(buffer_size=queue_entries, physical_vnets_channels=[],
+            number_of_virtual_networks=self.number_of_virtual_networks,
+            int_links=self.int_links, ext_links=self.ext_links)
+        for router in self.aggregate_routers:
+            router.setup_buffers(topology)
+        self.aggregate_link_buffers = [SwitchPortBuffer(buffer_size=queue_entries)
+            for link in self.int_links for vnet in range(int(self.number_of_virtual_networks))]
 
     num_rows = Param.Int(0, "number of rows if 2D (mesh/torus/..) topology")
     ni_flit_size = Param.UInt32(16, "network interface flit size in bytes")

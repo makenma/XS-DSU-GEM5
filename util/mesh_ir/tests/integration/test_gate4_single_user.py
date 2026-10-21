@@ -1,4 +1,5 @@
-import os
+from mesh_ir.runtime_environment import runtime_environment
+
 import re
 import subprocess
 import sys
@@ -84,11 +85,7 @@ SINGLE_USER_PATHS = {
 
 
 def run_single_user(name, outdir):
-    environment = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith("AI_MESH_")
-    }
+    environment = runtime_environment()
     return subprocess.run(
         [
             str(GEM5),

@@ -76,6 +76,10 @@ class Sequencer;
 class MessageBuffer : public SimObject
 {
   public:
+    void serialize(CheckpointOut &cp) const override;
+    void unserialize(CheckpointIn &cp) override;
+    void drainResume() override;
+    template<class Archive> void serialize(Archive &archive, unsigned);
     typedef MessageBufferParams Params;
     MessageBuffer(const Params &p);
 
@@ -116,6 +120,13 @@ class MessageBuffer : public SimObject
     }
 
     Consumer* getConsumer() { return m_consumer; }
+    void handoffConsumer(Consumer *expected, Consumer *next)
+    {
+        fatal_if(!expected || !next || m_consumer != expected ||
+                 getNumMessages() || getNumStalledMessages() || !m_deferred_msg_map.empty(),
+                 "message queue consumer handoff requires an empty owned queue");
+        m_consumer = next;
+    }
 
     bool getOrdered() { return m_strict_fifo; }
 
@@ -154,6 +165,8 @@ class MessageBuffer : public SimObject
     void recycle(Tick current_time, Tick recycle_latency);
     bool isEmpty() const { return m_prio_heap.size() == 0; }
     unsigned int getNumMessages() const { return m_prio_heap.size(); }
+    unsigned int capacity() const { return m_max_size; }
+    unsigned int getNumStalledMessages() const { return m_stall_map_size; }
     bool isStallMapEmpty() { return m_stall_msg_map.size() == 0; }
     unsigned int getStallMapSize() { return m_stall_msg_map.size(); }
 
@@ -277,6 +290,7 @@ class MessageBuffer : public SimObject
     unsigned int m_stalled_at_cycle_start;
     unsigned int m_msgs_this_cycle;
 
+    std::string checkpointState;
     uint64_t m_msg_counter;
     int m_priority_rank;
 

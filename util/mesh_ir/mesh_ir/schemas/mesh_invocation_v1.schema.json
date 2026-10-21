@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mesh-invocation-v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "program_semantic_sha256", "architecture_sha256", "entrypoint_id", "profile_id", "bindings", "bound_identity_sha256"],
+  "properties": {
+    "schema": {"const": "mesh-invocation-v1"},
+    "program_semantic_sha256": {"$ref": "#/$defs/digest"},
+    "architecture_sha256": {"$ref": "#/$defs/digest"},
+    "bound_identity_sha256": {"$ref": "#/$defs/digest"},
+    "entrypoint_id": {"$ref": "#/$defs/id"},
+    "profile_id": {"$ref": "#/$defs/id"},
+    "bindings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["slot_id", "region_id", "owner_core", "allocation_offset_bytes", "allocation_size_bytes", "allocation_alignment_bytes", "access"],
+        "properties": {
+          "slot_id": {"$ref": "#/$defs/id"},
+          "region_id": {"type": "integer", "minimum": 0, "maximum": 4294967295},
+          "owner_core": {"type": "integer", "minimum": 0, "maximum": 65535},
+          "allocation_offset_bytes": {"$ref": "#/$defs/u64"},
+          "allocation_size_bytes": {"$ref": "#/$defs/u64"},
+          "allocation_alignment_bytes": {"$ref": "#/$defs/id"},
+          "access": {"type": "integer", "minimum": 0, "maximum": 4294967295}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "id": {"type": "integer", "minimum": 1, "maximum": 4294967295},
+    "u64": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615}
+  }
+}

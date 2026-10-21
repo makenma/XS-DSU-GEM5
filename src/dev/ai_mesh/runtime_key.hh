@@ -2,6 +2,7 @@
 #define DEV_AI_MESH_RUNTIME_KEY_HH
 
 #include <cstdint>
+#include "base/checkpoint_fields.hh"
 
 #include "dev/ai_mesh/agent_runtime_types.hh"
 #include "dev/ai_mesh/generated/mesh_ir_abi.hh"
@@ -23,6 +24,7 @@ class MeshCoreId
     static constexpr uint16_t INVALID_VALUE = 0xffff;
     static constexpr uint16_t MAX_VALUE = 0xfffe;
 
+    GEM5_CHECKPOINT_FIELDS(_value)
     constexpr MeshCoreId() = default;
     constexpr explicit MeshCoreId(uint16_t value) : _value(value) {}
 
@@ -47,6 +49,7 @@ class MeshCoreId
 
 struct RuntimeObjectKey
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     InstanceGeneration instance;
     mesh_abi::MeshObjectDomain domain = mesh_abi::MeshObjectDomain::STATIC;
     uint32_t regionGroupId = 0;

@@ -90,7 +90,8 @@ def validate_manifest(manifest):
         raise ValueError("unknown manifest schema_version")
     units = manifest.get("unit_binaries")
     if not isinstance(units, list) or len(units) != len(UNIT_BINARIES):
-        raise ValueError("unit manifest must contain exactly 10 binaries")
+        raise ValueError(
+            f"unit manifest must contain exactly {len(UNIT_BINARIES)} binaries")
     if {entry.get("binary") for entry in units} != set(UNIT_BINARIES):
         raise ValueError("unit manifest binary set mismatch")
 

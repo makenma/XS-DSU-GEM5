@@ -7,7 +7,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from mesh_ir.abi.decoder import decode_program
-from mesh_ir.builder import load_arch
+from mesh_ir.architecture import load_arch
 from mesh_ir.generated import abi as A
 from mesh_ir.generated import agent_abi as G
 from mesh_ir.model import MeshIrError, canonical_json_bytes
@@ -111,7 +111,7 @@ def replay_document(program, population, tmp_path) -> Path:
         "schema": "moe_route_replay_v1",
         "version": 1,
         "workload_plan_digest": PLAN_DIGEST.hex(),
-        "mesh_program_digest": program.semantic_sha256(),
+        "mesh_program_digest": program.semantic_sha256,
         "layers": PROGRAM_LAYERS,
         "entries": entries,
     }
@@ -309,7 +309,7 @@ def histogram_document(program, population, tmp_path, row=None,
         "schema": "moe_histogram_replay_v1",
         "version": 1,
         "workload_plan_digest": PLAN_DIGEST.hex(),
-        "mesh_program_digest": program.semantic_sha256(),
+        "mesh_program_digest": program.semantic_sha256,
         "route_window_tokens": window,
         "layers": PROGRAM_LAYERS,
         "records": [{

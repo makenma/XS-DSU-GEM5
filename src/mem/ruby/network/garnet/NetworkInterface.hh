@@ -33,6 +33,8 @@
 #ifndef __MEM_RUBY_NETWORK_GARNET_0_NETWORKINTERFACE_HH__
 #define __MEM_RUBY_NETWORK_GARNET_0_NETWORKINTERFACE_HH__
 
+#include "base/checkpoint_fields.hh"
+
 #include <iostream>
 #include <vector>
 
@@ -62,6 +64,15 @@ class flitBuffer;
 class NetworkInterface : public ClockedObject, public Consumer
 {
   public:
+    template<class Archive> void serialize(Archive &archive, unsigned)
+    {
+        Consumer::checkpoint(archive);
+        checkpoint::fields(archive, m_vc_allocator, m_stall_count,
+            m_ni_out_vcs_enqueue_time, m_ni_vc_last_accounted_cycle, vc_busy_counter);
+        checkpoint::existing(archive, outVcState);
+        for (auto *port : outPorts) archive & *port;
+        for (auto *port : inPorts) archive & port->messageEnqueuedThisCycle;
+    }
     typedef GarnetNetworkInterfaceParams Params;
     NetworkInterface(const Params &p);
     ~NetworkInterface() = default;
@@ -102,6 +113,7 @@ class NetworkInterface : public ClockedObject, public Consumer
     class OutputPort
     {
       public:
+          GEM5_CHECKPOINT_FIELDS(_vcRoundRobin)
           OutputPort(NetworkLink *outLink, CreditLink *creditLink,
               int routerID)
           {

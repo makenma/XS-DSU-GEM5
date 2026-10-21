@@ -4,61 +4,21 @@ from mesh_ir.abi.spans import checked_span
 from mesh_ir.model import Program
 
 
-def stream_commands(program: Program, stream) -> list:
+def stream_commands(program: Program, stream) -> tuple:
     span = checked_span(
-        stream.command_begin, stream.command_count, len(program.commands),
-        "stream range out of table",
+        stream.command_begin, stream.command_count,
+        len(program.semantics.stream_command_ids),
+        "stream range out of semantic command order",
     )
-    return program.commands[span]
+    commands = {item.command_id: item for item in program.commands}
+    return tuple(commands[identity] for identity in program.semantics.stream_command_ids[span])
 
 
-def command_waits(program: Program) -> dict:
-    waits_by_command = {}
-    for command in program.commands:
-        span = checked_span(
-            command.wait_begin, command.wait_count,
-            len(program.command_waits), "wait range out of table",
-        )
-        waits_by_command[command.command_id] = [
-            w.event_id for w in program.command_waits[span]
-        ]
-    return waits_by_command
-
-
-def command_prerequisites(program: Program, views=None) -> dict:
-    producers = {}
-    for command in program.commands:
-        if command.signal_event:
-            producers.setdefault(command.signal_event, set()).add(
-                command.command_id)
-    for descriptor in program.dma_descriptors:
-        producers.setdefault(descriptor.completion_event, set()).add(
-            descriptor.command_id)
-
-    wait_owners = {}
-    if views is not None and not views.whole_program:
-        for view in views.views:
-            for command_id in view.command_ids:
-                wait_owners[command_id] = view.profile_id
-
-    def related(left: int, right: int) -> bool:
-        if not wait_owners:
-            return True
-        return wait_owners.get(left) == wait_owners.get(right)
-
-    waits_by_command = command_waits(program)
-    prerequisites = {c.command_id: [] for c in program.commands}
-    for stream in program.streams:
-        commands = stream_commands(program, stream)
-        for previous, current in zip(commands, commands[1:]):
-            if related(previous.command_id, current.command_id):
-                prerequisites[current.command_id].append(previous.command_id)
-    for command in program.commands:
-        for event_id in waits_by_command[command.command_id]:
-            prerequisites[command.command_id].extend(
-                producer for producer in producers.get(event_id, ())
-                if related(producer, command.command_id))
-    return prerequisites
+def command_prerequisites(program: Program) -> dict[int, tuple[int, ...]]:
+    prerequisites = {item.command_id: set() for item in program.commands}
+    for dependency in program.semantics.dependencies:
+        prerequisites[dependency.target_command_id].add(dependency.source_command_id)
+    return {key: tuple(sorted(value)) for key, value in prerequisites.items()}
 
 
 def prerequisite_closure(prerequisites: dict, target: int) -> set:

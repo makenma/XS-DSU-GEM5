@@ -6,7 +6,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from mesh_ir.abi.decoder import decode_program
-from mesh_ir.builder import load_arch
+from mesh_ir.architecture import load_arch
 from mesh_ir.generated import abi as A
 from mesh_ir.generated import agent_abi as G
 from mesh_ir.model import MeshIrError
@@ -286,7 +286,7 @@ def _materialize(layer_index, bindings):
          for region in regions},
         MaterializeConfig(
             workload_plan_digest=PLAN_DIGEST,
-            program_semantic_digest=bytes.fromhex(program.semantic_sha256()),
+            program_semantic_digest=bytes.fromhex(program.semantic_sha256),
             p2p_chunk_bytes=4096, weight_residency="cached"),
         bounds, experts, weight_tag_index_map(program), bindings)
 

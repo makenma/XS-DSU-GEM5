@@ -75,7 +75,7 @@ class SimpleIntLink(BasicIntLink):
         # in and out port
         buffers = []
         for i in range(int(network.number_of_virtual_networks)):
-            buffers.append(MessageBuffer(ordered=True))
+            buffers.append(MessageBuffer(ordered=True, buffer_size=network.buffer_size))
 
         # If physical_vnets_channels is set we adjust the buffer sizes and
         # the max_dequeue_rate in order to achieve the expected thoughput

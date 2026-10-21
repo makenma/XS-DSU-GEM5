@@ -4,7 +4,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO / "util" / "mesh_ir"))
 
-from mesh_ir.builder import load_arch  # noqa: E402
+from mesh_ir.architecture import load_arch  # noqa: E402
 from mesh_ir.effective import (  # noqa: E402
     EffectiveArchitecture,
     apply_cli_dma_overrides,

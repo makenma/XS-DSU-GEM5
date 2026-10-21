@@ -222,7 +222,7 @@ def test_checked_in_manifest_is_the_only_manifest_authority():
     assert validator.is_file()
     assert not (HARNESS_DIR / "generate_manifest.py").exists()
     result = subprocess.run(
-        [str(Path(SELECTOR.sys.executable).resolve()), str(validator)],
+        [SELECTOR.sys.executable, str(validator)],
         cwd=REPO,
         capture_output=True,
         text=True,
@@ -843,7 +843,7 @@ def test_run_manifest_program_identity_comes_from_loaded_binary(tmp_path):
     (program_dir / "manifest.json").write_text(json.dumps(helper_manifest))
     scenario = SELECTOR._gem5_scenario(execution, [], golden)
     decoded = SELECTOR.decode_program((program_dir / "program.mshb").read_bytes())
-    assert scenario["mesh_programs"][0]["semantic_digest"] == decoded.semantic_sha256()
+    assert scenario["mesh_programs"][0]["semantic_digest"] == decoded.semantic_sha256
 
 
 def test_traffic_builder_rejects_duplicate_descriptor_rows():

@@ -1,9 +1,120 @@
 # Mesh IR / Dummy Core Test Commands
 
-All commands run from the repository root on the `AXI_MESH` build. Every
-entry below was executed during its phase and must stay green.
+Torch frontend usage and source indexes are in [`torch_frontend.md`](torch_frontend.md).
+
+Torch gates and Agent Serving gates are separate acceptance tracks. The ABI 2.0 integration status and owners are indexed in [`abi2_integration.md`](abi2_integration.md).
+
+## Torch package contract
+
+```bash
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m pytest -q \
+  util/mesh_ir/tests/unit/test_gate1_package_contract.py
+```
+
+## Torch frontend Gate 1
+
+```bash
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m pytest -q \
+  util/mesh_ir/tests/unit/test_gate1_canonical_diagnostics.py \
+  util/mesh_ir/tests/unit/test_gate1_arch_config.py \
+  util/mesh_ir/tests/unit/test_gate1_graph_ir.py \
+  util/mesh_ir/tests/unit/test_export_archive_streaming.py \
+  util/mesh_ir/tests/integration/test_gate1_real_frontend.py
+```
+
+Qwen3 frontend primitives (the eight operator classes the full model
+export needs; requires the torch export environment python):
+
+```bash
+PYTHONPATH=util/mesh_ir .tmp/worktrees/torch-frontend/.tmp/qwen-export-env/bin/python -m pytest -q \
+  util/mesh_ir/tests/integration/test_gate1_qwen_primitives.py
+```
+
+## Torch address and traffic foundation
+
+Contracts are indexed by [`architecture.py`](../../util/mesh_ir/mesh_ir/architecture.py) and [`traffic.py`](../../util/mesh_ir/mesh_ir/traffic.py).
+
+```bash
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m pytest -q \
+  util/mesh_ir/tests/unit/test_gate2_shared_attrs.py \
+  util/mesh_ir/tests/unit/test_gate2_address_bindings.py \
+  util/mesh_ir/tests/unit/test_control_initiators.py \
+  util/mesh_ir/tests/unit/test_gate2_fabric_traffic.py
+```
+
+## Torch Kernel and SRAM foundation
+
+The dependency and allocation contracts are indexed by the [`analysis`](../../util/mesh_ir/mesh_ir/analysis) package and [`kernel_verify.py`](../../util/mesh_ir/mesh_ir/ir/kernel_verify.py).
+
+```bash
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m pytest -q \
+  util/mesh_ir/tests/unit/test_gate2_kernel_ir.py \
+  util/mesh_ir/tests/unit/test_gate2_kernel_work.py \
+  util/mesh_ir/tests/unit/test_gate2_dependency_sram.py
+```
+
+## Torch Scheduled variant and completion checks
+
+```bash
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m pytest -q \
+  util/mesh_ir/tests/unit/test_gate2_scheduled_variant_dependencies.py \
+  util/mesh_ir/tests/unit/test_gate2_scheduled_dma.py \
+  util/mesh_ir/tests/unit/test_gate2_scheduled_barriers.py
+```
+
+## Torch selected placement geometry
+
+```bash
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m pytest -q \
+  util/mesh_ir/tests/unit/test_gate2_placement_geometry.py
+```
+
+## Torch backend composition
+
+Focused composition contract:
+
+```bash
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m pytest -q \
+  util/mesh_ir/tests/unit/test_gate2_compiler.py
+```
+
+Complete real-model backend integration:
+
+```bash
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m pytest -q \
+  util/mesh_ir/tests/integration/test_gate2_backend_compiler.py
+```
+
+## Torch public compilation
+
+Use new output paths on a filesystem that supports atomic no-replace directory rename. These commands use `/tmp`:
+
+```bash
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m mesh_ir.export_and_compile \
+  --module examples.tiny_mlp:create_model \
+  --inputs util/mesh_ir/examples/tiny_mlp_inputs.json \
+  --arch configs/example/ai_mesh/arch/mesh_2x2.yaml \
+  --config util/mesh_ir/examples/tiny_mlp_compile.yaml \
+  --output /tmp/ai-mesh-tiny-mlp-export
+
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m mesh_ir.compile \
+  --exported-program /tmp/ai-mesh-tiny-mlp-export/exported_program.pt2 \
+  --arch configs/example/ai_mesh/arch/mesh_2x2.yaml \
+  --config util/mesh_ir/examples/tiny_mlp_compile.yaml \
+  --output /tmp/ai-mesh-tiny-mlp-load
+```
+
+All commands run from the repository root. The runtime commands below use
+the `AXI_MESH` build; Python foundation tests do not require a gem5 build.
 
 ## Build
+
+The `AXI_MESH` build requires libisl headers, which the system does not carry;
+export the environment recorded in
+`.tmp/docs/torch-stage3-isl-environment/` (extracted `.deb` tree under
+`.tmp/torch-isl-dev-package/`) before running scons: `CCFLAGS_EXTRA`,
+`LIBRARY_PATH` and `PKG_CONFIG_PATH` are the whitelisted scons variables that
+carry the extracted tree into the probes and the link.
 
 ```bash
 scons build/AXI_MESH/gem5.opt -j8
@@ -342,8 +453,10 @@ python3 tests/gem5/ai_mesh/run_dual_lane_checks.py \
 构建完成后再启动仿真。
 
 5×5 tensor 实验通过 profile 的 `network.dual_lane` 布尔字段启用双 lane；
-[实验入口](../../configs/example/ai_mesh/run_mesh_experiment.py) 和
-[校验器](../../util/mesh_ir/mesh_ir/experiment/verify.py) 读取同一 profile。
+[实验架构解析器](../../util/mesh_ir/mesh_ir/experiment/workload.py) 生成唯一
+`ArchManifest`，[实验入口](../../tests/gem5/ai_mesh/run_mesh_experiment.py) 通过
+`architecture_document` 持久化该架构，[校验器](../../util/mesh_ir/mesh_ir/experiment/verify.py)
+读取同一持久化架构。
 物理链路统计保留 lane 身份，按逻辑路由汇总后与 workload oracle 核对。
 LOAD 图及运行证据见 [实验报告](../../src/doc/ai_mesh/goal_mesh_outstanding_buffer_experiment.md)。
 
@@ -460,9 +573,8 @@ PREFILL/DECODE/PUBLISH 的 admission/slot/pin/append 生产接线属 R3。
 
 R3 当前接受范围、独立证据与后续边界见 [r86 独立复审](../../.tmp/docs/gate6-r3-r86-independent-review.md)；实施状态唯一入口为 [Gate 6 实施计划](../../.tmp/docs/gate6-implementation-plan.md)。
 
-profile 执行绑定由 ABI section `PROFILE_STREAM_RANGES`（16 B/record，feature
-`PROFILE_SCOPED_EXECUTION_V1`，`abi.minor 3`）单点定义；Python 侧唯一 ownership
-入口为 `mesh_ir.execution_view`，C++ 侧镜像为
+profile 执行绑定与 feature 契约见 [ABI SSOT](../../util/mesh_ir/mesh_ir/abi/mesh_ir_abi.yaml)。Python ownership
+入口为 [execution_view.py](../../util/mesh_ir/mesh_ir/execution_view.py)，C++ 侧为
 [mesh_execution_view.hh](../../src/dev/ai_mesh/mesh_execution_view.hh)（scoped
 program 无 selector 即 fatal，不退回全 stream 执行）。per-phase fixture 为
 `tests/gem5/ai_mesh/fixtures/gate6/serving_two_tokens.mshb`（PREFILL → 2×DECODE
@@ -486,7 +598,7 @@ python3 tests/gem5/ai_mesh/run_manifest_selector.py --gate 6 --id E2E-D \
 descriptor 闭包、per-phase KV token/descriptor 账本与终态账本由
 `mesh_ir.serving_e2e_oracle` 独立重算（输入为 facts 的 `SERVING_PHASE` 行，
 单点定义在 `mesh_ir.gate3_oracle.SERVING_PHASE_FIELDS`），phase 串行性由
-`command_issue_ticks`、join 双条件 tick 次序由 `SERVING_PHASE` 行重算，traffic
+逐实例 command observations、join 双条件 tick 次序由 `SERVING_PHASE` 行重算，traffic
 由 `program.expected_traffic` 重建；`SERVING_PHASE` 行由运行期
 `ServingMeshExecutor::setPhaseFactSink`（frontend 接
 `Gate3ObservationRecorder::recordServingPhase`）在每次 phase commit 时落盘。
@@ -536,6 +648,84 @@ KV FILL/STORE/LOAD 的冻结内容期望同样由 `serving_contract_digest.py` �
 逐字节不变、commit tick 与 run terminal tick 后移。determinism 类由
 `run_manifest_selector.py --gate 6 --id E2E-D` 重复运行并对
 `mesh_result.json`/`gate6_facts.tsv`/`traffic.json` 做逐字节比较取证。
+
+## Gate 6 serving scheduler (R4)
+
+调度模型与量子生命周期用例分别见
+[scheduler tests](../../src/dev/ai_mesh/mesh_serving_scheduler.test.cc)、
+[executor tests](../../src/dev/ai_mesh/serving_mesh_executor.test.cc) 和
+[Python scheduler tests](../../util/mesh_ir/tests/unit/test_serving_scheduler.py)。
+资源等待/取消见 [admission tests](../../src/dev/ai_mesh/serving_mesh_executor_admission.test.cc)，
+READY/WAIT/实例选择见 [quantum tests](../../src/dev/ai_mesh/serving_mesh_executor_quantum.test.cc)；
+两者复用 [Harness](../../src/dev/ai_mesh/serving_mesh_executor_test.hh)。
+共享实例与 canonical arrival permutation 的组件入口见
+[shared executor tests](../../src/dev/ai_mesh/serving_mesh_executor_shared.test.cc)。
+多请求调度、CQ ACK 回收与整轮 drain 见
+[multiple-request integration](../../util/mesh_ir/tests/integration/test_gate6_multiple_requests.py)。
+运行期 MoE 的独立完整图对照见
+[materializer golden](../../util/mesh_ir/tests/unit/test_moe_materializer_golden.py) 与
+[serving oracle](../../util/mesh_ir/tests/integration/serving_moe_oracle.py)。
+跨 batch attach、RESOURCE_WAIT、失败与冻结后取消复用上述 multiple-request integration；
+实例身份通过 [phase facts](../../src/dev/ai_mesh/serving_phase_fact.hh) 对账。
+R4 出口与 cache 生产覆盖使用同一 manifest selector：
+
+```bash
+python3 tests/gem5/ai_mesh/run_manifest_selector.py --gate 6 \
+    --id SERV-3 --id SERV-4 --id SERV-11 --id SERV-14 --id SERV-15 \
+    --id MOE-24 --id MOE-28 --workdir .tmp/r4-acceptance
+scons build/AXI_MESH/dev/ai_mesh/mesh_moe_materializer.test.opt -j4
+build/AXI_MESH/dev/ai_mesh/mesh_moe_materializer.test.opt
+```
+
+Host 控制与真实 owner terminal 的联合场景见
+[serving control integration](../../util/mesh_ir/tests/integration/test_gate6_serving_controls.py)。
+静态 member slot 与 primary relocation 独立性见
+[member-slot integration](../../util/mesh_ir/tests/integration/test_gate6_member_slots.py)，
+与 [multirow prefix](../../util/mesh_ir/tests/integration/test_gate6_multirow_prefix.py)
+共用 [fixture/runner](../../util/mesh_ir/tests/integration/serving_runtime.py)。
+三表配置容量的 Python/Loader 双层拒绝与恰够执行见
+[binding-capacity integration](../../util/mesh_ir/tests/integration/test_gate6_binding_capacity.py)，
+C++ 静态证明见 [capacity tests](../../src/dev/ai_mesh/mesh_serving_capacity.test.cc)。
+运行期三表冻结、失败不发布及存储复用见
+[batch tests](../../src/dev/ai_mesh/mesh_serving_batch.test.cc)；
+singleton 接入与冻结失败清理见
+[admission tests](../../src/dev/ai_mesh/serving_mesh_executor_admission.test.cc)。
+地址与成员身份共用解析入口见
+[binding tests](../../src/dev/ai_mesh/serving_instance_binding.test.cc)；
+DMA accepted/terminal 的调用入口为
+[MeshDummyCore](../../src/dev/ai_mesh/mesh_dummy_core.cc) 的 `dmaOwner`。
+真实事件所有者见
+[Frontend execution adapter](../../src/dev/ai_mesh/npu_serving_frontend_execution.cc)。
+单请求回归复用上节 E2E-D；R4 范围与开放项以
+[实施计划](../../.tmp/docs/gate6-implementation-plan.md) 为准。
+
+```bash
+scons build/AXI_MESH/dev/ai_mesh/mesh_serving_scheduler.test.opt \
+    build/AXI_MESH/dev/ai_mesh/serving_mesh_executor.test.opt -j4
+build/AXI_MESH/dev/ai_mesh/mesh_serving_scheduler.test.opt
+build/AXI_MESH/dev/ai_mesh/serving_mesh_executor.test.opt \
+    --gtest_filter='ServingMeshExecutor.*Quantum*:ServingMeshExecutor.SelectedPhaseRemainsBusyUntilTheRealStart'
+build/AXI_MESH/dev/ai_mesh/serving_mesh_executor.test.opt \
+    --gtest_filter='ServingMeshExecutor.*Identity*:ServingMeshExecutor.UnknownCompletionBeforeAdmissionHasNoState:ServingMeshExecutor.*Facts*'
+build/AXI_MESH/dev/ai_mesh/serving_mesh_executor.test.opt \
+    --gtest_filter='ServingMeshExecutor.SelectorsAreInstalledOnlyByTheWinningQuantum:ServingMeshExecutor.InstanceIdentityComesFromDispatcherSelection:ServingMeshExecutor.FailedReadyPhaseDoesNotWaitForANeverStartedInstance'
+build/AXI_MESH/dev/ai_mesh/serving_mesh_executor.test.opt \
+    --gtest_filter='ServingMeshExecutor.Admission*:ServingMeshExecutor.CancellingAdmission*'
+build/AXI_MESH/dev/ai_mesh/serving_mesh_executor.test.opt \
+    --gtest_filter='ServingBatchFixture.*:ServingMeshExecutor.InvalidFrozenTable*'
+build/AXI_MESH/dev/ai_mesh/serving_mesh_executor.test.opt \
+    --gtest_filter='ServingMeshExecutor.Cancel*:ServingMeshExecutor.SameEdgeCancel*:ServingMeshExecutor.ReleaseOnTheOwnerTerminalEdgePreservesTheSnapshot'
+PYTHONPATH=util/mesh_ir python3 -m pytest \
+    util/mesh_ir/tests/unit/test_serving_scheduler.py -q
+PYTHONPATH=util/mesh_ir python3 -m pytest \
+    util/mesh_ir/tests/integration/test_gate6_serving_controls.py \
+    util/mesh_ir/tests/integration/test_gate6_multiple_requests.py -q
+PYTHONPATH=util/mesh_ir python3 -m pytest \
+    util/mesh_ir/tests/integration/test_gate6_member_slots.py \
+    util/mesh_ir/tests/integration/test_gate6_multirow_prefix.py -q
+PYTHONPATH=util/mesh_ir python3 -m pytest \
+    util/mesh_ir/tests/integration/test_gate6_binding_capacity.py -q
+```
 
 ## Gate 5 Dynamic MoE V1
 
@@ -838,6 +1028,172 @@ python3 configs/example/ai_mesh/gate5_acceptance.py
 python3 tests/gem5/ai_mesh/gate5/runtime_contract.py
 ```
 
+## Torch Gate 4 mock runtime acceptance
+
+Compiler publication and simulator setup share the
+[`runtime_harness`](../../util/mesh_ir/tests/integration/support/runtime_harness.py).
+Focused contracts are in the [view-offset tests](../../util/mesh_ir/tests/integration/test_gate4_view_offset_runtime.py),
+[fill tests](../../util/mesh_ir/tests/integration/test_gate4_fill_runtime.py),
+[transfer snapshots](../../util/mesh_ir/tests/integration/test_gate4_transfer_snapshots.py),
+[reconciliation tests](../../util/mesh_ir/tests/integration/test_gate4_reconciliation.py),
+[diagnostic lifecycle tests](../../util/mesh_ir/tests/integration/test_gate4_diagnostic_lifecycle.py)
+and [behaviour matrix](../../util/mesh_ir/tests/integration/test_gate4_behaviour_matrix.py).
+Use the locked interpreter and a fresh local `/tmp` publication directory as above.
+
+## Torch Gate 5 real AXI/Garnet runtime
+
+The real-backend run entry is
+[`run_mesh_dma_garnet.py`](../../configs/example/ai_mesh/run_mesh_dma_garnet.py);
+the harness that drives it is
+[`garnet_harness.py`](../../util/mesh_ir/tests/integration/support/garnet_harness.py),
+which shares program publication, oracle readers and the gem5 runtime
+environment with [`runtime_harness.py`](../../util/mesh_ir/tests/integration/support/runtime_harness.py).
+The runner reconciles through the same
+[`runtime_reconciliation.py`](../../util/mesh_ir/mesh_ir/runtime_reconciliation.py)
+entry as the mock runtime and writes its admitted oracle to
+`gate5_oracle.json` before simulating. Raw byte archives are opt-in per run
+(`--dump-verify-bytes`, `--dump-source-bytes`, `--dump-compute-bytes`).
+
+```bash
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m pytest -q \
+  util/mesh_ir/tests/integration/test_gate5_garnet_e2e.py \
+  util/mesh_ir/tests/integration/test_gate5_transport_contract.py \
+  util/mesh_ir/tests/integration/test_gate5_axi_completion.py \
+  util/mesh_ir/tests/integration/test_gate5_peer_commit_runtime.py \
+  util/mesh_ir/tests/integration/test_gate5_wstrb_runtime.py \
+  util/mesh_ir/tests/integration/test_gate5_determinism.py \
+  util/mesh_ir/tests/integration/test_gate5_burst_attribution.py \
+  util/mesh_ir/tests/integration/test_gate5_e2e_bytes.py \
+  util/mesh_ir/tests/integration/test_gate5_packet_traffic.py \
+  util/mesh_ir/tests/integration/test_gate5_archive_manifest.py \
+  util/mesh_ir/tests/integration/test_axi_outstanding_runtime.py \
+  --basetemp=/tmp/torch-gate5-focused-UNIQUE
+```
+
+## Torch Gate 6 workload acceptance
+
+Entry points live in
+[`workload_producer.py`](../../util/mesh_ir/mesh_ir/workload_producer.py)
+(every consumed local source row has a byte-exact admitted producer,
+sub-range reads tile producer runs, consumer rows are anchored to their
+admitted endpoint geometry, P2P relays inherit producer identity) and
+[`workload_statistics.py`](../../util/mesh_ir/mesh_ir/workload_statistics.py)
+(spec §13 metrics derived from real event owners, including the compiler
+cycle prediction of [`compute_timing.py`](../../util/mesh_ir/mesh_ir/compute_timing.py)
+against archived engine executions; `unavailable` lists what still has no
+owner). Both consume the archived `actual_result.json`; the statistics
+summary is also written per run as `workload_statistics.json`. Composite
+counterexamples (consistent moves, replayed instances, masked deletions,
+error-B disguises) are exercised by
+[`test_gate6_composite_lies.py`](../../util/mesh_ir/tests/integration/test_gate6_composite_lies.py).
+
+```bash
+PYTHONPATH=util/mesh_ir .tmp/torch-package-compiler/bin/python -m pytest -q \
+  util/mesh_ir/tests/integration/test_gate6_ring_workload.py \
+  util/mesh_ir/tests/integration/test_gate6_tensor_classes.py \
+  util/mesh_ir/tests/integration/test_gate6_producer_chain.py \
+  util/mesh_ir/tests/integration/test_gate6_statistics.py \
+  util/mesh_ir/tests/integration/test_gate6_composite_lies.py \
+  --basetemp=/tmp/torch-gate6-focused-UNIQUE
+```
+
+Target fault plans are resolved to admitted execution identities by
+[`fault_plan.py`](../../util/mesh_ir/mesh_ir/fault_plan.py), so an error-drained
+run is judged by the shared reconciliation entry instead of a UID list; the
+same module derives the accepted transaction order, clipped by the smaller of
+the architecture and descriptor burst caps. The `read_reorder` case delays one
+middle read burst and asserts the resulting R completion order, while
+`read_outstanding_window` is its no-delay control.
+Every real commit that extends a transfer's coverage is archived as a stage,
+and the receiver notification crosses `MeshDispatcher::routePeerCommit`, so
+`--receiver-fault receive_duplicate|receive_redirect|receive_drop` injects at
+the same boundary for both backends. Peer coverage is observed per byte by
+[`peer_sram_aperture.cc`](../../src/dev/ai_mesh/peer_sram_aperture.cc) and
+verified by `verified_transfer_publishes` in
+[`runtime_peer_publish.py`](../../util/mesh_ir/mesh_ir/runtime_peer_publish.py);
+`--replay-write-commit TARGET:UID:COUNT` injects a real duplicate observer
+notification at the target delivery boundary. The `p2p_partial_abandon` carrier
+fails one burst of an admitted P2P plan: the aperture retires the expectation as
+abandoned (`PeerSramAperture::abandonAllExpectations`) instead of discarding its
+coverage, and `verified_transfer_publishes` requires the receiver's covered bytes
+and transactions to equal the source's own partial contribution while neither
+side reports a release. The DMA direction class of each descriptor kind is one
+table (`_AXI_DIRECTION_FIELDS`) shared by the execution oracle and the fault
+model. The `p2p_prefilled` and `p2p_prefilled_incomplete` carriers push a
+40-descriptor transfer onto a destination a core-1 `LOCAL_FILL` already made
+resident: every committed descriptor archives its own destination observation
+(`MeshDummyCore::recordTransferCommit`, shared by both engines) and
+`verified_transfer_snapshots` in
+[`runtime_reconciliation.py`](../../util/mesh_ir/mesh_ir/runtime_reconciliation.py)
+requires a resident destination never to be this transfer's completion, the
+pending set to be exactly the admitted descriptors that did not commit, and each
+untouched pending span to still hold its admitted initial content. Peer coverage
+is a per-frame fact: the dispatcher snapshots every aperture's transfer coverage
+into the instance frame it archives (`MeshDispatcher::writeInstanceApertures`),
+and the `p2p_frames` carrier runs the whole E2E-2 chain at 1/2/3 instances with
+each frame's own receiver ordering, peer publish, staged stages and chain content
+(the shared `verify_transfer_producer_content` pairs the frame's producer with
+each local-source descriptor). `dma_basic_shallow` and `p2p_frames_shallow` run
+the same two chains under one shallow configuration
+(`run_mesh_dma_garnet.shallow_queues`) with the full assertion set, and the shared
+`verified_queue_bounds` proves from the archive that the in-flight descriptor
+peak stays within the admitted depth and reaches it, that the read window is
+filled but never exceeded, that every accepted burst retires exactly once and
+that the source recorded measurable blocking. The admitted compute model is one
+shared definition in
+[`compute_timing.py`](../../util/mesh_ir/mesh_ir/compute_timing.py): the core
+archives each engine plan's analytic cycle count, and every real compute command
+must run exactly the cycles its own admitted attribute costs, on the admitted
+engine, ending at the tick the model predicts. `p2p_peer_edge` pushes onto a
+peer destination that itself starts unaligned, pads every row by four bytes and
+crosses a 4 KiB page: its admitted burst split is verified against the observed
+AW bursts, and `verified_sentinels` treats a declared span a published compute
+run really wrote as explained while every other span must stay identical.
+`drain_stalled` arms a test-only credit-drop fault at the real credit-return
+boundary (`--drain-fault drop_credit`) once the drain is open, so every core has
+halted and the data path is empty while the credit ledger alone keeps the gate
+waiting; the drain-phase watchdog must report that state with
+`unrestored_links`/`deficit` instead of DONE. The E2E-1 destination landing is
+owned by `verified_store_destinations`: the verified destination digest must equal
+the payload the last instance's own STORE execution wrote over the whole admitted
+span, so a wrong store payload fails instead of merely being non-zero. WSTRB-disabled lanes, row
+padding and the unaligned head and tail around a payload are proven untouched
+by `TargetSentinels` in
+[`target_sentinels.cc`](../../src/dev/ai_mesh/target_sentinels.cc) and
+`verified_sentinels` in
+[`runtime_reconciliation.py`](../../util/mesh_ir/mesh_ir/runtime_reconciliation.py).
+The unified drain boundary is owned by `MeshDispatcher::drainSatisfied` in
+[`mesh_dispatcher.cc`](../../src/dev/ai_mesh/mesh_dispatcher.cc): after HALT it
+waits for an empty Garnet snapshot, every restored credit-ledger link, idle
+bridges, no live peer expectation and an idle target endpoint, publishes the
+drain window and the ledger, and is verified by `verified_drain` in
+[`runtime_reconciliation.py`](../../util/mesh_ir/mesh_ir/runtime_reconciliation.py).
+The drain is re-evaluated on real clock edges (and on real progress), and a
+drain that makes no progress fires the watchdog with the pending owner
+identities. The `drain_deferred` case raises the per-link latency so credits
+are still returning when the last core halts, which is the carrier for the
+postponed exit. A rejected admission is also covered: a corrupt image and a program admitted
+against a different architecture are refused before any tick runs, and the
+structured diagnostic names the lifecycle stage, the phase (`decode`,
+`admission`, `variant_selection`, `binding_resolution`, `command_rom`),
+`install_state` and `installed_cores`. A post-commit B error is injected with `--post-commit-fault TARGET:UID`: the
+target commits the burst and then reports a failing B, so the landing and the
+error are both recorded. The fault model in
+[`fault_plan.py`](../../util/mesh_ir/mesh_ir/fault_plan.py) names the failed
+burst and the admitted per-burst bytes, and `reconcile` verifies that every
+other burst still accounts as committed. A `lost_response` carrier delays one read transaction far beyond the watchdog
+budget: it must fail closed with `E_RUNTIME_DEADLOCK`, a watchdog diagnostic and
+the pending descriptor and waiter identities, never as DONE or ERROR_DRAINED.
+`test_gate5_determinism.py` runs five carriers twice each and requires the
+canonical result JSON to be identical, with no excluded field.
+A drained run's issued beats are classified from the archived executions and
+must equal the bridge counters exactly, so an errored run is not exempted from
+beat conservation. Per-case evidence for the whole real-backend matrix is
+regenerated by
+[`run_case_matrix.py`](../../.tmp/docs/torch-gate-5-implementation/run_case_matrix.py)
+into `.tmp/docs/torch-gate-5-implementation/matrix`; the implementation state is
+`status.json` under `.tmp/docs/torch-gate-5-implementation/`.
+
 ## Mandatory manifest selector (Dummy Core Gates)
 
 ```bash
@@ -888,6 +1244,18 @@ Acceptance tests for `reference_compute` and poison paths are indexed by
 
 ## 5×5 outstanding / router input buffer experiment
 
+Physical memory ownership and manifest-based deployment checks:
+
+```bash
+PYTHONPATH=util/mesh_ir python3 -m pytest -q \
+    util/mesh_ir/tests/unit/test_runtime_memory.py \
+    util/mesh_ir/tests/unit/test_runtime_deployment.py \
+    util/mesh_ir/tests/unit/test_runtime_fabric.py \
+    util/mesh_ir/tests/unit/test_gate6_credit.py \
+    util/mesh_ir/tests/integration/test_gather_runtime.py
+build/AXI_MESH/dev/ai_mesh/memory_address_map.test.opt
+```
+
 The experiment contract and implementation boundaries are indexed by
 [outstanding_router_fifo_experiment_design.md](outstanding_router_fifo_experiment_design.md).
 The measured configurations, frozen execution budget, raw artifacts and
@@ -932,3 +1300,240 @@ python3 -m pytest -q \
 python3 -m pytest -q \
     util/mesh_ir/tests/integration/test_mesh_experiment_measurement.py
 ```
+
+## Gate 6 repair、持久状态与 Host 生命周期（R5）
+
+阶段合同：[Gate 6 coding spec](../../src/doc/ai_mesh/DUMMY_AI_CORE_GATE6_CODING_SPEC.md)。
+注册入口：[mandatory manifest](../../tests/gem5/ai_mesh/mandatory_case_manifest.yaml) 的 E2E-E、HOST-15、HOST-25。
+
+- [真实 repair、策略错误、控制交错和持久 manifest](../../util/mesh_ir/tests/integration/test_gate6_repair.py)。
+- [有限 Host pool 与运行期 provider 对照](../../util/mesh_ir/tests/integration/test_gate6_host_pools.py)；
+  [provider 接缝](../../util/mesh_ir/mesh_ir/serving_moe_provider.py) 复用 [provider 组件](../../util/mesh_ir/mesh_ir/moe_provider.py)，
+  [C++ population](../../src/dev/ai_mesh/mesh_moe_population.hh) 统一验证选择与容量。
+- [持久恢复](../../src/dev/ai_mesh/mesh_kv_persistence.hh)、[独立 manifest reader](../../util/mesh_ir/mesh_ir/kv_persistence.py)、
+  [exact schema](../../schemas/ai_mesh/kv_persistent_v1.schema.json)。恢复入口要求调用方提供捕获时冻结的 manifest digest；
+  整体 gem5 serving checkpoint 见 [运行合同与入口](serving_checkpoint.md)。
+- [Host 生命周期](../../src/dev/ai_mesh/agent_workload_manager.hh)、
+  [metadata 诊断校验](../../src/dev/ai_mesh/agent_protocol_validation.hh)、
+  [ABI 投影真源](../../util/mesh_ir/mesh_ir/abi/agent_protocol_abi.yaml)。
+- [Host plan image 编解码](../../util/mesh_ir/mesh_ir/agent_plan_image.py)、
+  [C++ reader](../../src/dev/ai_mesh/agent_plan_image.hh)；版本与可达 instance counts 格式以编解码实现为准。
+- [真实输入文件与 native admission](../../util/mesh_ir/tests/unit/test_agent_input_payload.py)、
+  [driver 字节落地与 checkpoint 身份](../../util/mesh_ir/tests/integration/test_agent_input_payload_runtime.py)。
+  输入声明见 [workload schema](../../schemas/ai_mesh/agent_workload_plan_v1.schema.json)。
+
+```sh
+python3 tests/gem5/ai_mesh/run_manifest_selector.py --gate 6 \
+  --id E2E-E --id HOST-15 --id HOST-25 --workdir .tmp/r5-acceptance
+PYTHONPATH=util/mesh_ir python3 -m pytest -q \
+  util/mesh_ir/tests/unit/test_serving_repair.py \
+  util/mesh_ir/tests/unit/test_serving_moe_provider.py \
+  util/mesh_ir/tests/unit/test_kv_persistence.py
+```
+
+## Gate 6 取消与错误收尾（R6）
+
+合同和出口：[Gate 6 coding spec](../../src/doc/ai_mesh/DUMMY_AI_CORE_GATE6_CODING_SPEC.md)。
+
+- [分段 PUBLISH、4 KiB、错误前缀和取消 drain/suppress](../../util/mesh_ir/tests/integration/test_gate6_failure.py)。
+- [独立 segment oracle](../../util/mesh_ir/mesh_ir/serving_publish_oracle.py)、[篡改拒绝](../../util/mesh_ir/tests/unit/test_serving_publish_oracle.py)。
+- [全局 reducer](../../src/dev/ai_mesh/instance_failure_reducer.test.cc)、[segment 账本](../../src/dev/ai_mesh/publish_segment_ledger.test.cc)。
+- [共享 fill fanout](../../util/mesh_ir/tests/integration/test_gate6_multiple_requests.py)、[cache first candidate](../../src/dev/ai_mesh/mesh_weight_cache_candidates.test.cc)。
+- [错误 source wire 真源](../../util/mesh_ir/mesh_ir/abi/mesh_ir_abi.yaml)、[diagnostic golden](../../util/mesh_ir/tests/unit/test_agent_diagnostic.py)。
+- [共享取消与部分输出](../../util/mesh_ir/tests/integration/test_gate6_shared_cancel.py)、[RELEASE 状态矩阵](../../util/mesh_ir/tests/integration/test_gate6_release.py)。
+- [SQ/parameter/identity/binding wire 矩阵](../../util/mesh_ir/tests/integration/test_gate6_wire_admission.py)、[SQ 身份与 CQ 合同组件](../../src/dev/ai_mesh/agent_sq_admission.test.cc)。
+- [共享与跨 batch 故障](../../util/mesh_ir/tests/integration/test_gate6_shared_failure.py)、[compute poison-read](../../util/mesh_ir/tests/integration/test_gate6_compute_failure.py)、[materializer prestart](../../util/mesh_ir/tests/integration/test_gate6_materializer_failure.py)。
+- [completion-path fatal KV 保留](../../util/mesh_ir/tests/integration/test_gate6_completion_fatal.py)。
+- Mandatory 节点唯一索引：[manifest](../../tests/gem5/ai_mesh/mandatory_case_manifest.yaml) 的 `PROTO-12/23/25`、`E2E-H`。
+
+```sh
+python3 tests/gem5/ai_mesh/run_manifest_selector.py --gate 6 \
+  --id PROTO-12 --id PROTO-23 --id PROTO-25 --id E2E-H \
+  --workdir .tmp/r6-acceptance
+```
+
+```sh
+PYTHONPATH=util/mesh_ir python3 -m pytest -q \
+  util/mesh_ir/tests/integration/test_gate6_failure.py
+PYTHONPATH=util/mesh_ir python3 -m pytest -q \
+  util/mesh_ir/tests/integration/test_gate6_multiple_requests.py \
+  -k 'crossing or cancel_frozen_attached'
+```
+
+R6 PUBLISH suppression 事件闭包与冻结 KV 错误来源：
+[Loader negative](../../util/mesh_ir/tests/integration/test_gate6_publish_closure.py)、
+[事件闭包 unit](../../util/mesh_ir/tests/unit/test_publish_consumer_closure.py)、
+[真实 source/prefix](../../util/mesh_ir/tests/integration/test_gate6_failure.py)。
+
+## Gate 6 oracle 与累计验收（R7）
+
+阶段出口：[Coding Spec §13](../../src/doc/ai_mesh/DUMMY_AI_CORE_GATE6_CODING_SPEC.md)。
+[真实三次重复与产物篡改](../../util/mesh_ir/tests/integration/test_gate6_artifact_integrity.py)复用
+[serving oracle](../../util/mesh_ir/mesh_ir/serving_e2e_oracle.py)；
+[组件反例](../../util/mesh_ir/tests/unit/test_serving_e2e_oracle.py)与
+[acceptance 验证](../../util/mesh_ir/tests/unit/test_gate6_acceptance.py)使用相同正式入口。
+
+```sh
+PYTHONPATH=util/mesh_ir python3 -m pytest -q \
+  util/mesh_ir/tests/unit/test_serving_e2e_oracle.py \
+  util/mesh_ir/tests/unit/test_gate6_acceptance.py
+PYTHONPATH=util/mesh_ir python3 -m pytest -q \
+  util/mesh_ir/tests/integration/test_gate6_artifact_integrity.py
+```
+
+## Gate 7 定向压力与故障验收
+
+[12 用户压力与生效配置校验](../../util/mesh_ir/tests/integration/test_gate7_pressure.py)、
+[有限服务池与 provider 对账](../../util/mesh_ir/tests/integration/test_gate6_host_pools.py)、
+[AXI 故障](../../util/mesh_ir/tests/integration/test_gate6_failure.py)和
+[program 故障](../../util/mesh_ir/tests/integration/test_gate6_compute_failure.py)
+由 mandatory manifest 的 E2E-F/G 调用。
+Proxy 请求/响应队列的配置映射由
+[gate4_runtime.py](../../configs/example/ai_mesh/gate4_runtime.py)供两个 runner 共用。
+
+```sh
+python3 tests/gem5/ai_mesh/run_manifest_selector.py --gate 7 \
+  --id E2E-F --id E2E-G --id HOST-1 --workdir .tmp/gate7-fg
+python3 tests/gem5/ai_mesh/run_manifest_selector.py --gate 7 \
+  --id E2E-H --id E2E-C --id DC-26 --id DC-31 --workdir .tmp/gate7-stress
+```
+
+这些命令只运行显式 ID；累计出口仍要求新目录单次 Gate 7 全部 150 项通过。
+
+### Serving/KV 分句定向验收
+
+[固定 profile padding 与 MoE PAD](../../util/mesh_ir/tests/integration/test_gate6_padding.py)、
+[wire 长度边界](../../util/mesh_ir/tests/integration/test_gate6_wire_admission.py)、
+[Host 阶段与 repair](../../util/mesh_ir/tests/integration/test_gate6_repair.py)
+与既有 KV、binding、PUBLISH 组件及生产用例在 mandatory manifest 中逐子例登记。
+
+```sh
+python3 tests/gem5/ai_mesh/run_manifest_selector.py --gate 6 \
+  --id SERV-6 --id SERV-8 --id SERV-9 --id SERV-10 --id SERV-12 \
+  --id SERV-13 --id SERV-17 --id SERV-18 --id SERV-19 --id SERV-20 \
+  --id SERV-21 --workdir .tmp/r7-serving-clauses
+```
+
+Batch replay 的真实共享成员与 strict timing 检查：
+
+```bash
+PYTHONPATH=util/mesh_ir python3 -m pytest -q util/mesh_ir/tests/integration/test_gate6_batch_replay.py
+```
+
+
+## Gate 8 有限聚合网络
+
+[FAST_EVENT 真实校准与压力测试](../../util/mesh_ir/tests/integration/test_gate8_fast_event.py)
+复用 serving runner 与 Gate 7 Host 服务池场景。模式与容量合同见
+[runtime schema](../../schemas/ai_mesh/agent_runtime_config_v1.schema.json)。
+校准产物为 `calibration.json`，12 用户产物为 `pressure.json`；
+`simulation_mode.json` 记录本次运行的聚合粒度与能力边界。
+状态安装入口见 [serving runner](../../configs/example/ai_mesh/run_gate6_serving.py)。
+
+```sh
+scons build/AXI_MESH/gem5.opt -j4
+PYTHONPATH=util/mesh_ir python3 -m pytest -q \
+  util/mesh_ir/tests/integration/test_gate8_fast_event.py
+```
+
+缓存状态导出与原子安装的组件验证见
+[C++ owner tests](../../src/dev/ai_mesh/mesh_weight_cache_replay.test.cc)、
+[Python 原子安装测试](../../util/mesh_ir/tests/unit/test_cache_replay_atomic.py)；
+[FULL/FAST 真实导出](../../util/mesh_ir/tests/integration/test_gate8_cache_state.py)
+验证运行期缓存元数据的跨语言读取。该验证不包含权重字节恢复或整机 checkpoint。
+
+```sh
+scons build/AXI_MESH/dev/ai_mesh/mesh_binary.test.opt -j4
+build/AXI_MESH/dev/ai_mesh/mesh_binary.test.opt --gtest_filter='WeightCache*:*WeightCache*'
+PYTHONPATH=util/mesh_ir python3 -m pytest -q \
+  util/mesh_ir/tests/unit/test_cache_replay_atomic.py \
+  util/mesh_ir/tests/unit/test_gate5_strict_replay.py \
+  util/mesh_ir/tests/unit/test_gate5_weight_cache.py
+PYTHONPATH=util/mesh_ir python3 -m pytest -q \
+  util/mesh_ir/tests/integration/test_gate8_cache_state.py
+```
+
+启动时外部 warm-state 的输入与验证入口见
+[runtime compiler](../../util/mesh_ir/mesh_ir/weight_runtime.py) 和
+[C++ 安装准备](../../src/dev/ai_mesh/mesh_cache_replay.cc)。
+真实测试覆盖 FULL/FAST/WINDOWED cold→warm 数据与输出对账、Python/Loader 分别拒绝非法输入，
+以及失败 tombstone 恢复后禁止重试 DMA。
+
+```sh
+PYTHONPATH=util/mesh_ir python3 -m pytest -q \
+  util/mesh_ir/tests/integration/test_gate8_warm_cache.py
+```
+
+同进程暂停、排空和恢复入口见
+[program boundary](../../src/dev/ai_mesh/serving_program_boundary.cc)，
+replay 依赖由 [replay owner](../../src/dev/ai_mesh/serving_mesh_replay.cc) 推导。
+[真实用例](../../util/mesh_ir/tests/integration/test_gate8_program_boundary.py)
+对账恢复后的 payload、cache replay state 与实际 SRAM 内容摘要，并覆盖非法转换拒绝。
+网络切换验证见下方 WINDOWED_TIMING 入口；完整保存/恢复见 [checkpoint](serving_checkpoint.md)。
+
+```sh
+PYTHONPATH=util/mesh_ir python3 -m pytest -q \
+  util/mesh_ir/tests/integration/test_gate8_program_boundary.py
+```
+
+WINDOWED_TIMING 的 program boundary 交接见
+[GarnetNetwork](../../src/mem/ruby/network/garnet/GarnetNetwork.cc) 与
+[聚合路径](../../src/mem/ruby/network/simple/AggregateNetwork.cc)。
+窗口计划与 `timing_windows.json` 产物由
+[ServingTimeline](../../util/mesh_ir/mesh_ir/serving_timeline.py)管理。
+[真实测试](../../util/mesh_ir/tests/integration/test_gate8_windowed.py)
+覆盖双向切换、业务状态和流量对账、既有路径时序一致及非法转换拒绝。
+
+```sh
+PYTHONPATH=util/mesh_ir python3 -m pytest -q \
+  util/mesh_ir/tests/integration/test_gate8_windowed.py
+```
+
+## Gate 8 serving checkpoint
+
+使用合同与所有者索引见 [serving checkpoint](serving_checkpoint.md)。
+
+```sh
+PYTHONPATH=util/mesh_ir python3 -m pytest -q \
+  util/mesh_ir/tests/unit/test_serving_checkpoint.py \
+  util/mesh_ir/tests/integration/test_gate8_checkpoint.py \
+  util/mesh_ir/tests/integration/test_gate6_repair.py::test_checkpoint_without_program_boundary_is_rejected
+build/AXI_MESH/dev/ai_mesh/mesh_binary.test.opt --gtest_filter='MeshCheckpoint.*'
+build/AXI_MESH/dev/ai_mesh/agent_workload_manager.test.opt --gtest_filter='AgentWorkloadManager.Checkpoint*'
+build/AXI_MESH/mem/axi/axi_checkpoint.test.opt
+```
+
+## Gate 8 长任务校准
+
+[十二用户、二十四任务实验](../../util/mesh_ir/tests/integration/test_gate8_long_task.py)
+复用 serving runner，运行 FULL/FAST/WINDOWED 三臂。
+[校准组件](../../util/mesh_ir/mesh_ir/serving_calibration.py)统一请求、输出与端点流量口径；
+`calibration.json` 包含每请求误差、延迟分布、运行成本、选中窗口 DMA 对账和输入/产物摘要。
+运行状态与能力边界见 [验收索引](../../.tmp/docs/gate8-long-task.md)。
+
+```sh
+PYTHONPATH=util/mesh_ir python3 -m pytest -q \
+  util/mesh_ir/tests/unit/test_serving_calibration.py \
+  util/mesh_ir/tests/integration/test_gate8_long_task.py \
+  --basetemp=.tmp/gate8-long-task
+```
+
+## Serving physical deployment
+
+[Deployment and fault-drain checks](../../util/mesh_ir/tests/integration/test_serving_deployment_runtime.py) generate current ABI Programs and exercise shared or separate host owners. [Composition contracts](../../util/mesh_ir/tests/unit/test_gate6_scenario.py) consume the architecture and runtime configuration.
+
+```bash
+PYTHONPATH=util/mesh_ir python3 -m pytest -q \
+  util/mesh_ir/tests/unit/test_gate6_scenario.py \
+  util/mesh_ir/tests/integration/test_serving_deployment_runtime.py
+```
+
+Binary startup image contracts: [native tests](../../src/dev/ai_mesh/mesh_memory_image.test.cc) and [Serving integration](../../util/mesh_ir/tests/integration/test_memory_file_image_runtime.py). Partitioned view and unary native execution: [targeted integration](../../util/mesh_ir/tests/integration/test_partitioned_slice.py).
+
+- [Tensor payload and memory file contracts](tensor_payload.md).
+
+- Gather runtime coverage: [AXI read and error paths](../../util/mesh_ir/tests/integration/test_gather_runtime.py), [compiled driver cancellation and checkpoint](../../util/mesh_ir/tests/integration/test_gather_driver_runtime.py), [seeded mock transport](../../util/mesh_ir/tests/integration/test_gather_mock_runtime.py).
+- Compiled prefill execution: [parameterized entrypoint](prefill_smoke.md), [actual driver and negative artifact checks](../../util/mesh_ir/tests/integration/test_prefill_smoke.py).
+- Preparation execution: [analysis and rejection tests](../../util/mesh_ir/tests/unit/test_prepare_analysis.py), [serial/parallel artifact equivalence and native smoke](../../util/mesh_ir/tests/integration/test_prepare_execution.py).
+
+ROM allocation and immutable derivation tests: [capacity planning](../../util/mesh_ir/tests/unit/test_command_capacity_planning.py), [early admission](../../util/mesh_ir/tests/unit/test_command_rom_capacity.py), [proof reuse](../../util/mesh_ir/tests/unit/test_scheduled_derivation_reuse.py), [descriptor indexing](../../util/mesh_ir/tests/unit/test_descriptor_address_index.py) and [native 32-worker carrier](../../util/mesh_ir/tests/integration/test_streamed_weight_reuse.py).

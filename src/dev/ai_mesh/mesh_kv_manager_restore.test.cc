@@ -23,6 +23,39 @@ namespace
 
 using namespace mesh_kv_test;
 
+TEST(MeshKvManager, AdmittedRepairPathComesFromThePinnedRollbackOwner)
+{
+    for (const auto state : {KvState::Resident, KvState::Evicted}) {
+        MeshKvManager manager(testGeometry(1), testCapacity());
+        auto record = makeRecord(7, 1, state,
+            state == KvState::Resident ? std::optional<uint32_t>(0) : std::nullopt,
+            state == KvState::Resident ? 8 : 0, 4, 5);
+        auto snapshot = persistentState({record}, {std::nullopt}, 6);
+        if (state == KvState::Resident)
+            snapshot.slot_owners[0] = std::make_pair(7, 7);
+        std::string reason;
+        ASSERT_TRUE(manager.loadPersistent(snapshot, reason)) << reason;
+        KvEdgeInputs edge;
+        edge.admissions.push_back(admit(1, 7, 1,
+            agent_abi::kSqFlagsALLOW_REPREFILL, 0, 0, 0, 8, 16));
+        const auto result = manager.commitEdge(edge);
+        ASSERT_FALSE(result.fatal);
+        ASSERT_EQ(result.handoffs.count(1), 1u);
+        const auto token = result.handoffs.at(1);
+        ASSERT_TRUE(manager.admittedPath(token));
+        EXPECT_EQ(*manager.admittedPath(token), state == KvState::Resident ?
+            KvPath::KvReuse : KvPath::Reprefill);
+        EXPECT_FALSE(manager.admittedPath({token.request_id, token.serial + 1}));
+        MeshKvManager restored(testGeometry(1), testCapacity());
+        ASSERT_TRUE(restored.loadLive(manager.saveLive(), reason)) << reason;
+        EXPECT_EQ(restored.admittedPath(token), manager.admittedPath(token));
+        edge = {};
+        edge.core_starts.push_back(1);
+        ASSERT_FALSE(restored.commitEdge(edge).fatal);
+        EXPECT_FALSE(restored.admittedPath(token));
+    }
+}
+
 TEST(MeshKvManager, PersistentRoundTripRejectsTampering)
 {
     MeshKvManager manager(testGeometry(2), testCapacity(2, 1, 4, 2));
@@ -33,7 +66,8 @@ TEST(MeshKvManager, PersistentRoundTripRejectsTampering)
         {std::make_pair<uint64_t, uint64_t>(11, 11),
          std::make_pair<uint64_t, uint64_t>(22, 22)}, 6);
     ASSERT_TRUE(manager.loadPersistent(initial, reason)) << reason;
-    const KvPersistentState saved = manager.savePersistent();
+    KvPersistentState saved;
+    ASSERT_TRUE(manager.savePersistent(saved, reason)) << reason;
     MeshKvManager clone(testGeometry(2), testCapacity(2, 1, 4, 2));
     ASSERT_TRUE(clone.loadPersistent(saved, reason)) << reason;
     EXPECT_EQ(clone.stateScalars(), manager.stateScalars());
@@ -588,7 +622,7 @@ TEST(MeshKvManager, RestoreValidatesNestedErrorSource)
         {std::nullopt, std::nullopt}, 4), reason)) << reason;
     KvLiveState live = source.saveLive();
     live.records[0].state = KvState::Error;
-    live.records[0].first_error = KvErrorCandidate{};
+    live.records[0].first_error = ErrorCandidate{};
     MeshKvManager accepted(geometry, capacity);
     ASSERT_TRUE(accepted.loadLive(live, reason)) << reason;
     EXPECT_TRUE(accepted.validate().empty());
@@ -797,7 +831,8 @@ TEST(MeshKvManager, LiveRestoreRejectsIncompleteRawStructure)
     EXPECT_EQ(target.recordCount(), 0u);
     EXPECT_TRUE(target.validate().empty());
 
-    MeshKvManager started = manager;
+    MeshKvManager started(testGeometry(1), testCapacity(2, 2, 2, 2));
+    ASSERT_TRUE(started.loadLive(manager.saveLive(), reason)) << reason;
     EXPECT_TRUE(started.validate().empty());
 }
 

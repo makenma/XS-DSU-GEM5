@@ -3,20 +3,55 @@
   "$id": "agent_runtime_config_v1.schema.json",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema", "version", "runtime", "agent", "serving", "agent_axi_driver"],
+  "required": [
+    "schema",
+    "version",
+    "runtime",
+    "agent",
+    "serving",
+    "agent_axi_driver"
+  ],
   "properties": {
-    "schema": {"const": "agent_runtime_config_v1"},
-    "version": {"const": 1},
-    "runtime": {"$ref": "#/$defs/runtimeSection"},
-    "agent": {"$ref": "#/$defs/agentSection"},
-    "serving": {"$ref": "#/$defs/servingSection"},
-    "agent_axi_driver": {"$ref": "#/$defs/driverSection"}
+    "schema": {
+      "const": "agent_runtime_config_v1"
+    },
+    "version": {
+      "const": 1
+    },
+    "runtime": {
+      "$ref": "#/$defs/runtimeSection"
+    },
+    "agent": {
+      "$ref": "#/$defs/agentSection"
+    },
+    "serving": {
+      "$ref": "#/$defs/servingSection"
+    },
+    "agent_axi_driver": {
+      "$ref": "#/$defs/driverSection"
+    }
   },
   "$defs": {
-    "u16": {"type": "integer", "minimum": 0, "maximum": 65535},
-    "u32": {"type": "integer", "minimum": 0, "maximum": 4294967295},
-    "positiveU32": {"type": "integer", "minimum": 1, "maximum": 4294967295},
-    "u53": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+    "u16": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535
+    },
+    "u32": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "positiveU32": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "u53": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
     "runtimeSection": {
       "type": "object",
       "additionalProperties": false,
@@ -28,12 +63,131 @@
         "require_global_drain"
       ],
       "properties": {
-        "mode": {"const": "FULL_TIMING"},
-        "master_seed": {"$ref": "#/$defs/u53"},
-        "stop_after_completed_tasks": {"$ref": "#/$defs/u32"},
-        "stop_accepting_new_tasks_at_tick": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/u53"}]},
-        "require_global_drain": {"type": "boolean"}
-      }
+        "mode": {
+          "enum": [
+            "FULL_TIMING",
+            "FAST_EVENT",
+            "WINDOWED_TIMING"
+          ]
+        },
+        "master_seed": {
+          "$ref": "#/$defs/u53"
+        },
+        "stop_after_completed_tasks": {
+          "$ref": "#/$defs/u32"
+        },
+        "stop_accepting_new_tasks_at_tick": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/u53"
+            }
+          ]
+        },
+        "require_global_drain": {
+          "type": "boolean"
+        },
+        "fast_event": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "queue_entries"
+          ],
+          "properties": {
+            "queue_entries": {
+              "$ref": "#/$defs/positiveU32"
+            }
+          }
+        },
+        "windows": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "initial_mode",
+            "switches"
+          ],
+          "properties": {
+            "initial_mode": {
+              "enum": [
+                "FAST_EVENT",
+                "FULL_TIMING"
+              ]
+            },
+            "switches": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "at_tick",
+                  "mode"
+                ],
+                "properties": {
+                  "at_tick": {
+                    "$ref": "#/$defs/u53"
+                  },
+                  "mode": {
+                    "enum": [
+                      "FAST_EVENT",
+                      "FULL_TIMING"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "enum": [
+                  "FAST_EVENT",
+                  "WINDOWED_TIMING"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "fast_event"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "fast_event"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "WINDOWED_TIMING"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "windows"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "windows"
+              ]
+            }
+          }
+        }
+      ]
     },
     "agentSection": {
       "type": "object",
@@ -49,23 +203,63 @@
         "completion_mode"
       ],
       "properties": {
-        "users": {"$ref": "#/$defs/positiveU32"},
-        "mode": {"const": "replay_plan"},
-        "workload_plan": {"type": "string", "minLength": 1},
-        "workload_output_oracle": {"anyOf": [{"type": "null"}, {"type": "string", "minLength": 1}]},
-        "control_plan": {"anyOf": [{"type": "null"}, {"type": "string", "minLength": 1}]},
-        "max_repair_rounds": {"$ref": "#/$defs/u16"},
-        "release_session_on_task_terminal": {"type": "boolean"},
-        "completion_mode": {"const": "interrupt"}
+        "users": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "mode": {
+          "const": "replay_plan"
+        },
+        "workload_plan": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workload_output_oracle": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "minLength": 1
+            }
+          ]
+        },
+        "control_plan": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "minLength": 1
+            }
+          ]
+        },
+        "max_repair_rounds": {
+          "$ref": "#/$defs/u16"
+        },
+        "release_session_on_task_terminal": {
+          "type": "boolean"
+        },
+        "completion_mode": {
+          "const": "interrupt"
+        }
       }
     },
     "arenaRegion": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["base", "bytes"],
+      "required": [
+        "base",
+        "bytes"
+      ],
       "properties": {
-        "base": {"$ref": "#/$defs/u53"},
-        "bytes": {"$ref": "#/$defs/u53"}
+        "base": {
+          "$ref": "#/$defs/u53"
+        },
+        "bytes": {
+          "$ref": "#/$defs/u53"
+        }
       }
     },
     "addressMap": {
@@ -84,16 +278,39 @@
         "arena_alignment_bytes"
       ],
       "properties": {
-        "npu_control_page_base": {"$ref": "#/$defs/u53"},
-        "host_control_page_base": {"$ref": "#/$defs/u53"},
-        "msi_address": {"$ref": "#/$defs/u53"},
-        "sq_ring_base": {"$ref": "#/$defs/u53"},
-        "cq_ring_base": {"$ref": "#/$defs/u53"},
-        "parameter_arena": {"$ref": "#/$defs/arenaRegion"},
-        "input_arena": {"$ref": "#/$defs/arenaRegion"},
-        "output_arena": {"$ref": "#/$defs/arenaRegion"},
-        "metadata_arena": {"$ref": "#/$defs/arenaRegion"},
-        "arena_alignment_bytes": {"$ref": "#/$defs/positiveU32"}
+        "npu_control_page_base": {
+          "$ref": "#/$defs/u53"
+        },
+        "host_control_page_base": {
+          "$ref": "#/$defs/u53"
+        },
+        "msi_address": {
+          "$ref": "#/$defs/u53"
+        },
+        "sq_ring_base": {
+          "$ref": "#/$defs/u53"
+        },
+        "cq_ring_base": {
+          "$ref": "#/$defs/u53"
+        },
+        "parameter_arena": {
+          "$ref": "#/$defs/arenaRegion"
+        },
+        "input_arena": {
+          "$ref": "#/$defs/arenaRegion"
+        },
+        "output_arena": {
+          "$ref": "#/$defs/arenaRegion"
+        },
+        "metadata_arena": {
+          "$ref": "#/$defs/arenaRegion"
+        },
+        "workspace_arena": {
+          "$ref": "#/$defs/arenaRegion"
+        },
+        "arena_alignment_bytes": {
+          "$ref": "#/$defs/positiveU32"
+        }
       }
     },
     "servingSection": {
@@ -128,57 +345,188 @@
         "address_map",
         "control_axi_ids",
         "msi_axi_id_base",
-        "msi_axi_id_count"
+        "msi_axi_id_count",
+        "prefill_decode_policy",
+        "max_batch_tokens",
+        "max_prefill_tokens_per_batch",
+        "max_decode_sequences_per_batch",
+        "batch_wait_cycles",
+        "prefill_starvation_cycles",
+        "batch_weight_binding_entries_per_context",
+        "instance_member_binding_entries_per_context",
+        "batch_interval_entries_per_context",
+        "batch_replay_artifact",
+        "strict_replay_serial_batches"
       ],
       "properties": {
-        "output_chunk_bytes": {"$ref": "#/$defs/positiveU32"},
-        "sq_entries": {"$ref": "#/$defs/positiveU32"},
-        "cq_entries": {"$ref": "#/$defs/positiveU32"},
-        "max_inflight_msi_writes": {"$ref": "#/$defs/positiveU32"},
-        "max_active_sequences": {"$ref": "#/$defs/positiveU32"},
-        "max_request_contexts": {"$ref": "#/$defs/positiveU32"},
-        "sq_intake_slots": {"$ref": "#/$defs/positiveU32"},
-        "cq_obligation_entries": {"$ref": "#/$defs/positiveU32"},
-        "terminal_result_queue_depth": {"$ref": "#/$defs/positiveU32"},
-        "driver_submission_table_entries": {"$ref": "#/$defs/positiveU32"},
-        "early_completion_cache_entries": {"$ref": "#/$defs/positiveU32"},
-        "max_pending_sq_publications": {"const": 1},
-        "max_sq_entries_per_publication": {"const": 1},
-        "host_ack_response_entries": {"$ref": "#/$defs/positiveU32"},
-        "early_cq_ack_entries": {"$ref": "#/$defs/positiveU32"},
-        "seen_request_id_entries": {"$ref": "#/$defs/positiveU32"},
-        "host_issued_request_id_entries": {"$ref": "#/$defs/positiveU32"},
-        "batch_failure_record_entries": {"$ref": "#/$defs/positiveU32"},
-        "session_release_waiter_entries": {"$ref": "#/$defs/positiveU32"},
-        "kv_session_record_entries": {"$ref": "#/$defs/positiveU32"},
-        "kv_session_tombstone_entries": {"$ref": "#/$defs/positiveU32"},
-        "kv_admission_wait_entries": {"$ref": "#/$defs/positiveU32"},
-        "cache_reservation_queue_entries": {"$ref": "#/$defs/positiveU32"},
-        "instance_view_buffer_depth": {"$ref": "#/$defs/positiveU32"},
-        "instance_view_ref_buffer_depth": {"$ref": "#/$defs/positiveU32"},
-        "address_map": {"$ref": "#/$defs/addressMap"},
+        "output_chunk_bytes": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "sq_entries": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "cq_entries": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "max_inflight_msi_writes": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "max_active_sequences": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "max_request_contexts": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "sq_intake_slots": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "cq_obligation_entries": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "terminal_result_queue_depth": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "driver_submission_table_entries": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "early_completion_cache_entries": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "max_pending_sq_publications": {
+          "const": 1
+        },
+        "max_sq_entries_per_publication": {
+          "const": 1
+        },
+        "host_ack_response_entries": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "early_cq_ack_entries": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "seen_request_id_entries": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "host_issued_request_id_entries": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "batch_failure_record_entries": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "session_release_waiter_entries": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "kv_session_record_entries": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "kv_session_tombstone_entries": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "kv_admission_wait_entries": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "cache_reservation_queue_entries": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "instance_view_buffer_depth": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "instance_view_ref_buffer_depth": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "address_map": {
+          "$ref": "#/$defs/addressMap"
+        },
         "control_axi_ids": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["sq_doorbell", "cq_head_ack", "sq_head_update", "cq_tail_update"],
+          "required": [
+            "sq_doorbell",
+            "cq_head_ack",
+            "sq_head_update",
+            "cq_tail_update"
+          ],
           "properties": {
-            "sq_doorbell": {"$ref": "#/$defs/u32"},
-            "cq_head_ack": {"$ref": "#/$defs/u32"},
-            "sq_head_update": {"$ref": "#/$defs/u32"},
-            "cq_tail_update": {"$ref": "#/$defs/u32"}
+            "sq_doorbell": {
+              "$ref": "#/$defs/u32"
+            },
+            "cq_head_ack": {
+              "$ref": "#/$defs/u32"
+            },
+            "sq_head_update": {
+              "$ref": "#/$defs/u32"
+            },
+            "cq_tail_update": {
+              "$ref": "#/$defs/u32"
+            }
           }
         },
-        "msi_axi_id_base": {"$ref": "#/$defs/u32"},
-        "msi_axi_id_count": {"$ref": "#/$defs/positiveU32"}
+        "msi_axi_id_base": {
+          "$ref": "#/$defs/u32"
+        },
+        "msi_axi_id_count": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "prefill_decode_policy": {
+          "type": "string",
+          "enum": [
+            "PUBLISH_THEN_DECODE_FIRST_AGED_PREFILL"
+          ]
+        },
+        "max_batch_tokens": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "max_prefill_tokens_per_batch": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "max_decode_sequences_per_batch": {
+          "$ref": "#/$defs/positiveU32"
+        },
+        "batch_wait_cycles": {
+          "$ref": "#/$defs/u53"
+        },
+        "prefill_starvation_cycles": {
+          "$ref": "#/$defs/u53"
+        },
+        "batch_weight_binding_entries_per_context": {
+          "$ref": "#/$defs/u32"
+        },
+        "instance_member_binding_entries_per_context": {
+          "$ref": "#/$defs/u32"
+        },
+        "batch_interval_entries_per_context": {
+          "$ref": "#/$defs/u32"
+        },
+        "batch_replay_artifact": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "strict_replay_serial_batches": {
+          "type": "boolean"
+        }
       }
     },
     "driverSection": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["mode", "clock", "remote_host_memory", "remote_link_shaper", "synthetic_host_services"],
+      "required": [
+        "mode",
+        "clock",
+        "remote_host_memory",
+        "remote_link_shaper",
+        "synthetic_host_services"
+      ],
       "properties": {
-        "mode": {"const": "REMOTE_HOST_PROXY"},
-        "clock": {"type": "string", "minLength": 1},
+        "mode": {
+          "const": "REMOTE_HOST_PROXY"
+        },
+        "clock": {
+          "type": "string",
+          "minLength": 1
+        },
         "remote_host_memory": {
           "type": "object",
           "additionalProperties": false,
@@ -190,11 +538,21 @@
             "local_store_queue_depth"
           ],
           "properties": {
-            "base": {"$ref": "#/$defs/u53"},
-            "bytes": {"$ref": "#/$defs/u53"},
-            "target_request_queue_depth": {"$ref": "#/$defs/positiveU32"},
-            "target_response_queue_depth": {"$ref": "#/$defs/positiveU32"},
-            "local_store_queue_depth": {"$ref": "#/$defs/positiveU32"}
+            "base": {
+              "$ref": "#/$defs/u53"
+            },
+            "bytes": {
+              "$ref": "#/$defs/u53"
+            },
+            "target_request_queue_depth": {
+              "$ref": "#/$defs/positiveU32"
+            },
+            "target_response_queue_depth": {
+              "$ref": "#/$defs/positiveU32"
+            },
+            "local_store_queue_depth": {
+              "$ref": "#/$defs/positiveU32"
+            }
           }
         },
         "remote_link_shaper": {
@@ -209,12 +567,24 @@
             "to_agent_queue_depth"
           ],
           "properties": {
-            "enabled": {"type": "boolean"},
-            "to_npu_latency_cycles": {"$ref": "#/$defs/u32"},
-            "to_agent_latency_cycles": {"$ref": "#/$defs/u32"},
-            "bytes_per_cycle_per_direction": {"$ref": "#/$defs/u32"},
-            "to_npu_queue_depth": {"$ref": "#/$defs/u32"},
-            "to_agent_queue_depth": {"$ref": "#/$defs/u32"}
+            "enabled": {
+              "type": "boolean"
+            },
+            "to_npu_latency_cycles": {
+              "$ref": "#/$defs/u32"
+            },
+            "to_agent_latency_cycles": {
+              "$ref": "#/$defs/u32"
+            },
+            "bytes_per_cycle_per_direction": {
+              "$ref": "#/$defs/u32"
+            },
+            "to_npu_queue_depth": {
+              "$ref": "#/$defs/u32"
+            },
+            "to_agent_queue_depth": {
+              "$ref": "#/$defs/u32"
+            }
           }
         },
         "synthetic_host_services": {
@@ -241,40 +611,94 @@
             "local_io_model"
           ],
           "properties": {
-            "compute_tokens": {"$ref": "#/$defs/positiveU32"},
-            "host_available_fraction_q16": {"type": "integer", "minimum": 1, "maximum": 65536},
-            "compile_slots": {"$ref": "#/$defs/u32"},
-            "test_slots": {"$ref": "#/$defs/u32"},
-            "log_parse_slots": {"$ref": "#/$defs/u32"},
-            "service_queue_depth": {"$ref": "#/$defs/positiveU32"},
-            "sq_submit_ready_queue_entries": {"$ref": "#/$defs/positiveU32"},
-            "control_trigger_queue_entries": {"$ref": "#/$defs/positiveU32"},
-            "irq_queue_entries": {"$ref": "#/$defs/positiveU32"},
-            "completion_read_queue_entries": {"$ref": "#/$defs/positiveU32"},
-            "cancel_join_entries": {"$ref": "#/$defs/u32"},
-            "standalone_control_waiter_entries": {"$ref": "#/$defs/positiveU32"},
+            "compute_tokens": {
+              "$ref": "#/$defs/positiveU32"
+            },
+            "host_available_fraction_q16": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65536
+            },
+            "compile_slots": {
+              "$ref": "#/$defs/u32"
+            },
+            "test_slots": {
+              "$ref": "#/$defs/u32"
+            },
+            "log_parse_slots": {
+              "$ref": "#/$defs/u32"
+            },
+            "service_queue_depth": {
+              "$ref": "#/$defs/positiveU32"
+            },
+            "sq_submit_ready_queue_entries": {
+              "$ref": "#/$defs/positiveU32"
+            },
+            "control_trigger_queue_entries": {
+              "$ref": "#/$defs/positiveU32"
+            },
+            "irq_queue_entries": {
+              "$ref": "#/$defs/positiveU32"
+            },
+            "completion_read_queue_entries": {
+              "$ref": "#/$defs/positiveU32"
+            },
+            "cancel_join_entries": {
+              "$ref": "#/$defs/u32"
+            },
+            "standalone_control_waiter_entries": {
+              "$ref": "#/$defs/positiveU32"
+            },
             "scheduler_weights": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["compile", "test", "log_parse"],
+              "required": [
+                "compile",
+                "test",
+                "log_parse"
+              ],
               "properties": {
-                "compile": {"$ref": "#/$defs/u32"},
-                "test": {"$ref": "#/$defs/u32"},
-                "log_parse": {"$ref": "#/$defs/u32"}
+                "compile": {
+                  "$ref": "#/$defs/u32"
+                },
+                "test": {
+                  "$ref": "#/$defs/u32"
+                },
+                "log_parse": {
+                  "$ref": "#/$defs/u32"
+                }
               }
             },
-            "aging_threshold_ns": {"$ref": "#/$defs/u53"},
-            "host_admission_registry_entries": {"$ref": "#/$defs/positiveU32"},
-            "release_waiter_entries": {"$ref": "#/$defs/positiveU32"},
-            "agent_object_table_entries": {"$ref": "#/$defs/positiveU32"},
+            "aging_threshold_ns": {
+              "$ref": "#/$defs/u53"
+            },
+            "host_admission_registry_entries": {
+              "$ref": "#/$defs/positiveU32"
+            },
+            "release_waiter_entries": {
+              "$ref": "#/$defs/positiveU32"
+            },
+            "agent_object_table_entries": {
+              "$ref": "#/$defs/positiveU32"
+            },
             "local_io_model": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["enabled", "fixed_latency_ns", "bytes_per_ns"],
+              "required": [
+                "enabled",
+                "fixed_latency_ns",
+                "bytes_per_ns"
+              ],
               "properties": {
-                "enabled": {"type": "boolean"},
-                "fixed_latency_ns": {"$ref": "#/$defs/u53"},
-                "bytes_per_ns": {"$ref": "#/$defs/u32"}
+                "enabled": {
+                  "type": "boolean"
+                },
+                "fixed_latency_ns": {
+                  "$ref": "#/$defs/u53"
+                },
+                "bytes_per_ns": {
+                  "$ref": "#/$defs/u32"
+                }
               }
             }
           }

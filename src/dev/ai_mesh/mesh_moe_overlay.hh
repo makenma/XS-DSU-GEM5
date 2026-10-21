@@ -2,9 +2,13 @@
 #define DEV_AI_MESH_MESH_MOE_OVERLAY_HH
 
 #include <array>
+#include "base/checkpoint_fields.hh"
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
+
+#include "dev/ai_mesh/generated/mesh_ir_abi.hh"
 
 namespace gem5
 {
@@ -17,6 +21,13 @@ namespace ai_mesh
 // Python projection one field at a time.
 struct MoeOverlayEntry
 {
+    GEM5_CHECKPOINT_FIELDS(kind, region_id, ordinal, owner_core, secondary_kind,
+        expert_id, src_core, dst_core, chunk_ordinal, phase, role, access, bytes,
+        alignment, offset, ref_region, ref_ordinal, src_view_region, src_view_ordinal,
+        dst_view_region, dst_view_ordinal, backing_kind, semantic_owner_kind,
+        semantic_owner_ref0, validity_extent, token, wait_count, signal_count,
+        view_count, wait_refs, signal_refs, view_refs)
+
     static constexpr uint16_t kSentinel16 = 0xFFFF;
     uint16_t kind = 0;
     uint32_t region_id = 0;
@@ -88,6 +99,7 @@ inline void MoeOverlayEntry::appendTokenWords(
 // Absolute SRAM interval of one overlay allocation ordinal.
 struct MoeScratchInterval
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     uint32_t region_id = 0;
     uint32_t ordinal = 0;
     uint64_t offset = 0;
@@ -99,6 +111,7 @@ struct MoeScratchInterval
 // either writes it (FUNCTIONAL_BYTES) or only digests it (the other modes).
 struct MoeFillPayload
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     uint32_t region_id = 0;
     uint32_t ordinal = 0;
     uint64_t offset = 0;
@@ -108,6 +121,9 @@ struct MoeFillPayload
 class MoeOverlayGraph
 {
   public:
+    GEM5_CHECKPOINT_FIELDS(entries, scratch_entries, payload_entries,
+                           payload_blob, fill_mode_value, program_digest)
+
     void add(const MoeOverlayEntry &entry) { entries.push_back(entry); }
 
     void addPayload(const MoeFillPayload &payload)
@@ -177,6 +193,8 @@ class MoeOverlayGraph
     // Canonical ordering and dense per-(region, kind) ordinals, mirroring
     // OverlayBuilder::finish() on the Python side.
     void assignOrdinals();
+    bool finalize(const std::vector<mesh_abi::MoeDynamicRegion> &regions,
+                  std::string &error);
 
     // Structural checks: dense ordinals, unique canonical keys, valid
     // region labels and a cycle-free wait graph over event producers.
@@ -222,6 +240,8 @@ class MoeOverlayImage
     bool decode(const std::vector<uint8_t> &image, MoeOverlayGraph &graph,
                 uint32_t &layer_id, std::string &error) const;
 };
+
+using MoeOverlaySet = std::vector<std::pair<uint32_t, MoeOverlayGraph>>;
 
 } // namespace ai_mesh
 } // namespace gem5

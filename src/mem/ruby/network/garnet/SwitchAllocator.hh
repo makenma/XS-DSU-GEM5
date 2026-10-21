@@ -32,6 +32,8 @@
 #ifndef __MEM_RUBY_NETWORK_GARNET_0_SWITCHALLOCATOR_HH__
 #define __MEM_RUBY_NETWORK_GARNET_0_SWITCHALLOCATOR_HH__
 
+#include "base/checkpoint_fields.hh"
+
 #include <iostream>
 #include <vector>
 
@@ -55,6 +57,13 @@ class OutputUnit;
 class SwitchAllocator : public Consumer
 {
   public:
+    template<class Archive> void serialize(Archive &archive, unsigned)
+    {
+        Consumer::checkpoint(archive);
+        checkpoint::existing(archive, m_lanes);
+        checkpoint::existing(archive, m_local_merges);
+        checkpoint::fields(archive, m_input_arbiter_activity, m_output_arbiter_activity);
+    }
     SwitchAllocator(Router *router);
     void wakeup();
     void init();

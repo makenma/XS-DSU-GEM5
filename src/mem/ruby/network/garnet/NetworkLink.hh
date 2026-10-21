@@ -33,6 +33,8 @@
 #ifndef __MEM_RUBY_NETWORK_GARNET_0_NETWORKLINK_HH__
 #define __MEM_RUBY_NETWORK_GARNET_0_NETWORKLINK_HH__
 
+#include "base/checkpoint_fields.hh"
+
 #include <iostream>
 #include <vector>
 
@@ -56,6 +58,11 @@ class GarnetNetwork;
 class NetworkLink : public ClockedObject, public Consumer
 {
   public:
+    template<class Archive> void serialize(Archive &archive, unsigned)
+    {
+        Consumer::checkpoint(archive);
+        checkpoint::fields(archive, m_link_utilized, m_vc_load, m_experiment_flits, m_experiment_vc_load);
+    }
     typedef NetworkLinkParams Params;
     NetworkLink(const Params &p);
     ~NetworkLink() = default;

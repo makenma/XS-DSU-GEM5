@@ -46,7 +46,7 @@
 #include "base/cast.hh"
 #include "base/stl_helpers.hh"
 #include "mem/ruby/network/MessageBuffer.hh"
-#include "mem/ruby/network/simple/SimpleNetwork.hh"
+#include "mem/ruby/network/simple/SimpleNetworkConfig.hh"
 
 namespace gem5
 {
@@ -74,17 +74,22 @@ void
 Switch::init()
 {
     BasicRouter::init();
+    if (m_network_ptr->finiteBuffers)
+        for (const auto *buffer : m_port_buffers)
+            fatal_if(!buffer->capacity(),
+                     "finite SimpleNetwork has an unbounded router queue");
     perfectSwitch.init(m_network_ptr);
     m_routing_unit.init_parent(this);
 }
 
-void
-Switch::addInPort(const std::vector<MessageBuffer*>& in)
+Consumer *
+Switch::addInPort(const std::vector<MessageBuffer*>& in, bool connect)
 {
-    perfectSwitch.addInPort(in);
+    perfectSwitch.addInPort(in, connect);
+    return &perfectSwitch;
 }
 
-void
+const Throttle &
 Switch::addOutPort(const std::vector<MessageBuffer*>& out,
                    const NetDest& routing_table_entry,
                    Cycles link_latency, int link_weight,
@@ -93,24 +98,24 @@ Switch::addOutPort(const std::vector<MessageBuffer*>& out,
                    PortDirection dst_inport)
 {
     const std::vector<int> &physical_vnets_channels =
-        m_network_ptr->params().physical_vnets_channels;
+        m_network_ptr->physicalVnetChannels;
 
     // Create a throttle
     if (physical_vnets_channels.size() > 0 && !out.empty()) {
         // Assign a different bandwith for each vnet channel if specified by
         // physical_vnets_bandwidth, otherwise all channels use bw_multiplier
         std::vector<int> physical_vnets_bandwidth =
-            m_network_ptr->params().physical_vnets_bandwidth;
+            m_network_ptr->physicalVnetBandwidth;
         physical_vnets_bandwidth.resize(out.size(), bw_multiplier);
 
-        throttles.emplace_back(m_id, m_network_ptr->params().ruby_system,
+        throttles.emplace_back(m_id, m_network_ptr->rubySystem,
             throttles.size(), link_latency,
             physical_vnets_channels, physical_vnets_bandwidth,
-            m_network_ptr->getEndpointBandwidth(), this);
+            m_network_ptr->endpointBandwidth, this);
     } else {
-        throttles.emplace_back(m_id, m_network_ptr->params().ruby_system,
+        throttles.emplace_back(m_id, m_network_ptr->rubySystem,
             throttles.size(), link_latency, bw_multiplier,
-            m_network_ptr->getEndpointBandwidth(), this);
+            m_network_ptr->endpointBandwidth, this);
     }
 
     // Create one buffer per vnet (these are intermediaryQueues)
@@ -132,6 +137,18 @@ Switch::addOutPort(const std::vector<MessageBuffer*>& out,
 
     // Hook the queues to the Throttle
     throttles.back().addLinks(intermediateBuffers, out);
+    return throttles.back();
+}
+
+SimpleNetworkSnapshot
+Switch::quiescenceSnapshot() const
+{
+    SimpleNetworkSnapshot snapshot;
+    for (auto *buffer : m_port_buffers)
+        snapshot.queuedMessages += buffer->getNumMessages() + buffer->getNumStalledMessages();
+    for (const auto &throttle : throttles)
+        snapshot += throttle.quiescenceSnapshot();
+    return snapshot;
 }
 
 void
@@ -162,10 +179,8 @@ Switch::regStats()
 
         for (const auto& throttle : throttles) {
             *(switchStats.m_msg_counts[type]) += throttle.getMsgCount(type);
+            *(switchStats.m_msg_bytes[type]) += throttle.getMsgBytes(type);
         }
-        *(switchStats.m_msg_bytes[type]) =
-            *(switchStats.m_msg_counts[type]) * statistics::constant(
-                Network::MessageSizeType_to_int(MessageSizeType(type)));
     }
 }
 
@@ -195,6 +210,9 @@ Switch::functionalRead(Packet *pkt)
         if (m_port_buffers[i]->functionalRead(pkt))
             return true;
     }
+    for (auto &throttle : throttles)
+        if (throttle.functionalRead(pkt))
+            return true;
     return false;
 }
 
@@ -206,6 +224,8 @@ Switch::functionalRead(Packet *pkt, WriteMask &mask)
         if (m_port_buffers[i]->functionalRead(pkt, mask))
             read = true;
     }
+    for (auto &throttle : throttles)
+        read = throttle.functionalRead(pkt, mask) || read;
     return read;
 }
 
@@ -217,6 +237,8 @@ Switch::functionalWrite(Packet *pkt)
     for (unsigned int i = 0; i < m_port_buffers.size(); ++i) {
         num_functional_writes += m_port_buffers[i]->functionalWrite(pkt);
     }
+    for (auto &throttle : throttles)
+        num_functional_writes += throttle.functionalWrite(pkt);
     return num_functional_writes;
 }
 

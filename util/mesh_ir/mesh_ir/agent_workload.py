@@ -154,7 +154,7 @@ def null_control_plan_digest(workload_digest: str) -> str:
     ).hexdigest()
 
 
-def _check_round_equations(base: str, round_, previous) -> None:
+def _check_round_equations(base: str, round_, previous, uses_kv: bool) -> None:
     repair = round_["repair_round"]
     full_tokens = round_["full_context_tokens"]
     full_bytes = u64_value(round_["full_context_bytes"])
@@ -188,10 +188,10 @@ def _check_round_equations(base: str, round_, previous) -> None:
                 f"{base}/expected_cached_context_bytes",
                 "must equal previous round full_context_bytes",
             )
-    if round_["kv_required_tokens_after_round"] != full_tokens + round_["output_tokens"]:
+    if round_["kv_required_tokens_after_round"] != (full_tokens + round_["output_tokens"] if uses_kv else 0):
         raise _error(
             f"{base}/kv_required_tokens_after_round",
-            "must equal full context tokens plus output tokens",
+            "must equal retained KV tokens for the task mode",
         )
     if u64_value(round_["output_capacity_bytes"]) < u64_value(round_["generated_code_bytes"]):
         raise _error(f"{base}/output_capacity_bytes", "must cover generated_code_bytes")
@@ -273,7 +273,14 @@ def _semantic_workload(document) -> None:
                 raise _error(f"{task_base}/task_seq", "tasks must be dense from 0")
             if not task["task_class"].strip():
                 raise _error(f"{task_base}/task_class", "blank after whitespace normalization")
+            uses_kv = u64_value(task["kv_handle"]) != 0
+            if task["initial_kv_generation"] != int(uses_kv):
+                raise _error(f"{task_base}/initial_kv_generation", "must match the task KV identity")
+            if not uses_kv and (len(task["rounds"]) != 1 or task["rounds"][0]["output_tokens"] != 0):
+                raise _error(f"{task_base}/rounds", "no-KV prefill requires one round and zero generated tokens")
             for field, seen in (("session_id", session_ids), ("kv_handle", kv_handles)):
+                if field == "kv_handle" and not uses_kv:
+                    continue
                 value = u64_value(task[field])
                 if value == 0:
                     raise _error(f"{task_base}/{field}", "must be nonzero")
@@ -299,7 +306,7 @@ def _semantic_workload(document) -> None:
                 if round_["program_id"] != program_id:
                     raise _error(f"{base}/program_id", "must be identical across task rounds")
                 previous = rounds[round_index - 1] if round_index else None
-                _check_round_equations(base, round_, previous)
+                _check_round_equations(base, round_, previous, uses_kv)
                 _check_stage_paths(base, round_, cap, round_index == len(rounds) - 1)
                 _check_stage_local_io(base, round_)
 
@@ -426,6 +433,7 @@ class RoundPlan:
     prompt_bytes: int | None = None
     delta_prompt_tokens: int | None = None
     delta_prompt_bytes: int | None = None
+    input_payload: bytes | None = None
 
 
 @dataclass(frozen=True)
@@ -507,7 +515,22 @@ def _stage(document_stage) -> HostStagePlan:
     )
 
 
-def _round(document_round) -> RoundPlan:
+def _round(document_round, source_directory: Path) -> RoundPlan:
+    input_payload = None
+    if 'input_payload_file' in document_round:
+        source = source_directory / document_round['input_payload_file']
+        size = u64_value(document_round['full_context_bytes'])
+        try:
+            with source.open('rb') as stream:
+                if source.stat().st_size != size:
+                    raise _error('input_payload_file', 'file length differs from full_context_bytes')
+                input_payload = stream.read(size + 1)
+        except (OSError, ValueError) as error:
+            raise _error('input_payload_file', f'cannot read input payload: {error}') from error
+        if len(input_payload) != size:
+            raise _error('input_payload_file', 'file length differs from full_context_bytes')
+        if hashlib.sha256(input_payload).hexdigest() != document_round['input_content_digest']:
+            raise _error('input_payload_file', 'content SHA256 differs from input_content_digest')
     return RoundPlan(
         workload_plan_item_id=document_round["workload_plan_item_id"],
         repair_round=document_round["repair_round"],
@@ -520,6 +543,7 @@ def _round(document_round) -> RoundPlan:
             document_round["expected_cached_context_bytes"]
         ),
         input_content_digest=document_round["input_content_digest"],
+        input_payload=input_payload,
         output_tokens=document_round["output_tokens"],
         generated_code_bytes=u64_value(document_round["generated_code_bytes"]),
         output_capacity_bytes=u64_value(document_round["output_capacity_bytes"]),
@@ -559,7 +583,7 @@ def _round(document_round) -> RoundPlan:
     )
 
 
-def _task(document_task, header_cap: int) -> TaskPlan:
+def _task(document_task, header_cap: int, source_directory: Path) -> TaskPlan:
     return TaskPlan(
         task_seq=document_task["task_seq"],
         task_class=document_task["task_class"],
@@ -568,18 +592,19 @@ def _task(document_task, header_cap: int) -> TaskPlan:
         kv_handle=u64_value(document_task["kv_handle"]),
         initial_kv_generation=document_task["initial_kv_generation"],
         max_repair_rounds=document_task.get("max_repair_rounds", header_cap),
-        rounds=tuple(_round(round_) for round_ in document_task["rounds"]),
+        rounds=tuple(_round(round_, source_directory) for round_ in document_task["rounds"]),
     )
 
 
-def _build_workload(document) -> WorkloadPlan:
+def _build_workload(document, source_directory: Path) -> WorkloadPlan:
     return WorkloadPlan(
         plan_id=document["plan_id"],
         max_repair_rounds=document["max_repair_rounds"],
         users=tuple(
             UserPlan(
                 user_id=user["user_id"],
-                tasks=tuple(_task(task, document["max_repair_rounds"]) for task in user["tasks"]),
+                tasks=tuple(_task(task, document["max_repair_rounds"], source_directory)
+                            for task in user["tasks"]),
             )
             for user in document["users"]
         ),
@@ -625,7 +650,7 @@ def validate_control_document(document, workload: WorkloadPlan) -> None:
 def load_workload_plan(path) -> WorkloadPlan:
     document = load_strict_json(path)
     validate_workload_document(document)
-    return _build_workload(document)
+    return _build_workload(document, Path(path).parent)
 
 
 def load_control_plan(path, workload: WorkloadPlan) -> ControlPlan:

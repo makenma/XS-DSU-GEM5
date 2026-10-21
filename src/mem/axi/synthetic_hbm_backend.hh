@@ -5,6 +5,10 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <stdexcept>
+#include <vector>
+
+#include "base/checkpoint_fields.hh"
 
 namespace gem5
 {
@@ -17,8 +21,16 @@ enum class SyntheticHbmDirection : uint8_t
     Write
 };
 
+struct SyntheticHbmCompletion
+{
+    uint64_t uid;
+    SyntheticHbmDirection direction;
+    uint64_t completedAt;
+};
+
 struct SyntheticHbmStats
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     uint64_t submitted = 0;
     uint64_t completed = 0;
     uint64_t retired = 0;
@@ -40,12 +52,18 @@ class SyntheticHbmBackend
     bool trySubmit(uint64_t uid, SyntheticHbmDirection direction,
                    uint64_t bytes, uint64_t now, uint64_t latency);
     void advance(uint64_t now);
-    bool ready(uint64_t uid) const;
-    uint64_t completionCycle(uint64_t uid) const;
-    void retire(uint64_t uid);
+    std::vector<SyntheticHbmCompletion> takeCompleted();
     bool idle() const { return jobs.empty(); }
     bool full() const { return jobs.size() == queueDepth; }
     SyntheticHbmStats stats() const;
+
+    template<class Archive> void serialize(Archive &archive, unsigned)
+    {
+        if (!idle() || active)
+            throw std::runtime_error("E_CHECKPOINT_BOUNDARY: synthetic HBM is active");
+        checkpoint::fields(archive, currentCycle, nextSequence, counters);
+    }
+
 
   private:
     struct Job
@@ -62,6 +80,7 @@ class SyntheticHbmBackend
     uint64_t currentCycle = 0;
     uint64_t nextSequence = 0;
     std::map<uint64_t, Job> jobs;
+    std::vector<uint64_t> completedUids;
     std::optional<uint64_t> active;
     SyntheticHbmStats counters;
 };

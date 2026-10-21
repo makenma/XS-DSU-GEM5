@@ -11,6 +11,7 @@
 
 #include "dev/ai_mesh/generated/agent_protocol_abi.hh"
 #include "dev/ai_mesh/generated/mesh_ir_abi.hh"
+#include "dev/ai_mesh/mesh_error_candidate.hh"
 
 namespace gem5
 {
@@ -205,15 +206,9 @@ struct KvCapacity
     bool valid(std::string &reason) const;
 };
 
-struct KvErrorCandidate
-{
-    uint64_t tick = 0;
-    mesh_abi::ErrorSourceKey source;
-    uint32_t code = 0;
-};
-
 struct KvRecord
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     uint64_t session_id = 0;
     uint64_t kv_handle = 0;
     uint32_t generation = 0;
@@ -228,7 +223,7 @@ struct KvRecord
     uint32_t pin_count = 0;
     uint32_t admission_claim_count = 0;
     uint32_t outstanding_kv_dma = 0;
-    std::optional<KvErrorCandidate> first_error;
+    std::optional<ErrorCandidate> first_error;
     uint32_t diagnostic_prefix_tokens = 0;
     uint64_t diagnostic_prefix_bytes = 0;
     std::optional<std::array<uint8_t, 32>> diagnostic_prefix_digest;
@@ -359,6 +354,16 @@ struct KvTerminalSnapshot
     KvSnapshotSource source = KvSnapshotSource::Pin;
 };
 
+struct KvOwnedSlot
+{
+    uint64_t request_id = 0;
+    uint64_t session_id = 0;
+    uint64_t kv_handle = 0;
+    uint32_t generation = 0;
+    uint64_t address = 0;
+    uint64_t bytes = 0;
+};
+
 struct KvRuntimeView
 {
     uint64_t request_id = 0;
@@ -404,7 +409,7 @@ struct KvOwnerTerminal
 struct KvLaterFault
 {
     uint64_t request_id = 0;
-    KvErrorCandidate candidate;
+    ErrorCandidate candidate;
 };
 
 struct KvAppendArm
@@ -430,7 +435,7 @@ struct KvDmaCount
 struct KvFaultEvent
 {
     uint64_t request_id = 0;
-    KvErrorCandidate candidate;
+    ErrorCandidate candidate;
 };
 
 struct KvViewArm
@@ -474,10 +479,18 @@ struct KvEdgeResult
 
 struct KvPersistentState
 {
+    GEM5_CHECKPOINT_AGGREGATE()
     std::vector<std::optional<std::pair<uint64_t, uint64_t>>> slot_owners;
     std::vector<KvRecord> records;
     std::vector<std::pair<std::pair<uint64_t, uint64_t>, uint32_t>> tombstones;
     uint64_t next_kv_use_epoch = 0;
+};
+
+class KvEdgeObserver
+{
+  public:
+    virtual ~KvEdgeObserver() = default;
+    virtual void onKvEdgeCommitted(const KvEdgeResult &result) = 0;
 };
 
 struct KvLiveState
@@ -498,8 +511,30 @@ class MeshKvManager
 {
   public:
     MeshKvManager(const KvGeometry &geometry, const KvCapacity &capacity);
+    MeshKvManager(const MeshKvManager &) = delete;
+    MeshKvManager &operator=(const MeshKvManager &) = delete;
+    bool attachEdgeObserver(KvEdgeObserver &observer);
+    bool detachEdgeObserver(KvEdgeObserver &observer);
 
     const KvGeometry &geometry() const { return geometry_; }
+    const KvCapacity &capacity() const { return capacity_; }
+    bool persistentReady(std::string &reason) const;
+
+    template<class Archive> void serialize(Archive &archive, unsigned)
+    {
+        KvPersistentState state;
+        std::string reason;
+        uint64_t rollback = next_rollback_serial;
+        if (!savePersistent(state, reason))
+            throw std::runtime_error("E_CHECKPOINT_BOUNDARY: " + reason);
+        checkpoint::fields(archive, state, rollback);
+        if constexpr (Archive::is_loading::value) {
+            if (!rollback || !loadPersistent(state, reason))
+                throw std::runtime_error("E_CHECKPOINT_STATE: invalid KV state: " + reason);
+            next_rollback_serial = rollback;
+        }
+    }
+
 
     KvEdgeResult commitEdge(const KvEdgeInputs &edge);
 
@@ -508,11 +543,16 @@ class MeshKvManager
     size_t tombstoneCount() const { return tombstones.size(); }
     bool releasePending(uint64_t session_id, uint64_t kv_handle) const;
     bool hasPin(uint64_t request_id) const;
+    std::optional<KvPath> admittedPath(const KvRollbackToken &token) const;
+    std::optional<KvOwnedSlot> ownedSlot(uint64_t request_id) const;
+    std::optional<KvRuntimeView> runtimeView(uint64_t request_id,
+                                           uint32_t member_ordinal) const;
     // True when the record owns no live KV work, i.e. releasing its pin (or
     // claiming its owner terminal) is legal.  The release guard and the
     // serving executor both read this one predicate.
     bool kvWorkDrained(uint64_t session_id, uint64_t kv_handle) const;
     bool hasClaim(uint64_t request_id) const;
+    bool hasAdmissionWaiter(uint64_t request_id) const;
     bool hasReleaseWaiter(uint64_t request_id) const;
     bool liveAppend(uint64_t session_id, uint64_t kv_handle) const;
     uint64_t nextKvUseEpoch() const { return next_kv_use_epoch; }
@@ -523,7 +563,7 @@ class MeshKvManager
     std::vector<uint64_t> decisionScalars(const KvEdgeResult &result) const;
     std::vector<uint64_t> edgeScalars(const KvEdgeResult &result) const;
 
-    KvPersistentState savePersistent() const;
+    bool savePersistent(KvPersistentState &state, std::string &reason) const;
     bool loadPersistent(const KvPersistentState &state, std::string &reason);
     KvLiveState saveLive() const;
     bool loadLive(const KvLiveState &state, std::string &reason);
@@ -538,6 +578,7 @@ class MeshKvManager
         uint32_t bytes_per_token);
 
   private:
+    KvEdgeObserver *edge_observer = nullptr;
     KvRecord *find(uint64_t session_id, uint64_t kv_handle);
     const KvRecord *find(uint64_t session_id, uint64_t kv_handle) const;
     KvRecord *find(const std::pair<uint64_t, uint64_t> &key);
@@ -632,9 +673,7 @@ class MeshKvManager
                                        uint64_t next_epoch,
                                        const KvRecord *record) const;
     static void mergeFirstError(KvRecord &record,
-                                const KvErrorCandidate &candidate);
-    static bool candidateLess(const KvErrorCandidate &left,
-                              const KvErrorCandidate &right);
+                                const ErrorCandidate &candidate);
     void appendRecordScalars(std::vector<uint64_t> &out,
                              const KvRecord &record) const;
     bool fail(std::string reason);

@@ -11,6 +11,24 @@ namespace gem5
 namespace ai_mesh
 {
 
+AgentSubmissionIntent
+AgentWorkloadManager::intentForRequest(uint64_t requestId) const
+{
+    if (!requestId)
+        return {};
+    for (size_t index = 0; index < image.commands().size(); ++index) {
+        const auto &command = image.commands()[index];
+        if (command.requestId == requestId) {
+            const auto intent = command.commandKind == kAgentCommandGenerate ?
+                buildGenerateIntent(image, index) : buildControlCommandIntent(image, index);
+            if (intent)
+                return *intent;
+            break;
+        }
+    }
+    throw std::runtime_error("checkpoint request identity is absent from plan");
+}
+
 namespace
 {
 
@@ -117,6 +135,15 @@ AgentWorkloadManager::AgentWorkloadManager(
         }
     }
 
+    fatal_if(config.hostReleaseWaiterEntries == 0, "Host RELEASE waiter capacity is zero");
+    for (size_t index = 0; index < image.commands().size(); ++index) {
+        const auto &command = image.commands()[index];
+        if (command.commandKind == kAgentCommandReleaseSession && command.controlOrdinal == 0)
+            for (auto &task : tasks)
+                if (command.userId == task.userId && command.taskSeq == task.taskSeq)
+                    task.autoReleaseCommand = index;
+    }
+    setMetric("host_release_waiters", 0);
     for (size_t index = 0; index < image.commands().size(); ++index) {
         const AgentCommandRecord &record = image.commands()[index];
         if (record.commandKind != kAgentCommandGenerate)
@@ -296,14 +323,16 @@ AgentWorkloadManager::nextBatch(
 {
     std::vector<AgentSubmissionIntent> intents;
     if (!pendingControls.empty()) {
-        intents.push_back(std::move(pendingControls.front()));
-        pendingControls.erase(pendingControls.begin());
+        intents.push_back(*takeControlIntent());
         return intents;
     }
     size_t selected = tasks.size();
     for (size_t index = 0; index < tasks.size(); ++index) {
         const TaskContext &task = tasks[index];
         if (task.state != AgentTaskFsmState::SubmitNpu || !task.intent)
+            continue;
+        if (boundaryAdmissions &&
+                !boundaryAdmissions->count(task.intent->workloadPlanItemId))
             continue;
         if (selected == tasks.size() ||
                 std::make_pair(task.submitReadyTick, task.userId) <
@@ -314,6 +343,8 @@ AgentWorkloadManager::nextBatch(
     if (selected == tasks.size())
         return intents;
     TaskContext &task = tasks[selected];
+    if (boundaryAdmissions)
+        boundaryAdmissions->erase(task.intent->workloadPlanItemId);
     task.state = AgentTaskFsmState::WaitNpu;
     intents.push_back(std::move(*task.intent));
     task.intent.reset();
@@ -403,6 +434,14 @@ AgentWorkloadManager::takeControlIntent()
         return std::nullopt;
     AgentSubmissionIntent intent = std::move(pendingControls.front());
     pendingControls.erase(pendingControls.begin());
+    for (auto &task : tasks)
+        if (task.autoReleaseCommand &&
+                image.commands()[*task.autoReleaseCommand].requestId == intent.requestId) {
+            fatal_if(task.state != AgentTaskFsmState::ReleaseSubmitting,
+                     "automatic RELEASE has no submitting owner");
+            task.state = AgentTaskFsmState::ReleaseWaitCq;
+            emitSemantic("RELEASE_WAIT_CQ", "SESSION_RELEASE_WAITER", intent.requestId);
+        }
     return intent;
 }
 
@@ -427,6 +466,7 @@ AgentWorkloadManager::onEdge(Tick now)
 {
     consumeDueGenerateTerminals(now);
     finishDueStages(now);
+    scheduleSessionReleases();
     processThinkArrivals(now);
     startGrantedStages(resources.arbitrate(now), now);
     if (resources.hasAgingReservation() != agingReservationActive) {
@@ -540,6 +580,22 @@ AgentWorkloadManager::enterTaskTerminal(TaskContext &task,
     task.ownedObjects.clear();
     task.generatedCode.reset();
     task.rawLog.reset();
+    fatal_if(task.businessOutcome.has_value(), "task business outcome was already sealed");
+    task.businessOutcome = outcome;
+    task.state = outcome == AgentTaskOutcome::BusinessDone ?
+        AgentTaskFsmState::BusinessDone : AgentTaskFsmState::BusinessFailed;
+    emitSemantic("BUSINESS_TERMINAL", "TASK", task.currentRequestId);
+    if (!task.sessionAdmitted || !task.autoReleaseCommand)
+        finishTaskLifecycle(task, now);
+}
+
+void
+AgentWorkloadManager::finishTaskLifecycle(TaskContext &task, Tick now)
+{
+    fatal_if(!task.businessOutcome || task.state == AgentTaskFsmState::TaskLifecycleFinal,
+             "task lifecycle finalization has no unique business outcome");
+    const auto outcome = *task.businessOutcome;
+    emitSemantic("TASK_LIFECYCLE_FINAL", "TASK", task.currentRequestId);
     task.state = AgentTaskFsmState::TaskLifecycleFinal;
     task.lifecycleFinalTick = now;
     if (outcome == AgentTaskOutcome::BusinessDone)
@@ -561,6 +617,68 @@ AgentWorkloadManager::enterTaskTerminal(TaskContext &task,
                 next.taskSeq == task.taskSeq + 1)
             next.thinkTargetTick =
                 now + ceilNsToTicks(next.planTask->thinkNs);
+}
+
+void
+AgentWorkloadManager::observeSessionAdmitted(uint64_t requestId, bool admitted)
+{
+    const auto found = requestRounds.find(requestId);
+    if (found != requestRounds.end() && admitted && !tasks[found->second.first].sessionReleased) {
+        tasks[found->second.first].sessionAdmitted = true;
+        emitSemantic("SESSION_ADMITTED", "TASK", requestId);
+    }
+}
+
+void
+AgentWorkloadManager::scheduleSessionReleases()
+{
+    for (auto &task : tasks) {
+        if ((task.state != AgentTaskFsmState::BusinessDone &&
+             task.state != AgentTaskFsmState::BusinessFailed) || task.stage ||
+                !task.autoReleaseCommand || !task.sessionAdmitted)
+            continue;
+        if (liveReleaseWaiters == config.hostReleaseWaiterEntries)
+            break;
+        const auto intent = buildControlCommandIntent(image, *task.autoReleaseCommand);
+        fatal_if(!intent, "automatic RELEASE has no frozen command identity or parameter range");
+        pendingControls.push_back(*intent);
+        task.state = AgentTaskFsmState::ReleaseSubmitting;
+        ++liveReleaseWaiters;
+        emitSemantic("RELEASE_SUBMITTING", "SESSION_RELEASE_WAITER", intent->requestId);
+    }
+    setMetric("host_release_waiters", liveReleaseWaiters);
+}
+
+bool
+AgentWorkloadManager::onReleaseTerminal(const AgentSubmissionIntent &intent,
+    uint16_t status, Tick now)
+{
+    for (auto &task : tasks) {
+        const bool automatic = task.autoReleaseCommand &&
+            image.commands()[*task.autoReleaseCommand].requestId == intent.requestId;
+        if (automatic && (status != agent_abi::kCqStatusSUCCESS ||
+                          task.state != AgentTaskFsmState::ReleaseWaitCq))
+            return false;
+        if (status != agent_abi::kCqStatusSUCCESS ||
+                task.planTask->sessionId != intent.controlSessionId ||
+                task.planTask->kvHandle != intent.controlKvHandle ||
+                task.planTask->generation != intent.controlGeneration)
+            continue;
+        task.sessionAdmitted = false;
+        task.sessionReleased = true;
+        if (!automatic && task.businessOutcome &&
+                (task.state == AgentTaskFsmState::BusinessDone ||
+                 task.state == AgentTaskFsmState::BusinessFailed))
+            finishTaskLifecycle(task, now);
+        if (automatic) {
+            --liveReleaseWaiters;
+            setMetric("host_release_waiters", liveReleaseWaiters);
+            emitSemantic("RELEASE_SUCCESS", "SESSION_RELEASE_WAITER", intent.requestId);
+            finishTaskLifecycle(task, now);
+        }
+    }
+    scheduleSessionReleases();
+    return true;
 }
 
 bool

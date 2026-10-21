@@ -1,11 +1,108 @@
 #include "dev/ai_mesh/agent_protocol_validation.hh"
 
+#include <algorithm>
 #include <limits>
+
+#include "dev/ai_mesh/agent_sha256.hh"
 
 namespace gem5
 {
 namespace ai_mesh
 {
+
+namespace
+{
+std::array<uint8_t, 32>
+diagnosticDigest(uint32_t kind, const std::vector<uint8_t> &wire, agent_abi::DetailCode detail)
+{
+    constexpr char domain[] = "AGENT_DIAGNOSTIC_V1";
+    std::vector<uint8_t> source(domain, domain + sizeof(domain));
+    const size_t offset = source.size();
+    source.resize(offset + 8 + wire.size() + 4, 0);
+    agent_abi::wrU32(source.data() + offset, kind);
+    agent_abi::wrU32(source.data() + offset + 4, wire.size());
+    std::copy(wire.begin(), wire.end(), source.begin() + offset + 8);
+    agent_abi::wrU32(source.data() + offset + 8 + wire.size(), detail);
+    return agentSha256(source);
+}
+}
+
+std::optional<std::array<uint8_t, 64>>
+errorSourceDiagnostic(const ErrorCandidate &candidate)
+{
+    const auto detail = static_cast<agent_abi::DetailCode>(candidate.code);
+    const auto disposition = agent_abi::detailDispositionV1(detail);
+    const auto projection = disposition ?
+        agent_abi::diagnosticProjectionV1(disposition->cqStatus, detail) : std::nullopt;
+    const auto &source = candidate.source;
+    const auto component = agent_abi::diagnosticErrorComponentV1(source.domain, source.error_class);
+    if (!projection || projection->sourceKind != agent_abi::DiagnosticSourceKindV1::ERROR_SOURCE_KEY ||
+            !component || !validErrorSource(source))
+        return std::nullopt;
+    const auto wire = errorSourceKeyBytes(source);
+    const auto digest = diagnosticDigest(agent_abi::kDiagnosticSourceKindV1ERROR_SOURCE_KEY,
+        std::vector<uint8_t>(wire.begin(), wire.end()), detail);
+    std::array<uint8_t, 64> result{};
+    agent_abi::wrU32(result.data(), candidate.code);
+    agent_abi::wrU16(result.data() + 4, static_cast<uint16_t>(*component));
+    agent_abi::wrU16(result.data() + 6, source.core_id_or_ffff);
+    agent_abi::wrU32(result.data() + 8, source.region_group_id);
+    agent_abi::wrU32(result.data() + 12, source.region_id);
+    agent_abi::wrU32(result.data() + 16, source.ordinal);
+    agent_abi::wrU32(result.data() + 20, agent_abi::kDiagnosticSourceKindV1ERROR_SOURCE_KEY);
+    std::copy(digest.begin(), digest.end(), result.begin() + 24);
+    return result;
+}
+
+std::array<uint8_t, 64>
+requestCancellationDiagnostic(uint64_t requestId, const RequestTerminalPosition &position)
+{
+    constexpr auto projection = agent_abi::diagnosticProjectionV1(
+        agent_abi::kCqStatusCANCELLED, agent_abi::E_REQUEST_CANCELLED);
+    static_assert(projection.has_value());
+    std::vector<uint8_t> source(24, 0);
+    agent_abi::wrU64(source.data(), requestId);
+    agent_abi::wrU64(source.data() + 8, position.instance);
+    agent_abi::wrU32(source.data() + 16, position.phase);
+    const auto digest = diagnosticDigest(agent_abi::kDiagnosticSourceKindV1REQUEST_TERMINAL,
+        source, agent_abi::E_REQUEST_CANCELLED);
+    std::array<uint8_t, 64> result{};
+    agent_abi::wrU32(result.data(), agent_abi::E_REQUEST_CANCELLED);
+    agent_abi::wrU16(result.data() + 4, static_cast<uint16_t>(projection->component));
+    agent_abi::wrU16(result.data() + 6, UINT16_MAX);
+    agent_abi::wrU32(result.data() + 8, position.phase);
+    agent_abi::wrU32(result.data() + 20, agent_abi::kDiagnosticSourceKindV1REQUEST_TERMINAL);
+    std::copy(digest.begin(), digest.end(), result.begin() + 24);
+    return result;
+}
+
+std::optional<std::array<uint8_t, 64>>
+kvPolicyDiagnostic(uint64_t requestId, uint64_t sessionId, uint64_t handle,
+                   uint32_t generation, agent_abi::DetailCode detail)
+{
+    const auto disposition = agent_abi::detailDispositionV1(detail);
+    const auto projection = disposition ?
+        agent_abi::diagnosticProjectionV1(disposition->cqStatus, detail) : std::nullopt;
+    if (!projection || projection->sourceKind != agent_abi::DiagnosticSourceKindV1::KV_POLICY)
+        return std::nullopt;
+    const auto site = projection->site;
+    std::vector<uint8_t> source(32, 0);
+    agent_abi::wrU64(source.data(), requestId);
+    agent_abi::wrU64(source.data() + 8, sessionId);
+    agent_abi::wrU64(source.data() + 16, handle);
+    agent_abi::wrU32(source.data() + 24, generation);
+    agent_abi::wrU32(source.data() + 28, site);
+    const auto digest = diagnosticDigest(agent_abi::kDiagnosticSourceKindV1KV_POLICY, source, detail);
+    std::array<uint8_t, 64> result{};
+    agent_abi::wrU32(result.data(), detail);
+    agent_abi::wrU16(result.data() + 4, static_cast<uint16_t>(projection->component));
+    agent_abi::wrU16(result.data() + 6, UINT16_MAX);
+    agent_abi::wrU32(result.data() + 8, generation);
+    agent_abi::wrU32(result.data() + 16, site);
+    agent_abi::wrU32(result.data() + 20, agent_abi::kDiagnosticSourceKindV1KV_POLICY);
+    std::copy(digest.begin(), digest.end(), result.begin() + 24);
+    return result;
+}
 
 namespace
 {
@@ -130,10 +227,16 @@ gate3MetadataHeaderValid(const agent_abi::OutputMetadata &header,
     const bool outputMatches = extended ?
         expected.cqValue == UINT32_MAX && header.output_bytes > UINT32_MAX :
         header.output_bytes == expected.cqValue;
-    const bool surrogateMatches = !expected.checkSurrogate ||
+    if (expected.outputBytes && header.output_bytes != *expected.outputBytes)
+        return false;
+    if (expected.outputBytes &&
+            bool(expected.cqFlags & agent_abi::kCqFlagsPARTIAL_OUTPUT) !=
+                (expected.cqStatus != agent_abi::kCqStatusSUCCESS && *expected.outputBytes != 0))
+        return false;
+    const bool executionMatches = !expected.checkExecution ||
         (header.output_tokens == expected.outputTokens &&
-         header.completed_instance_count ==
-             expected.completedInstanceCount &&
+         std::find(expected.completedInstanceCounts.begin(), expected.completedInstanceCounts.end(),
+                   header.completed_instance_count) != expected.completedInstanceCounts.end() &&
          header.semantic_content_digest == expected.semanticDigest);
     return header.magic == 0x4f4e4741 &&
         header.abi_major == agent_abi::kAbiMajor &&
@@ -142,7 +245,8 @@ gate3MetadataHeaderValid(const agent_abi::OutputMetadata &header,
         header.total_bytes >= agent_abi::kOutputMetadataBytes &&
         header.total_bytes % 8 == 0 &&
         header.total_bytes <= expected.capacity &&
-        header.flags == expected.metadataFlags &&
+        (header.flags & ~agent_abi::kMetadataFlagsSESSION_ADMITTED) == 0 &&
+        (!expected.metadataFlags || header.flags == *expected.metadataFlags) &&
         header.terminal_status == expected.cqStatus &&
         header.request_id == expected.requestId &&
         header.session_id == expected.sessionId &&
@@ -150,7 +254,7 @@ gate3MetadataHeaderValid(const agent_abi::OutputMetadata &header,
         header.task_seq == expected.taskSequence &&
         header.repair_round == expected.repairRound &&
         header.reserved == 0 && header.reserved2 == 0 && outputMatches &&
-        surrogateMatches;
+        executionMatches;
 }
 
 bool
@@ -168,6 +272,7 @@ gate3MetadataRecordValid(const std::vector<uint8_t> &data,
         covered.data() + agent_abi::kOutputMetadataCrcFieldOffset, 0);
     if (agent_abi::crc32c(covered.data(), covered.size()) != header.crc32)
         return false;
+    bool diagnostic = false;
     uint16_t previousType = 0;
     size_t offset = agent_abi::kOutputMetadataBytes;
     while (offset < data.size()) {
@@ -186,10 +291,36 @@ gate3MetadataRecordValid(const std::vector<uint8_t> &data,
         if ((known && tlv.payload_bytes != 64) ||
             (!known && (tlv.flags & agent_abi::kTlvFlagsREQUIRED)))
             return false;
+        if (tlv.type == agent_abi::kOutputTlvTypeDIAGNOSTIC &&
+                expected.cqStatus == agent_abi::kCqStatusCANCELLED) {
+            const auto canonical = requestCancellationDiagnostic(expected.requestId, expected.terminalPosition);
+            if (tlv.flags != agent_abi::kTlvFlagsREQUIRED ||
+                    !std::equal(canonical.begin(), canonical.end(), data.begin() + offset + 8))
+                return false;
+            diagnostic = true;
+        }
+        if (tlv.type == agent_abi::kOutputTlvTypeDIAGNOSTIC &&
+                expected.cqStatus != agent_abi::kCqStatusCANCELLED) {
+            const auto detail = static_cast<agent_abi::DetailCode>(agent_abi::rdU32(data.data() + offset + 8));
+            const auto disposition = agent_abi::detailDispositionV1(detail);
+            const auto canonical = expected.failure ? errorSourceDiagnostic(*expected.failure) :
+                kvPolicyDiagnostic(expected.requestId, expected.sessionId,
+                    expected.kvHandle, expected.generation, detail);
+            if (!canonical || !disposition ||
+                    static_cast<uint16_t>(disposition->cqStatus) != expected.cqStatus ||
+                    tlv.flags != agent_abi::kTlvFlagsREQUIRED ||
+                    !std::equal(canonical->begin(), canonical->end(), data.begin() + offset + 8))
+                return false;
+            diagnostic = true;
+        }
+        if (expected.cqStatus != agent_abi::kCqStatusSUCCESS &&
+                tlv.type == agent_abi::kOutputTlvTypeTIMING_BREAKDOWN)
+            return false;
         previousType = tlv.type;
         offset += agent_abi::kTlvHeaderBytes + tlv.payload_bytes;
     }
-    return offset == data.size();
+    return offset == data.size() &&
+        (expected.cqStatus == agent_abi::kCqStatusSUCCESS || diagnostic);
 }
 
 }

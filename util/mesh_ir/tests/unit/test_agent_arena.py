@@ -212,17 +212,23 @@ def test_host_binding_plan_projects_the_four_roles_without_npu_slots():
         program, [0, 0x100200000, 0x100300000, 0x100400000])
     assert len(plans) == 1
     plan = plans[0]
-    assert plan.primary_input_symbol_id == 1
-    assert plan.primary_output_symbol_id == 6
-    assert plan.primary_kv_symbol_id == 3
-    assert plan.instance_count == 4
-    assert [row.symbol_id for row in plan.requirements] == [1, 2, 3, 6]
-    assert [row.kind for row in plan.requirements] == [1, 4, 3, 2]
-    assert plan.requirements[0].platform_address == 0
-    assert plan.requirements[2].platform_address == 0
+    request, = program.agent_request_profiles
+    assert plan.primary_input_symbol_id == request.primary_input_symbol_id
+    assert plan.primary_output_symbol_id == request.primary_output_symbol_id
+    assert plan.primary_kv_symbol_id == request.primary_kv_symbol_id
+    assert plan.instance_counts == (4,)
+    requirements = {row.kind: row for row in plan.requirements}
+    assert set(requirements) == {1, 2, 3, 4}
+    assert requirements[1].symbol_id == request.primary_input_symbol_id
+    assert requirements[2].symbol_id == request.primary_output_symbol_id
+    assert requirements[3].symbol_id == request.primary_kv_symbol_id
+    assert requirements[1].platform_address == requirements[2].platform_address == requirements[3].platform_address == 0
+    assert requirements[4].required_bytes > 0
     records = resolve_host_binding_records(
         plan, 0x100200000, 128, 0x100300000, 256, 4096)
-    assert [record[0] for record in records] == [1, 2, 3, 6]
-    assert records[0][3:] == (0x100200000, 128)
-    assert records[2][3:] == (0, 4096)
-    assert records[3][3:] == (0x100300000, 256)
+    assert [record[0] for record in records] == sorted(row.symbol_id for row in plan.requirements)
+    by_kind = {record[1]: record for record in records}
+    assert by_kind[1][3:] == (0x100200000, 128)
+    assert by_kind[3][3:] == (0, 4096)
+    assert by_kind[2][3:] == (0x100300000, 256)
+    assert by_kind[4][3:] == (requirements[4].platform_address, requirements[4].required_bytes)

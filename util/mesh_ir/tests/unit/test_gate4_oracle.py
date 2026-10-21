@@ -1,3 +1,4 @@
+from mesh_ir.runtime_environment import embedded_python_path
 import os
 import subprocess
 from pathlib import Path
@@ -523,11 +524,13 @@ def test_cancel_rejects_generate_latch_after_cq_assignment(tmp_path):
 
 
 def _first_pass_environment(outdir):
-    return {
+    environment = {
         name: value
         for name, value in os.environ.items()
         if not name.startswith("AI_MESH_")
     }
+    environment["PYTHONPATH"] = embedded_python_path()
+    return environment
 
 
 def test_first_pass_e2e_oracle_and_tamper_negatives(tmp_path):

@@ -31,6 +31,13 @@ Gate3ObservationRecorder::registerPhaseParticipant(
 }
 
 void
+Gate3ObservationRecorder::notifyDrainComplete()
+{
+    for (auto *participant : phaseParticipants)
+        participant->onGate3DrainComplete();
+}
+
+void
 Gate3ObservationRecorder::requestNormalCommit()
 {
     schedulePhase(true);
@@ -133,8 +140,51 @@ Gate3ObservationRecorder::fatalValue() const
     return static_cast<uint32_t>(fatalReducer.first().errorCode);
 }
 
+Gate3ObservationRecorder::ServingTerminalProjection
+Gate3ObservationRecorder::servingProjection(uint64_t request) const
+{
+    ServingTerminalProjection result;
+    for (const auto &phase : _servingPhases)
+        if (phase.request_id == request && phase.commit_tick != 0) {
+            ++result.instances;
+            if (phase.phase == mesh_abi::kPhaseDECODE)
+                result.tokens += phase.append_tokens;
+        }
+    for (const auto &segment : _publishSegments)
+        if (segment.request == request && segment.kind == PublishSegmentFact::Kind::Okay) {
+            fatal_if(segment.offset != result.bytes, "PUBLISH report contains a hole or overlap");
+            result.bytes += segment.bytes;
+        }
+    return result;
+}
+
+RequestTerminalPosition
+Gate3ObservationRecorder::servingCancellation(uint64_t request) const
+{
+    const auto found = _servingCancellations.find(request);
+    fatal_if(found == _servingCancellations.end(), "cancelled request has no terminal position report");
+    return found->second;
+}
+
 void
-Gate3ObservationRecorder::recordServingPhase(ServingPhaseRow row)
+Gate3ObservationRecorder::recordServingCancellation(uint64_t request, RequestTerminalPosition position)
+{
+    const auto [entry, inserted] = _servingCancellations.emplace(request, position);
+    fatal_if(!inserted && (entry->second.instance != position.instance || entry->second.phase != position.phase),
+             "terminal cancellation position changed after publication");
+}
+
+void
+Gate3ObservationRecorder::recordServingFailure(uint64_t request, const ErrorCandidate &failure)
+{
+    const auto [entry, inserted] = _servingFailures.emplace(request, failure);
+    fatal_if(!inserted && (errorCandidateLess(entry->second, failure) ||
+                          errorCandidateLess(failure, entry->second)),
+             "terminal batch diagnostic changed after publication");
+}
+
+void
+Gate3ObservationRecorder::recordServingPhase(ServingPhaseFact row)
 {
     _servingPhases.push_back(row);
 }
@@ -313,6 +363,13 @@ Gate3ObservationRecorder::metric(const std::string &name) const
 void
 Gate3ObservationRecorder::write(const Gate3FinalState &final) const
 {
+    if (!final.fatal && !kvPersistentManifest.empty()) {
+        std::ofstream manifest(outputPath + ".kv.json", std::ios::trunc);
+        fatal_if(!manifest, "cannot open persistent KV manifest");
+        manifest << kvPersistentManifest;
+        manifest.flush();
+        fatal_if(!manifest, "cannot write persistent KV manifest");
+    }
     std::ofstream output(outputPath, std::ios::trunc);
     fatal_if(!output, "%s: cannot open observation facts %s", name(),
              outputPath);
@@ -346,13 +403,21 @@ Gate3ObservationRecorder::write(const Gate3FinalState &final) const
            << final.ackWaitB << '|' << (final.fatal ? 1 : 0) << '|'
            << final.coreStarts << '|' << final.cqAssignments << '|'
            << final.irqDeliveries << '\n';
-    for (const ServingPhaseRow &phase : _servingPhases)
-        output << "SERVING_PHASE|" << phase.phase << '|'
-               << phase.instanceProfileId << '|' << phase.meshProfileId << '|'
-               << phase.kvTokensBefore << '|' << phase.appendTokens << '|'
-               << phase.acceptedDescriptors << '|'
-               << phase.terminalDescriptors << '|' << phase.coreDrainTick << '|'
-               << phase.appendTerminalTick << '|' << phase.commitTick << '\n';
+    for (const auto &[request, position] : _servingCancellations)
+        output << "CANCEL_SOURCE|" << request << '|' << position.instance << '|'
+               << position.phase << '\n';
+    for (const auto &segment : _publishSegments)
+        output << "PUBLISH_SEGMENT|" << segment.request << '|' << segment.instance << '|'
+               << segment.descriptor << '|' << segment.offset << '|' << segment.bytes << '|'
+               << segment.tick << '|' << unsigned(segment.kind) << '\n';
+    for (const ServingPhaseFact &phase : _servingPhases)
+        output << "SERVING_PHASE|" << phase.request_id << '|' << phase.request_generation << '|'
+               << phase.instance_generation << '|' << phase.phase << '|'
+               << phase.instance_profile_id << '|' << phase.mesh_profile_id << '|'
+               << phase.kv_tokens_before << '|' << phase.append_tokens << '|'
+               << phase.accepted_descriptors << '|'
+               << phase.terminal_descriptors << '|' << phase.core_drain_tick << '|'
+               << phase.append_terminal_tick << '|' << phase.commit_tick << '\n';
     for (const auto &[name, value] : metrics)
         output << "METRIC|" << name << '|' << value << '\n';
     for (const auto &[id, intake] : _fatalSqIntakes)

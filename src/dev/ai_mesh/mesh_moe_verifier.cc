@@ -1,5 +1,8 @@
 #include "dev/ai_mesh/mesh_moe_verifier.hh"
 
+#include "dev/ai_mesh/mesh_ir_dtype.hh"
+#include "dev/ai_mesh/mesh_hash.hh"
+
 #include <algorithm>
 #include <cstdint>
 #include <map>
@@ -29,14 +32,9 @@ bool powerOfTwo(uint64_t value)
 
 uint32_t dtypeBytes(uint16_t dtype)
 {
-    switch (dtype) {
-    case mesh_abi::kDtypeFP32: return 4;
-    case mesh_abi::kDtypeFP16: return 2;
-    case mesh_abi::kDtypeBF16: return 2;
-    case mesh_abi::kDtypeINT8: return 1;
-    case mesh_abi::kDtypeINT32: return 4;
-    default: return 0;
-    }
+    uint64_t width = 0;
+    return dtypeByteWidth(static_cast<mesh_abi::semantic_abi::DType>(dtype), width)
+        ? width : 0;
 }
 
 uint64_t tensorBytes(const mesh_abi::Tensor &tensor, bool &ok)
@@ -64,22 +62,22 @@ const mesh_abi::MoeExpertSpec *expertOf(
     const DecodedProgram &program, const mesh_abi::MoeLayerSpec &layer,
     size_t offset)
 {
-    if (layer.expert_first > program.moe_expert_specs.size() ||
-        layer.expert_count > program.moe_expert_specs.size() -
+    if (layer.expert_first > program.transport.moe_expert_specs.size() ||
+        layer.expert_count > program.transport.moe_expert_specs.size() -
                                 layer.expert_first)
         return nullptr;
-    return &program.moe_expert_specs[layer.expert_first + offset];
+    return &program.transport.moe_expert_specs[layer.expert_first + offset];
 }
 
 const mesh_abi::MoeDynamicRegion *regionOf(
     const DecodedProgram &program, const mesh_abi::MoeLayerSpec &layer,
     size_t offset)
 {
-    if (layer.dynamic_region_first > program.moe_dynamic_regions.size() ||
-        layer.dynamic_region_count > program.moe_dynamic_regions.size() -
+    if (layer.dynamic_region_first > program.transport.moe_dynamic_regions.size() ||
+        layer.dynamic_region_count > program.transport.moe_dynamic_regions.size() -
                                        layer.dynamic_region_first)
         return nullptr;
-    return &program.moe_dynamic_regions[layer.dynamic_region_first + offset];
+    return &program.transport.moe_dynamic_regions[layer.dynamic_region_first + offset];
 }
 
 bool verifyGroupBounds(const DecodedProgram &program,
@@ -113,7 +111,7 @@ bool verifyGroupBounds(const DecodedProgram &program,
 
 bool verifyLayers(const DecodedProgram &program, MeshLoadError &error)
 {
-    const auto &layers = program.moe_layer_specs;
+    const auto &layers = program.transport.moe_layer_specs;
     uint64_t experts_offset = 0;
     uint64_t regions_offset = 0;
     std::vector<uint32_t> kernel_indices;
@@ -158,18 +156,18 @@ bool verifyLayers(const DecodedProgram &program, MeshLoadError &error)
         experts_offset = uint64_t(layer.expert_first) + layer.expert_count;
         regions_offset = uint64_t(layer.dynamic_region_first) +
                          layer.dynamic_region_count;
-        if (layer.kernel_spec_index >= program.moe_kernel_specs.size())
+        if (layer.kernel_spec_index >= program.transport.moe_kernel_specs.size())
             return fail("E_ABI_BOUNDS", "kernel index out of table", error);
         kernel_indices.push_back(layer.kernel_spec_index);
         if (!verifyGroupBounds(program, layer, error))
             return false;
     }
-    if (experts_offset != program.moe_expert_specs.size())
+    if (experts_offset != program.transport.moe_expert_specs.size())
         return fail("E_ABI_ORDER", "expert table has unowned records", error);
-    if (regions_offset != program.moe_dynamic_regions.size())
+    if (regions_offset != program.transport.moe_dynamic_regions.size())
         return fail("E_ABI_ORDER", "region table has unowned records", error);
     std::sort(kernel_indices.begin(), kernel_indices.end());
-    if (program.moe_kernel_specs.size() != layers.size())
+    if (program.transport.moe_kernel_specs.size() != layers.size())
         return fail("E_ABI_DUPLICATE",
                     "each layer must own exactly one kernel record", error);
     for (size_t i = 0; i < kernel_indices.size(); i++)
@@ -181,38 +179,50 @@ bool verifyLayers(const DecodedProgram &program, MeshLoadError &error)
 }
 
 const mesh_abi::Tensor *weightTensor(const DecodedProgram &program,
-                                     uint32_t symbol_id, MeshLoadError &error)
+    const ProgramSemanticContext &context, uint64_t variantId,
+    uint32_t symbol_id, MeshLoadError &error)
 {
-    const mesh_abi::Relocation *relocation = nullptr;
-    for (const auto &candidate : program.relocations)
-        if (candidate.symbol_sid == symbol_id)
-            relocation = &candidate;
-    if (relocation == nullptr) {
-        fail("E_RELOCATION", "weight symbol is not relocated", error);
+    if (!symbol_id || symbol_id > program.transport.strings.size()) {
+        fail("E_RELOCATION", "weight symbol is missing", error);
         return nullptr;
     }
-    for (const auto &tensor : program.tensors)
-        if (tensor.tensor_id == relocation->tensor_id) {
-            if (tensor.role != mesh_abi::kTensorRoleWEIGHT ||
-                tensor.storage_class != mesh_abi::kStorageClassEXTERNAL ||
-                tensor.access != mesh_abi::kAccessKindREAD_ONLY ||
-                (tensor.flags &
-                 mesh_abi::kTensorFlagsHAS_CONTENT_SHA256) == 0) {
-                fail("E_RELOCATION",
-                     "MoE weight symbol must be read-only persistent external",
-                     error);
-                return nullptr;
-            }
-            return &tensor;
-        }
-    fail("E_RELOCATION", "weight symbol tensor is missing", error);
-    return nullptr;
+    const auto binding = context.symbolBinding(variantId, program.transport.strings[symbol_id - 1]);
+    if (!binding) {
+        fail("E_RELOCATION", "weight symbol has no unique admitted variant owner", error);
+        return nullptr;
+    }
+    const auto &tensor = *binding->tensor;
+    const auto &logical = *binding->logical_tensor;
+    const uint64_t digestId = logical.content_sha256.string_id;
+    if (tensor.role != mesh_abi::kTensorRoleWEIGHT ||
+        tensor.storage_class != mesh_abi::kStorageClassEXTERNAL ||
+        tensor.access != mesh_abi::kAccessKindREAD_ONLY ||
+        !(tensor.flags & mesh_abi::kTensorFlagsHAS_CONTENT_SHA256) ||
+        uint16_t(logical.role) != tensor.role ||
+        uint16_t(logical.storage_class) != tensor.storage_class ||
+        uint16_t(logical.access) != tensor.access || !digestId ||
+        digestId > program.semantic_strings.size() ||
+        program.semantic_strings[digestId - 1] != mesh_hash::digestHex(tensor.content_sha256)) {
+        fail("E_RELOCATION", "MoE weight must match its admitted read-only external tensor", error);
+        return nullptr;
+    }
+    return &tensor;
 }
 
-bool verifyExperts(const DecodedProgram &program, const RuntimeArch &arch,
-                   MeshLoadError &error)
+bool verifyExperts(const DecodedProgram &program,
+                   const ProgramSemanticContext &context,
+                   const RuntimeArch &arch, MeshLoadError &error)
 {
-    for (const auto &layer : program.moe_layer_specs) {
+    for (const auto &layer : program.transport.moe_layer_specs) {
+        uint64_t variantId = 0;
+        for (uint32_t ordinal = 0; ordinal < layer.dynamic_region_count; ++ordinal) {
+            const auto *region = regionOf(program, layer, ordinal);
+            const auto *owner = region ? context.owner(
+                "commands", region->insert_after_command_id) : nullptr;
+            if (!owner || (variantId && owner->variant_id != variantId))
+                return fail("E_RELOCATION", "MoE layer gates cross admitted variants", error);
+            variantId = owner->variant_id;
+        }
         for (uint32_t ordinal = 0; ordinal < layer.expert_count; ordinal++) {
             const auto *expert = expertOf(program, layer, ordinal);
             if (expert->layer_id != layer.layer_id)
@@ -233,7 +243,7 @@ bool verifyExperts(const DecodedProgram &program, const RuntimeArch &arch,
                 return fail("E_ABI_OVERFLOW",
                             "expert weight range overflows", error);
             const auto *tensor =
-                weightTensor(program, expert->weight_symbol_id, error);
+                weightTensor(program, context, variantId, expert->weight_symbol_id, error);
             if (tensor == nullptr)
                 return false;
             bool shaped = false;
@@ -245,15 +255,15 @@ bool verifyExperts(const DecodedProgram &program, const RuntimeArch &arch,
                 return fail("E_ABI_BOUNDS",
                             "expert weight range escapes its backing", error);
             if (expert->weight_digest_index == UINT32_MAX ||
-                expert->weight_digest_index >= program.content_digests.size())
+                expert->weight_digest_index >= program.transport.content_digests.size())
                 return fail("E_ABI_BOUNDS",
                             "weight digest index out of table", error);
             const auto &digest =
-                program.content_digests[expert->weight_digest_index];
+                program.transport.content_digests[expert->weight_digest_index];
             bool zero = true;
             for (uint8_t byte : digest.digest)
                 zero = zero && byte == 0;
-            if (digest.object_kind != mesh_abi::kTensorRoleWEIGHT ||
+            if (digest.object_kind != mesh_abi::kContentDigestObjectKindTENSOR ||
                 digest.object_id != tensor->tensor_id || zero ||
                 digest.digest != tensor->content_sha256)
                 return fail("E_ABI_BOUNDS",
@@ -284,8 +294,8 @@ bool verifyKernelShape(const mesh_abi::MoeKernelSpec &kernel,
 
 bool verifyKernels(const DecodedProgram &program, MeshLoadError &error)
 {
-    for (const auto &layer : program.moe_layer_specs) {
-        const auto &kernel = program.moe_kernel_specs[layer.kernel_spec_index];
+    for (const auto &layer : program.transport.moe_layer_specs) {
+        const auto &kernel = program.transport.moe_kernel_specs[layer.kernel_spec_index];
         if (kernel.layer_id != layer.layer_id)
             return fail("E_ABI_BOUNDS", "kernel layer mismatch", error);
         if (kernel.expert_opcode != mesh_abi::kOpcodeGEMM &&
@@ -317,34 +327,14 @@ bool verifyKernels(const DecodedProgram &program, MeshLoadError &error)
 }
 
 std::map<uint32_t, std::vector<uint32_t>>
-commandPrerequisites(const DecodedProgram &program)
+commandPrerequisites(const ProgramSemanticContext &context)
 {
-    std::map<uint32_t, std::vector<uint32_t>> producers;
-    for (const auto &command : program.commands)
-        if (command.signal_event != 0)
-            producers[command.signal_event].push_back(command.command_id);
-    for (const auto &descriptor : program.descriptors)
-        producers[descriptor.completion_event].push_back(descriptor.command_id);
-
     std::map<uint32_t, std::vector<uint32_t>> prerequisites;
-    for (const auto &command : program.commands)
-        prerequisites[command.command_id];
-    for (const auto &stream : program.streams) {
-        const size_t begin = stream.command_begin;
-        for (size_t i = 1; i < stream.command_count; i++) {
-            const uint32_t previous = program.commands[begin + i - 1].command_id;
-            const uint32_t current = program.commands[begin + i].command_id;
-            prerequisites[current].push_back(previous);
-        }
-    }
-    for (const auto &command : program.commands) {
-        for (uint16_t w = 0; w < command.wait_count; w++) {
-            const uint32_t event_id =
-                program.waits[size_t(command.wait_begin) + w];
-            for (uint32_t producer : producers[event_id])
-                prerequisites[command.command_id].push_back(producer);
-        }
-    }
+    for (const auto &[id, command] : context.commands())
+        prerequisites[id];
+    for (const auto &[id, dependency] : context.dependencies())
+        prerequisites[dependency->target_command_id].push_back(
+            dependency->source_command_id);
     return prerequisites;
 }
 
@@ -372,11 +362,13 @@ bool prerequisiteOf(
 
 const mesh_abi::Command *uniqueOpcode(const DecodedProgram &program,
                                       uint16_t opcode, int16_t core_id,
-                                      size_t &count)
+                                      size_t &count, const std::set<uint32_t> &scope)
 {
     const mesh_abi::Command *found = nullptr;
     count = 0;
-    for (const auto &command : program.commands) {
+    for (const auto &command : program.transport.commands) {
+        if (!scope.count(command.command_id))
+            continue;
         if (command.opcode != opcode)
             continue;
         if (core_id >= 0 && command.core_id != uint16_t(core_id))
@@ -387,27 +379,36 @@ const mesh_abi::Command *uniqueOpcode(const DecodedProgram &program,
     return found;
 }
 
-bool verifyRegionDomination(const DecodedProgram &program,
+bool verifyRegionDomination(const DecodedProgram &program, const ProgramSemanticContext &context,
                             const mesh_abi::MoeDynamicRegion &region,
                             const mesh_abi::Command &insert,
                             const mesh_abi::Command &resume,
                             MeshLoadError &error)
 {
+    std::set<uint32_t> scope;
+    const auto *owner = context.owner("commands", insert.command_id);
+    if (!owner)
+        return fail("E_LIFECYCLE", "region gate has no variant", error);
+    for (const auto &[id, command] : context.commands())
+        if (context.owner("commands", id) == owner)
+            scope.insert(id);
+    if (!scope.count(resume.command_id))
+        return fail("E_LIFECYCLE", "region gate crosses execution profiles", error);
     size_t begins = 0;
     size_t ends = 0;
     size_t halts = 0;
     const auto *begin =
-        uniqueOpcode(program, mesh_abi::kOpcodeREQUEST_BEGIN, -1, begins);
+        uniqueOpcode(program, mesh_abi::kOpcodeREQUEST_BEGIN, -1, begins, scope);
     const auto *end =
-        uniqueOpcode(program, mesh_abi::kOpcodeREQUEST_END, -1, ends);
+        uniqueOpcode(program, mesh_abi::kOpcodeREQUEST_END, -1, ends, scope);
     const auto *halt =
-        uniqueOpcode(program, mesh_abi::kOpcodeHALT, region.core_id, halts);
+        uniqueOpcode(program, mesh_abi::kOpcodeHALT, region.core_id, halts, scope);
     if (begins != 1 || ends != 1)
         return fail("E_LIFECYCLE", "instance lifecycle must be unique", error);
     if (halts != 1)
         return fail("E_LIFECYCLE",
                     "region core must hold exactly one local halt", error);
-    const auto prerequisites = commandPrerequisites(program);
+    const auto prerequisites = commandPrerequisites(context);
     if (!prerequisiteOf(prerequisites, insert.command_id, begin->command_id))
         return fail("E_LIFECYCLE",
                     "request begin must precede the region gate", error);
@@ -420,22 +421,23 @@ bool verifyRegionDomination(const DecodedProgram &program,
     return true;
 }
 
-bool verifyRegionGate(const DecodedProgram &program,
+bool verifyRegionGate(const DecodedProgram &program, const ProgramSemanticContext &context,
                       const mesh_abi::MoeDynamicRegion &region,
                       MeshLoadError &error)
 {
-    const mesh_abi::Stream *stream = nullptr;
-    for (const auto &candidate : program.streams)
-        if (candidate.core_id == region.core_id &&
-            candidate.stream_id == region.stream_id)
-            stream = &candidate;
-    if (stream == nullptr)
+    const auto *position = context.commandStream(region.insert_after_command_id);
+    if (!position || position->stream->core_id != region.core_id ||
+        position->stream->physical_stream_id != region.stream_id)
         return fail("E_STREAM_CONTRACT", "region stream missing", error);
+    std::map<uint64_t, const mesh_abi::Command *> ordered;
+    for (const auto &[id, command] : context.commands()) {
+        const auto *candidate = context.commandStream(id);
+        if (candidate->stream == position->stream)
+            ordered.emplace(candidate->ordinal, command);
+    }
     std::vector<const mesh_abi::Command *> commands;
-    for (const auto &command : program.commands)
-        if (command.core_id == region.core_id &&
-            command.stream_id == region.stream_id)
-            commands.push_back(&command);
+    for (const auto &[ordinal, command] : ordered)
+        commands.push_back(command);
     int64_t insert_index = -1;
     int64_t resume_index = -1;
     for (size_t i = 0; i < commands.size(); i++) {
@@ -455,24 +457,24 @@ bool verifyRegionGate(const DecodedProgram &program,
         return fail("E_ABI_BOUNDS",
                     "region entry event must be the gate signal", error);
     const mesh_abi::Event *event = nullptr;
-    for (const auto &candidate : program.events)
+    for (const auto &candidate : program.transport.events)
         if (candidate.event_id == region.entry_event_id)
             event = &candidate;
     if (event == nullptr || event->producer_command_id != insert->command_id)
         return fail("E_ABI_BOUNDS",
                     "region entry event has no matching producer", error);
-    if (!verifyRegionDomination(program, region, *insert,
+    if (!verifyRegionDomination(program, context, region, *insert,
                                 *commands[resume_index], error))
         return false;
     for (const auto *command : commands) {
         if (command->opcode != mesh_abi::kOpcodeREPEAT)
             continue;
         if (command->attr_index == 0 ||
-            command->attr_index > program.attrs.size())
+            command->attr_index > program.transport.op_attrs.size())
             return fail("E_ABI_BOUNDS", "REPEAT attr index out of table",
                         error);
-        const auto &attr = program.attrs[command->attr_index - 1];
-        const auto *repeat = std::get_if<mesh_abi::RepeatV1>(&attr.typed);
+        const auto &attr = program.transport.op_attrs[command->attr_index - 1];
+        const auto *repeat = std::get_if<mesh_abi::RepeatV1>(&attr.payload);
         if (repeat == nullptr)
             return fail("E_ABI_ENUM", "REPEAT requires REPEAT_V1 attr", error);
         const uint64_t begin = repeat->subrange_begin_stream_ordinal;
@@ -513,12 +515,12 @@ bool verifyScratchPartition(const RuntimeArch &arch,
     return true;
 }
 
-bool verifyRegions(const DecodedProgram &program, const RuntimeArch &arch,
+bool verifyRegions(const DecodedProgram &program, const ProgramSemanticContext &context, const RuntimeArch &arch,
                    MeshLoadError &error)
 {
     std::map<uint16_t, std::vector<std::pair<uint64_t, uint64_t>>> scratch;
     std::vector<std::vector<uint16_t>> core_sets;
-    for (const auto &layer : program.moe_layer_specs) {
+    for (const auto &layer : program.transport.moe_layer_specs) {
         std::vector<uint16_t> cores;
         for (uint32_t ordinal = 0; ordinal < layer.dynamic_region_count;
              ordinal++) {
@@ -555,7 +557,7 @@ bool verifyRegions(const DecodedProgram &program, const RuntimeArch &arch,
             intervals.emplace_back(region->scratch_offset,
                                    region->scratch_offset +
                                        region->scratch_bytes);
-            if (!verifyRegionGate(program, *region, error))
+            if (!verifyRegionGate(program, context, *region, error))
                 return false;
         }
         for (uint32_t ordinal = 0; ordinal < layer.expert_count; ordinal++) {
@@ -577,33 +579,30 @@ bool verifyRegions(const DecodedProgram &program, const RuntimeArch &arch,
 
 } // anonymous namespace
 
-bool verifyMoeV1(const DecodedProgram &program, const RuntimeArch &arch,
+bool verifyMoeV1(const DecodedProgram &program, const ProgramSemanticContext &context, const RuntimeArch &arch,
                  MeshLoadError &error)
 {
     using namespace mesh_abi;
     const bool enabled =
-        (program.required_features & kFeatureDynamicMoeV1) != 0;
-    const bool any_table = !program.moe_layer_specs.empty() ||
-                           !program.moe_expert_specs.empty() ||
-                           !program.moe_dynamic_regions.empty() ||
-                           !program.moe_kernel_specs.empty() ||
-                           !program.content_digests.empty();
-    if ((program.required_features & ~kKnownFeatureMask) != 0)
-        return fail("E_ABI_FEATURE", "unknown required feature bits", error);
+        (program.header.required_features & kFeatureDynamicMoeV1) != 0;
+    const bool any_table = !program.transport.moe_layer_specs.empty() ||
+                           !program.transport.moe_expert_specs.empty() ||
+                           !program.transport.moe_dynamic_regions.empty() ||
+                           !program.transport.moe_kernel_specs.empty();
     if (!enabled) {
         if (any_table)
             return fail("E_ABI_FEATURE",
                         "MoE sections without the feature bit", error);
         return true;
     }
-    if (program.moe_layer_specs.empty() || program.moe_expert_specs.empty() ||
-        program.moe_dynamic_regions.empty() ||
-        program.moe_kernel_specs.empty() || program.content_digests.empty())
+    if (program.transport.moe_layer_specs.empty() || program.transport.moe_expert_specs.empty() ||
+        program.transport.moe_dynamic_regions.empty() ||
+        program.transport.moe_kernel_specs.empty() || program.transport.content_digests.empty())
         return fail("E_ABI_BOUNDS",
                     "MoE feature requires every conditional section", error);
     return verifyLayers(program, error) &&
-           verifyExperts(program, arch, error) &&
-           verifyRegions(program, arch, error) &&
+           verifyExperts(program, context, arch, error) &&
+           verifyRegions(program, context, arch, error) &&
            verifyKernels(program, error);
 }
 

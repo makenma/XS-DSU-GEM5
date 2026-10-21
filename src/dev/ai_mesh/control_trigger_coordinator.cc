@@ -11,12 +11,6 @@ namespace
 {
 
 bool
-implementedTrigger(uint8_t kind)
-{
-    return kind <= static_cast<uint8_t>(ControlTriggerEvent::AfterGenerateTerminal);
-}
-
-bool
 terminalState(ControlRecordState state)
 {
     return state == ControlRecordState::ControlTerminal ||
@@ -37,7 +31,7 @@ ControlTriggerCoordinator::loadFromImage(const AgentPlanImage &image)
     if (image.controlActions().size() > capacity_)
         return false;
     for (const AgentControlAction &action : image.controlActions()) {
-        if (!implementedTrigger(action.triggerKind))
+        if (action.triggerKind > static_cast<uint8_t>(ControlTriggerEvent::AfterReleaseTerminal))
             return false;
         Record record;
         record.action = action;

@@ -7,7 +7,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from mesh_ir.builder import load_arch
+from mesh_ir.architecture import load_arch
 from mesh_ir.generated import abi as A
 from mesh_ir.model import MeshIrError
 
@@ -58,13 +58,13 @@ def test_gate5_weight_cache_slots_are_equal_and_complete(arch_document):
     assert cache.max_pinned_entries <= cache.metadata_entries
 
 
-def test_gate5_legacy_arch_without_partitions_keeps_its_digest():
+def test_gate5_arch_without_partitions_has_explicit_empty_projection():
     legacy = load_arch(LEGACY_ARCH)
     assert legacy.sram_partitions == ()
     assert legacy.sram_weight_cache_slot_bytes == 0
-    assert "sram_partitions" not in legacy.canonical_dict()
+    assert legacy.canonical_dict()["sram_partitions"] == ()
     assert legacy.digest().hex() == (
-        "76bb2d472057bd3907a9722ff397a164fae2328825c41e48bf12bc92d9bfe25c")
+        "be63f5362c5890ba64460511b6aae70cee265f6587376330599dfdd272ac1058")
 
 
 ARCH_VIOLATIONS = (

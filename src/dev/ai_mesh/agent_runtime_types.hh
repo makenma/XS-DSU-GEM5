@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include "base/checkpoint_fields.hh"
 
 namespace gem5
 {
@@ -14,6 +15,7 @@ template <class Tag>
 class SequenceValue
 {
   public:
+    GEM5_CHECKPOINT_FIELDS(_value)
     constexpr explicit SequenceValue(uint64_t value = 0) : _value(value) {}
 
     constexpr uint64_t value() const { return _value; }

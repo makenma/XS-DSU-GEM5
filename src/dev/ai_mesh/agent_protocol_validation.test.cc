@@ -126,6 +126,17 @@ TEST(AgentProtocolValidationTest, ChecksMetadataIdentityAndKnownTlvSize)
     header.repair_round = expected.repairRound;
     header.output_bytes = expected.cqValue;
     EXPECT_TRUE(gate3MetadataHeaderValid(header, expected));
+    expected.outputBytes = 64;
+    expected.cqStatus = header.terminal_status = static_cast<uint16_t>(agent_abi::CqStatus::AXI_ERROR);
+    EXPECT_FALSE(gate3MetadataHeaderValid(header, expected));
+    expected.cqFlags = agent_abi::kCqFlagsPARTIAL_OUTPUT;
+    EXPECT_TRUE(gate3MetadataHeaderValid(header, expected));
+    expected.outputBytes = 32;
+    EXPECT_FALSE(gate3MetadataHeaderValid(header, expected));
+    expected.outputBytes = 64;
+    expected.cqStatus = header.terminal_status = static_cast<uint16_t>(agent_abi::CqStatus::SUCCESS);
+    EXPECT_FALSE(gate3MetadataHeaderValid(header, expected));
+    expected.cqFlags = 0;
     header.session_id = 0;
     EXPECT_FALSE(gate3MetadataHeaderValid(header, expected));
     header.session_id = expected.sessionId;
@@ -290,4 +301,216 @@ TEST(AgentProtocolValidationTest, ParsesChunkAsU32WithZeroReserved)
 
 }
 }
+}
+
+using namespace gem5::ai_mesh;
+
+TEST(AgentProtocolValidationTest, CancellationDiagnosticIsCanonicalAndIdentityBound)
+{
+    const auto payload = requestCancellationDiagnostic(9);
+    EXPECT_EQ(agent_abi::rdU32(payload.data()), agent_abi::E_REQUEST_CANCELLED);
+    EXPECT_EQ(agent_abi::rdU16(payload.data() + 4), agent_abi::kDiagnosticComponentFRONTEND);
+    EXPECT_EQ(agent_abi::rdU16(payload.data() + 6), 0xffff);
+    EXPECT_EQ(agent_abi::rdU32(payload.data() + 20), 1u);
+    EXPECT_NE(payload, requestCancellationDiagnostic(10));
+    const std::array<uint8_t, 32> expected = {0xa8,0x81,0x2e,0xd3,0x9d,0x65,0x1c,0x7,0xe6,0x44,0xbb,0x96,0xd0,0xcd,0x62,0xf7,0x1e,0xb5,0x59,0x55,0xb9,0xae,0x3f,0x65,0xea,0x2d,0xb8,0xae,0xb9,0xc7,0x28,0x6};
+    EXPECT_TRUE(std::equal(expected.begin(), expected.end(), payload.begin() + 24));
+}
+
+TEST(AgentProtocolValidationTest, CancelMetadataRejectsIdentityAndPayloadTampering)
+{
+    Gate3MetadataExpectation expected{9, 4, 7, 3, 1,
+        agent_abi::kCqStatusCANCELLED, agent_abi::kCqFlagsMETADATA_VALID, 0, 200};
+    expected.metadataFlags = agent_abi::kMetadataFlagsSESSION_ADMITTED;
+    agent_abi::OutputMetadata header;
+    header.magic = 0x4f4e4741;
+    header.abi_major = agent_abi::kAbiMajor;
+    header.abi_minor = agent_abi::kAbiMinor;
+    header.header_bytes = agent_abi::kOutputMetadataBytes;
+    header.total_bytes = 200;
+    header.flags = *expected.metadataFlags;
+    header.terminal_status = expected.cqStatus;
+    header.request_id = expected.requestId;
+    header.session_id = expected.sessionId;
+    header.user_id = expected.userId;
+    header.task_seq = expected.taskSequence;
+    header.repair_round = expected.repairRound;
+    const auto encoded = agent_abi::encodeOutputMetadata(header);
+    std::vector<uint8_t> record(encoded.begin(), encoded.end());
+    record.resize(200, 0);
+    agent_abi::wrU16(record.data() + 128, agent_abi::kOutputTlvTypeDIAGNOSTIC);
+    agent_abi::wrU16(record.data() + 130, agent_abi::kTlvFlagsREQUIRED);
+    agent_abi::wrU32(record.data() + 132, 64);
+    const auto diagnostic = requestCancellationDiagnostic(expected.requestId);
+    std::copy(diagnostic.begin(), diagnostic.end(), record.begin() + 136);
+    for (size_t mutation = 0; mutation <= 64; ++mutation) {
+        auto candidate = record;
+        if (mutation < 64)
+            candidate[136 + mutation] ^= 1;
+        agent_abi::wrU32(candidate.data() + 120, 0);
+        agent_abi::wrU32(candidate.data() + 120,
+            agent_abi::crc32c(candidate.data(), candidate.size()));
+        EXPECT_EQ(gate3MetadataRecordValid(candidate, expected), mutation == 64) << mutation;
+    }
+}
+
+TEST(AgentProtocolValidationTest, KvPolicyDiagnosticBindsTheTupleGenerationAndSite)
+{
+    const auto payload = kvPolicyDiagnostic(9, 4, 5, 3, agent_abi::E_KV_REUSE_REQUIRED);
+    ASSERT_TRUE(payload);
+    EXPECT_EQ(agent_abi::rdU32(payload->data() + 8), 3u);
+    EXPECT_EQ(agent_abi::rdU32(payload->data() + 16), agent_abi::kKvPolicySiteV1REUSE_REQUIRED);
+    EXPECT_EQ(agent_abi::rdU32(payload->data() + 20), agent_abi::kDiagnosticSourceKindV1KV_POLICY);
+    EXPECT_NE(payload, kvPolicyDiagnostic(9, 4, 5, 4, agent_abi::E_KV_REUSE_REQUIRED));
+    EXPECT_NE(payload, kvPolicyDiagnostic(9, 4, 6, 3, agent_abi::E_KV_REUSE_REQUIRED));
+    for (const auto detail : {agent_abi::E_KV_REUSE_REQUIRED,
+                              agent_abi::E_KV_TOKEN_MISMATCH, agent_abi::E_KV_STATE})
+        EXPECT_TRUE(kvPolicyDiagnostic(9, 4, 5, 3, detail));
+    EXPECT_NE(payload, kvPolicyDiagnostic(9, 4, 5, 3, agent_abi::E_KV_TOKEN_MISMATCH));
+    EXPECT_FALSE(kvPolicyDiagnostic(9, 4, 5, 3, agent_abi::E_REQUEST_BINDING));
+    const std::array<uint8_t, 32> golden = {0xb, 0x6b, 0x8e, 0xf3, 0x1d, 0xfd, 0xe5, 0x4d, 0xec, 0x21, 0xf, 0xc5, 0xa9, 0x64, 0xbe, 0x17, 0x4b, 0x41, 0x5a, 0xdb, 0xc1, 0x6c, 0x26, 0x7, 0x4c, 0x14, 0x46, 0x76, 0x98, 0x1c, 0x93, 0x3b};
+    EXPECT_TRUE(std::equal(golden.begin(), golden.end(), payload->begin() + 24));
+}
+
+TEST(AgentProtocolValidation, TypedErrorSourceDiagnosticHasExactWireGolden)
+{
+    using namespace gem5::ai_mesh;
+    ErrorCandidate failure;
+    failure.code = agent_abi::E_AXI_RESPONSE;
+    failure.source.error_class = mesh_abi::kMoeErrorClassDMA_AXI;
+    failure.source.core_id_or_ffff = 256;
+    failure.source.object_kind = mesh_abi::kMeshObjectKindDESCRIPTOR;
+    failure.source.ordinal = 257;
+    failure.source.generation = 3;
+    const auto diagnostic = errorSourceDiagnostic(failure);
+    ASSERT_TRUE(diagnostic);
+    const std::array<uint8_t, 32> golden{
+        0xaa, 0x8a, 0xb9, 0x8b, 0x77, 0x49, 0xbe, 0xeb,
+        0xcc, 0x10, 0x22, 0x7c, 0xd6, 0xcb, 0x3e, 0xbb,
+        0x40, 0x8e, 0x61, 0xfd, 0x4d, 0x36, 0x45, 0x00,
+        0xf7, 0x19, 0xc5, 0xd2, 0xa0, 0x6d, 0x9a, 0x34};
+    EXPECT_TRUE(std::equal(golden.begin(), golden.end(), diagnostic->begin() + 24));
+    EXPECT_EQ(agent_abi::rdU16(diagnostic->data() + 6), 256);
+    EXPECT_EQ(agent_abi::rdU32(diagnostic->data() + 16), 257u);
+    failure.source.domain = 6;
+    EXPECT_FALSE(errorSourceDiagnostic(failure));
+}
+
+TEST(AgentProtocolValidationTest, CancellationBindsFrozenInstanceAndPhase)
+{
+    const auto payload = requestCancellationDiagnostic(9, {4, 3});
+    EXPECT_NE(payload, requestCancellationDiagnostic(9));
+    EXPECT_EQ(agent_abi::rdU32(payload.data() + 8), 3u);
+    const std::array<uint8_t, 32> golden{0xb4,0x7e,0x9e,0xe6,0x13,0xe3,0xcb,0x3b,0x9d,0x6c,0x6f,0xbb,0x3c,0x0c,0xea,0x8a,0x2e,0x39,0x34,0xd6,0x12,0x94,0x15,0xef,0xec,0x51,0x56,0x63,0x56,0x4a,0x4f,0xe0};
+    EXPECT_TRUE(std::equal(golden.begin(), golden.end(), payload.begin() + 24));
+}
+
+TEST(AgentProtocolValidation, EveryRecoverableRuntimeDetailHasTypedDiagnostic)
+{
+    ErrorCandidate failure;
+    failure.source.error_class = mesh_abi::kMoeErrorClassCOMMAND;
+    failure.source.object_kind = mesh_abi::kErrorSourceObjectKindCOMMAND;
+    failure.source.ordinal = 1;
+    for (const auto detail : {agent_abi::E_DCORE_COMMAND_STATE,
+            agent_abi::E_DCORE_ENGINE,
+            agent_abi::E_DCORE_EVENT,
+            agent_abi::E_DCORE_EVENT_NAMESPACE,
+            agent_abi::E_DCORE_OPCODE,
+            agent_abi::E_DCORE_POISON_READ,
+            agent_abi::E_DCORE_SRAM_BOUNDS,
+            agent_abi::E_DCORE_SRAM_LIFETIME,
+            agent_abi::E_DCORE_TIMING_OVERFLOW,
+            agent_abi::E_MOE_CAPACITY,
+            agent_abi::E_MOE_COMBINE_BYTES,
+            agent_abi::E_MOE_DISPATCH_BYTES,
+            agent_abi::E_MOE_MATERIALIZE_CAPACITY,
+            agent_abi::E_MOE_PROFILE,
+            agent_abi::E_MOE_ROUTE_DIGEST,
+            agent_abi::E_MOE_ROUTE_REPLAY,
+            agent_abi::E_MOE_TOPK_DUP}) {
+        failure.code = detail;
+        const auto diagnostic = errorSourceDiagnostic(failure);
+        ASSERT_TRUE(diagnostic) << uint32_t(detail);
+        EXPECT_EQ(agent_abi::rdU32(diagnostic->data()), uint32_t(detail));
+    }
+}
+
+TEST(AgentProtocolValidation, RejectsSourcesOutsideTheConstructorClosure)
+{
+    using namespace mesh_abi;
+    ErrorCandidate failure;
+    failure.code = agent_abi::E_DCORE_ENGINE;
+    auto &source = failure.source;
+    source.error_class = kMoeErrorClassCOMMAND;
+    source.core_id_or_ffff = 2;
+    source.ordinal = 1;
+    ASSERT_TRUE(errorSourceDiagnostic(failure));
+    source.object_kind = kErrorSourceObjectKindDESCRIPTOR;
+    EXPECT_FALSE(errorSourceDiagnostic(failure));
+    source.error_class = kMoeErrorClassDMA_AXI;
+    ASSERT_TRUE(errorSourceDiagnostic(failure));
+    source.region_group_id = 7;
+    EXPECT_FALSE(errorSourceDiagnostic(failure));
+    source.domain = kMeshObjectDomainCOORDINATOR;
+    source.error_class = kMoeErrorClassMATERIALIZE;
+    source.object_kind = kErrorSourceObjectKindMATERIALIZER_CHECK;
+    source.ordinal = kMaterializerCheckSiteCOUNT;
+    EXPECT_FALSE(errorSourceDiagnostic(failure));
+    source.core_id_or_ffff = UINT16_MAX;
+    ASSERT_TRUE(errorSourceDiagnostic(failure));
+    source.ordinal = kMaterializerCheckSiteCACHE_BINDING + 1;
+    EXPECT_FALSE(errorSourceDiagnostic(failure));
+}
+
+TEST(AgentProtocolValidation, CacheTagIndexZeroHasAValidFullKeySource)
+{
+    ErrorCandidate failure;
+    failure.code = agent_abi::E_AXI_RESPONSE;
+    auto &source = failure.source;
+    source.error_class = mesh_abi::kMoeErrorClassDMA_AXI;
+    source.domain = mesh_abi::kMeshObjectDomainWEIGHT_FILL;
+    source.object_kind = mesh_abi::kErrorSourceObjectKindWEIGHT_FILL_OBLIGATION;
+    agent_abi::wrU32(source.aux_key.data() + 12, 1);
+    EXPECT_TRUE(errorSourceDiagnostic(failure));
+}
+
+TEST(AgentProtocolValidationTest, NoKvFailureDiagnosticRequiresExactFailureEvidence)
+{
+    Gate3MetadataExpectation expected{9, 4, 7, 3, 0,
+        agent_abi::kCqStatusAXI_ERROR, agent_abi::kCqFlagsMETADATA_VALID, 0, 200};
+    expected.failure = ErrorCandidate{123, {}, agent_abi::E_AXI_RESPONSE};
+    expected.failure->source.error_class = mesh_abi::kMoeErrorClassDMA_AXI;
+    expected.failure->source.object_kind = mesh_abi::kErrorSourceObjectKindDESCRIPTOR;
+    expected.failure->source.ordinal = 3;
+    const auto diagnostic = errorSourceDiagnostic(*expected.failure);
+    ASSERT_TRUE(diagnostic);
+    agent_abi::OutputMetadata header;
+    header.magic = 0x4f4e4741;
+    header.abi_major = agent_abi::kAbiMajor;
+    header.abi_minor = agent_abi::kAbiMinor;
+    header.header_bytes = agent_abi::kOutputMetadataBytes;
+    header.total_bytes = 200;
+    header.terminal_status = expected.cqStatus;
+    header.request_id = expected.requestId;
+    header.session_id = expected.sessionId;
+    header.user_id = expected.userId;
+    header.task_seq = expected.taskSequence;
+    const auto encoded = agent_abi::encodeOutputMetadata(header);
+    std::vector<uint8_t> record(encoded.begin(), encoded.end());
+    record.resize(200, 0);
+    agent_abi::wrU16(record.data() + 128, agent_abi::kOutputTlvTypeDIAGNOSTIC);
+    agent_abi::wrU16(record.data() + 130, agent_abi::kTlvFlagsREQUIRED);
+    agent_abi::wrU32(record.data() + 132, 64);
+    std::copy(diagnostic->begin(), diagnostic->end(), record.begin() + 136);
+    for (size_t mutation = 0; mutation <= 64; ++mutation) {
+        auto candidate = record;
+        if (mutation < 64)
+            candidate[136 + mutation] ^= 1;
+        agent_abi::wrU32(candidate.data() + 120, 0);
+        agent_abi::wrU32(candidate.data() + 120, agent_abi::crc32c(candidate.data(), candidate.size()));
+        EXPECT_EQ(gate3MetadataRecordValid(candidate, expected), mutation == 64) << mutation;
+    }
+    expected.failure.reset();
+    agent_abi::wrU32(record.data() + 120, agent_abi::crc32c(record.data(), record.size()));
+    EXPECT_FALSE(gate3MetadataRecordValid(record, expected));
 }
