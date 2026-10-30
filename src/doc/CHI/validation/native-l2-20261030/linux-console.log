@@ -1,0 +1,109 @@
+[    0.000000] Linux version 6.10.7-g0dc336bf6c07 (whz@desktop) (riscv64-unknown-linux-gnu-gcc (gd56cb4fac95-dirty) 15.0.0 20240611 (experimental), GNU ld (GNU Binutils) 2.42) #69 SMP Wed Mar 12 15:06:07 CST 2025
+[    0.000000] Machine model: gem5 CHI 2x2 mesh
+[    0.000000] SBI specification v2.0 detected
+[    0.000000] SBI implementation ID=0x1 Version=0x10004
+[    0.000000] SBI TIME extension detected
+[    0.000000] SBI IPI extension detected
+[    0.000000] SBI RFENCE extension detected
+[    0.000000] SBI DBCN extension detected
+[    0.000000] earlycon: sbi0 at I/O port 0x0 (options '')
+[    0.000000] printk: legacy bootconsole [sbi0] enabled
+[    0.000000] efi: UEFI not found.
+[    0.000000] OF: reserved mem: 0x0000000080000000..0x000000008003ffff (256 KiB) nomap non-reusable mmode_resv1@80000000
+[    0.000000] OF: reserved mem: 0x0000000080040000..0x000000008005ffff (128 KiB) nomap non-reusable mmode_resv0@80040000
+[    0.000000] Zone ranges:
+[    0.000000]   DMA32    [mem 0x0000000080000000-0x0000000087ffffff]
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000080000000-0x000000008005ffff]
+[    0.000000]   node   0: [mem 0x0000000080060000-0x0000000087ffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000080000000-0x0000000087ffffff]
+[    0.000000] SBI HSM extension detected
+[    0.000000] Falling back to deprecated "riscv,isa"
+[    0.000000] riscv: base ISA extensions acdfim
+[    0.000000] riscv: ELF capabilities acdfim
+[    0.000000] percpu: Embedded 14 pages/cpu s27304 r0 d30040 u57344
+[    0.000000] Kernel command line: console=ttyS0,115200 earlycon=sbi loglevel=7 rdinit=/init initcall_blacklist=check_unaligned_access_all_cpus
+[    0.000000] Dentry cache hash table entries: 16384 (order: 5, 131072 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 8192 (order: 4, 65536 bytes, linear)
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 32768
+[    0.000000] mem auto-init: stack:all(zero), heap alloc:off, heap free:off
+[    0.000000] Memory: 110116K/131072K available (4566K kernel code, 4459K rwdata, 2048K rodata, 4113K init, 257K bss, 20956K reserved, 0K cma-reserved)
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=2, Nodes=1
+[    0.000000] rcu: Hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=64 to nr_cpu_ids=2.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=2
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] riscv-intc: 64 local interrupts mapped
+[    0.000000] riscv: providing IPIs using SBI IPI extension
+[    0.000000] rcu: srcu_init: Setting srcu_struct sizes based on contention.
+[    0.000000] clocksource: riscv_clocksource: mask: 0xffffffffffffffff max_cycles: 0x24e6a1710, max_idle_ns: 440795202120 ns
+[    0.000013] sched_clock: 64 bits at 10MHz, resolution 100ns, wraps every 4398046511100ns
+[    0.002628] Console: colour dummy device 80x25
+[    0.003420] Calibrating delay loop (skipped), value calculated using timer frequency.. 20.00 BogoMIPS (lpj=40000)
+[    0.003869] pid_max: default: 32768 minimum: 301
+[    0.006861] Mount-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[    0.007372] Mountpoint-cache hash table entries: 512 (order: 0, 4096 bytes, linear)
+[    0.044433] riscv: ELF compat mode unsupported
+[    0.045320] ASID allocator using 16 bits (65536 entries)
+[    0.049038] rcu: Hierarchical SRCU implementation.
+[    0.049342] rcu: 	Max phase no-delay instances is 1000.
+[    0.058272] EFI services will not be available.
+[    0.063442] smp: Bringing up secondary CPUs ...
+[    0.078781] smp: Brought up 1 node, 2 CPUs
+[    0.099538] devtmpfs: initialized
+[    0.121158] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
+[    0.121960] futex hash table entries: 512 (order: 3, 32768 bytes, linear)
+[    0.138124] NET: Registered PF_NETLINK/PF_ROUTE protocol family
+[    0.144277] DMA: preallocated 128 KiB GFP_KERNEL pool for atomic allocations
+[    0.145321] DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA32 pool for atomic allocations
+[    0.199769] vgaarb: loaded
+[    0.203017] clocksource: Switched to clocksource riscv_clocksource
+[    0.402271] NET: Registered PF_INET protocol family
+[    0.407322] IP idents hash table entries: 2048 (order: 2, 16384 bytes, linear)
+[    0.417463] tcp_listen_portaddr_hash hash table entries: 256 (order: 0, 4096 bytes, linear)
+[    0.418205] Table-perturb hash table entries: 65536 (order: 6, 262144 bytes, linear)
+[    0.418659] TCP established hash table entries: 1024 (order: 1, 8192 bytes, linear)
+[    0.420118] TCP bind hash table entries: 1024 (order: 3, 32768 bytes, linear)
+[    0.421745] TCP: Hash tables configured (established 1024 bind 1024)
+[    0.425376] UDP hash table entries: 256 (order: 1, 8192 bytes, linear)
+[    0.426243] UDP-Lite hash table entries: 256 (order: 1, 8192 bytes, linear)
+[    0.429933] NET: Registered PF_UNIX/PF_LOCAL protocol family
+[    0.431415] PCI: CLS 0 bytes, default 64
+[    0.449707] workingset: timestamp_bits=62 max_order=15 bucket_order=0
+[    0.467691] io scheduler mq-deadline registered
+[    0.468507] io scheduler kyber registered
+[    0.469426] io scheduler bfq registered
+[    0.493165] riscv-plic c000000.plic: mapped 20 interrupts with 2 handlers for 4 contexts.
+[    0.516310] Serial: 8250/16550 driver, 4 ports, IRQ sharing disabled
+[    0.549672] printk: legacy console [ttyS0] disabled
+[    0.554162] 10000000.uart: ttyS0 at MMIO 0x10000000 (irq = 12, base_baud = 230400) is a 16550A
+[    0.555428] printk: legacy console [ttyS0] enabled
+[    0.555428] printk: legacy console [ttyS0] enabled
+[    0.555915] printk: legacy bootconsole [sbi0] disabled
+[    0.555915] printk: legacy bootconsole [sbi0] disabled
+[    0.590171] sdhci: Secure Digital Host Controller Interface driver
+[    0.590651] sdhci: Copyright(c) Pierre Ossman
+[    0.591599] sdhci-pltfm: SDHCI platform and OF driver helper
+[    0.600676] NET: Registered PF_INET6 protocol family
+[    0.625920] Segment Routing with IPv6
+[    0.628006] In-situ OAM (IOAM) with IPv6
+[    0.629381] sit: IPv6, IPv4 and MPLS over IPv4 tunneling driver
+[    0.820691] clk: Disabling unused clocks
+[    2.437515] Freeing unused kernel image (initmem) memory: 4112K
+[    2.439625] Run /init as init process
+mount: mounting devpts on /dev/pts failed: No such device
+
+gem5-chi RISC-V Linux (simulated serial console)
+
+gem5-chi login: root
+login[46]: root login on 'ttyS0'
+gem5-chi:~# printf 'CHI_MERGE_ONLINE='; cat /sys/devices/system/cpu/online; prin
+tf 'CHI_MERGE_KERNEL='; uname -r; printf 'CHI_MERGE_UID='; id -u; echo CHI_MERGE
+_LOGIN_"DONE"
+CHI_MERGE_ONLINE=0-1
+CHI_MERGE_KERNEL=6.10.7-g0dc336bf6c07
+CHI_MERGE_UID=0
+CHI_MERGE_LOGIN_DONE

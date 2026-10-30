@@ -1,0 +1,288 @@
+{
+  "ancient_commit": "1edf65206bf584786548334575f3f4cb38d68be6",
+  "ancient_working_snapshot": "a43642cd9a26f6b5d9fb9840d1ac140b58baf604",
+  "native_l2_source": "72fbf09812279f877619515ce50220bdff74048b",
+  "passed": true,
+  "files": [
+    {
+      "file": "src/mem/cache/CHI/Cache2ChiBridge.cc",
+      "sha256": "4c49dd6f58d04adc69f789d77be526b87869d85953f54a9b5fd3c3ba13adf2be",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/Cache2ChiBridge.hh",
+      "sha256": "2723dc440c5c955d4cdc423faca02289dc986642153685658094ad6c52ff523b",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/Cache2ChiBridge.py",
+      "sha256": "3bfbc2100c552277f9bc6105ef6fc4f1f3dd65124ca06ce803e2c4c48a373ed4",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/ChiFlitSink.cc",
+      "sha256": "b99c8b2e620ce93e6e65a97012c37ccc5d94c6d770629963ea0d99ab500856ec",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/ChiFlitSink.hh",
+      "sha256": "d90a6452a27294e65edb98afe62fc883fc852d0dcd22c22b45f79068fa73f1ae",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/ChiFlitSink.py",
+      "sha256": "9a355bb85a47776c137504ab6ff4ce00cc30e40bcaa4af6eae615474be1caccd",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/ChiHnfTester.cc",
+      "sha256": "153920b0465be15eced5a919aaea8195db13d8c1f63521d5d3a1f0b0dd205498",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/ChiHnfTester.hh",
+      "sha256": "931e77a8972bf4f45d0183b6e6b31bae610006c527e33fdb957610fa5a746518",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/ChiHnfTester.py",
+      "sha256": "2e5d3471d2e0603e30db4eac1290ec4584d70a9570bd93ca98a95ec4ea0598a8",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/ChiRnfBridge.cc",
+      "sha256": "3a0be048d0a3df17780c4d388ada8773617a60078b59b3b635053e8b5e0cdaec",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/ChiRnfBridge.hh",
+      "sha256": "0ea3d38128c3f105a34bd6ec4f67bbb6241b3b5dbc6bcbabf83900873aeb5e80",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/ChiRnfBridge.py",
+      "sha256": "235290d05fafce5cefd279f8c53b542343f8aa5ab8a9ee1b8d8183610f9760fd",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/ChiRouterRefModel.cc",
+      "sha256": "94007376decb1ba71bd1b45d5522beb79e8da9bf9467ac2287f133e44b070c58",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/ChiRouterRefModel.hh",
+      "sha256": "1b1c9a65dfb9e628e3f3242017b6fd9ccccda493fb2370e627d7e58287b6019e",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/ChiRouterRefModel.py",
+      "sha256": "906c2a10bbbc66cbae3248c6aac99acf2846d2833452e9a36eb46442635bfaec",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/ChiRouterTester.cc",
+      "sha256": "b66ecb4878cac633654f08a37b8fb08a052e4b38cc7333c7d84f2fa270b04c3c",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/ChiRouterTester.hh",
+      "sha256": "a144937c4ada279bbf4e65f7a62f65d8c50fab9d8694403563a2a5bf63a4737c",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/ChiRouterTester.py",
+      "sha256": "f64f24142e9353895a76020c2a8fbe662cc4e2e42d84ff13c03892ccd959d70c",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/ChiRouterUnits.bench.cc",
+      "sha256": "5eda90cf340b51ac789d5c3a2ad80386d27aaf54c5265cd35c3a51914c3d5e47",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/ChiRouterUnits.hh",
+      "sha256": "369af22e1196dfdcd5cd50b37bdf1f121edc7f917737314d8ea9e75c27ed2170",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/ChiRouterUnits.test.cc",
+      "sha256": "152f2cabb272fb7389e48f94c9462087abf96fc5e9f12b2a86b7113abc94432d",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/ChiSnfBridge.cc",
+      "sha256": "a043a663acb863f68646c7596d1657e7390953fcd8f5ac393922e7b90f58427e",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/ChiSnfBridge.hh",
+      "sha256": "00c0d6f7c1dd3c3098d9a2f403da8b5b81d87d7250b3a6d1677f687bfc241a67",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/ChiSnfBridge.py",
+      "sha256": "d52ff23dc847858c2bf84dc5ad4a17b95f11ecc27ea39042b5486f667cc07d9d",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/HomeLinkLayer.cc",
+      "sha256": "3153508691bd126ea87c8ea71eab23ed90c653163f16734cd0de700d9a8b2f85",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/HomeLinkLayer.hh",
+      "sha256": "fe033d0a3203c3a7eda4e5f4f1eb215e36988c419c40bd32c2ff2d0176d2720d",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/HomeNodeFull.cc",
+      "sha256": "d1cff7672f2473c190b5e823316593230170d6dc7f5326e96c9ca5858720f2dd",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/HomeNodeFull.hh",
+      "sha256": "4439456b3077a7081c975d857e142e3a733b08afcf39751ba8ad05c83bb54b27",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/HomeNodeFull.py",
+      "sha256": "c4f950ab0925ce53e1ad3a5e772ccf65518a4de5c5b8659bec0b3f1ab06f2e77",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/HomePocq.cc",
+      "sha256": "08bf23166545000798aa9ad25adc9f87428806f97d8e5dbcd8fc24dcc4c63579",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/HomePocq.hh",
+      "sha256": "45f78e0fa866b1303c47be1eb3e1befd7c62d62faebe4acc33921369c6a3491b",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/PocqStateGraph.cc",
+      "sha256": "abfd17c8482b2a288efb80d594bc714208fb048c5471ded8620cd6a3e899891e",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/PocqStateGraph.hh",
+      "sha256": "1abeb85bd07173faf0d27d79c4434dba19b88c0cdab3d47c19e14e81fb055fc8",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/PocqStateGraph.test.cc",
+      "sha256": "e62d170549ff1a1e9354dc8a727e55a224a927db10df3be9b628a7b35dd6c886",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/PocqVictimBuffer.hh",
+      "sha256": "317367b91908b5d41d5b4caa01a141eaa46481a998d6b84a6a0346121ba2df7e",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/SlcSf.cc",
+      "sha256": "355c27380f6d538cd54e098dcbff76731dee6e41dad9c058f9a1ab889510b175",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/SlcSf.hh",
+      "sha256": "29e8d5b9d6e2dcc14caaf284db5773c9f531c5646131a5760eaf6f6fe1b77854",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/SlcSf.py",
+      "sha256": "e590a4fc3a6020be30eaea95c431901b3a8b2ec3bd55a049ea34a7e937460e42",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/SlcSfModel.bench.cc",
+      "sha256": "1e3a6ce2a3332cdc2c70713fd4e3e424363b57c32246785d44c0ed6112c84a24",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/SlcSfModel.cc",
+      "sha256": "46647c0500d2be250c2e5963677003d28dd90b58f67a6bf0d963ee78de806b4d",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/SlcSfModel.hh",
+      "sha256": "fc3ad654c28116c3efe35929642cdf13e0fadd48479907731eb9b72314ad7375",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/SlcSfModel.test.cc",
+      "sha256": "48b8a8f6562f224de7c604a1a6bc41dc5ad873d105b93de7cc7a35afef9199b3",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/SlcSfTypes.hh",
+      "sha256": "224c609654ecb4b515b8e255e4c1fc7e4d3cb724f3ba5e4e328b27489841c62b",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/base/BasicChiComponent.cc",
+      "sha256": "15fe4ac3868c099ebc81e67c9dd160c01b4939b5d968d4d6bddbd1a85d075ca8",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/base/BasicChiComponent.hh",
+      "sha256": "d21c2809343e7db0d0461392dc03f7bd1281c9648fbd01eef7afbed9e3b412e6",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/base/BasicChiComponent.py",
+      "sha256": "a7eab18c7fb1bfbb679f70345bf92f6169154cdb611521bd7277e195bf0a3ef6",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/base/ChiChannel.hh",
+      "sha256": "c4c52024c5fdd07635d115096b8e022b595223ee0fc14150182ddb42d69fb8f9",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/base/ChiChannel.test.cc",
+      "sha256": "97128520573e038f9d5b14a61f71ed1c3cc66198edcee5b3365322c9012d6b29",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/base/ChiCommonPort.hh",
+      "sha256": "cecd848bb2984874464029db3711955bacf9a087483a40d1b1e46fb466246ef9",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/base/ChiFlitBuffer.hh",
+      "sha256": "cbaa2e37706ffa5c9e1bb99f5a2f854860f1af01325e28681a1c9782951fe037",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/base/ChiPipeline.hh",
+      "sha256": "f1df877e3b2856b6b7e5a14a8b65e0f0b2c16e57930f0d5c1f3cedba65e79efe",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/base/DatOpcode.hh",
+      "sha256": "834c5d17e45076a45090abe52ef43d9cf33193531f74a37f9db6f45ae5d66efe",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/base/DirectedGraph.hh",
+      "sha256": "3b502bd8c1ae3c5315d3ed1637ba80c4121bfffeabc803e1c7a7865d4fb9cd93",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/base/ReqOpcode.hh",
+      "sha256": "c004fa18a8b60131ee51831119e0d8ca1fbbe21b9ac01b0388317ec970ed664e",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/base/RspOpcode.hh",
+      "sha256": "cec45bbbc91cb8e98b114bf63e02c919decc983da1dc52cec0319c98fef0cbd4",
+      "matches_ancient_working_snapshot": true
+    },
+    {
+      "file": "src/mem/cache/CHI/base/SnoopOpcode.hh",
+      "sha256": "cc1d17610ffacfcdff7aeceec751524c0721dbb3f3ef32123a2ee5272456130b",
+      "matches_ancient_working_snapshot": true
+    }
+  ]
+}

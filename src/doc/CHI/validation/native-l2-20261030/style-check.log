@@ -1,0 +1,255 @@
+
+
+Style checker failed for the following files:
+	src/mem/cache/CHI/FlowGraphTrace.hh
+	src/mem/cache/cache.cc
+	src/mem/cache/CHI/ChiNativeWire.hh
+	src/mem/cache/CHI/ChiNativeWire.test.cc
+	src/mem/cache/CHI/ChiNativeL2.hh
+	src/mem/cache/CHI/ChiTransferCensus.hh
+	src/mem/cache/CHI/ChiNativeChannel.hh
+	src/mem/cache/CHI/ChiNativeL2.cc
+
+
+Please run the style checker manually to fix the offending files.
+To check your modifications, run: util/style.py -m
+
+
+invalid sorting of includes in src/mem/cache/CHI/ChiNativeChannel.hh. Note: If there is more than one empty line under the #include region, please reduce it to one.
+invalid structure opening brace position in src/mem/cache/CHI/ChiNativeChannel.hh:33
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:20
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:21
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:22
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:25
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:31
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:32
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:33
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:39
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:43
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:48
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:53
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:54
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:56
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:57
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:59
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:60
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:65
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:71
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:77
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:89
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:91
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:92
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:94
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:95
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:99
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:103
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:104
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:117
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:124
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:125
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:128
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:130
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:131
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:132
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:133
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:134
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:140
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:146
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:148
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:155
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:158
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:161
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:162
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:166
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:170
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:171
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:199
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:206
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:208
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:211
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:216
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:217
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:218
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:220
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:234
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:249
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:250
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:252
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:270
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:273
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:278
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:280
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:290
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:292
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:307
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:310
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:315
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:323
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:327
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:332
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:335
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:337
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:338
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:344
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:347
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:348
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:354
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:355
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:356
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:365
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:373
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:389
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:391
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:395
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:397
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:400
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:404
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:405
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:406
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:409
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:410
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:411
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:414
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:417
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:421
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:429
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:439
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:440
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:442
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:443
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:444
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:446
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:451
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:453
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:455
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:458
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:460
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:465
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:466
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:467
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:469
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:470
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:473
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:475
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:478
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.cc:479
+invalid line length in src/mem/cache/CHI/ChiNativeL2.cc:13
+invalid line length in src/mem/cache/CHI/ChiNativeL2.cc:188
+invalid line length in src/mem/cache/CHI/ChiNativeL2.cc:215
+invalid line length in src/mem/cache/CHI/ChiNativeL2.cc:327
+invalid line length in src/mem/cache/CHI/ChiNativeL2.cc:330
+invalid line length in src/mem/cache/CHI/ChiNativeL2.cc:332
+invalid line length in src/mem/cache/CHI/ChiNativeL2.cc:343
+invalid line length in src/mem/cache/CHI/ChiNativeL2.cc:347
+invalid line length in src/mem/cache/CHI/ChiNativeL2.cc:373
+invalid line length in src/mem/cache/CHI/ChiNativeL2.cc:378
+invalid line length in src/mem/cache/CHI/ChiNativeL2.cc:380
+invalid line length in src/mem/cache/CHI/ChiNativeL2.cc:448
+invalid line length in src/mem/cache/CHI/ChiNativeL2.cc:455
+invalid line length in src/mem/cache/CHI/ChiNativeL2.cc:461
+invalid line length in src/mem/cache/CHI/ChiNativeL2.cc:465
+invalid line length in src/mem/cache/CHI/ChiNativeL2.cc:478
+invalid sorting of includes in src/mem/cache/CHI/ChiNativeL2.cc. Note: If there is more than one empty line under the #include region, please reduce it to one.
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiNativeL2.hh:55
+invalid sorting of includes in src/mem/cache/CHI/ChiNativeL2.hh. Note: If there is more than one empty line under the #include region, please reduce it to one.
+invalid structure opening brace position in src/mem/cache/CHI/ChiNativeL2.hh:19
+invalid structure opening brace position in src/mem/cache/CHI/ChiNativeL2.hh:20
+invalid structure opening brace position in src/mem/cache/CHI/ChiNativeL2.hh:26
+invalid structure opening brace position in src/mem/cache/CHI/ChiNativeL2.hh:41
+invalid structure opening brace position in src/mem/cache/CHI/ChiNativeL2.hh:45
+invalid structure opening brace position in src/mem/cache/CHI/ChiNativeL2.hh:50
+invalid structure opening brace position in src/mem/cache/CHI/ChiNativeL2.hh:65
+invalid sorting of includes in src/mem/cache/CHI/ChiNativeWire.hh. Note: If there is more than one empty line under the #include region, please reduce it to one.
+invalid structure opening brace position in src/mem/cache/CHI/ChiNativeWire.hh:262
+invalid line length in src/mem/cache/CHI/ChiNativeWire.test.cc:87
+invalid line length in src/mem/cache/CHI/ChiNativeWire.test.cc:106
+invalid line length in src/mem/cache/CHI/ChiNativeWire.test.cc:107
+invalid line length in src/mem/cache/CHI/ChiNativeWire.test.cc:129
+invalid line length in src/mem/cache/CHI/ChiNativeWire.test.cc:130
+invalid line length in src/mem/cache/CHI/ChiNativeWire.test.cc:157
+invalid sorting of includes in src/mem/cache/CHI/ChiNativeWire.test.cc. Note: If there is more than one empty line under the #include region, please reduce it to one.
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiTransferCensus.hh:27
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiTransferCensus.hh:29
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiTransferCensus.hh:36
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiTransferCensus.hh:41
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiTransferCensus.hh:42
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiTransferCensus.hh:45
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiTransferCensus.hh:50
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiTransferCensus.hh:52
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiTransferCensus.hh:54
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiTransferCensus.hh:55
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiTransferCensus.hh:56
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiTransferCensus.hh:58
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiTransferCensus.hh:61
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiTransferCensus.hh:63
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiTransferCensus.hh:76
+invalid spacing after if/while/for in src/mem/cache/CHI/ChiTransferCensus.hh:77
+invalid sorting of includes in src/mem/cache/CHI/ChiTransferCensus.hh. Note: If there is more than one empty line under the #include region, please reduce it to one.
+invalid structure opening brace position in src/mem/cache/CHI/ChiTransferCensus.hh:15
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:102
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:105
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:109
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:112
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:114
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:118
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:120
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:127
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:128
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:129
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:131
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:136
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:138
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:144
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:145
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:147
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:149
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:151
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:154
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:156
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:159
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:162
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:165
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:166
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:170
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:173
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:174
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:176
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:212
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:233
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:234
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:244
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:246
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:249
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:268
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:270
+invalid spacing after if/while/for in src/mem/cache/CHI/FlowGraphTrace.hh:273
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:56
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:66
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:92
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:94
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:99
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:101
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:106
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:108
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:114
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:121
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:131
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:144
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:151
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:176
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:186
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:189
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:236
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:237
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:238
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:239
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:255
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:267
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:268
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:270
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:275
+invalid line length in src/mem/cache/CHI/FlowGraphTrace.hh:278
+invalid sorting of includes in src/mem/cache/CHI/FlowGraphTrace.hh. Note: If there is more than one empty line under the #include region, please reduce it to one.
+invalid structure opening brace position in src/mem/cache/CHI/FlowGraphTrace.hh:22
+invalid spacing after if/while/for in src/mem/cache/cache.cc:459
+invalid sorting of includes in src/mem/cache/cache.cc. Note: If there is more than one empty line under the #include region, please reduce it to one.

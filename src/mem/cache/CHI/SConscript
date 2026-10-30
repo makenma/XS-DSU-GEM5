@@ -15,6 +15,7 @@ SimObject('ChiRouterRefModel.py', sim_objects=['ChiRouterRefModel'])
 SimObject('ChiRouterTester.py', sim_objects=['ChiRouterTester'])
 SimObject('ChiRnfBridge.py', sim_objects=['ChiRnfBridge'])
 SimObject('ChiSnfBridge.py', sim_objects=['ChiSnfBridge'])
+SimObject('ChiNativeL2.py', sim_objects=['ChiNativeL2'])
 
 
 Source('Cache2ChiBridge.cc')
@@ -32,12 +33,14 @@ Source('ChiRouterRefModel.cc')
 Source('ChiRouterTester.cc')
 Source('ChiRnfBridge.cc')
 Source('ChiSnfBridge.cc')
+Source('ChiNativeL2.cc')
 
 GTest('pocq_state_graph.test',
       'PocqStateGraph.test.cc', 'PocqStateGraph.cc')
 GTest('slcsf_model.test', 'SlcSfModel.test.cc', 'SlcSfModel.cc')
 GTest('chi_channel.test', 'base/ChiChannel.test.cc')
 GTest('chi_router_units.test', 'ChiRouterUnits.test.cc')
+GTest('chi_native_legacy.test', 'ChiNativeLegacy.test.cc')
 
 DebugFlag('Cache2ChiBridge')
 DebugFlag('ChiFlitSink')
@@ -47,3 +50,4 @@ DebugFlag('HomeLinkLayer')
 DebugFlag('HomePocq')
 DebugFlag('SlcSf')
 DebugFlag('ChiRouterRefModel')
+DebugFlag('ChiNativeL2')

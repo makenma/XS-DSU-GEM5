@@ -275,6 +275,7 @@ Export('base_dir')
 
 # the ext directory should be on the #includes path
 main.Append(CPPPATH=[Dir('ext')])
+main.Append(CPPPATH=[Dir('ext/flowgraph-json')])
 
 # Add shared top-level headers
 main.Prepend(CPPPATH=Dir('include'))

@@ -1,0 +1,44 @@
+{
+  "functional_acceptance": "passed",
+  "date": "2026-10-30",
+  "scope": "2x2 mesh, two real TimingSimpleCPU cores, ancient router/HNF/SNF, native CHI L2; cold Linux boot and actual root login at 100MHz",
+  "build": {
+    "status": "passed",
+    "command": "LINKFLAGS_EXTRA=-fuse-ld=mold scons build/RISCV/gem5.opt -j32",
+    "binary_sha256": "6d727ea4f441d0a5ba7f4be054adf364f28d9554016db2c0377f3200760364ec"
+  },
+  "native_wire_checks": 89,
+  "adapter_unit_cases": 3,
+  "two_hart_memory_atomic_smoke": "passed",
+  "linux_root_login": "passed",
+  "linux_checks": {
+    "gem5_exit_zero": true,
+    "root_login_sent": true,
+    "shell_command_sent": true,
+    "console_marker": true,
+    "two_online_cpus": true,
+    "linux_kernel": true,
+    "root_uid": true,
+    "shell_completed": true
+  },
+  "l2_mshrs_per_core": [
+    32,
+    32
+  ],
+  "ancient_components_unchanged": 56,
+  "style_check": {
+    "status": "failed",
+    "scope": "formatting of imported/adapted sources",
+    "log": "style-check.log"
+  },
+  "limitations": [
+    "Native L2 warm checkpoint serialization and restore are not implemented.",
+    "Linux login acceptance uses 100MHz; the platform default remains 1GHz.",
+    "This preserves the ancient exclusive-only HNF profile, not the other branch full shared-read/CMO protocol profile."
+  ],
+  "console_evidence": {
+    "raw_sha256": "2badeaa6dbece73873d6374fadbe914a50731f91e82f81a1b529d18d88c8102d",
+    "committed_sha256": "b3195b97349366db46fd378716beb1cf24609f315b737524b47162af154dc976",
+    "normalization": "Removed serial carriage returns and trailing line whitespace in the committed text copy; raw terminal remains in the run output directory."
+  }
+}

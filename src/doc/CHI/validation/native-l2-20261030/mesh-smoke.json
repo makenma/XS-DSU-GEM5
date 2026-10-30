@@ -1,0 +1,37 @@
+{
+  "command": [
+    "/nfs/home/majunhong/project/XS-DSU-GEM5/build/RISCV/gem5.opt",
+    "--listener-mode=off",
+    "--remote-gdb-port=0",
+    "-d",
+    "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/chi-merge-20261030/mesh-reserved-final",
+    "/nfs/home/majunhong/project/XS-DSU-GEM5/configs/example/chi_mesh_native_l2_linux.py",
+    "--kernel",
+    "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/chi-merge-20261030/mesh-reserved-final/mesh-native.elf",
+    "--bare-test",
+    "--l2-sets",
+    "16",
+    "--l2-assoc",
+    "4",
+    "--slc-sets",
+    "4",
+    "--sf-sets",
+    "4",
+    "--max-ticks",
+    "20000000000"
+  ],
+  "status": "passed",
+  "result": {
+    "topology": "2x2 mesh, 2 CPU/native-L2, 2 HNF, 1 SNF",
+    "kernel": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/chi-merge-20261030/mesh-reserved-final/mesh-native.elf",
+    "restore": null,
+    "start_tick": 0,
+    "status": "guest_exit",
+    "cause": "m5_exit instruction encountered",
+    "code": 0,
+    "end_tick": 1297923000,
+    "wall_seconds": 1.793944325298071
+  },
+  "binary_sha256": "6d727ea4f441d0a5ba7f4be054adf364f28d9554016db2c0377f3200760364ec",
+  "elf_sha256": "f7003bf71949d722d2e81d37808d8ee8862dd19de1a7651483607ecc9a7f6037"
+}

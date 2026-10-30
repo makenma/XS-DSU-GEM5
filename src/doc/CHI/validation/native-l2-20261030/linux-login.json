@@ -1,0 +1,57 @@
+{
+  "command": [
+    "/nfs/home/majunhong/project/XS-DSU-GEM5/build/RISCV/gem5.opt",
+    "--listener-mode=on",
+    "--remote-gdb-port=0",
+    "-d",
+    "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/chi-merge-20261030/linux-functional-login",
+    "/nfs/home/majunhong/project/XS-DSU-GEM5/configs/example/chi_mesh_native_l2_linux.py",
+    "--kernel",
+    "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/linux-chi-mesh/assets/fw_payload.elf",
+    "--clock",
+    "100MHz",
+    "--exit-marker",
+    "CHI_MERGE_LOGIN_DONE"
+  ],
+  "status": "passed",
+  "requested_clock": "100MHz",
+  "checks": {
+    "gem5_exit_zero": true,
+    "root_login_sent": true,
+    "shell_command_sent": true,
+    "console_marker": true,
+    "two_online_cpus": true,
+    "linux_kernel": true,
+    "root_uid": true,
+    "shell_completed": true
+  },
+  "result": {
+    "topology": "2x2 mesh, 2 CPU/native-L2, 2 HNF, 1 SNF",
+    "kernel": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/linux-chi-mesh/assets/fw_payload.elf",
+    "restore": null,
+    "start_tick": 0,
+    "status": "console_marker",
+    "marker": "CHI_MERGE_LOGIN_DONE",
+    "end_tick": 3551000000000,
+    "wall_seconds": 958.1292837411165
+  },
+  "topology": {
+    "routers": 4,
+    "hnfs": 2,
+    "cpus": 2,
+    "l2_types": [
+      "ChiNativeL2",
+      "ChiNativeL2"
+    ],
+    "l2_mshrs": [
+      32,
+      32
+    ]
+  },
+  "clock_period_ticks": [
+    10000
+  ],
+  "binary_sha256": "6d727ea4f441d0a5ba7f4be054adf364f28d9554016db2c0377f3200760364ec",
+  "kernel_sha256": "4897883ab3e7566ad5d85d65c874c99e6ac31887ee3bca23d3e08746e8a4257d",
+  "wall_seconds": 960.8916072379798
+}

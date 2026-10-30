@@ -374,7 +374,10 @@ class Packet : public Printable
         MSHR_ALIAS_FAIL       = 0x00040000,
 
         // Signal that the packet hit in the write buffer.
-        HIT_IN_WRITE_BUFFER   = 0x00080000
+        HIT_IN_WRITE_BUFFER   = 0x00080000,
+
+        // A home-ordered snoop that must precede a matching local MSHR.
+        SNOOP_PRECEDES_MSHR   = 0x00100000
     };
 
     Flags flags;
@@ -736,6 +739,10 @@ class Packet : public Printable
      */
     void setExpressSnoop()      { flags.set(EXPRESS_SNOOP); }
     bool isExpressSnoop() const { return flags.isSet(EXPRESS_SNOOP); }
+
+    void setSnoopPrecedesMshr() { flags.set(SNOOP_PRECEDES_MSHR); }
+    bool snoopPrecedesMshr() const
+    { return flags.isSet(SNOOP_PRECEDES_MSHR); }
 
     /**
      * On responding to a snoop request (which only happens for

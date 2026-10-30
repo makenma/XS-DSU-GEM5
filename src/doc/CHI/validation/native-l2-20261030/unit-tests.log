@@ -1,0 +1,17 @@
+Running main() from ext/googletest/googletest/src/gtest_main.cc
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from ChiNativeLegacy
+[ RUN      ] ChiNativeLegacy.LargeHomeTokensSurviveBackpressureAndReuse
+[       OK ] ChiNativeLegacy.LargeHomeTokensSurviveBackpressureAndReuse (3 ms)
+[ RUN      ] ChiNativeLegacy.SnoopAddressAndTwoBeatDirtyResponse
+[       OK ] ChiNativeLegacy.SnoopAddressAndTwoBeatDirtyResponse (0 ms)
+[ RUN      ] ChiNativeLegacy.HomesHaveIndependentTokenNamespaces
+[       OK ] ChiNativeLegacy.HomesHaveIndependentTokenNamespaces (0 ms)
+[----------] 3 tests from ChiNativeLegacy (3 ms total)
+
+[----------] Global test environment tear-down
+[==========] 3 tests from 1 test suite ran. (3 ms total)
+[  PASSED  ] 3 tests.
+
+ChiNativeWire: 89 checks passed

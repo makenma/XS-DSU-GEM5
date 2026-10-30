@@ -1,3 +1,4 @@
+#include "mem/cache/CHI/FlowGraphTrace.hh"
 /*
  * Copyright (c) 2010-2019 ARM Limited
  * All rights reserved.
@@ -454,6 +455,8 @@ Cache::handleTimingReqMiss(PacketPtr pkt, CacheBlk *blk, Tick forward_time,
 void
 Cache::recvTimingReq(PacketPtr pkt)
 {
+    Chi::FlowGraphTrace::get().observeInstruction(pkt->req);
+    if(pkt->isWrite()) Chi::FlowGraphTrace::get().observeWrite(pkt->req);
     DPRINTF(CacheTags, "%s tags:\n%s\n", __func__, tags->print());
 
     promoteWholeLineWrites(pkt);
@@ -1177,6 +1180,9 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
             // there is a snoop hit in upper levels
             Packet snoopPkt(pkt, true, true);
             snoopPkt.setExpressSnoop();
+            if (pkt->snoopPrecedesMshr()) {
+                snoopPkt.setSnoopPrecedesMshr();
+            }
             // the snoop packet does not need to wait any additional
             // time
             snoopPkt.headerDelay = snoopPkt.payloadDelay = 0;
@@ -1263,13 +1269,16 @@ Cache::handleSnoop(PacketPtr pkt, CacheBlk *blk, bool is_timing,
         // invalidation itself is taken care of below. We don't respond to
         // cache maintenance operations as this is done by the destination
         // xbar.
-        respond = pkt->needsResponse() && blk->isSet(CacheBlk::DirtyBit);
+        respond = pkt->needsResponse() && !pkt->cacheResponding() &&
+            blk->isSet(CacheBlk::DirtyBit);
 
         // print conditions below
         DPRINTF(Cache, "%s: need response: %i, cache responding: %i, deferring mshr: %lx, responding by: %lx\n",
                 __func__, pkt->needsResponse(), pkt->cacheResponding(), (uint64_t)deferring_mshr,
                 (uint64_t)pkt->getCacheRespondingBy());
-        if (pkt->needsResponse() && deferring_mshr && (uint64_t)deferring_mshr == pkt->getCacheRespondingBy()) {
+        if (pkt->needsResponse() && !pkt->cacheResponding() &&
+            deferring_mshr &&
+            (uint64_t)deferring_mshr == pkt->getCacheRespondingBy()) {
             respond = true;
             DPRINTF(Cache, "%s: respond because mshr %lx has promised to respond\n", __func__,
                     (uint64_t)deferring_mshr);
