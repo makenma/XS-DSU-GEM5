@@ -3,6 +3,7 @@ from m5.proxy import *
 
 # Inherit parameters (x/y/port/device/node_type) from BasicChiComponent.
 from m5.objects.BasicChiComponent import BasicChiComponent
+from m5.objects.SlcSf import SlcSf
 
 
 class HomeNodeFull(BasicChiComponent):
@@ -25,7 +26,11 @@ class HomeNodeFull(BasicChiComponent):
 
     # Number of RN-F nodes (used by HomeLinkLayer).
     rnf_num = Param.Int(1, "Number of RN-F nodes")
+    rnf_node_ids = VectorParam.Unsigned(
+        [], "Wire node IDs indexed by SF RNF index; empty uses 0..rnf_num-1")
 
-    # Number of active protocol entries in HomePocq. Retired deque storage is
-    # not counted against this limit.
+    # Number of protocol entries in the finite HomePocq storage.
     pocq_entry_num = Param.Unsigned(64, "Number of Home POCQ entries")
+
+    slcsf = Param.SlcSf(SlcSf(rnf_num=Parent.rnf_num), "SLC and snoop filter")
+    sn_node_id = Param.Unsigned(0x100, "Memory node CHI ID")

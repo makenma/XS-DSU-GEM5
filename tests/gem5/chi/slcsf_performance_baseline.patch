@@ -1,0 +1,145 @@
+--- a/SlcSfModel.cc
++++ b/SlcSfModel.cc
+@@ -180,25 +180,28 @@
+ {
+     advance(c);
+     if (c < nextAccept || returnPortUsed) return false;
+-    for (std::size_t i = 0; i < activeCount; ++i)
+-        if (attempts[activeOrder[i]]->req.token == r.token)
+-            throw std::invalid_argument("duplicate live SLCSF attempt token");
+-    if (activeCount == MaxAttempts || results.size() + (activeCount + 1) * 4 > MaxResults)
++    std::size_t occupied = 0;
++    for (const auto &a : attempts) {
++        if (a) {
++            ++occupied;
++            if (a->req.token == r.token)
++                throw std::invalid_argument("duplicate live SLCSF attempt token");
++        }
++    }
++    if (occupied == MaxAttempts || results.size() + (occupied + 1) * 4 > MaxResults)
+         return false;
+     if (r.op == SlcSfOp::Lookup && !supportedOpcode(r.opcode))
+         throw std::invalid_argument("unsupported ordinary SLCSF opcode");
+     if (r.rnf >= cfg.rnfCount || (!r.sfTargets.empty() &&
+                                  r.sfTargets.size() != cfg.rnfCount))
+         throw std::invalid_argument("SLCSF request RNF/vector out of range");
+-    for (std::size_t index = 0; index < attempts.size(); ++index) {
+-        auto &slot = attempts[index];
++    for (auto &slot : attempts) {
+         if (!slot) {
+             slot.emplace(); slot->req = r; slot->accepted = c;
+             slot->slcSet = r.addr / 64 % cfg.slcSets;
+             slot->sfSet = r.addr / 64 % cfg.sfSets;
+             slot->sfNext = SfTagEntry(cfg.rnfCount);
+             slot->lookup.snoopTargets.assign(cfg.rnfCount, false);
+-            activeOrder[activeCount++] = index;
+             nextAccept = c + 2;
+             return true;
+         }
+@@ -208,24 +211,12 @@
+ void SlcSfModel::advance(uint64_t c)
+ {
+     if (c < currentCycle) throw std::invalid_argument("SLCSF time cannot go backwards");
+-    while (currentCycle < c) {
+-        if (!hasClockWork()) {
+-            // No register can produce a new event during this interval.
+-            // History expiration and H0's previous-edge snapshot still need
+-            // to agree with repeated idle clocks at the destination edge.
+-            currentCycle = c;
+-            returnPortUsed = false;
+-            expireHistory();
+-            previousSeqRequest = seqRequest;
+-            break;
+-        }
+-        ++currentCycle;
+-        tick();
+-    }
++    while (currentCycle < c) { ++currentCycle; tick(); }
+ }
+ bool SlcSfModel::hasPipelineWork() const
+ {
+-    return activeCount != 0;
++    return std::any_of(attempts.begin(), attempts.end(),
++                       [](const auto &a) { return a.has_value(); });
+ }
+ bool SlcSfModel::hasClockWork() const
+ { return hasPipelineWork() || seqNeedsClock(); }
+@@ -246,10 +237,9 @@
+ void SlcSfModel::expireHistory()
+ {
+     auto expire = [&](auto &h) {
+-        // H7 inserts in admission order and every record has the same
+-        // lifetime. Removal on replay preserves this expiration order.
+-        while (!h.empty() && h.front().expires < currentCycle)
+-            h.pop_front();
++        h.erase(std::remove_if(h.begin(), h.end(), [&](const auto &v) {
++            return v.expires < currentCycle;
++        }), h.end());
+     };
+     expire(slcHistory); expire(sfHistory);
+ }
+@@ -590,15 +580,17 @@
+     returnPortUsed = false;
+     tickSeq();
+     expireHistory();
+-    // Walk the already ordered live slots. Each pass remains a distinct RTL
+-    // edge operation: reservation, reads, then writes/retirement.
+-    for (std::size_t i = 0; i < activeCount; ++i) {
+-        const auto *a = &*attempts[activeOrder[i]];
++    // Oldest first is important for H5->H6 SEQ slot arbitration. Attempt
++    // slots can be recycled in a different order from accepted timestamps.
++    std::vector<Attempt *> order;
++    for (auto &a : attempts) if (a) order.push_back(&*a);
++    std::sort(order.begin(), order.end(), [](const auto *a, const auto *b) {
++        return a->accepted < b->accepted;
++    });
++    for (const auto *a : order)
+         if (currentCycle == a->accepted + LookupOffset &&
+             a->replay == SlcSfReplay::None) recordHistory(*a);
+-    }
+-    for (std::size_t i = 0; i < activeCount; ++i) {
+-        auto *a = &*attempts[activeOrder[i]];
++    for (auto *a : order) {
+         const auto age = currentCycle - a->accepted;
+         if (age == SlcSnapshotOffset - 1) snapshotReservations(*a, true);
+         if (age == DecisionOffset - 1) snapshotReservations(*a, false);
+@@ -606,8 +598,7 @@
+     // RAM responses were read before this edge's recirculated writes. Read
+     // every attempt before committing any tag, rather than letting the host
+     // iteration order turn an older invalidate into a younger false miss.
+-    for (std::size_t i = 0; i < activeCount; ++i) {
+-        auto *a = &*attempts[activeOrder[i]];
++    for (auto *a : order) {
+         const auto age = currentCycle - a->accepted;
+         if (age == SlcSnapshotOffset) snapshotSlc(*a);
+         if (age == DecisionOffset) decide(*a);
+@@ -617,8 +608,8 @@
+             std::copy_n(data.begin() + offset, 32, a->line.begin() + offset);
+         }
+     }
+-    for (std::size_t i = 0; i < activeCount; ++i) {
+-        auto &a = *attempts[activeOrder[i]];
++    for (auto *ptr : order) {
++        auto &a = *ptr;
+         const auto age = currentCycle - a.accepted;
+         if (age == SeqOffset) checkReplay(a);
+         if (age == SeqOffset && a.seqHitId) {
+@@ -676,15 +667,11 @@
+             emit(a, SlcSfResultKind::CommitDone); a.complete = true;
+         }
+     }
+-    std::size_t kept = 0;
+-    for (std::size_t i = 0; i < activeCount; ++i) {
+-        auto &a = attempts[activeOrder[i]];
+-        if (currentCycle >= a->accepted + ReturnOffset &&
++    for (auto &a : attempts)
++        if (a && currentCycle >= a->accepted + ReturnOffset &&
+             (a->complete || (a->replay != SlcSfReplay::None &&
+                              currentCycle >= a->accepted + LookupOffset))) a.reset();
+-        else activeOrder[kept++] = activeOrder[i];
+-    }
+-    activeCount = kept;
++
+ }
+ 
+ std::size_t SlcSfModel::seqOccupancy() const

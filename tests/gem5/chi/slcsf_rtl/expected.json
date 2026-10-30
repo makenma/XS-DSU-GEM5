@@ -1,0 +1,601 @@
+{
+  "release": "r3p0-00eac0",
+  "parameters": {
+    "HNS_SLC_SIZE_PARAM": 1,
+    "HNS_SF_SIZE_PARAM": 3,
+    "HNS_SLC_NUM_WAYS_PARAM": 16,
+    "HNS_SF_NUM_WAYS_PARAM": 16,
+    "HNS_SLC_DSLICE_PARAM": 0,
+    "HNS_SLC_TAG_RAM_LATENCY_PARAM": 2,
+    "HNS_SLC_DATA_RAM_LATENCY_PARAM": 2,
+    "HNS_NUM_ENTRIES_POCQ_PARAM": 16,
+    "HNS_MIN_SF_RNFVEC_WIDTH_PARAM": 4,
+    "HNS_LID_WIDTH_PARAM": 2,
+    "POR_CHI_MPAM_ENABLE_PARAM": 0,
+    "POR_CHI_MTE_ENABLE_PARAM": 0
+  },
+  "simulator": "Verilator 5.048 2026-04-26 rev v5.048",
+  "source_sha256": {
+    "logical/cmn_hns/verilog/cmn_hns_l3_tagpipe.sv": "39216257fe27b655c8fb259c4192053108fdbc6167aff2ecb5bca66adf8bade9",
+    "logical/cmn_hns/verilog/cmn_hns_sf_tagpipe.sv": "e7b49ec74789b7d40de7f119855cae8803bad4a9f2d053266ed07d94193186b7",
+    "logical/cmn_hns/verilog/cmn_hns_l3_datadp.sv": "2e83f1f09ee6ef2fbbe21068fe595e62c1f6b1ca98cfdd3d7ee6aa90ad57e370",
+    "logical/cmn_hns/verilog/cmn_hns_wrap.sv": "4154556e31c06ef44e08916998a95d08d6c1e410d8081d747b589796ff8089c9",
+    "logical/shared/verilog/cmn_hns_defines.v": "7e4b1b073b3b12406a2edcc8d6e8c3ef009778a6999a404697f09cc35557d000",
+    "logical/shared/verilog/cmn_hns_localparams.v": "a5b79144054caa975ef38aa985fb3b4e8eadf29bfd0a891494749a6a19aaba78",
+    "logical/shared/verilog/cmn_hns_structs.sv": "d382de1649969e4c5db900846544657688ff0ee5c27fba06c097c967277dea1f",
+    "logical/cmn700/verilog/cmn700_3x2_4c_sbsx.v": "d4e4f44b07570820c055ae6469163ccd649154cd70c58c3594cd6cf3fc19f4f6",
+    "logical/cmn_hns/verilog/cmn_hns_l3_data_llib.sv": "c14d76673106571ffa9fa2e88131720ad1e944406aa8beeb6fff4f6395f4d5d5",
+    "logical/cmn_hns/verilog/cmn_hns_poc_addr.sv": "c0d185b73c0168a01f9d2fc70cc88c55c480e68802c02c69a377853f0e21afe9",
+    "logical/cmn_hns/verilog/cmn_hns_poc_ctl.sv": "9bb55e1fa5fce1f904e6990f18345ce4701161d44d2a2f8f7b741dfcea084d69",
+    "logical/cmn_hns/verilog/cmn_hns_cfg_params.v": "1fadeb70ca993601789ac8db6d073f7e9f9f28d5d432f1a6610e0122b529d90f"
+  },
+  "measurement": "Actual CMN700 l3_tagpipe + sf_tagpipe + l3_datadp; bounded SRAM response ports; H1 admission phase is cycle 0.",
+  "scenarios": {
+    "read_unique_both_miss": {
+      "accept": [
+        0
+      ],
+      "busy": [
+        1,
+        9,
+        10,
+        11
+      ],
+      "l3wr": [],
+      "l3ramwr": [],
+      "lruwr": [],
+      "sfwr": [
+        11
+      ],
+      "sframwr": [
+        12
+      ],
+      "datawr0": [],
+      "datawr2": [],
+      "data_beats": [],
+      "control": [
+        {
+          "cycle": 7,
+          "replay": 0,
+          "slc_hit": 0,
+          "sf_hit": 0,
+          "slc_state": 0,
+          "sf_state": 6
+        }
+      ]
+    },
+    "read_unique_slc_hit": {
+      "accept": [
+        0
+      ],
+      "busy": [
+        1,
+        9,
+        10,
+        11
+      ],
+      "l3wr": [
+        10
+      ],
+      "l3ramwr": [
+        11
+      ],
+      "lruwr": [
+        11
+      ],
+      "sfwr": [
+        11
+      ],
+      "sframwr": [
+        12
+      ],
+      "datawr0": [],
+      "datawr2": [],
+      "data_beats": [
+        [
+          9,
+          1
+        ],
+        [
+          10,
+          2
+        ]
+      ],
+      "control": [
+        {
+          "cycle": 7,
+          "replay": 0,
+          "slc_hit": 1,
+          "sf_hit": 0,
+          "slc_state": 0,
+          "sf_state": 6
+        }
+      ]
+    },
+    "read_unique_sf_hit": {
+      "accept": [
+        0
+      ],
+      "busy": [
+        1,
+        9,
+        10,
+        11
+      ],
+      "l3wr": [],
+      "l3ramwr": [],
+      "lruwr": [],
+      "sfwr": [
+        11
+      ],
+      "sframwr": [
+        12
+      ],
+      "datawr0": [],
+      "datawr2": [],
+      "data_beats": [],
+      "control": [
+        {
+          "cycle": 7,
+          "replay": 0,
+          "slc_hit": 0,
+          "sf_hit": 1,
+          "slc_state": 0,
+          "sf_state": 6
+        }
+      ]
+    },
+    "read_unique_both_hit": {
+      "accept": [
+        0
+      ],
+      "busy": [
+        1,
+        9,
+        10,
+        11
+      ],
+      "l3wr": [
+        10
+      ],
+      "l3ramwr": [
+        11
+      ],
+      "lruwr": [
+        11
+      ],
+      "sfwr": [
+        11
+      ],
+      "sframwr": [
+        12
+      ],
+      "datawr0": [],
+      "datawr2": [],
+      "data_beats": [
+        [
+          9,
+          1
+        ],
+        [
+          10,
+          2
+        ]
+      ],
+      "control": [
+        {
+          "cycle": 7,
+          "replay": 0,
+          "slc_hit": 1,
+          "sf_hit": 1,
+          "slc_state": 0,
+          "sf_state": 6
+        }
+      ]
+    },
+    "writeback_fill": {
+      "accept": [
+        0
+      ],
+      "busy": [
+        1,
+        9,
+        10,
+        11
+      ],
+      "l3wr": [
+        10
+      ],
+      "l3ramwr": [
+        11
+      ],
+      "lruwr": [
+        11
+      ],
+      "sfwr": [],
+      "sframwr": [],
+      "datawr0": [
+        15
+      ],
+      "datawr2": [
+        16
+      ],
+      "data_beats": [],
+      "control": []
+    },
+    "poc_replay": {
+      "accept": [
+        0
+      ],
+      "busy": [
+        1,
+        9
+      ],
+      "l3wr": [],
+      "l3ramwr": [],
+      "lruwr": [],
+      "sfwr": [],
+      "sframwr": [],
+      "datawr0": [],
+      "datawr2": [],
+      "data_beats": [],
+      "control": [
+        {
+          "cycle": 7,
+          "replay": 1,
+          "slc_hit": 1,
+          "sf_hit": 0,
+          "slc_state": 0,
+          "sf_state": 6
+        }
+      ]
+    },
+    "read_clean_sf_eu_to_en": {
+      "accept": [
+        0
+      ],
+      "busy": [
+        1,
+        9,
+        10,
+        11
+      ],
+      "l3wr": [],
+      "l3ramwr": [],
+      "lruwr": [],
+      "sfwr": [
+        11
+      ],
+      "sframwr": [
+        12
+      ],
+      "datawr0": [],
+      "datawr2": [],
+      "data_beats": [],
+      "control": [
+        {
+          "cycle": 7,
+          "replay": 0,
+          "slc_hit": 0,
+          "sf_hit": 1,
+          "slc_state": 0,
+          "sf_state": 2
+        }
+      ]
+    },
+    "read_clean_sf_su_to_sn": {
+      "accept": [
+        0
+      ],
+      "busy": [
+        1,
+        9,
+        10,
+        11
+      ],
+      "l3wr": [],
+      "l3ramwr": [],
+      "lruwr": [],
+      "sfwr": [
+        11
+      ],
+      "sframwr": [
+        12
+      ],
+      "datawr0": [],
+      "datawr2": [],
+      "data_beats": [],
+      "control": [
+        {
+          "cycle": 7,
+          "replay": 0,
+          "slc_hit": 0,
+          "sf_hit": 1,
+          "slc_state": 0,
+          "sf_state": 1
+        }
+      ]
+    },
+    "read_clean_slc_en_allocates_sf_en": {
+      "accept": [
+        0
+      ],
+      "busy": [
+        1,
+        9,
+        10,
+        11
+      ],
+      "l3wr": [],
+      "l3ramwr": [],
+      "lruwr": [],
+      "sfwr": [
+        11
+      ],
+      "sframwr": [
+        12
+      ],
+      "datawr0": [],
+      "datawr2": [],
+      "data_beats": [
+        [
+          9,
+          1
+        ],
+        [
+          10,
+          2
+        ]
+      ],
+      "control": [
+        {
+          "cycle": 7,
+          "replay": 0,
+          "slc_hit": 1,
+          "sf_hit": 0,
+          "slc_state": 2,
+          "sf_state": 2
+        }
+      ]
+    },
+    "read_clean_slc_mn_allocates_sf_en": {
+      "accept": [
+        0
+      ],
+      "busy": [
+        1,
+        9,
+        10,
+        11
+      ],
+      "l3wr": [],
+      "l3ramwr": [],
+      "lruwr": [],
+      "sfwr": [
+        11
+      ],
+      "sframwr": [
+        12
+      ],
+      "datawr0": [],
+      "datawr2": [],
+      "data_beats": [
+        [
+          9,
+          1
+        ],
+        [
+          10,
+          2
+        ]
+      ],
+      "control": [
+        {
+          "cycle": 7,
+          "replay": 0,
+          "slc_hit": 1,
+          "sf_hit": 0,
+          "slc_state": 3,
+          "sf_state": 2
+        }
+      ]
+    },
+    "clean_invalid_both_hit": {
+      "accept": [
+        0
+      ],
+      "busy": [
+        1,
+        9,
+        10,
+        11
+      ],
+      "l3wr": [
+        10
+      ],
+      "l3ramwr": [
+        11
+      ],
+      "lruwr": [
+        11
+      ],
+      "sfwr": [
+        11
+      ],
+      "sframwr": [
+        12
+      ],
+      "datawr0": [],
+      "datawr2": [],
+      "data_beats": [
+        [
+          9,
+          1
+        ],
+        [
+          10,
+          2
+        ]
+      ],
+      "control": [
+        {
+          "cycle": 7,
+          "replay": 0,
+          "slc_hit": 1,
+          "sf_hit": 1,
+          "slc_state": 0,
+          "sf_state": 0
+        }
+      ]
+    },
+    "continuous_same_way": {
+      "accept": [
+        0,
+        2,
+        4,
+        6
+      ],
+      "busy": [
+        1,
+        3,
+        5,
+        7,
+        9,
+        10,
+        11,
+        13,
+        15
+      ],
+      "l3wr": [
+        10
+      ],
+      "l3ramwr": [
+        11
+      ],
+      "lruwr": [
+        11
+      ],
+      "sfwr": [
+        11
+      ],
+      "sframwr": [
+        12
+      ],
+      "datawr0": [],
+      "datawr2": [],
+      "data_beats": [
+        [
+          9,
+          1
+        ],
+        [
+          10,
+          2
+        ]
+      ],
+      "control": [
+        {
+          "cycle": 7,
+          "replay": 0,
+          "slc_hit": 1,
+          "sf_hit": 0,
+          "slc_state": 0,
+          "sf_state": 6
+        },
+        {
+          "cycle": 9,
+          "replay": 1,
+          "slc_hit": 1,
+          "sf_hit": 0,
+          "slc_state": 0,
+          "sf_state": 6
+        },
+        {
+          "cycle": 11,
+          "replay": 1,
+          "slc_hit": 1,
+          "sf_hit": 0,
+          "slc_state": 0,
+          "sf_state": 6
+        },
+        {
+          "cycle": 13,
+          "replay": 1,
+          "slc_hit": 1,
+          "sf_hit": 0,
+          "slc_state": 0,
+          "sf_state": 6
+        }
+      ]
+    },
+    "read_once_both_miss_no_update": {
+      "accept": [
+        0
+      ],
+      "busy": [
+        1,
+        9
+      ],
+      "l3wr": [],
+      "l3ramwr": [],
+      "lruwr": [],
+      "sfwr": [],
+      "sframwr": [],
+      "datawr0": [],
+      "datawr2": [],
+      "data_beats": [],
+      "control": [
+        {
+          "cycle": 7,
+          "replay": 0,
+          "slc_hit": 0,
+          "sf_hit": 0,
+          "slc_state": 0,
+          "sf_state": 0
+        }
+      ]
+    },
+    "read_once_slc_hit_no_update": {
+      "accept": [
+        0
+      ],
+      "busy": [
+        1,
+        9
+      ],
+      "l3wr": [],
+      "l3ramwr": [],
+      "lruwr": [],
+      "sfwr": [],
+      "sframwr": [],
+      "datawr0": [],
+      "datawr2": [],
+      "data_beats": [
+        [
+          9,
+          1
+        ],
+        [
+          10,
+          2
+        ]
+      ],
+      "control": [
+        {
+          "cycle": 7,
+          "replay": 0,
+          "slc_hit": 1,
+          "sf_hit": 0,
+          "slc_state": 3,
+          "sf_state": 0
+        }
+      ]
+    }
+  },
+  "runtime_config": {
+    "ecc_disable": 1,
+    "slc_ecc_pipe_mode_dis": 1,
+    "other_configuration_inputs": 0,
+    "bounded_sram_response_ports": true
+  }
+}

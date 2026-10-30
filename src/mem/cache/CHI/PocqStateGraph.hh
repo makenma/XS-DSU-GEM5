@@ -132,6 +132,7 @@ struct PocqEvent
     bool sfHit = false;
     bool orderNonZero = false;
     bool dirty = false;
+    bool dataValid = true;
 
     static PocqEvent enter();
     static PocqEvent subGraphDone();
@@ -152,11 +153,13 @@ enum class PocqActionKind : uint8_t
     SendCompData,
     SendComp,
     SendCompDbidResp,
+    SendDbidResp,
     SendSnpOnce,
     SendSnpOnceFwd,
     SendSnpShared,
     SendSnpUnique,
     SendSnpMakeInvalid,
+    SendSnpCleanInvalid,
     FlushSf,
     FlushL3,
     WriteL3,
@@ -340,6 +343,7 @@ class PocqGraphPanel
     void buildReadUnique();
     void buildSnpCleanInvalid();
     void buildCleanInvalid();
+    void buildWriteBackFull();
 
     std::array<std::unique_ptr<PocqGraph>, GraphCount> graphs{};
     NodeIndex nodeIndex{};

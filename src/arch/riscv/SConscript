@@ -54,6 +54,9 @@ Source('pmp.cc', tags='riscv isa')
 Source('reg_abi.cc', tags='riscv isa')
 Source('remote_gdb.cc', tags='riscv isa')
 Source('tlb.cc', tags='riscv isa')
+GTest('riscv_instruction_bytes.test', 'instruction_bytes.test.cc')
+GTest('riscv_tlb_checkpoint.test', 'tlb_checkpoint.test.cc', 'pagetable.cc',
+      with_tag('gem5 serialize'))
 
 Source('linux/se_workload.cc', tags='riscv isa')
 Source('linux/fs_workload.cc', tags='riscv isa')

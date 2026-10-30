@@ -1,17 +1,23 @@
 #ifndef __HOMEPOCQ__HH__
 #define __HOMEPOCQ__HH__
 
+#include <algorithm>
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <optional>
+#include <map>
+#include <list>
 #include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
 
 #include "mem/cache/CHI/PocqStateGraph.hh"
+#include "mem/cache/CHI/PocqVictimBuffer.hh"
+#include "mem/cache/CHI/SlcSfTypes.hh"
 #include "mem/cache/CHI/base/ChiChannel.hh"
 #include "mem/cache/CHI/base/DatOpcode.hh"
 #include "mem/cache/CHI/base/ReqOpcode.hh"
@@ -19,6 +25,7 @@
 #include "mem/cache/CHI/base/SnoopOpcode.hh"
 #include "mem/ruby/common/Consumer.hh"
 #include "sim/eventq.hh"
+#include "sim/serialize.hh"
 
 namespace gem5::Chi
 {
@@ -44,6 +51,17 @@ class HomePocq : public ruby::Consumer
     bool allocate(const FlitVariant &flit);
     bool allocate(const FlitVariant &flit, PoolPriority reserved_pool);
     bool hasFreeEntry() const;
+    bool victimConflict(const SlcSfRequest &request, uint64_t cycle) const
+    {
+        return victimBuffers.conflicts(PocqVictimBuffer::ownerKey(
+            request.srcid, request.txnid), request.addr, request.ns, cycle);
+    }
+    std::size_t activeEntries() const { return m_pocq.size(); }
+    bool idle() const;
+    void serialize(CheckpointOut &cp) const;
+    void unserialize(CheckpointIn &cp);
+    void receive(const RawRsp &rsp);
+    void receive(const RawDat &dat);
 
     struct IssuedAction
     {
@@ -72,6 +90,28 @@ class HomePocq : public ruby::Consumer
         RawDat dat{};
     };
 
+    struct Writeback
+    {
+        uint64_t addr = 0;
+        bool ns = true;
+        SlcLineData data{};
+        uint32_t wireId = 0;
+        uint32_t dbid = 0;
+        bool sent = false;
+        bool haveDbid = false;
+        bool complete = false;
+        unsigned beats = 0;
+    };
+
+    struct SnoopReply
+    {
+        bool sent = false;
+        bool done = false;
+        bool dirty = false;
+        uint8_t beats = 0;
+        SlcLineData data{};
+    };
+
     struct Entry : public PocqMachine
     {
         bool valid = false;
@@ -82,6 +122,37 @@ class HomePocq : public ruby::Consumer
         PoolPriority qosPriority = Low;
         bool qosPoolReserved = false;
         std::deque<PocqAction> pendingActions;
+        uint32_t wireId = 0;
+        uint64_t slcToken = 0;
+        std::optional<PocqAction> slcAction;
+        bool slcCommitted = false;
+        bool lookupSeen = false;
+        bool lookupDelivered = false;
+        SlcSfLookup lookup{};
+        SlcLineData line{};
+        uint8_t lineBeats = 0;
+        bool dirty = false;
+        SlcLineData victimData{};
+        uint8_t victimBeats = 0;
+        bool victimQueued = false;
+        std::map<uint32_t, SnoopReply> snoops;
+        bool snoopStarted = false;
+        bool snoopDelivered = false;
+        unsigned txDataBeat = 0;
+        uint32_t memoryDbid = 0;
+        bool memorySent = false;
+        bool memoryDone = false;
+        bool memoryReceipt = false;
+        bool memoryEventSent = false;
+        bool dirtyQueued = false;
+        bool completionSent = false;
+        bool writeDbidSent = false;
+        bool writeDataValid = false;
+        std::optional<uint8_t> writeDataResp;
+        std::deque<Writeback> writebacks;
+        bool internalSeq = false;
+        uint64_t seqId = 0;
+        bool seqReleased = false;
 
         DecodedReq reqOpcode{
             ReqOpcode{0}, ReqMajor::ReservedOrUnsupported,
@@ -188,8 +259,16 @@ class HomePocq : public ruby::Consumer
         void
         appendActions(const PocqStepResult &result)
         {
-            for (std::size_t i = 0; i < result.action_count(); ++i)
-                pendingActions.push_back(result.get_action(i));
+            for (std::size_t i = 0; i < result.action_count(); ++i) {
+                const auto &action = result.get_action(i);
+                // A SEQ operates on an evicted snapshot. Its SF replacement
+                // has already committed, so there is no tag operation here.
+                // Do not queue a no-op behind older SeqFull lookup replays:
+                // they depend on this SEQ completing and releasing capacity.
+                if (internalSeq && action.kind == PocqActionKind::FlushSf)
+                    continue;
+                pendingActions.push_back(action);
+            }
         }
     };
 
@@ -199,9 +278,9 @@ class HomePocq : public ruby::Consumer
             : m_entry_num(entry_num), graphPanel(panel)
         {}
 
-        // sleep_queue stores Entry pointers. deque keeps those pointers stable
-        // when new entries are appended; vector reallocation would not.
-        std::deque<Entry> queue;
+        // Age order plus stable addresses for sleep_queue pointers. Immediate
+        // removal bounds storage even when the oldest transaction stalls.
+        std::list<Entry> queue;
 
         enum Arb_win
         {
@@ -236,6 +315,7 @@ class HomePocq : public ruby::Consumer
             entry.qosPoolReserved = qos_pool_reserved;
             Sleep_if_Hazard(entry);
             ++activeEntries;
+            assert(queue.size() == activeEntries);
             return true;
         }
 
@@ -259,15 +339,20 @@ class HomePocq : public ruby::Consumer
             if (!entry.valid)
                 return false;
 
+            assert(!entry.is_sleep);
             const bool woke_entry = !entry.sleep_queue.empty();
             entry.deallocate();
             entry.valid = false;
             --activeEntries;
 
-            // 只回收队首连续的无效 Entry。deque 在两端插入/删除
-            // 时不会使其他 Entry 引用失效，可以保持 sleep_queue 指针。
-            while (!queue.empty() && !queue.front().valid)
-                queue.pop_front();
+            // A sleeping entry cannot retire. The retiring runnable head has
+            // already transferred its dependent chain, and erasing this list
+            // node preserves every other entry's address and age order.
+            const auto position = std::find_if(queue.begin(), queue.end(),
+                [&entry](const Entry &other) { return &entry == &other; });
+            assert(position != queue.end());
+            queue.erase(position);
+            assert(queue.size() == activeEntries);
             return woke_entry;
         }
 
@@ -280,7 +365,8 @@ class HomePocq : public ruby::Consumer
 
             for (Entry &x : queue) {
                 if (&x != &entry && x.valid && x.channel == REQ &&
-                    x.ReqAddr() == entry.ReqAddr()) {
+                    (x.ReqAddr() >> 6) == (entry.ReqAddr() >> 6) &&
+                    x.rawflit.req.ns == entry.rawflit.req.ns) {
                     entry.is_sleep = true;
                     x.setSleepQueue(&entry);
                     return true;
@@ -400,10 +486,12 @@ class HomePocq : public ruby::Consumer
               case PocqActionKind::SendSnpShared:
               case PocqActionKind::SendSnpUnique:
               case PocqActionKind::SendSnpMakeInvalid:
+              case PocqActionKind::SendSnpCleanInvalid:
                 return TxSnp;
               case PocqActionKind::SendCompAck:
               case PocqActionKind::SendComp:
               case PocqActionKind::SendCompDbidResp:
+              case PocqActionKind::SendDbidResp:
                 return TxRsp;
             }
             return std::nullopt;
@@ -418,6 +506,7 @@ class HomePocq : public ruby::Consumer
     PocqGraphPanel graphPanel;
     std::size_t m_entry_num;
     POCQueue m_pocq;
+    PocqVictimBuffer victimBuffers;
 
     // classic-cache 风格事件成员: 绑定 process()
     EventFunctionWrapper processEvent;
@@ -439,8 +528,31 @@ class HomePocq : public ruby::Consumer
     bool retireCompletedEntries();
     bool hasPendingPocqWork() const;
     bool allocateImpl(const FlitVariant &flit, PoolPriority priority,
-                      bool qos_pool_reserved);
-    void issueAction(const Entry &entry, const PocqAction &action);
+                      bool qos_pool_reserved, bool internal_seq = false);
+    bool issueAction(Entry &entry, const PocqAction &action);
+    Entry *findWire(uint32_t wire);
+    uint64_t nextToken = 1;
+    uint32_t nextWireId = 1;
+    uint32_t allocateWireId();
+    struct PendingLink
+    {
+        Tick ready;
+        std::variant<RawRsp, RawDat> flit;
+    };
+    std::deque<PendingLink> incoming;
+    void consumeLink();
+    void processLink(const RawRsp &rsp);
+    void processLink(const RawDat &dat);
+    void collectSlcResults();
+    void acceptSeq();
+    void progressEntry(Entry &entry);
+    void progressWritebacks(Entry &entry);
+    void queueWriteback(Entry &entry, uint64_t addr, bool ns,
+                        const SlcLineData &data);
+    void dispatch(Entry &entry, PocqEvent event);
+    bool sendSnoops(Entry &entry, uint8_t opcode);
+    bool sendCompletion(Entry &entry, bool data);
+    bool operationsComplete(const Entry &entry) const;
 
     // 单个触发的状态机推进 (选 Entry → state->step → 收集 action)。
     void step(const Trigger &t);

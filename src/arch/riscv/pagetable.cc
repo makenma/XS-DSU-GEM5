@@ -47,6 +47,19 @@ TlbEntry::serialize(CheckpointOut &cp) const
     SERIALIZE_SCALAR(asid);
     SERIALIZE_SCALAR(pte);
     SERIALIZE_SCALAR(lruSeq);
+    SERIALIZE_SCALAR(gpaddr);
+    SERIALIZE_SCALAR(translateMode);
+    SERIALIZE_SCALAR(vmid);
+    SERIALIZE_SCALAR(pteVS);
+    SERIALIZE_SCALAR(level);
+    SERIALIZE_SCALAR(VSlevel);
+    SERIALIZE_SCALAR(index);
+    SERIALIZE_SCALAR(isSquashed);
+    SERIALIZE_SCALAR(used);
+    SERIALIZE_SCALAR(isPre);
+    SERIALIZE_SCALAR(fromForwardPreReq);
+    SERIALIZE_SCALAR(fromBackPreReq);
+    SERIALIZE_SCALAR(preSign);
 }
 
 void
@@ -58,6 +71,24 @@ TlbEntry::unserialize(CheckpointIn &cp)
     UNSERIALIZE_SCALAR(asid);
     UNSERIALIZE_SCALAR(pte);
     UNSERIALIZE_SCALAR(lruSeq);
+    // The original native format stored only single-stage L1 translations.
+    // New bank snapshots require all these fields; retain that legacy entry
+    // reader for checkpoints whose TLB format predates bank serialization.
+    if (optParamIn(cp, "gpaddr", gpaddr, false)) {
+        UNSERIALIZE_SCALAR(translateMode);
+        UNSERIALIZE_SCALAR(vmid);
+        UNSERIALIZE_SCALAR(pteVS);
+        UNSERIALIZE_SCALAR(level);
+        UNSERIALIZE_SCALAR(VSlevel);
+        UNSERIALIZE_SCALAR(index);
+        UNSERIALIZE_SCALAR(isSquashed);
+        UNSERIALIZE_SCALAR(used);
+        UNSERIALIZE_SCALAR(isPre);
+        UNSERIALIZE_SCALAR(fromForwardPreReq);
+        UNSERIALIZE_SCALAR(fromBackPreReq);
+        UNSERIALIZE_SCALAR(preSign);
+    }
+    trieHandle = nullptr;
 }
 
 } // namespace RiscvISA

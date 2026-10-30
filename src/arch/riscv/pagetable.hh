@@ -235,6 +235,7 @@ struct TlbEntry : public Serializable
           vmid(0),
           pte(),
           pteVS(),
+          trieHandle(nullptr),
           lruSeq(0),
           level(0),
           VSlevel(0),

@@ -39,6 +39,7 @@
 #include "arch/riscv/mmu.hh"
 #include "arch/riscv/page_size.hh"
 #include "arch/riscv/pagetable.hh"
+#include "arch/riscv/tlb_checkpoint.hh"
 #include "arch/riscv/pagetable_walker.hh"
 #include "arch/riscv/pma_checker.hh"
 #include "arch/riscv/pmp.hh"
@@ -101,7 +102,8 @@ TLB::TLB(const Params &p) :
     allForwardPre(0),removeNoUseForwardPre(0),removeNoUseBackPre(0),
     usedBackPre(0),test_num(0),allUsed(0),forwardUsedPre(0),
     lastVaddr(0),lastPc(0), traceFlag(false),
-    stats(this), pma(p.pma_checker),
+    use_old_priv(false), old_priv_ldst(PRV_M), old_priv_ex(PRV_M),
+    walker(nullptr), stats(this), pma(p.pma_checker),
     pmp(p.pmp),
     archDBer(p.arch_db),
     tlbL2L3(l2TlbL3Size *l2tlbLineSize),tlbL2L2(l2TlbL2Size *l2tlbLineSize),
@@ -2410,40 +2412,126 @@ TLB::finalizePhysical(const RequestPtr &req,
 void
 TLB::serialize(CheckpointOut &cp) const
 {
-    // Only store the entries in use.
-    printf("serialize\n");
-    uint32_t _size = size - freeList.size();
-    SERIALIZE_SCALAR(_size);
+    const unsigned checkpointVersion = 2;
+    SERIALIZE_SCALAR(checkpointVersion);
+    SERIALIZE_SCALAR(is_L1tlb);
+    SERIALIZE_SCALAR(isStage2);
+    SERIALIZE_SCALAR(isTheSharedL2);
     SERIALIZE_SCALAR(lruSeq);
-
-    uint32_t _count = 0;
-    for (uint32_t x = 0; x < size; x++) {
-        if (tlb[x].trieHandle != nullptr)
-            tlb[x].serializeSection(cp, csprintf("Entry%d", _count++));
+    SERIALIZE_SCALAR(hitInSp);
+    SERIALIZE_SCALAR(hitPreEntry);
+    SERIALIZE_SCALAR(hitPreNum);
+    SERIALIZE_SCALAR(RemovePreUnused);
+    SERIALIZE_SCALAR(AllPre);
+    SERIALIZE_SCALAR(isOpenAutoNextLine);
+    SERIALIZE_SCALAR(openForwardPre);
+    SERIALIZE_SCALAR(openBackPre);
+    SERIALIZE_SCALAR(backPrePrecision);
+    SERIALIZE_SCALAR(forwardPrePrecision);
+    SERIALIZE_SCALAR(controlNum);
+    SERIALIZE_SCALAR(allForwardPre);
+    SERIALIZE_SCALAR(removeNoUseForwardPre);
+    SERIALIZE_SCALAR(removeNoUseBackPre);
+    SERIALIZE_SCALAR(usedBackPre);
+    SERIALIZE_SCALAR(test_num);
+    SERIALIZE_SCALAR(allUsed);
+    SERIALIZE_SCALAR(forwardUsedPre);
+    SERIALIZE_SCALAR(lastVaddr);
+    SERIALIZE_SCALAR(lastPc);
+    SERIALIZE_SCALAR(traceFlag);
+    SERIALIZE_SCALAR(use_old_priv);
+    SERIALIZE_ENUM(old_priv_ldst);
+    SERIALIZE_ENUM(old_priv_ex);
+    if (is_L1tlb)
+        tlb_checkpoint::saveBank(cp, "L1", tlb, freeList);
+    if (isStage2 || isTheSharedL2) {
+        tlb_checkpoint::saveBank(cp, "L2L3", tlbL2L3, freeListL2L3);
+        tlb_checkpoint::saveBank(cp, "L2L2", tlbL2L2, freeListL2L2);
+        tlb_checkpoint::saveBank(cp, "L2L1", tlbL2L1, freeListL2L1);
+        tlb_checkpoint::saveBank(cp, "L2L0", tlbL2L0, freeListL2L0);
+        tlb_checkpoint::saveBank(cp, "L2Sp", tlbL2Sp, freeListL2sp);
+        tlb_checkpoint::saveBank(cp, "Forward", forwardPre, freeListForwardPre);
+        tlb_checkpoint::saveBank(cp, "Back", backPre, freeListBackPre);
     }
 }
 
 void
 TLB::unserialize(CheckpointIn &cp)
 {
-    // Do not allow to restore with a smaller tlb.
-    printf("unserialize\n");
-    uint32_t _size;
-    UNSERIALIZE_SCALAR(_size);
-    if (_size > size) {
-        fatal("TLB size less than the one in checkpoint!");
+    unsigned checkpointVersion = 0;
+    optParamIn(cp, "checkpointVersion", checkpointVersion, false);
+    if (!checkpointVersion) {
+        // The legacy format never wrote L2/page-cache/prefetch banks and even
+        // reported a nonzero L1 occupancy for shared-only objects. Recovering
+        // those lost contents would require inventing state, so reject it.
+        fatal_if(!is_L1tlb || isStage2 || isTheSharedL2,
+                 "%s: legacy checkpoint has no L2 TLB state; regenerate it", name());
+        uint32_t _size;
+        UNSERIALIZE_SCALAR(_size);
+        fatal_if(_size > tlb.size(), "TLB size less than checkpoint size");
+        UNSERIALIZE_SCALAR(lruSeq);
+        trie.clear();
+        freeList.clear();
+        for (auto &entry : tlb) {
+            entry = TlbEntry{};
+            freeList.push_back(&entry);
+        }
+        for (uint32_t i = 0; i < _size; ++i) {
+            TlbEntry *entry = freeList.front();
+            freeList.pop_front();
+            entry->unserializeSection(cp, csprintf("Entry%u", i));
+            const Addr key = buildKey(entry->vaddr,
+                entry->translateMode == gstage ? entry->vmid : entry->asid,
+                entry->translateMode);
+            entry->trieHandle = trie.insert(key,
+                TlbEntryTrie::MaxBits - entry->logBytes + PGSHFT, entry);
+        }
+        return;
     }
-
+    fatal_if(checkpointVersion != 2, "%s: unsupported TLB checkpoint version", name());
+    const auto checkRole = [&](const char *field, bool current) {
+        bool saved;
+        paramIn(cp, field, saved);
+        fatal_if(saved != current, "%s: checkpoint changed TLB role %s", name(), field);
+    };
+    checkRole("is_L1tlb", is_L1tlb);
+    checkRole("isStage2", isStage2);
+    checkRole("isTheSharedL2", isTheSharedL2);
     UNSERIALIZE_SCALAR(lruSeq);
-
-    for (uint32_t x = 0; x < _size; x++) {
-        TlbEntry *newEntry = freeList.front();
-        freeList.pop_front();
-
-        newEntry->unserializeSection(cp, csprintf("Entry%d", x));
-        Addr key = buildKey(newEntry->vaddr, newEntry->asid,0);
-        newEntry->trieHandle = trie.insert(key,
-            TlbEntryTrie::MaxBits - newEntry->logBytes + PGSHFT, newEntry);
+    UNSERIALIZE_SCALAR(hitInSp);
+    UNSERIALIZE_SCALAR(hitPreEntry);
+    UNSERIALIZE_SCALAR(hitPreNum);
+    UNSERIALIZE_SCALAR(RemovePreUnused);
+    UNSERIALIZE_SCALAR(AllPre);
+    UNSERIALIZE_SCALAR(isOpenAutoNextLine);
+    UNSERIALIZE_SCALAR(openForwardPre);
+    UNSERIALIZE_SCALAR(openBackPre);
+    UNSERIALIZE_SCALAR(backPrePrecision);
+    UNSERIALIZE_SCALAR(forwardPrePrecision);
+    UNSERIALIZE_SCALAR(controlNum);
+    UNSERIALIZE_SCALAR(allForwardPre);
+    UNSERIALIZE_SCALAR(removeNoUseForwardPre);
+    UNSERIALIZE_SCALAR(removeNoUseBackPre);
+    UNSERIALIZE_SCALAR(usedBackPre);
+    UNSERIALIZE_SCALAR(test_num);
+    UNSERIALIZE_SCALAR(allUsed);
+    UNSERIALIZE_SCALAR(forwardUsedPre);
+    UNSERIALIZE_SCALAR(lastVaddr);
+    UNSERIALIZE_SCALAR(lastPc);
+    UNSERIALIZE_SCALAR(traceFlag);
+    UNSERIALIZE_SCALAR(use_old_priv);
+    UNSERIALIZE_ENUM(old_priv_ldst);
+    UNSERIALIZE_ENUM(old_priv_ex);
+    if (is_L1tlb)
+        tlb_checkpoint::loadBank(cp, "L1", tlb, trie, freeList);
+    if (isStage2 || isTheSharedL2) {
+        tlb_checkpoint::loadBank(cp, "L2L3", tlbL2L3, trieL2L3, freeListL2L3);
+        tlb_checkpoint::loadBank(cp, "L2L2", tlbL2L2, trieL2L2, freeListL2L2);
+        tlb_checkpoint::loadBank(cp, "L2L1", tlbL2L1, trieL2L1, freeListL2L1);
+        tlb_checkpoint::loadBank(cp, "L2L0", tlbL2L0, trieL2L0, freeListL2L0);
+        tlb_checkpoint::loadBank(cp, "L2Sp", tlbL2Sp, trieL2sp, freeListL2sp);
+        tlb_checkpoint::loadBank(cp, "Forward", forwardPre, trieForwardPre, freeListForwardPre);
+        tlb_checkpoint::loadBank(cp, "Back", backPre, trieBackPre, freeListBackPre);
     }
 }
 

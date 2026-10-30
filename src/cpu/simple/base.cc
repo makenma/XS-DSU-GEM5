@@ -217,12 +217,21 @@ BaseSimpleCPU::serializeThread(CheckpointOut &cp, ThreadID tid) const
     assert(_status == Idle || _status == Running);
 
     threadInfo[tid]->thread->serialize(cp);
+    // These are lifetime counters, unlike the resettable statistics. The
+    // RISC-V instret CSR and instruction-count events read numInst directly.
+    paramOut(cp, "execNumInst", threadInfo[tid]->numInst);
+    paramOut(cp, "execNumOp", threadInfo[tid]->numOp);
 }
 
 void
 BaseSimpleCPU::unserializeThread(CheckpointIn &cp, ThreadID tid)
 {
     threadInfo[tid]->thread->unserialize(cp);
+    // Legacy SimpleCPU snapshots did not preserve the lifetime counters.
+    threadInfo[tid]->numInst = 0;
+    threadInfo[tid]->numOp = 0;
+    optParamIn(cp, "execNumInst", threadInfo[tid]->numInst, false);
+    optParamIn(cp, "execNumOp", threadInfo[tid]->numOp, false);
 }
 
 void

@@ -33,12 +33,17 @@ class HomeLinkLayer : public ruby::Consumer,
         void print(std::ostream& out) const override {};
         inline void setRxPort(ChiCommonPort* port) { rxport = port; }
         void releaseQos(PoolPriority priority);
+        bool transmit(ChannelType channel, const FlitVariant &flit);
+        bool idle() const { return !hasPendingWork(); }
     private:
         friend class ChiPipeline<HomeLinkLayer, 2>;
 
         HomeNodeFull *m_homenode;
         HomePocq *m_HomePocq;
-        ChiCommonPort *rxport;
+        ChiCommonPort *rxport = nullptr;
+        std::array<Tick, NUM_CHANNELS> lastTx{};
+        std::array<bool, NUM_CHANNELS> sentTx{};
+        std::array<bool, NUM_CHANNELS> h1Visited{};
 
         struct QosPool
         {

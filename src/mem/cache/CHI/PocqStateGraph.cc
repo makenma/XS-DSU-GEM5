@@ -33,6 +33,18 @@ slcHit(const PocqMachine &, const PocqEvent &event)
 }
 
 bool
+sfHit(const PocqMachine &, const PocqEvent &event)
+{
+    return event.sfHit;
+}
+
+bool
+noData(const PocqMachine &, const PocqEvent &event)
+{
+    return !event.slcHit;
+}
+
+bool
 slcMissSfMiss(const PocqMachine &, const PocqEvent &event)
 {
     return !event.slcHit && !event.sfHit;
@@ -244,11 +256,13 @@ PocqGraphPanel::PocqGraphPanel()
     makeGraph(PocqGraphId::ReadUnique);
     makeGraph(PocqGraphId::SnpCleanInvalid);
     makeGraph(PocqGraphId::CleanInvalid);
+    makeGraph(PocqGraphId::WriteBackFull);
 
     buildMcRead();
     buildSnpCleanInvalid();
     buildReadUnique();
     buildCleanInvalid();
+    buildWriteBackFull();
 }
 
 bool
@@ -292,6 +306,8 @@ PocqGraphPanel::graphForReq(ReqMinor opcode)
         return PocqGraphId::CleanInvalid;
       case ReqMinor::ReadUnique:
         return PocqGraphId::ReadUnique;
+      case ReqMinor::WriteBack:
+        return PocqGraphId::WriteBackFull;
       default:
         return std::nullopt;
     }
@@ -385,6 +401,9 @@ PocqGraphPanel::buildReadUnique()
     PocqNode &call_mc_read = makeNode(PocqGraphId::ReadUnique,
                                       PocqNodeRole::CallMcRead,
                                       PocqNodeKind::Composite);
+    PocqNode &wait_snoop = makeNode(PocqGraphId::ReadUnique,
+                                    PocqNodeRole::WaitSnpResp,
+                                    PocqNodeKind::State);
     PocqNode &wait_comp_ack = makeNode(PocqGraphId::ReadUnique,
                                        PocqNodeRole::WaitCompAck,
                                        PocqNodeKind::State);
@@ -400,8 +419,14 @@ PocqGraphPanel::buildReadUnique()
     addEdge(entry, slc_lookup, PocqEventKind::Enter, always,
             {slcSfAction(PocqActionKind::StartSlcLookup)});
     addEdge(slc_lookup, wait_comp_ack, PocqEventKind::SlcLookupDone,
-            slcHit,
+            slcHitSfMiss,
             {linkAction(PocqActionKind::SendCompData)});
+    addEdge(slc_lookup, wait_snoop, PocqEventKind::SlcLookupDone,
+            sfHit, {linkAction(PocqActionKind::SendSnpUnique)});
+    addEdge(wait_snoop, wait_comp_ack, PocqEventKind::SnpResp,
+            slcHit, {linkAction(PocqActionKind::SendCompData)});
+    addEdge(wait_snoop, call_mc_read, PocqEventKind::SnpResp,
+            noData);
     addEdge(slc_lookup, call_mc_read, PocqEventKind::SlcLookupDone,
             slcMissSfMiss);
     addEdge(call_mc_read, wait_comp_ack, PocqEventKind::SubGraphDone,
@@ -430,7 +455,7 @@ PocqGraphPanel::buildSnpCleanInvalid()
     snp_clean_invalid.setExit(&exit);
 
     addEdge(entry, wait_snp_resp, PocqEventKind::Enter, always,
-            {linkAction(PocqActionKind::SendSnpMakeInvalid)});
+            {linkAction(PocqActionKind::SendSnpCleanInvalid)});
     addEdge(wait_snp_resp, exit, PocqEventKind::SnpResp, always,
             {slcSfAction(PocqActionKind::FlushSf)});
 }
@@ -477,6 +502,34 @@ PocqGraphPanel::buildCleanInvalid()
             slcMissSfMiss,
             {linkAction(PocqActionKind::SendComp)});
     addEdge(call_snp, exit, PocqEventKind::SubGraphDone, always,
+            {linkAction(PocqActionKind::SendComp)});
+}
+
+void
+PocqGraphPanel::buildWriteBackFull()
+{
+    auto &graph = *graphs[static_cast<std::size_t>(PocqGraphId::WriteBackFull)];
+    auto &entry = makeNode(PocqGraphId::WriteBackFull, PocqNodeRole::Entry,
+                          PocqNodeKind::State);
+    auto &data = makeNode(PocqGraphId::WriteBackFull, PocqNodeRole::WaitWriteData,
+                         PocqNodeKind::State);
+    auto &fill = makeNode(PocqGraphId::WriteBackFull, PocqNodeRole::SlcFill,
+                         PocqNodeKind::State);
+    auto &exit = makeNode(PocqGraphId::WriteBackFull, PocqNodeRole::Exit,
+                         PocqNodeKind::Exit);
+    graph.setEntry(&entry);
+    graph.setExit(&exit);
+    // Separate DBIDResp and Comp keeps ownership with the RN-F until the
+    // entire returned line and any displaced dirty SLC line are committed.
+    addEdge(entry, data, PocqEventKind::Enter, always,
+            {linkAction(PocqActionKind::SendDbidResp)});
+    addEdge(data, fill, PocqEventKind::WriteData,
+            [](const PocqMachine &, const PocqEvent &e) { return e.dataValid; },
+            {slcSfAction(PocqActionKind::WriteL3)});
+    addEdge(data, exit, PocqEventKind::WriteData,
+            [](const PocqMachine &, const PocqEvent &e) { return !e.dataValid; },
+            {linkAction(PocqActionKind::SendComp)});
+    addEdge(fill, exit, PocqEventKind::SlcSfDone, always,
             {linkAction(PocqActionKind::SendComp)});
 }
 
@@ -554,11 +607,13 @@ pocqActionName(PocqActionKind action)
       case PocqActionKind::SendCompData: return "SendCompData";
       case PocqActionKind::SendComp: return "SendComp";
       case PocqActionKind::SendCompDbidResp: return "SendCompDbidResp";
+      case PocqActionKind::SendDbidResp: return "SendDbidResp";
       case PocqActionKind::SendSnpOnce: return "SendSnpOnce";
       case PocqActionKind::SendSnpOnceFwd: return "SendSnpOnceFwd";
       case PocqActionKind::SendSnpShared: return "SendSnpShared";
       case PocqActionKind::SendSnpUnique: return "SendSnpUnique";
       case PocqActionKind::SendSnpMakeInvalid: return "SendSnpMakeInvalid";
+      case PocqActionKind::SendSnpCleanInvalid: return "SendSnpCleanInvalid";
       case PocqActionKind::FlushSf: return "FlushSf";
       case PocqActionKind::FlushL3: return "FlushL3";
       case PocqActionKind::WriteL3: return "WriteL3";

@@ -4,6 +4,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <variant>
+#include <array>
+#include <algorithm>
+#include <stdexcept>
 
 namespace gem5
 {
@@ -71,39 +74,92 @@ namespace Chi
 
     struct RawReq:BaseFlit
     {
-        uint8_t     AllowRetry;
-        uint64_t    addr;
-        uint8_t     size;
-        uint32_t    ReturnNid;
+        uint8_t     AllowRetry = 1;
+        uint64_t    addr = 0;
+        uint8_t     size = 6;
+        uint32_t    ReturnNid = 0;
+        bool ns = true;
+        bool allocate = true;
+        bool cacheable = true;
+        bool likelyShared = false;
+        bool snoopMe = false;
+        uint8_t order = 0;
+        bool expCompAck = true;
 
     };
 
     struct RawRsp:BaseFlit
     {
-        uint8_t     dbid;
+        uint32_t    dbid = 0;
+        uint8_t     resp = 0;
+        bool passDirty = false;
     };
 
 
     struct RawSnp:BaseFlit
     {
-        uint64_t    addr;
-        uint8_t     size;
+        uint64_t    addr = 0;
+        uint8_t     size = 6;
+        bool ns = true;
     };
 
     struct data_payload
     {
-        uint8_t* data;
-        size_t   ByteLength;// in bytes
+        uint8_t* data = nullptr;
+        size_t   ByteLength = 0;// in bytes
     };
 
     struct RawDat:BaseFlit
     {
-        uint8_t     last;
-        uint32_t    HomeNID;
-        uint8_t     dbid;
-        uint8_t     dataid;
-        data_payload data;
-        // uint8_t[]   data; // variable length data payload
+        uint8_t     last = 0;
+        uint32_t    HomeNID = 0;
+        uint32_t    dbid = 0;
+        uint8_t     resp = 0;
+        bool passDirty = false;
+        uint8_t     dataid = 0;
+        data_payload data{};
+        // A flit owns at most one cache line. Copies rebase the legacy
+        // data pointer, so both APIs remain valid after pipeline retirement.
+        std::array<uint8_t, 64> payload{};
+        std::size_t payloadLength = 0;
+
+        RawDat() = default;
+        RawDat(const RawDat &other) { *this = other; }
+        RawDat(RawDat &&other) noexcept { *this = other; }
+        RawDat &operator=(const RawDat &other) {
+            if (this == &other) return *this;
+            static_cast<BaseFlit &>(*this) = other;
+            last = other.last;
+            HomeNID = other.HomeNID;
+            dbid = other.dbid;
+            resp = other.resp;
+            passDirty = other.passDirty;
+            dataid = other.dataid;
+            payload = other.payload;
+            payloadLength = other.payloadLength;
+            data = payloadLength ? data_payload{payload.data(), payloadLength}
+                                 : other.data;
+            return *this;
+        }
+        RawDat &operator=(RawDat &&other) noexcept { return *this = other; }
+        void setPayload(const uint8_t *bytes, std::size_t length) {
+            if (length > payload.size() || (length && !bytes))
+                throw std::invalid_argument("Invalid CHI data payload");
+            if (length)
+                std::copy_n(bytes, length, payload.begin());
+            payloadLength = length;
+            data = {payload.data(), payloadLength};
+        }
+        void ownPayload() {
+            if (!payloadLength && data.data && data.ByteLength)
+                setPayload(data.data, data.ByteLength);
+        }
+        const uint8_t *payloadData() const {
+            return payloadLength ? payload.data() : data.data;
+        }
+        std::size_t payloadSize() const {
+            return payloadLength ? payloadLength : data.ByteLength;
+        }
     };
 
     struct FlitId

@@ -165,7 +165,7 @@ TEST(PocqStateGraphTest, CleanInvalidKeepsFlushL3OnGuardedEdges)
     ASSERT_EQ(step->action_count(), 2);
     expectAction(*step, 0, PocqActionKind::FlushL3,
                  PocqActionTarget::SlcSf);
-    expectAction(*step, 1, PocqActionKind::SendSnpMakeInvalid,
+    expectAction(*step, 1, PocqActionKind::SendSnpCleanInvalid,
                  PocqActionTarget::LinkLayer);
     expectState(machine, PocqGraphId::SnpCleanInvalid,
                 PocqNodeRole::WaitSnpResp);
@@ -192,6 +192,83 @@ TEST(PocqStateGraphTest, CleanInvalidKeepsFlushL3OnGuardedEdges)
     expectAction(*step, 1, PocqActionKind::SendComp,
                  PocqActionTarget::LinkLayer);
     EXPECT_TRUE(step->is_complete());
+}
+
+TEST(PocqStateGraphTest, ReadUniqueSfHitAlwaysWaitsForSnoop)
+{
+    for (bool slc : {false, true}) {
+        PocqGraphPanel panel;
+        PocqMachine machine;
+        ASSERT_TRUE(panel.initialize(machine, PocqGraphId::ReadUnique));
+        ASSERT_TRUE(machine.state->step(machine, PocqEvent::enter()));
+        auto result = machine.state->step(machine, lookupDone(slc, true));
+        ASSERT_TRUE(result);
+        expectAction(*result, 0, PocqActionKind::SendSnpUnique,
+                     PocqActionTarget::LinkLayer);
+        expectState(machine, PocqGraphId::ReadUnique,
+                    PocqNodeRole::WaitSnpResp);
+        auto response = linkEvent(PocqEventKind::SnpResp);
+        response.slcHit = true; // Collected complete data from an RN-F.
+        result = machine.state->step(machine, response);
+        ASSERT_TRUE(result);
+        expectAction(*result, 0, PocqActionKind::SendCompData,
+                     PocqActionTarget::LinkLayer);
+        expectState(machine, PocqGraphId::ReadUnique,
+                    PocqNodeRole::WaitCompAck);
+    }
+}
+
+TEST(PocqStateGraphTest, ReadUniqueSnoopWithoutDataReadsMemory)
+{
+    PocqGraphPanel panel;
+    PocqMachine machine;
+    ASSERT_TRUE(panel.initialize(machine, PocqGraphId::ReadUnique));
+    ASSERT_TRUE(machine.state->step(machine, PocqEvent::enter()));
+    ASSERT_TRUE(machine.state->step(machine, lookupDone(false, true)));
+    auto result = machine.state->step(machine,
+                                     linkEvent(PocqEventKind::SnpResp));
+    ASSERT_TRUE(result);
+    expectAction(*result, 0, PocqActionKind::SendReadNoSnp,
+                 PocqActionTarget::LinkLayer);
+    expectState(machine, PocqGraphId::McRead, PocqNodeRole::WaitCompData);
+}
+
+TEST(PocqStateGraphTest, WriteBackFullWaitsForDataAndSlcCommit)
+{
+    PocqGraphPanel panel;
+    PocqMachine machine;
+    ASSERT_EQ(PocqGraphPanel::graphForReq(decodeReq(0x1b).minor),
+              PocqGraphId::WriteBackFull);
+    ASSERT_TRUE(panel.initialize(machine, PocqGraphId::WriteBackFull));
+    auto result = machine.state->step(machine, PocqEvent::enter());
+    ASSERT_TRUE(result);
+    expectAction(*result, 0, PocqActionKind::SendDbidResp,
+                 PocqActionTarget::LinkLayer);
+    expectState(machine, PocqGraphId::WriteBackFull, PocqNodeRole::WaitWriteData);
+    result = machine.state->step(machine, linkEvent(PocqEventKind::WriteData));
+    ASSERT_TRUE(result);
+    expectAction(*result, 0, PocqActionKind::WriteL3, PocqActionTarget::SlcSf);
+    EXPECT_FALSE(machine.completed);
+    result = machine.state->step(machine,
+        {PocqEventKind::SlcSfDone, PocqEventSource::SlcSf});
+    ASSERT_TRUE(result);
+    expectAction(*result, 0, PocqActionKind::SendComp, PocqActionTarget::LinkLayer);
+    EXPECT_TRUE(machine.completed);
+}
+
+TEST(PocqStateGraphTest, WriteBackInvalidAfterSnoopLeavesNewOwnerUntouched)
+{
+    PocqGraphPanel panel;
+    PocqMachine machine;
+    ASSERT_TRUE(panel.initialize(machine, PocqGraphId::WriteBackFull));
+    ASSERT_TRUE(machine.state->step(machine, PocqEvent::enter()));
+    auto invalid = linkEvent(PocqEventKind::WriteData);
+    invalid.dataValid = false;
+    auto result = machine.state->step(machine, invalid);
+    ASSERT_TRUE(result);
+    ASSERT_EQ(result->action_count(), 1);
+    expectAction(*result, 0, PocqActionKind::SendComp, PocqActionTarget::LinkLayer);
+    EXPECT_TRUE(machine.completed);
 }
 
 } // namespace gem5::Chi

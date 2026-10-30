@@ -33,6 +33,7 @@
 #include <ctime>
 #include <set>
 #include <sstream>
+#include <unordered_map>
 
 #include "arch/riscv/interrupts.hh"
 #include "arch/riscv/mmu.hh"
@@ -818,11 +819,29 @@ ISA::setMiscReg(int misc_reg, RegVal val)
     }
 }
 
+const Addr INVALID_RESERVATION_ADDR = (Addr) -1;
+std::unordered_map<int, Addr> load_reservation_addrs;
+
+static Addr &
+loadReservation(ContextID context)
+{
+    // An absent context has no LR reservation, including at physical zero.
+    return load_reservation_addrs.try_emplace(
+        context, INVALID_RESERVATION_ADDR).first->second;
+}
+
 void
 ISA::serialize(CheckpointOut &cp) const
 {
     DPRINTF(Checkpoint, "Serializing Riscv Misc Registers\n");
     SERIALIZE_CONTAINER(miscRegFile);
+    Addr load_reservation_addr = INVALID_RESERVATION_ADDR;
+    if (tc) {
+        const auto found = load_reservation_addrs.find(tc->contextId());
+        if (found != load_reservation_addrs.end())
+            load_reservation_addr = found->second;
+    }
+    SERIALIZE_SCALAR(load_reservation_addr);
 }
 
 void
@@ -830,17 +849,18 @@ ISA::unserialize(CheckpointIn &cp)
 {
     DPRINTF(Checkpoint, "Unserializing Riscv Misc Registers\n");
     UNSERIALIZE_CONTAINER(miscRegFile);
+    // Older checkpoints did not include the CPU-side LR/SC reservation.
+    Addr load_reservation_addr = INVALID_RESERVATION_ADDR;
+    optParamIn(cp, "load_reservation_addr", load_reservation_addr, false);
+    if (tc) loadReservation(tc->contextId()) = load_reservation_addr;
 }
 
 const int WARN_FAILURE = 10000;
 
-const Addr INVALID_RESERVATION_ADDR = (Addr) -1;
-std::unordered_map<int, Addr> load_reservation_addrs;
-
 void
 ISA::handleLockedSnoop(PacketPtr pkt, Addr cacheBlockMask)
 {
-    Addr& load_reservation_addr = load_reservation_addrs[tc->contextId()];
+    Addr& load_reservation_addr = loadReservation(tc->contextId());
 
     if (load_reservation_addr == INVALID_RESERVATION_ADDR)
         return;
@@ -854,7 +874,7 @@ ISA::handleLockedSnoop(PacketPtr pkt, Addr cacheBlockMask)
 void
 ISA::handleLockedRead(const RequestPtr &req)
 {
-    Addr& load_reservation_addr = load_reservation_addrs[tc->contextId()];
+    Addr& load_reservation_addr = loadReservation(tc->contextId());
 
     load_reservation_addr = req->getPaddr() & ~0xF;
     DPRINTF(LLSC, "[cid:%d]: Reserved address %x.\n",
@@ -864,7 +884,7 @@ ISA::handleLockedRead(const RequestPtr &req)
 bool
 ISA::handleLockedWrite(const RequestPtr &req, Addr cacheBlockMask)
 {
-    Addr& load_reservation_addr = load_reservation_addrs[tc->contextId()];
+    Addr& load_reservation_addr = loadReservation(tc->contextId());
     bool lr_addr_empty = (load_reservation_addr == INVALID_RESERVATION_ADDR);
 
     // Normally RISC-V uses zero to indicate success and nonzero to indicate

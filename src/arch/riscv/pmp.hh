@@ -56,6 +56,10 @@ class PMP : public SimObject
     PARAMS(PMP);
     PMP(const Params &params);
 
+    void loadState(CheckpointIn &cp) override;
+    void serialize(CheckpointOut &cp) const override;
+    void unserialize(CheckpointIn &cp) override;
+
   private:
     /** maximum number of entries in the pmp table */
     int pmpEntries;
@@ -104,7 +108,7 @@ class PMP : public SimObject
         /** addr range corresponding to a single pmp entry */
         AddrRange pmpAddr = AddrRange(0, 0);
         /** raw addr in pmpaddr register for a pmp entry */
-        Addr rawAddr;
+        Addr rawAddr = 0;
         /** pmpcfg reg value for a pmp entry */
         uint8_t pmpCfg = 0;
     };

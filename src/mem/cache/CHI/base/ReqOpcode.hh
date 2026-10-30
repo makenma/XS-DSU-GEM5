@@ -157,6 +157,13 @@ namespace Chi
                 out.minor = ReqMinor::Evict;
                 return out;
 
+            case 0x1B: // WriteBackFull
+                if (!op.v1()) {
+                    out.major = ReqMajor::Write;
+                    out.minor = ReqMinor::WriteBack;
+                }
+                return out;
+
             case 0x14: // DVMOp / WriteUniqueFullCleanSh (bit6=1)
                 if (!op.v1()) { out.major = ReqMajor::DVM; out.minor = ReqMinor::DVMOp; }
                 else          { out.major = ReqMajor::Write; out.minor = ReqMinor::WriteUnique; }

@@ -118,20 +118,25 @@ HomeLinkLayer::wakeup()
     //    放在最前 = retry 优先占用 REQ credit (硬件防死锁惯例);
     //    想给流水优先就挪到循环后面。每拍无条件执行, 不依赖 REQ 到达。
     ArbPcrdCredit();
+    h1Visited.fill(false);
 
     for (std::size_t i = 0; i < NUM_CHANNELS; ++i) {
         const auto channel = static_cast<ChannelType>(i);
 
         // ①② 公共层推进整条流水并按顺序退休。TX 无
         // credit 时 callback 返回 false，flit 会恢复到队首。
-        drivePipeline(i, [this, channel](FlitVariant &flit) {
-            return rxport->enqueueTx(channel, flit);
-        });
+        // H1 consumes incoming flits; it must never echo them to TX.
+        drivePipeline(i, [](FlitVariant &) { return true; });
 
         // ③ 准入: RX 有新 flit 则放入对应 channel 流水。
-        auto flit = rxport->getRxFlit(channel);
-        if (flit)
-            enqueuePipeline(i, std::move(*flit));
+        if (pipelineSize(i) < 2 && rxport->hasRxFlit(channel, true)) {
+            auto flit = rxport->getRxFlit(channel);
+            if (flit) {
+                // Pipeline stage is local metadata, never wire state.
+                std::visit([](auto &raw) { raw.stage = 0; }, *flit);
+                enqueuePipeline(i, std::move(*flit));
+            }
+        }
     }
 
     // 按需调度: 有活才排下一拍, 没活就睡 (省仿真时间)。
@@ -158,23 +163,34 @@ HomeLinkLayer::dispatchStageH0(FlitVariant &flit)
 void
 HomeLinkLayer::dispatchStageH1(FlitVariant &flit)
 {
+    const auto channel = flit.index();
+    if (baseFlit(flit).stage != 1 || h1Visited[channel])
+        return;
+    h1Visited[channel] = true;
     std::visit([this](auto &raw) { doStageH1(&raw); }, flit);
 }
 
 
-void HomeLinkLayer::ArbPcrdCredit(){
-    // 先查 credit 再出队: 不满足就下拍再试, 不空转不丢序
-    if (m_PendingRetry.empty())
-        return;
-    if (!rxport->hasTxCredit(ChannelType::RSP))
-        return;
-
-    PendingElement pcrd_grant = m_PendingRetry.arbPend();
-    //TODO: 用 pcrd_grant (srcid/优先级) 构造 retry flit 并 enqueueTx 发送
+bool
+HomeLinkLayer::transmit(ChannelType channel, const FlitVariant &flit)
+{
+    const auto index = static_cast<std::size_t>(channel);
+    if (sentTx[index] && lastTx[index] == curTick())
+        return false;
+    if (!rxport->peerHasTxCredit(channel) ||
+        !rxport->enqueueTx(channel, flit))
+        return false;
+    sentTx[index] = true;
+    lastTx[index] = curTick();
+    return true;
 }
 
-
-
+void
+HomeLinkLayer::ArbPcrdCredit()
+{
+    // Admission stalls in H1 until capacity exists. No RetryAck is issued,
+    // so no protocol credit may be invented or consumed here.
+}
 
 // RawReq
 void HomeLinkLayer::doStageH0(RawReq* Req) {
@@ -185,6 +201,12 @@ void HomeLinkLayer::doStageH0(RawReq* Req) {
 void HomeLinkLayer::doStageH1(RawReq* Req) {
     IS_THIS_STAGE(Req, 1)
     panic_if(!m_HomePocq, "HomeLinkLayer has no HomePocq");
+    fatal_if(!PocqGraphPanel::graphForReq(decodeReq(Req->opcode).minor),
+             "HNF supports ReadUnique, CleanInvalid and WriteBackFull; opcode %#x unsupported",
+             Req->opcode);
+    fatal_if(Req->opcode == 0x1b &&
+             (Req->size != 6 || Req->expCompAck),
+             "WriteBackFull requires a 64B line without ExpCompAck");
 
     // 先做 QoS 容量的无副作用检查，再准入 POCQ。这样
     // POCQ 失败时不会留下一个已占用的 QoS 计数。
@@ -198,17 +220,7 @@ void HomeLinkLayer::doStageH1(RawReq* Req) {
                  "QoS pool changed during POCQ admission");
     }
     else {
-        //fast path
-        if (m_RetryFifo.full()){
-            //TODO:stall req credit
-        }
-        else {
-            m_RetryFifo.push({static_cast<int>(Req->srcid), Req->qos});
-            m_PendingRetry.enqueue(*Req);
-            PendingElement pcrd_grant;
-            pcrd_grant = m_PendingRetry.arbPend();
-            //TODO:return req credit send Pcrd_grant to RNf
-        }
+        return; // Retain the flit at H1 and propagate finite RX backpressure.
     }
     Req->next_stage();
 }
@@ -218,7 +230,9 @@ void HomeLinkLayer::doStageH0(RawRsp* Rsp) {
     IS_THIS_STAGE(Rsp, 0) Rsp->next_stage();
 }
 void HomeLinkLayer::doStageH1(RawRsp* Rsp) {
-    IS_THIS_STAGE(Rsp, 1) Rsp->next_stage();
+    IS_THIS_STAGE(Rsp, 1)
+    m_HomePocq->receive(*Rsp);
+    Rsp->next_stage();
 }
 
 // RawSnp
@@ -234,7 +248,9 @@ void HomeLinkLayer::doStageH0(RawDat* Dat) {
     IS_THIS_STAGE(Dat, 0) Dat->next_stage();
 }
 void HomeLinkLayer::doStageH1(RawDat* Dat) {
-    IS_THIS_STAGE(Dat, 1) Dat->next_stage();
+    IS_THIS_STAGE(Dat, 1)
+    m_HomePocq->receive(*Dat);
+    Dat->next_stage();
 }
 
 

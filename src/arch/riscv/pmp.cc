@@ -39,6 +39,7 @@
 #include "math.h"
 #include "mem/request.hh"
 #include "params/PMP.hh"
+#include "sim/serialize.hh"
 #include "sim/sim_object.hh"
 
 namespace gem5
@@ -50,6 +51,68 @@ PMP::PMP(const Params &params) :
     numRules(0)
 {
     pmpTable.resize(pmpEntries);
+}
+
+void
+PMP::loadState(CheckpointIn &cp)
+{
+    // SimObject normally ignores absent sections. That would silently restore
+    // an enabled protection unit as an unrestricted, empty PMP table.
+    fatal_if(!cp.sectionExists(name()),
+             "%s: checkpoint has no PMP state; regenerate it", name());
+    SimObject::loadState(cp);
+}
+
+void
+PMP::serialize(CheckpointOut &cp) const
+{
+    const unsigned checkpointVersion = 1;
+    SERIALIZE_SCALAR(checkpointVersion);
+    SERIALIZE_SCALAR(pmpEntries);
+    std::vector<Addr> rawAddresses;
+    std::vector<unsigned> configurations;
+    rawAddresses.reserve(pmpTable.size());
+    configurations.reserve(pmpTable.size());
+    for (const auto &entry : pmpTable) {
+        rawAddresses.push_back(entry.rawAddr);
+        configurations.push_back(entry.pmpCfg);
+    }
+    SERIALIZE_CONTAINER(rawAddresses);
+    SERIALIZE_CONTAINER(configurations);
+}
+
+void
+PMP::unserialize(CheckpointIn &cp)
+{
+    unsigned checkpointVersion = 0;
+    optParamIn(cp, "checkpointVersion", checkpointVersion, false);
+    // The old ISA snapshot masks PMPADDR values, while this unit receives the
+    // unmasked CSR write. Those lost bits cannot be reconstructed faithfully.
+    fatal_if(checkpointVersion != 1,
+             "%s: checkpoint has no complete PMP state; regenerate it", name());
+    int savedEntries;
+    paramIn(cp, "pmpEntries", savedEntries);
+    fatal_if(savedEntries != pmpEntries,
+             "%s: checkpoint changed PMP entry count", name());
+    std::vector<Addr> rawAddresses;
+    std::vector<unsigned> configurations;
+    UNSERIALIZE_CONTAINER(rawAddresses);
+    UNSERIALIZE_CONTAINER(configurations);
+    fatal_if(rawAddresses.size() != pmpTable.size() ||
+             configurations.size() != pmpTable.size(),
+             "%s: invalid PMP checkpoint table size", name());
+    for (size_t i = 0; i < pmpTable.size(); ++i) {
+        fatal_if(configurations[i] > 0xff,
+                 "%s: invalid PMP checkpoint configuration", name());
+        pmpTable[i].rawAddr = rawAddresses[i];
+        pmpTable[i].pmpCfg = configurations[i];
+    }
+    // Restore every raw address before rebuilding TOR ranges, which depend
+    // on the preceding entry even when that preceding rule is disabled.
+    // Do not replay CSR writes: restoring a locked rule is not a guest write.
+    numRules = 0;
+    for (int i = 0; i < pmpEntries; ++i)
+        pmpUpdateRule(i);
 }
 
 Fault

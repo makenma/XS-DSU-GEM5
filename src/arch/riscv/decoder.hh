@@ -32,6 +32,7 @@
 
 #include "arch/generic/decode_cache.hh"
 #include "arch/generic/decoder.hh"
+#include "arch/riscv/instruction_bytes.hh"
 #include "arch/riscv/insts/vector.hh"
 #include "arch/riscv/types.hh"
 #include "base/logging.hh"
@@ -53,6 +54,7 @@ class Decoder : public InstDecoder
     //The extended machine instruction being generated
     ExtMachInst emi;
     uint32_t machInst;
+    InstructionBytes instructionBytes;
 
     bool vtypeReady = true;
     VTYPE machVtype;

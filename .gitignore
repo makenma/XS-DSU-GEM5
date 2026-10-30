@@ -71,3 +71,26 @@ AGENTS.md
 microbench/build/
 microbench/output/
 microbench/dramsim3*
+
+# Keep the directed CHI regression sources; other local test artifacts stay ignored.
+!/tests/
+/tests/*
+!/tests/gem5/
+/tests/gem5/*
+!/tests/gem5/chi/
+/tests/gem5/chi/*
+!/tests/gem5/chi/run_slcsf.py
+!/tests/gem5/chi/benchmark_slcsf.py
+!/tests/gem5/chi/benchmark_hnf.py
+!/tests/gem5/chi/benchmark_router.py
+!/tests/gem5/chi/slcsf_performance_baseline.patch
+!/tests/gem5/chi/run_router.py
+!/tests/gem5/chi/mesh_smoke.S
+!/tests/gem5/chi/mesh_smoke.ld
+!/tests/gem5/chi/run_mesh.py
+!/tests/gem5/chi/mesh_lrsc_checkpoint.S
+!/tests/gem5/chi/run_mesh_lrsc_checkpoint.py
+!/tests/gem5/chi/mesh_mmu_checkpoint.S
+!/tests/gem5/chi/run_mesh_mmu_checkpoint.py
+!/tests/gem5/chi/restore_linux_mesh.py
+!/tests/gem5/chi/slcsf_rtl/
