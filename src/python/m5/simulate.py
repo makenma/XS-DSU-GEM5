@@ -224,8 +224,12 @@ def drain():
 
     assert _drain_manager.isDrained(), "Drain state inconsistent"
 
-def memWriteback(root):
+def memWriteback(root, checkpoint=False):
     for obj in root.descendants():
+        # Warm cache snapshots retain ownership and data in the hierarchy.
+        # Explicit writebacks and CPU-switch callers keep their old behavior.
+        if checkpoint and bool(getattr(obj, 'checkpoint_preserve', False)):
+            continue
         obj.memWriteback()
 
 def memInvalidate(root):
@@ -238,7 +242,7 @@ def checkpoint(dir):
         raise TypeError("Checkpoint must be called on a root object.")
 
     drain()
-    memWriteback(root)
+    memWriteback(root, checkpoint=True)
     print("Writing checkpoint")
     _m5.core.serializeAll(dir)
 

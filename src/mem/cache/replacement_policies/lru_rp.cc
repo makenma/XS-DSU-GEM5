@@ -97,5 +97,18 @@ LRU::instantiateEntry()
     return std::shared_ptr<ReplacementData>(new LRUReplData());
 }
 
+Tick
+LRU::checkpointTick(const std::shared_ptr<ReplacementData> &data) const
+{
+    return std::static_pointer_cast<LRUReplData>(data)->lastTouchTick;
+}
+
+void
+LRU::restoreCheckpointTick(const std::shared_ptr<ReplacementData> &data,
+                           Tick tick)
+{
+    std::static_pointer_cast<LRUReplData>(data)->lastTouchTick = tick;
+}
+
 } // namespace replacement_policy
 } // namespace gem5

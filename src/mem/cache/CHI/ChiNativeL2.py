@@ -6,8 +6,9 @@ class ChiNativeL2(ClockedObject):
     """Native L2 adapted to ancient_coding's exclusive-only HNF profile.
 
     Misses use ReadUnique, dirty victims use WriteBackFull and clean victims
-    use CleanInvalid. MMIO belongs on a separate platform bus. Warm native
-    checkpoints are rejected because this L2 has no state serialization.
+    use CleanInvalid. MMIO belongs on a separate platform bus. Native
+    checkpoints drain transactions and preserve tags, data and replacement
+    state, including dirty data owned by a checkpointed upper cache.
     """
     type = 'ChiNativeL2'
     cxx_header = 'mem/cache/CHI/ChiNativeL2.hh'

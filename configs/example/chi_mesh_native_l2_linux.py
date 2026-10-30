@@ -2,7 +2,7 @@
 
 Only firmware/DTB loading uses the SNF functional port. CPU instructions,
 data and page-table walks all use their RNF and the credit-controlled mesh.
-MMIO uses the platform bus. This native L2 profile supports cold boot only.
+MMIO uses the platform bus. Native checkpoints retain the warm hierarchy.
 """
 import argparse
 import json
@@ -66,6 +66,8 @@ parser.add_argument("--kernel", type=Path, required=True)
 parser.add_argument("--clock", default="1GHz")
 parser.add_argument("--restore", type=Path)
 parser.add_argument("--bare-test", action="store_true")
+parser.add_argument("--checkpoint-dir", type=Path)
+parser.add_argument("--stop-at-checkpoint", action="store_true")
 parser.add_argument("--exit-marker", help="Stop after this text appears on the guest serial console")
 parser.add_argument("--max-ticks", type=int, default=30_000_000_000_000)
 parser.add_argument("--poll-ticks", type=int, default=1_000_000_000)
@@ -75,8 +77,6 @@ parser.add_argument("--sf-sets", type=int, default=4096)
 parser.add_argument("--slc-sets", type=int, default=1024)
 parser.add_argument("--sn-latency", type=int, default=20)
 args = parser.parse_args()
-if args.restore:
-    parser.error("Native L2 warm checkpoint restore is not supported")
 if args.max_ticks <= 0 or args.poll_ticks <= 0:
     parser.error("max-ticks and poll-ticks must be positive")
 out = Path(m5.options.outdir).resolve()
@@ -151,7 +151,7 @@ for i, cpu in enumerate(system.cpu):
     def l1(size):
         return Cache(size=size, assoc=4, tag_latency=1, data_latency=1,
                      response_latency=1, mshrs=8, tgts_per_mshr=8,
-                     write_buffers=8)
+                     write_buffers=8, checkpoint_preserve=True)
     cpu.addPrivateSplitL1Caches(l1("32KiB"), l1("32KiB"),
                                 l1("4KiB"), l1("4KiB"))
     cpu.connectBus(system.cpu_buses[i])
@@ -176,6 +176,7 @@ m5.instantiate(str(args.restore.resolve()) if args.restore else None)
 start_tick = m5.curTick()
 start_wall = time.monotonic()
 terminal = out / "system.platform.terminal"
+checkpoint = args.checkpoint_dir or (out / "cpt.login")
 result = {"topology": "2x2 mesh, 2 CPU/native-L2, 2 HNF, 1 SNF",
           "kernel": str(args.kernel.resolve()), "restore": str(args.restore) if args.restore else None,
           "start_tick": start_tick, "status": "running"}
@@ -192,11 +193,16 @@ while m5.curTick() - start_tick < args.max_ticks:
         result.update(status="console_marker", marker=args.exit_marker)
         break
     login = not args.bare_test and not args.restore and "gem5-chi login:" in console
-    if login and not args.exit_marker:
-        result.update(status="login_prompt")
-        break
-    if cause == "checkpoint":
-        raise RuntimeError("Native L2 warm checkpoints are not supported")
+    if (login and not args.exit_marker) or cause == "checkpoint":
+        checkpoint = checkpoint.resolve()
+        if checkpoint.exists():
+            raise RuntimeError("Refusing to overwrite checkpoint: " + str(checkpoint))
+        m5.checkpoint(str(checkpoint))
+        result.update(checkpoint=str(checkpoint), checkpoint_tick=m5.curTick(),
+                      status="login_checkpoint" if login else "checkpoint")
+        print("CHI_MESH_CHECKPOINT", json.dumps(result), flush=True)
+        if login or args.stop_at_checkpoint:
+            break
     elif cause != "simulate() limit reached":
         result.update(status="guest_exit", cause=cause, code=event.getCode())
         if event.getCode() != 0:

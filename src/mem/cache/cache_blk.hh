@@ -69,6 +69,7 @@ namespace gem5
  */
 class CacheBlk : public TaggedEntry
 {
+    friend class BaseSetAssoc;
   public:
     /**
      * Cache block's enum listing the supported coherence bits. The valid

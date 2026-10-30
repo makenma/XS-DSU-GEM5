@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cold boot the merged 2x2 mesh and verify a real root shell over serial."""
+"""Boot or restore the merged 2x2 mesh and verify a root shell over serial."""
 
 import argparse
 import hashlib
@@ -27,6 +27,7 @@ def main():
                         default=ROOT / "build/RISCV/gem5.opt")
     parser.add_argument("--kernel", type=Path, required=True)
     parser.add_argument("--clock", default="100MHz")
+    parser.add_argument("--restore", type=Path)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=3600)
     args = parser.parse_args()
@@ -40,6 +41,8 @@ def main():
                "--kernel", str(args.kernel.resolve()),
                "--clock", args.clock,
                "--exit-marker", "CHI_MERGE_LOGIN_DONE"]
+    if args.restore:
+        command += ["--restore", str(args.restore.resolve())]
     report = {"command": command, "status": "running",
               "requested_clock": args.clock}
     binary_digest = sha256(args.gem5)
@@ -72,6 +75,11 @@ def main():
             if connection is None:
                 raise RuntimeError("Serial listener timeout")
             logged_in = sent = False
+            if args.restore:
+                # The login prompt was printed before the snapshot. Resume
+                # the waiting getty rather than waiting for it to print again.
+                connection.sendall(b"root\n")
+                logged_in = True
             while time.monotonic() < deadline and process.poll() is None:
                 try:
                     data = connection.recv(16384)

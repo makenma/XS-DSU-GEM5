@@ -11,11 +11,21 @@ _start:
     bnez t0, secondary
     la s0, datum
     li s2, 0x1234
+#ifdef CHI_LRSC_COLD_DATA
+    la t1, dirty_line
+    sd s2, 0(t1)
+#else
     sd s2, 0(s0)
+#endif
     /* Let the secondary reach WFI and warm the primary instruction/data
      * lines before creating the reservation tested by the checkpoint. */
     li t0, 64
-1:  ld t1, 0(s0)
+1:
+#ifdef CHI_LRSC_COLD_DATA
+    addi t1, t0, 0
+#else
+    ld t1, 0(s0)
+#endif
     addi t0, t0, -1
     bnez t0, 1b
     la t0, reservation_sequence
@@ -85,6 +95,14 @@ puts:
 normal_message: .asciz "CHI_LRSC_CHECKPOINT first_sc=0 retry_sc=0\n"
 legacy_message: .asciz "CHI_LRSC_CHECKPOINT first_sc=1 retry_sc=0\n"
 failure_message: .asciz "CHI_LRSC_CHECKPOINT_FAIL\n"
+#ifdef CHI_LRSC_COLD_DATA
+.section .data
+.balign 64
+datum: .dword 0x1234
+       .zero 56
+dirty_line: .zero 64
+#else
 .section .bss
 .balign 64
 datum: .zero 64
+#endif

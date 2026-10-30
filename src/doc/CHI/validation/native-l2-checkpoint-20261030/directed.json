@@ -1,0 +1,202 @@
+{
+  "status": "passed",
+  "cases": {
+    "mesh": {
+      "status": "passed",
+      "runs": {
+        "cold": {
+          "topology": "2x2 mesh, 2 CPU/native-L2, 2 HNF, 1 SNF",
+          "kernel": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/directed-checked/mesh/guest.elf",
+          "restore": null,
+          "start_tick": 0,
+          "status": "guest_exit",
+          "checkpoint": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/directed-checked/mesh/cold/cpt.login",
+          "checkpoint_tick": 1144066000,
+          "cause": "m5_exit instruction encountered",
+          "code": 0,
+          "end_tick": 1300941000,
+          "wall_seconds": 2.4864577259868383
+        },
+        "restore": {
+          "topology": "2x2 mesh, 2 CPU/native-L2, 2 HNF, 1 SNF",
+          "kernel": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/directed-checked/mesh/guest.elf",
+          "restore": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/directed-checked/mesh/cold/cpt.login",
+          "start_tick": 1144066000,
+          "status": "guest_exit",
+          "cause": "m5_exit instruction encountered",
+          "code": 0,
+          "end_tick": 1300941000,
+          "wall_seconds": 0.3284157104790211
+        }
+      },
+      "audit": {
+        "l2": {
+          "system.l2s0": {
+            "valid": 59,
+            "dirty": 39,
+            "upperWritable": 59
+          },
+          "system.l2s1": {
+            "valid": 64,
+            "dirty": 41,
+            "upperWritable": 64
+          }
+        },
+        "l1_valid": 123,
+        "l1_dirty": 80,
+        "l1_locks": 0
+      },
+      "finish_tick_equal": true,
+      "checkpoint_unchanged": true
+    },
+    "lrsc": {
+      "status": "passed",
+      "runs": {
+        "cold": {
+          "topology": "2x2 mesh, 2 CPU/native-L2, 2 HNF, 1 SNF",
+          "kernel": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/directed-checked/lrsc/guest.elf",
+          "restore": null,
+          "start_tick": 0,
+          "status": "guest_exit",
+          "checkpoint": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/directed-checked/lrsc/cold/cpt.login",
+          "checkpoint_tick": 933000,
+          "cause": "m5_exit instruction encountered",
+          "code": 0,
+          "end_tick": 21588000,
+          "wall_seconds": 0.8312487062066793
+        },
+        "restore": {
+          "topology": "2x2 mesh, 2 CPU/native-L2, 2 HNF, 1 SNF",
+          "kernel": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/directed-checked/lrsc/guest.elf",
+          "restore": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/directed-checked/lrsc/cold/cpt.login",
+          "start_tick": 933000,
+          "status": "guest_exit",
+          "cause": "m5_exit instruction encountered",
+          "code": 0,
+          "end_tick": 21588000,
+          "wall_seconds": 0.0797551367431879
+        }
+      },
+      "audit": {
+        "l2": {
+          "system.l2s0": {
+            "valid": 5,
+            "dirty": 0,
+            "upperWritable": 5
+          },
+          "system.l2s1": {
+            "valid": 1,
+            "dirty": 0,
+            "upperWritable": 1
+          }
+        },
+        "l1_valid": 7,
+        "l1_dirty": 1,
+        "l1_locks": 1,
+        "live_reservation": 2147484096
+      },
+      "finish_tick_equal": true,
+      "checkpoint_unchanged": true,
+      "invalid_snapshots_rejected": true
+    },
+    "lrsc_miss": {
+      "status": "passed",
+      "runs": {
+        "cold": {
+          "topology": "2x2 mesh, 2 CPU/native-L2, 2 HNF, 1 SNF",
+          "kernel": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/directed-checked/lrsc_miss/guest.elf",
+          "restore": null,
+          "start_tick": 0,
+          "status": "guest_exit",
+          "checkpoint": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/directed-checked/lrsc_miss/cold/cpt.login",
+          "checkpoint_tick": 970000,
+          "cause": "m5_exit instruction encountered",
+          "code": 0,
+          "end_tick": 22141000,
+          "wall_seconds": 0.8825815003365278
+        },
+        "restore": {
+          "topology": "2x2 mesh, 2 CPU/native-L2, 2 HNF, 1 SNF",
+          "kernel": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/directed-checked/lrsc_miss/guest.elf",
+          "restore": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/directed-checked/lrsc_miss/cold/cpt.login",
+          "start_tick": 970000,
+          "status": "guest_exit",
+          "cause": "m5_exit instruction encountered",
+          "code": 0,
+          "end_tick": 22141000,
+          "wall_seconds": 0.07775259390473366
+        }
+      },
+      "audit": {
+        "l2": {
+          "system.l2s0": {
+            "valid": 6,
+            "dirty": 0,
+            "upperWritable": 6
+          },
+          "system.l2s1": {
+            "valid": 1,
+            "dirty": 0,
+            "upperWritable": 1
+          }
+        },
+        "l1_valid": 8,
+        "l1_dirty": 1,
+        "l1_locks": 1,
+        "live_reservation": 2147484096,
+        "l2_reservation_guard": true
+      },
+      "finish_tick_equal": true,
+      "checkpoint_unchanged": true
+    },
+    "mmu": {
+      "status": "passed",
+      "runs": {
+        "cold": {
+          "topology": "2x2 mesh, 2 CPU/native-L2, 2 HNF, 1 SNF",
+          "kernel": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/directed-checked/mmu/guest.elf",
+          "restore": null,
+          "start_tick": 0,
+          "status": "guest_exit",
+          "checkpoint": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/directed-checked/mmu/cold/cpt.login",
+          "checkpoint_tick": 1249000,
+          "cause": "m5_exit instruction encountered",
+          "code": 0,
+          "end_tick": 29232000,
+          "wall_seconds": 0.7552977912127972
+        },
+        "restore": {
+          "topology": "2x2 mesh, 2 CPU/native-L2, 2 HNF, 1 SNF",
+          "kernel": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/directed-checked/mmu/guest.elf",
+          "restore": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/directed-checked/mmu/cold/cpt.login",
+          "start_tick": 1249000,
+          "status": "guest_exit",
+          "cause": "m5_exit instruction encountered",
+          "code": 0,
+          "end_tick": 29232000,
+          "wall_seconds": 0.08869458362460136
+        }
+      },
+      "audit": {
+        "l2": {
+          "system.l2s0": {
+            "valid": 11,
+            "dirty": 0,
+            "upperWritable": 11
+          },
+          "system.l2s1": {
+            "valid": 1,
+            "dirty": 0,
+            "upperWritable": 1
+          }
+        },
+        "l1_valid": 13,
+        "l1_dirty": 3,
+        "l1_locks": 0
+      },
+      "finish_tick_equal": true,
+      "checkpoint_unchanged": true
+    }
+  },
+  "binary_sha256": "ea8717f3c22f1907a2b0806f80b736ea252d738859208bb5dc8449f25e2dfae6"
+}

@@ -50,8 +50,12 @@ the probe is outstanding, and retrying the queued miss cannot evict every
 way in its set. Outstanding victim probes count against MSHR admission. The
 Linux configuration retains the source L2's 32 MSHRs per core.
 
-The source L2 has no warm checkpoint serialization. The new configuration and
-L2 reject warm save/restore explicitly. The original RNF configuration and its
+The integrated L2 now supports drained warm native checkpoints. Its tags,
+data, permissions, replacement ages and LR/SC guard deadlines are retained.
+The configuration also enables warm serialization of its classic L1 caches,
+including dirty data and LR/SC locks, so upper-cache ownership remains valid
+after restore. See [Native_L2_Checkpoint.md](Native_L2_Checkpoint.md) for save,
+restore and validation commands. The original RNF configuration and its
 checkpoint tests remain available under `chi_mesh_linux.py`.
 
 ## Reproduce the Linux login check

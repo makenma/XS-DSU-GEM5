@@ -102,6 +102,8 @@ class BaseCache(ClockedObject):
     do_fast_writeline = Param.Bool(True, "Write whole line do not read")
 
     is_read_only = Param.Bool(False, "Is this cache read only (e.g. inst)")
+    checkpoint_preserve = Param.Bool(False,
+        "Preserve drained plain set-associative/LRU cache state in checkpoints")
     wpu = Param.BaseWpu(NULL, "Way prediction unit")
 
     prefetcher = Param.BasePrefetcher(NULL,"Prefetcher attached to cache")

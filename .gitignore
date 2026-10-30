@@ -95,4 +95,6 @@ microbench/dramsim3*
 !/tests/gem5/chi/restore_linux_mesh.py
 !/tests/gem5/chi/login_native_l2_linux.py
 !/tests/gem5/chi/run_native_l2_mesh.py
+!/tests/gem5/chi/run_native_l2_checkpoint.py
+!/tests/gem5/chi/restore_native_l2_linux.py
 !/tests/gem5/chi/slcsf_rtl/

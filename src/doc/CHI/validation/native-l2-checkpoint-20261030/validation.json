@@ -1,0 +1,74 @@
+{
+  "status": "passed",
+  "parent_commit": "da46ff30eb9f4d78bebc5f68de15d30057223521",
+  "binary_sha256": "ea8717f3c22f1907a2b0806f80b736ea252d738859208bb5dc8449f25e2dfae6",
+  "kernel_sha256": "4897883ab3e7566ad5d85d65c874c99e6ac31887ee3bca23d3e08746e8a4257d",
+  "build": {
+    "command": "LINKFLAGS_EXTRA=-fuse-ld=mold scons build/RISCV/gem5.opt -j48",
+    "exit_code": 0,
+    "log": "m5out/native-l2-checkpoint/build-final-checked.log",
+    "log_sha256": "840a1d49df109e21d3e9977bfb37c479055a2fab3d91853b51337dc6ff2ecf56"
+  },
+  "directed_cases": [
+    "mesh",
+    "lrsc",
+    "lrsc_miss",
+    "mmu"
+  ],
+  "all_directed_finish_ticks_equal": true,
+  "invalid_snapshots_rejected": true,
+  "rnf_native_and_legacy_regression": "passed",
+  "linux_clock": "100MHz",
+  "linux_save_tick": 3256000430000,
+  "linux_restore_start_tick": 3256000430000,
+  "linux_restore_end_tick": 3551000430000,
+  "linux_checks": {
+    "gem5_exit_zero": true,
+    "root_login_sent": true,
+    "shell_command_sent": true,
+    "console_marker": true,
+    "two_online_cpus": true,
+    "linux_kernel": true,
+    "root_uid": true,
+    "shell_completed": true
+  },
+  "warm_state": {
+    "l2": {
+      "system.l2s0": {
+        "valid": 4039,
+        "dirty": 1232,
+        "upperWritable": 3175
+      },
+      "system.l2s1": {
+        "valid": 2428,
+        "dirty": 1396,
+        "upperWritable": 1384
+      }
+    },
+    "l1_valid": 1770,
+    "l1_dirty": 777,
+    "l1_locks": 0
+  },
+  "source_checkpoint_unchanged": true,
+  "style_hook_exit_code": 0,
+  "diff_check_exit_code": 0,
+  "source_sha256": {
+    "configs/example/chi_mesh_native_l2_linux.py": "e5345798120e980da2566967ae076abe7c5b36d3239cb9f5699bee23805a7263",
+    "src/mem/cache/CHI/ChiNativeL2.cc": "54a58e4f7694da70a731c757c53e3009d37abccf7aed384726717068255a838f",
+    "src/mem/cache/CHI/ChiNativeL2.hh": "4faf5adc407c21587719f13f2cbf703452b1fd4086d2e479c2efaea7c14bee4e",
+    "src/mem/cache/CHI/ChiNativeL2.py": "072fb3da64faa2c381dc7e9390bb158ef819377ac52fe5af4074b45959cfc6ab",
+    "src/mem/cache/Cache.py": "9c29569421b80240f8969dfd2dcc6e05c875bfff8202e80396993f291e9e8e82",
+    "src/mem/cache/base.cc": "b991aaf405a3d51c6c68cf5d8afe18174bb93b34993dcb32e65b8e89d525e434",
+    "src/mem/cache/base.hh": "ca74f1318ef12f7c33cb01137aa9d46202e6214eae5a5d88126380a3f5a59688",
+    "src/mem/cache/cache_blk.hh": "2f4c8c3c249bfb485b182f943e95955513481b91d237f2eeebe93df32fd15eeb",
+    "src/mem/cache/replacement_policies/lru_rp.cc": "3b6b10058b6f066b1db0e512c82a4dd492f454a1a25d45760e2639d9d959893b",
+    "src/mem/cache/replacement_policies/lru_rp.hh": "3745d2d99c7d2e3494ba4ae980b8f6335fa8b0e5191b3fef3a1b130be305464c",
+    "src/mem/cache/tags/base_set_assoc.cc": "6982a643bec67f9427c775219a0a139c5966541316dc15970415afae64c997aa",
+    "src/mem/cache/tags/base_set_assoc.hh": "3456c58e6756fdb29896e73c6146ca321b86a39e3e4491cec2d6c6cdb6cdaf8b",
+    "src/python/m5/simulate.py": "2e826d3b13bed06830febf988382fd3d09c56fbc516b2932ee299bd78c480b69",
+    "tests/gem5/chi/login_native_l2_linux.py": "e1aedba6de453b92deea439e3f9f804d1270fd924bba56a54145563069cfeb6c",
+    "tests/gem5/chi/mesh_lrsc_checkpoint.S": "705bc89a9945072e1c601d9b8f72397fd4f03c2bb78270738d0179deb93be49a",
+    "tests/gem5/chi/restore_native_l2_linux.py": "bd1c5f05d77f9240d7489aa521d2c767ff4c00e4d52e7218e06556993bed3cf3",
+    "tests/gem5/chi/run_native_l2_checkpoint.py": "8bd42c2633ad2ecafb4ed4b3e5da1cd2889c63e4e54219808e0e23c9fc3f9d62"
+  }
+}

@@ -108,6 +108,10 @@ class LRU : public Base
      * @return A shared pointer to the new replacement data.
      */
     std::shared_ptr<ReplacementData> instantiateEntry() override;
+
+    Tick checkpointTick(const std::shared_ptr<ReplacementData> &data) const;
+    void restoreCheckpointTick(const std::shared_ptr<ReplacementData> &data,
+                               Tick tick);
 };
 
 } // namespace replacement_policy

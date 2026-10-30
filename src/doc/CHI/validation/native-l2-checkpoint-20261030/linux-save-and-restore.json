@@ -1,0 +1,129 @@
+{
+  "status": "passed",
+  "clock": "100MHz",
+  "boot_command": [
+    "/nfs/home/majunhong/project/XS-DSU-GEM5/build/RISCV/gem5.opt",
+    "--listener-mode=off",
+    "--remote-gdb-port=0",
+    "-d",
+    "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/linux-restore/boot",
+    "/nfs/home/majunhong/project/XS-DSU-GEM5/configs/example/chi_mesh_native_l2_linux.py",
+    "--kernel",
+    "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/linux-chi-mesh/assets/fw_payload.elf",
+    "--clock",
+    "100MHz"
+  ],
+  "boot": {
+    "topology": "2x2 mesh, 2 CPU/native-L2, 2 HNF, 1 SNF",
+    "kernel": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/linux-chi-mesh/assets/fw_payload.elf",
+    "restore": null,
+    "start_tick": 0,
+    "status": "login_checkpoint",
+    "checkpoint": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/linux-restore/boot/cpt.login",
+    "checkpoint_tick": 3256000430000,
+    "end_tick": 3256000430000,
+    "wall_seconds": 859.0234085097909
+  },
+  "checkpoint": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/linux-restore/boot/cpt.login",
+  "audit": {
+    "l2": {
+      "system.l2s0": {
+        "valid": 4039,
+        "dirty": 1232,
+        "upperWritable": 3175
+      },
+      "system.l2s1": {
+        "valid": 2428,
+        "dirty": 1396,
+        "upperWritable": 1384
+      }
+    },
+    "l1_valid": 1770,
+    "l1_dirty": 777,
+    "l1_locks": 0
+  },
+  "restore_command": [
+    "/usr/bin/python3",
+    "/nfs/home/majunhong/project/XS-DSU-GEM5/tests/gem5/chi/login_native_l2_linux.py",
+    "--gem5",
+    "/nfs/home/majunhong/project/XS-DSU-GEM5/build/RISCV/gem5.opt",
+    "--kernel",
+    "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/linux-chi-mesh/assets/fw_payload.elf",
+    "--clock",
+    "100MHz",
+    "--restore",
+    "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/linux-restore/boot/cpt.login",
+    "--timeout",
+    "600",
+    "--out",
+    "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/linux-restore/restore"
+  ],
+  "restore": {
+    "command": [
+      "/nfs/home/majunhong/project/XS-DSU-GEM5/build/RISCV/gem5.opt",
+      "--listener-mode=on",
+      "--remote-gdb-port=0",
+      "-d",
+      "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/linux-restore/restore",
+      "/nfs/home/majunhong/project/XS-DSU-GEM5/configs/example/chi_mesh_native_l2_linux.py",
+      "--kernel",
+      "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/linux-chi-mesh/assets/fw_payload.elf",
+      "--clock",
+      "100MHz",
+      "--exit-marker",
+      "CHI_MERGE_LOGIN_DONE",
+      "--restore",
+      "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/linux-restore/boot/cpt.login"
+    ],
+    "status": "passed",
+    "requested_clock": "100MHz",
+    "checks": {
+      "gem5_exit_zero": true,
+      "root_login_sent": true,
+      "shell_command_sent": true,
+      "console_marker": true,
+      "two_online_cpus": true,
+      "linux_kernel": true,
+      "root_uid": true,
+      "shell_completed": true
+    },
+    "result": {
+      "topology": "2x2 mesh, 2 CPU/native-L2, 2 HNF, 1 SNF",
+      "kernel": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/linux-chi-mesh/assets/fw_payload.elf",
+      "restore": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/linux-restore/boot/cpt.login",
+      "start_tick": 3256000430000,
+      "status": "console_marker",
+      "marker": "CHI_MERGE_LOGIN_DONE",
+      "end_tick": 3551000430000,
+      "wall_seconds": 80.88115543499589
+    },
+    "topology": {
+      "routers": 4,
+      "hnfs": 2,
+      "cpus": 2,
+      "l2_types": [
+        "ChiNativeL2",
+        "ChiNativeL2"
+      ],
+      "l2_mshrs": [
+        32,
+        32
+      ]
+    },
+    "clock_period_ticks": [
+      10000
+    ],
+    "binary_sha256": "456013647d93cf230eb7e919ee91140cfea027d8be282ff74cee35684eaf9d13",
+    "kernel_sha256": "4897883ab3e7566ad5d85d65c874c99e6ac31887ee3bca23d3e08746e8a4257d",
+    "wall_seconds": 84.7061573881656
+  },
+  "checkpoint_unchanged": true,
+  "checkpoint_files": {
+    "system.physmem.store0.pmem": "c64b49fd0c4a6fcb6c93ad865024aa7ae156f5f5609b2660b3823b87329cfe10",
+    "system.hnfs1.slcsf.slcsf": "eab45b4226cc86d1bcbf2b3918b6c6bfce9483dc6368e2c280f2460a222430e5",
+    "system.hnfs0.slcsf.slcsf": "6d94e0f432dc15c42c91b17334ffad82473a6d17d2586def0687dc3fcdd1b4ad",
+    "m5.cpt": "f40ad19bbca7cb13f5a5e29661e53cc12457e16f9b7b1ffbafa332345c417dcb"
+  },
+  "binary_sha256": "456013647d93cf230eb7e919ee91140cfea027d8be282ff74cee35684eaf9d13",
+  "kernel_sha256": "4897883ab3e7566ad5d85d65c874c99e6ac31887ee3bca23d3e08746e8a4257d"
+}

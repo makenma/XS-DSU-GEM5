@@ -45,9 +45,14 @@
 
 #include "mem/cache/tags/base_set_assoc.hh"
 
+#include <algorithm>
 #include <string>
+#include <typeinfo>
 
 #include "base/intmath.hh"
+#include "mem/cache/replacement_policies/lru_rp.hh"
+#include "mem/cache/tags/indexing_policies/set_associative.hh"
+#include "sim/serialize.hh"
 
 namespace gem5
 {
@@ -107,6 +112,154 @@ BaseSetAssoc::moveBlock(CacheBlk *src_blk, CacheBlk *dest_blk)
     // the one that is being moved.
     replacementPolicy->invalidate(src_blk->replacementData);
     replacementPolicy->reset(dest_blk->replacementData);
+}
+
+bool
+BaseSetAssoc::supportsWarmCheckpoint() const
+{
+    return typeid(*this) == typeid(BaseSetAssoc) &&
+        typeid(*indexingPolicy) == typeid(SetAssociative) &&
+        typeid(*replacementPolicy) == typeid(replacement_policy::LRU);
+}
+
+void
+BaseSetAssoc::serializeWarm(CheckpointOut &cp) const
+{
+    fatal_if(!supportsWarmCheckpoint(),
+             "%s warm checkpoints require plain set-associative/LRU tags",
+             name());
+    const auto *lru = static_cast<replacement_policy::LRU *>(replacementPolicy);
+    SERIALIZE_SCALAR(blkSize);
+    SERIALIZE_SCALAR(numBlocks);
+    SERIALIZE_SCALAR(allocAssoc);
+    SERIALIZE_SCALAR(warmedUp);
+    for (unsigned i = 0; i < blks.size(); ++i) {
+        ScopedCheckpointSection section(cp, csprintf("block%u", i));
+        const auto &blk = blks[i];
+        fatal_if(blk._xsMeta.instXsMetadata,
+                 "%s cannot checkpoint live O3 instruction metadata", name());
+        paramOut(cp, "set", blk.getSet());
+        paramOut(cp, "way", blk.getWay());
+        paramOut(cp, "valid", blk.isValid());
+        paramOut(cp, "secure", blk.isSecure());
+        paramOut(cp, "tag", blk.getTag());
+        paramOut(cp, "coherence", blk.coherence);
+        paramOut(cp, "whenReady", blk.whenReady);
+        paramOut(cp, "taskId", blk._taskId);
+        paramOut(cp, "requestor", blk._srcRequestorId);
+        paramOut(cp, "refCount", blk._refCount);
+        paramOut(cp, "demandHits", blk._refDemandHits);
+        paramOut(cp, "inserted", blk._tickInserted);
+        paramOut(cp, "prefetched", blk._prefetched);
+        paramOut(cp, "everPrefetched", blk._ever_prefetched);
+        paramOut(cp, "pendingInvalidate", blk._needInvalidate);
+        paramOut(cp, "hitWay", blk._way);
+        paramOut(cp, "xsValid", blk._xsMeta.validXsMetadata);
+        paramOut(cp, "prefetchSource", unsigned(blk._xsMeta.prefetchSource));
+        paramOut(cp, "prefetchDepth", blk._xsMeta.prefetchDepth);
+        paramOut(cp, "lruTick", lru->checkpointTick(blk.replacementData));
+        if (blk.isValid())
+            arrayParamOut(cp, "data", blk.data, blkSize);
+        std::vector<ContextID> lockContexts;
+        std::vector<Addr> lockLow, lockHigh;
+        for (const auto &lock : blk.lockList) {
+            lockContexts.push_back(lock.contextId);
+            lockLow.push_back(lock.lowAddr);
+            lockHigh.push_back(lock.highAddr);
+        }
+        SERIALIZE_CONTAINER(lockContexts);
+        SERIALIZE_CONTAINER(lockLow);
+        SERIALIZE_CONTAINER(lockHigh);
+    }
+}
+
+void
+BaseSetAssoc::unserializeWarm(CheckpointIn &cp)
+{
+    fatal_if(!supportsWarmCheckpoint(),
+             "%s warm checkpoints require plain set-associative/LRU tags",
+             name());
+    unsigned savedBlockSize, savedCount;
+    paramIn(cp, "blkSize", savedBlockSize);
+    paramIn(cp, "numBlocks", savedCount);
+    fatal_if(savedBlockSize != blkSize || savedCount != numBlocks,
+             "%s warm checkpoint tag geometry changed", name());
+    UNSERIALIZE_SCALAR(allocAssoc);
+    fatal_if(allocAssoc == 0 ||
+             allocAssoc > indexingPolicy->getPossibleEntries(0).size(),
+             "%s invalid checkpoint allocation associativity", name());
+    UNSERIALIZE_SCALAR(warmedUp);
+    auto *lru = static_cast<replacement_policy::LRU *>(replacementPolicy);
+    unsigned validCount = 0;
+    for (unsigned i = 0; i < blks.size(); ++i) {
+        ScopedCheckpointSection section(cp, csprintf("block%u", i));
+        auto &blk = blks[i];
+        unsigned set, way, source;
+        bool valid, secure;
+        Addr tag;
+        Tick lruTick;
+        paramIn(cp, "set", set);
+        paramIn(cp, "way", way);
+        fatal_if(set != blk.getSet() || way != blk.getWay(),
+                 "%s checkpoint block location changed", name());
+        paramIn(cp, "valid", valid);
+        paramIn(cp, "secure", secure);
+        paramIn(cp, "tag", tag);
+        blk.invalidate();
+        if (valid) {
+            blk.TaggedEntry::insert(tag, secure);
+            ++validCount;
+        }
+        paramIn(cp, "coherence", blk.coherence);
+        paramIn(cp, "whenReady", blk.whenReady);
+        paramIn(cp, "taskId", blk._taskId);
+        paramIn(cp, "requestor", blk._srcRequestorId);
+        paramIn(cp, "refCount", blk._refCount);
+        paramIn(cp, "demandHits", blk._refDemandHits);
+        paramIn(cp, "inserted", blk._tickInserted);
+        paramIn(cp, "prefetched", blk._prefetched);
+        paramIn(cp, "everPrefetched", blk._ever_prefetched);
+        paramIn(cp, "pendingInvalidate", blk._needInvalidate);
+        paramIn(cp, "hitWay", blk._way);
+        paramIn(cp, "xsValid", blk._xsMeta.validXsMetadata);
+        paramIn(cp, "prefetchSource", source);
+        blk._xsMeta.prefetchSource = PrefetchSourceType(source);
+        paramIn(cp, "prefetchDepth", blk._xsMeta.prefetchDepth);
+        blk._xsMeta.instXsMetadata = nullptr;
+        paramIn(cp, "lruTick", lruTick);
+        lru->restoreCheckpointTick(blk.replacementData, lruTick);
+        fatal_if((blk.coherence & ~CacheBlk::AllBits) ||
+                 (valid && (blk._tickInserted > curTick() ||
+                            blk.whenReady < blk._tickInserted)),
+                 "%s invalid warm checkpoint coherence or timing", name());
+        if (valid)
+            arrayParamIn(cp, "data", blk.data, blkSize);
+        else
+            std::fill_n(blk.data, blkSize, 0);
+        std::vector<ContextID> lockContexts;
+        std::vector<Addr> lockLow, lockHigh;
+        UNSERIALIZE_CONTAINER(lockContexts);
+        UNSERIALIZE_CONTAINER(lockLow);
+        UNSERIALIZE_CONTAINER(lockHigh);
+        fatal_if(lockContexts.size() != lockLow.size() ||
+                 lockContexts.size() != lockHigh.size(),
+                 "%s invalid checkpoint lock vectors", name());
+        for (unsigned j = 0; j < lockContexts.size(); ++j) {
+            fatal_if(!valid || lockLow[j] > lockHigh[j] ||
+                     lockHigh[j] - lockLow[j] >= blkSize ||
+                     (lockLow[j] & ~Addr(blkSize - 1)) !=
+                         regenerateBlkAddr(&blk) ||
+                     (lockHigh[j] & ~Addr(blkSize - 1)) !=
+                         regenerateBlkAddr(&blk),
+                     "%s invalid checkpoint LR/SC range", name());
+            auto request = std::make_shared<Request>(
+                lockLow[j], lockHigh[j] - lockLow[j] + 1,
+                Request::LLSC, Request::funcRequestorId);
+            request->setContext(lockContexts[j]);
+            blk.lockList.emplace_back(request);
+        }
+    }
+    stats.tagsInUse = validCount;
 }
 
 } // namespace gem5

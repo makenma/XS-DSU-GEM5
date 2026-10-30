@@ -99,6 +99,8 @@ class ChiNativeL2 : public ClockedObject, public ruby::Consumer {
     bool receive(PacketPtr);
     bool dispatch(PacketPtr);
     void pump();
+    bool idle() const;
+    std::vector<uint64_t> checkpointConfig() const;
     void issue(unsigned,PacketPtr,uint8_t,bool=false,uint8_t=0,const FlowGraphIdentity* =nullptr);
     void respondControl(PacketPtr);
     void absorbWriteback(PacketPtr);
@@ -127,12 +129,10 @@ class ChiNativeL2 : public ClockedObject, public ruby::Consumer {
     Port& getPort(const std::string&,PortID=InvalidPortID) override;
     void init() override;
     void wakeup() override;
-    void serialize(CheckpointOut&) const override {
-        fatal("Native L2 warm checkpoint serialization is not implemented\n");
-    }
-    void unserialize(CheckpointIn&) override {
-        fatal("Native L2 warm checkpoint restore is not implemented\n");
-    }
+    DrainState drain() override;
+    void drainResume() override;
+    void serialize(CheckpointOut&) const override;
+    void unserialize(CheckpointIn&) override;
     void print(std::ostream& o) const override { o<<name(); }
 };
 }

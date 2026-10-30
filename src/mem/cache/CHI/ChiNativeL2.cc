@@ -4,6 +4,7 @@
 #include <limits>
 #include "base/trace.hh"
 #include "debug/ChiNativeL2.hh"
+#include "sim/serialize.hh"
 
 namespace gem5::Chi {
 ChiNativeL2::ChiNativeL2(const ChiNativeL2Params& p):ClockedObject(p),ruby::Consumer(this),
@@ -478,5 +479,176 @@ void ChiNativeL2::pump() {
     while(!responseBlocked&&!responses.empty()) {if(!cpu.sendTimingResp(responses.front())){responseBlocked=true;break;}responses.pop_front();}
     if(!requests.empty()||!responses.empty()||!mshrs.empty()||!snoops.empty()||!probes.empty()||
        std::any_of(outgoing.begin(),outgoing.end(),[](const auto& q){return !q.empty();}))wakeup();
+    else if (drainState()==DrainState::Draining) {
+        if (idle()) {
+            if (event.scheduled())deschedule(event);
+            signalDrainDone();
+        } else wakeup();
+    }
+}
+
+bool
+ChiNativeL2::idle() const
+{
+    return requests.empty() && responses.empty() && mshrs.empty() &&
+        active.empty() && probes.empty() && probing.empty() && snoops.empty() &&
+        replacementWays.empty() && reservedWays.empty() &&
+        !requestBlocked && !responseBlocked && chi.drained() &&
+        transport.pendingTokens() == 0 &&
+        std::all_of(outgoing.begin(), outgoing.end(),
+                    [](const auto &queue) { return queue.empty(); });
+}
+
+DrainState
+ChiNativeL2::drain()
+{
+    if (idle()) {
+        if (event.scheduled())
+            deschedule(event);
+        return DrainState::Drained;
+    }
+    wakeup();
+    return DrainState::Draining;
+}
+
+void
+ChiNativeL2::drainResume()
+{
+    if (!idle())
+        wakeup();
+}
+
+std::vector<uint64_t>
+ChiNativeL2::checkpointConfig() const
+{
+    std::vector<uint64_t> config = {
+        node, nsets, ways, maxMshrs, queueLimit, clockPeriod(),
+        uint64_t(reservationCycles), uint64_t(writeEvictOrEvict), ranges.size()
+    };
+    for (const auto &range : ranges) {
+        fatal_if(range.interleaved(),
+                 "%s warm checkpoints require plain memory ranges", name());
+        config.push_back(range.start());
+        config.push_back(range.end());
+    }
+    config.push_back(homes.size());
+    config.insert(config.end(), homes.begin(), homes.end());
+    config.push_back(homeMasks.size());
+    config.insert(config.end(), homeMasks.begin(), homeMasks.end());
+    return config;
+}
+
+void
+ChiNativeL2::serialize(CheckpointOut &cp) const
+{
+    fatal_if(!idle() || event.scheduled() || !cleanDataArrived.empty(),
+             "%s checkpoint requires drained native transactions", name());
+    ClockedObject::serialize(cp);
+    const unsigned checkpointVersion = 1;
+    SERIALIZE_SCALAR(checkpointVersion);
+    const auto config = checkpointConfig();
+    SERIALIZE_CONTAINER(config);
+    SERIALIZE_SCALAR(nextId);
+    SERIALIZE_SCALAR(age);
+    SERIALIZE_SCALAR(nextProbe);
+    unsigned count = lines.size();
+    SERIALIZE_SCALAR(count);
+    std::vector<Addr> reservationAddresses;
+    std::vector<Tick> reservationDeadlines;
+    for (const auto &[address, deadline] : reservationUntil) {
+        reservationAddresses.push_back(address);
+        reservationDeadlines.push_back(deadline);
+    }
+    SERIALIZE_CONTAINER(reservationAddresses);
+    SERIALIZE_CONTAINER(reservationDeadlines);
+    std::vector<unsigned> creditHomes, creditTypes, creditCounts;
+    for (const auto &[key, count] : credits) {
+        creditHomes.push_back(key.first);
+        creditTypes.push_back(key.second);
+        creditCounts.push_back(count);
+    }
+    SERIALIZE_CONTAINER(creditHomes);
+    SERIALIZE_CONTAINER(creditTypes);
+    SERIALIZE_CONTAINER(creditCounts);
+    // CheckpointOut writes headers when entering a child section, not when
+    // leaving it. Keep every parent field before the per-line sections.
+    for (unsigned i = 0; i < count; ++i) {
+        ScopedCheckpointSection section(cp, csprintf("line%u", i));
+        const auto &line = lines[i];
+        paramOut(cp, "address", line.address);
+        paramOut(cp, "valid", line.valid);
+        paramOut(cp, "unique", line.unique);
+        paramOut(cp, "dirty", line.dirty);
+        paramOut(cp, "upperWritable", line.upperWritable);
+        paramOut(cp, "age", line.age);
+        arrayParamOut(cp, "data", line.data);
+    }
+}
+
+void
+ChiNativeL2::unserialize(CheckpointIn &cp)
+{
+    fatal_if(!idle(), "%s restore requires an idle native L2", name());
+    ClockedObject::unserialize(cp);
+    unsigned checkpointVersion;
+    UNSERIALIZE_SCALAR(checkpointVersion);
+    fatal_if(checkpointVersion != 1,
+             "%s unsupported native L2 checkpoint version", name());
+    std::vector<uint64_t> config;
+    UNSERIALIZE_CONTAINER(config);
+    fatal_if(config != checkpointConfig(),
+             "%s native L2 checkpoint configuration changed", name());
+    UNSERIALIZE_SCALAR(nextId);
+    UNSERIALIZE_SCALAR(age);
+    UNSERIALIZE_SCALAR(nextProbe);
+    fatal_if(nextId > NativeWire::MaxTxnID,
+             "%s invalid checkpoint transaction counter", name());
+    unsigned count;
+    UNSERIALIZE_SCALAR(count);
+    fatal_if(count != lines.size(),
+             "%s native L2 checkpoint capacity changed", name());
+    for (unsigned i = 0; i < count; ++i) {
+        ScopedCheckpointSection section(cp, csprintf("line%u", i));
+        auto &line = lines[i];
+        paramIn(cp, "address", line.address);
+        paramIn(cp, "valid", line.valid);
+        paramIn(cp, "unique", line.unique);
+        paramIn(cp, "dirty", line.dirty);
+        paramIn(cp, "upperWritable", line.upperWritable);
+        paramIn(cp, "age", line.age);
+        arrayParamIn(cp, "data", line.data);
+        fatal_if(line.data.size() != 64 || (line.address & 63) ||
+                 (line.valid && ((line.address / 64) % nsets != i / ways ||
+                                 line.age > age)),
+                 "%s corrupt native L2 checkpoint line %u", name(), i);
+    }
+    std::vector<Addr> reservationAddresses;
+    std::vector<Tick> reservationDeadlines;
+    UNSERIALIZE_CONTAINER(reservationAddresses);
+    UNSERIALIZE_CONTAINER(reservationDeadlines);
+    fatal_if(reservationAddresses.size() != reservationDeadlines.size(),
+             "%s invalid checkpoint reservation vectors", name());
+    reservationUntil.clear();
+    for (unsigned i = 0; i < reservationAddresses.size(); ++i) {
+        fatal_if((reservationAddresses[i] & 63) ||
+                 !reservationUntil.emplace(reservationAddresses[i],
+                                           reservationDeadlines[i]).second,
+                 "%s invalid checkpoint reservation", name());
+    }
+    std::vector<unsigned> creditHomes, creditTypes, creditCounts;
+    UNSERIALIZE_CONTAINER(creditHomes);
+    UNSERIALIZE_CONTAINER(creditTypes);
+    UNSERIALIZE_CONTAINER(creditCounts);
+    fatal_if(creditHomes.size() != creditTypes.size() ||
+             creditHomes.size() != creditCounts.size(),
+             "%s invalid checkpoint credit vectors", name());
+    credits.clear();
+    for (unsigned i = 0; i < creditHomes.size(); ++i) {
+        fatal_if(creditTypes[i] > 15 ||
+                 !credits.emplace(std::make_pair(creditHomes[i],
+                                                uint8_t(creditTypes[i])),
+                                  creditCounts[i]).second,
+                 "%s invalid checkpoint protocol credits", name());
+    }
 }
 }

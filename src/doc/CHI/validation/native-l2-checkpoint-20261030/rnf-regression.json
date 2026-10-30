@@ -1,0 +1,183 @@
+{
+  "status": "passed",
+  "runs": {
+    "cold": {
+      "command": [
+        "/nfs/home/majunhong/project/XS-DSU-GEM5/build/RISCV/gem5.opt",
+        "--listener-mode=off",
+        "-d",
+        "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/rnf-checked/cold",
+        "/nfs/home/majunhong/project/XS-DSU-GEM5/configs/example/chi_mesh_linux.py",
+        "--kernel",
+        "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/rnf-checked/mesh-lrsc-checkpoint.elf",
+        "--bare-test",
+        "--slc-sets",
+        "4",
+        "--sf-sets",
+        "4",
+        "--rnf-lines",
+        "64",
+        "--max-ticks",
+        "1000000000"
+      ],
+      "expected_first_sc": 0,
+      "log": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/rnf-checked/cold/run.log",
+      "returncode": 0,
+      "result": {
+        "topology": "2x2 mesh, 2 CPU/RNF, 2 HNF, 1 SNF",
+        "kernel": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/rnf-checked/mesh-lrsc-checkpoint.elf",
+        "restore": null,
+        "start_tick": 0,
+        "status": "guest_exit",
+        "checkpoint": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/rnf-checked/cold/cpt.login",
+        "checkpoint_tick": 3932000,
+        "cause": "m5_exit instruction encountered",
+        "code": 0,
+        "end_tick": 27347000,
+        "wall_seconds": 0.659762678667903
+      },
+      "signatures": [
+        [
+          "0",
+          "0"
+        ]
+      ],
+      "passed": true
+    },
+    "restore": {
+      "command": [
+        "/nfs/home/majunhong/project/XS-DSU-GEM5/build/RISCV/gem5.opt",
+        "--listener-mode=off",
+        "-d",
+        "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/rnf-checked/restore",
+        "/nfs/home/majunhong/project/XS-DSU-GEM5/configs/example/chi_mesh_linux.py",
+        "--kernel",
+        "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/rnf-checked/mesh-lrsc-checkpoint.elf",
+        "--bare-test",
+        "--slc-sets",
+        "4",
+        "--sf-sets",
+        "4",
+        "--rnf-lines",
+        "64",
+        "--max-ticks",
+        "1000000000",
+        "--restore",
+        "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/rnf-checked/cold/cpt.login"
+      ],
+      "expected_first_sc": 0,
+      "log": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/rnf-checked/restore/run.log",
+      "returncode": 0,
+      "result": {
+        "topology": "2x2 mesh, 2 CPU/RNF, 2 HNF, 1 SNF",
+        "kernel": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/rnf-checked/mesh-lrsc-checkpoint.elf",
+        "restore": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/rnf-checked/cold/cpt.login",
+        "start_tick": 3932000,
+        "status": "guest_exit",
+        "cause": "m5_exit instruction encountered",
+        "code": 0,
+        "end_tick": 27347000,
+        "wall_seconds": 0.052742911502718925
+      },
+      "signatures": [
+        [
+          "0",
+          "0"
+        ]
+      ],
+      "passed": true
+    },
+    "legacy": {
+      "command": [
+        "/nfs/home/majunhong/project/XS-DSU-GEM5/build/RISCV/gem5.opt",
+        "--listener-mode=off",
+        "-d",
+        "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/rnf-checked/legacy",
+        "/nfs/home/majunhong/project/XS-DSU-GEM5/configs/example/chi_mesh_linux.py",
+        "--kernel",
+        "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/rnf-checked/mesh-lrsc-checkpoint.elf",
+        "--bare-test",
+        "--slc-sets",
+        "4",
+        "--sf-sets",
+        "4",
+        "--rnf-lines",
+        "64",
+        "--max-ticks",
+        "1000000000",
+        "--restore",
+        "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/rnf-checked/legacy-cpt"
+      ],
+      "expected_first_sc": 1,
+      "log": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/rnf-checked/legacy/run.log",
+      "returncode": 0,
+      "result": {
+        "topology": "2x2 mesh, 2 CPU/RNF, 2 HNF, 1 SNF",
+        "kernel": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/rnf-checked/mesh-lrsc-checkpoint.elf",
+        "restore": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/rnf-checked/legacy-cpt",
+        "start_tick": 3932000,
+        "status": "guest_exit",
+        "cause": "m5_exit instruction encountered",
+        "code": 0,
+        "end_tick": 27306000,
+        "wall_seconds": 0.05973000451922417
+      },
+      "signatures": [
+        [
+          "1",
+          "0"
+        ]
+      ],
+      "passed": true
+    }
+  },
+  "scope": "Two-hart CHI mesh with sleeping hart 1; checkpoint between LR.D and SC.D",
+  "compile_command": [
+    "riscv64-linux-gnu-gcc",
+    "-nostdlib",
+    "-nostartfiles",
+    "-static",
+    "-march=rv64imac_zicsr",
+    "-mabi=lp64",
+    "-Wl,--build-id=none",
+    "-T",
+    "/nfs/home/majunhong/project/XS-DSU-GEM5/tests/gem5/chi/mesh_smoke.ld",
+    "/nfs/home/majunhong/project/XS-DSU-GEM5/tests/gem5/chi/mesh_lrsc_checkpoint.S",
+    "-o",
+    "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/rnf-checked/mesh-lrsc-checkpoint.elf"
+  ],
+  "inputs": {
+    "binary": {
+      "path": "/nfs/home/majunhong/project/XS-DSU-GEM5/build/RISCV/gem5.opt",
+      "sha256": "ea8717f3c22f1907a2b0806f80b736ea252d738859208bb5dc8449f25e2dfae6"
+    },
+    "config": {
+      "path": "/nfs/home/majunhong/project/XS-DSU-GEM5/configs/example/chi_mesh_linux.py",
+      "sha256": "2e82d34905dacf3484a554b3302ef46cab9938ec6307f2d887eab163e476074a"
+    },
+    "source": {
+      "path": "/nfs/home/majunhong/project/XS-DSU-GEM5/tests/gem5/chi/mesh_lrsc_checkpoint.S",
+      "sha256": "705bc89a9945072e1c601d9b8f72397fd4f03c2bb78270738d0179deb93be49a"
+    },
+    "linker_script": {
+      "path": "/nfs/home/majunhong/project/XS-DSU-GEM5/tests/gem5/chi/mesh_smoke.ld",
+      "sha256": "da63cbce2ce11a76c72d41f6d4e5eb391a3451b6f5d2ab76422bd033b6cbc16b"
+    },
+    "elf": {
+      "path": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/rnf-checked/mesh-lrsc-checkpoint.elf",
+      "sha256": "ba8c52728f12ba87ab6159305b5967aaad84481a19400cbe41bc78746c665ff5"
+    }
+  },
+  "legacy_copy": {
+    "source": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/rnf-checked/cold/cpt.login",
+    "copy": "/nfs/home/majunhong/project/XS-DSU-GEM5/m5out/native-l2-checkpoint/rnf-checked/legacy-cpt",
+    "source_m5_cpt_sha256": "d0367edf0e63ab2591c5b263f7f61d2024020abe454a6e0c64901ff373a0c9ae",
+    "legacy_m5_cpt_sha256": "13168ad218f7603721a7c30ffe4d98afa26a4fce7f468a44bad93e5cc51580b6",
+    "removed_fields": {
+      "system.cpu1.isa": "18446744073709551615",
+      "system.cpu0.isa": "2147484096"
+    },
+    "live_reservation": 2147484096
+  },
+  "native_finish_tick_equal": true
+}

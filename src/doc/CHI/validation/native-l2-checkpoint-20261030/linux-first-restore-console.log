@@ -1,0 +1,9 @@
+root
+login[46]: root login on 'ttyS0'
+gem5-chi:~# printf 'CHI_MERGE_ONLINE='; cat /sys/devices/system/cpu/online; prin
+tf 'CHI_MERGE_KERNEL='; uname -r; printf 'CHI_MERGE_UID='; id -u; echo CHI_MERGE
+_LOGIN_"DONE"
+CHI_MERGE_ONLINE=0-1
+CHI_MERGE_KERNEL=6.10.7-g0dc336bf6c07
+CHI_MERGE_UID=0
+CHI_MERGE_LOGIN_DONE

@@ -71,6 +71,7 @@
 #include "mem/cache/mshr.hh"
 #include "mem/cache/prefetch/associative_set_impl.hh"
 #include "mem/cache/queue_entry.hh"
+#include "mem/cache/tags/base_set_assoc.hh"
 #include "mem/cache/tags/compressed_tags.hh"
 #include "mem/cache/tags/super_blk.hh"
 #include "mem/packet.hh"
@@ -157,6 +158,7 @@ BaseCache::BaseCache(const BaseCacheParams &p, unsigned blk_size)
       blkSize(blk_size),
       size(p.size),
       assoc(p.assoc),
+      checkpointPreserve(p.checkpoint_preserve),
       wpu(p.wpu),
       Judgmentcycle(0),
       sliceAddr(8),
@@ -306,6 +308,13 @@ BaseCache::regenerateBlkAddr(CacheBlk* blk)
 void
 BaseCache::init()
 {
+    if (checkpointPreserve) {
+        const auto *plain = dynamic_cast<const BaseSetAssoc *>(tags);
+        fatal_if(!plain || !plain->supportsWarmCheckpoint() || prefetcher ||
+                 compressor || writeAllocator || wpu || cacheLevel != 0,
+                 "%s warm checkpoint mode requires a generic plain "
+                 "set-associative/LRU cache without optional engines", name());
+    }
     if (!cpuSidePort.isConnected() || !memSidePort.isConnected())
         fatal("Cache ports on %s are not connected\n", name());
     cpuSidePort.sendRangeChange();
@@ -2574,6 +2583,39 @@ BaseCache::sendWriteQueuePacket(WriteQueueEntry* wq_entry)
 void
 BaseCache::serialize(CheckpointOut &cp) const
 {
+    if (checkpointPreserve) {
+        fatal_if(!mshrQueue.isEmpty() || !writeBuffer.isEmpty() || blocked ||
+                 noTargetMSHR || tempBlock->isValid() || tempBlockWriteback ||
+                 writebackTempBlockAtomicEvent.scheduled() ||
+                 !cpuSidePort.checkpointIdle() || !memSidePort.checkpointIdle(),
+                 "%s warm checkpoint requires drained cache queues", name());
+        ClockedObject::serialize(cp);
+        const unsigned warmCheckpointVersion = 1;
+        SERIALIZE_SCALAR(warmCheckpointVersion);
+        const std::vector<uint64_t> geometry = {
+            uint64_t(size), uint64_t(assoc), blkSize, clockPeriod(),
+            uint64_t(lookupLatency), uint64_t(dataLatency),
+            uint64_t(responseLatency), uint64_t(pipeLatency),
+            uint64_t(sliceNum), uint64_t(mshrAllocPerCycle), uint64_t(numTarget)
+        };
+        SERIALIZE_CONTAINER(geometry);
+        SERIALIZE_SCALAR(order);
+        SERIALIZE_SCALAR(missCount);
+        SERIALIZE_SCALAR(freeTagLoadReadPorts);
+        const uint64_t tagCycle = uint64_t(lastTagAccessCheckCycle);
+        SERIALIZE_SCALAR(tagCycle);
+        SERIALIZE_SCALAR(lastMSHRAllocCycle);
+        SERIALIZE_SCALAR(accessCounter);
+        SERIALIZE_SCALAR(Judgmentcycle);
+        SERIALIZE_CONTAINER(sliceReadyTick);
+        SERIALIZE_CONTAINER(sliceAddr);
+        SERIALIZE_CONTAINER(cacheblkAddr);
+        for (unsigned i = 0; i < wayPreTable.size(); ++i)
+            arrayParamOut(cp, csprintf("wayPrediction%u", i), wayPreTable[i]);
+        ScopedCheckpointSection section(cp, "warmTags");
+        static_cast<const BaseSetAssoc *>(tags)->serializeWarm(cp);
+        return;
+    }
     bool dirty(isDirty());
 
     if (dirty) {
@@ -2594,6 +2636,50 @@ BaseCache::serialize(CheckpointOut &cp) const
 void
 BaseCache::unserialize(CheckpointIn &cp)
 {
+    unsigned warmCheckpointVersion = 0;
+    const bool savedWarm = optParamIn(cp, "warmCheckpointVersion",
+                                      warmCheckpointVersion, false);
+    fatal_if(savedWarm != checkpointPreserve,
+             "%s checkpoint warm-cache mode changed or snapshot is missing "
+             "warm cache state", name());
+    if (checkpointPreserve) {
+        fatal_if(warmCheckpointVersion != 1,
+                 "%s unsupported warm cache checkpoint version", name());
+        ClockedObject::unserialize(cp);
+        const std::vector<uint64_t> expected = {
+            uint64_t(size), uint64_t(assoc), blkSize, clockPeriod(),
+            uint64_t(lookupLatency), uint64_t(dataLatency),
+            uint64_t(responseLatency), uint64_t(pipeLatency),
+            uint64_t(sliceNum), uint64_t(mshrAllocPerCycle), uint64_t(numTarget)
+        };
+        std::vector<uint64_t> geometry;
+        UNSERIALIZE_CONTAINER(geometry);
+        fatal_if(geometry != expected,
+                 "%s warm cache checkpoint configuration changed", name());
+        UNSERIALIZE_SCALAR(order);
+        UNSERIALIZE_SCALAR(missCount);
+        UNSERIALIZE_SCALAR(freeTagLoadReadPorts);
+        uint64_t tagCycle;
+        UNSERIALIZE_SCALAR(tagCycle);
+        lastTagAccessCheckCycle = Cycles(tagCycle);
+        UNSERIALIZE_SCALAR(lastMSHRAllocCycle);
+        UNSERIALIZE_SCALAR(accessCounter);
+        UNSERIALIZE_SCALAR(Judgmentcycle);
+        UNSERIALIZE_CONTAINER(sliceReadyTick);
+        UNSERIALIZE_CONTAINER(sliceAddr);
+        UNSERIALIZE_CONTAINER(cacheblkAddr);
+        fatal_if(freeTagLoadReadPorts > tagLoadReadPorts ||
+                 sliceReadyTick.size() != (sliceNum > 0 ? sliceNum : 0),
+                 "%s invalid warm cache checkpoint runtime geometry", name());
+        for (unsigned i = 0; i < wayPreTable.size(); ++i) {
+            arrayParamIn(cp, csprintf("wayPrediction%u", i), wayPreTable[i]);
+            fatal_if(wayPreTable[i].size() != assoc,
+                     "%s invalid warm cache way-prediction shape", name());
+        }
+        ScopedCheckpointSection section(cp, "warmTags");
+        static_cast<BaseSetAssoc *>(tags)->unserializeWarm(cp);
+        return;
+    }
     bool bad_checkpoint;
     UNSERIALIZE_SCALAR(bad_checkpoint);
     if (bad_checkpoint) {

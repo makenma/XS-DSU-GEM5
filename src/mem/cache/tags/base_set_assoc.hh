@@ -101,6 +101,10 @@ class BaseSetAssoc : public BaseTags
      */
     virtual ~BaseSetAssoc() {};
 
+    bool supportsWarmCheckpoint() const;
+    void serializeWarm(CheckpointOut &cp) const;
+    void unserializeWarm(CheckpointIn &cp);
+
     /**
      * Initialize blocks as CacheBlk instances.
      */

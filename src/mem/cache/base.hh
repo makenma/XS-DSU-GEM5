@@ -285,6 +285,10 @@ class BaseCache : public ClockedObject, public CacheAccessor
                     const std::string &_label);
 
         bool hasSchedSendEvent() const { return _reqQueue.hasSchedSendEvent(); }
+        bool checkpointIdle() const {
+            return _reqQueue.size() == 0 && !_reqQueue.hasSchedSendEvent() &&
+                _snoopRespQueue.size() == 0;
+        }
     };
 
     /**
@@ -307,6 +311,10 @@ class BaseCache : public ClockedObject, public CacheAccessor
         void clearBlocked();
 
         bool isBlocked() const { return blocked; }
+        bool checkpointIdle() const {
+            return !blocked && !mustSendRetry &&
+                !sendRetryEvent.scheduled() && queue.size() == 0;
+        }
 
       protected:
 
@@ -1005,6 +1013,7 @@ class BaseCache : public ClockedObject, public CacheAccessor
     const unsigned blkSize;
     const int size ;
     const int assoc;
+    const bool checkpointPreserve;
     way_prediction_policy::BaseWpu *wpu;
     const int DEFAULTWAYPRESIZE = 65536;
     uint64_t Judgmentcycle;
